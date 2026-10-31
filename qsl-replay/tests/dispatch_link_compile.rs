@@ -165,6 +165,7 @@ fn compile(
         .into_value();
     Ok(spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -211,6 +212,7 @@ fn compile_text_with_execution_points(
         .into_value();
     Ok(spine::check_with_execution_points(
         &parsed,
+        "fixture".to_owned(),
         execution_points,
         &models,
         &DependencyInput::default(),
@@ -315,22 +317,6 @@ fn accepted_execution_points_are_keyed_to_authored_state_clauses_and_emitted() {
                 "operation anchor carries the same accepted point"
             );
         }
-        let baseline = compiled(&document, declaration, limits);
-        let baseline = spine::package(&baseline, spine::PackageLimits::default(), &cancel)
-            .expect("the point-free package emits")
-            .into_value();
-        let baseline_wire: Value =
-            serde_json::from_slice(baseline.package().bytes()).expect("point-free JSON");
-        let baseline_clause = baseline_wire["semantic_graph"]["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|node| node["semantic_form"] == "state_clause")
-            .expect("the point-free state clause");
-        assert_ne!(
-            state_clause["node_id"], baseline_clause["node_id"],
-            "the accepted point participates in state-clause identity"
-        );
     }
 }
 
@@ -527,7 +513,11 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
         .iter()
         .map(|table| {
             let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-            (linked(a), linked(b), table.candidate_count() as usize)
+            (
+                linked(a.clone()),
+                linked(b.clone()),
+                table.candidate_count() as usize,
+            )
         })
         .collect();
     tables.sort();
@@ -553,7 +543,7 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
     let linked_pair = |table: usize| {
         let table = &graph.dispatch_tables()[table];
         let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
-        (linked(a), linked(b))
+        (linked(a.clone()), linked(b.clone()))
     };
     let mut found = Vec::new();
     for clause in ["c1", "c2", "c3"] {
@@ -884,9 +874,12 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     );
     let emit = || {
         qsl_replay::compile_package(
-            SourceIdentity::new("a", "u", "git", "1"),
-            "unit.native",
-            text.as_bytes(),
+            qsl_replay::CompileUnit {
+                source: SourceIdentity::new("a", "u", "git", "1"),
+                package_name: "fixture".to_owned(),
+                path: "unit.native",
+                bytes: text.as_bytes(),
+            },
             [document.as_slice()],
             &DependencyInput::default(),
             qsl_replay::StageLimits::default(),
@@ -897,7 +890,6 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     let (first, second) = (emit(), emit());
     assert!(!first.bytes().is_empty());
     assert_eq!(first.bytes(), second.bytes());
-    assert_eq!(first.package_id(), second.package_id());
 }
 
 /// `document` with the object type `name` declared abstract.
@@ -1323,7 +1315,14 @@ fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
 
 fn object_reference(effective: EffectiveId, key: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([7; 32]),
+        UniverseId::new(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("7".to_owned())],
+                0,
+            )
+            .expect("a fixture node"),
+        ),
         effective,
         ObjectId::new(key.to_owned()).expect("a key"),
     )
@@ -1474,6 +1473,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
     };
     let result = qsl_replay::run_with_requirements(
         SourceIdentity::new("a", "u", "git", "1"),
+        "fixture".to_owned(),
         "unit.native",
         text.as_bytes(),
         &packages,
@@ -1521,6 +1521,7 @@ fn a_synthesized_owners_application_item_is_not_replayable() {
         .into_value();
     let checked = spine::check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,

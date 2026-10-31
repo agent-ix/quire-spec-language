@@ -302,13 +302,13 @@ impl ModelSystem<'_> {
         let preconditions = walk.applicable(
             &self.clauses.preconditions,
             row,
-            application.declaring,
+            application.declaring.clone(),
             &application.name,
         );
         let postconditions = walk.applicable(
             &self.clauses.postconditions,
             row,
-            application.declaring,
+            application.declaring.clone(),
             &application.name,
         );
         let mut judged = Vec::new();

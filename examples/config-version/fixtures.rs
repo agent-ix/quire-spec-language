@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: newly authored ConfigVersion fixtures through public native APIs.
 
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::{
     formal_source::FormalSource,
@@ -169,10 +169,10 @@ fn snapshot(
     .map_err(io::Error::other)
 }
 
-fn source_selection(file: &str, identity: &SourceIdentity, text: &str, document: &str) -> Value {
+fn source_selection(file: &str, identity: &SourceIdentity, document: &str) -> Value {
     json!({"file":file,"authority":identity.authority,"identity":identity.identity,
         "revision_namespace":identity.revision_namespace,"revision":identity.revision,
-        "digest":ByteDigest::of(text.as_bytes()).to_string(),"document":document,"formal_revision":1})
+        "document":document,"formal_revision":1})
 }
 
 struct Program {
@@ -211,7 +211,7 @@ fn write_program(directory: &Path, case: Case) -> io::Result<Program> {
     let owner = json!({"package":"example/config-version","requirement":clause.name,"revision":1});
     let document = format!("ConfigVersion{}", case.id().replace('-', "_"));
     let selection = json!({
-        "source":source_selection("program.native", &identity(case, "native"), &native, &document),
+        "source":source_selection("program.native", &identity(case, "native"), &document),
         "clauses":[{"name":clause.name,"owner":owner,"clause":clause.id,"point":syntax.point}]
     });
     Ok(Program {
@@ -302,7 +302,7 @@ fn write_model(directory: &Path, model: &NativeModel, spec: CaseSpec) -> io::Res
     Ok(if spec.include_model {
         vec![
             json!({"format":"native-rule-model/1","source":source_selection(
-            "model.json", model.source().source().identity(), MODEL, "ConfigVersionModelSource")}),
+            "model.json", model.source().source().identity(), "ConfigVersionModelSource")}),
         ]
     } else {
         Vec::new()
@@ -337,7 +337,6 @@ fn write_markdown(
     selected["source"] = source_selection(
         "rules.md",
         &identity(case, "spec"),
-        &markdown,
         &format!("Markdown{}", program.document),
     );
     let extracted = identity(case, "extracted");

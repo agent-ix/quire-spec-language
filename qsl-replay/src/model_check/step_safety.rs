@@ -35,7 +35,6 @@ use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
 use qsl_eval::smt::RefinementCertificateRequest;
-use qsl_foundation::digest::WireNodeId;
 
 /// What the SMT backend returned for one per-step simulation record, before
 /// the refinement's certificate is checked.
@@ -270,7 +269,7 @@ fn decisive_row(
     {
         return Some(Row::inconclusive(
             InconclusiveCause::HypothesesNotEstablished {
-                hypothesis: WireNodeId::from_digest(*hypothesis.as_bytes()),
+                hypothesis: hypothesis.clone(),
                 result,
             },
         ));

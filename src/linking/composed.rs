@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use crate::syntax::composed::{ComposedUnit, Declaration, NativeUnit};
 use crate::Limits;
-use qsl_foundation::{ByteDigest, Diagnostic, Source, SourceIdentity, Spanned};
+use qsl_foundation::{Diagnostic, Source, SourceIdentity, Spanned};
 
 pub use dependencies::{DependencyKind, DependencyReference, DependencyRefusal, DependencySite};
 pub use work::{
@@ -34,8 +34,6 @@ pub struct ExpectedSource {
     pub authority: String,
     /// Exact source identity and revision required from the supplied inventory.
     pub identity: SourceIdentity,
-    /// SHA-256 of the selected source's original bytes.
-    pub digest: ByteDigest,
 }
 
 /// The complete selected native source set. Supplied Source objects are matched
@@ -80,13 +78,6 @@ pub enum InventoryIssue {
     /// A supplied source is outside the explicit expected inventory.
     UnexpectedSource {
         /// Unmatched index into supplied().
-        supplied: usize,
-    },
-    /// Exact source labels match, but the selected byte digest does not.
-    DigestMismatch {
-        /// Selected index into inventory().units.
-        expected: usize,
-        /// Conflicting index into supplied().
         supplied: usize,
     },
     /// Both actual header token loci are retained, alongside the report's

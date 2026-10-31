@@ -45,13 +45,13 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 use crate::reductions::Reductions;
@@ -138,8 +138,8 @@ impl ItemKind {
 /// neither.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AbstractSubject {
-    /// The abstract subject's package id.
-    pub package_id: PackageId,
+    /// The abstract subject's library.
+    pub library: LibraryName,
     /// The abstract subject's initial-state snapshots, in order.
     pub initial_states: Vec<DocumentRef>,
 }
@@ -356,7 +356,7 @@ impl RequestItem {
 
     /// The checked node the item requests a claim over: its occurrence's
     /// node.
-    pub fn node(&self) -> WireNodeId {
+    pub fn node(&self) -> &NodeKey {
         self.occurrence.node()
     }
 
@@ -714,7 +714,7 @@ pub struct RequirementItem {
     proof_bounds: Vec<ProofBound>,
     subject_proof_bounds: Vec<ProofBound>,
     model_subject: bool,
-    result_bound: WireNodeId,
+    result_bound: NodeKey,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
@@ -755,7 +755,7 @@ impl RequirementItem {
     }
 
     /// The occurrence key's node: the application the claim is over.
-    pub fn node(&self) -> WireNodeId {
+    pub fn node(&self) -> &NodeKey {
         self.occurrence.node()
     }
 
@@ -878,8 +878,8 @@ impl RequirementItem {
     }
 
     /// The record's result bound, as its type node.
-    pub fn result_bound(&self) -> WireNodeId {
-        self.result_bound
+    pub fn result_bound(&self) -> &NodeKey {
+        &self.result_bound
     }
 
     /// The occurrence of the direct narrow that supplies this item's result
@@ -1184,8 +1184,13 @@ mod tests {
         );
     }
 
-    fn node(fill: u8) -> WireNodeId {
-        WireNodeId::from_digest([fill; 32])
+    fn node(fill: u8) -> NodeKey {
+        NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text(format!("n{fill}"))],
+            0,
+        )
+        .expect("a fixture node key is well formed")
     }
 
     /// The first `expression` occurrence of node 9.

@@ -3,15 +3,15 @@
 //! operator-level scalar-parity claim.
 //!
 //! The request carries the original proving context: the package's
-//! `package_id`, sources and byte provision, as the call site of the
+//! package name, sources and byte provision, as the call site of the
 //! enclosing function (which may be non-`Boolean`) named them. The replay
-//! recompiles that source by FR-098's rules, requires its `package_id`, and
+//! recompiles that source by FR-098's rules, and
 //! requires the claim's scalar node to lie in the enclosing function's body
 //! and to be an application of the claim's operator. It never selects a function: no synthetic predicate or
 //! function obligation stands in for the operator.
 
-use qsl_foundation::digest::WireNodeId;
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::LibraryName;
+use quire_exact::NodeKey;
 use quire_exact::Origin;
 use quire_semantic_value::declaration::EqualityOperator;
 
@@ -34,23 +34,23 @@ use crate::target::ReplayEntry;
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ScalarIdentityMismatch {
     /// The claim's scalar node is no node of the recompiled package.
-    #[error("the claim names scalar node {node} but package {} holds no such node", .package.hex())]
+    #[error("the claim names scalar node {node} but package {package} holds no such node")]
     Node {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The recompiled package.
-        package: PackageId,
+        package: LibraryName,
     },
     /// The claim's scalar node is no node of the body of the function the
     /// request selects as the enclosing function.
-    #[error("scalar node {node} is not in the body of function {function} of package {}", .package.hex())]
+    #[error("scalar node {node} is not in the body of function {function} of package {package}")]
     Function {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The request's enclosing function.
         function: QualifiedName,
         /// The recompiled package.
-        package: PackageId,
+        package: LibraryName,
     },
     /// The request's obligation identity is not the one ADR-013 O-09's
     /// operator-parity preimage gives for the claim.
@@ -69,7 +69,7 @@ pub enum ScalarIdentityMismatch {
     #[error("scalar node {node} has no occurrence {occurrence:?}")]
     Occurrence {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The claimed occurrence key.
         occurrence: Origin,
     },
@@ -78,23 +78,23 @@ pub enum ScalarIdentityMismatch {
     #[error("the claim names {claimed} operands but scalar node {node} has {found} arguments")]
     OperandCount {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operands the claim names.
         claimed: usize,
         /// The arguments the node has.
         found: usize,
     },
     /// A `GraphChild` operand is not the node's child at its position.
-    #[error("operand {position} of scalar node {node} is claimed to be {claimed} but is {}", found.map_or_else(|| "no node reference".to_owned(), |found| found.to_string()))]
+    #[error("operand {position} of scalar node {node} is claimed to be {claimed} but is {}", found.as_ref().map_or_else(|| "no node reference".to_owned(), ToString::to_string))]
     OperandChild {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position.
         position: usize,
         /// The node the claim names.
-        claimed: WireNodeId,
+        claimed: Box<NodeKey>,
         /// The node the argument references, or `None` for an inline term.
-        found: Option<WireNodeId>,
+        found: Option<Box<NodeKey>>,
     },
     /// An `InlineLiteral` operand is not an inline integer literal of the
     /// node at its position.
@@ -103,7 +103,7 @@ pub enum ScalarIdentityMismatch {
     )]
     NotInlineLiteral {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position.
         position: usize,
     },
@@ -112,7 +112,7 @@ pub enum ScalarIdentityMismatch {
     #[error("operand {position} of scalar node {node} is the inline literal {found}, not the claimed value and singleton range")]
     LiteralValue {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position.
         position: usize,
         /// The literal's value in the package.
@@ -120,42 +120,42 @@ pub enum ScalarIdentityMismatch {
     },
     /// The claim's scalar node is not an application of the claim's
     /// operator.
-    #[error("scalar node {node} of package {} is no {operator:?} application", .package.hex())]
+    #[error("scalar node {node} of package {package} is no {operator:?} application")]
     Operator {
         /// The claim's scalar node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The claim's operator.
         operator: ScalarOperator,
         /// The recompiled package.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-358: the claimed node is not an application of the claimed
     /// equality operator.
-    #[error("scalar node {node} of package {} is no {operator:?} equality application", .package.hex())]
+    #[error("scalar node {node} of package {package} is no {operator:?} equality application")]
     Equality {
         /// The claim's node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The claim's operator.
         operator: EqualityOperator,
         /// The recompiled package.
-        package: PackageId,
+        package: LibraryName,
     },
     /// FR-358: an operand of the claimed equality is neither a parameter
     /// reference nor a literal.
-    #[error("operand {position} of scalar node {node} of package {} is neither a parameter nor a literal", .package.hex())]
+    #[error("operand {position} of scalar node {node} of package {package} is neither a parameter nor a literal")]
     Operand {
         /// The claim's node.
-        node: WireNodeId,
+        node: NodeKey,
         /// The operand's position: 0 for the left, 1 for the right.
         position: usize,
         /// The recompiled package.
-        package: PackageId,
+        package: LibraryName,
     },
 }
 
 /// FR-357: replay an operator-level claim.
 ///
-/// `wire` is the original proving context: its `package_id`, package
+/// `wire` is the original proving context: its package name, package
 /// reference, dependencies and byte provision are the call site's, its
 /// `function` replay target names the enclosing function (an undeclared name
 /// refuses [`ReplayRefusal::UnknownFunction`], and the scalar node must lie in
@@ -175,7 +175,7 @@ pub fn replay_operator_parity(
     claim: OperatorClaim,
     replay_limits: ReplayLimits,
 ) -> OperatorParityReport {
-    let obligation = ObligationIdentity::from_digest(wire.obligation_identity);
+    let obligation = wire.obligation_identity.clone();
     let identity = claim.identity(obligation);
     let request = match ReplayRequest::decode(wire, replay_limits) {
         Ok(request) => request,
@@ -217,13 +217,13 @@ pub(super) fn verify_obligation(
 pub(super) fn preimage_of(claim: &OperatorIdentity) -> ParityPreimage {
     let (first, second) = claim.operation.operands();
     ParityPreimage {
-        node: claim.node,
+        node: claim.node.clone(),
         occurrence: claim.occurrence.clone(),
         obligation_kind: claim.obligation_kind.clone(),
         arguments: std::iter::once(first)
             .chain(second)
             .map(|operand| ParityArgument {
-                identity: operand.identity,
+                identity: operand.identity.clone(),
                 domain: Domain::Range(operand.range.clone()),
             })
             .collect(),
@@ -242,50 +242,47 @@ fn settle(
         replay_limits,
     )?;
     let compiled = recompile(request, &limits)?;
-    let package = compiled.emitted.package().package_id();
+    let package = compiled.package.clone();
     let checked_graph = compiled.checked.package().graph();
     let graph = checked_graph.semantic_graph();
     let operator = claim.operation.operator();
-    let node = graph
-        .resolve_wire(claim.node)
-        .and_then(|key| graph.node(key))
-        .ok_or_else(|| {
-            ReplayRefusal::ScalarIdentity(Box::new(ScalarIdentityMismatch::Node {
-                node: claim.node,
-                package,
-            }))
-        })?;
+    let node = graph.node(claim.node.clone()).ok_or_else(|| {
+        ReplayRefusal::ScalarIdentity(Box::new(ScalarIdentityMismatch::Node {
+            node: claim.node.clone(),
+            package: package.clone(),
+        }))
+    })?;
     if !applies(node, operator) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Operator {
-                node: claim.node,
+                node: claim.node.clone(),
                 operator,
-                package,
+                package: package.clone(),
             },
         )));
     }
     let (_, function) = lookup(&compiled, function_name)?;
-    if !in_body(graph, function.identity, node.key()) {
+    if !in_body(graph, &function.identity, node.key()) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Function {
-                node: claim.node,
+                node: claim.node.clone(),
                 function: function_name.clone(),
-                package,
+                package: package.clone(),
             },
         )));
     }
     if checked_graph
-        .occurrence(node.key(), &claim.occurrence)
+        .occurrence(node.key().clone(), &claim.occurrence)
         .is_none()
     {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Occurrence {
-                node: claim.node,
+                node: claim.node.clone(),
                 occurrence: claim.occurrence.clone(),
             },
         )));
     }
-    check_node_operands(node, claim.node, &claim.operation)?;
+    check_node_operands(node, &claim.node, &claim.operation)?;
     verify_obligation(claim, request.obligation_identity())
         .map_err(|mismatch| ReplayRefusal::ScalarIdentity(Box::new(mismatch)))?;
     compare(claim).map_err(ReplayRefusal::Fault)

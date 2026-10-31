@@ -43,6 +43,9 @@ and never names `qsl_replay::spine` (FR-060, T12-A).
 
 - The context holds only the keys the check minted. A lookup finds a key or
   refuses; it creates none.
+- The context SHALL expose the exact emitted checked-package bytes retained
+  beside it, including the source lock and checked body, so a consumer can
+  compare the complete package before any lookup without a digest surrogate.
 - A declaration id that no package of the dependency closure admitted is
   `Unknown`; one a dependency admitted is `Foreign`, naming that dependency's
   `package_id`; a case the declaration lacks is `Unknown`, naming the case.
@@ -59,6 +62,7 @@ and never names `qsl_replay::spine` (FR-060, T12-A).
 | FR-394-AC-3 | Over a unit that imports, directly or transitively, a library that declares an enum, `enum_declaration` of the library enum's id refuses `Foreign` naming the library's `package_id`, while the unit's own enum is found. | Test (TC-1088) |
 | FR-394-AC-4 | A malformed source and a library with the unit's source owner refuse `Package`; an S1 limit below the source size and an S1 limit above the reader limit refuse `Resource`. | Test (TC-1088) |
 | FR-394-AC-5 | A consumer reaches the entry and its types through the `qsl_replay` root alone, without naming `qsl_replay::spine`. | Test (TC-1088) |
+| FR-394-AC-6 | `AdmittedContext::package_bytes()` equals the bytes of the `CompiledPackage` returned by the same `compile_admitted` call. Two valid units with the same package name and different checked bodies yield unequal context bytes, so comparing only their names cannot substitute for complete package equality. | Test (TC-1088) |
 
 ## Dependencies
 

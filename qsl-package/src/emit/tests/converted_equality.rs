@@ -28,7 +28,7 @@ fn emitted(declarations: &str) -> Emission {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
@@ -47,10 +47,10 @@ fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
 
 /// The node `reference` term `term` names.
 fn referenced<'w>(wire: &'w Value, term: &Value) -> &'w Value {
-    let digest = term["target"]["digest"].as_str().expect("a reference");
+    let key = &term["target"];
     nodes(wire)
         .iter()
-        .find(|node| node["node_id"]["digest"] == digest)
+        .find(|node| &node["node_id"] == key)
         .expect("the referenced node")
 }
 
@@ -95,7 +95,7 @@ fn assert_converted(
     let arguments = equalities[0]["body"]["arguments"].as_array().unwrap();
     assert_eq!(arguments.len(), 2, "{body}");
     assert_eq!(
-        arguments[converted_at]["target"]["digest"], convert["node_id"]["digest"],
+        arguments[converted_at]["target"], convert["node_id"],
         "{body}: the converted operand is the convert node"
     );
     let peer = referenced(&wire, &arguments[1 - converted_at]);
@@ -280,12 +280,12 @@ fn an_equality_with_both_operands_converted_converts_each() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|argument| &argument["target"]["digest"])
+        .map(|argument| &argument["target"])
         .collect();
     for (argument, parameter) in arguments.iter().zip(["a", "c"]) {
         let convert = converts
             .iter()
-            .find(|convert| &convert["node_id"]["digest"] == *argument)
+            .find(|convert| &convert["node_id"] == *argument)
             .expect("each argument is a convert node");
         let source = referenced(&wire, &convert["body"]["arguments"][0]);
         assert_eq!(source["body"]["members"][0]["value"]["value"], parameter);
@@ -300,17 +300,9 @@ fn length_units() -> (
     ValueType,
 ) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-        UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
-    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
-    let digest = |preimage: &dyn NodeIdentityPreimage| {
-        NodeKey::from_digest(
-            preimage
-                .digest(qsl_foundation::IdentityLimits::default())
-                .expect("a digest"),
-        )
-    };
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let length = DimensionPreimage::from_json(json!({
         "version": "quire.dimension-node/v1",
         "owner": owner,
@@ -318,30 +310,34 @@ fn length_units() -> (
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = digest(&length);
-    let node_ref = |key: NodeKey| json!({"domain": NODE_KEY_DOMAIN, "digest": key.to_string()});
+    let length_key = length.key().expect("a dimension declaration key");
+    let node_ref = |key: &NodeKey| {
+        qsl_foundation::node_wire::node_key_to_json(key).expect("a structural fixture key")
+    };
     let unit = |name: &str, target: Option<NodeKey>, scale: &str| {
         UnitPreimage::from_json(json!({
             "version": "quire.unit-node/v1",
             "owner": owner,
             "qualified_declaration": ["Example", name],
-            "dimension_node_id": node_ref(length_key),
-            "target_unit_node_id": target.map(node_ref),
+            "dimension_node_id": node_ref(&length_key),
+            "target_unit_node_id": target.as_ref().map(node_ref),
             "scale": {"numerator": scale, "denominator": "1"},
             "offset": {"numerator": "0", "denominator": "1"},
         }))
         .expect("a unit")
     };
     let metre = unit("metre", None, "1");
-    let metre_key = digest(&metre);
-    let kilometre = unit("kilometre", Some(metre_key), "1000");
-    let kilometre_key = digest(&kilometre);
+    let metre_key = metre.key().expect("a unit declaration key");
+    let kilometre = unit("kilometre", Some(metre_key.clone()), "1000");
+    let kilometre_key = kilometre.key().expect("a unit declaration key");
     let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
         [(length, length_key)],
-        [(metre, metre_key), (kilometre, kilometre_key)],
+        [
+            (metre, metre_key.clone()),
+            (kilometre, kilometre_key.clone()),
+        ],
         &OwnerSelection::new([selection]),
-        qsl_foundation::IdentityLimits::default(),
     )
     .expect("the unit graph admits");
     (
@@ -387,7 +383,7 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
                 ("Km".to_owned(), kilometre.clone()),
             ],
             functions: vec![declared],
-            ..PackageDeclarations::new(source(), qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default())
         }
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -408,8 +404,7 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
         assert_eq!(equalities.len(), 1, "{suffix}: one quantity.{suffix}");
         let at = usize::from(!converted_first);
         assert_eq!(
-            equalities[0]["body"]["arguments"][at]["target"]["digest"],
-            converts[0]["node_id"]["digest"],
+            equalities[0]["body"]["arguments"][at]["target"], converts[0]["node_id"],
             "{suffix}: the converted operand is the convert node"
         );
     }
@@ -465,9 +460,10 @@ fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
         .expect("S1 admits the unit");
         let raw = parsed.source().reference().clone();
         let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-        let refused = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
-            .expect("the unit assembles")
-            .check(CheckingLimits::default());
+        let refused =
+            PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
+                .expect("the unit assembles")
+                .check(CheckingLimits::default());
         assert!(refused.is_err(), "{body}: the body is not in [0, 3]");
     }
 }

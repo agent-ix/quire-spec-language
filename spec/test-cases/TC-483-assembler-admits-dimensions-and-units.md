@@ -13,8 +13,8 @@ relationships:
 ## Description
 
 Verify that the assembler normalizes dimension terms, reduces exact
-numbers, mints dimension and unit keys over the unit's source owner by
-QSpec FR-142's nominal preimages, admits them through `UnitGraph::admit`,
+numbers, mints dimension and unit keys from the required package name and declared paths by
+QSpec FR-322, admits them through `UnitGraph::admit`,
 and refuses each source error with its own cause.
 
 This catches: unnormalized or unsorted terms; an unreduced scale or offset
@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60 to FR-091-AC-64, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-45, FR-093-AC-46.
+Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-45, FR-093-AC-46.
 
 ## Test Procedure
 
@@ -32,7 +32,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
 
 1. Assemble one unit holding the sources of FR-091 vectors Q1 to Q10. Read
    `units` and `nominal_spans`. Assemble a unit with no dimension or unit
-   form and read `units`.
+form and read `units`; repeat with source-owner identity `w` and the same required `package_name`.
    With the decimal-scale bound set to `4`, assemble
    `dimension Length; unit m : Length = rational(1, 1);` with
    `unit c : Length = decimal(1, 5) * m;`, and again with `decimal(1, 4)`.
@@ -62,7 +62,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `n7`.
 10. Assemble FR-091-AC-50's unit, then `unit u : Time2 = rational(1, 1);` beside it, then a second `dimension Time;`.
 11. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base dimension `Time` and a root unit, assemble each unit of FR-091-AC-60: the admitted equivalences, each refusal, the speeds with and without the length and time equivalences, the two phase-order units, and the equivalences in each source order within a phase; then each unit of FR-091-AC-63: the unit of another dimension, the swapped units, the affine unit, the zero and negative numbers, the speeds with ratios 1 and 2, the base cycle with and without a consistent closing ratio, and the ratio written through a larger unit.
-12. Mint the keys of FR-091-AC-61: Q11, Q12 and Q13, `dimension Length ~ Distance by 1 km = 1 dist;`, `dimension Distance ~ Length by 1 dist = 1 km;` and `by 1 dist = 1000 m`, Q3's `Speed` beside `dimension Length ~ Distance by 1 km = 1 dist;`, and the three package pairs `R::Time ~ F::Time by 1 R::s = 1000 F::ms`, `R::Time ~ G::Time by 1 R::s = 1000 G::ms` and `F::Time ~ G::Time by 1 F::s = 1000 G::ms` under owner (`agent-ix`, `example`) over QSpec's three package `Time` dimension vectors; read `nominal_spans`.
+12. Read the structural keys and normalized equivalence bodies of FR-091-AC-68's Q11, Q12 and Q13 sources: `dimension Length ~ Distance by 1 km = 1 dist;`, `dimension Distance ~ Length by 1 dist = 1 km;` and `by 1 dist = 1000 m`, `Speed` beside `dimension Length ~ Distance by 1 km = 1 dist;`, and the three package pairs `R::Time ~ F::Time by 1 R::s = 1000 F::ms`, `R::Time ~ G::Time by 1 R::s = 1000 G::ms` and `F::Time ~ G::Time by 1 F::s = 1000 G::ms` under owner (`agent-ix`, `example`) over QSpec's three package `Time` dimension sources; read `nominal_spans`, then repeat with a changed source-owner unit label and fixed `package_name`.
 13. Assemble FR-091-AC-62's `Force` units with and without `dimension R::Mass ~ F::Mass by 1 R::kg = 1 F::kg;`, and read the classes of the admitted graph over `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` and over Q12; assemble FR-091-AC-64's three spellings of the unequal-root pair, read the class root and the identification edge, and the cycle with `1000` and `1001`.
 14. Declare FR-093-AC-43's `Period`, `sec`, `msec` and `dimension Period ~ Time by 1 sec = 1 s;` beside FR-091-AC-44's units. Check and lower each of `c1` to `c4`, pass each checked package to IR's v2 reader, and evaluate `c1` to `c3` with the operand values AC-43 lists; check `c1` again without the equivalence. Declare FR-093-AC-46's `Beat`, `beat`, `bar` and `dimension Beat ~ Time by 1 beat = rational(1, 4) s;`, check and lower `u1` to `u5`, evaluate `u1` to `u4` with the values AC-46 lists, and check `u1`, `u2` and `u5` again under `by 1 beat = 1 s`.
 15. Under the same units check each of FR-093-AC-44's `a1` to `a4`, then check and lower `a5` to `a8`, pass each package to IR's v2 reader and evaluate each with the operand values AC-44 lists.
@@ -71,8 +71,8 @@ Tag the tests with the AC ids they back and `TC-483`.
 
 ## Expected Results
 
-- Step 1: dimensions keyed Q1 to Q5 and units keyed Q6 to Q10; Q3's and
-  Q4's terms as the vectors list; `km`'s scale `1000`, `cm`'s `1/100`,
+- Step 1: five dimensions and five units keyed by their QSpec FR-322 declared structural paths, with unchanged keys when only the source-owner unit label changes; `Speed`'s exact ordered terms `[(Length, 1), (Time, -1)]` and
+  `Accel`'s `[(Length, 1), (Time, -2)]` in ascending structural-key order; `km`'s scale `1000`, `cm`'s `1/100`,
   `C`'s offset `5463/20`; `C` affine and `km` not; a span for each key in
   `nominal_spans`. The unit with no dimension or unit form has the empty
   `units`. `decimal(1, 5)` gives a limit refusal,
@@ -121,7 +121,7 @@ Tag the tests with the AC ids they back and `TC-483`.
   `ill_typed`/`operator-ineligible` at the negation and emits no node.
 - Step 10: the first unit assembles with no error and keeps `R::Time` and `R::s` as written; `Time2` refuses with an unresolved-name error naming `Time2`; the second `dimension Time;` refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named (FR-091-AC-50).
 - Step 11: each admitted equivalence assembles; each refusal is the one error FR-091-AC-60 and AC-63 name, at the equivalence form, with the retained nodes, units, offsets or numbers they list; the phase-order units report the equivalence first for `L ~ L` and the row 1 defect first for `Dur ~ L2`; the speeds are admitted with ratio 1 and refused with ratio 2; the base cycle is admitted with the consistent closing ratio and refused `conflicting-definition` at the third form otherwise; the decisions are the same in every source order within a phase.
-- Step 12: the keys FR-091-AC-61 gives, Q12's key from every spelling of its ratio, Q13's key (`root_scale` 1/200), Q1's, Q11's and Q3's keys unchanged, the QSpec vector keys for the three package pairs, and a span under each equivalence key.
-- Step 13: the equivalence naming `F::kg` refuses `missing-name`, and `Force` refuses the base-dimension rule at `F::Mass` naming `ix://acme/flow/dimension/Mass` and `n` with and without any equivalence; the graph holds one class of `R::Time` and `F::Time` and one of `Distance` and `Length`, and no class for a graph with no equivalence; the unequal-root spellings give one key (the clock pair's QSpec vector key), class root the `acme/rpc` `s` and an identification edge of scale `1/1000` from the `acme/clock` root; the `1001` cycle refuses at itself.
+- Step 12: each equivalence key has the required package and QSpec FR-322 derived path `["scalar_type", "dimension_equivalence", first id, second id]`; equivalent ratio spellings and a source-owner unit-label change preserve it. The former Q12 and Q13 sources normalize to `root_scale` `1000/1` and `1/200` for the first ordered node; adding an equivalence leaves the `Length`, `Distance` and `Speed` declaration keys and `Speed`'s terms unchanged. Each package pair holds its two dimension node ids in ascending order with normalized scales `1/1` (rpc/flow), `1000/1` (rpc/clock) and `1000/1` (flow/clock) for the first, and each equivalence has a span under its key.
+- Step 13: the equivalence naming `F::kg` refuses `missing-name`, and `Force` refuses the base-dimension rule at `F::Mass` naming `ix://acme/flow/dimension/Mass` and `n` with and without any equivalence; the graph holds one class of `R::Time` and `F::Time` and one of `Distance` and `Length`, and no class for a graph with no equivalence; the unequal-root spellings give one structural key for the clock pair, class root the `acme/rpc` `s` and an identification edge of scale `1/1000` from the `acme/clock` root; the `1001` cycle refuses at itself.
 - Step 14: `c1` to `c3` check and lower to `quire.op.quantity.convert` (mode `rounding` = `exact`) with the verdicts AC-43 lists; IR's v2 reader admits each package; `c4` and the no-equivalence `c1` refuse `ill_typed` at the conversion; `u1` to `u4` check and lower with the verdicts AC-46 lists, `u1` false for `1 beat` and true for `rational(1, 4) beat` under ratio 1, and `u5` refuses `ill_typed`/`type-mismatch` under either declaration.
 - Step 15: `a1` to `a4` refuse `ill_typed`/`type-mismatch`; `a5` to `a8` check and lower with the node shapes and verdicts AC-44 lists, `a7`'s two divisions sharing one dimensionless compound-unit node and `a8`'s two products one compound-unit node.

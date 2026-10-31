@@ -223,7 +223,7 @@ fn t_effect(
         package: PACKAGE_IDENTITY.to_owned(),
         node: id(if on_sub { "Sub" } else { "Counter" }),
     };
-    let owner_id = views[0].view.type_identities()[&owner];
+    let owner_id = views[0].view.type_identities()[&owner].clone();
     declarations
         .operations
         .declared_by(owner_id)

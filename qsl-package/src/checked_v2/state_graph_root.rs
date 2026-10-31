@@ -20,9 +20,9 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedTerm, ClaimForm,
 };
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::{Origin, Role};
+use quire_contract_model::CheckedNodeId;
+use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::ClauseRootUnresolved;
@@ -44,9 +44,9 @@ pub enum StateGraphKind {
 pub struct StateGraphRoot {
     occurrence: OccurrenceKey,
     kind: StateGraphKind,
-    over: Option<WireNodeId>,
-    from: Option<WireNodeId>,
-    target: WireNodeId,
+    over: Option<NodeKey>,
+    from: Option<NodeKey>,
+    target: NodeKey,
 }
 
 impl StateGraphRoot {
@@ -62,23 +62,24 @@ impl StateGraphRoot {
 
     /// The `value`/`parameter` node of the `over` parameter, or `None` for a
     /// claim written without one.
-    pub fn over(&self) -> Option<WireNodeId> {
-        self.over
+    pub fn over(&self) -> Option<&NodeKey> {
+        self.over.as_ref()
     }
 
     /// The predicate node of `from`, or `None` for `possible`.
-    pub fn from(&self) -> Option<WireNodeId> {
-        self.from
+    pub fn from(&self) -> Option<&NodeKey> {
+        self.from.as_ref()
     }
 
     /// The predicate node of `target` (`unique path`'s `Y`).
-    pub fn target(&self) -> WireNodeId {
-        self.target
+    pub fn target(&self) -> &NodeKey {
+        &self.target
     }
 }
 
 /// A broken invariant between IR's admission and this lookup.
-const NODE_ID_FAULT: InternalFault = InternalFault::new("I2", "admitted-node-id-is-a-wire-node-id");
+const NODE_ID_FAULT: InternalFault =
+    InternalFault::new("I2", "admitted-node-id-is-a-structural-node-id");
 
 /// A broken invariant between IR's admission of the body and this reading.
 const BODY_FAULT: InternalFault = InternalFault::new("I2", "admitted-state-graph-body-is-read");
@@ -94,7 +95,7 @@ fn is_state_graph(node: &CheckedSemanticNodeV2) -> bool {
 /// aggregate (`None`).
 #[derive(Clone, Copy)]
 enum Slot<'a> {
-    Reference(&'a str),
+    Reference(&'a CheckedNodeId),
     Empty,
     Other,
 }
@@ -116,7 +117,7 @@ fn binding<'a>(node: &'a CheckedSemanticNodeV2, name: &str) -> Option<&'a Checke
 
 fn slot<'a>(node: &'a CheckedSemanticNodeV2, name: &str) -> Option<Slot<'a>> {
     Some(match binding(node, name)? {
-        CheckedTerm::Reference { target } => Slot::Reference(&target.digest),
+        CheckedTerm::Reference { target } => Slot::Reference(target),
         CheckedTerm::Aggregate { members } if members.is_empty() => Slot::Empty,
         _ => Slot::Other,
     })
@@ -135,12 +136,16 @@ fn kind_of(node: &CheckedSemanticNodeV2) -> Option<StateGraphKind> {
     }
 }
 
-fn reference(
-    node: &CheckedSemanticNodeV2,
-    name: &str,
-) -> Result<Option<WireNodeId>, InternalFault> {
+/// The structural key of the admitted wire node id `id`, through the
+/// shared node codec.
+pub(super) fn node_key(id: &CheckedNodeId) -> Option<NodeKey> {
+    let value = serde_json::to_value(id).ok()?;
+    qsl_foundation::node_wire::node_key_from_json(&value).ok()
+}
+
+fn reference(node: &CheckedSemanticNodeV2, name: &str) -> Result<Option<NodeKey>, InternalFault> {
     match slot(node, name) {
-        Some(Slot::Reference(digest)) => WireNodeId::from_hex(digest).map(Some).ok_or(BODY_FAULT),
+        Some(Slot::Reference(id)) => node_key(id).map(Some).ok_or(BODY_FAULT),
         Some(Slot::Empty) => Ok(None),
         Some(Slot::Other) | None => Err(BODY_FAULT),
     }
@@ -149,12 +154,12 @@ fn reference(
 /// The claim declared by `node`'s `claim` occurrence `ordinal`.
 fn root(
     node: &CheckedSemanticNodeV2,
-    id: WireNodeId,
+    id: &NodeKey,
     ordinal: u64,
 ) -> Result<StateGraphRoot, InternalFault> {
     Ok(StateGraphRoot {
         occurrence: OccurrenceKey::new(
-            id,
+            id.clone(),
             Origin::new(
                 Role::new(super::role_spelling(&CheckedOccurrenceRole::Claim)),
                 ordinal,
@@ -178,13 +183,13 @@ pub fn state_graph_roots(package: &CheckedPackageV2) -> Result<Vec<StateGraphRoo
         .iter()
         .filter(|node| is_state_graph(node))
     {
-        let id = WireNodeId::from_hex(&node.node_id.digest).ok_or(NODE_ID_FAULT)?;
+        let id = node_key(&node.node_id).ok_or(NODE_ID_FAULT)?;
         for occurrence in node
             .occurrences
             .iter()
             .filter(|occurrence| occurrence.role == CheckedOccurrenceRole::Claim)
         {
-            roots.push(root(node, id, occurrence.ordinal)?);
+            roots.push(root(node, &id, occurrence.ordinal)?);
         }
     }
     Ok(roots)
@@ -202,12 +207,11 @@ pub fn resolve_state_graph_root(
     let unresolved = || ClauseRootUnresolved {
         root: triple.clone(),
     };
-    let digest = triple.node().to_string();
     let Some(node) = package
         .graph()
         .nodes
         .iter()
-        .find(|node| *node.node_id.digest == *digest)
+        .find(|node| node_key(&node.node_id).as_ref() == Some(triple.node()))
         .filter(|node| is_state_graph(node))
     else {
         return Ok(Err(unresolved()));

@@ -9,11 +9,10 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
     read_checked_package, CheckedOccurrence, CheckedPackageDispatchResult, CheckedPackageReadLimits,
 };
-use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
+use quire_exact::{Cancel, Integer, Origin, Role, Value};
 
 use super::*;
-use crate::execute::scalar_site::{check_operands, equality_operator};
-use crate::scalar::{ScalarOperand, ScalarOperation};
+use crate::execute::scalar_site::equality_operator;
 use crate::spine::call::tests::{lookup_driver_context, lookup_driver_fixture};
 use crate::spine::{
     check, default_accounting, package as emit, parse, run, select as select_models, CallArgument,
@@ -63,9 +62,16 @@ fn compile_with(
     let models = select_models(&parsed, &packages, limits.model, &cancel)
         .expect("the models select")
         .into_value();
-    let checked = check(&parsed, &models, &dependencies, limits, &cancel)
-        .expect("the unit checks")
-        .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .expect("the unit checks")
+    .into_value();
     let emitted = emit(&checked, Default::default(), &cancel)
         .expect("the unit emits")
         .into_value();
@@ -167,8 +173,8 @@ fn refused(unit: &Unit, call: &Call, occurrence: &ScalarOccurrence) -> BindRefus
     }
 }
 
-fn wire(key: quire_exact::NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*key.as_bytes())
+fn wire(key: quire_exact::NodeKey) -> NodeKey {
+    key.clone()
 }
 
 /// Every occurrence in `function`'s body of a node `keep` accepts.
@@ -186,12 +192,12 @@ fn occurrences_in(
         .filter(|(key, _, _)| {
             graph
                 .semantic_graph()
-                .node(*key)
+                .node(key.clone())
                 .is_some_and(&keep)
         })
         .map(|(key, origin, _)| ScalarOccurrence {
             function: function.to_owned(),
-            application: wire(key),
+            application: wire(key.clone()),
             occurrence: OccurrenceKey::new(wire(key), origin),
         })
         .collect()
@@ -204,7 +210,7 @@ fn the_application(unit: &Unit, function: &str, operator: ScalarOperator) -> Sca
     found.remove(0)
 }
 
-fn parameter_node(unit: &Unit, function: &str, name: &str) -> WireNodeId {
+fn parameter_node(unit: &Unit, function: &str, name: &str) -> NodeKey {
     let package = unit.checked.package();
     let callable = package.graph().callable(function).expect("declared");
     let keys = callable_parameter_keys(package, &callable).expect("parameter nodes");
@@ -213,7 +219,7 @@ fn parameter_node(unit: &Unit, function: &str, name: &str) -> WireNodeId {
         .iter()
         .position(|(parameter, _)| parameter == name)
         .expect("declared parameter");
-    wire(keys[position])
+    wire(keys[position].clone())
 }
 
 fn bound_range(lower: i128, upper: i128) -> CheckedScalarOperandRange {
@@ -222,7 +228,7 @@ fn bound_range(lower: i128, upper: i128) -> CheckedScalarOperandRange {
 
 /// The source of the argument at `index` for parameter `parameter`: a
 /// parameter's level is its declared position.
-fn argument_source(index: usize, parameter: &str, node: WireNodeId) -> OperandSource {
+fn argument_source(index: usize, parameter: &str, node: NodeKey) -> OperandSource {
     OperandSource::Argument {
         argument: index,
         parameter: parameter.to_owned(),
@@ -237,6 +243,7 @@ const SUB: &str = "function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] 
 fn run_refusal(unit: &Unit, call: &Call, objects: &ObjectEnvironment) -> Box<RunRefusal> {
     run(
         identity(),
+        "fixture".to_owned(),
         "bind.native",
         unit.source.as_bytes(),
         &unit.packages,
@@ -246,7 +253,6 @@ fn run_refusal(unit: &Unit, call: &Call, objects: &ObjectEnvironment) -> Box<Run
         objects,
         &Cancel::new(),
     )
-    .map(|(_, outcome)| outcome)
     .expect_err("run refuses the call")
 }
 
@@ -275,13 +281,13 @@ fn tc_1053_step_1_operands_bind_in_application_order() {
                 ordinal: 0,
                 value: 7,
                 range: bound_range(0, 9),
-                source: argument_source(1, "a", a),
+                source: argument_source(1, "a", a.clone()),
             },
             BoundOperand {
                 ordinal: 1,
                 value: 2,
                 range: bound_range(0, 9),
-                source: argument_source(0, "b", b),
+                source: argument_source(0, "b", b.clone()),
             },
         ]
     );
@@ -335,14 +341,6 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
     let literal = &plus.operands()[1];
     assert_eq!(literal.range, bound_range(1, 1));
     assert_eq!(literal.source, OperandSource::InlineLiteral);
-    let graph = unit.checked.package().graph().semantic_graph();
-    assert!(
-        graph.nodes().all(|node| {
-            serde_json::from_slice::<serde_json::Value>(node.preimage())
-                .map_or(true, |json| json["body"]["value"] != "1")
-        }),
-        "a source integer literal operand has no node of its own"
-    );
 
     let occurrence = the_application(&unit, "lead", ScalarOperator::Add);
     assert_eq!(
@@ -361,7 +359,7 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
             .map(|o| (o.ordinal, o.source.clone()))
             .collect::<Vec<_>>(),
         [
-            (0, argument_source(0, "a", a)),
+            (0, argument_source(0, "a", a.clone())),
             (1, argument_source(0, "a", a))
         ]
     );
@@ -389,7 +387,7 @@ fn tc_1053_step_2_inline_literal_term_binds_without_a_node() {
     let operands = [CheckedScalarOperand {
         ordinal: 0,
         child: CheckedScalarOperandChild::InlineLiteral {
-            application: checked_node_id(occurrence.application),
+            application: super::wire_node_id(&occurrence.application),
             occurrence: CheckedOccurrence {
                 role: quire_contract_model::CheckedOccurrenceRole::Expression,
                 ordinal: 0,
@@ -519,8 +517,8 @@ fn tc_1053_step_3_reference_admission_equals_runs() {
     assert_eq!(good.values(), [4, 1]);
 
     let foreign = quire_exact::ObjectReference::new(
-        quire_exact::UniverseId::from_digest([0xa5; 32]),
-        present.object_type(),
+        crate::spine::fixture_ids::universe(0xa5),
+        present.object_type().clone(),
         present.object().clone(),
     );
     let foreign_call = reference(foreign);
@@ -536,8 +534,8 @@ fn tc_1053_step_3_reference_admission_equals_runs() {
     );
 
     let dangling = quire_exact::ObjectReference::new(
-        present.universe(),
-        present.object_type(),
+        present.universe().clone(),
+        present.object_type().clone(),
         quire_exact::ObjectId::new("absent-from-the-population").unwrap(),
     );
     let dangling_call = reference(dangling);
@@ -578,12 +576,12 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     ));
     let values = || call("sub", vec![arg("a", 7), arg("b", 2)]);
     let sub = the_application(&unit, "sub", ScalarOperator::Subtract);
-    let node = sub.application;
+    let node = sub.application.clone();
 
     // An occurrence key the node lacks, while the node has another.
     let mut stale = sub.clone();
     stale.occurrence = OccurrenceKey::new(
-        node,
+        node.clone(),
         Origin::new(Role::new(sub.occurrence.origin().role().as_str()), 99),
     );
     assert_eq!(
@@ -622,9 +620,14 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     );
 
     // A node absent from the package.
-    let absent = WireNodeId::from_digest([0xee; 32]);
+    let absent = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        0xee,
+    )
+    .expect("a fixture key");
     let absent = ScalarOccurrence {
-        application: absent,
+        application: absent.clone(),
         occurrence: OccurrenceKey::new(absent, sub.occurrence.origin().clone()),
         function: "sub".to_owned(),
     };
@@ -651,11 +654,11 @@ fn tc_1053_step_4_occurrence_identity_refusals() {
     assert_eq!(
         refused(&unit, &under_eq, &equality[0]),
         BindRefusal::ScalarIdentity(BindIdentityCause::Operator {
-            node: equality[0].application
+            node: equality[0].application.clone()
         })
     );
     assert_eq!(
-        BindRefusal::ScalarIdentity(BindIdentityCause::Operator { node }).code(),
+        BindRefusal::ScalarIdentity(BindIdentityCause::Operator { node: node.clone() }).code(),
         Code::StaleDependency
     );
     assert_eq!(
@@ -719,7 +722,7 @@ fn tc_1053_step_5_unbounded_and_nested_operands() {
         .expect("the outer application refuses");
     let operands = [CheckedScalarOperand {
         ordinal: 0,
-        child: CheckedScalarOperandChild::GraphChild(checked_node_id(nested.application)),
+        child: CheckedScalarOperandChild::GraphChild(super::wire_node_id(&nested.application)),
         range: bound_range(0, 12),
     }];
     let Err(Halt::Refused(refusal)) = resolver.bind(&operands) else {
@@ -795,6 +798,7 @@ fn tc_1053_step_7_binding_does_not_evaluate() {
     starved.accounting = default_accounting(0);
     let evaluated = run(
         identity(),
+        "fixture".to_owned(),
         "bind.native",
         unit.source.as_bytes(),
         &BTreeMap::new(),
@@ -804,74 +808,12 @@ fn tc_1053_step_7_binding_does_not_evaluate() {
         &ObjectEnvironment::default(),
         &Cancel::new(),
     )
-    .unwrap()
-    .1;
+    .unwrap();
     let CallOutcome::Incomplete(incomplete) = evaluated else {
         panic!("run is incomplete at work_units, got {evaluated:?}");
     };
     assert_eq!(incomplete.limits_field(), "work_units");
     assert_eq!(bound(&unit, &starved, &occurrence).values(), [4, 1]);
-}
-
-/// FR-367-AC-9: the binding is FR-357's operator-level operand list, and its
-/// identities are the ones FR-357 checks against the application.
-#[trace("TC-1053", "FR-367-AC-9")]
-#[test]
-fn tc_1053_step_8_binding_is_the_operator_claims_operand_list() {
-    let unit = compile(
-        "function plus using v(a: Int[0, 9]): Int[1, 10] pure { a + 1 }\n\
-         function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }",
-    );
-    let graph = unit.checked.package().graph().semantic_graph();
-    let claimed = |function: &str, operator, request: Call| {
-        let occurrence = the_application(&unit, function, operator);
-        let bound = bound(&unit, &request, &occurrence);
-        let operands: Vec<ScalarOperand> = bound
-            .operands()
-            .iter()
-            .map(|operand| {
-                let range = IntegerInterval::spanning(
-                    Integer::from(operand.range.lower),
-                    Integer::from(operand.range.upper),
-                );
-                match operand.source {
-                    OperandSource::InlineLiteral => ScalarOperand::literal(operand.value),
-                    OperandSource::Argument { node, .. } => {
-                        ScalarOperand::graph_child(operand.value, range, node)
-                    }
-                }
-            })
-            .collect();
-        let preimage = {
-            let node = graph.node(graph.resolve_wire(occurrence.application).unwrap());
-            serde_json::from_slice::<serde_json::Value>(node.unwrap().preimage()).unwrap()
-        };
-        (bound, operands, preimage, occurrence)
-    };
-
-    let (bound, mut operands, preimage, occurrence) = claimed(
-        "sub",
-        ScalarOperator::Subtract,
-        call("sub", vec![arg("b", 2), arg("a", 7)]),
-    );
-    let (right, left) = (operands.pop().unwrap(), operands.pop().unwrap());
-    assert_eq!(
-        [left.value, right.value],
-        <[i64; 2]>::try_from(bound.values()).unwrap()
-    );
-    let operation = ScalarOperation::Subtract { left, right };
-    assert!(check_operands(&preimage, occurrence.application, &operation).is_ok());
-
-    let (bound, mut operands, preimage, occurrence) =
-        claimed("plus", ScalarOperator::Add, call("plus", vec![arg("a", 4)]));
-    let (right, left) = (operands.pop().unwrap(), operands.pop().unwrap());
-    assert!(matches!(
-        right.identity,
-        crate::scalar::OperandIdentity::InlineLiteral
-    ));
-    let operation = ScalarOperation::Add { left, right };
-    assert!(check_operands(&preimage, occurrence.application, &operation).is_ok());
-    assert_eq!(bound.values(), [4, 1]);
 }
 
 /// FR-367-AC-10: a `let` binder operand is a parameter node no argument
@@ -931,14 +873,15 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
                 .type_identities()
                 .iter()
                 .find(|(key, _)| key.node.rsplit('/').next() == Some("Gizmo"))
-                .map(|(key, identity)| (&model.view, key.clone(), *identity))
+                .map(|(key, identity)| (&model.view, key.clone(), identity.clone()))
         })
         .expect("the second model declares Gizmo");
     let foreign = quire_exact::ObjectReference::new(
         other
             .object_universe_of(&key)
             .expect("a universe")
-            .identity(),
+            .identity()
+            .expect("a universe identity"),
         identity,
         quire_exact::ObjectId::new("g1").unwrap(),
     );
@@ -992,6 +935,7 @@ fn tc_1053_step_1_a_unit_importing_a_library_binds() {
     assert_eq!(bound(&unit, &request, &occurrence).values(), [4, 1]);
     let completed = run(
         identity(),
+        "fixture".to_owned(),
         "bind.native",
         unit.source.as_bytes(),
         &unit.packages,
@@ -1041,12 +985,13 @@ fn node_unit(
         .type_identities()
         .iter()
         .find(|(key, _)| key.node.rsplit('/').next() == Some("Node"))
-        .map(|(key, identity)| (key.clone(), *identity))
+        .map(|(key, identity)| (key.clone(), identity.clone()))
         .expect("Node is declared");
     let reference = quire_exact::ObjectReference::new(
         view.object_universe_of(&key)
             .expect("a universe")
-            .identity(),
+            .identity()
+            .expect("a universe identity"),
         identity,
         quire_exact::ObjectId::new("n1").unwrap(),
     );
@@ -1135,55 +1080,4 @@ fn tc_1053_step_9_binds_from_the_callers_admission_without_the_bytes() {
     };
     assert_eq!(bound.values(), [7, 2]);
     assert_eq!(bound.occurrence(), &occurrence);
-}
-
-/// FR-367-AC-12: an admitted package that is not the admission of the
-/// checked unit's own emitted bytes refuses before anything binds, even when
-/// the occurrence's node is in both packages.
-#[trace("TC-1053", "FR-367-AC-12")]
-#[test]
-fn tc_1053_step_10_a_mismatched_admission_refuses() {
-    let unit = compile(SUB);
-    let other = compile(&format!(
-        "{SUB}\nfunction neg using v(a: Int[0, 9]): Int[-9, 0] pure {{ -a }}"
-    ));
-    let occurrence = the_application(&other, "sub", ScalarOperator::Subtract);
-    // The node is content-addressed: both packages hold the same occurrence.
-    assert_eq!(
-        the_application(&unit, "sub", ScalarOperator::Subtract),
-        occurrence
-    );
-    let admitted = admit(&unit);
-    let outcome = bind_scalar_operands(
-        &admitted,
-        &other.models,
-        &other.checked,
-        &call("sub", vec![arg("a", 7), arg("b", 2)]),
-        &occurrence,
-        &ObjectEnvironment::default(),
-        &Cancel::new(),
-    );
-    let Ok(BindOutcome::Refused(refusal)) = outcome else {
-        panic!("a mismatched admission refuses, got {outcome:?}");
-    };
-    assert_eq!(
-        refusal,
-        BindRefusal::AdmittedPackage {
-            admitted: unit.emitted.package().package_id().hex(),
-            emitted: Some(other.emitted.package().package_id().hex()),
-        }
-    );
-    assert_eq!(refusal.code(), Code::StaleDependency);
-    assert_eq!(refusal.cause(), Some("content-mismatch"));
-
-    // The same occurrence binds over the other unit's own admission.
-    assert_eq!(
-        bound(
-            &other,
-            &call("sub", vec![arg("a", 7), arg("b", 2)]),
-            &occurrence
-        )
-        .values(),
-        [7, 2]
-    );
 }

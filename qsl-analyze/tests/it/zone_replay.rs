@@ -16,7 +16,6 @@ use qsl_eval::simulation::model::{TimedState, TimedSystem};
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     CertificateLocus, CertificateRule, ClosedFormAnalysis, CounterexampleKind, DelayBar,
     DisagreementCause, IncompleteCause, InconclusiveCause, Lasso, ModelCheckLimit, ModelStep,
@@ -438,7 +437,6 @@ fn a_non_local_time_lock_reproduces_by_fresh_exploration() {
     assert_eq!(found, stalled(&world, exact(0, 1)));
     let record = settle_zone_check(
         ZoneItem::Outcome(&outcome),
-        &package_id(),
         &Cancel::new(),
         |_| Ok(ZoneCertificateVerdict::Accepted),
         |payload| replay_on(&world, payload, true, &Limits::default()).map(replayed),
@@ -512,21 +510,11 @@ fn a_violation_on_time_locked_behaviour_does_not_reproduce() {
     }
 }
 
-/// The package every settled run here checked.
-fn package() -> qsl_semantics::library::PackageId {
-    qsl_semantics::library::PackageId::of_preimage(b"zone-replay")
-}
-
-pub(crate) fn package_id() -> DigestRecord {
-    package().record()
-}
-
-/// A replay result settled against the run's package.
+/// A replay result with no hints.
 fn replayed(settlement: ModelTraceSettlement) -> ModelTraceReplayResult {
     ModelTraceReplayResult {
         settlement,
         hints: Vec::new(),
-        package_id: package(),
     }
 }
 
@@ -539,7 +527,6 @@ fn settle(
 ) -> ZoneCheckRecord {
     settle_zone_check(
         ZoneItem::Outcome(outcome),
-        &package_id(),
         &Cancel::new(),
         |_| Ok(check),
         |_| result.map(replayed),
@@ -649,25 +636,12 @@ fn each_timed_verdict_row_settles_as_stated() {
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::InvalidRuntimeInput))
     );
     assert!(record.counterexample.is_none());
-    // A replay settled against another package is stale.
-    let record = settle_zone_check(
-        ZoneItem::Outcome(&refuted),
-        &qsl_semantics::library::PackageId::of_preimage(b"another").record(),
-        &Cancel::new(),
-        |_| Ok(ZoneCertificateVerdict::Accepted),
-        |_| Ok(replayed(reproduced.clone())),
-    );
-    assert_eq!(
-        record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
-    );
     // A cancelled run.
     let cancel = Cancel::new();
     cancel.cancel(quire_exact::CancelCause::Requested);
     let cancelled = claim(&four, ZoneCheckLimits::default(), &cancel);
     let record = settle_zone_check(
         ZoneItem::Outcome(&cancelled),
-        &package_id(),
         &cancel,
         |_| Ok(ZoneCertificateVerdict::Accepted),
         |_| Err(fault()),
@@ -723,7 +697,6 @@ fn a_timed_refutation_settles_through_its_replay() {
     let settle_with = |outcome: &Outcome| {
         settle_zone_check(
             ZoneItem::Outcome(outcome),
-            &package_id(),
             &Cancel::new(),
             |_| Ok(ZoneCertificateVerdict::Accepted),
             |payload| replay(&three, payload).map(replayed),
@@ -757,7 +730,6 @@ fn a_timed_refutation_settles_through_its_replay() {
     assert_eq!(violated(outcome.clone()), time_lock(&locked));
     let record = settle_zone_check(
         ZoneItem::Outcome(&outcome),
-        &package_id(),
         &Cancel::new(),
         |_| Ok(ZoneCertificateVerdict::Accepted),
         |payload| replay_on(&locked, payload, true, &Limits::default()).map(replayed),
@@ -806,7 +778,6 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
     let disposed = UnsupportedItem::PunctualInterval { span };
     let record = settle_zone_check::<&'static str>(
         ZoneItem::Unsupported(&disposed),
-        &package_id(),
         &Cancel::new(),
         |_| Ok(ZoneCertificateVerdict::Accepted),
         |_| Err(fault()),
@@ -849,7 +820,6 @@ fn an_undefined_timed_evaluation_settles_refuted() {
     let outcome = claim(&world, ZoneCheckLimits::default(), &Cancel::new());
     let record = settle_zone_check(
         ZoneItem::Outcome(&outcome),
-        &package_id(),
         &Cancel::new(),
         |_| Ok(ZoneCertificateVerdict::Accepted),
         |payload| replay(&world, payload).map(replayed),

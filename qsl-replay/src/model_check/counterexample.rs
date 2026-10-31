@@ -17,63 +17,15 @@ use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::TemporalPosition;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::TemporalInterval;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
-use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Origin, Rational, Role};
+use quire_exact::Rational;
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
-
-/// The occurrence role of the derived deadlock-freedom item.
-const DEADLOCK_FREEDOM_ROLE: &str = "deadlock-freedom";
-
-/// The envelope identity of the deadlock-freedom item of the package
-/// `package_id` (FR-128 "The envelope names the clause, or the
-/// deadlock-freedom item, by its clause node and occurrence key"): the
-/// item has no authored clause node, so its node is the package's own
-/// identity, and its occurrence key is that node with the role
-/// `deadlock-freedom` and ordinal 0. No authored clause has this node,
-/// since a clause node is the digest of a clause's checked content and
-/// never a `package_id`. The subject is bound by the envelope's obligation
-/// identity (FR-124), not here.
-pub fn deadlock_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
-    let node = WireNodeId::from_digest(*package_id.as_bytes());
-    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(DEADLOCK_FREEDOM_ROLE), 0));
-    (node, occurrence)
-}
-
-/// The occurrence role of the derived time-lock-freedom item.
-const TIME_LOCK_FREEDOM_ROLE: &str = "time-lock-freedom";
-
-/// The envelope identity of the time-lock-freedom item of the package
-/// `package_id` (FR-232), as [`deadlock_freedom_clause`] names the
-/// deadlock-freedom item's: its node is the package's own identity and its
-/// occurrence key is that node with the role `time-lock-freedom` and
-/// ordinal 0.
-pub fn time_lock_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
-    let node = WireNodeId::from_digest(*package_id.as_bytes());
-    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(TIME_LOCK_FREEDOM_ROLE), 0));
-    (node, occurrence)
-}
-
-/// The occurrence role of the derived race-freedom item.
-const RACE_FREEDOM_ROLE: &str = "race-freedom";
-
-/// The envelope identity of the race-freedom item of the package
-/// `package_id`, as [`deadlock_freedom_clause`] names the deadlock-freedom
-/// item's: its node is the package's own identity and its occurrence key is
-/// that node with the role `race-freedom` and ordinal 0. The subject and its
-/// resolved models are bound by the envelope's obligation identity
-/// (FR-224), not here.
-pub fn race_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
-    let node = WireNodeId::from_digest(*package_id.as_bytes());
-    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(RACE_FREEDOM_ROLE), 0));
-    (node, occurrence)
-}
 
 /// One step of a behaviour: the transition identity it took (FR-120's for a
 /// model subject, ADR-027 TS-2's for a protocol subject) and its

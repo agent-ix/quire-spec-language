@@ -81,8 +81,7 @@ fn the_refund_template_checks_and_records_every_stage() {
 }
 
 /// The frame records keyed at `frame` in `graph`.
-fn frame_records(graph: &CheckedGraph, frame: quire_exact::NodeKey) -> usize {
-    let frame = qsl_foundation::digest::WireNodeId::from_digest(*frame.as_bytes());
+fn frame_records(graph: &CheckedGraph, frame: &quire_exact::NodeKey) -> usize {
     graph
         .requirements()
         .keys()
@@ -120,7 +119,7 @@ fn a_template_shares_the_operations_anchor_and_frame() {
     assert_eq!(bound.anchor, attempt.anchor);
     assert_eq!(bound.frame, attempt.frame);
     assert_ne!(bound.anchor, bound.frame);
-    assert_eq!(frame_records(&graph, bound.frame), 1);
+    assert_eq!(frame_records(&graph, &bound.frame), 1);
 
     // The same template on another operation than the attempt's: its own
     // anchor and frame, each with its one frame record.
@@ -138,8 +137,8 @@ fn a_template_shares_the_operations_anchor_and_frame() {
     };
     assert_ne!(bound.anchor, attempt.anchor);
     assert_ne!(bound.frame, attempt.frame);
-    assert_eq!(frame_records(&graph, bound.frame), 1);
-    assert_eq!(frame_records(&graph, attempt.frame), 1);
+    assert_eq!(frame_records(&graph, &bound.frame), 1);
+    assert_eq!(frame_records(&graph, &attempt.frame), 1);
 }
 
 /// FR-381-AC-6: two templates for one effect check and give two

@@ -33,8 +33,8 @@
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
 //! #242): [`super::emit`], a sibling module of this one, so
 //! it stays within this crate's `pub(super)` reach without being
-//! reachable from outside `qsl-package` (ADR-013 O-02: `package_id` is
-//! computed from the package, never accepted from a caller).
+//! reachable from outside `qsl-package` (ADR-013 O-02: the package name
+//! comes from the checked manifest, never from a caller).
 
 use alloc::collections::BTreeMap;
 #[cfg(feature = "std")]
@@ -51,10 +51,10 @@ use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation, CheckedGraph,
 };
-use qsl_semantics::library::{LibraryName, PackageId};
+use qsl_semantics::library::LibraryName;
 
-/// The limits the E4 emitter encodes a package's identity preimage and its
-/// `quire.checked-package/v2` bytes under: no byte bound of their own. Both
+/// The limits the E4 emitter encodes `quire.checked-package/v2` bytes under:
+/// no byte bound of its own. The bytes
 /// project a checked graph the check stage already bounded (`checking.nodes`,
 /// `checking.input_bytes`), the stage budget FR-259 Behavior 3 has the site
 /// pass; a bound here could only refuse a package `check` admitted, with no
@@ -105,26 +105,8 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 /// }
 /// ```
 ///
-/// TC-244 row 3 (FR-087-AC-2, R-10): a wire-admitted `VerifiedPackage`
-/// has no conversion into a `CheckedPackage`:
-/// ```compile_fail,E0277
-/// use qsl_package::CheckedPackage;
-/// use qsl_semantics::library::VerifiedPackage;
-/// fn forge(verified: VerifiedPackage) -> CheckedPackage {
-///     verified.into()
-/// }
-/// ```
-/// Its pair:
-/// ```no_run
-/// use qsl_package::CheckedPackage;
-/// use qsl_semantics::library::VerifiedPackage;
-/// fn holds(verified: VerifiedPackage, package: CheckedPackage) -> CheckedPackage {
-///     drop(verified);
-///     package
-/// }
-/// ```
-///
-/// TC-244 row 4: nor has an `ImportView`:
+/// TC-244 row 3: a wire-admitted `ImportView` has no conversion into a
+/// `CheckedPackage`:
 /// ```compile_fail,E0277
 /// use qsl_package::CheckedPackage;
 /// use qsl_semantics::library::ImportView;
@@ -151,10 +133,10 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 pub struct CheckedPackage {
     graph: Arc<CheckedGraph>,
     /// E4's checked dependency closure: each directly imported package's
-    /// own checked package, compiled from its digest-addressed source, by
-    /// its recomputed `package_id` ([`Self::link_with`]). Shared: one
+    /// own checked package, compiled from its source, by library name
+    /// ([`Self::link_with`]). Shared: one
     /// library compile serves every import that reaches it (ADR-015 D-1).
-    dependencies: BTreeMap<PackageId, Arc<CheckedPackage>>,
+    dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>>,
     /// The resolved library closure (FR-307):
     /// one selection per library identity, over the direct imports and every
     /// dependency's own closure, keyed by the library identity an import
@@ -170,7 +152,7 @@ pub struct CheckedPackage {
     /// declares one. The checked package is its only authority.
     abstraction: Option<CheckedAbstractionRelation>,
     /// This package's checked emission, set only by the emitter
-    /// ([`Self::remember_emission`]; the `package_id` stays the emitter's own
+    /// ([`Self::remember_emission`]; the bytes stay the emitter's own
     /// output, ADR-013 O-02) so a package reached again, as a dependency or
     /// by another emit, is not emitted again. Reset when the package changes.
     #[cfg(feature = "std")]
@@ -179,14 +161,23 @@ pub struct CheckedPackage {
 
 /// One library identity's selection in a package's resolved closure, and the
 /// first dependency path that reached it (FR-307).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ResolvedDependency {
-    /// The selected `package_id`.
-    pub package_id: PackageId,
+    /// The selected checked package. One identity must resolve to one
+    /// package in the graph, even when reached through a diamond.
+    package: Arc<CheckedPackage>,
     /// How the first dependency path reached this selection: its first hop
     /// and the package that hop imports, which holds the rest of the path.
     path: DependencyPath,
 }
+
+impl PartialEq for ResolvedDependency {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.package, &other.package) && self.path == other.path
+    }
+}
+
+impl Eq for ResolvedDependency {}
 
 impl ResolvedDependency {
     /// The library identities from the linking package's direct import down
@@ -266,8 +257,16 @@ pub struct Import {
 #[cfg(feature = "std")]
 #[derive(Debug, thiserror::Error)]
 pub enum LinkRefusal {
+    /// An import names a different library than the emitted package declares.
+    #[error("import {expected} resolves to package {actual}")]
+    IdentityMismatch {
+        /// The imported library name.
+        expected: LibraryName,
+        /// The package's own manifest name.
+        actual: Box<str>,
+    },
     /// FR-307 diamond rule: two dependency paths select one library
-    /// identity with a different `package_id`
+    /// identity with different canonical package bytes
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
     #[error(
         "invalid_package/conflicting-definition: {} and {} select {identity} differently",
@@ -280,7 +279,7 @@ pub enum LinkRefusal {
         /// The earlier selection and its path, then the conflicting one.
         selections: Box<[ResolvedDependency; 2]>,
     },
-    /// A dependency's `package_id` could not be recomputed: its emission
+    /// A dependency's complete v2 bytes could not be emitted: emission
     /// refused, or would omit nodes (ADR-011 §2.3 partial output).
     #[error("the dependency {identity} does not emit a complete package")]
     DependencyEmission {
@@ -296,7 +295,9 @@ impl LinkRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ConflictingDefinition { .. } => Code::InvalidPackage,
+            Self::ConflictingDefinition { .. } | Self::IdentityMismatch { .. } => {
+                Code::InvalidPackage
+            }
             Self::DependencyEmission {
                 refusal: Some(refusal),
                 ..
@@ -309,6 +310,7 @@ impl LinkRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::ConflictingDefinition { .. } => Some("conflicting-definition"),
+            Self::IdentityMismatch { .. } => None,
             Self::DependencyEmission { .. } => None,
         }
     }
@@ -391,7 +393,7 @@ impl CheckedPackage {
     /// fn build(
     ///     source: qsl_foundation::source::provenance::RawSourceRef,
     /// ) -> CheckedPackage {
-    ///     let graph = PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+    ///     let graph = PackageDeclarations::new(source, "test/package", qsl_foundation::IdentityLimits::default())
     ///         .check(CheckingLimits::default())
     ///         .expect("an empty package checks cleanly");
     ///     CheckedPackage::link(graph)
@@ -412,25 +414,23 @@ impl CheckedPackage {
 
     /// The E4 link step with a dependency closure (ADR-011 §2.1 E4, §4
     /// dependency binding): `graph` linked with each import's checked
-    /// package. Each dependency's `package_id` is recomputed by emitting it
-    /// (ADR-013 O-02: never accepted from a caller) and is the identity the
-    /// lock binds the library's content to.
-    /// The closure takes the imports and every dependency's own closure; two
-    /// selections of one identity unify only when their `package_id`s
-    /// are equal (FR-307), else [`LinkRefusal::ConflictingDefinition`].
+    /// package. The closure takes the imports and every dependency's own
+    /// closure; two selections of one library name unify only when their
+    /// canonical package bytes are equal (FR-307), else
+    /// [`LinkRefusal::ConflictingDefinition`].
     /// A refusal yields no package.
     #[cfg(feature = "std")]
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
-        let mut dependencies = BTreeMap::new();
+        let mut dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>> = BTreeMap::new();
         let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
         let direct_imports = imports
             .iter()
             .map(|import| import.identity.clone())
             .collect();
         for import in imports {
-            let recompiled = recomputed_package_id(&import)?;
+            check_dependency_emission(&import)?;
             let direct = ResolvedDependency {
-                package_id: recompiled,
+                package: Arc::clone(&import.package),
                 path: DependencyPath::Direct,
             };
             let transitive = import
@@ -441,7 +441,7 @@ impl CheckedPackage {
                     (
                         identity.clone(),
                         ResolvedDependency {
-                            package_id: resolved.package_id,
+                            package: Arc::clone(&resolved.package),
                             path: DependencyPath::Via {
                                 first: import.identity.clone(),
                                 package: Arc::clone(&import.package),
@@ -456,7 +456,25 @@ impl CheckedPackage {
             for (identity, resolved) in entries {
                 unify(&mut selections, identity, resolved)?;
             }
-            dependencies.insert(recompiled, import.package);
+            match dependencies.get(&import.identity) {
+                Some(existing) if !same_package(existing, &import.package, &import.identity)? => {
+                    return Err(LinkRefusal::ConflictingDefinition {
+                        identity: import.identity.clone(),
+                        selections: Box::new([
+                            ResolvedDependency {
+                                package: Arc::clone(existing),
+                                path: DependencyPath::Direct,
+                            },
+                            ResolvedDependency {
+                                package: Arc::clone(&import.package),
+                                path: DependencyPath::Direct,
+                            },
+                        ]),
+                    });
+                }
+                _ => {}
+            }
+            dependencies.insert(import.identity, import.package);
         }
         Ok(Self {
             abstraction: graph.abstraction().cloned(),
@@ -524,16 +542,14 @@ impl CheckedPackage {
         self.emission.get()
     }
 
-    /// The `package_id` the emitter computed for this package, if it was
+    /// The name the emitter used for this package, if it was
     /// emitted through `emit_checked` or `emit_checked_with_cancel`, which
     /// record the emission: the identity Contract IR's admission of those
     /// bytes declares. A package emitted only through `emit_package` has
     /// none.
     #[cfg(feature = "std")]
-    pub fn emitted_package_id(&self) -> Option<PackageId> {
-        self.emission
-            .get()
-            .map(|emission| emission.package.package_id())
+    pub fn emitted_package_name(&self) -> Option<&str> {
+        self.emission.get().map(|emission| emission.package.name())
     }
 
     /// This package's own checked declarations (S3's stage output) -- the
@@ -552,7 +568,7 @@ impl CheckedPackage {
 
     /// The checked dependency closure (E4): each imported identity's own
     /// checked package.
-    pub fn dependencies(&self) -> &BTreeMap<PackageId, Arc<CheckedPackage>> {
+    pub fn dependencies(&self) -> &BTreeMap<LibraryName, Arc<CheckedPackage>> {
         &self.dependencies
     }
 
@@ -576,11 +592,10 @@ impl CheckedPackage {
     }
 }
 
-/// `import`'s dependency `package_id`, taken from the emitter's output for
-/// its package: the remembered emission when it has been emitted, else a
-/// fresh `emit_checked`, which remembers its result.
+/// Check that the imported package emits complete bytes under the imported
+/// library name. A remembered emission is reused when available.
 #[cfg(feature = "std")]
-fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
+fn check_dependency_emission(import: &Import) -> Result<(), LinkRefusal> {
     let fresh;
     let emission = match import.package.remembered_emission() {
         Some(emission) => emission,
@@ -600,7 +615,33 @@ fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
             refusal: None,
         });
     }
-    Ok(emission.package().package_id())
+    if emission.package().name() != import.identity.as_str() {
+        return Err(LinkRefusal::IdentityMismatch {
+            expected: import.identity.clone(),
+            actual: emission.package().name().into(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(feature = "std")]
+fn same_package(
+    left: &CheckedPackage,
+    right: &CheckedPackage,
+    identity: &LibraryName,
+) -> Result<bool, LinkRefusal> {
+    if core::ptr::eq(left, right) {
+        return Ok(true);
+    }
+    let emit = |package: &CheckedPackage| {
+        emit_checked(package).map_err(|refusal| LinkRefusal::DependencyEmission {
+            identity: identity.clone(),
+            refusal: Some(refusal),
+        })
+    };
+    let left = emit(left)?;
+    let right = emit(right)?;
+    Ok(left.package().bytes() == right.package().bytes())
 }
 
 /// A dependency path written `a -> b -> c`.
@@ -621,7 +662,7 @@ fn unify(
     resolved: ResolvedDependency,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if existing.package_id == resolved.package_id => Ok(()),
+        Some(existing) if same_package(&existing.package, &resolved.package, &identity)? => Ok(()),
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
             selections: Box::new([existing.clone(), resolved]),
             identity,
@@ -633,23 +674,22 @@ fn unify(
     }
 }
 
-/// S4 wire output (ADR-013 T-1): the `quire.checked-package/v2` bytes with
-/// their `package_id`. Distinct from `protocol_artifact::native::EmittedPackage`
+/// S4 wire output (ADR-013 T-1): canonical checked-package/v2 bytes and
+/// the manifest package name. Distinct from `protocol_artifact::native::EmittedPackage`
 /// (SEAM-3, unrelated: FR-087-AC-8/TC-247) -- two separate types under two
 /// separate module paths, with no shared field, method or re-export, and
 /// with no `pub use`/glob anywhere that would place both names in one import
 /// scope.
 ///
-/// A caller cannot supply a `package_id`: both fields are private, and this
-/// type's own (`pub(super)`, so not documented on this public page)
-/// constructor takes no `package_id` parameter to forge one through --
+/// A caller cannot supply a forged name or bytes: both fields are private,
+/// and this type's own (`pub(super)`) constructor is crate-local --
 /// naming this struct's private fields directly from outside `qsl-package`
 /// (ADR-013 O-02) does not compile:
 /// ```compile_fail,E0451
 /// use qsl_package::EmittedPackage;
 /// let forged = EmittedPackage {
 ///     bytes: Vec::new(),
-///     package_id: todo!(),
+///     name: todo!(),
 /// };
 /// ```
 ///
@@ -658,36 +698,21 @@ fn unify(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmittedPackage {
     bytes: Vec<u8>,
-    package_id: PackageId,
+    name: Box<str>,
 }
 
 #[cfg(feature = "std")]
 impl EmittedPackage {
-    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4).
-    /// `identity_preimage` is IR's own typed
-    /// `CheckedPackageIdentityPreimageRefV2`, JCS-encoded inside this
-    /// constructor before `package_id` is minted from those bytes
-    /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
-    /// through which a caller could instead supply arbitrary preimage
-    /// bytes, let alone an arbitrary `package_id` directly. `encode` writes
-    /// the wire around the minted `package_id`. A preimage the encoder
-    /// refuses (a failed heap reservation) is returned as `E`, never a
-    /// panic. `pub(super)`: reachable from anywhere in
-    /// `qsl-package` (in particular, `emit`), never from outside it.
-    pub(super) fn new<Body: quire_canonical::Encode, E: From<quire_canonical::Error>>(
-        identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageRefV2<'_, Body>,
-        encode: impl FnOnce(PackageId) -> Result<Vec<u8>, E>,
+    /// The v2 emitter's crate-local constructor (ADR-011 T-8, M-4).
+    /// The encoder writes canonical bytes under `name`; an encoding refusal
+    /// is returned as `E`. External callers cannot construct this type.
+    pub(super) fn new<E>(
+        name: &str,
+        encode: impl FnOnce(&str) -> Result<Vec<u8>, E>,
     ) -> Result<Self, E> {
-        // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
-        // the one RFC 8785 implementation), encoded straight from the typed
-        // preimage through its `quire_canonical::Encode`: the encoder orders
-        // members itself, and the projected node bodies nest as deep as
-        // their expressions.
-        let preimage_bytes = quire_canonical::to_vec(identity_preimage, EMIT_LIMITS)?;
-        let package_id = PackageId::of_preimage(&preimage_bytes);
         Ok(Self {
-            bytes: encode(package_id)?,
-            package_id,
+            bytes: encode(name)?,
+            name: name.into(),
         })
     }
 
@@ -696,14 +721,14 @@ impl EmittedPackage {
         &self.bytes
     }
 
-    /// The `package_id` these bytes declare (O-02).
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
+    /// The package name these bytes declare.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
 /// A chain of `length` packages over one empty checked graph, each
-/// depending on the next under a distinct `package_id`: the shape a
+/// depending on the next under a distinct library name: the shape a
 /// `length`-long library import chain links to, for the stack-depth tests.
 #[cfg(test)]
 #[cfg(feature = "std")]
@@ -720,9 +745,13 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
     .reference()
     .clone();
     let graph = Arc::new(
-        PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
-            .check(CheckingLimits::default())
-            .expect("an empty package checks"),
+        PackageDeclarations::new(
+            source,
+            "test/package",
+            qsl_foundation::IdentityLimits::default(),
+        )
+        .check(CheckingLimits::default())
+        .expect("an empty package checks"),
     );
     (0..length).fold(
         CheckedPackage {
@@ -736,7 +765,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
             dependencies: BTreeMap::from([(
-                PackageId::of_preimage(&link.to_le_bytes()),
+                LibraryName::new(format!("test/chain-{link}")).expect("a library identity"),
                 Arc::new(dependency),
             )]),
             selections: BTreeMap::new(),
@@ -756,16 +785,14 @@ pub(crate) fn dependency_chain_with_selections(length: usize) -> CheckedPackage 
     for link in 0..length {
         let below = Arc::new(chain);
         let mut package = dependency_chain(0);
-        package.dependencies = BTreeMap::from([(
-            PackageId::of_preimage(&link.to_le_bytes()),
-            Arc::clone(&below),
-        )]);
+        let identity = LibraryName::new(format!("test/chain-{link}")).expect("a library identity");
+        package.dependencies = BTreeMap::from([(identity.clone(), Arc::clone(&below))]);
         package.selections = BTreeMap::from([(
-            LibraryName::new("test/below").expect("a library identity"),
+            identity.clone(),
             ResolvedDependency {
-                package_id: PackageId::of_preimage(&link.to_le_bytes()),
+                package: Arc::clone(&below),
                 path: DependencyPath::Via {
-                    first: LibraryName::new("test/below").expect("a library identity"),
+                    first: identity,
                     package: below,
                 },
             },
@@ -846,7 +873,7 @@ mod tests {
         else {
             panic!("the one-type domain package normalizes");
         };
-        let a = view.type_identities()[&declaration];
+        let a = view.type_identities()[&declaration].clone();
         let span = qsl_foundation::Span { start: 0, end: 0 };
         let graph = PackageDeclarations {
             types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(a, "M::A", vec![])])
@@ -861,6 +888,7 @@ mod tests {
             )],
             ..PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
+                "test/package",
                 qsl_foundation::IdentityLimits::default(),
             )
         }
@@ -875,57 +903,29 @@ mod tests {
         assert_eq!(model_nodes.len(), 1, "one model node: model.A's");
         let package = CheckedPackage::link(graph);
         assert_eq!(
-            package.graph().resolve_declaration(model_nodes[0]),
+            package.graph().resolve_declaration(model_nodes[0].clone()),
             Some(&declaration)
         );
 
         // Adverse (R-05): a node `check` never keyed resolves to nothing.
-        let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
+        let other = quire_exact::NodeKey::new(
+            "test/package",
+            vec![quire_exact::PathSegment::Text("missing".into())],
+            0,
+        )
+        .expect("a structural node key");
         assert_eq!(package.graph().resolve_declaration(other), None);
     }
 
-    /// Golden vector for `package_id`
-    /// (`quire.package.semantic/v2`): the identity preimage's RFC 8785 text,
-    /// written out by hand, and its SHA-256. `EmittedPackage::new` encodes
-    /// IR's typed preimage through `quire-canonical`, and the `serde_json`
-    /// `Value` round trip it replaced emitted the same text, so the minted
-    /// `package_id` is unchanged.
+    /// The emitted name comes from the required package manifest name.
     #[trace("TC-253", "FR-087-AC-3")]
     #[test]
-    fn package_id_is_the_hash_of_its_hand_written_preimage() {
-        use sha2::{Digest as _, Sha256};
-        const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","identity":"edition-def"},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
-        let digest = format!("{:x}", Sha256::digest(TEXT.as_bytes()));
-        let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
-        // The wire preimage holds the six selections only; the hashed
-        // `identity_projection` is derived from the graph nodes.
-        let mut selections = value.clone();
-        selections
-            .as_object_mut()
-            .unwrap()
-            .remove("identity_projection");
-        let preimage: quire_contract_model::CheckedPackageIdentityPreimageV2 =
-            serde_json::from_value(selections).expect("the vector is a v2 identity preimage");
-        let mut node = value["identity_projection"][0].clone();
-        node["occurrences"] = serde_json::json!([]);
-        let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
-            vec![serde_json::from_value(node).expect("the projection is a semantic node")];
-        let borrowed = quire_contract_model::CheckedPackageIdentityPreimageRefV2 {
-            version: preimage.version.as_ref(),
-            edition: &preimage.edition,
-            profile_selections: &preimage.profile_selections,
-            definition_selections: &preimage.definition_selections,
-            required_features: &preimage.required_features,
-            dependency_selections: &preimage.dependency_selections,
-            identity_projection: &nodes,
-        };
-        assert_eq!(
-            EmittedPackage::new(&borrowed, |_| Ok::<_, quire_canonical::Error>(Vec::new()))
-                .expect("the golden preimage encodes")
-                .package_id()
-                .hex(),
-            digest
-        );
-        assert_eq!(serde_json::to_string(&value).unwrap(), TEXT);
+    fn emitted_package_retains_declared_name() {
+        let emitted = EmittedPackage::new("test/package", |_| {
+            Ok::<_, core::convert::Infallible>(vec![1, 2, 3])
+        })
+        .expect("the encoder is infallible");
+        assert_eq!(emitted.name(), "test/package");
+        assert_eq!(emitted.bytes(), [1, 2, 3]);
     }
 }

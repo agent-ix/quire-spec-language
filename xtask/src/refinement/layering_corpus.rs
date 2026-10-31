@@ -31,12 +31,6 @@ const TIMED_VERSION: &str = "1.0.0";
 /// The model file's name inside each entry directory.
 const MODEL_FILE: &str = "model.semantic-ir.json";
 const AUTHORITY: &str = "agent-ix";
-/// A well-formed value for the digest members the FCD semantic-ir schema
-/// still requires (`source.digest`, `package.manifestDigest`,
-/// `package.lockDigest`, `construct.manifestDigest`). Nothing reads them.
-/// BLOCKED-BY PLAT-1205 (owner: planner titan:QSL:plan): the FCD schema's
-/// required digest members.
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// One model an entry selects: its bytes and the identity a `model`
 /// statement repeats, read from the bytes.
@@ -193,7 +187,6 @@ fn timed_document() -> Vec<u8> {
     };
     let construct = |name: &str, meaning: &str| {
         json!({"kind": {"module": TIMED_PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     };
@@ -201,12 +194,10 @@ fn timed_document() -> Vec<u8> {
     let population = ident("timers");
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": TIMED_VERSION, "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": TIMED_VERSION, "dialect": "spec-bundle"},
         "package": {"identity": TIMED_PACKAGE, "version": TIMED_VERSION,
-            "manifestDigest": PLACEHOLDER, "mappingVersions": [], "profileVersions": [],
-            "lockDigest": PLACEHOLDER},
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": [
             construct("object_type", qsl_semantics::model::intake::meaning::OBJECT_TYPE),

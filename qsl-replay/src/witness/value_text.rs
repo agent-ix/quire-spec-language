@@ -9,9 +9,9 @@
 //! encodes and decodes on a small native stack, and only the entry's byte
 //! length bounds it.
 
+use quire_exact::NodeKey;
 use std::collections::{HashMap, HashSet};
 
-use qsl_foundation::digest::WireNodeId;
 use quire_canonical::{read, to_vec, Error as CanonicalError, Limits, Node, NodeRef, Writer};
 use quire_exact::Integer;
 
@@ -70,6 +70,12 @@ enum Task<'v> {
     EndObject,
     BeginArray,
     EndArray,
+}
+
+/// A declaration node as value text spells it: the node's compact JSON
+/// object, as a string member.
+fn node_text(node: &NodeKey) -> String {
+    crate::id_text::node_text(node).unwrap_or_default()
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -469,7 +475,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => object(
             vec![
                 tag("enum"),
-                ("name", Task::Owned(declaration.to_string())),
+                ("name", Task::Owned(node_text(declaration))),
                 ("member", Task::Str(member)),
             ],
             vec![],
@@ -537,7 +543,10 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
                     ("scale", text_of(scale)),
                 ],
             };
-            members.push(("unit", Task::Owned(hex(unit))));
+            members.push((
+                "unit",
+                Task::Owned(crate::id_text::unit_text(unit).unwrap_or_default()),
+            ));
             object(members, vec![])
         }
         WitnessValue::Reference {
@@ -547,8 +556,14 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => object(
             vec![
                 tag("reference"),
-                ("universe", Task::Owned(hex(universe))),
-                ("object_type", Task::Owned(hex(object_type))),
+                (
+                    "universe",
+                    Task::Owned(crate::id_text::universe_text(universe).unwrap_or_default()),
+                ),
+                (
+                    "object_type",
+                    Task::Owned(crate::id_text::effective_text(object_type).unwrap_or_default()),
+                ),
                 ("identity", Task::Owned(hex(identity))),
             ],
             vec![],
@@ -573,10 +588,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             }
             elements.push(Task::EndArray);
             with_array(
-                vec![
-                    tag("record"),
-                    ("name", Task::Owned(declaration.to_string())),
-                ],
+                vec![tag("record"), ("name", Task::Owned(node_text(declaration)))],
                 "fields",
                 elements,
             )
@@ -585,7 +597,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             declaration,
             components,
         } => with_array(
-            vec![tag("tuple"), ("name", Task::Owned(declaration.to_string()))],
+            vec![tag("tuple"), ("name", Task::Owned(node_text(declaration)))],
             "components",
             array(components.iter().collect()),
         ),
@@ -596,7 +608,7 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
         } => with_array(
             vec![
                 tag("union"),
-                ("name", Task::Owned(declaration.to_string())),
+                ("name", Task::Owned(node_text(declaration))),
                 ("member", Task::Str(member)),
             ],
             "components",
@@ -774,17 +786,8 @@ fn integer_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<Integer
         .map_err(|_| EntryFault::Spelling)
 }
 
-fn digest_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<[u8; 32], EntryFault> {
-    WireNodeId::from_hex(string_member(members, name)?)
-        .map(|id| *id.as_bytes())
-        .ok_or(EntryFault::Spelling)
-}
-
-fn declaration_member(
-    members: &[(&str, NodeRef<'_>)],
-    name: &str,
-) -> Result<WireNodeId, EntryFault> {
-    WireNodeId::from_hex(string_member(members, name)?).ok_or(EntryFault::Spelling)
+fn declaration_member(members: &[(&str, NodeRef<'_>)], name: &str) -> Result<NodeKey, EntryFault> {
+    crate::id_text::node_from_text(string_member(members, name)?).ok_or(EntryFault::Spelling)
 }
 
 /// Whether `text` is lowercase hex of exactly `digits` digits.
@@ -856,15 +859,15 @@ enum Step<'d> {
         present: bool,
     },
     Record {
-        declaration: WireNodeId,
+        declaration: NodeKey,
         fields: Vec<(String, SlotKind)>,
     },
     Tuple {
-        declaration: WireNodeId,
+        declaration: NodeKey,
         count: usize,
     },
     Union {
-        declaration: WireNodeId,
+        declaration: NodeKey,
         member: String,
         count: usize,
     },
@@ -1238,7 +1241,8 @@ fn visit<'d>(
             values.push(if has_unit {
                 WitnessValue::Quantity {
                     magnitude,
-                    unit: digest_member(&members, "unit")?,
+                    unit: crate::id_text::unit_from_text(string_member(&members, "unit")?)
+                        .ok_or(EntryFault::Spelling)?,
                 }
             } else {
                 match magnitude {
@@ -1268,8 +1272,13 @@ fn visit<'d>(
         "reference" => {
             let members = exact_object(node, &["type", "universe", "object_type", "identity"])?;
             values.push(WitnessValue::Reference {
-                universe: digest_member(&members, "universe")?,
-                object_type: digest_member(&members, "object_type")?,
+                universe: crate::id_text::universe_from_text(string_member(&members, "universe")?)
+                    .ok_or(EntryFault::Spelling)?,
+                object_type: crate::id_text::effective_from_text(string_member(
+                    &members,
+                    "object_type",
+                )?)
+                .ok_or(EntryFault::Spelling)?,
                 identity: identity_bytes(string_member(&members, "identity")?)?,
             });
         }

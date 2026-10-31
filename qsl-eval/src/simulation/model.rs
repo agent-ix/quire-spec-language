@@ -36,7 +36,7 @@ mod walk;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::IdentityLimits;
 use qsl_package::CheckedPackage;
@@ -81,8 +81,8 @@ pub use contract::{
 };
 pub(crate) use contracts::{verdict, Verdict};
 pub(crate) use domain::enumerable;
+use encode::declaration_text;
 pub use encode::ModelKey;
-use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
@@ -716,14 +716,17 @@ impl<'a> ModelSystem<'a> {
         let mut applications = BTreeMap::new();
         for declaration in types.object_types() {
             let identity = declaration.key();
-            let Some(type_key) = model.type_key(identity).cloned() else {
+            let Some(type_key) = model.type_key(identity.clone()).cloned() else {
                 continue;
             };
             let declared = model
                 .fields(&type_key)?
                 .ok_or_else(|| fault("type-fields"))?;
             fields.insert(type_key, declared);
-            applications.insert(identity, Self::applications_of(graph, &model, identity)?);
+            applications.insert(
+                identity.clone(),
+                Self::applications_of(graph, &model, identity)?,
+            );
         }
 
         // FR-120-AC-26, FR-230 "Initial element count": a collection of bare
@@ -970,7 +973,7 @@ impl<'a> ModelSystem<'a> {
             .flatten()
             .find(|application| {
                 application.name == key.operation.as_str()
-                    && self.model.type_key(application.declaring) == Some(&key.declaring)
+                    && self.model.type_key(application.declaring.clone()) == Some(&key.declaring)
             })
             .map(|application| application.text.as_str())
     }
@@ -988,15 +991,16 @@ impl<'a> ModelSystem<'a> {
             .flatten()
             .map(|application| {
                 (
-                    application.declaring,
+                    application.declaring.clone(),
                     application.name.as_str(),
                     application.text.as_str(),
                 )
             })
             .collect();
-        operations
-            .sort_by(|left, right| (left.0, left.1.as_bytes()).cmp(&(right.0, right.1.as_bytes())));
-        operations.dedup_by(|next, kept| (next.0, next.1) == (kept.0, kept.1));
+        operations.sort_by(|left, right| {
+            (left.0.clone(), left.1.as_bytes()).cmp(&(right.0.clone(), right.1.as_bytes()))
+        });
+        operations.dedup_by(|next, kept| (next.0.clone(), next.1) == (kept.0.clone(), kept.1));
         operations
     }
 
@@ -1010,7 +1014,7 @@ impl<'a> ModelSystem<'a> {
         let types = graph.scope().types();
         let mut names = BTreeSet::new();
         for declaring in types.object_types() {
-            if types.conforms(identity, declaring.key()) {
+            if types.conforms(identity.clone(), declaring.key()) {
                 for operation in operations.declared_by(declaring.key()) {
                     names.insert(operation.name().to_owned());
                 }
@@ -1021,12 +1025,12 @@ impl<'a> ModelSystem<'a> {
             let qsl_semantics::model::operation::OperationLookup::Declared {
                 declaring,
                 operation,
-            } = operations.resolve(types, identity, &name)
+            } = operations.resolve(types, identity.clone(), &name)
             else {
                 continue;
             };
             let owner = model
-                .type_key(declaring)
+                .type_key(declaring.clone())
                 .ok_or_else(|| fault("operation-owner"))?;
             let key = DeclarationKey {
                 package: owner.package.clone(),
@@ -1055,7 +1059,10 @@ impl<'a> ModelSystem<'a> {
                 identity: clause.identity(),
                 context: clause.context(),
                 operation: clause.operation().map(|operation| {
-                    (operation.declaring, operation.declaration.name().to_owned())
+                    (
+                        operation.declaring.clone(),
+                        operation.declaration.name().to_owned(),
+                    )
                 }),
             };
             match clause.observation() {
@@ -1078,11 +1085,20 @@ impl<'a> ModelSystem<'a> {
     /// parameter and result, each field a `modifies` entry grants or a
     /// creatable type declares, and each population the initial states hold.
     /// A type this module cannot enumerate is listed as an unbounded domain.
-    pub fn domains(&self) -> Vec<(WireNodeId, ValueType)> {
+    pub fn domains(&self) -> Vec<(NodeKey, ValueType)> {
+        self.rooted_domains()
+            .into_iter()
+            .map(|(node, _, value_type)| (node, value_type))
+            .collect()
+    }
+
+    /// [`Self::domains`], each with the child-index path below its node at
+    /// which the root sits (QSpec FR-331): empty for a population, `[0, f]`
+    /// for a field, `[1, o, p]` for a parameter, `[2, o]` for a result.
+    pub fn rooted_domains(&self) -> Vec<(NodeKey, Vec<u32>, ValueType)> {
         let mut roots = Vec::new();
-        let mut root = |naming: Enc, value_type: &ValueType| {
-            let Ok(digest) = quire_canonical::sha256(&naming, CanonicalLimits::new(u64::MAX))
-            else {
+        let mut root = |node: Option<NodeKey>, base: Vec<u32>, value_type: &ValueType| {
+            let Some(node) = node else {
                 return;
             };
             let bounded = if matches!(value_type, ValueType::Population(_))
@@ -1096,18 +1112,45 @@ impl<'a> ModelSystem<'a> {
             } else {
                 ValueType::Integer
             };
-            roots.push((WireNodeId::from_digest(*digest.as_bytes()), bounded));
+            roots.push((node, base, bounded));
+        };
+        // QSpec FR-331 "Model member domain keys": a member's domain is the
+        // model declaration node of its declaring type and the member's path
+        // (field `[0, f]`, parameter `[1, o, p]`, result `[2, o]`), `f` and
+        // `o` the ordinal among the type's own fields and operations in
+        // UTF-8 name order and `p` the declared parameter position.
+        let type_node = |id: &EffectiveId| {
+            let original = id.original();
+            qsl_semantics::model::key::model_node_key(
+                original.package(),
+                "model",
+                "object_type",
+                original.node(),
+            )
+            .ok()
         };
         for declaration in self.types.object_types() {
-            for operation in self.operations.declared_by(declaration.key()) {
-                let Some(owner) = self.model.type_key(declaration.key()) else {
+            let owner = declaration.key();
+            let declared = self.operations.declared_by(owner.clone());
+            let mut names: Vec<&str> = declared.iter().map(|operation| operation.name()).collect();
+            names.sort_unstable();
+            for operation in declared {
+                let Some(ordinal) = names
+                    .binary_search(&operation.name())
+                    .ok()
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                else {
                     continue;
                 };
-                let key = DeclarationKey {
-                    package: owner.package.clone(),
-                    node: format!("{}/{}", owner.node, operation.name()),
-                };
-                for (position, (name, value_type)) in operation.parameters().iter().enumerate() {
+                let clocks: BTreeSet<usize> = operation
+                    .clock_parameters()
+                    .iter()
+                    .map(|(position, _)| *position)
+                    .collect();
+                let mut declared_positions =
+                    (0_usize..).filter(|position| !clocks.contains(position));
+                for (position, (_, value_type)) in operation.parameters().iter().enumerate() {
+                    let declared_position = declared_positions.next().unwrap_or(position);
                     // A random parameter's finite domain is its support
                     // (ADR-024 PM-1), whatever its declared type.
                     if !domain::enumerable(value_type)
@@ -1118,22 +1161,17 @@ impl<'a> ModelSystem<'a> {
                     {
                         continue;
                     }
+                    let Ok(declared_position) = u32::try_from(declared_position) else {
+                        continue;
+                    };
                     root(
-                        Enc::Object(vec![
-                            ("operation", declaration_enc(&key)),
-                            ("parameter", Enc::text(name.clone())),
-                        ]),
+                        type_node(&owner),
+                        vec![1, ordinal, declared_position],
                         value_type,
                     );
                 }
                 if let Some(result) = operation.result() {
-                    root(
-                        Enc::Object(vec![
-                            ("operation", declaration_enc(&key)),
-                            ("result", Enc::text("result")),
-                        ]),
-                        result,
-                    );
+                    root(type_node(&owner), vec![2, ordinal], result);
                 }
             }
         }
@@ -1154,13 +1192,82 @@ impl<'a> ModelSystem<'a> {
                 )
             })
             .collect();
+        // Each field's declaring type and ordinal among that type's own
+        // fields, found through the effective attribute set of every type
+        // (which lists a field in the same order as `self.fields`).
+        let graph = self.package.graph();
+        let mut field_homes: BTreeMap<&DeclarationKey, (EffectiveId, u32)> = BTreeMap::new();
+        for declaration in self.types.object_types() {
+            let Some(type_key) = self.model.type_key(declaration.key()) else {
+                continue;
+            };
+            let (Some(fields), Some(attributes)) = (
+                self.fields.get(type_key),
+                self.types.attributes(declaration.key()),
+            ) else {
+                continue;
+            };
+            let attributes: Vec<_> = attributes.into_iter().collect();
+            for field in fields {
+                // A field is found by name in the effective set: an eval-side
+                // member (a clock count or presence bit) is named for the
+                // clock field it stands for.
+                let Some(attribute) = attributes
+                    .iter()
+                    .find(|attribute| attribute.field().name() == field.name)
+                else {
+                    continue;
+                };
+                let owner = attribute.owner();
+                let Some(ordinal) = graph
+                    .own_field_ordinal(&owner, attribute.field().name())
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                else {
+                    continue;
+                };
+                field_homes.insert(&field.key, (owner, ordinal));
+            }
+        }
+        // An eval-side clock member stands for a clock field its owner
+        // declares in a `time` declaration, outside the owner's data
+        // attributes: it is keyed under that owner by its place in the
+        // owner's one name-ordered sequence of own fields.
+        let mut clock_fields: BTreeMap<EffectiveId, BTreeMap<String, &DeclarationKey>> =
+            BTreeMap::new();
+        for timed in self.package.graph().timed_models() {
+            for clock in timed.clocks() {
+                let Some(qsl_semantics::check::PlaceStep::Field(name)) = clock.path().first()
+                else {
+                    continue;
+                };
+                if field_homes.contains_key(clock.field()) {
+                    continue;
+                }
+                clock_fields
+                    .entry(clock.owner())
+                    .or_default()
+                    .insert(name.clone(), clock.field());
+            }
+        }
+        for (owner, named) in &clock_fields {
+            for (name, key) in named {
+                if let Some(ordinal) = graph
+                    .own_field_ordinal(owner, name)
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                {
+                    field_homes.insert(key, (owner.clone(), ordinal));
+                }
+            }
+        }
         // A pure-clock collection's count is a root only where a frame
         // grants it: with no declared maximum it is then unbounded. An
         // ungranted one ranges its initial count up to `max_clocks` (FR-230
         // "Initial element count").
         for key in &granted {
-            if let Some(value_type) = field_types.get(key) {
-                root(declaration_enc(key), value_type);
+            if let (Some(value_type), Some((owner, ordinal))) =
+                (field_types.get(key), field_homes.get(key))
+            {
+                root(type_node(owner), vec![0, *ordinal], value_type);
             }
         }
         let held: BTreeSet<&DeclarationKey> = self
@@ -1173,7 +1280,11 @@ impl<'a> ModelSystem<'a> {
                 .universes
                 .get(population)
                 .map(|keys| u64::try_from(keys.len()).unwrap_or(u64::MAX));
-            root(declaration_enc(population), &ValueType::Population(bound));
+            root(
+                qsl_semantics::model::key::population_node_key(population).ok(),
+                Vec::new(),
+                &ValueType::Population(bound),
+            );
         }
         roots
     }
@@ -1201,7 +1312,7 @@ impl<'a> ModelSystem<'a> {
         };
         let mut admitting = Vec::new();
         for population in &self.populations {
-            if self.overlaps(population, *parameter) {
+            if self.overlaps(population, parameter.clone()) {
                 let text = declaration_text(&population.key, CanonicalLimits::new(u64::MAX))
                     .map_err(|_| {
                         NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
@@ -1215,24 +1326,20 @@ impl<'a> ModelSystem<'a> {
         let mut unbounded = Vec::new();
         for (_, population) in &admitting {
             if !self.universes.contains_key(*population) {
-                let digest = quire_canonical::sha256(
-                    &declaration_enc(population),
-                    CanonicalLimits::new(u64::MAX),
-                )
-                .map_err(|_| {
-                    NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
-                        "model-simulation",
-                        "population-root-digest",
-                    )))
-                })?;
-                unbounded.push((
-                    WireNodeId::from_digest(*digest.as_bytes()),
-                    ValueType::Population(None),
-                ));
+                let node =
+                    qsl_semantics::model::key::population_node_key(population).map_err(|_| {
+                        NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                            "model-simulation",
+                            "population-root-node",
+                        )))
+                    })?;
+                unbounded.push((node, ValueType::Population(None)));
             }
         }
-        let roots: Vec<(WireNodeId, &ValueType)> =
-            unbounded.iter().map(|(id, root)| (*id, root)).collect();
+        let roots: Vec<(NodeKey, &ValueType)> = unbounded
+            .iter()
+            .map(|(id, root)| (id.clone(), root))
+            .collect();
         crate::simulation::not_simulated::check_requires_bound(&roots, self.types, u64::MAX)?;
         admitting.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(admitting
@@ -1260,7 +1367,8 @@ impl<'a> ModelSystem<'a> {
     ) -> bool {
         population.member_types.iter().any(|member| {
             self.model.type_identity(member).is_some_and(|member| {
-                self.types.conforms(member, parameter) || self.types.conforms(parameter, member)
+                self.types.conforms(member.clone(), parameter.clone())
+                    || self.types.conforms(parameter.clone(), member)
             })
         })
     }
@@ -1317,8 +1425,11 @@ impl<'a> ModelSystem<'a> {
                 continue;
             }
             let identity = self.model.type_identity(type_key)?;
-            for instance in self.instances(&ValueType::Reference(identity)).ok()? {
-                objects.push(self.bound_reference(identity, &instance).ok()?);
+            for instance in self
+                .instances(&ValueType::Reference(identity.clone()))
+                .ok()?
+            {
+                objects.push(self.bound_reference(identity.clone(), &instance).ok()?);
             }
         }
         objects.sort();
@@ -1427,10 +1538,10 @@ pub fn check_model_bounds(
     system: &ModelSystem<'_>,
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
-    let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     crate::simulation::not_simulated::check_requires_bound(&roots, system.types, position_limit)
 }
@@ -1448,10 +1559,10 @@ pub fn explore_model(
     limits: Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<Exploration<ModelFinding>, NotSimulated> {
-    let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     explore_request(
         system,
@@ -1485,10 +1596,10 @@ pub fn sample_model(
     trace: u64,
     max_steps: usize,
 ) -> Result<ModelTrace, ModelSampleError> {
-    let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     let trace = sample_request(
         system,
@@ -1565,10 +1676,10 @@ pub fn sample_model_walk(
         .cloned()
         .ok_or(NotSimulated::EmptyInitial)?;
     let view = OneInitial { system, start };
-    let domains = system.domains();
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (*id, value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     sample_request_until(
         &view,

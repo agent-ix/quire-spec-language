@@ -20,7 +20,6 @@ use std::num::NonZeroU64;
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_semantics::library::LibraryName;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmittedObservations, ClauseSelection, ClauseSelectionInput, DocumentRef, Observation,
@@ -30,7 +29,7 @@ use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
-    ObjectReference, Outcome, UniverseId, Value,
+    ObjectReference, Outcome, Value,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -81,7 +80,7 @@ fn compose(
         formatted,
         "{path}: private fixture second-pass bytes",
     );
-    let checked = crate::spine::compose(
+    crate::spine::compose(
         formatted_identity,
         path,
         formatted.as_bytes(),
@@ -90,11 +89,6 @@ fn compose(
         formatted_limits,
     )
     .unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
-    assert_eq!(
-        checked.emitted.package_id(),
-        original.emitted.package_id(),
-        "{path}: private fixture formatting changed checked package identity",
-    );
     Ok(original)
 }
 
@@ -120,8 +114,6 @@ fn private_clause_source_generators_keep_format_identity() {
 }
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn node_type() -> String {
     format!("ix://{PACKAGE_IDENTITY}/Node")
@@ -139,20 +131,17 @@ fn domain_document() -> Vec<u8> {
     let population = population_identity();
     let envelope = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -160,7 +149,6 @@ fn domain_document() -> Vec<u8> {
             {
                 "kind": {"module": PACKAGE_IDENTITY, "name": "object_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -171,7 +159,6 @@ fn domain_document() -> Vec<u8> {
             {
                 "kind": {"module": PACKAGE_IDENTITY, "name": "population"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -357,7 +344,7 @@ fn no_cycle_selection(label: DocumentRef, self_key: &str) -> ClauseSelection {
 /// (FR-107), so one arbitrary universe for the whole environment suffices.
 fn node_reference(node_effective: EffectiveId, key: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([7; 32]),
+        crate::spine::fixture_ids::universe(7),
         node_effective,
         ObjectId::new(key.to_owned()).expect("non-empty key"),
     )
@@ -373,10 +360,13 @@ fn node_environment(
     let mut objects = Vec::with_capacity(chain.len());
     for (index, key) in chain.iter().enumerate() {
         let next = chain.get(index + 1).map(|next_key| {
-            FieldValue::Present(Value::Reference(node_reference(node_effective, next_key)))
+            FieldValue::Present(Value::Reference(node_reference(
+                node_effective.clone(),
+                next_key,
+            )))
         });
         objects.push((
-            node_reference(node_effective, key),
+            node_reference(node_effective.clone(), key),
             vec![("next", next.unwrap_or(FieldValue::Absent))],
         ));
     }
@@ -447,11 +437,11 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let environment = node_environment(types, node_effective.clone(), &["a", "b", "c"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
 
     let mut meter = Meter::new(default_accounting(1_000_000));
@@ -502,17 +492,23 @@ fn no_cycle_completes_false_over_a_cycle() {
             types,
             vec![
                 (
-                    node_reference(node_effective, "a"),
+                    node_reference(node_effective.clone(), "a"),
                     vec![(
                         "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
+                        FieldValue::Present(Value::Reference(node_reference(
+                            node_effective.clone(),
+                            "b",
+                        ))),
                     )],
                 ),
                 (
-                    node_reference(node_effective, "b"),
+                    node_reference(node_effective.clone(), "b"),
                     vec![(
                         "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
+                        FieldValue::Present(Value::Reference(node_reference(
+                            node_effective.clone(),
+                            "a",
+                        ))),
                     )],
                 ),
             ],
@@ -523,7 +519,7 @@ fn no_cycle_completes_false_over_a_cycle() {
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -545,11 +541,11 @@ fn evaluate_clause_refuses_an_unknown_clause_name() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a"]);
+    let environment = node_environment(types, node_effective.clone(), &["a"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoSuchClause").unwrap();
@@ -577,18 +573,28 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a"]);
+    let environment = node_environment(types, node_effective.clone(), &["a"]);
     // A clause identity that is not `NoCycle`'s own -- any other `NodeKey`
     // disagrees.
     assert_ne!(
         clause.identity(),
-        quire_exact::NodeKey::from_digest([9; 32])
+        quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("node".into())],
+            9
+        )
+        .expect("a fixture key")
     );
-    let wrong_identity = quire_exact::NodeKey::from_digest([9; 32]);
+    let wrong_identity = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        9,
+    )
+    .expect("a fixture key");
     let observations = no_cycle_observations(
         wrong_identity,
         environment,
-        node_reference(node_effective, "a"),
+        node_reference(node_effective.clone(), "a"),
     );
     let mut meter = Meter::new(default_accounting(1_000_000));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -621,7 +627,7 @@ fn evaluate_clause_is_deterministic() {
         let observations = no_cycle_observations(
             clause.identity(),
             environment,
-            node_reference(node_effective, self_key),
+            node_reference(node_effective.clone(), self_key),
         );
         let mut meter = Meter::new(default_accounting(1_000_000));
         let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -640,11 +646,11 @@ fn evaluate_clause_is_deterministic() {
     // charge logs.
     assert_eq!(
         run(
-            node_environment(types, node_effective, &["a", "b", "c"]),
+            node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         ),
         run(
-            node_environment(types, node_effective, &["a", "b", "c"]),
+            node_environment(types, node_effective.clone(), &["a", "b", "c"]),
             "a"
         )
     );
@@ -654,21 +660,21 @@ fn evaluate_clause_is_deterministic() {
                 types,
                 vec![
                     (
-                        node_reference(node_effective, "a"),
+                        node_reference(node_effective.clone(), "a"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "b",
                             ))),
                         )],
                     ),
                     (
-                        node_reference(node_effective, "b"),
+                        node_reference(node_effective.clone(), "b"),
                         vec![(
                             "next",
                             FieldValue::Present(Value::Reference(node_reference(
-                                node_effective,
+                                node_effective.clone(),
                                 "a",
                             ))),
                         )],
@@ -698,7 +704,7 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
     let clause = graph.state_clause("NoCycle").expect("NoCycle is declared");
     let node_effective = clause.context();
     let types = graph.scope().types();
-    let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let environment = node_environment(types, node_effective.clone(), &["a", "b", "c"]);
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
@@ -750,8 +756,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
+        package_name: "fixture".to_owned(),
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -782,26 +787,12 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
 /// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
 /// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`, and
 /// a cyclic chain to `Completed(Boolean(false))`; both carry the
-/// compiled `package_id` and the usage
+/// usage
 /// (`FR-109-run-a-state-clause-through-the-spine.md:149`).
 #[trace("TC-468", "FR-109-AC-1", "FR-109-AC-6")]
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
     let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-    // The package `compose` emits for this unit on its own, independent of
-    // the run.
-    let (unit, packages) = unit_and_packages();
-    let expected_package_id = compose(
-        source(),
-        "clause-run.native",
-        unit.as_bytes(),
-        &packages,
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .expect("the unit compiles")
-    .emitted
-    .package_id();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -819,7 +810,6 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
 
-    assert_eq!(report.package_id, Some(expected_package_id));
     assert!(
         report.usage.evaluation_admissions > 0,
         "the evaluation meter's charges are reported"
@@ -889,7 +879,6 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
     let report_one = run_clause(request_one).expect("a well-formed request always reports");
     let report_two = run_clause(request_two).expect("a well-formed request always reports");
 
-    assert_eq!(report_one.package_id, report_two.package_id);
     assert_eq!(
         report_one.disposition.truth(),
         report_two.disposition.truth()
@@ -1101,37 +1090,6 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
 }
 
-/// FR-098's stale-package rule (reused verbatim by FR-109): an
-/// `expected_package_id` the recompile disagrees with refuses at stage
-/// `compile`, before any selection.
-#[trace("TC-468", "FR-109-AC-2")]
-#[test]
-fn run_clause_reports_a_stale_package() {
-    let compiled = compiled();
-    let real_id = compiled.emitted.package_id();
-    let bogus_id = qsl_semantics::library::PackageId::of_preimage(b"not-the-real-package");
-    assert_ne!(real_id, bogus_id, "the bogus id must actually differ");
-
-    let mut request = request(ClauseRunSelection::Function {
-        name: "seven".to_owned(),
-        arguments: Vec::new(),
-        snapshot: DocumentRef {
-            authority: "test".to_owned(),
-            identity: "snap".to_owned(),
-            revision_namespace: "ns".to_owned(),
-            revision: "1".to_owned(),
-        },
-    });
-    request.expected_package_id = Some(bogus_id);
-    let report = run_clause(request).unwrap();
-    assert!(matches!(
-        report.disposition,
-        ClauseDisposition::StalePackage { .. }
-    ));
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.disposition.category().exit_code(), 20);
-}
-
 /// [`ClauseRunRefusal::EmptySource`]: an empty unit refuses before any
 /// stage runs. Not one of FR-109's own AC rows (`ClauseRunRefusal` is only
 /// for a request that cannot be formed, distinct from every `ClauseRunReport`
@@ -1162,7 +1120,7 @@ fn run_clause_refuses_an_empty_source() {
 
 /// TC-468 step 2 (FR-109-AC-2): no domain package bytes supplied for the
 /// unit's `model` declaration refuses at stage `compile`,
-/// `missing_import`/`missing-selection`, exit 20, with no `package_id`.
+/// `missing_import`/`missing-selection`, exit 20.
 #[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
@@ -1196,7 +1154,6 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert_eq!(report.package_id, None);
 }
 
 /// FR-255-AC-1 (QSL-745): a model-normalization ceiling and the intake byte
@@ -1360,10 +1317,11 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         package: PACKAGE_IDENTITY.to_owned(),
         node: node_type(),
     };
-    let node_effective = *view
+    let node_effective = view
         .type_identities()
         .get(&node_key)
-        .expect("Node is a declared object type");
+        .expect("Node is a declared object type")
+        .clone();
     let expected_universe = view
         .object_universe_of(&node_key)
         .expect("Node has a universe")
@@ -1373,12 +1331,13 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         std::slice::from_ref(&model_selection),
         &packages,
         limits,
-        node_effective,
+        node_effective.clone(),
     )
     .expect("population_universe_for resolves the same object type's universe");
 
     assert_eq!(
-        admitted_universe, expected_universe,
+        admitted_universe,
+        expected_universe.expect("a universe identity"),
         "admission's own universe resolution must agree with normalize's"
     );
 }
@@ -1487,20 +1446,17 @@ fn config_version_domain_document_with_operations(
     operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": CONFIG_VERSION_PACKAGE_IDENTITY,
             "version": "1.0.0",
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -1508,7 +1464,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1519,7 +1474,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "population"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1530,7 +1484,6 @@ fn config_version_domain_document_with_operations(
             {
                 "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "value_type"},
                 "moduleVersion": "1.0.0",
-                "manifestDigest": PLACEHOLDER_DIGEST,
                 "construct": {
                     "identity": "none",
                     "shape": "record",
@@ -1691,8 +1644,7 @@ fn config_version_request_for(
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
         selection,
-        expected_package_id: None,
-        expected_package_id_claim: None,
+        package_name: "fixture".to_owned(),
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1893,39 +1845,6 @@ fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
         ClauseDisposition::MissingName { .. }
     ));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
-}
-
-/// TC-468 step 2 (FR-109-AC-2): an `expected_package_id` taken from
-/// compiling a different unit (the `test/model` fixture, not
-/// `test/config-version`) refuses `compile`, `stale_dependency`, naming
-/// both identities.
-#[trace("TC-468", "FR-109-AC-2")]
-#[test]
-fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
-    let other = compiled();
-    let other_id = other.emitted.package_id();
-
-    let mut request = config_version_request(ClauseRunSelection::Function {
-        name: "n".to_owned(),
-        arguments: vec![ClauseArgument {
-            parameter: "a".to_owned(),
-            value: config_version_reference("root"),
-        }],
-        snapshot: config_version_document_ref("current-snap"),
-    });
-    request.expected_package_id = Some(other_id);
-    let report = run_clause(request).unwrap();
-    match &report.disposition {
-        ClauseDisposition::StalePackage {
-            expected, actual, ..
-        } => {
-            assert_eq!(expected, &other_id.hex());
-            assert_ne!(*actual, other_id, "the config-version package differs");
-        }
-        other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
-    }
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// TC-468 step 3 (FR-109-AC-2): a dangling `parent` reference (naming a key
@@ -3419,12 +3338,12 @@ mod extracted {
 
     /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
     /// is an I3 extracted source compiles the extracted body and reports
-    /// `success` as the program source does, with the body's `package_id`.
+    /// `success` as the program source does.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
     fn run_clause_compiles_an_extracted_body() {
         let (mut request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-        let (unit, packages) = unit_and_packages();
+        let (unit, _packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
         assert_eq!(
@@ -3432,31 +3351,17 @@ mod extracted {
             unit.trim_end_matches('\n'),
             "the extracted body is the fenced unit"
         );
-        // The package the extracted body compiles to on its own: the unit
-        // `run_clause` compiled is that body, not the original document.
-        let body_package_id = compose(
-            body.identity().clone(),
-            body.path(),
-            body.text().as_bytes(),
-            &packages,
-            &DependencyInput::default(),
-            SpineLimits::default(),
-        )
-        .expect("the extracted body compiles")
-        .emitted
-        .package_id();
         request.source = ClauseRunSource::Extracted(extracted);
         let report = run_clause(request).expect("a well-formed request always reports");
 
         assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
         assert_eq!(report.disposition.truth(), Some(true));
         assert_eq!(report.disposition.category().exit_code(), 0);
-        assert_eq!(report.package_id, Some(body_package_id));
     }
 
     /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
     /// `violation`, and a compile refusal over an I3 source (no domain
-    /// package supplied) reports stage `compile` with no `package_id`.
+    /// package supplied) reports stage `compile`.
     #[trace("TC-468", "FR-109-AC-6")]
     #[test]
     fn run_clause_reports_a_violation_and_a_compile_refusal_over_an_extracted_body() {
@@ -3471,13 +3376,12 @@ mod extracted {
         missing.packages = BTreeMap::new();
         let report = run_clause(missing).expect("a well-formed request always reports");
         assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-        assert_eq!(report.package_id, None);
     }
 }
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
 /// a language other than `ix:native` reports stage `compile`, `refusal`,
-/// `unknown_language`, exit 20, with no `package_id` -- the same refusal the root crate's
+/// `unknown_language`, exit 20, -- the same refusal the root crate's
 /// `mapped::compile` gives that fence.
 #[cfg(feature = "quire-extraction")]
 #[trace("TC-468", "FR-109-AC-6")]
@@ -3506,7 +3410,6 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
             .exit_code()
     );
     assert_eq!(report.disposition.category().exit_code(), 20);
-    assert_eq!(report.package_id, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -3650,7 +3553,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
     assert_eq!(
-        context_ref.0, config_version_node,
+        crate::adm(context_ref),
+        config_version_node,
         "operation_anchor's context is ConfigVersion's own node, verified via resolve_declaration"
     );
 
@@ -3681,7 +3585,8 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
             panic!("state_clause's anchor argument is a reference");
         };
         assert_eq!(
-            target.0, config_version_node,
+            crate::adm(target),
+            config_version_node,
             "an invariant's anchor argument names ConfigVersion's own node"
         );
     }
@@ -3711,13 +3616,13 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     };
     assert_eq!(only.field_name(), Some("versionNumber"));
     assert_eq!(
-        only.declaration().0,
-        context_ref.0,
+        crate::adm(&only.declaration()),
+        crate::adm(context_ref),
         "modifies names ConfigVersion's own node"
     );
     assert_eq!(
         frames[0].semantic_type(),
-        Some(context_ref.0),
+        Some(crate::adm(context_ref)),
         "the frame's own semantic_type is the declaring object type"
     );
     let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
@@ -3735,7 +3640,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         panic!("frame's value is a reference");
     };
     assert_eq!(
-        frame_target.0,
+        crate::adm(frame_target),
         frames[0].key(),
         "the anchor's frame binding names the frame node"
     );
@@ -3824,7 +3729,7 @@ fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
         })
         .expect("exactly one frame node (asserted by s4_emits_exactly_the_fr_105_state_nodes)")
         .key();
-    let frame_id = qsl_package::checked_node_id_of(frame_key);
+    let frame_id = qsl_package::checked_node_id_of(&frame_key);
     let fault_reason = "fault injection (test): forced encoding failure at the frame node";
 
     let refusal = qsl_package::emit_checked_with_fault(&compiled.package, |id| {
@@ -3882,10 +3787,7 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
         })
         .expect("ConfigVersion's own object_type node is in the graph")
         .key();
-    let expected_id = json!({
-        "domain": quire_exact::NODE_KEY_DOMAIN,
-        "digest": config_version_node.to_string(),
-    });
+    let expected_id = wire_node_id(config_version_node.clone());
 
     let wire: serde_json::Value =
         serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
@@ -3918,7 +3820,7 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
 }
 
 /// TC-463 step 2 (FR-105-AC-4): compiling FR-108's unit twice gives
-/// identical bytes and the same `package_id`.
+/// identical bytes.
 #[trace("TC-463", "FR-105-AC-4")]
 #[test]
 fn s4_state_package_emission_is_stable_across_compiles() {
@@ -3929,7 +3831,6 @@ fn s4_state_package_emission_is_stable_across_compiles() {
         second.emitted.bytes(),
         "compiling the same unit twice gives identical bytes"
     );
-    assert_eq!(first.emitted.package_id(), second.emitted.package_id());
 }
 
 // ---------------------------------------------------------------------------
@@ -4026,7 +3927,7 @@ fn named_clause_node<'g>(
         .identity();
     graph
         .semantic_graph()
-        .node(identity)
+        .node(identity.clone())
         .unwrap_or_else(|| panic!("clause {name}'s node {identity} is in the graph"))
 }
 
@@ -4043,7 +3944,7 @@ fn single_state_node_key(graph: &qsl_semantics::check::CheckedGraph, form: &str)
     let [key] = keys.as_slice() else {
         panic!("exactly one state/{form} node, got {keys:?}");
     };
-    *key
+    key.clone()
 }
 
 /// The body of the `expression` node `leaf` references (FR-093's
@@ -4056,7 +3957,7 @@ fn resolve_expression<'g>(
     let qsl_semantics::check::LeafTerm::Reference { target } = leaf else {
         return None;
     };
-    let node = graph.semantic_graph().node(target.0)?;
+    let node = graph.semantic_graph().node(crate::adm(target))?;
     (node.node_tag() == qsl_semantics::check::NodeTag::Expression).then(|| node.body())
 }
 
@@ -4112,12 +4013,9 @@ fn find_field_read_member<'g>(
         .member()
 }
 
-/// `key`'s wire `node_id` object (`quire.checked-semantic-node/v1`).
-fn wire_node_id(key: NodeKey) -> serde_json::Value {
-    json!({
-        "domain": quire_exact::NODE_KEY_DOMAIN,
-        "digest": key.to_string(),
-    })
+/// `key`'s wire `node_id` object: the structural `{package, path, ordinal}` form.
+fn wire_node_id(key: impl std::borrow::Borrow<NodeKey>) -> serde_json::Value {
+    qsl_foundation::node_wire::node_key_to_json(&key.borrow().clone()).expect("a node id encodes")
 }
 
 /// Every occurrence of `key` as a `(role, ordinal)` pair (`claim`, `anchor`,
@@ -4159,11 +4057,11 @@ fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_j
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic_graph.nodes is an array");
-    let id = wire_node_id(key);
+    let id = wire_node_id(&key);
     nodes
         .iter()
         .find(|node| node["node_id"] == id)
-        .unwrap_or_else(|| panic!("node {key} is in the emitted wire"))["dependencies"]
+        .unwrap_or_else(|| panic!("node {key:?} is in the emitted wire"))["dependencies"]
         .as_array()
         .expect("dependencies is an array")
         .clone()
@@ -4198,7 +4096,7 @@ fn clause_parameters(
             };
             let node = graph
                 .semantic_graph()
-                .node(target.0)
+                .node(crate::adm(target))
                 .expect("the parameter node is in the graph");
             assert_eq!(
                 (node.node_tag(), node.semantic_form()),
@@ -4227,7 +4125,7 @@ fn clause_parameters(
                     _ => None,
                 })
                 .expect("a parameter node binds its name as a text literal");
-            (target.0, name)
+            (crate::adm(target), name)
         })
         .collect()
 }
@@ -4241,7 +4139,7 @@ fn clause_condition_node(clause: &qsl_semantics::check::SemanticNode) -> NodeKey
     else {
         panic!("a state_clause's condition argument references its expression node");
     };
-    target.0
+    crate::adm(target)
 }
 
 /// TC-462 (FR-105-AC-2): each `state`/`state_clause`, `state`/
@@ -4277,9 +4175,9 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(names, ["self", "result"], "self, then result");
     let mut expected: Vec<serde_json::Value> = parameters
         .iter()
-        .map(|(key, _)| wire_node_id(*key))
+        .map(|(key, _)| wire_node_id(key))
         .collect();
-    expected.push(wire_node_id(anchor_key));
+    expected.push(wire_node_id(&anchor_key));
     expected.push(wire_node_id(clause_condition_node(version_unchanged)));
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, version_unchanged.key())),
@@ -4297,8 +4195,8 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         assert_eq!(
             sorted_json(emitted_dependencies_of(&compiled, invariant.key())),
             sorted_json(vec![
-                wire_node_id(*self_key),
-                wire_node_id(config_version_node),
+                wire_node_id(self_key),
+                wire_node_id(&config_version_node),
                 wire_node_id(clause_condition_node(invariant)),
             ]),
             "{name} depends on exactly self, ConfigVersion (its anchor) and its condition"
@@ -4308,7 +4206,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, anchor_key)),
         sorted_json(vec![
-            wire_node_id(config_version_node),
+            wire_node_id(&config_version_node),
             wire_node_id(frame_key)
         ]),
         "the operation_anchor's own dependencies are exactly its two reference bindings: \
@@ -4316,7 +4214,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     );
 
     let version_number_member = qsl_semantics::value::Member::Field {
-        declaration: config_version_node,
+        declaration: config_version_node.clone(),
         name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
     };
     let field_read = graph
@@ -4347,7 +4245,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         graph
             .semantic_graph()
-            .node(receiver.0)
+            .node(crate::adm(receiver))
             .map(qsl_semantics::check::SemanticNode::node_tag),
         Some(qsl_semantics::check::NodeTag::Expression),
         "the field read's receiver is the `deref(self)` expression node"
@@ -4355,8 +4253,8 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     assert_eq!(
         sorted_json(emitted_dependencies_of(&compiled, field_read.key())),
         sorted_json(vec![
-            wire_node_id(config_version_node),
-            wire_node_id(receiver.0),
+            wire_node_id(&config_version_node),
+            wire_node_id(crate::adm(receiver)),
         ]),
         "the versionNumber field read depends on exactly ConfigVersion (its member's \
          declaration) and its receiver expression node"
@@ -4412,7 +4310,7 @@ fn s4_state_clause_semantic_type_is_the_boolean_scalar_type_node() {
     for (node, kind) in state_clause_nodes(graph) {
         assert_eq!(
             node.semantic_type(),
-            Some(boolean),
+            Some(boolean.clone()),
             "{kind}'s state_clause node's own semantic_type is the Boolean scalar type node"
         );
     }
@@ -4610,7 +4508,7 @@ fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey 
     else {
         panic!("state_clause's second argument is a reference to its anchor: {arguments:?}");
     };
-    target.0
+    crate::adm(target)
 }
 
 /// TC-463 (FR-105-AC-4): renaming `ParentOrder` changes no node id -- the
@@ -4653,48 +4551,6 @@ fn s4_renaming_parent_order_changes_no_node_id() {
     );
 }
 
-/// TC-463 (FR-105-AC-4): changing `ParentOrder`'s `<` to `<=` changes its
-/// `state_clause` node id and the `package_id`, and leaves the other two
-/// clauses' node ids unchanged.
-#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
-#[test]
-fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id() {
-    let (unit, packages) = config_version_unit_and_packages();
-    let base = compile_config_version_unit(&unit, &packages);
-    let edited_unit = edit_once(
-        &unit,
-        ".versionNumber < self.versionNumber",
-        ".versionNumber <= self.versionNumber",
-    );
-    let edited = compile_config_version_unit(&edited_unit, &packages);
-    let identity = |compiled: &ComposedUnit, name: &str| {
-        compiled
-            .package
-            .graph()
-            .state_clause(name)
-            .unwrap_or_else(|| panic!("{name} is checked"))
-            .identity()
-    };
-
-    assert_ne!(
-        identity(&base, "ParentOrder"),
-        identity(&edited, "ParentOrder"),
-        "ParentOrder's state_clause node id covers its body"
-    );
-    assert_ne!(
-        base.emitted.package_id(),
-        edited.emitted.package_id(),
-        "the package_id covers the state_clause node"
-    );
-    for name in ["NoCycle", "VersionUnchanged"] {
-        assert_eq!(
-            identity(&base, name),
-            identity(&edited, name),
-            "{name}'s node id is untouched by ParentOrder's edit"
-        );
-    }
-}
-
 /// TC-463 (FR-105-AC-4, FR-104-AC-6): adding `ParentOrder2` with
 /// `ParentOrder`'s body adds no node and a second `claim` occurrence
 /// (ordinal 1) to `ParentOrder`'s node.
@@ -4732,7 +4588,7 @@ fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
         "ParentOrder2 checks to ParentOrder's node"
     );
     assert_eq!(
-        occurrences_of(base.package.graph(), parent_order),
+        occurrences_of(base.package.graph(), parent_order.clone()),
         occurrences_in("claim", &[0])
     );
     assert_eq!(
@@ -4897,7 +4753,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
     );
     let anchor_node = graph
         .semantic_graph()
-        .node(anchor)
+        .node(anchor.clone())
         .expect("the anchor node is in the graph");
     let qsl_semantics::check::BodyTerm::Aggregate(qsl_semantics::check::AggregateTerm { members }) =
         anchor_node.body()
@@ -4920,7 +4776,8 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
         panic!("the context binding's value is a reference, got {value:?}");
     };
     assert_eq!(
-        context.0, config_version_node,
+        crate::adm(context),
+        config_version_node,
         "the shared anchor's context is ConfigVersion, the operation's declaring type"
     );
     assert_eq!(anchor_node.semantic_type(), Some(config_version_node));
@@ -4933,7 +4790,7 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
 
 /// TC-463 step 1 (FR-105-AC-3): the emitted package reads back through
 /// QSL's I2 reader (`read_import_view`), including its frame step, with its
-/// recomputed `package_id` equal to the emitted one. `ParentOrder`'s
+/// `ParentOrder`'s
 /// cycle-safety predicate lowers to a `quire.op.model.reaches_field`
 /// application, so the read also checks that application's reference edge.
 #[trace("TC-463", "FR-105-AC-3")]
@@ -4944,8 +4801,7 @@ fn s4_state_package_reads_back_through_i2() {
 
     let emission = qsl_package::emit_checked(&first.package)
         .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
-    assert_eq!(emission.package().package_id(), first.emitted.package_id());
-    let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
+    let library = LibraryName::new("fixture".to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
     let view = qsl_package::read_import_view(
         &first.package,

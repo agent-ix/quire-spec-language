@@ -223,7 +223,6 @@ pub(crate) fn admitted_with(
     constructs.push(serde_json::json!({
         "kind": {"module": "fixture/domain", "name": "population"},
         "moduleVersion": business["moduleVersion"],
-        "manifestDigest": business["manifestDigest"],
         "construct": {
             "identity": "none",
             "shape": "record",
@@ -338,7 +337,6 @@ fn with_namespace(text: &str, test: impl FnOnce(&SyntaxNamespace)) {
         units: vec![ExpectedSource {
             authority: "plumbing".into(),
             identity: source.identity().clone(),
-            digest: source.digest(),
         }],
     };
     let sources = [source];

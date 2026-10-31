@@ -6,8 +6,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{SourceIdentity, Span};
+use quire_exact::NodeKey;
 use quire_semantic_value::checking::CheckingLimits;
 
 use super::*;
@@ -60,6 +60,7 @@ fn assemble(text: &str) -> PackageDeclarations {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         unit,
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -73,10 +74,11 @@ type Outcome = Result<CheckedTemporalClause, StageFailure<CheckRefusal>>;
 fn check(package: &PackageDeclarations) -> Outcome {
     let units = crate::check::time_units::TimeUnits::new(
         &package.units,
-        package.nominal_spans.keys().copied(),
+        package.nominal_spans.keys().cloned(),
         &package.models,
         &package.dimension_equivalences,
-        package.identity,
+        &package.source,
+        &package.package_name,
     );
     let scope = Scope::new(
         package.types.clone(),
@@ -91,6 +93,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
         scope: &scope,
         selections: &package.temporal_selections,
         source: &package.source,
+        package_name: &package.package_name,
         embedding: None,
         position_limit: 10_000,
         models: &package.models,
@@ -149,8 +152,13 @@ fn first(text: &str, needle: &str) -> Span {
     }
 }
 
-fn node(byte: u8) -> WireNodeId {
-    WireNodeId::from_digest([byte; 32])
+fn node(byte: u8) -> NodeKey {
+    NodeKey::new(
+        "fixture".to_owned(),
+        vec![quire_exact::PathSegment::Text(format!("node-{byte}"))],
+        0,
+    )
+    .expect("a nonempty structural fixture key")
 }
 
 /// FR-326-AC-1: under infinite-trace `eventually` alone checks with no

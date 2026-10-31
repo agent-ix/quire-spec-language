@@ -30,7 +30,6 @@ pub const RING: &str = "example/ring-queue-impl";
 
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
-const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// The identity text of `path` in `package`.
 pub fn node(package: &str, path: &str) -> String {
@@ -58,7 +57,6 @@ pub fn construct(package: &str, name: &str, semantic_meaning: &str) -> Value {
     json!({
         "kind": {"module": package, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": DIGEST,
         "construct": {
             "identity": "none", "shape": "record", "members": {},
             "meaning": semantic_meaning,
@@ -205,14 +203,14 @@ pub fn population(package: &str, name: &str, member: &str) -> Value {
 pub fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": node(package, "spec"), "version": "1.0.0",
-            "dialect": "spec-bundle", "digest": DIGEST,
+            "dialect": "spec-bundle",
         },
         "package": {
-            "identity": package, "version": "1.0.0", "manifestDigest": DIGEST,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
+            "identity": package, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": [],
         },
         "occurrences": [], "extensions": [],
         "constructs": [
@@ -405,10 +403,15 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
         ModelNormalizationLimits::default(),
     )
     .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![])
-            .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
-            .with_unwritten_refinements();
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_string(),
+        built,
+        selected,
+        vec![],
+    )
+    .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
+    .with_unwritten_refinements();
     let regions = declarations.regions();
     match declarations.check(CheckingLimits::default()) {
         Ok(graph) => Ok(Checked { graph, packages }),

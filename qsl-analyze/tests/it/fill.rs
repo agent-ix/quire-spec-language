@@ -7,7 +7,7 @@
 //! that selects it as `M` with their contracts, protocols over it, and the
 //! snapshots and protocol subjects the protocol tests build from it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
@@ -18,7 +18,7 @@ use qsl_eval::simulation::protocol::{
     MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{digest::DigestRecord, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -32,7 +32,6 @@ use serde_json::{json, Value as Json};
 use crate::counter::UNLIMITED;
 
 pub(crate) const PACKAGE: &str = "test/fill";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -129,12 +128,11 @@ pub(crate) fn document() -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
     .chain([json!({"kind": {"module": PACKAGE, "name": "variant_type"},
-        "moduleVersion": "1.0.0", "manifestDigest": PLACEHOLDER,
+        "moduleVersion": "1.0.0",
         "construct": {"identity": "none", "shape": "enumeration",
             "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}})])
     .collect();
@@ -180,11 +178,10 @@ pub(crate) fn document() -> Vec<u8> {
         .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -280,6 +277,10 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
     package_with("", body)
 }
 
+/// The header line selecting the protocol profile, so each protocol clause
+/// the package writes has its node.
+pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
@@ -310,6 +311,7 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     .expect("the operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "package".to_owned(),
         built,
         models,
         Vec::new(),
@@ -519,19 +521,6 @@ pub(crate) fn v(state: &ModelSimState, object: &str) -> i64 {
     }
 }
 
-/// The compiled `package_id` of the unit with `body`, through FR-098's
-/// compile.
-pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
-    package_id_with("", body)
-}
-
-/// [`package_id`] with the further header `profiles` lines.
-pub(crate) fn package_id_with(profiles: &str, body: &str) -> qsl_replay::DigestRecord {
-    compiled_with(profiles, body)
-        .expect("the unit compiles")
-        .package_id()
-}
-
 /// FR-098's compile of the unit with `body`.
 pub(crate) fn compiled(
     body: &str,
@@ -546,9 +535,12 @@ fn compiled_with(
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
     let document = document();
     qsl_replay::compile_package(
-        SourceIdentity::new("agent-ix", "counter", "git", "1"),
-        "counter.native",
-        unit_text_with(profiles, body).as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "counter", "git", "1"),
+            package_name: "package".to_owned(),
+            path: "counter.native",
+            bytes: unit_text_with(profiles, body).as_bytes(),
+        },
         [document.as_slice()],
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),
@@ -576,22 +568,32 @@ pub(crate) fn class_of<M: MemoryModel>(
 /// Every reachable state of `system`, breadth-first from its initial states,
 /// each once by its state key, successors in the engine's order.
 pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
-    let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
+    // The digest is already computed with each canonical key. Indexing by its
+    // fixed-size value avoids hashing and repeatedly comparing the much larger
+    // canonical bytes; retain and compare those bytes within each digest
+    // bucket so a digest collision can never merge distinct states.
+    let mut known: HashMap<DigestRecord, Vec<usize>> = HashMap::new();
+    let mut keys: Vec<Vec<u8>> = Vec::new();
     let mut reached: Vec<Reached<M>> = Vec::new();
     let mut queue = std::collections::VecDeque::new();
     let mut admit = |state: ProtocolState<M>,
                      reached: &mut Vec<Reached<M>>,
                      queue: &mut std::collections::VecDeque<usize>|
      -> usize {
-        let (key, _) = SubjectSystem::state_key(system, &state).expect("a key");
-        *known.entry(key).or_insert_with(|| {
-            reached.push(Reached {
-                state,
-                steps: Vec::new(),
-            });
-            queue.push_back(reached.len() - 1);
-            reached.len() - 1
-        })
+        let (key, digest) = SubjectSystem::state_key(system, &state).expect("a key");
+        let bucket = known.entry(digest).or_default();
+        if let Some(index) = bucket.iter().copied().find(|index| keys[*index] == key) {
+            return index;
+        }
+        let index = reached.len();
+        keys.push(key);
+        bucket.push(index);
+        reached.push(Reached {
+            state,
+            steps: Vec::new(),
+        });
+        queue.push_back(index);
+        index
     };
     for state in system.initial() {
         admit(state, &mut reached, &mut queue);

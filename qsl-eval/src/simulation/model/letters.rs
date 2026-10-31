@@ -102,23 +102,23 @@ impl<'a> ModelSystem<'a> {
         &'s self,
         node: &'s TemporalClauseNode,
     ) -> Result<ClauseLetters<'s, 'a>, LettersRefusal> {
-        let ValueType::Reference(parameter) = node.clause().over().1 else {
+        let ValueType::Reference(ref parameter) = node.clause().over().1 else {
             return Err(LettersRefusal::OverNotReference);
         };
         let type_key = self
             .model
-            .type_key(parameter)
+            .type_key(parameter.clone())
             .cloned()
             .ok_or(LettersRefusal::OverTypeUndeclared)?;
         Ok(ClauseLetters {
             system: self,
             node,
-            parameter,
+            parameter: parameter.clone(),
             type_key,
             overlapping: self
                 .populations
                 .iter()
-                .filter(|population| self.overlaps(population, parameter))
+                .filter(|population| self.overlaps(population, parameter.clone()))
                 .map(|population| population.key.clone())
                 .collect(),
             observed: RefCell::new(None),
@@ -155,7 +155,7 @@ impl ClauseLetters<'_, '_> {
                     && self
                         .system
                         .types
-                        .conforms(row.reference.object_type(), self.parameter)
+                        .conforms(row.reference.object_type().clone(), self.parameter.clone())
             })
             .map(|row| row.reference.clone())
     }

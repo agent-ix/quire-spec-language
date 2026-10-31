@@ -4,7 +4,10 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{ClockOp, CollectionShape, PlaceStep, SlotRef};
+use qsl_semantics::check::{
+    BodyTerm, ClockOp, CollectionShape, LeafTerm, LiteralValue, NodeRef, NodeTag, PlaceStep,
+    SlotRef,
+};
 use quire_semantic_value::declaration::CompositeShape;
 use serde_json::{json, Value};
 
@@ -592,7 +595,10 @@ fn a_record_collection_holds_one_clock_place_per_slot() {
             .expect("t.x");
         assert_eq!(single.bound(), Some(1));
         // `t.x`, `u.x` and `x`, one each, and the slots of `ts`.
-        assert_eq!(model.dimension(place.owner()), Some(3 + upper.unwrap_or(0)));
+        assert_eq!(
+            model.dimension(&place.owner()),
+            Some(3 + upper.unwrap_or(0))
+        );
     }
 }
 
@@ -1603,7 +1609,7 @@ fn a_unit_alias_or_sequence_types_each_position_and_refuses_a_ghost_unit() {
         graph
             .scope()
             .types()
-            .attribute(owner, name)
+            .attribute(owner.clone(), name)
             .unwrap_or_else(|| panic!("Call.{name}"))
             .field()
             .value_type()
@@ -1623,7 +1629,7 @@ fn a_unit_alias_or_sequence_types_each_position_and_refuses_a_ghost_unit() {
     let bump = graph
         .scope()
         .operations()
-        .declared_by(owner)
+        .declared_by(owner.clone())
         .iter()
         .find(|operation| operation.name() == "bump")
         .expect("bump");
@@ -2220,35 +2226,41 @@ fn absent_lowers_to_the_none_literal_of_its_option() {
         &format!("{UNITS}{DENSE}function f using v(): Option<Integer> pure {{ absent }}\n"),
     )
     .expect("absent checks");
-    let nodes: Vec<Value> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| serde_json::from_slice(node.preimage()).expect("a JSON preimage"))
-        .collect();
+    let nodes: Vec<_> = graph.semantic_graph().nodes().collect();
     let [none] = nodes
         .iter()
-        .filter(|node| node["body"]["term"] == "literal" && node["body"]["value_kind"] == "none")
+        .filter(|node| {
+            matches!(
+                node.body(),
+                BodyTerm::Leaf(LeafTerm::Literal {
+                    value: LiteralValue::None,
+                    ..
+                })
+            )
+        })
         .collect::<Vec<_>>()[..]
     else {
         panic!("one none literal");
     };
     assert_eq!(
-        (
-            &none["node_tag"],
-            &none["semantic_form"],
-            &none["body"]["value"]
-        ),
-        (&json!("value"), &json!("literal"), &Value::Null)
+        (none.node_tag(), none.semantic_form()),
+        (NodeTag::Value, "literal")
     );
     // Typed by the function's result type, `Option<Integer>`.
     let function = nodes
         .iter()
-        .find(|node| node["node_tag"] == "function")
+        .find(|node| node.node_tag() == NodeTag::Function)
         .expect("the function node");
-    assert_eq!(none["body"]["type"], function["semantic_type"]);
+    let BodyTerm::Leaf(LeafTerm::Literal { ty, .. }) = none.body() else {
+        unreachable!("filtered to a literal");
+    };
+    assert_eq!(
+        Some(ty),
+        function.semantic_type().map(NodeRef::Admitted).as_ref()
+    );
     assert!(nodes
         .iter()
-        .any(|node| node["semantic_form"] == "option" && node["node_tag"] == "composite_type"));
+        .any(|node| node.semantic_form() == "option" && node.node_tag() == NodeTag::CompositeType));
 }
 
 /// FR-230 "Presence bit" (TC-685), part of FR-230-AC-39: a top-level

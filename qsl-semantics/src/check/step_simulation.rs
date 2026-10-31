@@ -135,23 +135,27 @@ pub(crate) fn simulation_records(
     let read: BTreeSet<PopulationDomain> = roots
         .mapping
         .iter()
-        .copied()
+        .cloned()
         .chain(
             hypotheses
                 .iter()
                 .filter_map(|hypothesis| inputs.clauses.get(hypothesis))
                 .flatten()
-                .copied(),
+                .cloned(),
         )
         .collect();
     let mut initial_populations = roots.initial.clone();
-    initial_populations.extend(read.iter().copied());
+    initial_populations.extend(read.iter().cloned());
     let initial = extent_record(None, &initial_populations, None, inputs)?;
     written.push((
         StepSimulationEntry::new(
-            inputs.node,
+            inputs.node.clone(),
             0,
-            StepSimulationRecord::new(inputs.node, StepObligation::Initial, hypotheses.clone()),
+            StepSimulationRecord::new(
+                inputs.node.clone(),
+                StepObligation::Initial,
+                hypotheses.clone(),
+            ),
         ),
         initial,
     ));
@@ -168,11 +172,18 @@ pub(crate) fn simulation_records(
         let anchor = keyed
             .steps
             .get(position)
-            .and_then(|keyed| keyed.source_node)
+            .and_then(|keyed| keyed.source_node.clone())
             .ok_or_else(|| fault(location))?;
         let mut populations: BTreeSet<PopulationDomain> = read.clone();
-        populations.extend(*context);
-        populations.extend(inputs.contracts.get(operation).into_iter().flatten());
+        populations.extend(context.clone());
+        populations.extend(
+            inputs
+                .contracts
+                .get(operation)
+                .into_iter()
+                .flatten()
+                .cloned(),
+        );
         let record = extent_record(
             Some((anchor, types)),
             &populations,
@@ -182,10 +193,10 @@ pub(crate) fn simulation_records(
         let position = u32::try_from(position).map_err(|_| fault(location))?;
         written.push((
             StepSimulationEntry::new(
-                inputs.node,
+                inputs.node.clone(),
                 u64::from(position) + 1,
                 StepSimulationRecord::new(
-                    inputs.node,
+                    inputs.node.clone(),
                     StepObligation::Step {
                         row: StepRowRef::new(position),
                     },
@@ -210,23 +221,28 @@ fn extent_record(
     let location = inputs.location;
     let populations: Vec<(PopulationDomain, NodeKey)> = populations
         .iter()
-        .map(|domain| (inputs.object_node)(domain.object).map(|object| (*domain, object)))
+        .map(|domain| {
+            (inputs.object_node)(domain.object.clone()).map(|object| (domain.clone(), object))
+        })
         .collect::<Option<_>>()
         .ok_or_else(|| fault(location))?;
     let (anchor, types) = match roots {
-        Some((anchor, types)) => (anchor, types.iter().map(|value| (anchor, value)).collect()),
-        None => (inputs.node, Vec::new()),
+        Some((anchor, types)) => (
+            anchor.clone(),
+            types.iter().map(|value| (anchor.clone(), value)).collect(),
+        ),
+        None => (inputs.node.clone(), Vec::new()),
     };
     let references = ModelReferences::new(
         BTreeSet::new(),
-        populations.iter().map(|(domain, _)| *domain),
+        populations.iter().map(|(domain, _)| domain.clone()),
         operation,
     );
     record(
         &types,
         Some(anchor),
         &populations,
-        inputs.boolean,
+        inputs.boolean.clone(),
         inputs.types,
         inputs.position_limit,
         references,

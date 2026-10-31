@@ -141,10 +141,6 @@ fn package_time_units_reach_s3_with_their_model_owner() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("S3 resolves the package-owned Time unit");
     assert_eq!(checked.time_sources()[0].unit, "Config::ms");
-    assert_ne!(
-        checked.time_sources()[0].time_dimension.as_bytes(),
-        &[0; 32]
-    );
 }
 
 #[trace("TC-685")]
@@ -811,6 +807,7 @@ fn a_unit_without_the_timed_facet_refuses_every_timed_construct() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let refusals = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         qsl_semantics::model::intake::SelectedModels::default(),
         Vec::new(),
@@ -1391,8 +1388,13 @@ pub(crate) fn assemble_selected_as(
     .source()
     .reference()
     .clone();
-    let assembled =
-        qsl_semantics::check::PackageDeclarations::assemble(raw, built, models, Vec::new());
+    let assembled = qsl_semantics::check::PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    );
     (text, assembled)
 }
 
@@ -1451,7 +1453,7 @@ fn time_dimensions_of_different_owners_do_not_mix() {
         let [source] = graph.time_sources() else {
             panic!("one time source");
         };
-        (source.time_dimension, source.unit.clone())
+        (source.time_dimension.clone(), source.unit.clone())
     };
     let (rpc_time, _) = source_of("time R dense unit R::ms;");
     let (flow_time, _) = source_of("time R dense unit F::sec;");

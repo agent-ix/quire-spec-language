@@ -29,13 +29,13 @@ use quire_exact::{
     Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue, FloatType, IeeeValue,
     IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OptionValue, Outcome,
     Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits, TextPayload,
-    TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType, VariantId,
+    TextProfile, TextType, UnitDomain, UnitId, Value, ValueType,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use super::{digest, hex, malformed, present, CauseCodecError};
+use super::{malformed, present, spelled, CauseCodecError};
 
 #[cfg(test)]
 mod tests {
@@ -46,6 +46,7 @@ mod tests {
     fn package() -> CheckedPackage {
         let declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture",
             qsl_foundation::IdentityLimits::default(),
         );
         CheckedPackage::link(
@@ -140,32 +141,31 @@ mod tests {
     /// a `Pair` of two `Money`, in a checked package.
     fn money_package() -> (CheckedPackage, [quire_exact::NodeKey; 3]) {
         use quire_semantic_value::declaration::FieldDeclaration;
-        let [money, taxed, pair] =
-            [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+        let [money, taxed, pair] = [1, 2, 3].map(crate::fixture_node);
         let field =
             |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
         let types = TypeEnvironment::new(
             [
                 CompositeDeclaration::new(
-                    money,
+                    money.clone(),
                     "Money",
                     CompositeShape::Record(vec![field("amount", ValueType::Integer)]),
                 ),
                 CompositeDeclaration::new(
-                    taxed,
+                    taxed.clone(),
                     "TaxedMoney",
                     CompositeShape::Record(vec![
                         field("amount", ValueType::Integer),
                         field("tax", ValueType::Integer),
                     ]),
                 )
-                .with_supertypes(vec![money]),
+                .with_supertypes(vec![money.clone()]),
                 CompositeDeclaration::new(
-                    pair,
+                    pair.clone(),
                     "Pair",
                     CompositeShape::Record(vec![
-                        field("first", ValueType::Composite(money)),
-                        field("second", ValueType::Composite(money)),
+                        field("first", ValueType::Composite(money.clone())),
+                        field("second", ValueType::Composite(money.clone())),
                     ]),
                 ),
             ],
@@ -177,6 +177,7 @@ mod tests {
                 types,
                 ..qsl_semantics::check::PackageDeclarations::new(
                     qsl_semantics::check::fixture_source(),
+                    "fixture",
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
@@ -197,11 +198,11 @@ mod tests {
         let types = package.graph().scope().types();
         let int = |value: i64| Value::Integer(Integer::from(value));
         let plain = types
-            .record(money, vec![("amount", FieldValue::Present(int(1)))])
+            .record(money.clone(), vec![("amount", FieldValue::Present(int(1)))])
             .unwrap();
         let child = types
             .record(
-                taxed,
+                taxed.clone(),
                 vec![
                     ("amount", FieldValue::Present(int(1))),
                     ("tax", FieldValue::Present(int(2))),
@@ -217,7 +218,8 @@ mod tests {
                 ],
             )
             .unwrap();
-        let option = OptionValue::from_admitted(ValueType::Composite(money), Some(child.clone()));
+        let option =
+            OptionValue::from_admitted(ValueType::Composite(money.clone()), Some(child.clone()));
         let collection = quire_exact::from_admitted(
             CollectionType::new(
                 CollectionKind::Sequence,
@@ -244,7 +246,9 @@ mod tests {
         }
         // The child's own declaration is what the document names.
         let encoded = encode_element(&child).unwrap();
-        assert!(encoded.get().contains(&hex(taxed.as_bytes())));
+        let spelled = crate::id_text::node_text(&taxed).unwrap();
+        let escaped = serde_json::to_string(&spelled).unwrap();
+        assert!(encoded.get().contains(escaped.trim_matches('"')));
     }
 
     #[trace("FR-056-AC-23")]
@@ -314,10 +318,10 @@ impl<'a> Keys<'a> {
         text: &str,
         member: &'static str,
     ) -> Result<&'a CompositeDeclaration, CauseCodecError> {
-        let bytes = digest(text, member)?;
+        let key = spelled(crate::id_text::node_from_text, text, member)?;
         self.types()
             .composites()
-            .find(|declaration| declaration.key().as_bytes() == &bytes)
+            .find(|declaration| declaration.key().clone() == key)
             .ok_or(CauseCodecError::Unresolved(member))
     }
 
@@ -378,23 +382,26 @@ impl<'a> Keys<'a> {
         text: &str,
         member: &'static str,
     ) -> Result<EffectiveId, CauseCodecError> {
-        let bytes = digest(text, member)?;
+        let id = spelled(crate::id_text::effective_from_text, text, member)?;
         self.package
             .graph()
             .scope()
             .types()
             .object_types()
             .map(|declaration| declaration.key())
-            .find(|key| key.as_bytes() == &bytes)
+            .find(|key| *key == id)
             .ok_or(CauseCodecError::Unresolved(member))
     }
 
     /// A declared unit resolves among the package's units; a compound unit
     /// is its digest.
     fn unit(&self, unit: &UnitWire) -> Result<UnitId, CauseCodecError> {
-        let bytes = digest(&unit.digest, "unit")?;
+        let parsed = spelled(crate::id_text::unit_from_text, &unit.identity, "unit")?;
+        if parsed.domain() != unit.domain.of() {
+            return Err(CauseCodecError::Digest("unit"));
+        }
         match unit.domain {
-            UnitDomainWire::Compound => Ok(UnitId::compound(bytes)),
+            UnitDomainWire::Compound => Ok(parsed),
             UnitDomainWire::Declared => self
                 .package
                 .graph()
@@ -402,7 +409,7 @@ impl<'a> Keys<'a> {
                 .types()
                 .units()
                 .ids()
-                .find(|id| id.domain() == UnitDomain::Declared && id.as_bytes() == &bytes)
+                .find(|id| *id == parsed)
                 .ok_or(CauseCodecError::Unresolved("unit")),
         }
     }
@@ -416,7 +423,7 @@ pub(super) fn reference_of(
     object_identity: String,
 ) -> Result<ObjectReference, CauseCodecError> {
     Ok(ObjectReference::new(
-        UniverseId::from_digest(digest(universe, "universe")?),
+        spelled(crate::id_text::universe_from_text, universe, "universe")?,
         keys.object_type(object_type, "type")?,
         ObjectId::new(object_identity).map_err(|_| CauseCodecError::Empty("object_identity"))?,
     ))
@@ -480,21 +487,30 @@ pub(super) enum UnitDomainWire {
     Compound,
 }
 
+impl UnitDomainWire {
+    fn of(self) -> UnitDomain {
+        match self {
+            Self::Declared => UnitDomain::Declared,
+            Self::Compound => UnitDomain::Compound,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, FixedShape)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UnitWire {
     domain: UnitDomainWire,
-    digest: String,
+    identity: String,
 }
 
 impl UnitWire {
-    fn of(unit: UnitId) -> Self {
+    fn of(unit: &UnitId) -> Self {
         Self {
             domain: match unit.domain() {
                 UnitDomain::Declared => UnitDomainWire::Declared,
                 UnitDomain::Compound => UnitDomainWire::Compound,
             },
-            digest: hex(unit.as_bytes()),
+            identity: crate::id_text::unit_text(unit).unwrap_or_default(),
         }
     }
 }
@@ -723,7 +739,7 @@ impl TypeLeafWire {
                 rounding(&mode)?;
             }
             Self::Quantity { unit } => {
-                digest(&unit.digest, "unit")?;
+                spelled(crate::id_text::unit_from_text, &unit.identity, "unit")?;
             }
             Self::Text { text_type } => {
                 text_type.read()?;
@@ -732,18 +748,18 @@ impl TypeLeafWire {
             Self::Enum { ordered, variants } => {
                 let variants = variants
                     .iter()
-                    .map(|variant| digest(variant, "variant").map(VariantId::from_digest))
+                    .map(|variant| spelled(crate::id_text::variant_from_text, variant, "variant"))
                     .collect::<Result<Vec<_>, _>>()?;
-                let shape = EnumShape::new(ordered, variants.iter().copied());
+                let shape = EnumShape::new(ordered, variants.iter().cloned());
                 if shape.variants().count() != variants.len() {
                     return Err(CauseCodecError::Value("variants"));
                 }
             }
             Self::Composite { declaration } => {
-                digest(&declaration, "declaration")?;
+                spelled(crate::id_text::node_from_text, &declaration, "declaration")?;
             }
             Self::Reference { object_type } => {
-                digest(&object_type, "type")?;
+                spelled(crate::id_text::effective_from_text, &object_type, "type")?;
             }
             Self::Population { maximum } => {
                 if let Some(maximum) = maximum {
@@ -777,7 +793,7 @@ impl TypeLeafWire {
                 rounding: float.rounding().as_str().to_owned(),
             },
             ValueType::Quantity(unit) => Self::Quantity {
-                unit: UnitWire::of(*unit),
+                unit: UnitWire::of(unit),
             },
             ValueType::Text(text_type) => Self::Text {
                 text_type: TextTypeWire::of(text_type),
@@ -787,14 +803,14 @@ impl TypeLeafWire {
                 ordered: shape.is_ordered(),
                 variants: shape
                     .variants()
-                    .map(|variant| hex(variant.as_bytes()))
+                    .map(|variant| crate::id_text::variant_text(variant).unwrap_or_default())
                     .collect(),
             },
             ValueType::Composite(declaration) => Self::Composite {
-                declaration: hex(declaration.as_bytes()),
+                declaration: crate::id_text::node_text(declaration).unwrap_or_default(),
             },
             ValueType::Reference(object_type) => Self::Reference {
-                object_type: hex(object_type.as_bytes()),
+                object_type: crate::id_text::effective_text(object_type).unwrap_or_default(),
             },
             ValueType::Population(maximum) => Self::Population {
                 maximum: maximum.map(|maximum| maximum.to_string()),
@@ -846,9 +862,9 @@ impl TypeLeafWire {
             Self::Enum { ordered, variants } => {
                 let variants = variants
                     .iter()
-                    .map(|variant| digest(variant, "variant").map(VariantId::from_digest))
+                    .map(|variant| spelled(crate::id_text::variant_from_text, variant, "variant"))
                     .collect::<Result<Vec<_>, _>>()?;
-                let shape = EnumShape::new(ordered, variants.iter().copied());
+                let shape = EnumShape::new(ordered, variants.iter().cloned());
                 // A repeated variant collapses in the shape: it was not one
                 // variant set.
                 if shape.variants().count() != variants.len() {
@@ -941,7 +957,7 @@ impl ScalarWire {
             }
             Self::Quantity { magnitude, unit } => {
                 magnitude.read()?;
-                digest(&unit.digest, "unit")?;
+                spelled(crate::id_text::unit_from_text, &unit.identity, "unit")?;
             }
             Self::Text { text_type, payload } => {
                 let text_type = text_type.read()?;
@@ -957,15 +973,15 @@ impl ScalarWire {
             }
             Self::String { .. } => {}
             Self::Enum { variant, .. } => {
-                digest(&variant, "variant")?;
+                spelled(crate::id_text::variant_from_text, &variant, "variant")?;
             }
             Self::Reference {
                 universe,
                 object_type,
                 object_identity,
             } => {
-                digest(&universe, "universe")?;
-                digest(&object_type, "type")?;
+                spelled(crate::id_text::universe_from_text, &universe, "universe")?;
+                spelled(crate::id_text::effective_from_text, &object_type, "type")?;
                 ObjectId::new(object_identity)
                     .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
@@ -1000,12 +1016,13 @@ impl ScalarWire {
             },
             Value::String(text) => Self::String { text: text.clone() },
             Value::Enum(member) => Self::Enum {
-                variant: hex(member.variant().as_bytes()),
+                variant: crate::id_text::variant_text(member.variant()).unwrap_or_default(),
                 rank: member.rank(),
             },
             Value::Reference(reference) => Self::Reference {
-                universe: hex(reference.universe().as_bytes()),
-                object_type: hex(reference.object_type().as_bytes()),
+                universe: crate::id_text::universe_text(reference.universe()).unwrap_or_default(),
+                object_type: crate::id_text::effective_text(reference.object_type())
+                    .unwrap_or_default(),
                 object_identity: reference.object().as_str().to_owned(),
             },
             Value::Option(_)
@@ -1050,7 +1067,7 @@ impl ScalarWire {
             }
             Self::String { text } => Value::String(text),
             Self::Enum { variant, rank } => Value::Enum(EnumMember::new(
-                VariantId::from_digest(digest(&variant, "variant")?),
+                spelled(crate::id_text::variant_from_text, &variant, "variant")?,
                 rank,
             )),
             Self::Reference {
@@ -1182,7 +1199,9 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                         writer.name("kind")?;
                         writer.string("composite")?;
                         writer.name("declaration")?;
-                        writer.string(&hex(composite.declaration().as_bytes()))?;
+                        writer.string(
+                            &crate::id_text::node_text(composite.declaration()).unwrap_or_default(),
+                        )?;
                         writer.name("slots")?;
                         writer.begin_array()?;
                         let mut next: Vec<Emit<'_>> =

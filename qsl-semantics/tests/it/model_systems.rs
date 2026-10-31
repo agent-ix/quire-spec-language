@@ -466,12 +466,12 @@ fn systems_members_have_effective_owner_entries() {
         ("model.Pump", "model.rel.home", 1),
     ];
     for (owner, member, qualify_facts) in cases {
-        let owner = view.type_identities()[&DeclarationKey::fixture(owner)];
+        let owner = view.type_identities()[&DeclarationKey::fixture(owner)].clone();
         let entries: Vec<_> = view
             .declarations()
             .iter()
             .filter(|entry| {
-                entry.preimage.owner_effective_type == Some(owner)
+                entry.preimage.owner_effective_type == Some(owner.clone())
                     && entry.preimage.original == DeclarationKey::fixture(member)
             })
             .collect();
@@ -504,7 +504,7 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("systems subtype fixture must normalize: {other:?}"),
     };
-    let owner = view.type_identities()[&DeclarationKey::fixture("model.SysSub")];
+    let owner = view.type_identities()[&DeclarationKey::fixture("model.SysSub")].clone();
     for (member, expected_rules, expected_inputs) in [
         (
             "model.Sys.pump",
@@ -581,7 +581,7 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
             .declarations()
             .iter()
             .find(|entry| {
-                entry.preimage.owner_effective_type == Some(owner)
+                entry.preimage.owner_effective_type == Some(owner.clone())
                     && entry.preimage.original == DeclarationKey::fixture(member)
             })
             .unwrap_or_else(|| panic!("{member} is inherited by model.SysSub"));

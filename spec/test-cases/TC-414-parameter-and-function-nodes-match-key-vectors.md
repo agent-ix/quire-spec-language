@@ -1,59 +1,34 @@
 ---
 id: TC-414
-title: "Parameter, literal and function nodes key to their expected structural keys, and a function key carries its owner"
+title: "Parameter, literal and function nodes retain their checked shapes"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092
     type: verifies
 ---
-# TC-414: Parameter, literal and function nodes key to their expected structural keys, and a function key carries its owner
+# TC-414: Parameter, literal and function nodes retain their checked shapes
 
 ## Description
 
-Verify the FR-092 parameter and function node shapes and their keys: that a
-parameter node is keyed by name, type and level, that a function lists every
-parameter in order, that a function's body holds references only and its key
-carries its owner, and that an application node's key carries no owner.
-
-This catches an arity lost when a parameter is never read, a parameter key
-that embeds its function (a cycle), an integer literal spelled as a JSON
-number, and a function node keyed by the application-node preimage.
-
-Scope: FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10.
+Verify FR-092-AC-4/5/6/10: parameter level and type, function parameter
+order, separate expression nodes, literal values and measure references.
+Compare node ids as QSpec FR-322 structural `{package, path, ordinal}`
+objects, never as preimage bytes or digests.
 
 ## Test Procedure
 
-Every fixture unit starts with the complete-V1 header and one profile
-selection whose alias is `v`, and is checked under owner (`a`, `u`).
-
-1. Check `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }`,
-   `function f using v(): Boolean pure { true }`,
-   `function h using v(a: Boolean): Boolean pure { let y = a in y }` and
-   `function k using v(n: Boolean): Integer pure { 7 }`. Read the keys and
-   preimage bytes of the parameter nodes of `a`, `b` and `y`, the literal
-   nodes of `true` and `7`, and the function nodes of `both` and `f`.
-2. Check `function unused using v(a: Boolean, b: Boolean): Boolean pure { a }`
-   and `function both2 using v(a: Boolean, b: Boolean): Boolean pure { a and b }`
-   in one unit with `both`. Read `unused`'s `parameters` binding and the
-   parameter nodes `both2` references.
-3. For every function node of steps 1 and 2, walk its body for an
-   `application` term, and read its preimage's `version` and `owner`. Read the
-   preimage of the node of `a and b`.
-
-4. Check `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }`
-   and read the keys of `x`'s parameter node and of `m`, and `m`'s
-   `decreases` binding.
-
-Tag the tests `#[trace("FR-092-AC-n", "TC-414")]` with the AC each backs.
+1. Check the `both`, `f`, `h` and `k` functions of FR-092-AC-4. Inspect
+   parameter levels and types, literal values, function bodies and node ids.
+2. Check `unused` and `both2` of FR-092-AC-5. Inspect the full ordered
+   parameter list including the unread parameter.
+3. Walk each function body for an inline application; inspect the separate
+   `a and b` application node and its structural id.
+4. Check `m` with `decreases(x)` and inspect its measure reference.
 
 ## Expected Results
 
-- Step 1: `a` is P1, `b` P2, `y` P3, `true` L1, `7` L2 (value spelled
-  `"7"`), `both` F2 and `f` F1, bytes and keys.
-- Step 2: `unused`'s `parameters` lists P1 then P2; `both2` references P1
-  and P2.
-- Step 3: no function body holds an application; every function preimage's
-  `version` is `quire.structural-node/v1` with `owner` (`a`, `u`). The
-  `a and b` preimage's `version` is `quire.application-node/v1`, it has no
-  `owner` member, and its key is E1.
-- Step 4: `x` is P4 and `m` is F3; `decreases` references P4.
+The node shapes match FR-092. Function bodies contain references but no
+inline application, the unread parameter remains, the integer literal is
+exact, and `decreases` references its parameter. Every node id satisfies
+FR-322's structural identity rule and equals another only when all three
+components equal. No T/D/G/L/E/P vector or preimage byte is an oracle.

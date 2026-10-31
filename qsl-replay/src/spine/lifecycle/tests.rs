@@ -90,7 +90,15 @@ fn chain_of(
     let cancel = Cancel::new();
     let parsed = parse(&request(bytes), limits.source, &cancel)?.into_value();
     let models = select(&parsed, packages, limits.model, &cancel)?.into_value();
-    let checked = check(&parsed, &models, dependencies, limits, &cancel)?.into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )?
+    .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
     Ok(Chain {
         parsed,
@@ -180,6 +188,7 @@ fn each_operation_takes_exactly_its_predecessors_output() {
     // `package` the `CheckedUnit` of that check, and `execute` the same.
     let rechecked = check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
         SpineLimits::default(),
@@ -430,6 +439,7 @@ fn a_handle_cancelled_before_the_call_stops_every_operation() {
     ));
     assert_requested(check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
         limits,
@@ -519,7 +529,14 @@ fn assert_check_cancelled_at(
 ) {
     let gate = gated(Some(at));
     let outcome = gate.run(cause, |cancel| {
-        check(parsed, models, &DependencyInput::default(), *limits, cancel)
+        check(
+            parsed,
+            "fixture".to_owned(),
+            models,
+            &DependencyInput::default(),
+            *limits,
+            cancel,
+        )
     });
     match outcome {
         Err(StageFailure::Cancelled(seen)) => assert_eq!(seen, cause),
@@ -551,6 +568,7 @@ fn a_check_cancelled_from_another_thread_stops_within_one_charge() {
     let total = charges_of(|cancel| {
         check(
             &unit.0,
+            "fixture".to_owned(),
             &unit.1,
             &DependencyInput::default(),
             unit.2,
@@ -593,6 +611,7 @@ fn a_cancel_inside_one_large_body_stops_within_one_charge() {
     let total = charges_of(|cancel| {
         check(
             &unit.0,
+            "fixture".to_owned(),
             &unit.1,
             &DependencyInput::default(),
             unit.2,
@@ -771,6 +790,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
     let run_under = |cancel: &Cancel| {
         crate::spine::run(
             identity(),
+            "fixture".to_owned(),
             "unit.native",
             FIXTURE.as_bytes(),
             &BTreeMap::new(),
@@ -792,6 +812,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
         let models = select(&parsed, &BTreeMap::new(), limits.model, cancel)?.into_value();
         let checked = check(
             &parsed,
+            "fixture".to_owned(),
             &models,
             &DependencyInput::default(),
             limits,
@@ -845,7 +866,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
 fn the_composition_emits_packages_the_i2_reader_reads_back() {
     // The compile fixture.
     let fixture = fixture_chain();
-    read_back(&fixture, &BTreeMap::new(), "test/fixture");
+    read_back(&fixture, &BTreeMap::new(), "fixture");
 
     // A domain-package request: the unit's `model` names the document by
     // its `sha256-jcs` digest.
@@ -858,7 +879,7 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     )
     .unwrap_or_else(|failure| panic!("the model fixture compiles: {failure:?}"));
     assert_eq!(model.models.models().len(), 1);
-    read_back(&model, &packages, "test/model");
+    read_back(&model, &packages, "fixture");
     let again = chain_of(
         spine_model::unit().as_bytes(),
         &packages,
@@ -883,10 +904,10 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     )
     .unwrap_or_else(|failure| panic!("the importing unit compiles: {failure:?}"));
     assert_eq!(importing.checked.libraries().len(), 1);
-    read_back(&importing, &BTreeMap::new(), "test/importing");
+    read_back(&importing, &BTreeMap::new(), "fixture");
 }
 
-/// `chain`'s emitted bytes through the I2 reader, as `identity`.
+/// `chain`'s emitted bytes through the I2 reader, as `identity` (the name the package was checked under).
 fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInput, identity: &str) {
     let emission = emit_checked(chain.checked.package()).expect("the package emits");
     assert_eq!(emission.package(), chain.emitted.package());
@@ -955,8 +976,15 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
         .expect("a unit with no model selects nothing")
         .into_value();
     let refused = refusal(
-        check(&parsed, &models, &DependencyInput::default(), limits, &live)
-            .expect_err("the unit is ill typed"),
+        check(
+            &parsed,
+            "fixture".to_owned(),
+            &models,
+            &DependencyInput::default(),
+            limits,
+            &live,
+        )
+        .expect_err("the unit is ill typed"),
     );
     assert_eq!(refused.code().as_str(), "ill_typed");
     assert_eq!(refused.stage(), SpineStage::Check);
@@ -1034,6 +1062,7 @@ fn each_operation_reports_the_work_of_its_own_stages() {
 
     let checked = check(
         &parsed,
+        "fixture".to_owned(),
         &models,
         &DependencyInput::default(),
         limits,
@@ -1291,12 +1320,6 @@ fn select_names_the_model_limit_field_it_reached() {
         run(|limits, value| limits.ancestor_steps = value),
     );
     assert_budget_field(
-        Setting::ModelHashedBytes,
-        "insufficient-next-charge",
-        100_000,
-        run(|limits, value| limits.hashed_bytes = value),
-    );
-    assert_budget_field(
         Setting::ModelWorkUnits,
         "insufficient-next-charge",
         100_000,
@@ -1371,6 +1394,7 @@ fn check_names_the_checking_limit_field_it_reached() {
             let limits = edit(SpineLimits::default(), value);
             reached(check(
                 &chain.parsed,
+                "fixture".to_owned(),
                 &chain.models,
                 &DependencyInput::default(),
                 limits,
@@ -1409,77 +1433,11 @@ fn check_names_the_checking_limit_field_it_reached() {
     );
 }
 
-/// A unit with no record, enum or unit and one function whose 40-term body
-/// lowers to a node preimage of several hundred bytes: every identity
-/// encoding of it is a lowered node, none a declared type handle.
-fn long_body_chain() -> Chain {
-    let body = vec!["1"; 40].join(" + ");
-    let source = format!("{HEADER}function long using v(): Integer pure {{ {body} }}\n");
-    chain_of(
-        source.as_bytes(),
-        &BTreeMap::new(),
-        &DependencyInput::default(),
-        SpineLimits::default(),
-    )
-    .unwrap_or_else(|failure| panic!("the unit compiles: {failure:?}"))
-}
-
-/// FR-255-AC-1 for `identity.input_bytes` through the compile. The unit has
-/// no record, enum or unit, so no declared type handle or nominal preimage is
-/// encoded at assembly: every identity encoding is a node preimage lowering
-/// keys under the limit `AssemblyLimits.identity` carries into the checked
-/// package. The smallest `identity.input_bytes` at which `check` admits it is
-/// then the largest node preimage the checked package holds (well past a
-/// declared type handle's size); one below it `check` stops with
-/// `LimitExceeded` naming `identity.input_bytes` and that bound. It fails if
-/// assembly stops carrying the caller's limit into lowering (the search
-/// finds no refusal at all), or if the spine stops mapping the refusal.
-#[trace("TC-720", "FR-255-AC-1")]
-#[test]
-fn check_names_the_identity_limit_it_reached() {
-    let chain = long_body_chain();
-    let largest = chain
-        .checked
-        .package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .map(|node| u64::try_from(node.preimage().len()).expect("a small preimage"))
-        .max()
-        .expect("the checked package holds nodes");
-    // A declared type handle encodes to about 123 bytes.
-    assert!(
-        largest > 200,
-        "the fixture's largest node preimage ({largest}) must exceed a handle's size"
-    );
-    let run = |value: u64| {
-        let mut limits = SpineLimits::default();
-        limits.assembly.identity.input_bytes = value;
-        reached(check(
-            &chain.parsed,
-            &chain.models,
-            &DependencyInput::default(),
-            limits,
-            &Cancel::new(),
-        ))
-    };
-    let counter = assert_field(
-        Setting::IdentityInputBytes,
-        FoundationKind::InputBytes,
-        1_000_000,
-        run,
-    );
-    assert_eq!(
-        counter, largest,
-        "the identity limit the check reaches is the largest node preimage"
-    );
-}
-
 /// FR-255-AC-4 at both entry points, stage-driven: an input that reaches a
 /// limit stops with that limit's setting, and the same input passes once the
 /// setting is raised, through the settings operation's operand and through a
 /// replay request's `stage_limits` entry. Covers `s1.tokens` (parse),
-/// `s3.nodes`, `s3.work_units` and `identity.input_bytes` (check).
+/// `s3.nodes` and `s3.work_units` (check).
 #[trace("TC-721", "FR-255-AC-4")]
 #[test]
 fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
@@ -1504,6 +1462,7 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
     let check_under = |limits: SpineLimits| {
         reached(check(
             &chain.parsed,
+            "fixture".to_owned(),
             &chain.models,
             &DependencyInput::default(),
             limits,
@@ -1538,22 +1497,6 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             1_000_000,
             |value| check_under(work(value)[entry]),
         );
-        let identity = entry_points("identity.input_bytes");
-        let long = long_body_chain();
-        assert_field(
-            Setting::IdentityInputBytes,
-            FoundationKind::InputBytes,
-            1_000_000,
-            |value| {
-                reached(check(
-                    &long.parsed,
-                    &long.models,
-                    &DependencyInput::default(),
-                    identity(value)[entry],
-                    &Cancel::new(),
-                ))
-            },
-        );
     }
 }
 
@@ -1577,6 +1520,7 @@ fn the_effective_limits_a_checked_package_records_are_the_defaults() {
     );
     let checked = check(
         &chain.parsed,
+        "fixture".to_owned(),
         &chain.models,
         &DependencyInput::default(),
         limits,
@@ -1610,6 +1554,7 @@ fn check_names_the_type_environment_limit_field_it_reached() {
             edit(&mut limits, value);
             reached(check(
                 &model.parsed,
+                "fixture".to_owned(),
                 &model.models,
                 &DependencyInput::default(),
                 limits,
@@ -1668,7 +1613,14 @@ fn check_names_the_dependency_limit_field_it_reached() {
                 &mut limits,
                 usize::try_from(value).expect("a test bound fits usize"),
             );
-            reached(check(parsed, models, dependencies, limits, &Cancel::new()))
+            reached(check(
+                parsed,
+                "fixture".to_owned(),
+                models,
+                dependencies,
+                limits,
+                &Cancel::new(),
+            ))
         }
     };
     assert_field(
@@ -1737,7 +1689,12 @@ fn an_internal_invariant_failure_is_a_fault() {
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, CorrespondenceConflict, KeyFault};
     use quire_checked::key::DeclarationKey;
-    let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+    let node = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        7,
+    )
+    .expect("a fixture key");
     let (d1, d2) = (
         DeclarationKey::fixture("ix://test/orders/Invoice"),
         DeclarationKey::fixture("ix://test/orders/Order"),
@@ -1749,7 +1706,7 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::CorrespondenceConflict(Box::new(
                 CorrespondenceConflict::NodeRebound {
-                    node,
+                    node: node.clone(),
                     recorded: d1.clone(),
                     offered: d2.clone(),
                 },

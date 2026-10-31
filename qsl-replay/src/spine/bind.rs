@@ -12,15 +12,15 @@
 //! the function.
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
+use qsl_package::{checked_occurrence, CheckedPackage};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageEvidence, CheckedPackageV2, CheckedParameterDeclarationError,
     CheckedScalarOperand, CheckedScalarOperandChild, CheckedScalarOperandError,
     CheckedScalarOperandRange,
 };
+use quire_exact::NodeKey;
 use quire_exact::{Cancel, Integer, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::Origin as BodyOrigin;
@@ -38,7 +38,7 @@ pub struct ScalarOccurrence {
     /// [`Call::function`].
     pub function: String,
     /// The scalar application node.
-    pub application: WireNodeId,
+    pub application: NodeKey,
     /// The occurrence key of that node.
     pub occurrence: OccurrenceKey,
 }
@@ -130,7 +130,7 @@ pub enum OperandSource {
         /// The parameter's declared name.
         parameter: String,
         /// The parameter node the operand references.
-        node: WireNodeId,
+        node: NodeKey,
         /// The parameter node's declared level, as decimal text.
         level: String,
     },
@@ -154,12 +154,12 @@ pub enum BindIdentityCause {
     /// called function's body.
     Node {
         /// The claimed application node.
-        node: WireNodeId,
+        node: NodeKey,
     },
     /// The node is no application of `add`, `sub`, `mul` or `negate`.
     Operator {
         /// The claimed application node.
-        node: WireNodeId,
+        node: NodeKey,
     },
     /// The occurrence is not one of the node's occurrences in the called
     /// function's body.
@@ -172,17 +172,6 @@ pub enum BindIdentityCause {
 /// Why an occurrence or an operand did not bind.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BindRefusal {
-    /// The admitted package is not Contract IR's admission of the bytes
-    /// emitted from the checked unit: its `package_id` differs from the one
-    /// the emitter computed for the unit, or the unit was never emitted.
-    #[error("the admitted package {admitted} is not the checked unit's emission ({emitted:?})")]
-    AdmittedPackage {
-        /// The admitted package's `package_id` digest.
-        admitted: String,
-        /// The unit's emitted `package_id` digest, or `None` when the unit
-        /// was never emitted.
-        emitted: Option<String>,
-    },
     /// The occurrence is not the claim's scalar application.
     #[error("the occurrence does not name a scalar application of the called function: {0:?}")]
     ScalarIdentity(BindIdentityCause),
@@ -222,7 +211,7 @@ impl BindRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::AdmittedPackage { .. } | Self::ScalarIdentity(_) => Code::StaleDependency,
+            Self::ScalarIdentity(_) => Code::StaleDependency,
             Self::Operands(_)
             | Self::OperandNotParameter { .. }
             | Self::OperandNotArgument { .. } => Code::UnsupportedConstruct,
@@ -233,7 +222,7 @@ impl BindRefusal {
     /// The catalog cause, where the code has one here.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
-            Self::AdmittedPackage { .. } | Self::ScalarIdentity(_) => Some("content-mismatch"),
+            Self::ScalarIdentity(_) => Some("content-mismatch"),
             Self::Operands(_)
             | Self::OperandNotParameter { .. }
             | Self::OperandNotArgument { .. } => Some("expression-form"),
@@ -271,9 +260,7 @@ fn fault(invariant: &'static str) -> Box<RunRefusal> {
 /// once by the caller under [`admission_evidence`]; `models` and `checked`
 /// are the I1 and S4 products those bytes were emitted from. The entry takes
 /// no bytes and admits nothing: the operands are read from `admitted` as
-/// given. An `admitted` whose `package_id` is not the one the emitter
-/// computed for `checked` is refused [`BindRefusal::AdmittedPackage`]
-/// before anything else is checked.
+/// given.
 ///
 /// `Err` is [`super::run`]'s own refusal for the call's admission, and its
 /// internal failure. `cancel` is polled as [`super::run`] polls it.
@@ -286,13 +273,6 @@ pub fn bind_scalar_operands(
     environment: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<BindOutcome, Box<RunRefusal>> {
-    let emitted = checked.package().emitted_package_id().map(|id| id.hex());
-    if emitted.as_deref() != Some(admitted.package_id().digest.as_ref()) {
-        return Ok(BindOutcome::Refused(BindRefusal::AdmittedPackage {
-            admitted: admitted.package_id().digest.to_string(),
-            emitted,
-        }));
-    }
     let package = Package {
         admitted,
         models,
@@ -408,18 +388,15 @@ fn locate(
             called: call.function.clone(),
         }));
     }
-    let node = occurrence.application;
-    let not_a_node = || identity(BindIdentityCause::Node { node });
+    let node = occurrence.application.clone();
+    let not_a_node = || identity(BindIdentityCause::Node { node: node.clone() });
     let graph = checked.graph().semantic_graph();
-    let semantic = graph
-        .resolve_wire(node)
-        .and_then(|key| graph.node(key))
-        .ok_or_else(not_a_node)?;
+    let semantic = graph.node(node.clone()).ok_or_else(not_a_node)?;
     let callable = checked
         .graph()
         .callable(&call.function)
         .ok_or_else(not_a_node)?;
-    if !in_body(graph, callable.identity, semantic.key()) {
+    if !in_body(graph, &callable.identity, semantic.key()) {
         return Err(not_a_node());
     }
     if !ScalarOperator::ALL
@@ -433,7 +410,7 @@ fn locate(
             occurrence: occurrence.occurrence.clone(),
         })
     };
-    if occurrence.occurrence.node() != node {
+    if *occurrence.occurrence.node() != node {
         return Err(absent());
     }
     let origin = occurrence.occurrence.origin();
@@ -446,7 +423,7 @@ fn locate(
         })
         .ok_or_else(absent)?;
     let checked_origin = checked_occurrence(origin).ok_or_else(absent)?;
-    Ok((checked_node_id(node), checked_origin))
+    Ok((wire_node_id(&node), checked_origin))
 }
 
 /// A bound operand before the `i64` check.
@@ -463,7 +440,7 @@ struct Resolver<'a> {
     /// The called function's parameters in declared order.
     parameters: &'a [(String, ValueType)],
     /// Their node ids, in the same order.
-    parameter_nodes: Vec<WireNodeId>,
+    parameter_nodes: Vec<NodeKey>,
     /// The admitted argument values, in declared parameter order.
     arguments: &'a [Value],
     /// Their indices in `Call.arguments`, in declared parameter order.
@@ -485,7 +462,6 @@ impl<'a> Resolver<'a> {
         let parameter_nodes = callable_parameter_keys(checked, &callable)
             .map_err(|fault| Box::new(RunRefusal::Fault(fault)))?
             .into_iter()
-            .map(|key| WireNodeId::from_digest(*key.as_bytes()))
             .collect();
         Ok(Self {
             ir: package.admitted,
@@ -540,7 +516,9 @@ impl<'a> Resolver<'a> {
             }
             CheckedScalarOperandChild::GraphChild(id) => id,
         };
-        let node = WireNodeId::from_hex(&id.digest)
+        // DEPENDENCY: the migrated `CheckedNodeId { package, path, ordinal }`
+        // reads as a structural key through `NodeKey::try_from`.
+        let node = structural_node_key(id)
             .ok_or_else(|| Halt::Run(fault("operand-child-id-is-a-wire-node-id")))?;
         let declaration = self
             .ir
@@ -592,3 +570,94 @@ impl<'a> Resolver<'a> {
 
 #[cfg(test)]
 mod tests;
+
+/// The V2 wire identity of a structural key. Nested path nodes are visited
+/// with an explicit stack so their depth cannot consume the call stack.
+pub(crate) fn wire_node_id(key: &NodeKey) -> CheckedNodeId {
+    use quire_contract_model::CheckedNodePathSegment;
+    use quire_exact::{NodeKeyView, NodePathIter, PathSegmentView};
+    struct Frame<'a> {
+        package: &'a str,
+        ordinal: u64,
+        segments: NodePathIter<'a>,
+        path: Vec<CheckedNodePathSegment>,
+    }
+    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
+        Frame {
+            package: view.package(),
+            ordinal: view.ordinal(),
+            segments: view.path(),
+            path: Vec::new(),
+        }
+    }
+    let mut current = frame(key.view());
+    let mut parents = Vec::new();
+    loop {
+        match current.segments.next() {
+            Some(PathSegmentView::Text(text)) => {
+                current.path.push(CheckedNodePathSegment::Name(text.into()));
+            }
+            Some(PathSegmentView::Node(nested)) => {
+                parents.push(std::mem::replace(&mut current, frame(nested)));
+            }
+            None => {
+                let id = CheckedNodeId {
+                    package: current.package.into(),
+                    path: std::mem::take(&mut current.path),
+                    ordinal: current.ordinal,
+                };
+                let Some(mut parent) = parents.pop() else {
+                    return id;
+                };
+                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
+                current = parent;
+            }
+        }
+    }
+}
+
+/// The structural key a V2 wire identity names, or `None` when the wire id
+/// is not a valid key. The explicit parent stack handles any depth.
+pub(crate) fn structural_node_key(id: &CheckedNodeId) -> Option<NodeKey> {
+    use quire_contract_model::CheckedNodePathSegment;
+    use quire_exact::PathSegment;
+    struct Frame<'a> {
+        package: &'a str,
+        ordinal: u64,
+        segments: std::slice::Iter<'a, CheckedNodePathSegment>,
+        path: Vec<PathSegment>,
+    }
+    fn frame(id: &CheckedNodeId) -> Frame<'_> {
+        Frame {
+            package: &id.package,
+            ordinal: id.ordinal,
+            segments: id.path.iter(),
+            path: Vec::new(),
+        }
+    }
+    let mut current = frame(id);
+    let mut parents = Vec::new();
+    loop {
+        match current.segments.next() {
+            Some(CheckedNodePathSegment::Name(text)) => {
+                current.path.push(PathSegment::Text(text.to_string()));
+            }
+            Some(CheckedNodePathSegment::Node(nested)) => {
+                parents.push(std::mem::replace(&mut current, frame(nested)));
+            }
+            None => {
+                let key = NodeKey::new(
+                    current.package,
+                    std::mem::take(&mut current.path),
+                    current.ordinal,
+                )
+                .ok()?;
+                let Some(mut parent) = parents.pop() else {
+                    return Some(key);
+                };
+                parent.path.push(PathSegment::Node(key));
+                current = parent;
+            }
+        }
+    }
+}

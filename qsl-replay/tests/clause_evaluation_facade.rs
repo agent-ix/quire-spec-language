@@ -116,6 +116,7 @@ fn accounting(work_units: u64) -> ScalarLimits {
 fn evaluate(clause: &str, observation: ClauseObservation, work_units: u64) -> ClauseEvaluation {
     evaluate_clause(ClauseEvaluationRequest {
         source: SourceIdentity::new("a", "u", "git", "1"),
+        package_name: "fixture".to_owned(),
         path: "unit.native".to_owned(),
         bytes: unit().into_bytes(),
         packages: vec![MODEL.as_bytes().to_vec()],
@@ -258,6 +259,7 @@ fn a_snapshot_over_the_observation_byte_limit_is_incomplete() {
     let size = snapshot("current", &rows).len() as u64;
     let request = |bound: u64| ClauseEvaluationRequest {
         source: SourceIdentity::new("a", "u", "git", "1"),
+        package_name: "fixture".to_owned(),
         path: "unit.native".to_owned(),
         bytes: unit().into_bytes(),
         packages: vec![MODEL.as_bytes().to_vec()],

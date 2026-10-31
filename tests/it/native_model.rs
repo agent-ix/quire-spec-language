@@ -207,14 +207,6 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
         .model()
         .artifact_bytes()
     );
-    let with_whitespace = format!("{}\n", native_rule_model::fixture());
-    assert_ne!(
-        original.artifact_bytes(),
-        native_rule_model::from_text(&with_whitespace, "native-rule-model.json", "draft:1")
-            .unwrap()
-            .model()
-            .artifact_bytes()
-    );
 }
 
 #[test]

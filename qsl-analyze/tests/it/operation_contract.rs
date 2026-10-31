@@ -14,7 +14,6 @@ use qsl_analyze::analyze::{analyze, contract_item, AnalyzeRecord, Engines, Settl
 use qsl_analyze::contract_check::{manifest, ContractRequest};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_forms::StateClauseKind;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::RequestIndex;
 use qsl_replay::contract_check::{
     select_contract, CaseVerdict, ContractCase, ContractObligation, ContractSelection,
@@ -44,10 +43,7 @@ fn clause(world: &World, name: &str) -> OccurrenceKey {
         .iter()
         .find(|clause| clause.name() == name)
         .unwrap_or_else(|| panic!("the clause {name} is checked"));
-    OccurrenceKey::new(
-        WireNodeId::from_digest(*clause.identity().as_bytes()),
-        clause.claim().clone(),
-    )
+    OccurrenceKey::new(clause.identity().clone(), clause.claim().clone())
 }
 
 fn run(world: &World, claim: &OccurrenceKey, max_cases: Option<u64>) -> AnalyzeRecord {
@@ -272,7 +268,7 @@ fn the_case_budget_settles_incomplete_naming_max_cases() {
 fn a_claim_that_selects_no_form_is_declined_invalid_input() {
     let world = world("", 0);
     let claim = OccurrenceKey::new(
-        WireNodeId::from_digest([7; 32]),
+        crate::fixture_ids::node_key([7]),
         Origin::new(Role::new("claim"), 0),
     );
     assert_eq!(
@@ -298,12 +294,9 @@ fn an_unbound_frame_item_is_unsupported_with_no_contract_level_reading() {
         .expect("CONFIG_CONTRACT's postcondition");
     let operation = clause.operation().expect("a post names its operation");
     let anchor = graph
-        .operation_anchor_of(operation.declaring, operation.declaration.name())
+        .operation_anchor_of(operation.declaring.clone(), operation.declaration.name())
         .expect("the operation has an anchor");
-    let claim = OccurrenceKey::new(
-        WireNodeId::from_digest(*anchor.as_bytes()),
-        Origin::new(Role::new("anchor"), 0),
-    );
+    let claim = OccurrenceKey::new(anchor.clone(), Origin::new(Role::new("anchor"), 0));
     let record = run(&world, &claim, None);
     let TerminalValue::Unsupported(UnavailabilityCause::ContractCheck { form, reason }) =
         terminal(&record)
@@ -678,10 +671,7 @@ fn assert_no_per_step_reading(
     assert!(refinement.step_simulations().is_empty());
     let node = refinement.v2_emission().expect("emits").identity;
     for ordinal in [0, 1] {
-        let claim = OccurrenceKey::new(
-            WireNodeId::from_digest(*node.as_bytes()),
-            Origin::new(Role::new("generated"), ordinal),
-        );
+        let claim = OccurrenceKey::new(node.clone(), Origin::new(Role::new("generated"), ordinal));
         let request = select_contract(package, &claim).map(|selected| ContractRequest {
             package,
             claim: selected,
@@ -784,12 +774,12 @@ fn a_bound_step_relation_is_unsupported_with_no_implementation_engine() {
     let [relation] = graph.step_relations() else {
         panic!("one step relation");
     };
-    let node = WireNodeId::from_digest(*relation.identity().expect("assembled").as_bytes());
+    let node = relation.identity().expect("assembled").clone();
     let code: Vec<&OccurrenceKey> = graph
         .requirements()
         .iter()
         .filter(|(occurrence, record)| {
-            occurrence.node() == node
+            occurrence.node() == &node
                 && record.requirements().kind()
                     == qsl_semantics::check::Capability::OperationContract
         })

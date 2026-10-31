@@ -66,7 +66,7 @@ pub(super) fn member<'v>(node: &'v Value, name: &str) -> &'v Value {
 }
 
 /// Each step of an aggregate path, its literal members by name and a
-/// reference member as `ref:<digest>`.
+/// reference member as `ref:<node id>`.
 fn steps(path: &Value) -> Vec<Vec<(String, String)>> {
     path["members"]
         .as_array()
@@ -80,10 +80,7 @@ fn steps(path: &Value) -> Vec<Vec<(String, String)>> {
                 .map(|member| {
                     let value = &member["value"];
                     let shown = match value["term"].as_str() {
-                        Some("reference") => format!(
-                            "ref:{}",
-                            value["target"]["digest"].as_str().unwrap_or_default()
-                        ),
+                        Some("reference") => format!("ref:{}", value["target"]),
                         _ => match &value["value"] {
                             Value::String(text) => text.clone(),
                             other => other.to_string(),
@@ -117,15 +114,19 @@ fn a_clock_collection_emits_one_template_place() {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
+    let integer = qsl_semantics::check::builtin_integer_type_key(graph.package_name())
+        .expect("the built-in integer key");
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
-    let integer = qsl_semantics::check::builtin_integer_type_key().to_string();
     assert!(
         nodes(&wire)
             .iter()
-            .any(|node| node["node_id"]["digest"] == integer
-                && node["node_tag"] == "scalar_type"
-                && node["semantic_form"] == "integer"),
+            .any(
+                |node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).as_ref()
+                    == Ok(&integer)
+                    && node["node_tag"] == "scalar_type"
+                    && node["semantic_form"] == "integer"
+            ),
         "the selector's Integer type node is in the graph"
     );
     let places: Vec<&Value> = nodes(&wire)
@@ -151,7 +152,14 @@ fn a_clock_collection_emits_one_template_place() {
             vec![
                 ("kind".to_owned(), "slot".to_owned()),
                 ("collection".to_owned(), "sequence".to_owned()),
-                ("selector".to_owned(), format!("ref:{integer}")),
+                (
+                    "selector".to_owned(),
+                    format!(
+                        "ref:{}",
+                        qsl_foundation::node_wire::node_key_to_json(&integer)
+                            .expect("a structural key")
+                    )
+                ),
                 ("minimum".to_owned(), "0".to_owned()),
                 ("maximum".to_owned(), "3".to_owned()),
             ],
@@ -224,12 +232,9 @@ fn a_clock_collection_emits_one_template_place() {
         .as_array()
         .expect("clock_places")
         .iter()
-        .map(|reference| &reference["target"]["digest"])
+        .map(|reference| &reference["target"])
         .collect();
-    let mut emitted: Vec<&Value> = places
-        .iter()
-        .map(|place| &place["node_id"]["digest"])
-        .collect();
+    let mut emitted: Vec<&Value> = places.iter().map(|place| &place["node_id"]).collect();
     listed.sort_by_key(|digest| digest.to_string());
     emitted.sort_by_key(|digest| digest.to_string());
     assert_eq!(listed, emitted);
@@ -258,7 +263,6 @@ fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .map_err(|failure| format!("{failure:?}"))?;
     CheckedTimedModel::from_admitted(&read.into_value().admitted).map_err(str::to_owned)
@@ -394,97 +398,6 @@ pub(super) fn vector_document() -> Vec<u8> {
     serde_json::to_vec(&document).expect("the fixture stays JSON")
 }
 
-/// QSpec FR-322-AC-148/149 conformance (TC-685 step 33): the emitted
-/// template places of `ts`, `g` and `s` equal the `node` of the published
-/// timed-slot-selector vectors SL-01, SL-05 and SL-07, and those of `v` and
-/// `q` the vectors' presence places `v` and `q` (body and dependencies), once the vectors' `acme/orders` model node digest and
-/// type identities are read as this package's. Reads the vectors from
-/// `$QSPEC_DIR` (skipped, and passing, when it is unset; `make
-/// conformance` requires it); nothing of QSpec is copied here.
-#[trace("TC-685")]
-#[test]
-fn conformance_the_template_places_match_the_slot_selector_vectors() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    let path = std::path::Path::new(&qspec)
-        .join("proposals/checked-package-v2/timed-slot-selector-vectors.json");
-    let vectors: Value = serde_json::from_slice(
-        &std::fs::read(&path).unwrap_or_else(|failure| panic!("{}: {failure}", path.display())),
-    )
-    .expect("the vectors are JSON");
-    let document = vector_document();
-    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
-    let graph = assemble_with_models(clocked_unit("").as_bytes(), &packages)
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
-    let wire = wire(&emission);
-    let place = |name: &str| {
-        nodes(&wire)
-            .iter()
-            .find(|node| {
-                node["semantic_form"] == "clock_place"
-                    && steps(member(&node["body"], "path"))[0][1].1 == name
-            })
-            .unwrap_or_else(|| panic!("the place of {name}"))
-            .clone()
-    };
-    let vector_model = vectors["type_nodes"]["model"]
-        .as_str()
-        .expect("the model digest");
-    let published_node = |case: &str| {
-        vectors["cases"]
-            .as_array()
-            .expect("cases")
-            .iter()
-            .find(|vector| vector["id"] == case)
-            .map(|vector| vector["node"].clone())
-            .or_else(|| {
-                let place = case.strip_prefix("presence ")?;
-                Some(vectors["presence"]["places"][place]["node"].clone())
-            })
-            .filter(|node| !node.is_null())
-            .unwrap_or_else(|| panic!("{case} is published"))
-    };
-    for (case, name) in [
-        ("SL-01", "ts"),
-        ("SL-05", "g"),
-        ("SL-07", "s"),
-        ("presence v", "v"),
-        ("presence q", "q"),
-    ] {
-        let emitted = place(name);
-        let model = member(&emitted["body"], "model")["target"]["digest"]
-            .as_str()
-            .expect("a model reference")
-            .to_owned();
-        let read = serde_json::to_string(&published_node(case))
-            .expect("JSON")
-            .replace(vector_model, &model)
-            .replace(
-                "ix://acme/orders/Order",
-                "ix://example/config-version/ConfigVersion",
-            )
-            .replace("ix://acme/orders/", "ix://example/config-version/");
-        let published: Value = serde_json::from_str(&read).expect("JSON");
-        assert_eq!(emitted["body"], published["body"], "{case}");
-        let digests = |node: &Value| {
-            let mut digests: Vec<String> = node["dependencies"]
-                .as_array()
-                .expect("dependencies")
-                .iter()
-                .map(|dependency| dependency["digest"].as_str().unwrap_or_default().to_owned())
-                .collect();
-            digests.sort();
-            digests
-        };
-        assert_eq!(digests(&emitted), digests(&published), "{case}");
-    }
-}
-
 /// [`read_back`] of the unit with `body` after [`clocked_unit`]'s text.
 fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>, String> {
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
@@ -506,7 +419,6 @@ fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>,
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .map_err(|failure| format!("{failure:?}"))?;
     CheckedTimedModel::from_admitted(&read.into_value().admitted).map_err(str::to_owned)
@@ -571,7 +483,7 @@ fn an_urgency_predicate_is_a_located_expression_node() {
     let by_id = |digest: &Value| {
         nodes(&wire)
             .iter()
-            .find(|node| &node["node_id"]["digest"] == digest)
+            .find(|node| &node["node_id"] == digest)
             .unwrap_or_else(|| panic!("node {digest}"))
     };
     let [root] = nodes(&wire)
@@ -585,7 +497,7 @@ fn an_urgency_predicate_is_a_located_expression_node() {
         .as_array()
         .expect("urgencies")
         .iter()
-        .map(|reference| by_id(&reference["target"]["digest"]))
+        .map(|reference| by_id(&reference["target"]))
         .collect();
     let starts: Vec<u64> = listed
         .iter()
@@ -606,7 +518,7 @@ fn an_urgency_predicate_is_a_located_expression_node() {
         .map(|node| &member(&node["body"], "kind")["value"])
         .collect();
     assert_eq!(kinds, [&json!("operation"), &json!("when")]);
-    let predicate = by_id(&member(&listed[1]["body"], "predicate")["target"]["digest"]);
+    let predicate = by_id(&member(&listed[1]["body"], "predicate")["target"]);
     assert_eq!(predicate["node_tag"], "expression");
     let located = wire["source_map"]
         .as_array()

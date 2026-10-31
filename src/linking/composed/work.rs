@@ -10,7 +10,6 @@ pub struct WorkLimits {
     /// UTF-8 bytes in inventory language/edition; each expected authority and
     /// source identity/revision; each supplied source identity/revision/path/text.
     /// Each occurrence is counted once, including duplicate/unexpected sources.
-    /// Fixed-width ByteDigest values require no textual digest parsing or hashing.
     pub source_bytes: usize,
     /// One entry per expected source, then one per supplied Source, before access.
     pub units: usize,

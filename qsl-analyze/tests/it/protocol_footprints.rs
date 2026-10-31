@@ -72,12 +72,12 @@ impl Cells {
 
 /// The reference of the cell `name`.
 fn cell(system: &ProtocolSystem<'_, Sc>, name: &str) -> ObjectReference {
-    let ValueType::Reference(cell) = system.protocol().slots.binders[0].value_type else {
+    let ValueType::Reference(cell) = &system.protocol().slots.binders[0].value_type else {
         panic!("`k` is a cell");
     };
     system
         .model()
-        .bound_reference(cell, &instance(name))
+        .bound_reference(cell.clone(), &instance(name))
         .expect("a cell of the universe")
 }
 

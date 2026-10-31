@@ -21,7 +21,6 @@ use serde_json::{json, Value as Json};
 
 /// The package's identity.
 pub const PACKAGE: &str = "test/counter";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// `ix://test/counter/<suffix>`.
 pub fn ident(suffix: &str) -> String {
@@ -147,18 +146,16 @@ pub fn document(archive: bool) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
     .collect();
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs, "types": types, "populations": populations,
     })
@@ -216,8 +213,13 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         ModelNormalizationLimits::default(),
     )
     .expect("the model selection admits");
-    let assembled =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, models, vec![]);
+    let assembled = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        vec![],
+    );
     let declarations = match assembled {
         Ok(declarations) => declarations,
         Err(refusal) => {

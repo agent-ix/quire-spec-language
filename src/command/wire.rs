@@ -101,8 +101,6 @@ pub(super) struct ClauseRun {
     /// counter object and defaults.
     #[serde(default, deserialize_with = "from_object")]
     pub accounting: Accounting,
-    #[serde(default)]
-    pub package_id: Option<String>,
     #[serde(default, deserialize_with = "from_object_opt")]
     pub observation_limits: Option<qsl_replay::spine::ObservationLimitsWire>,
 }
@@ -228,7 +226,6 @@ fn selected_package<'de, D: serde::Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceFile {
     pub file: String,
-    pub digest: String,
     #[serde(flatten)]
     pub identity: Identity,
 }

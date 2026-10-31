@@ -20,12 +20,10 @@ use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
 use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
 use crate::check::lowering::AdmittedModel;
-use crate::check::node_key::nominal_key;
 use crate::check::temporal_clause::TimeNominalNode;
 use crate::model::domain_package::PackageUnitRecord;
-use crate::value::semantic_node::{ModelSubject, NodeOwner};
-use crate::value::unit::{DimensionPreimage, UnitPreimage};
-use qsl_foundation::IdentityLimits;
+use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
+use crate::value::semantic_node::{ModelSubject, NodeOwner, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
 
@@ -67,35 +65,60 @@ impl TimeUnits {
         keys: impl IntoIterator<Item = NodeKey>,
         models: &[AdmittedModel],
         equivalences: &[DimensionEquivalence],
-        identity: IdentityLimits,
+        source: &qsl_foundation::source::provenance::RawSourceRef,
+        package_name: &str,
     ) -> Self {
+        let source_owner = NodeOwner::Source(OwnerSubject::new(
+            source.authority(),
+            source.identity(),
+            package_name,
+        ));
         let table = UnitTable::declared(graph);
         let mut time = None;
         let mut time_dimensions = BTreeMap::new();
         let mut units = BTreeMap::new();
         let mut nominal_nodes = BTreeMap::new();
         for key in keys {
-            let Some(node) = table.nominal_node(key.as_bytes()) else {
+            let Some(node) = table.nominal_node(&key) else {
                 continue;
             };
             let dependencies = match &node.form {
-                NominalUnitForm::Dimension { terms } => terms.iter().map(|(key, _)| *key).collect(),
+                NominalUnitForm::Dimension { terms } => {
+                    terms.iter().map(|(key, _)| key.clone()).collect()
+                }
                 NominalUnitForm::Unit {
                     dimension, target, ..
-                } => std::iter::once(*dimension)
-                    .chain(target.iter().copied())
+                } => std::iter::once(dimension.clone())
+                    .chain(target.iter().cloned())
                     .collect(),
             };
             nominal_nodes.insert(
-                key,
+                key.clone(),
                 TimeNominalNode {
-                    key,
+                    key: key.clone(),
                     form: match &node.form {
                         NominalUnitForm::Dimension { .. } => "dimension",
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
-                    preimage: node.declaration.preimage.clone(),
+                    qualified_declaration: Some(node.declaration.qualified_declaration.clone()),
+                    owner: source_owner.clone(),
+                    nominal: Some(match &node.form {
+                        NominalUnitForm::Dimension { terms } => {
+                            NominalPayload::Dimension(DimensionPayload::new(terms.clone()))
+                        }
+                        NominalUnitForm::Unit {
+                            dimension,
+                            target,
+                            scale,
+                            offset,
+                        } => NominalPayload::Unit(UnitPayload::new(
+                            dimension.clone(),
+                            target.clone(),
+                            scale.clone(),
+                            offset.clone(),
+                        )),
+                    }),
                     dependencies,
                 },
             );
@@ -105,15 +128,15 @@ impl TimeUnits {
             match &node.form {
                 NominalUnitForm::Dimension { terms } => {
                     if terms.is_empty() && name == TIME_DIMENSION {
-                        time = Some(key);
+                        time = Some(key.clone());
                     }
                 }
                 NominalUnitForm::Unit { .. } => {
-                    if let Some(unit) = graph.unit(key) {
+                    if let Some(unit) = graph.unit(key.clone()) {
                         units.insert(
                             name.clone(),
                             DeclaredUnit {
-                                node: Some(key),
+                                node: Some(key.clone()),
                                 dimension: Some(unit.dimension_node()),
                                 scale: unit.canonical().scale().clone(),
                                 offset: unit.canonical().offset().clone(),
@@ -129,30 +152,29 @@ impl TimeUnits {
                 .dimensions
                 .iter()
                 .find(|dimension| dimension.base && dimension.name == TIME_DIMENSION);
-            let time_node = dimension.and_then(|dimension| {
-                let owner = NodeOwner::Model(ModelSubject {
-                    identity: package.identity.clone(),
-                    node: dimension.key.node.clone(),
-                });
-                let preimage =
-                    DimensionPreimage::new(owner, vec![dimension.name.clone()], vec![]).ok()?;
-                let key = nominal_key(&preimage, identity).ok()?;
-                Some((key, preimage.preimage_bytes(identity).ok()?))
-            });
-            let time_key = time_node.as_ref().map(|(key, _)| *key);
-            if let Some((time_key, preimage)) = time_node {
+            let time_node =
+                dimension.and_then(|dimension| scalar_type_key(&dimension.key, "dimension"));
+            let time_key = time_node.clone();
+            if let Some(time_key) = time_node {
                 nominal_nodes.insert(
-                    time_key,
+                    time_key.clone(),
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
-                        preimage,
+                        qualified_declaration: None,
+                        owner: NodeOwner::Model(ModelSubject {
+                            identity: package.identity.clone(),
+                            node: dimension
+                                .map(|dimension| dimension.key.node.clone())
+                                .unwrap_or_default(),
+                        }),
                         dependencies: Vec::new(),
+                        nominal: Some(NominalPayload::Dimension(DimensionPayload::new(Vec::new()))),
                     },
                 );
             }
             let prefix = model.alias().unwrap_or(&package.identity);
-            if let Some(time_key) = time_key {
+            if let Some(time_key) = time_key.clone() {
                 time_dimensions.insert(prefix.to_owned(), time_key);
             }
             for unit in &model.units {
@@ -160,21 +182,21 @@ impl TimeUnits {
                     continue;
                 };
                 let package_nodes = dimension.and_then(|dimension| {
-                    let time_key = time_key?;
+                    let time_key = time_key.clone()?;
                     (unit.dimension == dimension.key).then(|| {
-                        package_unit_nominal_nodes(unit, &model.units, time_key, identity)
+                        package_unit_nominal_nodes(unit, &model.units, time_key, &package.identity)
                     })?
                 });
                 if let Some(package_nodes) = &package_nodes {
                     for node in package_nodes {
-                        nominal_nodes.insert(node.key, node.clone());
+                        nominal_nodes.insert(node.key.clone(), node.clone());
                     }
                 }
                 let node = package_nodes
                     .as_ref()
-                    .and_then(|nodes| nodes.last().map(|node| node.key));
+                    .and_then(|nodes| nodes.last().map(|node| node.key.clone()));
                 let dimension_key = dimension
-                    .zip(time_key)
+                    .zip(time_key.clone())
                     .filter(|(dimension, _)| unit.dimension == dimension.key)
                     .map(|(_, key)| key);
                 units.insert(
@@ -203,9 +225,9 @@ impl TimeUnits {
     pub fn scale(&self, name: &str) -> Result<&Rational, TimeUnitCause> {
         let owner_time = name
             .split_once("::")
-            .and_then(|(owner, _)| self.time_dimensions.get(owner).copied());
+            .and_then(|(owner, _)| self.time_dimensions.get(owner).cloned());
         let time = owner_time
-            .or(self.time)
+            .or(self.time.clone())
             .ok_or(TimeUnitCause::NoTimeDimension {
                 name: TIME_DIMENSION,
             })?;
@@ -239,9 +261,11 @@ impl TimeUnits {
             .ok_or_else(|| TimeUnitCause::UnknownUnit {
                 name: name.to_owned(),
             })?;
-        unit.dimension.ok_or(TimeUnitCause::NotTimeDimension {
-            name: name.to_owned(),
-        })
+        unit.dimension
+            .clone()
+            .ok_or(TimeUnitCause::NotTimeDimension {
+                name: name.to_owned(),
+            })
     }
 
     /// The time unit `name` as a conversion target: the reciprocal of its
@@ -253,11 +277,11 @@ impl TimeUnits {
         let unit = self
             .units
             .get(name)
-            .and_then(|unit| unit.node)
+            .and_then(|unit| unit.node.clone())
             .ok_or_else(|| TimeUnitCause::NotTimeDimension {
                 name: name.to_owned(),
             })?;
-        let nominal_nodes = self.nominal_dependency_closure([dimension, unit]);
+        let nominal_nodes = self.nominal_dependency_closure([dimension.clone(), unit.clone()]);
         Ok(Rational::from_integer(Integer::one())
             .div(scale)
             .map(|reciprocal| TimeScale {
@@ -278,14 +302,14 @@ impl TimeUnits {
             seen: &mut BTreeSet<NodeKey>,
             ordered: &mut Vec<TimeNominalNode>,
         ) {
-            if !seen.insert(key) {
+            if !seen.insert(key.clone()) {
                 return;
             }
             let Some(node) = nodes.get(&key) else {
                 return;
             };
             for dependency in &node.dependencies {
-                visit(*dependency, nodes, seen, ordered);
+                visit(dependency.clone(), nodes, seen, ordered);
             }
             ordered.push(node.clone());
         }
@@ -312,7 +336,7 @@ impl TimeUnits {
     ) -> Result<Rational, TimeUnitCause> {
         let scale = self.scale(from)?;
         let (from_class, from_size) = self.classes.class(self.dimension(from)?);
-        let (to_class, to_size) = self.classes.class(to.dimension);
+        let (to_class, to_size) = self.classes.class(to.dimension.clone());
         let other = || TimeUnitCause::OtherTimeDimension {
             name: from.to_owned(),
         };
@@ -352,18 +376,33 @@ pub(crate) fn package_unit_scale(
     }
 }
 
+/// The key of a model package's dimension or unit node: package the
+/// declaring model package, path `["scalar_type", form, <FCD identity>]` (the
+/// identity opaque, never split) and ordinal 0.
+pub(crate) fn scalar_type_key(
+    key: &quire_checked::key::DeclarationKey,
+    form: &str,
+) -> Option<NodeKey> {
+    crate::check::declared_node_key(
+        key.package.clone(),
+        vec!["scalar_type".to_owned(), form.to_owned(), key.node.clone()],
+        0,
+    )
+    .ok()
+}
+
 /// The nominal nodes of an admitted package unit and its target chain.
 fn package_unit_nominal_nodes(
     start: &PackageUnitRecord,
     units: &[PackageUnitRecord],
     dimension: NodeKey,
-    identity: IdentityLimits,
+    identity: &str,
 ) -> Option<Vec<TimeNominalNode>> {
     fn resolve(
         unit: &PackageUnitRecord,
         units: &[PackageUnitRecord],
         dimension: NodeKey,
-        identity: IdentityLimits,
+        identity: &str,
         seen: &mut BTreeSet<quire_checked::key::DeclarationKey>,
     ) -> Option<Vec<TimeNominalNode>> {
         if !seen.insert(unit.key.clone()) {
@@ -372,33 +411,31 @@ fn package_unit_nominal_nodes(
         let target_nodes = match &unit.target {
             Some(key) => {
                 let target = units.iter().find(|candidate| candidate.key == *key)?;
-                resolve(target, units, dimension, identity, seen)?
+                resolve(target, units, dimension.clone(), identity, seen)?
             }
             None => Vec::new(),
         };
-        let target = target_nodes.last().map(|node| node.key);
-        let scale = rational(&unit.scale)?;
+        let target = target_nodes.last().map(|node| node.key.clone());
+        let factor = rational(&unit.scale)?;
         let offset = rational(&unit.offset)?;
-        let owner = NodeOwner::Model(ModelSubject {
-            identity: unit.key.package.clone(),
-            node: unit.key.node.clone(),
-        });
-        let preimage = UnitPreimage::new(
-            owner,
-            vec![unit.name.clone()],
-            dimension,
-            target,
-            &scale,
-            &offset,
-        )
-        .ok()?;
-        let key = nominal_key(&preimage, identity).ok()?;
-        let preimage = preimage.preimage_bytes(identity).ok()?;
+        // The reader pins a model-owned unit's path to its wire tag and form:
+        // `[scalar_type, unit, <declaration>]`, like the `Time` dimension.
+        let key = scalar_type_key(&unit.key, "unit")?;
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
-            preimage,
+            qualified_declaration: None,
+            owner: NodeOwner::Model(ModelSubject {
+                identity: identity.to_owned(),
+                node: unit.key.node.clone(),
+            }),
+            nominal: Some(NominalPayload::Unit(UnitPayload::new(
+                dimension.clone(),
+                target.clone(),
+                factor,
+                offset,
+            ))),
             dependencies: std::iter::once(dimension).chain(target).collect(),
         });
         Some(nodes)
@@ -433,12 +470,12 @@ pub struct TimeScale {
 impl TimeScale {
     /// The unit's nominal dimension node.
     pub fn dimension(&self) -> NodeKey {
-        self.dimension
+        self.dimension.clone()
     }
 
     /// The unit's nominal node key.
     pub fn unit(&self) -> NodeKey {
-        self.unit
+        self.unit.clone()
     }
 
     /// Nominal dimension/unit nodes needed by this conversion target.

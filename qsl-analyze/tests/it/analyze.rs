@@ -362,7 +362,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
     let evaluation = UndefinedEvaluation {
         site: UndefinedSite {
             position: last,
-            state_key: case.package_id,
+            state_key: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]),
             locus: UndefinedLocus::Contract("CanInc".to_owned()),
             transition: None,
             time: None,
@@ -376,7 +376,6 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
             stats: RunStats::default(),
         },
         &ModelCheckLimits::default(),
-        &case.package_id,
         &case.request(),
         &Cancel::new(),
         |payload| {

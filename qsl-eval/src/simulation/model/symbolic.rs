@@ -302,7 +302,7 @@ impl<'a> ModelSystem<'a> {
                 })
                 .collect();
             fields.sort_by(|left, right| left.name.cmp(&right.name));
-            let operations = self.symbolic_operations(type_id, &references)?;
+            let operations = self.symbolic_operations(type_id.clone(), &references)?;
             objects.push(SymbolicObject {
                 population: population.clone(),
                 key: key.clone(),
@@ -397,7 +397,7 @@ impl<'a> ModelSystem<'a> {
             for (position, (_, value_type)) in parameters.iter().enumerate() {
                 domains.push(
                     match self.probabilistic.support(
-                        application.declaring,
+                        application.declaring.clone(),
                         &application.name,
                         position,
                     ) {
@@ -430,7 +430,7 @@ impl<'a> ModelSystem<'a> {
                         .filter(|clause| {
                             clause.operation.as_ref().is_some_and(|(owner, name)| {
                                 *owner == application.declaring && *name == application.name
-                            }) && self.types.conforms(type_id, clause.context)
+                            }) && self.types.conforms(type_id.clone(), clause.context.clone())
                         })
                         .map(|clause| {
                             package

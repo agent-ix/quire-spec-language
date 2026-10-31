@@ -12,7 +12,6 @@ use super::protocol_graph::{argument, clause, member, target, PROFILES};
 use super::protocol_reference::clause_argument;
 use super::reachability::{lower_with, Lowered};
 use super::*;
-use crate::checked_v2::tests::rekey_stale;
 
 const MEMBERS: &str = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
     channel Ch from Buyer to Seller carries Boolean ordering unordered \
@@ -119,27 +118,26 @@ fn pair(name: &str, level: &str) -> (String, String) {
 }
 
 /// Sets `node`'s dependencies to the reference targets of its body, once each
-/// in ascending digest order (a control depends on what it names).
+/// in ascending structural-key order (a control depends on what it names).
 fn redepend(envelope: &mut Value, position: usize) {
     let node = &mut envelope["semantic_graph"]["nodes"][position];
     let mut found = Vec::new();
     targets(&node["body"], &mut found);
-    found.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    found.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
     found.dedup();
     node["dependencies"] = Value::Array(found);
 }
 
-/// `lowered` after `edit`, with every stale key rebuilt.
-fn rekeyed(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> Value {
+/// `lowered` after `edit`; structural keys remain stable.
+fn modified(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> Value {
     let mut envelope = lowered.wire.clone();
     edit(&mut envelope);
-    rekey_stale(&mut envelope);
     envelope
 }
 
-/// IR's verdict on `lowered` after `edit`, with every stale key rebuilt.
+/// IR's verdict on `lowered` after `edit`.
 fn edited(lowered: &Lowered, edit: impl FnOnce(&mut Value)) -> String {
-    verdict(lowered, &rekeyed(lowered, edit))
+    verdict(lowered, &modified(lowered, edit))
 }
 
 fn children_of(envelope: &mut Value, position: usize) -> &mut Vec<Value> {
@@ -376,7 +374,7 @@ fn a_check_condition_that_reads_model_state_is_operator_ineligible() {
     let initializer = member(capture, "initializer").clone();
     assert_eq!(initializer["term"], "reference");
     let at = position(wire, run_control(wire, "Gate"));
-    let mutated = rekeyed(&lowered, |envelope| {
+    let mutated = modified(&lowered, |envelope| {
         envelope["semantic_graph"]["nodes"][at]["body"]["arguments"][0]["value"] = initializer;
         redepend(envelope, at);
     });
@@ -428,7 +426,6 @@ fn admitted_config(declarations: &str) -> Value {
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id()),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));
     wire
@@ -732,11 +729,11 @@ fn two_contracts_are_listed_in_digest_order_whatever_the_source_order() {
     };
     let forward = contracts("Alpha, Beta");
     assert_eq!(forward.len(), 2);
-    let digests: Vec<&str> = forward
+    let keys: Vec<NodeKey> = forward
         .iter()
-        .map(|id| id["digest"].as_str().unwrap())
+        .map(|id| qsl_foundation::node_wire::node_key_from_json(id).unwrap())
         .collect();
-    assert!(digests[0] < digests[1], "{digests:?}");
+    assert!(keys[0] < keys[1], "{keys:?}");
     assert_eq!(forward, contracts("Beta, Alpha"));
 }
 

@@ -63,9 +63,6 @@ pub const PACKAGE: &str = "bench/model";
 /// The package version every selection names.
 pub const VERSION: &str = "1.0.0";
 
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-
 /// A model document's size parameters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModelShape {
@@ -114,7 +111,6 @@ fn construct(name: &str, meaning: &str) -> Value {
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER_DIGEST,
         "construct": {
             "identity": "none",
             "shape": "record",
@@ -169,20 +165,17 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
     let population = node("Pop");
     let document = json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {
             "identity": node("spec"),
             "version": VERSION,
             "dialect": "spec-bundle",
-            "digest": PLACEHOLDER_DIGEST,
         },
         "package": {
             "identity": PACKAGE,
             "version": VERSION,
-            "manifestDigest": PLACEHOLDER_DIGEST,
             "mappingVersions": [],
             "profileVersions": [],
-            "lockDigest": PLACEHOLDER_DIGEST,
         },
         "occurrences": [],
         "extensions": [],
@@ -376,10 +369,11 @@ pub fn admitted(shape: ModelShape, members: usize) -> (Arc<DomainPackage>, Popul
 pub fn query_all_instances_of_root(
     binding: &PopulationBinding,
 ) -> Result<quire_exact::Value, ModelQueryHalt> {
-    let root = *binding
+    let root = binding
         .type_catalog()
         .get(&key(&chain_type(0)))
-        .expect("C0 is a declared object type");
+        .expect("C0 is a declared object type")
+        .clone();
     let maximum = binding.declared_maximum().unwrap_or(u64::MAX);
     let collection = CollectionType::new(
         CollectionKind::Set,

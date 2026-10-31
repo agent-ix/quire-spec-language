@@ -1227,7 +1227,6 @@ fn compile_with<T>(
             .map(|unit| linking::ExpectedSource {
                 authority: unit.artifact.identity.clone(),
                 identity: unit.mapping.source.source().identity().clone(),
-                digest: unit.mapping.source.source().digest(),
             })
             .collect(),
     };
@@ -1308,9 +1307,6 @@ fn namespace_issue(issue: &linking::InventoryIssue) -> StageIssue {
         ),
         I::MissingSource { .. } => ("missing source", None, None, None),
         I::UnexpectedSource { supplied } => ("unexpected source", Some(*supplied), None, None),
-        I::DigestMismatch { supplied, .. } => {
-            ("source digest mismatch", Some(*supplied), None, None)
-        }
         I::HeaderConflict {
             supplied,
             language,

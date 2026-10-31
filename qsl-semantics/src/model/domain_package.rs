@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use qsl_forms::Expression;
-use quire_canonical::FixedShape;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, TextType};
 use quire_semantic_value::location::OperationClauseKind;
@@ -1007,21 +1006,6 @@ impl DomainPackageRecord {
 pub struct DomainPackageRef {
     /// The domain package's own identity (e.g. `test/orders`).
     pub identity: String,
-}
-
-/// A [`DomainPackageRef`]'s preimage form inside the `quire.model.*` identities.
-#[derive(serde::Serialize, FixedShape)]
-pub(super) struct DomainPackageRefWire<'a> {
-    identity: &'a str,
-}
-
-impl DomainPackageRef {
-    /// This selection's preimage form: `{identity}`.
-    pub(super) fn wire(&self) -> DomainPackageRefWire<'_> {
-        DomainPackageRefWire {
-            identity: &self.identity,
-        }
-    }
 }
 
 /// A domain package: a [`DomainPackageRef`] and its ordered records.

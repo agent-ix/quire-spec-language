@@ -62,16 +62,6 @@ fn node_named_mut<'a>(value: &'a mut Value, identity: &str) -> Option<&'a mut Va
     }
 }
 
-fn refresh_manifest_digest(document: &mut Value) {
-    let digest = jcs_digest(&document["types"]);
-    document["source"]["digest"] = json!(digest);
-    document["package"]["manifestDigest"] = json!(digest);
-    document["package"]["lockDigest"] = json!(digest);
-    for construct in document["constructs"].as_array_mut().unwrap() {
-        construct["manifestDigest"] = json!(digest);
-    }
-}
-
 fn tc213_fixture() -> Value {
     let mut count = declaration("Count", "value", json!({}));
     count["target"] = json!("ix://quire/native/Integer");
@@ -133,16 +123,13 @@ fn tc213_fixture() -> Value {
         node_named_mut(&mut document, &id(node))
             .unwrap_or_else(|| panic!("TC-213 fixture has {node}"))["origin"] = origin;
     }
-    refresh_manifest_digest(&mut document);
     document
 }
 
 fn tc213_retained_map(
     document: &Value,
 ) -> (BTreeSet<DeclarationKey>, BTreeMap<DeclarationKey, Value>) {
-    let mut document = document.clone();
-    refresh_manifest_digest(&mut document);
-    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let package = read_k2(document).expect("TC-213 fixture admits");
     let admitted_keys = package
         .records
         .iter()
@@ -204,9 +191,7 @@ fn tc213_retained_map(
 fn tc213_type_identities(
     document: &Value,
 ) -> BTreeMap<DeclarationKey, qsl_semantics::model::key::EffectiveId> {
-    let mut document = document.clone();
-    refresh_manifest_digest(&mut document);
-    let package = read_k2(&document).expect("TC-213 fixture admits");
+    let package = read_k2(document).expect("TC-213 fixture admits");
     let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("TC-213 fixture normalizes: {outcome:?}");
@@ -340,6 +325,7 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
     .expect("I1 admits and normalizes the K2-derived model");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        crate::TEST_PACKAGE_NAME.to_owned(),
         unit,
         selected,
         Vec::new(),
@@ -503,7 +489,6 @@ fn scalar_original_has_no_effective_entry_or_extra_charge() {
     for charge in [
         ChargePoint::NormalizeFact,
         ChargePoint::NormalizeDeclaration,
-        ChargePoint::NormalizeHash,
     ] {
         let count = |meter: &qsl_semantics::model::accounting::Meter| {
             meter
@@ -1099,11 +1084,12 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     let owner = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Money"),
-    }];
+    }]
+        .clone();
     assert!(view.declarations().iter().any(|declaration| {
         declaration.visible
             && declaration.preimage.original == invariant_key
-            && declaration.preimage.owner_effective_type == Some(owner)
+            && declaration.preimage.owner_effective_type == Some(owner.clone())
     }));
 
     let foreign_document = mutate_k2(|document| {
@@ -1205,11 +1191,13 @@ fn record_value_subtype_preserves_effective_fields_support() {
         package: PACKAGE.to_owned(),
         node: id("TaxedMoney"),
     };
-    let taxed_type = view.type_identities()[&taxed_key];
+    let taxed_type = view.type_identities()[&taxed_key].clone();
     let mut effective_fields: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(taxed_type))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(taxed_type.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     // FR-150 sorts effective declarations by identity; these same-package
@@ -1302,11 +1290,13 @@ fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
             other => panic!("expected a record/event subtype, got {other:?}"),
         };
         assert_eq!(supertypes, &[parent_key]);
-        let child_id = view.type_identities()[&key];
+        let child_id = view.type_identities()[&key].clone();
         let effective_fields: Vec<_> = view
             .declarations()
             .iter()
-            .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(child_id))
+            .filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(child_id.clone())
+            })
             .map(|entry| entry.preimage.original.node.as_str())
             .collect();
         assert!(
@@ -1995,11 +1985,13 @@ fn tc235_m18_event_type_specialization_vectors() {
         package: PACKAGE.to_owned(),
         node: id("OrderPlaced"),
     };
-    let event_type = view.type_identities()[&event_key];
+    let event_type = view.type_identities()[&event_key].clone();
     let mut effective_members: Vec<_> = view
         .declarations()
         .iter()
-        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(event_type))
+        .filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type == Some(event_type.clone())
+        })
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     effective_members.sort();

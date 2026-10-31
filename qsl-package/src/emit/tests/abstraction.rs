@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-804 (FR-306-AC-1, FR-306-AC-2): the abstraction relation of a checked
 //! package is written as one `correspondence`/`abstraction_relation` v2 node
-//! (QSpec FR-451) that enters the `package_id`. The relation is bound with
+//! (QSpec FR-451) that enters the package. The relation is bound with
 //! `CheckedPackage::bind_abstraction` (the source path is tested in
 //! `qsl-replay`'s model-gate tests), and the bytes are read back through IR's
 //! reader. The expected body is written here from FR-451.
@@ -145,10 +145,6 @@ fn emit_with(bindings: Option<&[AuthoredBinding]>) -> Emitted {
 }
 
 impl Emitted {
-    fn package_id(&self) -> qsl_semantics::library::PackageId {
-        self.emission.package().package_id()
-    }
-
     fn read(&self) -> Read {
         read_with(&self.emission, &self.evidence)
     }
@@ -226,7 +222,7 @@ fn the_relation_is_written_as_one_node_holding_the_three_bindings() {
         })
     );
     let mut targets = vec![config, configs];
-    targets.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
+    targets.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
     assert_eq!(relation["dependencies"], json!(targets));
     assert_eq!(relation["semantic_type"], relation["node_id"]);
     assert_eq!(
@@ -290,21 +286,17 @@ fn a_package_with_no_relation_writes_no_relation_node() {
     assert!(matches!(emitted.read(), Read::Verified { .. }));
 }
 
-/// FR-306-AC-2 (TC-804 step 2): emitting the same unit again gives the same
-/// `package_id` and relation node id; changing one `ObjectBinding` field's
-/// `RustField` gives a different `package_id` and a different relation node
-/// id.
+/// FR-306-AC-2 (TC-804 step 2): changing an `ObjectBinding` field's
+/// `RustField` changes the emitted relation and remains readable.
 #[trace("TC-804", "FR-306-AC-2")]
 #[test]
-fn a_rebinding_is_a_new_relation_node_and_a_new_package_id() {
+fn a_rebinding_changes_the_relation_body() {
     let first = emit_with(Some(&three_bindings("version")));
     let again = emit_with(Some(&three_bindings("version")));
-    assert_eq!(first.package_id(), again.package_id());
-    assert_eq!(first.relation()["node_id"], again.relation()["node_id"]);
+    assert_eq!(first.relation()["body"], again.relation()["body"]);
 
     let rebound = emit_with(Some(&three_bindings("revision")));
-    assert_ne!(first.package_id(), rebound.package_id());
-    assert_ne!(first.relation()["node_id"], rebound.relation()["node_id"]);
+    assert_ne!(first.relation()["body"], rebound.relation()["body"]);
     assert!(matches!(rebound.read(), Read::Verified { .. }));
 }
 

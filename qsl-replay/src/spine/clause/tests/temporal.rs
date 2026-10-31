@@ -19,7 +19,6 @@ use crate::spine::{
     ClauseRunReport, OverObject, TemporalTraceRefusal, TemporalVerdict, TraceInput,
 };
 use crate::ReplayRequestWire;
-use qsl_foundation::digest::DigestRecord;
 use quire_exact::Identifier;
 
 const OPERATIONS: &[&str] = &["noop"];
@@ -658,7 +657,6 @@ fn observed_replay_request(
         ReplayOverBinding, ReplaySource, ReplayTarget, TracePosition, Witness, WitnessEnvelope,
         WitnessPacket,
     };
-    use qsl_foundation::digest::{DigestDomain, WireNodeId};
     use qsl_foundation::source::provenance::OccurrenceKey;
 
     let (base, packages) = unit_and_packages(OPERATIONS);
@@ -671,6 +669,7 @@ fn observed_replay_request(
     let path = "counter-temporal.native";
     let compiled = run_spine(
         &source_identity,
+        &qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
         path,
         &source_bytes,
         &packages,
@@ -678,9 +677,6 @@ fn observed_replay_request(
         crate::spine::SpineLimits::default(),
     )
     .expect("the temporal fixture compiles");
-    let package_id = compiled.emitted.package().package_id();
-    let package_record =
-        DigestRecord::mint(DigestDomain::PackageSemanticV2, *package_id.as_bytes());
     let package = compiled.checked.package();
     let clause_node = package
         .graph()
@@ -688,8 +684,8 @@ fn observed_replay_request(
         .iter()
         .find(|node| node.clause().name() == name)
         .expect("the fixture temporal clause exists");
-    let node = WireNodeId::from_digest(*clause_node.identity().as_bytes());
-    let occurrence = OccurrenceKey::new(node, clause_node.claim().clone());
+    let node = clause_node.identity().clone();
+    let occurrence = OccurrenceKey::new(node.clone(), clause_node.claim().clone());
     let domain_document = packages.values().next().expect("one model package");
     let documents: Vec<(DocumentRef, Vec<u8>)> = values
         .iter()
@@ -710,13 +706,8 @@ fn observed_replay_request(
         crate::QualifiedName::new(vec![Identifier::new(name).expect("fixture name")])
             .expect("qualified name"),
     );
-    let mut wire = super::frame_replay::request(
-        &source_bytes,
-        domain_document,
-        package_record,
-        &documents,
-        target.clone(),
-    );
+    let mut wire =
+        super::frame_replay::request(&source_bytes, domain_document, &documents, target.clone());
     wire.replay_target.over = Some(ReplayOverBinding {
         population: fixture::id("counters"),
         key: "c1".to_owned(),
@@ -762,14 +753,10 @@ fn observed_replay_request(
         trace_position: qsl_eval::temporal::TemporalPosition::new(position),
     };
     let packet = WitnessPacket::<crate::ObservedTemporalCounterexample> {
-        obligation_identity: Some(wire.obligation_identity),
+        obligation_identity: Some(wire.obligation_identity.clone()),
         occurrence_key: Some(occurrence),
         clause_node: Some(node),
         replay_target: target.into(),
-        package_id: Some((
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_record.hex(),
-        )),
         profile_selections: Some(Vec::new()),
         run_limits: Some(wire.accounting_limits),
         declared_domains: Some(Vec::new()),
@@ -828,7 +815,6 @@ fn a_bounded_clause_over_a_finite_trace_violates_at_its_position() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
     assert_eq!(report.disposition.category(), Category::Violation);
     assert_eq!(exit_code(&report), 10);
-    assert!(report.package_id.is_some());
 }
 
 /// FR-330-AC-5 / TC-847: the third value makes the integer modulo divisor

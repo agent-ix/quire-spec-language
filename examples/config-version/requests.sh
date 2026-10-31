@@ -4,15 +4,14 @@
 #
 #   examples/config-version/requests.sh /tmp/config-version/healthy-parent ParentOrder
 #
-# Both requests select the case's 1-draft unit and its domain model by digest;
+# Both requests select the case's 1-draft unit and its domain model by identity;
 # run.json checks CLAUSE for the object keyed "child" in the current snapshot.
 set -eu
 dir=$1
 clause=${2:-ParentOrder}
 ref() {
-  digest=$(shasum -a 256 "$dir/$1" | cut -d' ' -f1)
-  printf '{"file":"%s","digest":"sha256:%s","authority":"agent-ix","identity":"example:%s","revision_namespace":"fixture","revision":"1","document":"%s","formal_revision":1}' \
-    "$1" "$digest" "$1" "$2"
+  printf '{"file":"%s","authority":"agent-ix","identity":"example:%s","revision_namespace":"fixture","revision":"1","document":"%s","formal_revision":1}' \
+    "$1" "$1" "$2"
 }
 models="[{\"format\":\"semantic-ir/2.0.0\",\"source\":$(ref spine-model.semantic-ir.json SpineModel)}]"
 program="{\"source\":$(ref spine-unit.native SpineUnit)}"

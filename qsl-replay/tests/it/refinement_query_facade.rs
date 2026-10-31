@@ -30,9 +30,12 @@ fn with_closure<T>(refinement: &str, body: impl FnOnce(&CheckedClosureHandle, &W
     let documents = packages(Variant::CAS);
     let text = unit_text(&documents, refinement, Variant::CAS);
     let compiled = acquire_checked_closure(
-        SourceIdentity::new("agent-ix", "refinement", "git", "1"),
-        "refinement.native",
-        text.as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("agent-ix", "refinement", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "refinement.native",
+            bytes: text.as_bytes(),
+        },
         documents.values().map(Vec::as_slice),
         &DependencyInput::default(),
         StageLimits::default(),

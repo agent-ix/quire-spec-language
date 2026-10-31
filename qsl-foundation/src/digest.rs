@@ -89,12 +89,6 @@ impl FromStr for ByteDigest {
 // that carries its own `algorithm` field (this type fixes SHA-256), and not
 // a domain outside FR-201's 21-member vocabulary.
 //
-// One real caller landed in this slice: `value::member::Member::to_wire`'s
-// `declaration_json` mints a `NodeKey`'s digest through
-// `DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, ...)` (#260
-// review item 5), in place of the bare `NODE_KEY_DOMAIN` constant plus raw
-// hex it used before.
-//
 // A hand-built enumeration of every other site meeting the criterion above
 // was attempted across three rounds of review on this one comment and was
 // wrong every time (3 candidates named, then corrected to 4, then corrected
@@ -144,8 +138,6 @@ pub enum DigestDomain {
     SourceBytesV1,
     /// `quire.definition.bytes/v1`.
     DefinitionBytesV1,
-    /// `quire.checked-semantic-node/v1`.
-    CheckedSemanticNodeV1,
     /// `quire.contract-ir.semantic/v1`.
     ContractIrSemanticV1,
     /// `quire.diagnostic-catalog.bytes/v1`.
@@ -169,7 +161,7 @@ pub enum DigestDomain {
 impl DigestDomain {
     /// Every closed variant, in FR-201's own table order, for exhaustive
     /// round-trip tests.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 19] = [
         Self::IrCanonical,
         Self::IrBound,
         Self::IrSemantic,
@@ -180,7 +172,6 @@ impl DigestDomain {
         Self::PackageSemanticV2,
         Self::SourceBytesV1,
         Self::DefinitionBytesV1,
-        Self::CheckedSemanticNodeV1,
         Self::ContractIrSemanticV1,
         Self::DiagnosticCatalogBytesV1,
         Self::GeneratedArtifactBytesV1,
@@ -207,7 +198,6 @@ impl DigestDomain {
             Self::PackageSemanticV2 => "quire.package.semantic/v2",
             Self::SourceBytesV1 => "quire.source.bytes/v1",
             Self::DefinitionBytesV1 => "quire.definition.bytes/v1",
-            Self::CheckedSemanticNodeV1 => "quire.checked-semantic-node/v1",
             Self::ContractIrSemanticV1 => "quire.contract-ir.semantic/v1",
             Self::DiagnosticCatalogBytesV1 => "quire.diagnostic-catalog.bytes/v1",
             Self::GeneratedArtifactBytesV1 => "quire.generated-artifact.bytes/v1",
@@ -230,9 +220,8 @@ impl DigestDomain {
     /// "the entry's raw bytes hash to its own declared digest", which is
     /// only ever true for a domain defined that way. A `sha256-jcs` or
     /// `.../jcs/v1` domain digests a canonicalized form this repo has no
-    /// canonicalizer for; a `quire.package.semantic/v2` or
-    /// `quire.checked-semantic-node/v1` domain digests a structural
-    /// preimage, not arbitrary bytes. Admitting one of those here would
+    /// canonicalizer for; a `quire.package.semantic/v2` domain digests a
+    /// structural preimage, not arbitrary bytes. Admitting one of those here would
     /// make every entry under it fail the raw-bytes check with a spurious
     /// `byte-digest-mismatch`, naming a staleness that does not exist for a
     /// domain the entry was never eligible to declare in the first place.
@@ -414,7 +403,7 @@ fn lower_hex_nibble(digit: u8) -> Option<u8> {
 
 /// Parse exactly 64 lowercase-hex ASCII digits into 32 bytes (FR-201's
 /// exact-match rule: no case folding, no separators, no other length).
-/// Shared by [`DigestRecord::from_wire`], [`WireNodeId::from_hex`] and this
+/// Shared by [`DigestRecord::from_wire`] and this
 /// crate's downstream wire-digest parsers that need this exact encoding.
 pub fn parse_lower_hex32(hex: &str) -> Option<[u8; 32]> {
     let (pairs, []) = hex.as_bytes().as_chunks::<2>() else {
@@ -494,61 +483,6 @@ impl InvalidDigestRecord {
     }
 }
 
-/// A node id exactly as it travels on the wire (a v2 node key's 64
-/// lowercase-hex digest), before a checked-package lookup resolves it to a
-/// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here from
-/// `replay::identity`, whose own module doc named this as a provisional,
-/// not-yet-canonical home: ADR-011 `:588` places the wire node id in the `F`
-/// foundation layer, alongside `digest` and before `wire_format`, not in the
-/// layer-6 `replay` facade -- `replay` (layer 6) importing `digest` (layer
-/// F) is the permitted direction; `package` (layer 4) or `library`
-/// (layer 3) importing `replay` would not be, which is exactly why
-/// `library::PackageNodeKey` (ADR-013 T-3) needs this type here rather than
-/// in `replay`. A wire-read node id stays a `WireNodeId`, never a
-/// `NodeKey`, until a lookup in an already-checked package resolves it, at
-/// E4 (the dependency's own checked package) or E9 (`replay`'s recompiled
-/// package) -- never by a conversion function, and none is defined here.
-///
-/// quire:canonical
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WireNodeId([u8; 32]);
-
-impl WireNodeId {
-    /// Wrap an already-known wire node-id digest. Unlike the kernel
-    /// `NodeKey` constructor, this carries no "only `check` calls this"
-    /// restriction: a `WireNodeId` is exactly the unchecked wire spelling,
-    /// never a claim that the id resolves to a real node.
-    pub fn from_digest(digest: [u8; 32]) -> Self {
-        Self(digest)
-    }
-
-    /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
-    /// travels (a v2 node reference's `{domain, digest}` object's `digest`
-    /// member). Needed by `library::package_identity` to read
-    /// a wire node id out of an identity preimage without ever constructing
-    /// a `NodeKey` from it (R-10).
-    pub fn from_hex(digest: &str) -> Option<Self> {
-        parse_lower_hex32(digest).map(Self)
-    }
-
-    /// The raw digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-impl fmt::Display for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WireNodeId({self})")
-    }
-}
-
 #[cfg(test)]
 mod digest_record_tests {
     use super::*;
@@ -564,14 +498,14 @@ mod digest_record_tests {
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
-    /// itself (#260 review item 4). Both `[(...); 20]` and `DigestDomain::
-    /// ALL: [Self; 20]` are fixed-length arrays, so a 20th-to-21st-entry
+    /// itself (#260 review item 4). Both `[(...); 19]` and `DigestDomain::
+    /// ALL: [Self; 19]` are fixed-length arrays, so a 19th-to-20th-entry
     /// mismatch between them is a compile error, not something this test
     /// could observe at runtime -- the per-entry label and round-trip
     /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
-        let labels: [(DigestDomain, &str); 20] = [
+        let labels: [(DigestDomain, &str); 19] = [
             (DigestDomain::IrCanonical, "ir-canonical"),
             (DigestDomain::IrBound, "ir-bound"),
             (DigestDomain::IrSemantic, "ir-semantic"),
@@ -582,10 +516,6 @@ mod digest_record_tests {
             (DigestDomain::PackageSemanticV2, "quire.package.semantic/v2"),
             (DigestDomain::SourceBytesV1, "quire.source.bytes/v1"),
             (DigestDomain::DefinitionBytesV1, "quire.definition.bytes/v1"),
-            (
-                DigestDomain::CheckedSemanticNodeV1,
-                "quire.checked-semantic-node/v1",
-            ),
             (
                 DigestDomain::ContractIrSemanticV1,
                 "quire.contract-ir.semantic/v1",
@@ -620,8 +550,8 @@ mod digest_record_tests {
                 "quire.model.object-universe/v2",
             ),
         ];
-        assert_eq!(DigestDomain::ALL.len(), 20);
-        assert_eq!(labels.len(), 20);
+        assert_eq!(DigestDomain::ALL.len(), 19);
+        assert_eq!(labels.len(), 19);
         for (domain, expected_label) in labels {
             assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
             let record = DigestRecord::mint(domain, bytes(0xab));
@@ -699,11 +629,11 @@ mod digest_record_tests {
     #[test]
     fn a_cross_domain_digest_is_unequal_despite_equal_bytes() {
         let same_bytes = bytes(0x42);
-        let node = DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, same_bytes);
+        let other = DigestRecord::mint(DigestDomain::SourceBytesV1, same_bytes);
         let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV2, same_bytes);
-        assert_ne!(node, effective);
+        assert_ne!(other, effective);
         assert_eq!(
-            node.as_bytes(),
+            other.as_bytes(),
             effective.as_bytes(),
             "sanity: bytes really do match"
         );

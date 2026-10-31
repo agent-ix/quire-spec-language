@@ -14,9 +14,12 @@ const UNITS: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n";
 
 fn admit(body: &str) -> Result<(), AdmittedRefusal> {
     compile_admitted(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "unit.native",
-        format!("{HEADER}{UNITS}{body}").as_bytes(),
+        qsl_replay::CompileUnit {
+            source: SourceIdentity::new("a", "u", "git", "1"),
+            package_name: "fixture".to_owned(),
+            path: "unit.native",
+            bytes: format!("{HEADER}{UNITS}{body}").as_bytes(),
+        },
         [],
         &DependencyInput::default(),
         StageLimits::default(),

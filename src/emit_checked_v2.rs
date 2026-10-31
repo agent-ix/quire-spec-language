@@ -16,7 +16,7 @@
 //! are written on failure.
 //!
 //! The emitted bytes embed the source path exactly as given: the label
-//! `source:<path>` feeds the source digest labels and so the `package_id`.
+//! `source:<path>` feeds the source reference labels.
 //! A caller that needs stable bytes passes an identical, fixed,
 //! cwd-relative path on every invocation. The same holds for each
 //! `--library` path.
@@ -38,7 +38,7 @@ use quire_semantic_value::catalog::Category;
 /// The usage line, shown on a malformed command line.
 pub const USAGE: &str = "usage: emit_checked_v2 [--model <domain-package-file>]... \
 [--library <identity>=<source-file>]... [--execution-points <json-file>] \
-[--out <path>] <source-file>";
+--package-name <name> [--out <path>] <source-file>";
 
 /// Why no bytes were emitted.
 #[derive(Debug, thiserror::Error)]
@@ -111,6 +111,8 @@ impl Error {
 pub struct Request {
     /// The `1-draft` source file.
     pub source: PathBuf,
+    /// The package's manifest name.
+    pub package_name: String,
     /// Domain package documents, in the order given.
     pub models: Vec<PathBuf>,
     /// Library sources: the identity an `import` names, and the file.
@@ -132,6 +134,7 @@ impl Request {
         let mut out = None;
         let mut execution_points = None;
         let mut source = None;
+        let mut package_name = None;
         let mut rest = arguments.iter();
         while let Some(argument) = rest.next() {
             match argument.to_str() {
@@ -145,6 +148,15 @@ impl Request {
                 Some("--execution-points") if execution_points.is_none() => {
                     execution_points = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
                 }
+                Some("--package-name") if package_name.is_none() => {
+                    package_name = Some(
+                        rest.next()
+                            .and_then(|name| name.to_str())
+                            .filter(|name| !name.is_empty())
+                            .ok_or(Error::Usage)?
+                            .to_owned(),
+                    );
+                }
                 Some("--out") if out.is_none() => {
                     out = Some(PathBuf::from(rest.next().ok_or(Error::Usage)?));
                 }
@@ -155,6 +167,7 @@ impl Request {
         }
         Ok(Self {
             source: source.ok_or(Error::Usage)?,
+            package_name: package_name.ok_or(Error::Usage)?,
             models,
             libraries,
             execution_points,
@@ -294,6 +307,7 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
         .unwrap_or_default();
     let compiled = compile_package_with_execution_points(
         identity("source", &request.source),
+        request.package_name.clone(),
         &request.source.display().to_string(),
         &source,
         models.iter().map(Vec::as_slice),

@@ -14,13 +14,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::{Code, SourceIdentity};
+use qsl_foundation::Code;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{
-    CheckedGraph, CheckedTypeNode, CompositeForm, NominalNode, SemanticGraph,
-};
-use qsl_semantics::library::PackageId;
+use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
+use qsl_semantics::library::LibraryName;
 use quire_exact::{Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
@@ -28,7 +25,7 @@ use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
 use quire_semantic_value::unit::{NominalUnitForm, NominalUnitNode};
 
 use crate::bounds::ReplayLimits;
-use crate::compile::{recompile_unit, CompiledPackage};
+use crate::compile::{recompile_unit, CompileUnit, CompiledPackage};
 use crate::execute::{LimitAboveReader, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{CompileRefusal, DependencyInput};
@@ -48,8 +45,8 @@ impl AdmittedEnumCase {
     }
 
     /// The admitted key of the case's member node.
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 }
 
@@ -65,8 +62,8 @@ pub struct AdmittedEnum {
 
 impl AdmittedEnum {
     /// The admitted key of the declaration node.
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 
     /// The declaration's qualified name.
@@ -111,7 +108,7 @@ pub struct AdmittedUnionMember {
 
 impl AdmittedUnionMember {
     /// The member identifier.
-    pub fn identifier(&self) -> &Identifier {
+    pub fn identifier(&self) -> &str {
         self.binding.identifier()
     }
 
@@ -119,7 +116,7 @@ impl AdmittedUnionMember {
     /// (QSpec FR-441), which a `UnionMember` of a replayed union value of it
     /// carries and a QSV union declaration names the member by.
     pub fn variant(&self) -> VariantId {
-        self.binding.variant()
+        self.binding.variant().clone()
     }
 
     /// The sealed binding the check minted for the member: its declaration
@@ -173,8 +170,8 @@ impl AdmittedComposite {
     /// is also the settled key: the `final_key` of `seal_union_verified`, the
     /// declaration of every [`AdmittedUnionMember::member`] and the id a
     /// replay witness names the union by.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The declaration's kernel key: the key `CompositeDeclaration::new` and
@@ -182,8 +179,8 @@ impl AdmittedComposite {
     /// `TypeEnvironment` and replay use. For a union this is the handle of its
     /// types (the `handle` of `seal_union_verified`); its values and members
     /// carry [`Self::node`].
-    pub fn key(&self) -> NodeKey {
-        self.key
+    pub fn key(&self) -> &NodeKey {
+        &self.key
     }
 
     /// The declaration's qualified name.
@@ -228,8 +225,8 @@ impl AdmittedDimension {
     /// The id of the dimension's node: the wire node id
     /// [`AdmittedContext::dimension_declaration`] finds it by and
     /// [`AdmittedUnit::dimension`] names it by.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The declaration's qualified name.
@@ -272,15 +269,15 @@ pub struct AdmittedUnit {
 impl AdmittedUnit {
     /// The id of the unit's node: the wire node id
     /// [`AdmittedContext::unit_declaration`] finds it by.
-    pub fn node(&self) -> NodeKey {
-        self.node
+    pub fn node(&self) -> &NodeKey {
+        &self.node
     }
 
     /// The unit's kernel id: the id `ValueType::Quantity` and a kernel
     /// `Quantity` take for it, equal to the one QSL's checked type
     /// environment and replay use.
     pub fn id(&self) -> UnitId {
-        self.id
+        self.id.clone()
     }
 
     /// The declaration's qualified name.
@@ -289,8 +286,8 @@ impl AdmittedUnit {
     }
 
     /// The node id of the unit's dimension ([`AdmittedDimension::node`]).
-    pub fn dimension(&self) -> NodeKey {
-        self.dimension
+    pub fn dimension(&self) -> &NodeKey {
+        &self.dimension
     }
 
     /// The unit as the kernel's quantity operations take it: its normalized
@@ -318,7 +315,7 @@ pub enum AdmittedLookupRefusal {
     #[error("unknown_declaration: {}", unknown_what(.declaration, .case))]
     Unknown {
         /// The declaration id looked up.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The case looked up, when the lookup named one and the
         /// declaration exists.
         case: Option<Identifier>,
@@ -326,12 +323,12 @@ pub enum AdmittedLookupRefusal {
     /// The declaration id names a declaration of the looked-up kind that a
     /// dependency of this package admitted, not this package. Its keys are
     /// that package's.
-    #[error("foreign_declaration: declaration {declaration} is admitted by dependency package {}", .package.hex())]
+    #[error("foreign_declaration: declaration {declaration} is admitted by dependency package {package}")]
     Foreign {
         /// The declaration id looked up.
-        declaration: WireNodeId,
+        declaration: NodeKey,
         /// The dependency package that admitted it.
-        package: PackageId,
+        package: LibraryName,
     },
     /// The declaration id names a node this package admitted that is not a
     /// declaration of the looked-up kind (for a record, tuple or union lookup
@@ -344,11 +341,11 @@ pub enum AdmittedLookupRefusal {
     #[error("wrong_kind: node {declaration} is admitted by this package but is not a declaration of the looked-up kind")]
     WrongKind {
         /// The declaration id looked up.
-        declaration: WireNodeId,
+        declaration: NodeKey,
     },
 }
 
-fn unknown_what(declaration: &WireNodeId, case: &Option<Identifier>) -> String {
+fn unknown_what(declaration: &NodeKey, case: &Option<Identifier>) -> String {
     match case {
         None => format!("no admitted declaration {declaration} of the looked-up kind"),
         Some(case) => format!(
@@ -363,28 +360,35 @@ fn unknown_what(declaration: &WireNodeId, case: &Option<Identifier>) -> String {
 /// record, tuple, union, dimension and unit a dependency admitted.
 #[derive(Clone, Debug)]
 pub struct AdmittedContext {
-    package: PackageId,
-    enums: BTreeMap<[u8; 32], AdmittedEnum>,
-    foreign: BTreeMap<[u8; 32], PackageId>,
-    composites: BTreeMap<[u8; 32], AdmittedComposite>,
-    foreign_composites: BTreeMap<[u8; 32], PackageId>,
-    units: BTreeMap<[u8; 32], AdmittedUnit>,
-    foreign_units: BTreeMap<[u8; 32], PackageId>,
-    dimensions: BTreeMap<[u8; 32], AdmittedDimension>,
-    foreign_dimensions: BTreeMap<[u8; 32], PackageId>,
+    package: LibraryName,
+    package_bytes: Box<[u8]>,
+    enums: BTreeMap<NodeKey, AdmittedEnum>,
+    foreign: BTreeMap<NodeKey, LibraryName>,
+    composites: BTreeMap<NodeKey, AdmittedComposite>,
+    foreign_composites: BTreeMap<NodeKey, LibraryName>,
+    units: BTreeMap<NodeKey, AdmittedUnit>,
+    foreign_units: BTreeMap<NodeKey, LibraryName>,
+    dimensions: BTreeMap<NodeKey, AdmittedDimension>,
+    foreign_dimensions: BTreeMap<NodeKey, LibraryName>,
     unit_table: UnitTable,
     /// Every node of this package's checked graph, and every declared unit
     /// and dimension (a unit enters the graph only when the package uses
     /// it): the ids a composite, unit or dimension lookup refuses as the
-    /// wrong kind when it is not of the looked-up kind. One 32-byte id per
-    /// node, so the context grows with the package's graph (FR-396, FR-398).
-    nodes: BTreeSet<[u8; 32]>,
+    /// wrong kind when it is not of the looked-up kind.
+    nodes: BTreeSet<NodeKey>,
 }
 
 impl AdmittedContext {
-    /// The `package_id` of the package whose check admitted this context.
-    pub fn package_id(&self) -> PackageId {
-        self.package
+    /// The library name of the package whose check admitted this context.
+    pub fn package_name(&self) -> &LibraryName {
+        &self.package
+    }
+
+    /// The exact emitted checked-package bytes admitted by this context,
+    /// including its source lock and checked body. A consumer can compare
+    /// these with the original package before using any admitted lookup.
+    pub fn package_bytes(&self) -> &[u8] {
+        &self.package_bytes
     }
 
     /// Every enum declaration this package admitted, ascending by key.
@@ -400,16 +404,16 @@ impl AdmittedContext {
     /// [`AdmittedLookupRefusal::Unknown`] when no package of the closure did.
     pub fn enum_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedEnum, AdmittedLookupRefusal> {
-        let id = *declaration.as_bytes();
-        if let Some(admitted) = self.enums.get(&id) {
+        if let Some(admitted) = self.enums.get(declaration) {
             return Ok(admitted);
         }
-        Err(match self.foreign.get(&id) {
-            Some(&package) => AdmittedLookupRefusal::Foreign {
+        let declaration = declaration.clone();
+        Err(match self.foreign.get(&declaration) {
+            Some(package) => AdmittedLookupRefusal::Foreign {
+                package: package.clone(),
                 declaration,
-                package,
             },
             None => AdmittedLookupRefusal::Unknown {
                 declaration,
@@ -426,13 +430,13 @@ impl AdmittedContext {
     /// naming the case when the declaration has no such case.
     pub fn enum_case(
         &self,
-        declaration: WireNodeId,
+        declaration: &NodeKey,
         case: &Identifier,
     ) -> Result<&AdmittedEnumCase, AdmittedLookupRefusal> {
         self.enum_declaration(declaration)?
             .case(case)
             .ok_or_else(|| AdmittedLookupRefusal::Unknown {
-                declaration,
+                declaration: declaration.clone(),
                 case: Some(case.clone()),
             })
     }
@@ -454,10 +458,9 @@ impl AdmittedContext {
     /// otherwise.
     pub fn composite_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedComposite, AdmittedLookupRefusal> {
-        let id = *declaration.as_bytes();
-        if let Some(admitted) = self.composites.get(&id) {
+        if let Some(admitted) = self.composites.get(declaration) {
             return Ok(admitted);
         }
         Err(self.refusal(declaration, &self.foreign_composites))
@@ -479,10 +482,10 @@ impl AdmittedContext {
     /// [`AdmittedLookupRefusal::Unknown`] otherwise.
     pub fn unit_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedUnit, AdmittedLookupRefusal> {
         self.units
-            .get(declaration.as_bytes())
+            .get(declaration)
             .ok_or_else(|| self.refusal(declaration, &self.foreign_units))
     }
 
@@ -499,10 +502,10 @@ impl AdmittedContext {
     /// As [`Self::unit_declaration`], for a dimension.
     pub fn dimension_declaration(
         &self,
-        declaration: WireNodeId,
+        declaration: &NodeKey,
     ) -> Result<&AdmittedDimension, AdmittedLookupRefusal> {
         self.dimensions
-            .get(declaration.as_bytes())
+            .get(declaration)
             .ok_or_else(|| self.refusal(declaration, &self.foreign_dimensions))
     }
 
@@ -519,16 +522,16 @@ impl AdmittedContext {
     /// `Unknown`.
     fn refusal(
         &self,
-        declaration: WireNodeId,
-        foreign: &BTreeMap<[u8; 32], PackageId>,
+        declaration: &NodeKey,
+        foreign: &BTreeMap<NodeKey, LibraryName>,
     ) -> AdmittedLookupRefusal {
-        let id = declaration.as_bytes();
-        if let Some(&package) = foreign.get(id) {
+        let declaration = declaration.clone();
+        if let Some(package) = foreign.get(&declaration) {
             AdmittedLookupRefusal::Foreign {
+                package: package.clone(),
                 declaration,
-                package,
             }
-        } else if self.nodes.contains(id) {
+        } else if self.nodes.contains(&declaration) {
             AdmittedLookupRefusal::WrongKind { declaration }
         } else {
             AdmittedLookupRefusal::Unknown {
@@ -607,8 +610,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::DomainPackages(_)
             | ReplayRefusal::SourceCount(_)
             | ReplayRefusal::DependencySelections(_)
-            | ReplayRefusal::DependencyIdentityMismatch { .. }
-            | ReplayRefusal::PackageIdMismatch { .. }
+            | ReplayRefusal::InvalidPackageName(_)
             | ReplayRefusal::UnknownFunction { .. }
             | ReplayRefusal::ClaimOccurrence { .. }
             | ReplayRefusal::UnknownParameter(_)
@@ -682,26 +684,17 @@ fn classify(refusal: CompileRefusal) -> AdmittedRefusal {
 /// or an S1 limit above the reader limit, and [`AdmittedRefusal::Fault`] for
 /// a broken QSL invariant.
 pub fn compile_admitted<'a>(
-    source: SourceIdentity,
-    path: &str,
-    bytes: &[u8],
+    unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
-    let compiled = recompile_unit(
-        source,
-        path,
-        bytes,
-        packages,
-        dependencies,
-        limits,
-        replay_limits,
-    )?;
+    let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
     let context = context_of(
         compiled.checked.package(),
-        compiled.emitted.package().package_id(),
+        &compiled.package,
+        compiled.emitted.package().bytes(),
     )
     .map_err(AdmittedRefusal::Fault)?;
     Ok(AdmittedCompilation {
@@ -712,9 +705,10 @@ pub fn compile_admitted<'a>(
 
 pub(crate) fn context_of(
     package: &CheckedPackage,
-    id: PackageId,
+    name: &LibraryName,
+    package_bytes: &[u8],
 ) -> Result<AdmittedContext, InternalFault> {
-    let enums = enum_table(package.graph().semantic_graph())?;
+    let enums = enum_table(package.graph())?;
     let composites = composite_table(package.graph())?;
     let UnitTables {
         units,
@@ -725,9 +719,9 @@ pub(crate) fn context_of(
         .graph()
         .semantic_graph()
         .nodes()
-        .map(|node| *node.key().as_bytes())
-        .chain(units.keys().copied())
-        .chain(dimensions.keys().copied())
+        .map(qsl_semantics::check::SemanticNode::key)
+        .chain(units.keys().cloned())
+        .chain(dimensions.keys().cloned())
         .collect();
     let mut foreign = BTreeMap::new();
     let mut foreign_composites = BTreeMap::new();
@@ -735,31 +729,36 @@ pub(crate) fn context_of(
     let mut foreign_dimensions = BTreeMap::new();
     let mut visited = BTreeSet::new();
     let mut pending: Vec<_> = package.dependencies().iter().collect();
-    while let Some((&dependency_id, dependency)) = pending.pop() {
-        if !visited.insert(dependency_id) {
+    while let Some((dependency_name, dependency)) = pending.pop() {
+        if !visited.insert(dependency_name.clone()) {
             continue;
         }
-        for declaration in enum_table(dependency.graph().semantic_graph())?.into_keys() {
-            foreign.entry(declaration).or_insert(dependency_id);
+        for declaration in enum_table(dependency.graph())?.into_keys() {
+            foreign
+                .entry(declaration)
+                .or_insert_with(|| dependency_name.clone());
         }
         for declaration in composite_table(dependency.graph())?.into_keys() {
             foreign_composites
                 .entry(declaration)
-                .or_insert(dependency_id);
+                .or_insert_with(|| dependency_name.clone());
         }
         let (unit_keys, dimension_keys) = unit_keys(dependency.graph())?;
         for declaration in unit_keys {
-            foreign_units.entry(declaration).or_insert(dependency_id);
+            foreign_units
+                .entry(declaration)
+                .or_insert_with(|| dependency_name.clone());
         }
         for declaration in dimension_keys {
             foreign_dimensions
                 .entry(declaration)
-                .or_insert(dependency_id);
+                .or_insert_with(|| dependency_name.clone());
         }
         pending.extend(dependency.dependencies().iter());
     }
     Ok(AdmittedContext {
-        package: id,
+        package: name.clone(),
+        package_bytes: package_bytes.into(),
         enums,
         foreign,
         composites,
@@ -776,8 +775,8 @@ pub(crate) fn context_of(
 /// A graph's admitted units and dimensions, and the unit table they came
 /// from.
 struct UnitTables {
-    units: BTreeMap<[u8; 32], AdmittedUnit>,
-    dimensions: BTreeMap<[u8; 32], AdmittedDimension>,
+    units: BTreeMap<NodeKey, AdmittedUnit>,
+    dimensions: BTreeMap<NodeKey, AdmittedDimension>,
     table: UnitTable,
 }
 
@@ -803,50 +802,50 @@ fn declared_nodes(
     ),
     InternalFault,
 > {
-    let named = |key: NodeKey| {
+    let named = |key: &NodeKey| {
         table
-            .nominal_node(key.as_bytes())
+            .nominal_node(key)
             .ok_or_else(|| InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node"))
     };
     let mut units = Vec::new();
     let mut pending = Vec::new();
     for id in table.ids() {
         if let Some(QuantityUnit::Declared(unit)) = table.get(id) {
-            pending.push(unit.dimension_node());
+            pending.push(unit.dimension_node().clone());
             units.push(&**unit);
         }
     }
     let mut seen = BTreeSet::new();
     let mut dimensions = Vec::new();
     while let Some(key) = pending.pop() {
-        if !seen.insert(*key.as_bytes()) {
+        let nominal = named(&key)?;
+        if !seen.insert(key) {
             continue;
         }
-        let nominal = named(key)?;
         let NominalUnitForm::Dimension { terms } = &nominal.form else {
             return Err(InternalFault::new(
                 "replay",
                 "every-admitted-unit-dimension-is-a-dimension",
             ));
         };
-        pending.extend(terms.iter().map(|(base, _)| *base));
+        pending.extend(terms.iter().map(|(base, _)| base.clone()));
         dimensions.push(nominal);
     }
     Ok((units, dimensions))
 }
 
 /// The unit and dimension node ids of a graph.
-type DeclaredKeys = (Vec<[u8; 32]>, Vec<[u8; 32]>);
+type DeclaredKeys = (Vec<NodeKey>, Vec<NodeKey>);
 
 /// The node ids of `graph`'s declared units and the dimensions they name,
 /// for a dependency's `Foreign` refusals: no names, no unit values.
 fn unit_keys(graph: &CheckedGraph) -> Result<DeclaredKeys, InternalFault> {
     let (units, dimensions) = declared_nodes(graph.scope().types().units())?;
     Ok((
-        units.iter().map(|unit| *unit.key().as_bytes()).collect(),
+        units.iter().map(|unit| unit.key().clone()).collect(),
         dimensions
             .iter()
-            .map(|dimension| *dimension.key.as_bytes())
+            .map(|dimension| dimension.key.clone())
             .collect(),
     ))
 }
@@ -860,16 +859,16 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
     let (declared, named_dimensions) = declared_nodes(&table)?;
     let mut units = BTreeMap::new();
     for unit in declared {
-        let nominal = table.nominal_node(unit.key().as_bytes()).ok_or_else(|| {
+        let nominal = table.nominal_node(&unit.key()).ok_or_else(|| {
             InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node")
         })?;
         units.insert(
-            *unit.key().as_bytes(),
+            unit.key().clone(),
             AdmittedUnit {
-                node: unit.key(),
+                node: unit.key().clone(),
                 id: unit.id(),
                 qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
-                dimension: unit.dimension_node(),
+                dimension: unit.dimension_node().clone(),
                 unit: QuantityUnit::Declared(Box::new(unit.clone())),
             },
         );
@@ -880,9 +879,9 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
             continue;
         };
         dimensions.insert(
-            *nominal.key.as_bytes(),
+            nominal.key.clone(),
             AdmittedDimension {
-                node: nominal.key,
+                node: nominal.key.clone(),
                 qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
                 terms: terms.clone(),
             },
@@ -902,7 +901,7 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
 /// kernel key.
 fn composite_table(
     graph: &CheckedGraph,
-) -> Result<BTreeMap<[u8; 32], AdmittedComposite>, InternalFault> {
+) -> Result<BTreeMap<NodeKey, AdmittedComposite>, InternalFault> {
     let mut composites = BTreeMap::new();
     for type_node in graph.checked_type_nodes() {
         let (node, key, shape) = match type_node {
@@ -911,12 +910,12 @@ fn composite_table(
                 declaration,
                 form,
             } => match form {
-                CompositeForm::Record => (*node, *declaration, AdmittedShape::Record),
-                CompositeForm::Tuple => (*node, *declaration, AdmittedShape::Tuple),
+                CompositeForm::Record => (node.clone(), declaration.clone(), AdmittedShape::Record),
+                CompositeForm::Tuple => (node.clone(), declaration.clone(), AdmittedShape::Tuple),
                 CompositeForm::Union => (
-                    *node,
-                    *declaration,
-                    AdmittedShape::Union(union_members(graph, *declaration)?),
+                    node.clone(),
+                    declaration.clone(),
+                    AdmittedShape::Union(union_members(graph, declaration)?),
                 ),
             },
             CheckedTypeNode::Scalar { .. }
@@ -925,14 +924,14 @@ fn composite_table(
         };
         let qualified_name = graph
             .semantic_graph()
-            .node(node)
+            .node(node.clone())
             .and_then(|declared| declared.declaration())
             .ok_or_else(|| {
                 InternalFault::new("replay", "every-admitted-composite-has-a-declared-node")
             })?
             .to_vec();
         composites.insert(
-            *node.as_bytes(),
+            node.clone(),
             AdmittedComposite {
                 node,
                 key,
@@ -948,12 +947,12 @@ fn composite_table(
 /// `key`, each with the `VariantId` of the binding the check sealed it with.
 fn union_members(
     graph: &CheckedGraph,
-    key: NodeKey,
+    key: &NodeKey,
 ) -> Result<Vec<AdmittedUnionMember>, InternalFault> {
     let Some(CompositeShape::Union(declared)) = graph
         .scope()
         .types()
-        .composite(key)
+        .composite(key.clone())
         .map(CompositeDeclaration::shape)
     else {
         return Err(InternalFault::new(
@@ -975,52 +974,37 @@ fn union_members(
         .collect()
 }
 
-/// Every enum declaration of `graph`, keyed by the declaration node's id
-/// bytes, with each case's member key read from the member node the checker
-/// built for it.
-fn enum_table(graph: &SemanticGraph) -> Result<BTreeMap<[u8; 32], AdmittedEnum>, InternalFault> {
-    let mut members = BTreeMap::new();
-    for node in graph.nodes() {
-        if let Some(NominalNode::EnumMember { declaration, case }) = node.nominal() {
-            members.insert((*declaration, case.as_str()), node.key());
-        }
-    }
+/// Every enum declaration of `graph`, keyed by its declaration node, with
+/// each case's member key as the checker admitted it.
+fn enum_table(graph: &CheckedGraph) -> Result<BTreeMap<NodeKey, AdmittedEnum>, InternalFault> {
+    let identifier = |text: &str| {
+        Identifier::new(text)
+            .map_err(|_| InternalFault::new("replay", "admitted-enum-names-are-identifiers"))
+    };
     let mut enums = BTreeMap::new();
-    for node in graph.nodes() {
-        let Some(NominalNode::EnumDeclaration(preimage)) = node.nominal() else {
-            continue;
-        };
-        let identifier = |text: &str| {
-            Identifier::new(text)
-                .map_err(|_| InternalFault::new("replay", "admitted-enum-names-are-identifiers"))
-        };
-        let cases = preimage
-            .members()
+    for binding in graph.scope().enums() {
+        let declaration = &binding.declaration;
+        let cases = binding
+            .members
             .iter()
-            .map(|case| {
-                let key = members
-                    .get(&(node.key(), case.as_str()))
-                    .copied()
-                    .ok_or_else(|| {
-                        InternalFault::new("replay", "every-admitted-enum-case-has-a-member-node")
-                    })?;
+            .map(|member| {
                 Ok(AdmittedEnumCase {
-                    case: identifier(case)?,
-                    key,
+                    case: identifier(member.case())?,
+                    key: member.member(),
                 })
             })
             .collect::<Result<Vec<_>, InternalFault>>()?;
-        let qualified_name = preimage
+        let qualified_name = declaration
             .qualified_declaration()
             .iter()
             .map(|name| identifier(name))
             .collect::<Result<Vec<_>, _>>()?;
         enums.insert(
-            *node.key().as_bytes(),
+            declaration.key(),
             AdmittedEnum {
-                key: node.key(),
+                key: declaration.key(),
                 qualified_name,
-                ordered: preimage.is_ordered(),
+                ordered: declaration.declaration().is_ordered(),
                 cases,
             },
         );

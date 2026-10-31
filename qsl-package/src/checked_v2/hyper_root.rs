@@ -20,9 +20,11 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedTerm, ClaimForm,
 };
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use quire_exact::{Origin, Role};
+use quire_contract_model::CheckedNodeId;
+use quire_exact::{NodeKey, Origin, Role};
+
+use super::state_graph_root::node_key;
 use quire_semantic_value::catalog::InternalFault;
 
 /// One declaration of an admitted hyper clause: its identity triple and its
@@ -30,7 +32,7 @@ use quire_semantic_value::catalog::InternalFault;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HyperRoot {
     occurrence: OccurrenceKey,
-    body: Option<WireNodeId>,
+    body: Option<NodeKey>,
 }
 
 impl HyperRoot {
@@ -41,8 +43,8 @@ impl HyperRoot {
 
     /// The `temporal`/`temporal_clause` node the clause's `body` binding
     /// references, or `None` for a node whose body names none.
-    pub fn body(&self) -> Option<WireNodeId> {
-        self.body
+    pub fn body(&self) -> Option<&NodeKey> {
+        self.body.as_ref()
     }
 }
 
@@ -62,7 +64,8 @@ impl HyperRootUnresolved {
 }
 
 /// A broken invariant between IR's admission and this lookup.
-const NODE_ID_FAULT: InternalFault = InternalFault::new("I2", "admitted-node-id-is-a-wire-node-id");
+const NODE_ID_FAULT: InternalFault =
+    InternalFault::new("I2", "admitted-node-id-is-a-structural-node-id");
 
 /// Whether `node` is a `claim`/`hyperproperty` node.
 fn is_hyper(node: &CheckedSemanticNodeV2) -> bool {
@@ -71,17 +74,17 @@ fn is_hyper(node: &CheckedSemanticNodeV2) -> bool {
         == Some(CheckedNodeKind::Claim(ClaimForm::Hyperproperty))
 }
 
-/// The digest the `body` binding of the hyper node `node` references. The
+/// The node id the `body` binding of the hyper node `node` references. The
 /// binding's wire name is the one place the written text is read (FR-064's
 /// string-edge): FR-402 names the member `body`.
 #[ix_trace_rs::string_edge]
-fn body_digest(node: &CheckedSemanticNodeV2) -> Option<&str> {
+fn body_id(node: &CheckedSemanticNodeV2) -> Option<&CheckedNodeId> {
     let CheckedTerm::Aggregate { members } = &node.body else {
         return None;
     };
     members.iter().find_map(|member| match member {
         CheckedTerm::Binding { name, value } if &**name == "body" => match &**value {
-            CheckedTerm::Reference { target } => Some(&*target.digest),
+            CheckedTerm::Reference { target } => Some(target),
             _ => None,
         },
         _ => None,
@@ -90,20 +93,20 @@ fn body_digest(node: &CheckedSemanticNodeV2) -> Option<&str> {
 
 /// The node ids of the body wrappers of every hyper clause of `package`:
 /// `temporal`/`temporal_clause` nodes that are no clause of their own.
-pub(super) fn wrappers(package: &CheckedPackageV2) -> BTreeSet<String> {
+pub(super) fn wrappers(package: &CheckedPackageV2) -> BTreeSet<CheckedNodeId> {
     package
         .graph()
         .nodes
         .iter()
         .filter(|node| is_hyper(node))
-        .filter_map(|node| body_digest(node).map(str::to_owned))
+        .filter_map(|node| body_id(node).cloned())
         .collect()
 }
 
-fn root(node: WireNodeId, ordinal: u64, body: Option<WireNodeId>) -> HyperRoot {
+fn root(node: &NodeKey, ordinal: u64, body: Option<NodeKey>) -> HyperRoot {
     HyperRoot {
         occurrence: OccurrenceKey::new(
-            node,
+            node.clone(),
             Origin::new(
                 Role::new(super::role_spelling(&CheckedOccurrenceRole::Claim)),
                 ordinal,
@@ -118,13 +121,13 @@ fn root(node: WireNodeId, ordinal: u64, body: Option<WireNodeId>) -> HyperRoot {
 pub fn hyper_roots(package: &CheckedPackageV2) -> Result<Vec<HyperRoot>, InternalFault> {
     let mut roots = Vec::new();
     for node in package.graph().nodes.iter().filter(|node| is_hyper(node)) {
-        let id = WireNodeId::from_hex(&node.node_id.digest).ok_or(NODE_ID_FAULT)?;
-        let body = body_digest(node).and_then(WireNodeId::from_hex);
+        let id = node_key(&node.node_id).ok_or(NODE_ID_FAULT)?;
+        let body = body_id(node).and_then(node_key);
         roots.extend(
             node.occurrences
                 .iter()
                 .filter(|occurrence| occurrence.role == CheckedOccurrenceRole::Claim)
-                .map(|occurrence| root(id, occurrence.ordinal, body)),
+                .map(|occurrence| root(&id, occurrence.ordinal, body.clone())),
         );
     }
     Ok(roots)
@@ -139,12 +142,11 @@ pub fn resolve_hyper_root(
     let unresolved = || HyperRootUnresolved {
         root: triple.clone(),
     };
-    let digest = triple.node().to_string();
     let node = package
         .graph()
         .nodes
         .iter()
-        .find(|node| *node.node_id.digest == *digest)
+        .find(|node| node_key(&node.node_id).as_ref() == Some(triple.node()))
         .filter(|node| is_hyper(node))
         .ok_or_else(unresolved)?;
     if super::occurrence_role(triple.origin().role().as_str()) != Some(CheckedOccurrenceRole::Claim)
@@ -162,6 +164,6 @@ pub fn resolve_hyper_root(
     Ok(root(
         triple.node(),
         occurrence.ordinal,
-        body_digest(node).and_then(WireNodeId::from_hex),
+        body_id(node).and_then(node_key),
     ))
 }

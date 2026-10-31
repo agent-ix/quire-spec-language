@@ -2,10 +2,8 @@
 //! TC-186 text profiles and declaration-qualified enum identity over the real
 //! `value` boundary.
 //!
-//! T01–T15 follow the TC-186 procedure. Every enum node key is either a
-//! preimage this file constructs itself, or a key from this file's
-//! independent RFC 8785 canonicalizer, which is first shown to reproduce the
-//! crate's own content-addressed keys for those preimages.
+//! T01–T15 follow the TC-186 procedure. Every enum node key is the structural
+//! key its preimage names.
 
 use std::cmp::Ordering;
 use std::num::NonZeroU64;
@@ -16,12 +14,10 @@ use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
-use qsl_semantics::value::NodeIdentityPreimage;
 use qsl_semantics::value::{NodeOwner, NominalRefusal, OwnerSelection, OwnerSubject};
-use quire_exact::NodeKey;
 use quire_exact::{
     admit_text, compare_text, ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause,
-    InvalidUtf8, Text, TextPayload, TextProfile, TextProvenance, TextType, NODE_KEY_DOMAIN,
+    InvalidUtf8, Text, TextPayload, TextProfile, TextProvenance, TextType,
 };
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
@@ -29,8 +25,6 @@ use quire_exact::{
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumValue};
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
-use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -402,33 +396,11 @@ fn t12_lexicographic_order_is_selected_by_the_profile() {
 
 // ---- enum fixtures ---------------------------------------------------------
 
-/// Independent RFC 8785 JCS for the string/boolean/array/object/null values
-/// the preimage schema admits.
-fn jcs(value: &Value) -> String {
-    match value {
-        Value::Null | Value::Bool(_) | Value::String(_) => value.to_string(),
-        Value::Number(_) => panic!("preimages carry no JSON numbers"),
-        Value::Array(items) => format!("[{}]", items.iter().map(jcs).collect::<Vec<_>>().join(",")),
-        Value::Object(members) => {
-            let mut entries: Vec<_> = members.iter().collect();
-            entries.sort_by(|(a, _), (b, _)| a.encode_utf16().cmp(b.encode_utf16()));
-            let body: Vec<_> = entries
-                .into_iter()
-                .map(|(key, item)| format!("{}:{}", Value::String(key.clone()), jcs(item)))
-                .collect();
-            format!("{{{}}}", body.join(","))
-        }
-    }
-}
-
-fn fixture_key(preimage: &Value) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(jcs(preimage).as_bytes()).into())
-}
-
 fn example_owner() -> NodeOwner {
     NodeOwner::Definition(OwnerSubject {
         authority: "agent-ix".into(),
         identity: "example-model".into(),
+        package_name: "example-model".into(),
     })
 }
 
@@ -436,21 +408,7 @@ fn owners() -> OwnerSelection {
     OwnerSelection::new([example_owner()])
 }
 
-fn declaration(
-    preimage: &Value,
-    key: NodeKey,
-) -> Result<AdmittedEnumDeclaration, InvalidSemanticGraph> {
-    AdmittedEnumDeclaration::admit(
-        EnumDeclarationPreimage::from_json(preimage.clone())?,
-        key,
-        &owners(),
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .map_err(graph)
-}
-
-/// A nominal refusal as the graph refusal every fixture here makes: a
-/// fixture preimage never reaches the identity byte limit.
+/// A nominal refusal as the graph refusal every fixture here makes.
 fn graph(refusal: NominalRefusal) -> InvalidSemanticGraph {
     match refusal {
         NominalRefusal::Graph(invalid) => invalid,
@@ -460,33 +418,32 @@ fn graph(refusal: NominalRefusal) -> InvalidSemanticGraph {
     }
 }
 
-fn member_preimage(declaration: NodeKey, case: &str) -> Value {
-    json!({
-        "version": "quire.enum-member-node/v1",
-        "declaration_node_id": {"domain": NODE_KEY_DOMAIN, "digest": declaration.to_string()},
-        "case": case,
-    })
-}
-
 fn member(declaration: &AdmittedEnumDeclaration, case: &str) -> EnumValue {
-    let preimage = member_preimage(declaration.key(), case);
-    declaration
-        .admit_member(
-            &EnumMemberPreimage::from_json(preimage.clone()).unwrap(),
-            fixture_key(&preimage),
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .unwrap()
+    let preimage = EnumMemberPreimage::new(declaration.key(), case).unwrap();
+    let key = preimage.key().unwrap();
+    declaration.admit_member(&preimage, key).unwrap()
 }
 
-fn declaration_preimage(qualified: [&str; 2], ordered: bool, members: &[&str]) -> Value {
-    json!({
-        "version": "quire.enum-declaration-node/v1",
-        "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
-        "qualified_declaration": qualified,
-        "ordered": ordered,
-        "members": members,
-    })
+fn declaration_preimage(
+    qualified: [&str; 2],
+    ordered: bool,
+    members: &[&str],
+) -> EnumDeclarationPreimage {
+    EnumDeclarationPreimage::new(
+        example_owner(),
+        qualified.map(str::to_owned).to_vec(),
+        ordered,
+        members.iter().map(|m| (*m).to_owned()).collect(),
+    )
+    .unwrap()
+}
+
+fn admit_declaration(
+    preimage: EnumDeclarationPreimage,
+    owners: &OwnerSelection,
+) -> Result<AdmittedEnumDeclaration, InvalidSemanticGraph> {
+    let key = preimage.key().unwrap();
+    AdmittedEnumDeclaration::admit(preimage, key, owners).map_err(graph)
 }
 
 fn fixture_declaration(
@@ -494,8 +451,7 @@ fn fixture_declaration(
     ordered: bool,
     members: &[&str],
 ) -> AdmittedEnumDeclaration {
-    let preimage = declaration_preimage(qualified, ordered, members);
-    declaration(&preimage, fixture_key(&preimage)).unwrap()
+    admit_declaration(declaration_preimage(qualified, ordered, members), &owners()).unwrap()
 }
 
 fn enum_compared(
@@ -505,156 +461,6 @@ fn enum_compared(
 ) -> Result<bool, IllTyped> {
     compare_enum(operator, left, right, &mut Meter::new(UNLIMITED))
         .map(|outcome| outcome.completed().unwrap())
-}
-
-#[trace("QSpec-TC-186", "QSpec-FR-141-AC-3")]
-#[test]
-fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
-    // The independent canonicalizer's digest is the key the crate itself
-    // computes for the same preimage, for both a declaration and a member.
-    for (qualified, ordered, members) in [
-        (["Example", "Status"], true, &["READY", "DONE"][..]),
-        (["Example", "Color"], false, &["BLUE", "GREEN", "RED"][..]),
-    ] {
-        let preimage = declaration_preimage(qualified, ordered, members);
-        let key = fixture_key(&preimage);
-        let parsed = EnumDeclarationPreimage::from_json(preimage.clone()).unwrap();
-        assert_eq!(
-            parsed
-                .digest(qsl_foundation::IdentityLimits::default())
-                .unwrap(),
-            *key.as_bytes(),
-            "{qualified:?}"
-        );
-        assert_eq!(declaration(&preimage, key).unwrap().key(), key);
-    }
-    let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
-    let ready_preimage = member_preimage(status.key(), "READY");
-    let ready_key = fixture_key(&ready_preimage);
-    let parsed = EnumMemberPreimage::from_json(ready_preimage.clone()).unwrap();
-    assert_eq!(
-        parsed
-            .digest(qsl_foundation::IdentityLimits::default())
-            .unwrap(),
-        *ready_key.as_bytes()
-    );
-    assert_eq!(parsed.declaration().as_bytes(), status.key().as_bytes());
-    let ready = status
-        .admit_member(
-            &parsed,
-            ready_key,
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .unwrap();
-    assert_eq!(
-        (ready.declaration(), ready.member()),
-        (status.key(), ready_key)
-    );
-
-    // Every non-canonical preimage is rejected.
-    let base = declaration_preimage(["Example", "Status"], true, &["READY", "DONE"]);
-    let mutated = |edit: &dyn Fn(&mut Value)| {
-        let mut value = base.clone();
-        edit(&mut value);
-        value
-    };
-    let noncanonical = [
-        mutated(&|v| v["extra"] = json!(1)),
-        mutated(&|v| {
-            v.as_object_mut().unwrap().remove("ordered");
-        }),
-        mutated(&|v| v["version"] = json!("quire.enum-declaration-node/v2")),
-        mutated(&|v| v["members"] = json!([])),
-        mutated(&|v| v["members"] = json!(["READY", "READY"])),
-        mutated(&|v| v["members"] = json!(["1READY"])),
-        mutated(&|v| v["qualified_declaration"] = json!([])),
-        mutated(&|v| v["owner"]["kind"] = json!("package")),
-        mutated(&|v| v["owner"]["authority"] = json!("")),
-        mutated(&|v| v["owner"]["extra"] = json!("x")),
-        mutated(&|v| v["owner"]["export"] = json!("E")),
-        mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b"})),
-        mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b", "node": null})),
-        // A model owner naming `authority` and `export` instead of `node` is
-        // refused: `node` is required and absent, and `authority`/`export`
-        // are unknown members.
-        mutated(&|v| {
-            v["owner"] = json!({"kind": "model", "authority": "a", "identity": "b", "export": "E"})
-        }),
-        mutated(&|v| v["ordered"] = json!("true")),
-    ];
-    for preimage in noncanonical {
-        assert_eq!(
-            EnumDeclarationPreimage::from_json(preimage.clone()),
-            Err(InvalidSemanticGraph {
-                cause: SemanticGraphCause::NonCanonicalPreimage
-            }),
-            "{preimage}"
-        );
-    }
-    let model = mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b", "node": "E"}));
-    assert!(EnumDeclarationPreimage::from_json(model).is_ok());
-
-    let member = member_preimage(status.key(), "READY");
-    let member_noncanonical = [
-        {
-            let mut v = member.clone();
-            v["declaration_node_id"]["digest"] = json!(status.key().to_string().to_uppercase());
-            v
-        },
-        {
-            let mut v = member.clone();
-            v["declaration_node_id"]["domain"] = json!("quire.definition.bytes/v1");
-            v
-        },
-        {
-            let mut v = member.clone();
-            v["case"] = json!("not-an-identifier");
-            v
-        },
-        {
-            let mut v = member.clone();
-            v["version"] = json!("quire.enum-declaration-node/v1");
-            v
-        },
-    ];
-    for preimage in member_noncanonical {
-        assert_eq!(
-            EnumMemberPreimage::from_json(preimage),
-            Err(InvalidSemanticGraph {
-                cause: SemanticGraphCause::NonCanonicalPreimage
-            })
-        );
-    }
-    assert_eq!(InvalidSemanticGraph::CODE, "invalid_semantic_graph");
-
-    // RFC 8785 string serialization: C0 controls as lowercase `\u00xx`, short
-    // escapes for quote, backslash and `\n`, and no escape for other scalars.
-    let escaped = EnumDeclarationPreimage::from_json(json!({
-        "version": "quire.enum-declaration-node/v1",
-        "owner": {"kind": "source", "authority": "a\u{1f}\"\\\n\u{e9}\u{2028}\u{7f}", "identity": "i"},
-        "qualified_declaration": ["Q"],
-        "ordered": true,
-        "members": ["A"],
-    }))
-    .unwrap();
-    let expected = concat!(
-        r#"{"members":["A"],"ordered":true,"owner":{"authority":"a\u001f\"\\\n"#,
-        "\u{e9}\u{2028}\u{7f}",
-        r#"","identity":"i","kind":"source"},"qualified_declaration":["Q"],"version":"quire.enum-declaration-node/v1"}"#,
-    );
-    let digest: String = Sha256::digest(expected.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    assert_eq!(
-        NodeKey::from_digest(
-            escaped
-                .digest(qsl_foundation::IdentityLimits::default())
-                .unwrap()
-        )
-        .to_string(),
-        digest
-    );
 }
 
 #[trace("QSpec-TC-186", "QSpec-FR-141-AC-2")]
@@ -707,183 +513,6 @@ fn t08_ordering_follows_ordered_declarations_only() {
             assert_eq!(result, Ok(operator == NotEqual));
         }
     }
-}
-
-#[trace("QSpec-TC-186", "QSpec-FR-141-AC-3")]
-#[test]
-fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
-    // A member preimage's retained key goes stale when the case it was
-    // computed for changes underneath it: the declared case is still valid,
-    // but the recomputed key no longer matches what was retained.
-    let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
-    let ready_preimage = member_preimage(status.key(), "READY");
-    let ready_key = fixture_key(&ready_preimage);
-    let mut restaged_case = ready_preimage.clone();
-    restaged_case["case"] = json!("DONE");
-    let restaged_case = EnumMemberPreimage::from_json(restaged_case).unwrap();
-    assert_eq!(
-        status
-            .admit_member(
-                &restaged_case,
-                ready_key,
-                qsl_foundation::IdentityLimits::default()
-            )
-            .map_err(graph)
-            .unwrap_err()
-            .cause,
-        SemanticGraphCause::StaleKey
-    );
-
-    // An owner absent from the selection refuses before any key is checked.
-    let mut foreign_owner = declaration_preimage(["Example", "Status"], true, &["READY", "DONE"]);
-    foreign_owner["owner"] =
-        json!({"kind": "definition", "authority": "agent-ix", "identity": "not-selected"});
-    assert_eq!(
-        declaration(&foreign_owner, fixture_key(&foreign_owner))
-            .unwrap_err()
-            .cause,
-        SemanticGraphCause::OwnerNotSelected
-    );
-
-    // An unordered declaration whose members are not sorted refuses.
-    let unsorted = declaration_preimage(["Example", "Status"], false, &["READY", "DONE"]);
-    assert_eq!(
-        declaration(&unsorted, fixture_key(&unsorted))
-            .unwrap_err()
-            .cause,
-        SemanticGraphCause::UnsortedUnorderedMembers
-    );
-
-    // Unsorted members refuse before an unselected owner is joined, and
-    // before a stale key is recomputed.
-    let mut unsorted_foreign = unsorted.clone();
-    unsorted_foreign["owner"] =
-        json!({"kind": "definition", "authority": "agent-ix", "identity": "not-selected"});
-    assert_eq!(
-        declaration(&unsorted_foreign, fixture_key(&unsorted))
-            .unwrap_err()
-            .cause,
-        SemanticGraphCause::UnsortedUnorderedMembers
-    );
-
-    // Owner, case and order changes that keep old keys are stale; recomputed
-    // keys are a new identity that is ill-typed against the old one.
-    let base = declaration_preimage(["Example", "Status"], true, &["READY", "DONE"]);
-    let old_key = fixture_key(&base);
-    let old = declaration(&base, old_key).unwrap();
-    let other_owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "other"});
-    let changes = [
-        declaration_preimage(["Example", "Status"], true, &["DONE", "READY"]),
-        declaration_preimage(["Example", "Status"], true, &["READY", "CLOSED"]),
-        declaration_preimage(["Example", "Status"], false, &["DONE", "READY"]),
-        {
-            let mut value = base.clone();
-            value["owner"] = other_owner.clone();
-            value
-        },
-    ];
-    let selection = OwnerSelection::new([
-        example_owner(),
-        NodeOwner::Definition(OwnerSubject {
-            authority: "agent-ix".into(),
-            identity: "other".into(),
-        }),
-    ]);
-    for changed in changes {
-        let preimage = EnumDeclarationPreimage::from_json(changed.clone()).unwrap();
-        assert_eq!(
-            AdmittedEnumDeclaration::admit(
-                preimage.clone(),
-                old_key,
-                &selection,
-                qsl_foundation::IdentityLimits::default()
-            )
-            .map_err(graph),
-            Err(InvalidSemanticGraph {
-                cause: SemanticGraphCause::StaleKey
-            }),
-            "{changed}"
-        );
-        let new_key = fixture_key(&changed);
-        assert_ne!(new_key, old_key);
-        let new = AdmittedEnumDeclaration::admit(
-            preimage,
-            new_key,
-            &selection,
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .unwrap();
-        let old_ready = member(&old, "READY");
-        let new_case = new.declaration().members()[0].clone();
-        let new_member = member(&new, &new_case);
-        assert_eq!(
-            enum_compared(Equal, &old_ready, &new_member),
-            Err(IllTyped {
-                cause: IllTypedCause::DistinctEnumDeclarations
-            })
-        );
-    }
-
-    // A retained member key moved to another declaration or case refuses.
-    let ready_preimage = member_preimage(old_key, "READY");
-    let ready_key = fixture_key(&ready_preimage);
-    let other = fixture_declaration(["Example", "Phase"], true, &["READY", "DONE"]);
-    let ready_preimage = EnumMemberPreimage::from_json(ready_preimage).unwrap();
-    assert_eq!(
-        other
-            .admit_member(
-                &ready_preimage,
-                ready_key,
-                qsl_foundation::IdentityLimits::default()
-            )
-            .map_err(graph)
-            .unwrap_err()
-            .cause,
-        SemanticGraphCause::ForeignDeclaration
-    );
-    let closed = EnumMemberPreimage::from_json(member_preimage(old_key, "CLOSED")).unwrap();
-    assert_eq!(
-        old.admit_member(
-            &closed,
-            ready_key,
-            qsl_foundation::IdentityLimits::default()
-        )
-        .map_err(graph)
-        .unwrap_err()
-        .cause,
-        SemanticGraphCause::UndeclaredCase
-    );
-}
-
-/// TC-409 step 7 (FR-088-AC-11, ADR-013 C-30): a declaration's own node key
-/// is never accepted in a member's place. `admit_member` recomputes the
-/// FR-141 member preimage digest (`{version: quire.enum-member-node/v1,
-/// declaration_node_id, case}`) and compares it against the retained key it
-/// is handed (ADR-013 O-04); the declaration's own key is the digest of a
-/// wholly different preimage (`quire.enum-declaration-node/v1`), so passing
-/// it in the member key's place -- the step a caller must go through before
-/// an `EnumValue::variant` (`VariantId`) ever exists -- refuses as a stale
-/// key rather than minting an identity from declaration bytes. This is the
-/// one TC-409 fault SR-511 (FND-006, informational) found untested anywhere
-/// in the repo.
-#[trace("TC-409", "FR-088-AC-11")]
-#[test]
-fn tc_409_declaration_key_is_never_accepted_as_a_member_key() {
-    let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
-    let ready_preimage =
-        EnumMemberPreimage::from_json(member_preimage(status.key(), "READY")).unwrap();
-    assert_eq!(
-        status
-            .admit_member(
-                &ready_preimage,
-                status.key(),
-                qsl_foundation::IdentityLimits::default()
-            )
-            .map_err(graph)
-            .unwrap_err()
-            .cause,
-        SemanticGraphCause::StaleKey
-    );
 }
 
 #[trace("QSpec-TC-186", "QSpec-FR-141-AC-6")]
@@ -1105,28 +734,24 @@ fn generated_enums_follow_declaration_identity_and_order() {
                 }
                 let name = format!("E{count}{rotation}{ordered}");
                 let preimage = declaration_preimage(["Example", &name], ordered, &members);
-                let key = fixture_key(&preimage);
-                let admitted = declaration(&preimage, key).unwrap();
-                // Retaining a key while changing the flag or owner is stale.
-                let mut flipped = preimage.clone();
-                flipped["ordered"] = json!(!ordered);
-                if !ordered || members.is_sorted() {
-                    assert_eq!(
-                        declaration(&flipped, key).unwrap_err().cause,
-                        SemanticGraphCause::StaleKey
-                    );
-                }
-                let mut foreign = preimage.clone();
-                foreign["owner"]["identity"] = json!("absent-model");
+                let admitted = admit_declaration(preimage.clone(), &owners()).unwrap();
+                // An owner the selection does not contain is refused.
                 assert_eq!(
-                    declaration(&foreign, key).unwrap_err().cause,
+                    admit_declaration(preimage, &OwnerSelection::new([]))
+                        .unwrap_err()
+                        .cause,
                     SemanticGraphCause::OwnerNotSelected
                 );
                 if !ordered && count > 1 {
-                    let mut unsorted = preimage.clone();
-                    unsorted["members"].as_array_mut().unwrap().reverse();
+                    let mut reversed = members.clone();
+                    reversed.reverse();
                     assert_eq!(
-                        declaration(&unsorted, key).unwrap_err().cause,
+                        admit_declaration(
+                            declaration_preimage(["Example", &name], ordered, &reversed),
+                            &owners()
+                        )
+                        .unwrap_err()
+                        .cause,
                         SemanticGraphCause::UnsortedUnorderedMembers
                     );
                 }

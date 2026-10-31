@@ -24,7 +24,6 @@ use qsl_foundation::diagnostic::{Code, Locus, RefusalRecord};
 use qsl_foundation::source::Source;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::OfferedSelection;
@@ -409,8 +408,8 @@ impl RunRefusal {
 }
 
 /// Compile `bytes` through the spine and call `call`'s named function with
-/// its arguments, under `call`'s accounting limits. Returns the compiled
-/// package's `package_id` and the call's outcome (FR-100).
+/// its arguments, under `call`'s accounting limits. Returns the call's
+/// outcome (FR-100).
 ///
 /// `cancel` is the caller's handle (ADR-029: every operation takes one): a
 /// cancel stops the run at its next charge, whichever stage it is in, as
@@ -421,6 +420,7 @@ impl RunRefusal {
 )]
 pub fn run(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -429,9 +429,10 @@ pub fn run(
     call: &Call,
     objects: &ObjectEnvironment,
     cancel: &Cancel,
-) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+) -> Result<CallOutcome, Box<RunRefusal>> {
     run_reading(
         source,
+        package_name,
         path,
         bytes,
         packages,
@@ -442,14 +443,13 @@ pub fn run(
         cancel,
         |_, _, _| Ok(()),
     )
-    .map(|(package_id, outcome, ())| (package_id, outcome))
+    .map(|(outcome, ())| outcome)
 }
 
 /// [`run`] over one compile, and, once the call has run, `read` over the
 /// compile's checked unit, emitted unit and admitted models (FR-395 "One
 /// checked graph", FR-404 "One compile"): the value `read` returns comes from
-/// the same compile as the call and the
-/// `package_id`. A refusal before the call, including a cancel, returns
+/// the same compile as the call. A refusal before the call, including a cancel, returns
 /// before `read` runs.
 #[allow(
     clippy::too_many_arguments,
@@ -457,6 +457,7 @@ pub fn run(
 )]
 pub(crate) fn run_reading<T>(
     source: SourceIdentity,
+    package_name: String,
     path: &str,
     bytes: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
@@ -466,7 +467,7 @@ pub(crate) fn run_reading<T>(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
     read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
-) -> Result<(PackageId, CallOutcome, T), Box<RunRefusal>> {
+) -> Result<(CallOutcome, T), Box<RunRefusal>> {
     let refusal = |failure| match failure {
         StageFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
         other => match front_end::refusal_or_fault(other) {
@@ -488,13 +489,12 @@ pub(crate) fn run_reading<T>(
     let models = front_end::select(&parsed, packages, limits.model, cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = front_end::check(&parsed, &models, dependencies, limits, cancel)
+    let checked = front_end::check(&parsed, package_name, &models, dependencies, limits, cancel)
         .map_err(refusal)?
         .into_value();
     let emitted = front_end::package(&checked, front_end::PackageLimits::default(), cancel)
         .map_err(refusal)?
         .into_value();
-    let package_id = emitted.package().package_id();
     let package = checked.package();
     let selected = select(package, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
@@ -530,7 +530,7 @@ pub(crate) fn run_reading<T>(
     sources.extend(checked.libraries().iter().cloned());
     let outcome = convert_outcome(evaluation, package.graph(), &sources)?;
     let read = read(&checked, &emitted, &models)?;
-    Ok((package_id, outcome, read))
+    Ok((outcome, read))
 }
 
 /// The selected function: its S6a name and declared parameters.
@@ -712,7 +712,7 @@ pub(crate) fn admit_model_arguments(
         if let (ValueType::Population(maximum), Value::Population(population_id)) =
             (value_type, argument)
         {
-            let Some(binding) = objects.resolve_population(*population_id) else {
+            let Some(binding) = objects.resolve_population(population_id.clone()) else {
                 return Err(Box::new(RunRefusal::WrongValueKind { position }));
             };
             if binding.declared_maximum() != *maximum {
@@ -760,7 +760,7 @@ pub(crate) fn admit_model_arguments(
                             model
                                 .view
                                 .object_universe_of(key)
-                                .map(|universe| universe.identity())
+                                .and_then(|universe| universe.identity().ok())
                         })
                         .flatten()
                 })
@@ -771,7 +771,7 @@ pub(crate) fn admit_model_arguments(
                 .view
                 .type_identities()
                 .values()
-                .any(|identity| *identity == reference.object_type())
+                .any(|identity| identity == reference.object_type())
         });
         let Some((expected_model, expected)) = expected_model else {
             let Some(supplied_model) = supplied_model else {
@@ -781,7 +781,7 @@ pub(crate) fn admit_model_arguments(
                 .view
                 .type_identities()
                 .iter()
-                .find(|(_, identity)| **identity == reference.object_type())
+                .find(|(_, identity)| *identity == reference.object_type())
             else {
                 return Err(Box::new(RunRefusal::WrongValueKind { position }));
             };
@@ -821,19 +821,19 @@ pub(crate) fn admit_model_arguments(
                 }));
             }
         }
-        if reference.universe() != expected {
+        if *reference.universe() != expected {
             return Err(Box::new(RunRefusal::Admission {
                 position,
                 refusal: ModelRefusal {
                     code: Code::ForeignReference,
                     cause: ModelRefusalCause::ForeignUniverse {
-                        actual: reference.universe().as_bytes().to_vec(),
-                        expected,
+                        actual: reference.universe().root_type().clone(),
+                        expected: expected.clone(),
                     },
                     detail: format!(
                         "reference names universe {}, expected {}",
-                        reference.universe(),
-                        expected
+                        reference.universe().root_type(),
+                        expected.root_type()
                     ),
                 },
             }));

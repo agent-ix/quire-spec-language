@@ -34,12 +34,13 @@ classification to construct and validate the TL correspondence.
 
 ## Semantic authority and boundary
 
-QSpec FR-095 owns the correspondence meaning and support table. This QSL
-requirement owns `mapping_support_v2` and the authenticated native classification
-that Contract IR FR-350 consumes. A supported classification names outstanding
-premises; it does not claim that a formula, valuation request or correspondence
-record has been emitted. Contract IR owns that construction and the result join.
-Neither QSL nor Contract IR owns the TL or native evaluator.
+QSpec FR-095 owns the correspondence contract and directs QSL FR-045 to
+classify its support table. This QSL requirement owns the table's classification
+and target mapping, `mapping_support_v2`, and the authenticated native
+classification that Contract IR FR-350 consumes. A supported classification
+names outstanding premises; it does not claim that a formula, valuation request
+or correspondence record has been emitted. Contract IR owns that construction
+and the result join. Neither QSL nor Contract IR owns the TL or native evaluator.
 
 The disposition SHALL be a total function of three inputs and nothing else:
 the declaration's selected profile, the operator kinds reachable from its root,
@@ -105,9 +106,9 @@ claim that the Contract IR bridge has emitted or joined an artifact.
 
 ## Behavior
 
-The classifier SHALL use exactly this table, which restates the reviewed
-correspondence disposition in
-`ix://agent-ix/quire-specification/FR-095`. The admitted temporal profiles are
+The classifier SHALL use exactly this QSL-owned table to map each admitted
+request to its target and disposition under the correspondence contract in
+QSpec FR-095. The admitted temporal profiles are
 `quire.temporal.event-position.false-extension/v1`,
 `quire.temporal.fixed-sample.false-extension/v1`,
 `quire.temporal.timestamped-event.finite-window/v1` and

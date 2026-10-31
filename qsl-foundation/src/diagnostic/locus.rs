@@ -3,9 +3,9 @@
 //! pointer its artifact variant carries.
 //!
 //! A stage converts its own position into a [`Locus`] when it emits a
-//! diagnostic (ADR-011 §6.1): S0 to S2 name a [`SourceRegion`], S3 on name
-//! a kernel [`Location`] tag, and a wire reader names a digest-addressed
-//! artifact and a pointer into it.
+//! diagnostic (ADR-011 §6.1): S0 to S2 name a [`SourceRegion`], S3 on names
+//! a kernel [`Location`] tag, and a wire reader names a pointer in the
+//! artifact being read.
 
 use alloc::{borrow::ToOwned, string::String};
 use core::fmt;
@@ -13,7 +13,6 @@ use core::str::FromStr;
 
 use quire_exact::Location;
 
-use crate::digest::DigestRecord;
 use crate::source::provenance::{PackageSourceMap, SourceRegion, UnresolvedOccurrence};
 
 /// ADR-013 T-5: where a diagnostic points.
@@ -25,11 +24,8 @@ pub enum Locus {
     /// from S3 on and resolved to regions through the package source map
     /// when rendered ([`Locus::regions`]).
     Occurrence(Location),
-    /// A digest-addressed artifact (O-18) and a JSON pointer into it, used
-    /// by wire readers.
+    /// A JSON pointer into the artifact being read, used by wire readers.
     Artifact {
-        /// The artifact's digest record.
-        digest: DigestRecord,
         /// The pointer into that artifact.
         pointer: JsonPointer,
     },
@@ -37,7 +33,7 @@ pub enum Locus {
 
 /// QSpec FR-461's rendering of a position: a source region as the source's
 /// identity and its byte range, an occurrence as its kernel location, and an
-/// artifact as its digest and pointer.
+/// artifact as its pointer.
 impl fmt::Display for Locus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -49,9 +45,7 @@ impl fmt::Display for Locus {
                 region.end()
             ),
             Self::Occurrence(location) => write!(f, "occurrence {location:?}"),
-            Self::Artifact { digest, pointer } => {
-                write!(f, "artifact {} at `{pointer}`", digest.hex())
-            }
+            Self::Artifact { pointer } => write!(f, "artifact at `{pointer}`"),
         }
     }
 }
@@ -154,10 +148,9 @@ impl fmt::Display for JsonPointer {
 mod tests {
     use alloc::vec;
     use ix_trace_rs::trace;
-    use quire_exact::{NodeKey, Origin, Role};
+    use quire_exact::{NodeKey, Origin, PathSegment, Role};
 
     use super::*;
-    use crate::digest::{DigestDomain, WireNodeId};
     use crate::source::provenance::{OccurrenceKey, RawSourceRef};
 
     fn region(start: u64, end: u64) -> SourceRegion {
@@ -175,9 +168,9 @@ mod tests {
     #[trace("TC-422", "FR-095-AC-5")]
     #[test]
     fn each_locus_variant_resolves_to_regions_by_its_own_rule() {
-        let node = [9; 32];
+        let node = NodeKey::new("test", vec![PathSegment::Text("9".into())], 0).unwrap();
         let map = PackageSourceMap::from_entries([(
-            OccurrenceKey::new(WireNodeId::from_digest(node), origin(0)),
+            OccurrenceKey::new(node.clone(), origin(0)),
             vec![region(3, 8), region(12, 14)],
         )])
         .unwrap();
@@ -185,12 +178,12 @@ mod tests {
             Locus::Region(region(1, 2)).regions(&map),
             Ok(&[region(1, 2)][..])
         );
-        let located = Locus::Occurrence(Location::new(NodeKey::from_digest(node), origin(0)));
+        let located = Locus::Occurrence(Location::new(node.clone(), origin(0)));
         assert_eq!(
             located.regions(&map),
             Ok(&[region(3, 8), region(12, 14)][..])
         );
-        let unmapped = Location::new(NodeKey::from_digest(node), origin(1));
+        let unmapped = Location::new(node, origin(1));
         assert_eq!(
             Locus::Occurrence(unmapped.clone()).regions(&map),
             Err(UnresolvedLocus::Occurrence(
@@ -198,9 +191,9 @@ mod tests {
             ))
         );
         let artifact = Locus::Artifact {
-            digest: DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]),
             pointer: "/source_map/0".parse().unwrap(),
         };
+        assert_eq!(artifact.to_string(), "artifact at `/source_map/0`");
         assert_eq!(artifact.regions(&map), Err(UnresolvedLocus::Artifact));
     }
 

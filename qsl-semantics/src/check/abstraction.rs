@@ -30,11 +30,12 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{
-    generated_location, object_type_node, population_node, relation_node, AdmittedModel,
-    SemanticNode,
+    generated_location, model_node_content, population_node_content, AdmittedModel, SemanticNode,
 };
 use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
+use super::node_key::{ModelOwner, NodeTag};
 use super::CheckedGraph;
+use crate::model::key::{object_type_node_key, population_node_key};
 use crate::model::operation::OperationLookup;
 use quire_checked::key::DeclarationKey;
 
@@ -176,7 +177,7 @@ impl AuthoredBinding {
 
 /// The `state`/`frame` and `state`/`operation_anchor` nodes of an operation
 /// a clause or attempt of the unit names (FR-305).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameNodes {
     frame: NodeKey,
     anchor: NodeKey,
@@ -185,12 +186,12 @@ pub struct FrameNodes {
 impl FrameNodes {
     /// The operation's `state`/`frame` node key.
     pub fn frame(&self) -> NodeKey {
-        self.frame
+        self.frame.clone()
     }
 
     /// The operation's `state`/`operation_anchor` node key.
     pub fn anchor(&self) -> NodeKey {
-        self.anchor
+        self.anchor.clone()
     }
 }
 
@@ -211,7 +212,7 @@ impl CheckedFrameBinding {
     /// The operation's frame and anchor nodes: `Some` when a clause or
     /// attempt of the unit names the operation, `None` otherwise.
     pub fn frame_nodes(&self) -> Option<FrameNodes> {
-        self.frame_nodes
+        self.frame_nodes.clone()
     }
 }
 
@@ -742,7 +743,7 @@ impl CheckedGraph {
                     if self
                         .scope
                         .types()
-                        .attribute(*context, field.as_str())
+                        .attribute(context.clone(), field.as_str())
                         .is_none()
                     {
                         return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
@@ -776,7 +777,7 @@ impl CheckedGraph {
                     operation,
                 } = self.scope.operations().resolve(
                     self.scope.types(),
-                    *context,
+                    context.clone(),
                     key.operation.as_str(),
                 )
                 else {
@@ -849,16 +850,13 @@ impl CheckedGraph {
         let Some(node) = self.object_nodes.get(declaration) else {
             return false;
         };
-        matches!(
-            object_type_node(declaration, self.identity),
-            Ok(Some(plain)) if plain.key() == *node
-        )
+        object_type_node_key(declaration).is_ok_and(|plain| plain == *node)
     }
 
     /// FR-305: the nodes of the frame of the operation `key` names, when a
     /// clause or attempt of the unit names it.
     fn frame_nodes(&self, key: &OperationKey) -> Option<FrameNodes> {
-        let context = *self.object_types.get(&key.declaring)?;
+        let context = self.object_types.get(&key.declaring)?.clone();
         self.operation_frames
             .iter()
             .find(|frame| {
@@ -866,8 +864,8 @@ impl CheckedGraph {
                     && frame.operation.declaration.name() == key.operation.as_str()
             })
             .map(|frame| FrameNodes {
-                frame: frame.frame,
-                anchor: frame.anchor,
+                frame: frame.frame.clone(),
+                anchor: frame.anchor.clone(),
             })
     }
 
@@ -894,7 +892,7 @@ impl CheckedGraph {
         let mut elements = BTreeSet::new();
         let resolved = (|| -> Result<(), InternalFault> {
             for id in &references.objects {
-                elements.insert(AbstractionKey::Object(object(*id)?));
+                elements.insert(AbstractionKey::Object(object(id.clone())?));
             }
             for domain in &references.populations {
                 let key = self
@@ -906,7 +904,7 @@ impl CheckedGraph {
             }
             if let Some((declaring, name)) = &references.operation {
                 elements.insert(AbstractionKey::Frame(OperationKey {
-                    declaring: object(*declaring)?,
+                    declaring: object(declaring.clone())?,
                     operation: Identifier::new(name)
                         .map_err(|_| fault("referenced-operation-name-is-an-identifier"))?,
                 }));
@@ -975,6 +973,9 @@ pub enum AbstractionNodeRefusal {
     /// A node has no key.
     #[error(transparent)]
     Key(#[from] NodeKeyRefusal),
+    /// The relation node's structural key cannot be formed.
+    #[error("the abstraction relation node has no structural key")]
+    UnkeyedRelation,
     /// A binding's kind disagrees with its key's: a broken check invariant.
     #[error("a check invariant is broken: {0:?}")]
     Internal(Box<InternalFault>),
@@ -1075,10 +1076,21 @@ impl CheckedGraph {
                 }
             }
         }
-        let node = relation_node(
-            AbstractionTerm::new(objects, populations, frames),
-            self.identity,
-        )?;
+        let term = AbstractionTerm::new(objects, populations, frames);
+        let operands = term
+            .targets()?
+            .into_iter()
+            .map(quire_exact::PathSegment::Node)
+            .collect();
+        let key = super::derived_node_key(
+            self.package_name(),
+            NodeTag::Correspondence,
+            "abstraction_relation",
+            operands,
+            0,
+        )
+        .map_err(|_| AbstractionNodeRefusal::UnkeyedRelation)?;
+        let node = SemanticNode::abstraction_relation(key, term);
         Ok(AbstractionNodes {
             relation: node,
             support: support.nodes.into_values().collect(),
@@ -1099,16 +1111,26 @@ impl CheckedGraph {
         let refused = || AbstractionNodeRefusal::NotAnObjectTypeNode {
             key: declaration.clone(),
         };
-        let key = *self.object_nodes.get(declaration).ok_or_else(refused)?;
-        if self.semantic_graph.node(key).is_some() || support.nodes.contains_key(&key) {
+        let key = self
+            .object_nodes
+            .get(declaration)
+            .ok_or_else(refused)?
+            .clone();
+        if self.semantic_graph.node(key.clone()).is_some() || support.nodes.contains_key(&key) {
             return Ok(key);
         }
         // A domain record whose node is not an `object_type` (a systems
         // interface) keys to another node than this content does.
-        let node = object_type_node(declaration, self.identity)?
-            .filter(|node| node.key() == key)
-            .ok_or_else(refused)?;
-        support.nodes.insert(key, node);
+        if object_type_node_key(declaration).map_err(|_| refused())? != key {
+            return Err(refused());
+        }
+        let owner = ModelOwner::new(declaration.package.clone(), declaration.node.clone())
+            .map_err(|_| refused())?;
+        let node = SemanticNode::declared(
+            key.clone(),
+            model_node_content(owner, NodeTag::Model, "object_type"),
+        );
+        support.nodes.insert(key.clone(), node);
         Ok(key)
     }
 
@@ -1119,13 +1141,14 @@ impl CheckedGraph {
         declaration: &DeclarationKey,
         support: &mut Support,
     ) -> Result<NodeKey, AbstractionNodeRefusal> {
-        let node = population_node(declaration, self.identity)?.ok_or_else(|| {
-            AbstractionNodeRefusal::NotAPopulationNode {
-                key: declaration.clone(),
-            }
-        })?;
-        let key = node.key();
-        support.nodes.insert(key, node);
+        let refused = || AbstractionNodeRefusal::NotAPopulationNode {
+            key: declaration.clone(),
+        };
+        let key = population_node_key(declaration).map_err(|_| refused())?;
+        let owner = ModelOwner::new(declaration.package.clone(), declaration.node.clone())
+            .map_err(|_| refused())?;
+        let node = SemanticNode::declared(key.clone(), population_node_content(owner));
+        support.nodes.insert(key.clone(), node);
         Ok(key)
     }
 }

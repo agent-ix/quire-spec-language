@@ -259,7 +259,7 @@ impl Lowering<'_> {
     ) -> Result<NodeKey, CheckRefusal> {
         let binding = self.operation_anchor(anchor, None, anchor.location)?;
         self.record(
-            binding.anchor,
+            binding.anchor.clone(),
             OccurrenceRole::Anchor,
             anchor.location.clone(),
         );
@@ -308,32 +308,39 @@ impl Lowering<'_> {
         let mut scope = Vec::with_capacity(clause.parameters.len());
         for (level, (name, value_type)) in clause.parameters.iter().enumerate() {
             let type_key = self.binder_type(value_type, None, location)?;
-            let key = self.parameter(name, level, type_key, location)?;
-            self.record(type_key, OccurrenceRole::Type, location.clone());
+            let key = self.parameter(name, level, type_key.clone(), location)?;
+            self.record(type_key.clone(), OccurrenceRole::Type, location.clone());
             self.record_binder(
                 BinderSite {
                     binder: location.clone(),
                     slot: level,
                 },
-                key,
+                key.clone(),
             );
             scope.push(Binder {
                 slot: level,
-                parameter: key,
-                semantic_type: type_key,
+                parameter: key.into(),
+                semantic_type: type_key.into(),
             });
         }
-        let parameters: Vec<NodeKey> = scope.iter().map(|binder| binder.parameter).collect();
+        let parameters: Vec<NodeKey> = scope
+            .iter()
+            .map(|binder| super::require_admitted(binder.parameter.clone(), location))
+            .collect::<Result<_, _>>()?;
         let mut binders = Binders::new(clause.body_slots, &scope);
         let condition = self.expression(clause.body, &mut binders)?;
         let boolean = self.type_node(&ValueType::Boolean, location)?;
         let (anchor, binding) = match &clause.anchor {
-            None => (self.object_node(clause.context, location)?, None),
+            None => (self.object_node(clause.context.clone(), location)?, None),
             Some(anchor) => {
                 let binding =
                     self.operation_anchor(anchor, clause.execution_point.as_ref(), location)?;
-                self.record(binding.anchor, OccurrenceRole::Anchor, location.clone());
-                (binding.anchor, Some(binding))
+                self.record(
+                    binding.anchor.clone(),
+                    OccurrenceRole::Anchor,
+                    location.clone(),
+                );
+                (binding.anchor.clone(), Some(binding))
             }
         };
         // FR-341: a `state_clause` node's body is a `quire.op.state.clause`
@@ -346,7 +353,7 @@ impl Lowering<'_> {
             location,
             NodeTag::State,
             "state_clause",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::StateClause,
@@ -357,25 +364,28 @@ impl Lowering<'_> {
                     }),
                     ..Operation::plain("quire.op.state.clause")
                 },
-                boolean,
+                boolean.clone(),
                 vec![
-                    MemberTerm::Group(GroupTerm::references(parameters.iter().copied())),
+                    MemberTerm::Group(GroupTerm::references(parameters.iter().cloned())),
                     MemberTerm::reference(anchor),
                     MemberTerm::Leaf(condition.clone()),
                 ],
             ),
         )?;
-        self.record(key, OccurrenceRole::Claim, location.clone());
+        self.record(key.clone(), OccurrenceRole::Claim, location.clone());
         let mut population_objects = Vec::with_capacity(clause.population_types.len());
         for object in clause.population_types {
-            let object = self.object_node(*object, location)?;
+            let object = self.object_node(object.clone(), location)?;
             // The requirement names this type even when the clause's nodes
             // do not, as for a population covering a proper subtype.
-            self.record(object, OccurrenceRole::Type, location.clone());
+            self.record(object.clone(), OccurrenceRole::Type, location.clone());
             population_objects.push(object);
         }
         let condition = match condition {
-            LeafTerm::Reference { target } => target.0,
+            LeafTerm::Reference { target } => target
+                .admitted()
+                .cloned()
+                .ok_or_else(|| fault(location, KeyFault::UnresolvedDraft))?,
             LeafTerm::Literal { .. } | LeafTerm::DependencyReference { .. } => {
                 return Err(fault(
                     location,
@@ -408,7 +418,7 @@ impl Lowering<'_> {
     ) -> Result<LoweredAttempt, CheckRefusal> {
         let binding = self.operation_anchor(&input.anchor, None, input.location)?;
         self.record(
-            binding.anchor,
+            binding.anchor.clone(),
             OccurrenceRole::Anchor,
             input.location.clone(),
         );
@@ -421,13 +431,18 @@ impl Lowering<'_> {
         // parameter's type node records.
         let population_object = input
             .frame_population
-            .map(|domain| self.object_node(domain.object, input.location))
+            .as_ref()
+            .map(|domain| self.object_node(domain.object.clone(), input.location))
             .transpose()?;
-        if let Some(object) = population_object {
-            self.record(object, OccurrenceRole::Type, input.location.clone());
+        if let Some(ref object) = population_object {
+            self.record(object.clone(), OccurrenceRole::Type, input.location.clone());
         }
         let boolean = self.type_node(&ValueType::Boolean, input.location)?;
-        self.record(boolean, OccurrenceRole::Type, input.location.clone());
+        self.record(
+            boolean.clone(),
+            OccurrenceRole::Type,
+            input.location.clone(),
+        );
         Ok(LoweredAttempt {
             binding,
             population_object,
@@ -447,15 +462,19 @@ impl Lowering<'_> {
         location: &Location,
     ) -> Result<OperationBinding, CheckRefusal> {
         let (declaring, frame) = self.frame_node(anchor, location)?;
-        let frame_origin =
-            self.frame_occurrence(anchor.declaring, anchor.operation.name(), frame, location)?;
+        let frame_origin = self.frame_occurrence(
+            anchor.declaring.clone(),
+            anchor.operation.name(),
+            frame.clone(),
+            location,
+        )?;
         let operation = self.text_literal(anchor.operation.name(), location)?;
         // FR-342: the optional fourth binding follows `frame`; a point-free
         // anchor (a protocol attempt's, an `align skip`'s) omits it.
         let mut members = vec![
-            MemberTerm::bound("context", LeafTerm::reference(declaring)),
+            MemberTerm::bound("context", LeafTerm::reference(declaring.clone())),
             MemberTerm::bound("operation", operation),
-            MemberTerm::bound("frame", LeafTerm::reference(frame)),
+            MemberTerm::bound("frame", LeafTerm::reference(frame.clone())),
         ];
         if let Some(point) = point {
             members.push(MemberTerm::binding(
@@ -488,7 +507,7 @@ impl Lowering<'_> {
         anchor: &AnchorInput<'_>,
         location: &Location,
     ) -> Result<(NodeKey, NodeKey), CheckRefusal> {
-        let declaring = self.object_node(anchor.declaring, location)?;
+        let declaring = self.object_node(anchor.declaring.clone(), location)?;
         let effect = anchor.operation.effect();
         let mut modifies =
             Vec::with_capacity(effect.modifies.len() + effect.receiver_modifies.len());
@@ -513,7 +532,7 @@ impl Lowering<'_> {
             .into_iter()
             .map(|(declaration, name, scope)| match name {
                 Some(name) => FrameModifies::Field(FrameField::new(declaration, name, scope)),
-                None => FrameModifies::Relationship(NodeRef(declaration)),
+                None => FrameModifies::Relationship(NodeRef::Admitted(declaration)),
             })
             .collect();
         let creates = self.frame_objects(&effect.creates, location)?;
@@ -540,7 +559,7 @@ impl Lowering<'_> {
             location,
             NodeTag::State,
             "frame",
-            Some(declaring),
+            Some(declaring.clone()),
             None,
             BodyTerm::frame(modifies, creates, deletes, deletes_scoped),
         )?;
@@ -563,7 +582,7 @@ impl Lowering<'_> {
         let mut distinct: BTreeMap<(EffectiveId, String), &AnchorInput<'_>> = BTreeMap::new();
         for anchor in operations {
             distinct
-                .entry((anchor.declaring, anchor.operation.name().to_owned()))
+                .entry((anchor.declaring.clone(), anchor.operation.name().to_owned()))
                 .or_insert(anchor);
         }
         let mut ordered: Vec<(DeclarationKey, String, &AnchorInput<'_>)> =
@@ -580,7 +599,7 @@ impl Lowering<'_> {
             // independently of it, so it decides only the occurrence's
             // source region (FR-105 "Outputs").
             let (_, frame) = self.frame_node(anchor, anchor.location)?;
-            self.frame_occurrence(anchor.declaring, &name, frame, anchor.reference)?;
+            self.frame_occurrence(anchor.declaring.clone(), &name, frame, anchor.reference)?;
         }
         Ok(())
     }

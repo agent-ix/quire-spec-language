@@ -62,6 +62,7 @@ fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         functions,
         ..PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
         )
     }
@@ -146,7 +147,7 @@ struct Request {
 impl BodyFactory for Request {
     fn begin(&self) -> Box<dyn Body> {
         Box::new(RequestBody {
-            callee: self.callee,
+            callee: self.callee.clone(),
             arguments: self.arguments.clone(),
             transitions: Arc::clone(&self.starts),
         })
@@ -164,11 +165,11 @@ impl Body for RequestBody {
         self.transitions.fetch_add(1, Ordering::SeqCst);
         match input {
             Resume::Start(_) | Resume::Again => Ok(Transition::Call(quire_eval::ChildRequest {
-                callee: self.callee,
+                callee: self.callee.clone(),
                 arguments: self.arguments.clone(),
                 site: call_site(),
             })),
-            Resume::Child(child) => Ok(Transition::Done(child)),
+            Resume::Child(child) => Ok(Transition::Done(*child)),
         }
     }
 }
@@ -248,7 +249,11 @@ fn located_dependency() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             functions: vec![declaration],
-            ..PackageDeclarations::new(source, qsl_foundation::IdentityLimits::default())
+            ..PackageDeclarations::new(
+                source,
+                "lib.g".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
         }
         .check(CheckingLimits::default())
         .unwrap(),
@@ -285,7 +290,7 @@ fn registration_is_decided_from_the_packages_admitted_signature() {
     )
     .expect("the dependency links");
     let f_key = identity(&root, "f");
-    let unknown = NodeKey::from_digest([7; 32]);
+    let unknown = crate::support::ids::node_key([7]);
     let fresh = || Registry::new(Closure::new(&root));
 
     let admitted = Signature::new(vec![range(0, 9)], ValueType::Boolean);
@@ -294,11 +299,11 @@ fn registration_is_decided_from_the_packages_admitted_signature() {
     let guard_signature = Signature::new(Vec::new(), ValueType::Boolean);
 
     assert_eq!(
-        fresh().register(f_key, &admitted, Constant(0)),
+        fresh().register(f_key.clone(), &admitted, Constant(0)),
         Admission::Accepted
     );
     assert_eq!(
-        fresh().register(f_key, &wider, Constant(0)),
+        fresh().register(f_key.clone(), &wider, Constant(0)),
         Admission::SignatureMismatch
     );
     assert_eq!(
@@ -315,7 +320,7 @@ fn registration_is_decided_from_the_packages_admitted_signature() {
     );
     let mut twice = fresh();
     assert_eq!(
-        twice.register(f_key, &admitted, Constant(0)),
+        twice.register(f_key.clone(), &admitted, Constant(0)),
         Admission::Accepted
     );
     assert_eq!(
@@ -446,16 +451,20 @@ fn invalid_child_requests_fault_and_a_valid_one_is_applied() {
     let objects = ObjectEnvironment::default();
     let (f_key, host) = (identity(&package, "f"), identity(&package, "host"));
     let cases: [(&str, NodeKey, Vec<Value>); 3] = [
-        ("unknown key", NodeKey::from_digest([9; 32]), vec![int(1)]),
-        ("two arguments", f_key, vec![int(1), int(2)]),
-        ("out of range", f_key, vec![int(10)]),
+        (
+            "unknown key",
+            crate::support::ids::node_key([9]),
+            vec![int(1)],
+        ),
+        ("two arguments", f_key.clone(), vec![int(1), int(2)]),
+        ("out of range", f_key.clone(), vec![int(10)]),
     ];
     for (what, callee, arguments) in cases {
         let mut registry = Registry::new(Closure::new(&package));
-        let transitions = register_request(&mut registry, host, callee, arguments);
+        let transitions = register_request(&mut registry, host.clone(), callee, arguments);
         let mut meter = Meter::new(UNLIMITED);
         let result = registry
-            .begin_call(host, vec![int(1)], &objects, &mut meter)
+            .begin_call(host.clone(), vec![int(1)], &objects, &mut meter)
             .unwrap()
             .run();
         match result {
@@ -470,7 +479,7 @@ fn invalid_child_requests_fault_and_a_valid_one_is_applied() {
         assert_eq!(transitions.load(Ordering::SeqCst), 1, "{what}: not resumed");
     }
     let mut registry = Registry::new(Closure::new(&package));
-    let transitions = register_request(&mut registry, host, f_key, vec![int(9)]);
+    let transitions = register_request(&mut registry, host.clone(), f_key, vec![int(9)]);
     let mut meter = Meter::new(UNLIMITED);
     let result = registry
         .begin_call(host, vec![int(1)], &objects, &mut meter)
@@ -499,14 +508,14 @@ fn a_mixed_chain_steps_to_the_synchronous_result_and_stops_at_its_fuel() {
     );
     let chain = |limit: u64| {
         let mut registry = Registry::new(Closure::new(&package));
-        let a = register_request(&mut registry, first, second, vec![int(3)]);
-        let b = register_request(&mut registry, second, f_key, vec![int(3)]);
+        let a = register_request(&mut registry, first.clone(), second.clone(), vec![int(3)]);
+        let b = register_request(&mut registry, second.clone(), f_key.clone(), vec![int(3)]);
         let mut meter = Meter::new(ScalarLimits {
             work_units: limit,
             ..UNLIMITED
         });
         let mut session = registry
-            .begin_call(first, vec![int(3)], &objects, &mut meter)
+            .begin_call(first.clone(), vec![int(3)], &objects, &mut meter)
             .unwrap();
         let mut steps = 0;
         let result = loop {
@@ -565,7 +574,7 @@ fn cancelling_after_a_request_is_saved_ends_at_the_childs_call_charge() {
     let objects = ObjectEnvironment::default();
     let (f_key, host) = (identity(&package, "f"), identity(&package, "host"));
     let mut registry = Registry::new(Closure::new(&package));
-    let transitions = register_request(&mut registry, host, f_key, vec![int(2)]);
+    let transitions = register_request(&mut registry, host.clone(), f_key, vec![int(2)]);
     let cancel = Cancel::new();
     let mut meter = Meter::new(UNLIMITED).with_cancel(cancel.clone());
     let session = registry
@@ -710,7 +719,7 @@ fn begin_of_a_call_and_of_an_expression_observes_the_meters_handle() {
     for cause in [CancelCause::Requested, CancelCause::Deadline] {
         let mut registry = Registry::new(Closure::new(&package));
         let mut meter = meter_with(Some(cancelled(cause)));
-        let refused = registry.begin_call(key, vec![int(3), int(4)], &objects, &mut meter);
+        let refused = registry.begin_call(key.clone(), vec![int(3), int(4)], &objects, &mut meter);
         assert!(matches!(refused, Err(CallFailure::Cancelled(c)) if c == cause));
         assert_no_consumption(&meter);
         let mut meter = meter_with(Some(cancelled(cause)));
@@ -723,7 +732,7 @@ fn begin_of_a_call_and_of_an_expression_observes_the_meters_handle() {
         let mut registry = Registry::new(Closure::new(&package));
         let mut meter = meter_with(handle.clone());
         assert!(registry
-            .begin_call(key, vec![int(3), int(4)], &objects, &mut meter)
+            .begin_call(key.clone(), vec![int(3), int(4)], &objects, &mut meter)
             .is_ok());
         let mut meter = meter_with(handle);
         assert!(registry
@@ -772,7 +781,7 @@ fn a_registered_body_for_f_runs_for_the_root_and_the_requesting_body() {
         let mut registry = Registry::new(Closure::new(&package));
         assert_eq!(
             registry.register(
-                f_key,
+                f_key.clone(),
                 &integer,
                 Counted {
                     value: 7,
@@ -787,7 +796,7 @@ fn a_registered_body_for_f_runs_for_the_root_and_the_requesting_body() {
     let (mut registry, begun) = fresh();
     let mut meter = Meter::new(UNLIMITED);
     let result = registry
-        .begin_call(f_key, vec![int(3)], &objects, &mut meter)
+        .begin_call(f_key.clone(), vec![int(3)], &objects, &mut meter)
         .unwrap()
         .run()
         .unwrap();
@@ -800,7 +809,7 @@ fn a_registered_body_for_f_runs_for_the_root_and_the_requesting_body() {
     );
 
     let (mut registry, begun) = fresh();
-    register_request(&mut registry, requester, f_key, vec![int(3)]);
+    register_request(&mut registry, requester.clone(), f_key, vec![int(3)]);
     let mut meter = Meter::new(UNLIMITED);
     let result = registry
         .begin_call(requester, vec![int(1)], &objects, &mut meter)

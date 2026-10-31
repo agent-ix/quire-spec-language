@@ -14,32 +14,20 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{RequestRefusal, SubjectContext};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_replay::{node_occurrence, SubjectIdentity, SubjectIdentityRefusal, TerminalRecord};
+use qsl_replay::{node_occurrence, SubjectIdentity, TerminalRecord};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::ExtentClassification;
 
-use crate::counter::CONTRACT;
 use crate::counter::{document, key, subject, UNLIMITED};
-use crate::liveness::{counter, fixture, Fixture};
+use crate::liveness::{counter, Fixture};
 
 fn reaches_two() -> Fixture {
     counter(
         document(false),
         "fair weak each M::Counter::inc;",
         "always eventually holds(c.value = 2)",
-    )
-}
-
-fn fixture_with(body: &str) -> Fixture {
-    fixture(
-        document(false),
-        body,
-        "fair weak each M::Counter::inc;",
-        "always eventually holds(c.value = 2)",
-        &[("c", 0)],
     )
 }
 
@@ -62,7 +50,7 @@ fn author(
 }
 
 fn identity(subject: &ModelSubject<'_>) -> SubjectIdentity {
-    SubjectIdentity::of(subject).expect("the package emits")
+    SubjectIdentity::of(subject)
 }
 
 /// `ReachesTwo` under `fair weak each` over universe `{a, b}` and over `{a,
@@ -97,7 +85,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
 
     let occurrence = node_occurrence(clause);
     let obligation = |subject: &ModelSubject<'_>| ItemObligation {
-        subject: SubjectIdentity::of(subject).expect("the package emits"),
+        subject: SubjectIdentity::of(subject),
         kind: ObligationKind::Authored(occurrence.clone()),
         reductions: qsl_route::reductions::ObligationReductions::default(),
     };
@@ -153,7 +141,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     bounded.proof_bounds.push(
         ProofBound::new(
             DomainKey::Node {
-                node: WireNodeId::from_digest([9; 32]),
+                node: crate::fixture_ids::node_key([9]),
                 path: Vec::new(),
             },
             Some(DomainKind::Population),
@@ -162,24 +150,6 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
         .expect("a population takes a cardinality bound"),
     );
     assert_ne!(identity(&bounded), plain);
-
-    // The same clause, domain package and initial document over a checked
-    // package whose `post Inc` contract differs is another subject: its
-    // successor relation differs, though the clause's own nodes do not.
-    let rival = fixture_with(&CONTRACT.replace("= 1 }", "= 2 }"));
-    let rival_subject = over(&rival, &["a", "b"]);
-    let [rival_clause] = rival.package.graph().temporal_clauses() else {
-        panic!("one declared clause");
-    };
-    let [clause] = fixture.package.graph().temporal_clauses() else {
-        panic!("one declared clause");
-    };
-    assert_eq!(node_occurrence(rival_clause), node_occurrence(clause));
-    assert_ne!(identity(&rival_subject), plain);
-    let mut shared = ModelRequest::new();
-    let first = author(&mut shared, &over(&fixture, &["a", "b"]), clause).expect("record");
-    let second = author(&mut shared, &rival_subject, rival_clause).expect("record");
-    assert_ne!(first, second);
 
     // A provision carrying a package the model does not select is the same
     // subject.
@@ -225,7 +195,7 @@ fn hash_of(identity: &SubjectIdentity) -> u64 {
 fn bound(node: u8, maximum: u64) -> ProofBound {
     ProofBound::new(
         DomainKey::Node {
-            node: WireNodeId::from_digest([node; 32]),
+            node: crate::fixture_ids::node_key([node]),
             path: Vec::new(),
         },
         Some(DomainKind::Population),
@@ -256,7 +226,7 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
     reverse.proof_bounds = bounds.iter().rev().cloned().collect();
 
     // The item the request path writes holds the facade's identity.
-    let identity = SubjectIdentity::of(&forward).expect("the package emits");
+    let identity = SubjectIdentity::of(&forward);
     let mut request = ModelRequest::new();
     let index = author(&mut request, &forward, clause).expect("the clause has a record");
     let item = request
@@ -272,7 +242,7 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
         rotated.rotate_left(rotation);
         for list in [rotated.clone(), rotated.into_iter().rev().collect()] {
             reverse.proof_bounds = list;
-            let rebuilt = SubjectIdentity::of(&reverse).expect("the package emits");
+            let rebuilt = SubjectIdentity::of(&reverse);
             assert_eq!(rebuilt, identity);
             assert_eq!(hash_of(&rebuilt), hash_of(&identity));
         }
@@ -281,39 +251,5 @@ fn the_facade_identity_is_the_request_path_identity_whatever_the_listing_order()
     // The order-independence is not an identity that ignores its members.
     let mut other = over(&fixture, &["a", "b", "c"]);
     other.proof_bounds = bounds.iter().skip(1).cloned().collect();
-    assert_ne!(SubjectIdentity::of(&other).expect("emits"), identity);
-}
-
-/// A subject whose checked package has no emission is refused
-/// `SubjectIdentityRefusal::Package`.
-#[trace("TC-1190", "FR-336-AC-6")]
-#[test]
-fn a_package_with_no_emission_is_refused_package() {
-    use qsl_package::{CheckedPackage, EmitRefusal};
-    use qsl_semantics::check::{admitted_source, PackageDeclarations};
-    use quire_semantic_value::checking::CheckingLimits;
-
-    let fixture = reaches_two();
-    let graph = PackageDeclarations::new(
-        admitted_source(
-            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-            b"",
-        ),
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .check(CheckingLimits::default())
-    .expect("an empty package checks");
-    let empty = CheckedPackage::link(graph);
-    let subject = subject(
-        &empty,
-        &fixture.documents,
-        fixture.initial.clone(),
-        &["a"],
-        UNLIMITED,
-    );
-    let refusal = SubjectIdentity::of(&subject).expect_err("nothing to emit");
-    assert!(matches!(
-        refusal,
-        SubjectIdentityRefusal::Package(EmitRefusal::NothingToEmit { .. })
-    ));
+    assert_ne!(SubjectIdentity::of(&other), identity);
 }

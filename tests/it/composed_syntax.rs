@@ -360,7 +360,7 @@ fn keyword_classification_is_edition_and_position_specific() {
         Limits::default(),
     )
     .unwrap();
-    assert_eq!(selected.source().digest(), original.source().digest());
+    assert_eq!(selected.source().identity(), original.source().identity());
 }
 
 #[test]

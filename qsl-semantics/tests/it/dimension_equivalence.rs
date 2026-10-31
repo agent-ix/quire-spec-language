@@ -74,10 +74,6 @@ fn refused(body: &str) -> (AssemblyCause, String, String) {
     )
 }
 
-fn hex(equivalence: &DimensionEquivalence) -> String {
-    equivalence.key.to_string()
-}
-
 /// Q12's and Q13's source: `Length` (`m`, `km`, `cm`) and `Distance`
 /// (`dist`).
 const LENGTH: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n\
@@ -484,103 +480,12 @@ fn dimension_equivalences_are_decided_by_fr_142_steps() {
     assert_eq!(admitted(&reordered).len(), 3);
 }
 
-#[path = "../../src/check/lowering/fr091_vectors.rs"]
-mod fr091_vectors;
-
-/// FR-091's vector `id` (`Q12`): its key, recomputed from the preimage
-/// content the spec states for it and never recorded.
-fn fr_091_vector(id: &str) -> String {
-    fr091_vectors::key(id)
-}
-
-/// QSpec's node-identity vectors by name: `name -> sha256`, from the
-/// checkout `QSPEC_DIR` names; `None` when it is unset.
-fn qspec_vector_shas() -> Option<std::collections::BTreeMap<String, String>> {
-    let qspec = std::env::var_os("QSPEC_DIR")?;
-    let path = std::path::Path::new(&qspec)
-        .join("proposals/checked-package-v2/node-identity-vectors.json");
-    let document: Value =
-        serde_json::from_slice(&std::fs::read(path).expect("vectors read")).expect("vectors parse");
-    Some(
-        document["vectors"]
-            .as_array()
-            .expect("a vector list")
-            .iter()
-            .map(|vector| {
-                (
-                    vector["name"].as_str().expect("a name").to_owned(),
-                    vector["sha256"].as_str().expect("a sha256").to_owned(),
-                )
-            })
-            .collect(),
-    )
-}
-
 fn exact(numerator: i64, denominator: i64) -> quire_exact::Rational {
     quire_exact::Rational::new(
         quire_exact::Integer::from(numerator),
         quire_exact::Integer::from(denominator),
     )
     .expect("a rational")
-}
-
-/// FR-091-AC-61 (TC-483): the assembler mints Q12 and Q13 under owner (`a`,
-/// `u`), one key for either written order and either unit spelling of one
-/// ratio, and QSpec's three package-time vectors under owner (`agent-ix`,
-/// `example`); `nominal_spans` holds each equivalence's span by its key.
-#[trace("TC-483", "FR-091-AC-61")]
-#[test]
-fn dimension_equivalence_keys_reproduce_the_vectors() {
-    let q12 = fr_091_vector("Q12");
-    let q13 = fr_091_vector("Q13");
-    let keyed = |owner, declaration: &str| {
-        let body = format!("{LENGTH}{declaration}");
-        let (text, assembled) = assemble(owner, &body);
-        let package = assembled.unwrap_or_else(|errors| panic!("{declaration}: {errors:?}"));
-        let [equivalence] = package.dimension_equivalences.as_slice() else {
-            panic!("one equivalence");
-        };
-        let span = package.nominal_spans[&equivalence.key];
-        assert_eq!(&text[span.start..span.end], declaration);
-        hex(equivalence)
-    };
-    for declaration in [
-        "dimension Distance ~ Length by 1 dist = 1 km;",
-        "dimension Length ~ Distance by 1 km = 1 dist;",
-        "dimension Distance ~ Length by 1 dist = 1000 m;",
-    ] {
-        assert_eq!(keyed(("a", "u"), declaration), q12, "{declaration}");
-    }
-    assert_eq!(
-        keyed(("a", "u"), "dimension Length ~ Distance by 1 cm = 2 dist;"),
-        q13
-    );
-
-    // QSpec's package-time vectors, read from its published vector file;
-    // without `QSPEC_DIR` only the FR-091 vectors above are checked (`make
-    // conformance` requires it).
-    let Some(published) = qspec_vector_shas() else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
-    for (declaration, name) in [
-        (
-            "dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;",
-            "dimension-equivalence-rpc-flow-time",
-        ),
-        (
-            "dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;",
-            "dimension-equivalence-rpc-clock-time",
-        ),
-        (
-            "dimension F::Time ~ G::Time by 1 F::s = 1000 G::ms;",
-            "dimension-equivalence-flow-clock-time",
-        ),
-    ] {
-        let vector = published[name].as_str();
-        let [equivalence] = admitted(declaration).try_into().expect("one equivalence");
-        assert_eq!(hex(&equivalence), vector, "{declaration}");
-    }
 }
 
 /// FR-091-AC-62 (TC-483): `F::Mass` has no unit, so naming `F::kg`
@@ -630,10 +535,10 @@ fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
         panic!("one equivalence");
     };
     let classes = EquivalenceClasses::new(&equivalences);
-    let [least, greater] = equivalence.dimensions;
-    assert!(least.as_bytes() < greater.as_bytes());
+    let [least, greater] = equivalence.dimensions.clone();
+    assert!(least < greater);
     let one = quire_exact::Rational::from_integer(quire_exact::Integer::one());
-    assert_eq!(classes.class(least), (least, one.clone()));
+    assert_eq!(classes.class(least.clone()), (least.clone(), one.clone()));
     assert_eq!(classes.class(greater), (least, one.clone()));
     assert!(admitted("dimension Other;").is_empty());
 
@@ -646,7 +551,7 @@ fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
         panic!("one equivalence");
     };
     let classes = EquivalenceClasses::new(&package.dimension_equivalences);
-    let [least, greater] = q12.dimensions;
-    assert_eq!(classes.class(least), (least, one));
+    let [least, greater] = q12.dimensions.clone();
+    assert_eq!(classes.class(least.clone()), (least.clone(), one));
     assert_eq!(classes.class(greater).0, least);
 }

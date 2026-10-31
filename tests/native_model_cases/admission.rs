@@ -173,10 +173,6 @@ fn tc_040_all_sites_wrappers_and_operation_roles_match_authored_model() {
         "test:rule-model"
     );
     assert_eq!(model.source().source().identity().revision, "draft:1");
-    assert_eq!(
-        model.source().source().digest(),
-        qsl_foundation::ByteDigest::of(native_rule_model::fixture().as_bytes())
-    );
 }
 
 #[test]

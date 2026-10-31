@@ -107,11 +107,6 @@ fn assert_format_identity(
         formatted,
         "{path}: formatted source retained"
     );
-    assert_eq!(
-        checked.package().package_id(),
-        original.package().package_id(),
-        "{path}: formatting changed checked package identity"
-    );
 }
 
 fn emitted_once(
@@ -156,9 +151,18 @@ fn checked_once(
     let models = select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    Ok(check(&parsed, &models, dependencies, limits, &cancel)
-        .map_err(refusal)?
-        .into_value())
+    Ok(check(
+        &parsed,
+        source
+            .label(qsl_foundation::source::SourceLabel::Identity)
+            .to_owned(),
+        &models,
+        dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value())
 }
 
 /// Formats every source in an actual dependency fixture, then checks each
@@ -250,18 +254,16 @@ pub fn dependency_fixture_identity(
             "{path}: formatted dependency emission omitted {:?}",
             formatted_emission.omitted()
         );
-        let original_id = original_emission.package().package_id();
-        let formatted_id = formatted_emission.package().package_id();
-        assert_eq!(
-            original_id, formatted_id,
-            "{path}: formatting changed checked dependency package identity"
-        );
-        if !visited.insert(original_id) {
+        let original_name = original_emission.package().name().to_owned();
+        if !visited.insert(original_name) {
             continue;
         }
-        assert_eq!(
-            original.dependency_selections(),
-            formatted.dependency_selections()
+        assert!(
+            original
+                .dependency_selections()
+                .keys()
+                .eq(formatted.dependency_selections().keys()),
+            "{path}: formatting changes the selected libraries"
         );
         for (identity, original) in original.dependencies() {
             pending.push((

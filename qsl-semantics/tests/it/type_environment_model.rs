@@ -35,8 +35,8 @@ use qsl_semantics::model::population::{
 use qsl_semantics::value::environment_stage::stage_failure;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
-    FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
-    UniverseId, Value, ValueType,
+    FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OriginalDeclarationKey,
+    Presence, ScalarLimits, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 use quire_semantic_value::declaration::{
@@ -47,7 +47,16 @@ use quire_semantic_value::declaration::{
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
-use sha2::{Digest, Sha256};
+
+/// A structural node key for a fixture, distinct per `tag`.
+fn fixture_key(tag: u8) -> quire_exact::NodeKey {
+    quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text(format!("node{tag}"))],
+        0,
+    )
+    .expect("a valid fixture key")
+}
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -111,7 +120,7 @@ fn view(domain_package: &DomainPackage, ancestor_steps: u64) -> EffectiveView {
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
     view.type_identities()
         .get(&DeclarationKey::fixture(identity))
-        .copied()
+        .cloned()
         .unwrap_or_else(|| panic!("{identity} has no effective type identity"))
 }
 
@@ -123,7 +132,8 @@ fn environment_of(view: &EffectiveView, ancestor_steps: u64) -> Admission<TypeEn
     TypeEnvironment::bounded(
         [],
         supertypes.into_iter().map(|(key, generals)| {
-            ObjectTypeDeclaration::new(key, key.to_string(), vec![]).with_supertypes(generals)
+            ObjectTypeDeclaration::new(key.clone(), format!("{key:?}"), vec![])
+                .with_supertypes(generals)
         }),
         TypeEnvironmentLimits {
             ancestor_steps,
@@ -166,7 +176,7 @@ fn evaluate_lookup(
 ) -> LookupOutcome {
     let key = LookupKey {
         static_type: DeclarationKey::fixture(s),
-        universe: binding.universe().as_bytes().to_vec(),
+        universe: binding.universe().clone(),
         type_identity: type_id(view, s),
         object: b"nobody".to_vec(),
     };
@@ -236,12 +246,15 @@ fn divergence_unknown_supertype_refuses_at_check_and_at_evaluation() {
     let missing = effective("model.Missing");
     let refusal = TypeEnvironment::new(
         [],
-        [ObjectTypeDeclaration::new(b, "M::B", vec![]).with_supertypes(vec![missing])],
+        [ObjectTypeDeclaration::new(b, "M::B", vec![]).with_supertypes(vec![missing.clone()])],
     )
     .unwrap_err()
     .into_refused()
     .unwrap();
-    assert_eq!(refusal.cause, DeclarationCause::UnknownObjectType(missing));
+    assert_eq!(
+        refusal.cause,
+        DeclarationCause::UnknownObjectType(missing.clone())
+    );
     assert_eq!(refusal.code(), "invalid_semantic_graph");
 }
 
@@ -261,8 +274,8 @@ fn divergence_known_supertype_admits_at_check_and_at_evaluation() {
     let view = view(&domain_package, 10);
     let environment = environment_of(&view, 10).unwrap();
     let (a, b) = (type_id(&view, "model.A"), type_id(&view, "model.B"));
-    assert!(environment.conforms(b, a));
-    assert!(!environment.conforms(a, b));
+    assert!(environment.conforms(b.clone(), a.clone()));
+    assert!(!environment.conforms(a.clone(), b.clone()));
     let binding = binding(&view, 10);
     assert_eq!(
         evaluate_lookup(&binding, &view, "model.B", "model.A"),
@@ -304,7 +317,7 @@ fn divergence_generalization_cycle_refuses_at_check_and_at_evaluation() {
     let refusal = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(m, "M::M", vec![]).with_supertypes(vec![n]),
+            ObjectTypeDeclaration::new(m.clone(), "M::M", vec![]).with_supertypes(vec![n.clone()]),
             ObjectTypeDeclaration::new(n, "M::N", vec![]).with_supertypes(vec![m]),
         ],
     )
@@ -489,7 +502,7 @@ fn check_and_evaluation_share_one_default_and_one_edge_count() {
 // ---- flattening and redefinition --------------------------------------------
 
 fn effective(label: &str) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+    EffectiveId::new(None, OriginalDeclarationKey::new("fixture", label))
 }
 
 fn integer_field(name: &str) -> FieldDeclaration {
@@ -526,7 +539,7 @@ fn slots(environment: &TypeEnvironment, label: &str) -> Vec<(EffectiveId, String
 
 fn reference(label: &str, object: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseId::from_digest([0x42; 32]),
+        UniverseId::new(fixture_key(0x42)),
         effective(label),
         ObjectId::new(object).unwrap(),
     )
@@ -860,7 +873,7 @@ fn a_redefinition_of_a_field_not_inherited_is_refused() {
 
     let record = TypeEnvironment::new(
         [CompositeDeclaration::new(
-            quire_exact::NodeKey::from_digest([0x11; 32]),
+            fixture_key(0x11),
             "R",
             CompositeShape::Record(vec![
                 integer_field("x").with_redefines(field_ref("M::A", "x"))
@@ -1092,13 +1105,13 @@ fn a_reference_field_is_redefined_by_the_same_or_a_subtype_reference() {
 #[trace("TC-219", "FR-082-AC-6")]
 #[test]
 fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
-    let record_key = quire_exact::NodeKey::from_digest([0x21; 32]);
-    let tuple_key = quire_exact::NodeKey::from_digest([0x22; 32]);
+    let record_key = fixture_key(0x21);
+    let tuple_key = fixture_key(0x22);
     let target = ValueType::Reference(effective("M::CV"));
     let environment = TypeEnvironment::new(
         [
             CompositeDeclaration::new(
-                record_key,
+                record_key.clone(),
                 "R",
                 CompositeShape::Record(vec![FieldDeclaration::new(
                     "r",
@@ -1106,7 +1119,7 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
                     Presence::Required,
                 )]),
             ),
-            CompositeDeclaration::new(tuple_key, "T", CompositeShape::Tuple(vec![target])),
+            CompositeDeclaration::new(tuple_key.clone(), "T", CompositeShape::Tuple(vec![target])),
         ],
         [
             object("M::CV", vec![], &[]),
@@ -1119,14 +1132,20 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
     let sub = Value::Reference(reference("M::Sub", "k"));
     let other = Value::Reference(reference("M::Other", "o"));
     environment
-        .record(record_key, vec![("r", FieldValue::Present(sub.clone()))])
+        .record(
+            record_key.clone(),
+            vec![("r", FieldValue::Present(sub.clone()))],
+        )
         .expect("a Sub reference fits a Reference<M::CV> field");
     environment
-        .tuple(tuple_key, vec![sub])
+        .tuple(tuple_key.clone(), vec![sub])
         .expect("a Sub reference fits a Reference<M::CV> position");
     assert_eq!(
         environment
-            .record(record_key, vec![("r", FieldValue::Present(other.clone()))])
+            .record(
+                record_key.clone(),
+                vec![("r", FieldValue::Present(other.clone()))]
+            )
             .unwrap_err(),
         ConstructionRefusal {
             component: Component::Field("r".to_owned()),
@@ -1134,7 +1153,9 @@ fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
         }
     );
     assert_eq!(
-        environment.tuple(tuple_key, vec![other]).unwrap_err(),
+        environment
+            .tuple(tuple_key.clone(), vec![other])
+            .unwrap_err(),
         ConstructionRefusal {
             component: Component::Position(0),
             cause: ConstructionCause::TypeMismatch,
@@ -1288,7 +1309,7 @@ fn object_type_supertypes_rekeys_a_view_and_normalization_refuses_a_shared_key()
     let view = view(&domain_package, 10);
     let supertypes = object_type_supertypes(&view).unwrap();
     let (a, b) = (type_id(&view, "model.A"), type_id(&view, "model.B"));
-    assert_eq!(supertypes.get(&b), Some(&vec![a]));
+    assert_eq!(supertypes.get(&b), Some(&vec![a.clone()]));
     assert_eq!(supertypes.get(&a), Some(&vec![]));
 
     let shared = package(

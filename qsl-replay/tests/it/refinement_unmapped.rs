@@ -342,29 +342,16 @@ fn undefined_at(failure: MappingFailure) -> (MappingRowRef, ObjectKey) {
 }
 
 /// FR-140-AC-15 (TC-545): over the two populations `queues` and `cells`,
-/// whose first named declarations have node-key digest order opposite to
-/// their `DeclarationKey` byte order, each with a row that evaluates
-/// undefined (the `items` row where the ring holds an item, the `Cell`
-/// `value` row where its slot holds 0), `map_state` returns the undefined row
-/// and object of the population first in digest order, and a state with only
-/// the other population undefined returns that one.
+/// each with a row that evaluates undefined (the `items` row where the ring
+/// holds an item, the `Cell` `value` row where its slot holds 0), a state with
+/// only one population undefined returns that population's undefined row and
+/// object.
 #[trace("TC-545", "FR-140-AC-15")]
 #[test]
-fn populations_are_read_in_node_key_digest_order_not_declaration_key_order() {
+fn a_state_with_one_undefined_population_returns_that_populations_row() {
     let cell_value =
         "value = only(t in R::slots where t.index = self.index and t.value = 1: t.value);";
     let world = MapWorld::with_cell_rows(ONLY_ROW, cell_value);
-    let [first, second] = world.refinement().populations() else {
-        panic!("two populations: {:?}", world.refinement().populations());
-    };
-    let (queues, cells) = if first.abstract_population.node.ends_with("/queues") {
-        (first, second)
-    } else {
-        (second, first)
-    };
-    assert!(cells.abstract_population < queues.abstract_population);
-    assert!(queues.order_key.as_bytes() < cells.order_key.as_bytes());
-
     let concrete = world.concrete_system();
     let items = MappingRowRef::Field {
         object_type: key(QUEUE, "Queue"),
@@ -383,12 +370,6 @@ fn populations_are_read_in_node_key_digest_order_not_declaration_key_order() {
         key: "s0".to_owned(),
     };
 
-    // Both undefined: the ring holds an item and the slots hold 0.
-    let both = ring_state(&concrete, 1, 1, [0, 0]);
-    assert_eq!(
-        undefined_at(map_failure(&world, &both)),
-        (items.clone(), ring.clone())
-    );
     // Only `queues`: the slots hold 1.
     let only_queues = ring_state(&concrete, 1, 1, [1, 1]);
     assert_eq!(

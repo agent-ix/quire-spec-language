@@ -16,7 +16,7 @@ use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
 use qsl_semantics::check::StateGraphForm;
-use quire_exact::{ObjectReference, ScalarLimits};
+use quire_exact::{NodeKey, ObjectReference, ScalarLimits};
 use quire_semantic_value::location::Location;
 use serde::{Serialize, Serializer};
 
@@ -251,8 +251,7 @@ impl crate::witness::FamilyPayload for GraphEvidence {
 pub struct GraphEvidenceEnvelope {
     obligation_identity: ObligationIdentity,
     occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
-    claim_node: qsl_foundation::digest::WireNodeId,
-    package_id: DigestRecord,
+    claim_node: NodeKey,
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
@@ -266,8 +265,7 @@ impl GraphEvidenceEnvelope {
     pub fn new(
         obligation_identity: ObligationIdentity,
         occurrence_key: qsl_foundation::source::provenance::OccurrenceKey,
-        claim_node: qsl_foundation::digest::WireNodeId,
-        package_id: DigestRecord,
+        claim_node: NodeKey,
         profile_selections: Vec<ProfileSelection>,
         run_limits: ScalarLimits,
         declared_domains: Vec<DeclaredDomain>,
@@ -278,7 +276,6 @@ impl GraphEvidenceEnvelope {
             obligation_identity,
             occurrence_key,
             claim_node,
-            package_id,
             profile_selections,
             run_limits,
             declared_domains,
@@ -289,7 +286,7 @@ impl GraphEvidenceEnvelope {
 
     /// The obligation identity of the checked subject, claim and instance.
     pub fn obligation_identity(&self) -> ObligationIdentity {
-        self.obligation_identity
+        self.obligation_identity.clone()
     }
 
     /// The claim's checked occurrence key.
@@ -298,13 +295,8 @@ impl GraphEvidenceEnvelope {
     }
 
     /// The checked package node that owns the claim.
-    pub fn claim_node(&self) -> qsl_foundation::digest::WireNodeId {
-        self.claim_node
-    }
-
-    /// The package identity the evidence was produced against.
-    pub fn package_id(&self) -> DigestRecord {
-        self.package_id
+    pub fn claim_node(&self) -> &NodeKey {
+        &self.claim_node
     }
 
     /// The semantic profile selections of the proving run.

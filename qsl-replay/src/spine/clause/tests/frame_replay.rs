@@ -15,11 +15,10 @@ use crate::{
     ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, ReplayTarget,
     StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{AdmissionFailure, FrameChange, SelectedObject};
 use quire_exact::Identifier;
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::Category;
 
 /// The labels `source()` gives the unit, as the request's source reference
@@ -79,13 +78,13 @@ fn parent_modifying_unit() -> Unit {
     unit_for(unit, document)
 }
 
-pub(super) fn wire(node: quire_exact::NodeKey) -> WireNodeId {
-    WireNodeId::from_digest(*node.as_bytes())
+pub(super) fn wire(node: quire_exact::NodeKey) -> NodeKey {
+    node.clone()
 }
 
 /// `attemptUpdate`'s anchor node, frame node and frame occurrence in
 /// `unit`'s compiled package.
-fn identities(unit: &Unit) -> (WireNodeId, WireNodeId, OccurrenceKey) {
+fn identities(unit: &Unit) -> (NodeKey, NodeKey, OccurrenceKey) {
     let graph = unit.compiled.package.graph();
     let selection = graph
         .resolve_operation(
@@ -106,7 +105,7 @@ fn identities(unit: &Unit) -> (WireNodeId, WireNodeId, OccurrenceKey) {
 
 /// The wire node id of the one emitted node whose `semantic_form` is
 /// `form`: the emitted package, not the checked graph the replay reads.
-fn emitted_node(unit: &Unit, form: &str) -> String {
+fn emitted_node(unit: &Unit, form: &str) -> quire_exact::NodeKey {
     let package: serde_json::Value =
         serde_json::from_slice(unit.compiled.emitted.bytes()).expect("the emitted package is JSON");
     let nodes: Vec<&serde_json::Value> = package["semantic_graph"]["nodes"]
@@ -118,10 +117,7 @@ fn emitted_node(unit: &Unit, form: &str) -> String {
     let [node] = nodes[..] else {
         panic!("one {form} node: {nodes:#?}");
     };
-    node["node_id"]["digest"]
-        .as_str()
-        .expect("a node id digest")
-        .to_owned()
+    qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).expect("a node id")
 }
 
 /// The `frame_operation` replay target for `Config::ConfigVersion::attemptUpdate`.
@@ -218,10 +214,6 @@ fn changed_version() -> Invocation {
     )
 }
 
-pub(super) fn package_digest(package_id: PackageId) -> DigestRecord {
-    DigestRecord::mint(DigestDomain::PackageSemanticV2, *package_id.as_bytes())
-}
-
 /// Withholds the document `reference` names from the provided documents.
 pub(super) fn withhold(wire: &mut ReplayRequestWire, reference: &DocumentRef) {
     wire.documents.retain(|document| {
@@ -233,12 +225,11 @@ pub(super) fn witness_source() -> ReplaySource {
     ReplaySource::Witness(Witness::parse("<<<assertion|frame_harness|frame|>>>").unwrap())
 }
 
-/// FR-098's request for `source_bytes` at `package_id`, with the domain
+/// FR-098's request for `source_bytes`, with the domain
 /// package and `documents` in the byte provision.
 pub(super) fn request(
     source_bytes: &[u8],
     domain_document: &[u8],
-    package_id: DigestRecord,
     documents: &[(DocumentRef, Vec<u8>)],
     target: ReplayTarget,
 ) -> ReplayRequestWire {
@@ -252,11 +243,8 @@ pub(super) fn request(
         provided.push(bytes.clone());
     }
     ReplayRequestWire {
+        package_name: "fixture".to_owned(),
         profile_selections: Vec::new(),
-        package_id: (
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_id.hex(),
-        ),
         sources: vec![(
             AUTHORITY.to_owned(),
             IDENTITY.to_owned(),
@@ -266,7 +254,7 @@ pub(super) fn request(
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
-        obligation_identity: [2; 32],
+        obligation_identity: crate::ObligationIdentity::new(crate::fixture_node(2), None, 0),
         backend: "kani-backend-1".to_owned(),
         state_environment: StateEnvironment::new(Vec::new()),
         accounting_limits: default_accounting(1_000_000),
@@ -279,31 +267,28 @@ pub(super) fn request(
     }
 }
 
-/// The envelope carrying `payload` at `package_id`, from `source_bytes`,
+/// The envelope carrying `payload`, from `source_bytes`,
 /// its `clause_node` and `occurrence_key` the payload's frame node and
 /// frame occurrence.
 fn envelope(
     source_bytes: &[u8],
-    package_id: DigestRecord,
     source: ReplaySource,
     payload: FrameCounterexample,
 ) -> WitnessEnvelope<FrameCounterexample> {
-    envelope_with(source_bytes, package_id, source, payload, |_| {})
+    envelope_with(source_bytes, source, payload, |_| {})
 }
 
 /// [`envelope`], with `adjust` applied to the packet before it
 /// reconstructs.
 fn envelope_with(
     source_bytes: &[u8],
-    package_id: DigestRecord,
     source: ReplaySource,
     payload: FrameCounterexample,
     adjust: impl FnOnce(&mut WitnessPacket<FrameCounterexample>),
 ) -> WitnessEnvelope<FrameCounterexample> {
-    let (clause_node, occurrence) = (payload.frame, payload.occurrence.clone());
+    let (clause_node, occurrence) = (payload.frame.clone(), payload.occurrence.clone());
     let mut packet = packet(
         source_bytes,
-        package_id,
         source,
         clause_node,
         occurrence,
@@ -315,26 +300,25 @@ fn envelope_with(
         .expect("a complete packet reconstructs")
 }
 
-/// A complete packet carrying `payload` at `package_id`, from
+/// A complete packet carrying `payload`, from
 /// `source_bytes`, with `clause_node` and `occurrence_key` as given.
 pub(super) fn packet<P: FamilyPayload>(
     _source_bytes: &[u8],
-    package_id: DigestRecord,
     source: ReplaySource,
-    clause_node: WireNodeId,
+    clause_node: NodeKey,
     occurrence_key: OccurrenceKey,
     payload: P,
     target: ReplayTarget,
 ) -> WitnessPacket<P> {
     WitnessPacket {
-        obligation_identity: Some([1; 32]),
+        obligation_identity: Some(crate::ObligationIdentity::new(
+            crate::fixture_node(1),
+            None,
+            0,
+        )),
         occurrence_key: Some(occurrence_key),
         clause_node: Some(clause_node),
         replay_target: target.into(),
-        package_id: Some((
-            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
-            package_id.hex(),
-        )),
         profile_selections: Some(vec![ProfileSelection::new(
             "quire.profile.v1".to_owned(),
             "finite-state".to_owned(),
@@ -407,7 +391,6 @@ fn case_in(
     adjust: impl FnOnce(&mut ReplayRequestWire, &mut FrameCounterexample),
 ) -> Case {
     let (anchor, frame, occurrence) = identities(&unit);
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let mut payload = FrameCounterexample {
         anchor,
         frame,
@@ -418,18 +401,13 @@ fn case_in(
     let mut wire = request(
         &unit.bytes,
         &unit.domain_document,
-        package_id,
         &input.documents,
         request_target,
     );
     adjust(&mut wire, &mut payload);
-    let envelope = envelope_with(
-        &unit.bytes,
-        package_id,
-        witness_source(),
-        payload,
-        |packet| packet.replay_target = envelope_target.into(),
-    );
+    let envelope = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
+        packet.replay_target = envelope_target.into()
+    });
     Case {
         unit,
         input,
@@ -461,7 +439,7 @@ fn found_field_write(result: &FrameReplayResult) -> (&str, &str) {
 
 /// TC-515 step 1 (FR-116-AC-1): forbidden-parent-change claiming (`child`,
 /// `parent`) reproduces with an evaluated witness, and the result holds the
-/// source digest, `package_id`, the payload's anchor, frame and occurrence
+/// source digest, the payload's anchor, frame and occurrence
 /// identities -- which are the emitted package's own `operation_anchor` and
 /// `frame` nodes -- the three document identities and digests, and both
 /// changes.
@@ -470,20 +448,13 @@ fn found_field_write(result: &FrameReplayResult) -> (&str, &str) {
 fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     let case = case(forbidden_parent_change(), child_change("parent"));
     let payload = case.envelope.family_payload().clone();
-    let (documents, _unit_bytes, package_id) = (
-        (
-            case.input.invocation.clone(),
-            case.input.pre.clone(),
-            case.input.post.clone(),
-        ),
-        case.unit.bytes.clone(),
-        case.unit.compiled.emitted.package_id(),
+    let documents = (
+        case.input.invocation.clone(),
+        case.input.pre.clone(),
+        case.input.post.clone(),
     );
-    assert_eq!(
-        payload.anchor.to_string(),
-        emitted_node(&case.unit, "operation_anchor")
-    );
-    assert_eq!(payload.frame.to_string(), emitted_node(&case.unit, "frame"));
+    assert_eq!(payload.anchor, emitted_node(&case.unit, "operation_anchor"));
+    assert_eq!(payload.frame, emitted_node(&case.unit, "frame"));
     let result = replay(case).expect("the replay settles");
 
     let arm = witness_arm(&result);
@@ -494,10 +465,9 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     assert_eq!(arm.category(), Category::Violation);
     assert_eq!(arm.disagreement(), None);
     assert_eq!(result.source().identity(), IDENTITY);
-    assert_eq!(result.package_id(), package_id);
     assert_eq!(result.operation(), &operation("attemptUpdate"));
-    assert_eq!(result.anchor(), payload.anchor);
-    assert_eq!(result.frame(), payload.frame);
+    assert_eq!(result.anchor().clone(), payload.anchor);
+    assert_eq!(result.frame().clone(), payload.frame);
     assert_eq!(result.occurrence(), &payload.occurrence);
     assert_eq!(
         (result.invocation(), result.pre(), result.post()),
@@ -593,28 +563,33 @@ fn a_disagreeing_declared_delta_is_inconclusive_with_no_value() {
 #[test]
 fn a_stale_frame_identity_refuses_before_admission() {
     let other = parent_modifying_unit();
-    let (other_anchor, other_frame, other_occurrence) = identities(&other);
+    let (other_anchor, _, other_occurrence) = identities(&other);
+    let other_frame = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("other-frame".into())],
+        0,
+    )
+    .expect("a fixture key");
     let mut recompiled = None;
     let input = forbidden_parent_change();
     let pre = input.pre.clone();
     let case = case_with(input, child_change("parent"), |wire, payload| {
-        recompiled = Some((payload.anchor, payload.frame));
-        payload.anchor = other_anchor;
-        payload.frame = other_frame;
+        recompiled = Some((payload.anchor.clone(), payload.frame.clone()));
+        payload.anchor = other_anchor.clone();
+        payload.frame = other_frame.clone();
         payload.occurrence = other_occurrence;
         withhold(wire, &pre);
     });
     let (recompiled_anchor, recompiled_frame) = recompiled.unwrap();
-    assert_ne!(other_frame, recompiled_frame);
-    assert_ne!(other_anchor, recompiled_anchor);
+    assert_eq!(other_anchor, recompiled_anchor);
     let refusal = replay(case).unwrap_err();
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     assert!(
         matches!(
             &refusal,
             ReplayRefusal::FrameIdentity(mismatch)
-                if matches!(**mismatch, FrameIdentityMismatch::Frame { payload, recompiled }
-                    if payload == other_frame && recompiled == recompiled_frame)
+                if matches!(&**mismatch, FrameIdentityMismatch::Frame { payload, recompiled }
+                    if *payload == other_frame && *recompiled == recompiled_frame)
         ),
         "{refusal:?}"
     );
@@ -628,19 +603,24 @@ fn a_stale_frame_identity_refuses_before_admission() {
 #[trace("TC-515", "FR-116-AC-3")]
 #[test]
 fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
-    let stale_anchor = WireNodeId::from_digest([0xAA; 32]);
+    let stale_anchor = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("node".into())],
+        0xAA,
+    )
+    .expect("a fixture key");
     let refusal = replay(case_with(
         forbidden_parent_change(),
         child_change("parent"),
-        |_, payload| payload.anchor = stale_anchor,
+        |_, payload| payload.anchor = stale_anchor.clone(),
     ))
     .unwrap_err();
     assert!(
         matches!(
             &refusal,
             ReplayRefusal::FrameIdentity(mismatch)
-                if matches!(**mismatch, FrameIdentityMismatch::Anchor { payload, .. }
-                    if payload == stale_anchor)
+                if matches!(&**mismatch, FrameIdentityMismatch::Anchor { payload, .. }
+                    if *payload == stale_anchor)
         ),
         "{refusal:?}"
     );
@@ -652,7 +632,7 @@ fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
         |_, payload| {
             let origin = payload.occurrence.origin();
             let other = OccurrenceKey::new(
-                payload.occurrence.node(),
+                payload.occurrence.node().clone(),
                 quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
             );
             stale_occurrence = Some(other.clone());
@@ -673,7 +653,7 @@ fn a_stale_anchor_or_occurrence_refuses_content_mismatch() {
 }
 
 /// A request whose source does not compile, for the ConfigVersion unit's
-/// `package_id`, and the step-1 payload built from the compiled unit.
+/// and the step-1 payload built from the compiled unit.
 fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
     let unit = config_version_unit();
     let input = forbidden_parent_change();
@@ -685,12 +665,10 @@ fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
         invocation: input.invocation.clone(),
         change: child_change("parent"),
     };
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let broken = b"this is not a QSL unit\n".to_vec();
     let wire = request(
         &broken,
         &unit.domain_document,
-        package_id,
         &input.documents,
         frame_target(),
     );
@@ -706,8 +684,7 @@ fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
 #[test]
 fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
     let (unit, wire, payload) = uncompilable_request();
-    let package_id = package_digest(unit.compiled.emitted.package_id());
-    let consistent = envelope(&unit.bytes, package_id, witness_source(), payload.clone());
+    let consistent = envelope(&unit.bytes, witness_source(), payload.clone());
     let refusal = replay_frame(
         uncompilable_request().1,
         &consistent,
@@ -719,25 +696,23 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
         "{refusal:?}"
     );
 
-    let (_, other_frame, _) = identities(&parent_modifying_unit());
-    assert_ne!(other_frame, payload.frame);
-    let frame = payload.frame;
-    let stale = envelope_with(
-        &unit.bytes,
-        package_id,
-        witness_source(),
-        payload,
-        |packet| {
-            packet.clause_node = Some(other_frame);
-        },
-    );
+    let other_frame = quire_exact::NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("other-frame".into())],
+        0,
+    )
+    .expect("a fixture key");
+    let frame = payload.frame.clone();
+    let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
+        packet.clause_node = Some(other_frame.clone());
+    });
     let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
             &refusal,
             ReplayRefusal::FrameIdentity(mismatch)
-                if matches!(**mismatch, FrameIdentityMismatch::EnvelopeFrame { envelope, payload }
-                    if envelope == other_frame && payload == frame)
+                if matches!(&**mismatch, FrameIdentityMismatch::EnvelopeFrame { envelope, payload }
+                    if *envelope == other_frame && *payload == frame)
         ),
         "{refusal:?}"
     );
@@ -755,22 +730,15 @@ fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
 #[test]
 fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompiling() {
     let (unit, wire, payload) = uncompilable_request();
-    let package_id = package_digest(unit.compiled.emitted.package_id());
     let origin = payload.occurrence.origin();
     let other = OccurrenceKey::new(
-        payload.occurrence.node(),
+        payload.occurrence.node().clone(),
         quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
     );
     let occurrence = payload.occurrence.clone();
-    let stale = envelope_with(
-        &unit.bytes,
-        package_id,
-        witness_source(),
-        payload,
-        |packet| {
-            packet.occurrence_key = Some(other.clone());
-        },
-    );
+    let stale = envelope_with(&unit.bytes, witness_source(), payload, |packet| {
+        packet.occurrence_key = Some(other.clone());
+    });
     let refusal = replay_frame(wire, &stale, crate::ReplayLimits::default()).unwrap_err();
     assert!(
         matches!(
@@ -786,70 +754,6 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
     assert!(message.starts_with("stale_dependency/content-mismatch"));
     assert!(message.contains(&format!("{other:?}")), "{message}");
     assert!(message.contains(&format!("{occurrence:?}")), "{message}");
-}
-
-/// TC-515 step 3 (FR-116-AC-3): a source edit that changes the
-/// `package_id` refuses by FR-098's stale `package_id` rule.
-#[trace("TC-515", "FR-116-AC-3")]
-#[test]
-fn a_source_edit_refuses_by_the_stale_package_rule() {
-    let input = forbidden_parent_change();
-    let unit = config_version_unit();
-    let original = package_digest(unit.compiled.emitted.package_id());
-    let mut edited = unit.bytes.clone();
-    edited.extend_from_slice(
-        b"function extra using v(a: Config::ConfigVersion): Integer pure { 2 }\n",
-    );
-    let (anchor, frame, occurrence) = identities(&unit);
-    let payload = FrameCounterexample {
-        anchor,
-        frame,
-        occurrence,
-        invocation: input.invocation.clone(),
-        change: child_change("parent"),
-    };
-    let wire = request(
-        &edited,
-        &unit.domain_document,
-        original,
-        &input.documents,
-        frame_target(),
-    );
-    let envelope = envelope(&edited, original, witness_source(), payload);
-    let refusal = replay_frame(wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
-    assert!(
-        matches!(
-            &refusal,
-            ReplayRefusal::PackageIdMismatch { requested, recompiled }
-                if *requested == original && !recompiled.matches(&original)
-        ),
-        "{refusal:?}"
-    );
-    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
-}
-
-/// FR-116 Behavior: a request whose `package_id` is the recompiled one but
-/// an envelope produced from another package refuses by FR-098's stale
-/// `package_id` rule, naming the envelope's.
-#[trace("TC-515", "FR-116-AC-3")]
-#[test]
-fn a_stale_envelope_package_id_refuses_by_the_stale_package_rule() {
-    let case = case(forbidden_parent_change(), child_change("parent"));
-    let other = package_digest(parent_modifying_unit().compiled.emitted.package_id());
-    let current = case.unit.compiled.emitted.package_id();
-    assert!(!current.matches(&other));
-    let payload = case.envelope.family_payload().clone();
-    let envelope = envelope(&case.unit.bytes, other, witness_source(), payload);
-    let refusal = replay_frame(case.wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
-    assert!(
-        matches!(
-            &refusal,
-            ReplayRefusal::PackageIdMismatch { requested, recompiled }
-                if *requested == other && *recompiled == current
-        ),
-        "{refusal:?}"
-    );
-    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
 }
 
 /// TC-515 step 3 (FR-116-AC-3): an `operation` naming `missing` refuses
@@ -1051,7 +955,6 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
             Source::EntryRemoved,
         ] {
             let unit = config_version_unit();
-            let package_id = package_digest(unit.compiled.emitted.package_id());
             let domain_document = unit.domain_document.clone();
             let input = forbidden_parent_change();
             let documents = input.documents.clone();
@@ -1068,7 +971,6 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
                         *wire = request(
                             b"this is not a QSL unit\n",
                             &domain_document,
-                            package_id,
                             &documents,
                             target,
                         );
@@ -1078,7 +980,14 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
             );
             if replace_node {
                 let mut packet = case.envelope.to_packet();
-                packet.clause_node = Some(WireNodeId::from_digest([9; 32]));
+                packet.clause_node = Some(
+                    quire_exact::NodeKey::new(
+                        "fixture",
+                        vec![quire_exact::PathSegment::Text("node".into())],
+                        9,
+                    )
+                    .expect("a fixture key"),
+                );
                 case.envelope =
                     WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
             }
@@ -1165,13 +1074,7 @@ fn replaying_one_envelope_twice_gives_equal_results() {
 fn an_input_arm_envelope_settles_the_input_arm() {
     let case = case(forbidden_parent_change(), child_change("parent"));
     let payload = case.envelope.family_payload().clone();
-    let package_id = package_digest(case.unit.compiled.emitted.package_id());
-    let envelope = envelope(
-        &case.unit.bytes,
-        package_id,
-        ReplaySource::Input(Vec::new()),
-        payload,
-    );
+    let envelope = envelope(&case.unit.bytes, ReplaySource::Input(Vec::new()), payload);
     let result = replay_frame(case.wire, &envelope, crate::ReplayLimits::default())
         .expect("the replay settles");
     let ReplayResult::Input(arm) = result.result() else {

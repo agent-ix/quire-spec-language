@@ -411,8 +411,9 @@ impl ParsedLists {
 /// type, in declaration order, and otherwise the one field of that type.
 fn binder_record(types: &TypeEnvironment, binder_type: &ValueType) -> Vec<ValueType> {
     if let ValueType::Composite(key) = binder_type {
-        if let Some(CompositeShape::Record(fields)) =
-            types.composite(*key).map(|declared| declared.shape())
+        if let Some(CompositeShape::Record(fields)) = types
+            .composite(key.clone())
+            .map(|declared| declared.shape())
         {
             return fields
                 .iter()
@@ -480,7 +481,7 @@ impl ProtocolClasses {
                 continue;
             };
             let operation = &bound.operation.declaration;
-            let record = std::iter::once(ValueType::Reference(bound.receiver))
+            let record = std::iter::once(ValueType::Reference(bound.receiver.clone()))
                 .chain(operation.parameters().iter().map(|(_, ty)| ty.clone()))
                 .chain(operation.result().cloned())
                 .collect();

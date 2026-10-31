@@ -30,7 +30,7 @@ use quire_eval::Evaluation;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
-    Presence, ScalarLimits, UniverseId, Value,
+    Presence, ScalarLimits, Value,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -200,9 +200,14 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
     )
     .expect("S1 admits the unit");
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), built, selected, vec![])
-            .expect("the model assembles");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        selected,
+        vec![],
+    )
+    .expect("the model assembles");
     CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
@@ -261,7 +266,7 @@ impl Orders {
 
     fn at(&self, type_name: &str, object: &str) -> ObjectReference {
         ObjectReference::new(
-            UniverseId::from_digest([9; 32]),
+            crate::support::ids::universe_id([9]),
             self.id(type_name),
             ObjectId::new(object.to_owned()).expect("a nonempty object id"),
         )

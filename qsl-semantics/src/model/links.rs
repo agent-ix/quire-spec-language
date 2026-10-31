@@ -78,11 +78,11 @@ impl<'v> Links<'v> {
     pub fn new(declarations: &'v [ViewEntry]) -> Result<Self, ModelRefusal> {
         let by_id: HashMap<EffectiveId, &ViewEntry> = declarations
             .iter()
-            .map(|entry| (entry.effective_id, entry))
+            .map(|entry| (entry.effective_id.clone(), entry))
             .collect();
         let mut owners: HashMap<&DeclarationKey, &DeclarationKey> = HashMap::new();
         for entry in declarations {
-            let Some(owner) = entry.preimage.owner_effective_type else {
+            let Some(owner) = entry.preimage.owner_effective_type.clone() else {
                 continue;
             };
             let Some(owner) = by_id.get(&owner) else {
@@ -114,10 +114,10 @@ impl<'v> Links<'v> {
                 }
                 continue;
             }
-            let Some(parent_id) = fact.parent else {
+            let Some(parent_id) = fact.parent.clone() else {
                 return Err(mis_wired(entry, position));
             };
-            if let Some(earlier) = linked.insert(parent_id, position) {
+            if let Some(earlier) = linked.insert(parent_id.clone(), position) {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::DuplicateParent {
@@ -152,8 +152,8 @@ impl<'v> Links<'v> {
             return false;
         };
         match (
-            preimage.owner_effective_type,
-            parent.preimage.owner_effective_type,
+            preimage.owner_effective_type.clone(),
+            parent.preimage.owner_effective_type.clone(),
         ) {
             (None, None) => matches!(inputs, [supertype] if *supertype == parent.preimage.original),
             (Some(owner), Some(parent_owner)) => {
@@ -168,11 +168,9 @@ impl<'v> Links<'v> {
                 *member == preimage.original
                     && *member == parent.preimage.original
                     && *supertype == parent_owner_entry.preimage.original
-                    && owner_entry
-                        .preimage
-                        .derivation
-                        .iter()
-                        .any(|fact| fact.rule == RULE_INHERIT && fact.parent == Some(parent_owner))
+                    && owner_entry.preimage.derivation.iter().any(|fact| {
+                        fact.rule == RULE_INHERIT && fact.parent == Some(parent_owner.clone())
+                    })
             }
             _ => false,
         }
@@ -185,7 +183,7 @@ impl<'v> Links<'v> {
         let entry = self
             .by_id
             .get(id)
-            .ok_or(ExpandError::UnknownDeclaration(*id))?;
+            .ok_or(ExpandError::UnknownDeclaration(id.clone()))?;
         let mut expanded: Vec<(u8, PathFact)> = Vec::new();
         let mut budget = Budget::new(max_facts);
         for fact in &entry.preimage.derivation {
@@ -193,7 +191,7 @@ impl<'v> Links<'v> {
                 budget.take(1)?;
                 expanded.push((2, path_fact(fact.rule.clone(), fact.inputs.clone())));
             } else if fact.rule == RULE_INHERIT {
-                self.expand_inherit(entry, fact.parent, &mut expanded, &mut budget)?;
+                self.expand_inherit(entry, fact.parent.clone(), &mut expanded, &mut budget)?;
             } else {
                 budget.take(1)?;
                 let path = self.least_path(entry, fact.inputs.first());
@@ -229,6 +227,7 @@ impl<'v> Links<'v> {
         let member = entry
             .preimage
             .owner_effective_type
+            .clone()
             .map(|_| &entry.preimage.original);
         let Some(first) = parent.and_then(|id| self.by_id.get(&id)).copied() else {
             return Ok(());
@@ -254,7 +253,12 @@ impl<'v> Links<'v> {
             if let Some(frame) = stack.last_mut() {
                 frame.1 = position + 1;
             }
-            let Some(child) = fact.parent.and_then(|id| self.by_id.get(&id)).copied() else {
+            let Some(child) = fact
+                .parent
+                .clone()
+                .and_then(|id| self.by_id.get(&id))
+                .copied()
+            else {
                 continue;
             };
             types.push(self.supertype_key(child, member));
@@ -267,7 +271,7 @@ impl<'v> Links<'v> {
     /// The supertype `parent` stands for on a path: the type itself, or the
     /// owner of the member `parent` is.
     fn supertype_key(&self, parent: &ViewEntry, member: Option<&DeclarationKey>) -> DeclarationKey {
-        match (parent.preimage.owner_effective_type, member) {
+        match (parent.preimage.owner_effective_type.clone(), member) {
             (Some(owner), Some(_)) => self.by_id.get(&owner).map_or_else(
                 || parent.preimage.original.clone(),
                 |owner| owner.preimage.original.clone(),
@@ -287,7 +291,7 @@ impl<'v> Links<'v> {
         let Some(target) = declaring.and_then(|key| self.owners.get(key)) else {
             return Vec::new();
         };
-        let start = match entry.preimage.owner_effective_type {
+        let start = match entry.preimage.owner_effective_type.clone() {
             Some(owner) => self.by_id.get(&owner).copied(),
             None => Some(entry),
         };
@@ -308,14 +312,14 @@ impl<'v> Links<'v> {
                 .skip(next)
                 .find(|(_, fact)| fact.rule == RULE_INHERIT);
             let Some((position, fact)) = step else {
-                dead.insert(at.effective_id);
+                dead.insert(at.effective_id.clone());
                 stack.pop();
                 continue;
             };
             if let Some(frame) = stack.last_mut() {
                 frame.1 = position + 1;
             }
-            let Some(parent) = fact.parent.and_then(|id| self.by_id.get(&id)) else {
+            let Some(parent) = fact.parent.clone().and_then(|id| self.by_id.get(&id)) else {
                 continue;
             };
             if &parent.preimage.original == *target {

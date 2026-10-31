@@ -204,8 +204,8 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 - ADR-015 D-1 to D-3 and D-5; ADR-011 §2.1 E3 and E4, §4; ADR-013 O-02,
   O-04, O-18.
-- [FR-087](FR-087-typestate-and-cross-package-node-key.md): `ImportView`,
-  `PackageNodeKey` and E3 name resolution (AC-13), and the E4 link step
+- [FR-087](FR-087-typestate-and-cross-package-node-key.md): `ImportView`
+  (`ImportView::of`) and E3 name resolution (AC-13), and the E4 link step
   with dependencies (AC-14).
 - [FR-027](FR-027-export-compiled-native-package.md): the CLI supplies the
   dependency input in native-compile/1's `libraries`.

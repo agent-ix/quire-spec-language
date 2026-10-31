@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{BackendId, Code, RequestIndex, SourceIdentity};
 use quire_exact::{Cancel, Integer, Origin, Role};
@@ -371,16 +370,17 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
 #[trace("TC-774")]
 #[test]
 fn the_cause_reader_reads_hypotheses_not_established() {
-    let node = |domain: &str, digest: String| json!({"domain": domain, "digest": digest});
-    let domain = quire_exact::NODE_KEY_DOMAIN;
+    let node = |ordinal: u64| json!({"package": "fixture", "path": ["clause"], "ordinal": ordinal});
+    let hypothesis = crate::fixture_node(0xdc);
+    let wire = qsl_foundation::node_wire::node_key_to_json(&hypothesis).unwrap();
     assert_eq!(
         read_plugin_inconclusive_cause(&json!({
             "type": "hypotheses-not-established",
-            "hypothesis": node(domain, "dc".repeat(32)),
+            "hypothesis": wire,
             "result": "refuted",
         })),
         Ok(InconclusiveCause::HypothesesNotEstablished {
-            hypothesis: WireNodeId::from_digest([0xdc; 32]),
+            hypothesis,
             result: crate::outcome::ItemLabel::Refuted,
         })
     );
@@ -395,27 +395,17 @@ fn the_cause_reader_reads_hypotheses_not_established() {
         ),
         (
             json!({"type": "hypotheses-not-established",
-                   "hypothesis": node("quire.package.semantic/v2", "dc".repeat(32)), "result": "refuted"}),
-            invalid("/cause/hypothesis/domain"),
+                   "hypothesis": {"package": "", "path": ["clause"], "ordinal": 0}, "result": "refuted"}),
+            invalid("/cause/hypothesis"),
         ),
         (
             json!({"type": "hypotheses-not-established",
-                   "hypothesis": node(domain, "DC".repeat(32)), "result": "refuted"}),
-            invalid("/cause/hypothesis/digest"),
-        ),
-        (
-            json!({"type": "hypotheses-not-established",
-                   "hypothesis": {"domain": domain, "digest": "dc".repeat(32), "extra": 1}, "result": "refuted"}),
-            unknown("/cause/hypothesis/extra"),
-        ),
-        (
-            json!({"type": "hypotheses-not-established",
-                   "hypothesis": node(domain, "dc".repeat(32)), "result": "undefined"}),
+                   "hypothesis": node(1), "result": "undefined"}),
             invalid("/cause/result"),
         ),
         (
             json!({"type": "hypotheses-not-established",
-                   "hypothesis": node(domain, "dc".repeat(32)), "result": 1}),
+                   "hypothesis": node(1), "result": 1}),
             wrong("/cause/result"),
         ),
     ];
@@ -541,12 +531,13 @@ fn entry(values: Value) -> Value {
 #[trace("TC-774", "FR-290-AC-10")]
 #[test]
 fn tc_774_assignment_reader_reads_and_refuses_in_order() {
-    let parameter = "11".repeat(32);
+    let parameter = qsl_foundation::node_wire::node_key_to_json(&crate::fixture_node(0x11))
+        .expect("a fixture node spells");
     let value = json!({"type": "integer", "value": "0"});
     assert_eq!(
         read_plugin_assignments(&entry(json!([{"parameter": parameter, "value": value}]))),
         Ok(vec![CanonicalAssignment {
-            parameter: WireNodeId::from_digest([0x11; 32]),
+            parameter: crate::fixture_node(0x11),
             value: WitnessValue::ExactInteger(Integer::from(0_i64)),
         }])
     );
@@ -554,7 +545,7 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
     let counterexample = |body: Value| json!({"counterexample": body});
     let mut with_extra = entry(json!([]));
     with_extra["extra"] = json!(1);
-    let element = |parameter: &str, value: Value| json!({"parameter": parameter, "value": value});
+    let element = |parameter: &Value, value: Value| json!({"parameter": parameter, "value": value});
     let cases: Vec<(Value, PluginResultRefusal)> = vec![
         (json!([]), wrong("")),
         (
@@ -599,12 +590,15 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
             missing("/counterexample/values/0/value"),
         ),
         (
-            entry(json!([element(&"1".repeat(63), value.clone())])),
+            entry(json!([element(
+                &json!({"package": "fixture"}),
+                value.clone()
+            )])),
             invalid("/counterexample/values/0/parameter"),
         ),
         (
-            entry(json!([element(&"A1".repeat(32), value.clone())])),
-            invalid("/counterexample/values/0/parameter"),
+            entry(json!([element(&json!("11".repeat(32)), value.clone())])),
+            wrong("/counterexample/values/0/parameter"),
         ),
         (
             entry(json!([element(
@@ -778,9 +772,16 @@ fn fixture_of(
     let models = select(&parsed, packages, limits.spine.model, &cancel)
         .unwrap_or_else(|failure| panic!("select: {failure:?}"))
         .into_value();
-    let checked = check(&parsed, &models, dependencies, limits.spine, &cancel)
-        .unwrap_or_else(|failure| panic!("check: {failure:?}"))
-        .into_value();
+    let checked = check(
+        &parsed,
+        "fixture".to_owned(),
+        &models,
+        dependencies,
+        limits.spine,
+        &cancel,
+    )
+    .unwrap_or_else(|failure| panic!("check: {failure:?}"))
+    .into_value();
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .unwrap_or_else(|failure| panic!("package: {failure:?}"))
         .into_value();
@@ -795,19 +796,19 @@ fn context(fixture: &Fixture, limits: CallerLimits) -> PluginReplayContext {
     PluginReplayContext::new(&fixture.checked, &fixture.emitted, &fixture.models, limits)
 }
 
-fn declaration(fixture: &Fixture, name: &str) -> (OccurrenceKey, WireNodeId) {
+fn declaration(fixture: &Fixture, name: &str) -> (OccurrenceKey, NodeKey) {
     let graph = fixture.checked.package().graph();
     let callable = graph.callable(name).expect("declared");
-    let parameter = crate::execute::callable_parameter_keys(fixture.checked.package(), &callable)
+    let parameter = &crate::execute::callable_parameter_keys(fixture.checked.package(), &callable)
         .expect("a function node")[0];
-    let node = WireNodeId::from_digest(*callable.identity.as_bytes());
+    let node = callable.identity.clone();
     (
         OccurrenceKey::new(node, Origin::new(Role::new("declaration"), 0)),
-        WireNodeId::from_digest(*parameter.as_bytes()),
+        parameter.clone(),
     )
 }
 
-fn bound_at(node: WireNodeId) -> ProofBound {
+fn bound_at(node: NodeKey) -> ProofBound {
     ProofBound::new(
         DomainKey::Node { node, path: vec![] },
         Some(DomainKind::Integer),
@@ -816,7 +817,7 @@ fn bound_at(node: WireNodeId) -> ProofBound {
     .unwrap()
 }
 
-fn input(parameter: WireNodeId, x: i128) -> Vec<CanonicalAssignment> {
+fn input(parameter: NodeKey, x: i128) -> Vec<CanonicalAssignment> {
     vec![CanonicalAssignment {
         parameter,
         value: WitnessValue::Integer(x),
@@ -846,9 +847,9 @@ fn tc_774_function_contract_and_application_items_replay() {
     let fixture = fixture();
     let context = context(&fixture, CallerLimits::default());
     let (p, p_x) = declaration(&fixture, "p");
-    let bounds = [bound_at(p_x)];
+    let bounds = [bound_at(p_x.clone())];
     let wire = context
-        .request(&p, &bounds, &plugin(), input(p_x, 0))
+        .request(&p, &bounds, &plugin(), input(p_x.clone(), 0))
         .expect("a function-contract item");
     assert_eq!(
         wire.replay_target
@@ -888,11 +889,11 @@ fn tc_774_function_contract_and_application_items_replay() {
         .expect("p's application has a requirement record");
     assert_ne!(p_application, p);
     assert!(matches!(
-        settle(&context, &p_application, &bounds, input(p_x, 0)).value(),
+        settle(&context, &p_application, &bounds, input(p_x.clone(), 0)).value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
     ));
 
-    let refuted = settle(&context, &p, &bounds, input(p_x, 0));
+    let refuted = settle(&context, &p, &bounds, input(p_x.clone(), 0));
     assert_eq!(refuted.value(), &TerminalValue::Refuted);
     assert_eq!(refuted.backend(), Some(&plugin()));
     let parity = settle(&context, &p, &bounds, input(p_x, 5));
@@ -904,7 +905,7 @@ fn tc_774_function_contract_and_application_items_replay() {
     // The item's identity is the process-provider preimage of its bounds.
     let entries = BoundEntries::new(bounds.to_vec()).unwrap();
     let identity = process_provider_obligation(p.node(), p.origin(), &entries).unwrap();
-    assert_eq!(wire.obligation_identity, *identity.as_bytes());
+    assert_eq!(wire.obligation_identity, identity);
 
     // `r(x) = x + 1 > 3` holds for every x, yet `r(0)` is false: the item at
     // an application of `r` is a value-validity item, so it replays the
@@ -926,14 +927,24 @@ fn tc_774_function_contract_and_application_items_replay() {
         // The item's identity is the process-provider preimage of its node
         // and occurrence.
         let wire = context
-            .request(application, &[bound_at(r_x)], &plugin(), input(r_x, 0))
+            .request(
+                application,
+                &[bound_at(r_x.clone())],
+                &plugin(),
+                input(r_x.clone(), 0),
+            )
             .expect("an application item");
-        let entries = BoundEntries::new(vec![bound_at(r_x)]).unwrap();
+        let entries = BoundEntries::new(vec![bound_at(r_x.clone())]).unwrap();
         let identity =
             process_provider_obligation(application.node(), application.origin(), &entries)
                 .unwrap();
-        assert_eq!(wire.obligation_identity, *identity.as_bytes());
-        let record = settle(&context, application, &[bound_at(r_x)], input(r_x, 0));
+        assert_eq!(wire.obligation_identity, identity);
+        let record = settle(
+            &context,
+            application,
+            &[bound_at(r_x.clone())],
+            input(r_x.clone(), 0),
+        );
         assert!(
             matches!(
                 record.value(),
@@ -944,7 +955,7 @@ fn tc_774_function_contract_and_application_items_replay() {
         assert_eq!(record.backend(), Some(&plugin()));
     }
     assert_eq!(
-        settle(&context, &r, &[bound_at(r_x)], input(r_x, 0)).value(),
+        settle(&context, &r, &[bound_at(r_x.clone())], input(r_x, 0)).value(),
         &TerminalValue::Refuted
     );
 
@@ -961,7 +972,12 @@ fn tc_774_function_contract_and_application_items_replay() {
         .map(|(key, _)| key.clone())
         .expect("q's application has a requirement record");
     let wire = context
-        .request(&application, &[bound_at(q_x)], &plugin(), input(q_x, 9))
+        .request(
+            &application,
+            &[bound_at(q_x.clone())],
+            &plugin(),
+            input(q_x.clone(), 9),
+        )
         .expect("an application item");
     assert_eq!(
         wire.replay_target
@@ -975,11 +991,16 @@ fn tc_774_function_contract_and_application_items_replay() {
         wire.replay_target.occurrence_key.as_ref(),
         Some(&application)
     );
-    let entries = BoundEntries::new(vec![bound_at(q_x)]).unwrap();
+    let entries = BoundEntries::new(vec![bound_at(q_x.clone())]).unwrap();
     let identity =
         process_provider_obligation(application.node(), application.origin(), &entries).unwrap();
-    assert_eq!(wire.obligation_identity, *identity.as_bytes());
-    let record = settle(&context, &application, &[bound_at(q_x)], input(q_x, 9));
+    assert_eq!(wire.obligation_identity, identity);
+    let record = settle(
+        &context,
+        &application,
+        &[bound_at(q_x.clone())],
+        input(q_x.clone(), 9),
+    );
     assert!(matches!(
         record.value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
@@ -989,14 +1010,19 @@ fn tc_774_function_contract_and_application_items_replay() {
     // A function declaration whose result is not `Boolean` is no
     // function-contract item.
     let refusal = context
-        .request(&q, &[bound_at(q_x)], &plugin(), input(q_x, 9))
+        .request(
+            &q,
+            &[bound_at(q_x.clone())],
+            &plugin(),
+            input(q_x.clone(), 9),
+        )
         .err()
         .expect("a non-predicate declaration");
     assert_eq!(
         refusal,
         PluginReplayRefusal::NotReplayable { key: q.clone() }
     );
-    let record = settle(&context, &q, &[bound_at(q_x)], input(q_x, 9));
+    let record = settle(&context, &q, &[bound_at(q_x.clone())], input(q_x, 9));
     assert_eq!(
         record.value(),
         &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
@@ -1026,11 +1052,11 @@ fn tc_774_an_undefined_application_item_is_refuted() {
         .find(|(_, record)| record.owner() == Some("m"))
         .map(|(key, _)| key.clone())
         .expect("m's application has a requirement record");
-    let bounds = [bound_at(x)];
-    let refuted = settle(&context, &application, &bounds, input(x, 0));
+    let bounds = [bound_at(x.clone())];
+    let refuted = settle(&context, &application, &bounds, input(x.clone(), 0));
     assert_eq!(refuted.value(), &TerminalValue::Refuted);
     assert_eq!(refuted.backend(), Some(&plugin()));
-    let defined = settle(&context, &application, &bounds, input(x, 3));
+    let defined = settle(&context, &application, &bounds, input(x.clone(), 3));
     assert!(matches!(
         defined.value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
@@ -1040,41 +1066,6 @@ fn tc_774_an_undefined_application_item_is_refuted() {
         outside.value(),
         &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::InvalidRuntimeInput))
     );
-}
-
-/// FR-290-AC-13.
-#[trace("TC-774", "FR-290-AC-13")]
-#[test]
-fn tc_774_process_provider_preimage_encodes_and_digests() {
-    let node = WireNodeId::from_digest([0x11; 32]);
-    let origin = Origin::new(Role::new("declaration"), 0);
-    let bound = bound_at(WireNodeId::from_digest([0x22; 32]));
-    let with = process_provider_obligation(node, &origin, &BoundEntries::new(vec![bound]).unwrap())
-        .unwrap();
-    let without =
-        process_provider_obligation(node, &origin, &BoundEntries::new(Vec::new()).unwrap())
-            .unwrap();
-    // The identity is the SHA-256 of the RFC 8785 text of the item's
-    // proof bounds, node, kind and occurrence, written out by hand here and
-    // hashed independently of `quire-canonical`.
-    let (node_id, bound_node) = ("11".repeat(32), "22".repeat(32));
-    let text = |entries: &str| {
-        format!(
-            r#"{{"declared_domains":{{"entries":[{entries}],"tag":"bounds"}},"node":"{node_id}","obligation_kind":"value-validity","occurrence_key":{{"ordinal":0,"role":"declaration"}},"subject_kind":"process-provider"}}"#
-        )
-    };
-    let entry = format!(
-        r#"{{"bound":{{"lower":"0","tag":"integer_range","upper":"9"}},"key":{{"node_id":"{bound_node}","path":[],"tag":"node"}}}}"#
-    );
-    assert_eq!(
-        with.as_bytes(),
-        &qsl_foundation::ByteDigest::of(text(&entry).as_bytes()).as_bytes()
-    );
-    assert_eq!(
-        without.as_bytes(),
-        &qsl_foundation::ByteDigest::of(text("").as_bytes()).as_bytes()
-    );
-    assert_ne!(with.as_bytes(), without.as_bytes());
 }
 
 /// FR-290-AC-14.
@@ -1091,7 +1082,9 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
     let defaults = CallerLimits::default();
     let context = context(&fixture, limits);
     let (p, p_x) = declaration(&fixture, "p");
-    let wire = context.request(&p, &[], &plugin(), input(p_x, 0)).unwrap();
+    let wire = context
+        .request(&p, &[], &plugin(), input(p_x.clone(), 0))
+        .unwrap();
     assert_eq!(wire.stage_limits["s1.tokens"], 200_000);
     assert_eq!(wire.stage_limits["library.definitions"], 9000);
     assert_eq!(wire.accounting_limits.work_units, 5000);
@@ -1116,7 +1109,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         context
             .request(
                 &q_declaration,
-                &[bound_at(q_x), bound_at(q_x)],
+                &[bound_at(q_x.clone()), bound_at(q_x)],
                 &plugin(),
                 Vec::new()
             )
@@ -1126,7 +1119,8 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         })
     );
     // Only the `declaration` occurrence at ordinal 0 names a function.
-    let off_ordinal = OccurrenceKey::new(p.node(), Origin::new(Role::new("declaration"), 1));
+    let off_ordinal =
+        OccurrenceKey::new(p.node().clone(), Origin::new(Role::new("declaration"), 1));
     assert_eq!(
         context
             .request(&off_ordinal, &[], &plugin(), Vec::new())
@@ -1136,7 +1130,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
 
     // An unknown key comes before NotReplayable; duplicate bounds come last.
     let unknown_key = OccurrenceKey::new(
-        WireNodeId::from_digest([0x99; 32]),
+        crate::fixture_node(0x99),
         Origin::new(Role::new("declaration"), 0),
     );
     assert_eq!(
@@ -1147,7 +1141,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
             key: unknown_key.clone()
         })
     );
-    let duplicate = [bound_at(p_x), bound_at(p_x)];
+    let duplicate = [bound_at(p_x.clone()), bound_at(p_x.clone())];
     let refusal = context
         .request(&p, &duplicate, &plugin(), input(p_x, 0))
         .err()
@@ -1237,7 +1231,12 @@ fn tc_774_a_transitive_dependency_replays() {
     let context = context(&fixture, CallerLimits::default());
     let (q, q_x) = declaration(&fixture, "q");
     let wire = context
-        .request(&q, &[bound_at(q_x)], &plugin(), input(q_x, 0))
+        .request(
+            &q,
+            &[bound_at(q_x.clone())],
+            &plugin(),
+            input(q_x.clone(), 0),
+        )
         .expect("a function-contract item");
     let identities: Vec<&str> = wire
         .dependencies
@@ -1246,11 +1245,17 @@ fn tc_774_a_transitive_dependency_replays() {
         .collect();
     assert_eq!(identities, ["test/b", "test/c"]);
     assert_eq!(
-        settle(&context, &q, &[bound_at(q_x)], input(q_x, 0)).value(),
+        settle(
+            &context,
+            &q,
+            &[bound_at(q_x.clone())],
+            input(q_x.clone(), 0)
+        )
+        .value(),
         &TerminalValue::Refuted
     );
     assert!(matches!(
-        settle(&context, &q, &[bound_at(q_x)], input(q_x, 7)).value(),
+        settle(&context, &q, &[bound_at(q_x.clone())], input(q_x, 7)).value(),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
     ));
 }

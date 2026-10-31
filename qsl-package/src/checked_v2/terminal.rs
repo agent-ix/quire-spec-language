@@ -9,15 +9,15 @@
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::digest::WireNodeId;
 use quire_contract_model::{
     CheckedNodeKind, CheckedNodeTag, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm,
     LiteralKind, TemporalForm,
 };
+use quire_exact::NodeKey;
 use quire_semantic_value::catalog::InternalFault;
 
 /// A model's intended terminal states as the package carries them.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReadTerminalDeclaration {
     /// The model has no `terminal` node: it intends no terminal state.
     None,
@@ -26,19 +26,19 @@ pub enum ReadTerminalDeclaration {
     /// A terminal state is intended when the condition holds at it.
     When {
         /// The `self` parameter node, present when the condition reads `self`.
-        parameter: Option<WireNodeId>,
+        parameter: Option<NodeKey>,
         /// The Boolean `expression` node of the condition.
-        condition: WireNodeId,
+        condition: NodeKey,
     },
 }
 
 /// One `terminal` node read back.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadTerminal {
     /// The `temporal`/`terminal` node.
-    pub node: WireNodeId,
+    pub node: NodeKey,
     /// The `model` node the declaration is on.
-    pub model: WireNodeId,
+    pub model: NodeKey,
     /// The declaration: never [`ReadTerminalDeclaration::None`].
     pub declaration: ReadTerminalDeclaration,
 }
@@ -52,13 +52,13 @@ fn is_terminal(node: &CheckedSemanticNodeV2) -> bool {
         == Some(CheckedNodeKind::Temporal(TemporalForm::Terminal))
 }
 
-fn wire_id(digest: &str) -> Result<WireNodeId, InternalFault> {
-    WireNodeId::from_hex(digest).ok_or(SHAPE)
+fn key(id: &quire_contract_model::CheckedNodeId) -> Result<NodeKey, InternalFault> {
+    crate::emit::admitted_key(id).map_err(|_| SHAPE)
 }
 
-fn reference(term: &CheckedTerm) -> Option<&str> {
+fn reference(term: &CheckedTerm) -> Option<&quire_contract_model::CheckedNodeId> {
     match term {
-        CheckedTerm::Reference { target } => Some(&target.digest),
+        CheckedTerm::Reference { target } => Some(target),
         _ => None,
     }
 }
@@ -83,7 +83,7 @@ fn bindings(node: &CheckedSemanticNodeV2) -> Option<[&CheckedTerm; 4]> {
 
 fn read_node(node: &CheckedSemanticNodeV2) -> Result<ReadTerminal, InternalFault> {
     let [model, mode, parameters, condition] = bindings(node).ok_or(SHAPE)?;
-    let model = wire_id(reference(model).ok_or(SHAPE)?)?;
+    let model = key(reference(model).ok_or(SHAPE)?)?;
     let CheckedTerm::Literal {
         value_kind: LiteralKind::Text,
         value: mode,
@@ -100,14 +100,14 @@ fn read_node(node: &CheckedSemanticNodeV2) -> Result<ReadTerminal, InternalFault
         Some("when") => ReadTerminalDeclaration::When {
             parameter: members
                 .first()
-                .map(|member| reference(member).ok_or(SHAPE).and_then(wire_id))
+                .map(|member| reference(member).ok_or(SHAPE).and_then(key))
                 .transpose()?,
-            condition: wire_id(reference(condition).ok_or(SHAPE)?)?,
+            condition: key(reference(condition).ok_or(SHAPE)?)?,
         },
         _ => return Err(SHAPE),
     };
     Ok(ReadTerminal {
-        node: wire_id(&node.node_id.digest)?,
+        node: key(&node.node_id)?,
         model,
         declaration,
     })
@@ -143,11 +143,11 @@ pub(crate) fn read_nodes(
 /// As [`read_terminals`].
 pub fn read_terminal(
     package: &CheckedPackageV2,
-    model: WireNodeId,
+    model: &NodeKey,
 ) -> Result<ReadTerminalDeclaration, InternalFault> {
     Ok(read_terminals(package)?
         .into_iter()
-        .find(|terminal| terminal.model == model)
+        .find(|terminal| &terminal.model == model)
         .map_or(ReadTerminalDeclaration::None, |terminal| {
             terminal.declaration
         }))
@@ -211,11 +211,9 @@ pub fn resolve_terminals(
     let mut resolved = Vec::new();
     let mut claimed = BTreeSet::new();
     for checked in package.graph().terminals() {
-        let found = checked.occurrence().and_then(|occurrence| {
-            nodes
-                .iter()
-                .find(|node| node.node.as_bytes() == occurrence.node().as_bytes())
-        });
+        let found = checked
+            .occurrence()
+            .and_then(|occurrence| nodes.iter().find(|node| &node.node == occurrence.node()));
         let declaration = match (found, checked.declaration()) {
             (None, TerminalDeclaration::None) => continue,
             (Some(node), TerminalDeclaration::Any) if node.mode == TerminalMode::Any => {
@@ -229,7 +227,7 @@ pub fn resolve_terminals(
             _ => return Err(disagrees(checked.model())),
         };
         if let Some(node) = found {
-            claimed.insert(*node.node.as_bytes());
+            claimed.insert(node.node.clone());
         }
         resolved.push(PackageTerminal {
             model: checked.model(),
@@ -237,13 +235,8 @@ pub fn resolve_terminals(
             declaration,
         });
     }
-    if let Some(orphan) = nodes
-        .iter()
-        .find(|node| !claimed.contains(node.node.as_bytes()))
-    {
-        return Err(disagrees(
-            &WireNodeId::from_digest(*orphan.node.as_bytes()).to_string(),
-        ));
+    if let Some(orphan) = nodes.iter().find(|node| !claimed.contains(&node.node)) {
+        return Err(disagrees(&orphan.node.to_string()));
     }
     Ok(resolved)
 }

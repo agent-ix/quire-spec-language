@@ -21,13 +21,13 @@ relationships:
 ## Description
 
 EN-5 SHALL emit every proof with a `ProbabilityCertificate` (ADR-028 CE-1).
-The layer-6 facade entry `qsl_replay::check_probability_certificate` SHALL
-verify the certificate in exact rationals with no engine present: it recompiles the
-package, re-enumerates the product, recomputes every qualitative set by
-graph algorithms, and checks the certificate's fixed-point, ranking and
-gain–bias conditions (CE-2 to CE-4). It solves no equation and runs no
-iteration. The checker is part of the qualified core (ADR-028 CE-7): an
-EN-5 `proved` SHALL count only after this checker accepts its certificate.
+QSpec FR-412 defines the certificate contract and the exact conditions its
+checker verifies. The layer-6 facade entry
+`qsl_replay::check_probability_certificate` SHALL apply that contract using
+QSL's recompile, product enumeration and graph code, without an engine
+present. It solves no equation and runs no iteration. The checker is part of
+the qualified core (ADR-028 CE-7): an EN-5 `proved` SHALL count only after
+this checker accepts its certificate.
 
 ## Use case
 
@@ -137,25 +137,18 @@ product state form `{product_key}` and the second as `{member}`.
   reachable product state for an `Upper`, `Exact` or `LongRun` certificate,
   and the states the certificate names and their successors for a `Lower`
   one, an unexplored successor counting as value 0.
-- It SHALL recompute the decided states, `Prob0` and `Prob1`, the
-  components and, with a fairness set, the maximal fair end components by
-  FR-200's refinement, with its own graph code.
-- With `F` the one-step operator of the objective, it SHALL check in exact
-  rationals: **Upper**, `F(y) <= y` at every state; **Lower**, `x <= F(x)`
-  at every named state and, at every non-target state with `x > 0`, a
-  successor with positive probability, `x > 0` and a smaller rank, under the
-  workload, the policy, or every action for a minimum; **Exact**, both with
-  equality; for a finite-horizon product the rank SHALL be the remaining
-  horizon read from the monitor state; **expected reward**, the same with
-  the reward added and the `+∞` states recomputed; **LongRun**, per
-  component the multichain optimality equations for `R · ([P] − ρ_C)` with
-  gain 0, as equalities under the component's policy and inequalities over
-  every action, plus a certificate for the combination.
-- It SHALL accept when the conditions hold and the initial state's value is
-  on the claim's side of the threshold, and report the side; otherwise it
-  SHALL reject with the rule and locus the table above gives the first
-  failing condition and state in canonical order. It SHALL check the
-  `Malformed` members before any re-enumeration.
+- It SHALL recompute the decided states, `Prob0` and `Prob1`, and components
+  with its own graph code. When the objective has a fairness set, it SHALL
+  derive the maximal fair end components using FR-200's refinement before
+  applying QSpec FR-412's certificate conditions.
+- It SHALL apply QSpec FR-412's exact-rational conditions and threshold-side
+  rule, and QSpec FR-331's rejection vocabulary. It SHALL accept when the
+  conditions hold and the initial state's value is on the claim's side of the
+  threshold, and report the side; otherwise it SHALL reject with the rule and
+  locus the table above gives the first failing condition and state in
+  canonical order. QSL's internal rule and locus variants map to the published
+  forms as the table above specifies. It SHALL check the `Malformed` members
+  before any re-enumeration.
 - For a `quantile q of M >= c` claim over every scheduler, proved by an
   `Upper` certificate `y` for `max E[Y]`, `Y = [activated] · ([M < c] − q)`
   (ADR-028 XF-2, CE-4): when `y(s0) < 0` the checker SHALL accept with side

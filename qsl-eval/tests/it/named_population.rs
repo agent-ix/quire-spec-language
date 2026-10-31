@@ -211,7 +211,7 @@ impl Unit {
             kind: clause.kind(),
             context: clause.context(),
             operation: clause.operation().map(|operation| OperationFacts {
-                declaring: operation.declaring,
+                declaring: operation.declaring.clone(),
                 declaration: operation.declaration.clone(),
             }),
             operations: self.graph().scope().operations().clone(),
@@ -389,7 +389,7 @@ fn footprint(
     } = graph
         .scope()
         .operations()
-        .resolve(graph.scope().types(), identity, operation)
+        .resolve(graph.scope().types(), identity.clone(), operation)
     else {
         panic!("{object_type} declares {operation}");
     };

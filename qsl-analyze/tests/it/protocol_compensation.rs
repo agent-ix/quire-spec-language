@@ -1069,7 +1069,7 @@ fn an_effect_waits_for_its_attempts_binder() {
 
     let chosen = format!(
         "sequence Main {{ event X by w as (x: Boolean) {{ true }}; \
-         choice Pick by w visible (x) {{ case yes when {{ x }} {CHARGE} case no when {{ not x }} {} }} \
+         choice Pick by w visible (x and true) {{ case yes when {{ x and true }} {CHARGE} case no when {{ not (x and true) }} {} }} \
          {} {FAIL} }}",
         crate::protocol_system::touch("TN"),
         paid("Main::Pick::yes::C"),
@@ -1594,7 +1594,11 @@ fn a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named() {
             assert_eq!(cases, ["fast", "slow"]);
             let enum_value = &members[0].1;
             assert_eq!(enum_value["type"], "enum");
-            assert_eq!(enum_value["name"].as_str().map(str::len), Some(64));
+            // `name` is the variant type's structural node key (ADR-013).
+            let name = &enum_value["name"];
+            assert!(name["package"].is_string(), "{enum_value}");
+            assert!(name["path"].is_array(), "{enum_value}");
+            assert!(name["ordinal"].is_number(), "{enum_value}");
             assert!(enum_value.get("rank").is_none(), "{enum_value}");
         },
     );

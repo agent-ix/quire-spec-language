@@ -21,7 +21,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, Rational, ScalarLimits};
@@ -31,7 +30,6 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/rpc";
-const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -114,7 +112,6 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
     .into_iter()
     .map(|(name, meaning)| {
         json!({"kind": {"module": PACKAGE, "name": name}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "record", "members": {},
                 "meaning": meaning}})
     })
@@ -135,11 +132,10 @@ fn clocked_document(clocked: bool, extra: &[&str]) -> Vec<u8> {
     );
     json!({
         "contractVersion": "2.0.0",
-        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
-        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle",
-            "digest": PLACEHOLDER},
-        "package": {"identity": PACKAGE, "version": "1.0.0", "manifestDigest": PLACEHOLDER,
-            "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": PACKAGE, "version": "1.0.0",
+            "mappingVersions": [], "profileVersions": []},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
         "types": [
@@ -279,6 +275,7 @@ fn try_world_of(
     .expect("the kept operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
+        "fixture".to_owned(),
         built,
         models,
         Vec::new(),
@@ -1162,7 +1159,6 @@ fn timer_document() -> Vec<u8> {
         .expect("constructs")
         .push(json!({
         "kind": {"module": PACKAGE, "name": "value_record"}, "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER,
         "construct": {"identity": "none", "shape": "record", "members": {},
             "meaning": meaning::RECORD_VALUE_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")
@@ -1362,7 +1358,6 @@ fn a_record_holding_an_enum_steps_where_its_frame_does_not_grant_it() {
         .expect("constructs")
         .push(json!({
             "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-            "manifestDigest": PLACEHOLDER,
             "construct": {"identity": "none", "shape": "enumeration",
                 "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
     let world = world_holding(
@@ -2701,7 +2696,6 @@ fn cells_document(
     let constructs = document["constructs"].as_array_mut().expect("constructs");
     constructs.push(json!({
         "kind": {"module": PACKAGE, "name": "mode"}, "moduleVersion": "1.0.0",
-        "manifestDigest": PLACEHOLDER,
         "construct": {"identity": "none", "shape": "enumeration",
             "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE}}));
     serde_json::to_vec(&document).expect("JSON")
@@ -4143,10 +4137,7 @@ fn a_clock_parameter_has_one_instance_per_place() {
             .collect();
         assert_eq!(zeros.len(), 1, "{place}");
         let object = timed.places()[zeros[0]].object();
-        let named = format!(
-            "\"identity\":\"{}\"",
-            hex(object.object().as_str().as_bytes())
-        );
+        let named = format!("\"identity\":\"{}\"", object.object().as_str());
         assert!(place.contains(&named), "{place} names {object:?}");
     }
 
@@ -4297,7 +4288,7 @@ fn two_clock_parameters_bind_every_pair_of_places() {
                 };
                 let named = format!(
                     "\"identity\":\"{}\"",
-                    hex(timed.places()[zero].object().object().as_str().as_bytes())
+                    timed.places()[zero].object().object().as_str()
                 );
                 assert!(c.contains(&named), "{c} names the reset place");
             }
@@ -4365,7 +4356,7 @@ fn a_permutation_renames_a_clock_place_argument() {
                     let [place] = transition.arguments() else {
                         panic!("one place argument");
                     };
-                    place.contains(&format!("\"identity\":\"{}\"", hex(key.as_bytes())))
+                    place.contains(&format!("\"identity\":\"{}\"", key))
                 };
                 for (from, to) in [("c1", "c2"), ("c2", "c1")] {
                     if named(transition, from) {
@@ -5491,4 +5482,39 @@ fn a_clock_parameter_reset_writes_the_place_its_instance_binds() {
         assert!(timed.live(&timed.places()[v], next.discrete()));
         assert!(next.clocks().values()[v].numerator().is_zero());
     }
+}
+
+/// QSpec FR-331 "Model member domain keys": a clock-count field is one of
+/// the declaring type's own fields, so the one name-ordered sequence of own
+/// fields interleaves it with the data fields. `Call` declares the data
+/// fields `inflight`, `late`, `phase` and `t` and the clock `x`; the
+/// pure-clock collection `m` sorts between `late` and `phase`, so the root a
+/// frame granting `m` gives it is `[0, 2]`, not past the data fields.
+#[trace("TC-685")]
+#[test]
+fn a_clock_count_field_is_keyed_by_its_place_among_the_own_fields() {
+    let clock = "ix://quire/native/Clock".to_owned();
+    let multiplicity = json!({"lower": 0, "ordered": true, "unique": false});
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world = world_holding(
+        cells_document(vec![], vec![("m", clock, Some(multiplicity))], &["m"], &[]),
+        "",
+        &only(&["work"], ""),
+        json!({"t": timer}),
+    );
+    let held = system(&world);
+    let roots: Vec<(Vec<u32>, String)> = held
+        .rooted_domains()
+        .into_iter()
+        .filter(|(_, path, _)| path.first() == Some(&0))
+        .map(|(_, path, value_type)| (path, format!("{value_type:?}")))
+        .collect();
+    // Own fields in UTF-8 name order: inflight, late, m, phase, t, x.
+    // `m`'s unbounded count is the one `Integer` root.
+    let counts: Vec<&Vec<u32>> = roots
+        .iter()
+        .filter(|(_, value_type)| value_type == "Integer")
+        .map(|(path, _)| path)
+        .collect();
+    assert_eq!(counts, vec![&vec![0, 2]], "{roots:?}");
 }

@@ -179,7 +179,7 @@ impl Lowering<'_> {
             variables.push(self.parameter(
                 variable.name.as_str(),
                 position,
-                rational,
+                rational.clone(),
                 &declared,
             )?);
         }
@@ -237,7 +237,7 @@ impl Lowering<'_> {
                         MemberTerm::binding("resets", BindingValue::Tuple(TupleTerm::new(resets))),
                     ]),
                 )?;
-                self.record(key, OccurrenceRole::Expression, transition_at);
+                self.record(key.clone(), OccurrenceRole::Expression, transition_at);
                 transitions.push(TupleMember::Leaf(LeafTerm::reference(key)));
             }
             let key = self.insert(
@@ -255,7 +255,7 @@ impl Lowering<'_> {
                     ),
                 ]),
             )?;
-            self.record(key, OccurrenceRole::Declaration, mode_at);
+            self.record(key.clone(), OccurrenceRole::Declaration, mode_at);
             modes.push(key);
         }
 
@@ -263,7 +263,7 @@ impl Lowering<'_> {
         for (variable, node) in model.variables.iter().zip(&variables) {
             let class = self.text_literal(class_spelling(variable.class), &declared)?;
             entries.push(TupleMember::Group(GroupTerm::new(vec![
-                GroupMember::Binding(Binding::new("parameter", LeafTerm::reference(*node))),
+                GroupMember::Binding(Binding::new("parameter", LeafTerm::reference(node.clone()))),
                 GroupMember::Binding(Binding::new("class", class)),
             ])));
         }
@@ -274,7 +274,7 @@ impl Lowering<'_> {
                 BindingValue::Tuple(TupleTerm::new(
                     modes
                         .iter()
-                        .map(|mode| TupleMember::Leaf(LeafTerm::reference(*mode)))
+                        .map(|mode| TupleMember::Leaf(LeafTerm::reference(mode.clone())))
                         .collect(),
                 )),
             ),
@@ -308,7 +308,7 @@ impl Lowering<'_> {
             Some(vec![model.name.clone()]),
             BodyTerm::aggregate(members),
         )?;
-        self.record(key, OccurrenceRole::Declaration, declared);
+        self.record(key.clone(), OccurrenceRole::Declaration, declared);
         Ok(LoweredHybridModel {
             key,
             variables,
@@ -328,7 +328,7 @@ impl Lowering<'_> {
         let at = hybrid_location(HybridSite::Claim(input.index));
         let boolean = self.type_node(&ValueType::Boolean, &at)?;
         let over_at = hybrid_location(HybridSite::Over(input.index));
-        let over = self.parameter(claim.over.as_str(), 0, input.lowered.key, &over_at)?;
+        let over = self.parameter(claim.over.as_str(), 0, input.lowered.key.clone(), &over_at)?;
         let scope = TermScope {
             variables: &input.lowered.variables,
             variable_names: input.model.variables.iter().map(|v| &v.name).collect(),
@@ -343,7 +343,7 @@ impl Lowering<'_> {
         let kind = self.text_literal(kind_name, &at)?;
         let mut activation = vec![GroupMember::Binding(Binding::new("kind", kind))];
         if let HybridActivation::Each { parameter, guard } = &claim.activation {
-            let trigger = self.parameter(parameter.as_str(), 1, input.lowered.key, &at)?;
+            let trigger = self.parameter(parameter.as_str(), 1, input.lowered.key.clone(), &at)?;
             activation.push(GroupMember::Binding(Binding::new(
                 "trigger",
                 LeafTerm::reference(trigger),
@@ -365,10 +365,10 @@ impl Lowering<'_> {
 
         let mut fairness = Vec::with_capacity(claim.fairness.len());
         for constraint in &claim.fairness {
-            fairness.push(self.hybrid_fairness(constraint, input, boolean, &at)?);
+            fairness.push(self.hybrid_fairness(constraint, input, boolean.clone(), &at)?);
         }
 
-        let formula = self.hybrid_formula(&claim.formula, &scope, claim, boolean, &at)?;
+        let formula = self.hybrid_formula(&claim.formula, &scope, claim, boolean.clone(), &at)?;
 
         let law = OperationLaw {
             role: LawRole::TemporalProfile,
@@ -379,7 +379,7 @@ impl Lowering<'_> {
             &at,
             NodeTag::Temporal,
             "temporal_clause",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::Temporal,
@@ -387,7 +387,7 @@ impl Lowering<'_> {
                     laws: vec![law],
                     ..Operation::plain("quire.op.temporal.clause")
                 },
-                boolean,
+                boolean.clone(),
                 vec![
                     MemberTerm::reference(over),
                     MemberTerm::Leaf(clock),
@@ -398,7 +398,7 @@ impl Lowering<'_> {
                 ],
             ),
         )?;
-        self.record(key, OccurrenceRole::Claim, at);
+        self.record(key.clone(), OccurrenceRole::Claim, at);
         Ok(LoweredHybridClaim { key, boolean })
     }
 
@@ -423,7 +423,7 @@ impl Lowering<'_> {
                 .lowered
                 .modes
                 .get(mode.get())
-                .copied()
+                .cloned()
                 .ok_or_else(|| stage_fault(location, "fairness-mode-lowered"))
         };
         let checked_mode = model
@@ -448,13 +448,13 @@ impl Lowering<'_> {
                 .ok_or_else(|| stage_fault(location, "fairness-target-checked"))?;
             (mode_node(mode)?, target.name.clone())
         } else {
-            (input.lowered.key, checked_mode.name.clone())
+            (input.lowered.key.clone(), checked_mode.name.clone())
         };
         let key = self.insert(
             location,
             NodeTag::Temporal,
             "fairness",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::TemporalFairness,
@@ -471,7 +471,7 @@ impl Lowering<'_> {
                 Vec::new(),
             ),
         )?;
-        self.record(key, OccurrenceRole::Expression, location.clone());
+        self.record(key.clone(), OccurrenceRole::Expression, location.clone());
         Ok(key)
     }
 
@@ -504,7 +504,7 @@ impl Lowering<'_> {
                             identity,
                             None,
                             Vec::new(),
-                            boolean,
+                            boolean.clone(),
                             location,
                         )?);
                     }
@@ -514,7 +514,7 @@ impl Lowering<'_> {
                             "quire.op.temporal.holds",
                             None,
                             vec![MemberTerm::Leaf(operand)],
-                            boolean,
+                            boolean.clone(),
                             location,
                         )?);
                     }
@@ -572,12 +572,18 @@ impl Lowering<'_> {
                         }
                         None => None,
                     };
-                    done.push(self.formula_node(identity, member, arguments, boolean, location)?);
+                    done.push(self.formula_node(
+                        identity,
+                        member,
+                        arguments,
+                        boolean.clone(),
+                        location,
+                    )?);
                 }
             }
         }
         match done.as_slice() {
-            [root] => Ok(*root),
+            [root] => Ok(root.clone()),
             _ => Err(stage_fault(location, "formula-root-keyed")),
         }
     }
@@ -595,7 +601,7 @@ impl Lowering<'_> {
             location,
             NodeTag::Temporal,
             "formula",
-            Some(boolean),
+            Some(boolean.clone()),
             None,
             BodyTerm::application(
                 Operator::TemporalFormula,
@@ -607,7 +613,7 @@ impl Lowering<'_> {
                 arguments,
             ),
         )?;
-        self.record(key, OccurrenceRole::Expression, location.clone());
+        self.record(key.clone(), OccurrenceRole::Expression, location.clone());
         Ok(key)
     }
 
@@ -630,7 +636,7 @@ impl Lowering<'_> {
                             .variables
                             .get(index.get())
                             .ok_or_else(|| stage_fault(location, "variable-lowered"))?;
-                        done.push((LeafTerm::reference(*node), TermKind::Real));
+                        done.push((LeafTerm::reference(node.clone()), TermKind::Real));
                     }
                     HybridTerm::ActivationVariable(index) => {
                         let name = scope
@@ -671,11 +677,11 @@ impl Lowering<'_> {
                             location,
                             NodeTag::Value,
                             "literal",
-                            Some(ty),
+                            Some(ty.clone()),
                             None,
                             BodyTerm::literal(ty, LiteralValue::Rational(value.clone())),
                         )?;
-                        self.record(key, OccurrenceRole::Expression, location.clone());
+                        self.record(key.clone(), OccurrenceRole::Expression, location.clone());
                         done.push((LeafTerm::reference(key), TermKind::Real));
                     }
                     HybridTerm::Boolean(value) => {
@@ -684,11 +690,11 @@ impl Lowering<'_> {
                             location,
                             NodeTag::Value,
                             "literal",
-                            Some(ty),
+                            Some(ty.clone()),
                             None,
                             BodyTerm::literal(ty, LiteralValue::Boolean(*value)),
                         )?;
-                        self.record(key, OccurrenceRole::Expression, location.clone());
+                        self.record(key.clone(), OccurrenceRole::Expression, location.clone());
                         done.push((LeafTerm::reference(key), TermKind::Boolean));
                     }
                     HybridTerm::Negate(operand) | HybridTerm::Not(operand) => {
@@ -778,10 +784,10 @@ impl Lowering<'_> {
                         let callee = self
                             .functions
                             .get(function.get())
-                            .copied()
+                            .cloned()
                             .flatten()
                             .ok_or_else(|| stage_fault(location, "callee-lowered"))?;
-                        operand_terms.insert(0, LeafTerm::reference(callee));
+                        operand_terms.insert(0, LeafTerm::reference_node(callee));
                     }
                     let result_type = match result {
                         TermKind::Boolean => self.type_node(&ValueType::Boolean, location)?,

@@ -92,8 +92,6 @@ pub enum Code {
     InvalidSourceIdentity,
     /// Supplied correspondence or query does not match the selected sources.
     InvalidSourceMap,
-    /// Exact input bytes disagree with the supplied digest.
-    SourceDigestMismatch,
     /// Input bytes are not valid UTF-8.
     InvalidUtf8,
     /// Source is malformed under the admitted grammar.
@@ -204,7 +202,6 @@ impl Code {
             Self::InvalidQuireContext => "invalid-quire-context",
             Self::InvalidSourceIdentity => "invalid_source_identity",
             Self::InvalidSourceMap => "invalid_source_map",
-            Self::SourceDigestMismatch => "source_digest_mismatch",
             Self::InvalidUtf8 => "invalid_utf8",
             Self::InvalidSyntax => "invalid_syntax",
             Self::UnsupportedConstruct => "unsupported_construct",
@@ -261,7 +258,6 @@ impl Code {
             Self::InvalidQuireContext,
             Self::InvalidSourceIdentity,
             Self::InvalidSourceMap,
-            Self::SourceDigestMismatch,
             Self::InvalidUtf8,
             Self::InvalidSyntax,
             Self::UnsupportedConstruct,
@@ -529,7 +525,7 @@ pub fn error(
 // so that `source`/`source_map` construct only their own typed refusal
 // (`SourceReadError`, `SourceMapError`) and `diagnostic` — the owner of the
 // code vocabulary — maps that refusal onto a stable `Code`. Public callers
-// see no difference: `Source::read`, `Source::read_verified`,
+// see no difference: `Source::read`,
 // `SourceMap::verify` and `SourceMap::map_span` keep their existing
 // `Result<_, Box<Diagnostic>>` signatures.
 impl crate::source::Source {
@@ -542,18 +538,6 @@ impl crate::source::Source {
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
         Self::read_typed(identity, path, bytes, byte_limit)
-            .map_err(|refusal| source_refusal(*refusal, bytes, byte_limit))
-    }
-
-    /// Verify an independently supplied byte digest before constructing a mapped subject.
-    pub fn read_verified(
-        identity: SourceIdentity,
-        path: impl Into<String>,
-        bytes: &[u8],
-        expected: crate::ByteDigest,
-        byte_limit: usize,
-    ) -> Result<Self, Box<Diagnostic>> {
-        Self::read_verified_typed(identity, path, bytes, expected, byte_limit)
             .map_err(|refusal| source_refusal(*refusal, bytes, byte_limit))
     }
 }
@@ -578,7 +562,6 @@ fn source_refusal(
         SourceReadCause::ByteBudget => Code::StageLimitExceeded,
         SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
         SourceReadCause::Bom | SourceReadCause::Nul => Code::InvalidSyntax,
-        SourceReadCause::DigestMismatch => Code::SourceDigestMismatch,
     };
     // L3: only a `ByteBudget` refusal names a `SyntaxLimit` --
     // every other cause's `limit` stays `None`.
@@ -616,7 +599,7 @@ fn source_refusal(
 
 impl crate::source_map::SourceMap {
     /// Validate a complete monotonic map against immutable exact source bytes.
-    /// Both sources can be loaded with Source::read_verified when consuming pinned artifacts.
+    /// Both sources are loaded as text under their declared identities.
     pub fn verify(
         original: Source,
         body: Source,
@@ -720,7 +703,7 @@ pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 50] = [
+const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -732,7 +715,6 @@ const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("missing_declaration", Category::Refusal),
     ("conflicting_declaration", Category::Refusal),
     ("stale_dependency", Category::Refusal),
-    ("source_digest_mismatch", Category::Refusal),
     ("ambiguous_declaration", Category::Refusal),
     ("invalid_package", Category::Refusal),
     ("invalid_model_binding", Category::Refusal),
@@ -840,8 +822,8 @@ pub fn kernel_refusal_record(
             ])
         }
         Refusal::ForeignReference { required, supplied } => BTreeMap::from([
-            ("required", required.to_string()),
-            ("supplied", supplied.to_string()),
+            ("required", required.root_type().to_string()),
+            ("supplied", supplied.root_type().to_string()),
         ]),
         Refusal::InexactDecimal { target } => BTreeMap::from([(
             "expected",
