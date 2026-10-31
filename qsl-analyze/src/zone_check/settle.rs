@@ -329,7 +329,8 @@ fn certified<O>(
         // A checker that cannot read the certificate's item is a tool
         // failure (ADR-013 C-09), never a verdict.
         Err(
-            ZoneCertificateRefusal::Admission(_)
+            ZoneCertificateRefusal::Package(_)
+            | ZoneCertificateRefusal::Admission(_)
             | ZoneCertificateRefusal::TimedSubject(_)
             | ZoneCertificateRefusal::UnsupportedItem
             | ZoneCertificateRefusal::Unbounded

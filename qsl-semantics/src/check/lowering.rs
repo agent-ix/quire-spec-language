@@ -5316,6 +5316,52 @@ fn strongly_connected_metered(
 /// repeat of its path takes the next producer ordinal.
 fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     use quire_exact::PathSegment;
+    if content.node_tag == NodeTag::State {
+        match (content.semantic_form, &content.body) {
+            // A clause's name is no part of its identity, so neither is its
+            // source position: its kind, anchor and condition tell clauses
+            // apart whatever order they are written in.
+            ("state_clause", BodyTerm::Application(application)) => {
+                let mut operands = Vec::new();
+                if let Some(Member::StateClause { clause, .. }) = &application.operation.member {
+                    operands.push(PathSegment::Text(format!("{clause:?}").to_lowercase()));
+                }
+                for argument in application.arguments.iter().skip(1) {
+                    if let MemberTerm::Leaf(LeafTerm::Reference {
+                        target: NodeRef::Admitted(key),
+                    }) = argument
+                    {
+                        operands.push(PathSegment::Node(key.clone()));
+                    }
+                }
+                return operands;
+            }
+            // An operation's anchor is keyed by its declaring type and its
+            // name, one node per operation whatever clause names it first.
+            ("operation_anchor", BodyTerm::Aggregate(aggregate)) => {
+                let mut operands = Vec::new();
+                for member in &aggregate.members {
+                    let MemberTerm::Binding(binding) = member else {
+                        continue;
+                    };
+                    match (binding.name.as_str(), &binding.value) {
+                        (
+                            "context",
+                            BindingValue::Leaf(LeafTerm::Reference {
+                                target: NodeRef::Admitted(key),
+                            }),
+                        ) => operands.push(PathSegment::Node(key.clone())),
+                        ("operation", BindingValue::Leaf(LeafTerm::Literal { value, .. })) => {
+                            operands.push(PathSegment::Text(literal_operand_text(value)));
+                        }
+                        _ => {}
+                    }
+                }
+                return operands;
+            }
+            _ => {}
+        }
+    }
     if matches!(
         content.node_tag,
         NodeTag::Value
