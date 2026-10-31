@@ -296,9 +296,11 @@ fn the_resolved_fairness_set_and_the_intervals_decide_the_node_key() {
     let bounded = "fair weak Config::ConfigVersion::attemptUpdate;\n\
          always eventually[0,5] holds(c.versionNumber = 2)";
     let (interval, _) = identity_with(INFINITE, bounded);
+    // The root is `always`; the interval belongs to the `eventually` it holds.
+    let always = formula_root(&interval.wire, clause_node(&interval.wire));
+    let eventually = operand(&interval.wire, always, 0);
     assert_eq!(
-        formula_root(&interval.wire, clause_node(&interval.wire))["body"]["operation"]["member"]
-            ["interval"],
+        eventually["body"]["operation"]["member"]["interval"],
         json!({"lower": "0", "upper": "5"})
     );
 }
