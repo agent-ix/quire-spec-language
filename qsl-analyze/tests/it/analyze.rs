@@ -920,3 +920,43 @@ fn engine_limit_before_deadline_keeps_its_typed_result() {
         ));
     }
 }
+
+/// TC-763: an accounting limit reached before the finite deadline keeps its
+/// typed limit result.
+#[trace("TC-763", "FR-281-AC-12")]
+#[test]
+fn accounting_limit_before_deadline_keeps_its_typed_result() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{IncompleteCause, ModelCheckLimit, TerminalValue};
+    use quire_exact::LimitKind;
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let items = routed_service_items(&world, 1);
+    let cancel = Cancel::new();
+    let limits = AnalyzeLimits {
+        accounting: quire_exact::ScalarLimits {
+            work_units: 1,
+            ..prob_world::UNLIMITED
+        },
+        deadline_ms: Some(60_000),
+        ..AnalyzeLimits::default()
+    };
+
+    let records = run_provider(&world, &items, &limits, &cancel);
+
+    assert_eq!(records.len(), 1);
+    assert!(matches!(
+        records[0].value(),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::WorkUnits
+            },
+            value: 1,
+        })
+    ));
+    assert_eq!(cancel.cause(), None);
+}

@@ -14,11 +14,11 @@ review_set: subset
 
 ## Summary
 
-Disposition pass 1 confirms that all four original findings are fixed on the reviewed head. The deadline tests introduce a new low severity issue: they use `thread::sleep` as a synchronization oracle, contrary to the Rust testing guidance.
+Disposition pass 2 confirms that FND-005 is fixed: both deadline-guard unit tests use channel synchronization and no sleeps. The review found no new code-review defects.
 
 ## Verdict
 
-**CONDITIONAL** — all original findings are fixed, but one new test-quality finding remains open.
+**PASS** — all findings in this code-review artifact are fixed, and no new code defects were found.
 
 ## Findings
 
@@ -48,7 +48,7 @@ Disposition pass 1 confirms that all four original findings are fixed on the rev
 
 Plan completion: not assessed.
 
-Rechecked findings against fix commits `a8858796c`, `9c17d3d66`, and `255746a05` at head `255746a05f86bf63c9c80c9200111057d1b016cb`. FND-001 through FND-004 are fixed. FND-005 is new and remains open. `codex exec review` remains unavailable because its in-process app-server client fails to initialize (`Operation not permitted`); static review used the installed code-review, rust-review, and rust-style checklists.
+Rechecked findings against fix commits `a8858796c`, `9c17d3d66`, and `255746a05` at head `255746a05f86bf63c9c80c9200111057d1b016cb`. FND-001 through FND-004 are fixed. FND-005 is fixed in c62868b76: both guard tests use deterministic channel state. No new code findings were identified. `codex exec review` remains unavailable because its in-process app-server client fails to initialize (`Operation not permitted`); static review used the installed code-review, rust-review, and rust-style checklists.
 
 Disposition checks on the updated head:
 
@@ -59,3 +59,12 @@ Disposition checks on the updated head:
 - `cargo test -p qsl-analyze --test it provider_entry_settles_a_zero_millisecond_deadline_as_incomplete` — passed.
 
 Earlier review limitations still apply: quoin 0.29.1 does not provide `gap-analysis`; the repository-wide matrix did not complete; `cargo deny check` fails on unchanged AGPL dependency allowances.
+
+
+Disposition pass 2 rechecked the fix commit `c62868b76c0bc86fbdb60224ad3f2d3bc5f7265d` against current main `5ec1d91c8a31ed3e3a123a9df00f5a63e0baa060`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-005 | fixed | Both DeadlineGuard unit tests synchronize with `std::sync::mpsc` channels; neither waits on `std::thread::sleep`. |
+
+Focused evidence: `cargo fmt --all -- --check` passed; `cargo test -p qsl-analyze --lib deadline_guard` passed (2 tests); deadline integration, caller-cancellation, and engine-limit precedence tests each passed (1 test each).
