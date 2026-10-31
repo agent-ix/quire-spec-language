@@ -356,9 +356,12 @@ Within one call the evaluator charges, in this order: the nodes of the slot's
 expression in evaluation order (left to right, short-circuited operands
 skipped), a read of a supplied source being one node; `model.navigate` for each
 field read of an object and `model.deref` for each dereference, as FR-107
-states, which occur only in a slot that may read model state; and
-`result_units` for the completed value. Admission charges nothing. A capture
-slot charges its initializer's nodes in its own call and no other call charges
+states, which occur only in a slot that may read model state; and the existing
+S6a result-retain charges when the expression reaches their charge points.
+Returning a forwarded scalar or a literal constant adds no result-retain
+point: its `result_units` usage is zero by S6a when no existing retain point
+was reached. Protocol slots add no counter or charge point. Admission charges
+nothing. A capture slot charges its initializer's nodes in its own call and no other call charges
 them. Across calls on one meter the charges accumulate in call order, each
 call's charges depending on its own package, slot and supply only. Tests assert
 these relations and the boundaries measured by a call's usage `U` (exact `U`
@@ -425,8 +428,10 @@ value; check 6 does not apply to it.
 - The evaluator SHALL evaluate the slot's expression term over the supplied
   values, with the charges FR-107 and FR-100 state for the same expression
   nodes under the ten accounting counters of FR-255, and SHALL add no counter
-  and no charge point. A completed value is retained and charged as a
-  completed S6a value is.
+  and no charge point. A completed value is retained and charged only at the
+  existing S6a retain points of its expression. A forwarded scalar or literal
+  constant that reaches none has zero `result_units` by S6a; returning it from
+  a protocol slot does not add a retain charge.
 - A capture slot SHALL evaluate its own initializer from its stage's supply and
   return the value as the capture's frozen value. The evaluator SHALL NOT
   retain it, and no other slot recomputes a capture: a slot that reads a capture
@@ -479,7 +484,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-6 | A value of the wrong shape, a record of another type, a value outside its type's domain, a reference to another model's population and a dangling reference each refuse with the code and cause TC-1071 lists; no observation with a reference, and an incomplete population, return `Incomplete`; an observation FR-106 refuses is refused with its record. | Test (TC-1071) |
 | FR-390-AC-7 | A source supplied `Unavailable` and read returns `Unavailable` naming the binder and the read, with the charges already made; the same source in a call whose short-circuit never reads it completes. | Test (TC-1072) |
 | FR-390-AC-8 | A capture initializer whose dispatched call has a false precondition gives the capture slot an `Undefined` result with reason `precondition-false`, category undefined, exit 10; the same slot with the precondition true completes. | Test (TC-1072) |
-| FR-390-AC-9 | With usage `U` from a completed call, a meter with every charged counter at exactly its measured usage completes; with each charged counter in turn one below its usage and the others at theirs, the call returns `Incomplete` naming that counter with no value; a zero `work_units` returns `Incomplete`; a fresh meter completes the same call with the same value. | Test (TC-1073) |
+| FR-390-AC-9 | With usage `U` from a completed call, a meter with every charged counter at exactly its measured usage completes; with each charged counter in turn one below its usage and the others at theirs, the call returns `Incomplete` naming that counter with no value; a zero `work_units` returns `Incomplete`; a fresh meter completes the same call with the same value. Forwarded scalars and literal constants with no existing retain point have zero `result_units` by S6a; tests assert those zero usages independently of the charged-counter boundary loop. | Test (TC-1073) |
 | FR-390-AC-10 | One meter passed to a compensation's registration capture, activation capture, trigger guard, retry relation and recovery predicate in turn accumulates exactly the sum of the calls' charges; a `work_units` budget of that sum completes all of them and one below it returns `Incomplete` `work_units` at the last call; the calls in another order give the same total. | Test (TC-1073) |
 | FR-390-AC-11 | Running one call twice gives equal results and charge logs; a call over the package the contract reader returns for FR-383's emitted nodes gives the same result and charge log as over the checked package that was emitted; a refused call leaves the meter as it was. | Test (TC-1073) |
 | FR-390-AC-12 | A package whose capture initializer reads itself, a later capture or another template's capture is refused at S3 (FR-381) and no package is built; a package mutated in its bytes so an activation capture's initializer reads its own binder, or another template's capture binder, is refused by the contract reader with `missing_declaration`/`missing-name` (`read` `forward` and `foreign`), and no evaluation call is possible. | Test (TC-1074) |

@@ -407,6 +407,7 @@ fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
         ),
         Value::Boolean(true)
     );
+    assert_retain_points(&meter, &[], "activation guard (forwarded scalar)");
     assert_value_eq!(
         completed(
             package
@@ -424,6 +425,7 @@ fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
         ),
         int(5)
     );
+    assert_retain_points(&meter, &[], "protocol capture (forwarded scalar)");
     for member in ["related.from", "related.to"] {
         let value = completed(
             package
@@ -443,6 +445,7 @@ fn activation_capture_and_both_related_ends_use_the_supplied_observation() {
             matches!(value, Value::Reference(actual) if actual == reference),
             "{member} returns the supplied endpoint"
         );
+        assert_retain_points(&meter, &[], "related end (forwarded reference)");
     }
 }
 
@@ -615,6 +618,35 @@ fn measured_boundaries(
     measured
 }
 
+fn assert_retain_points(meter: &Meter, expected: &[quire_exact::ChargePoint], call: &str) {
+    let actual: Vec<_> = quire_exact::ChargePoint::ALL
+        .into_iter()
+        .filter(|point| point.as_str().ends_with(".result-retain"))
+        .filter(|point| {
+            meter
+                .admitted_charges()
+                .iter()
+                .any(|charge| charge.point == *point)
+        })
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "{call} reaches exactly its existing S6a retain-point kinds"
+    );
+    if expected.is_empty() {
+        assert_eq!(
+            meter.consumed(LimitKind::ResultUnits),
+            0,
+            "{call}: result_units is zero by S6a, independently of measured boundary coverage"
+        );
+    } else {
+        assert!(
+            meter.consumed(LimitKind::ResultUnits) > 0,
+            "{call}: existing retain points charge result_units"
+        );
+    }
+}
+
 #[test]
 #[trace("TC-1073", "FR-390-AC-9", "FR-390-AC-11")]
 // AC-11's repeated-call and refusal properties only; contract-reader parity
@@ -624,6 +656,20 @@ fn retry_and_observation_capture_obey_every_measured_counter_boundary() {
     let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
     let values = retry_supply(&package, 0);
     let measured = measured_boundaries(&package, &retry, &values, Value::Boolean(true));
+    use quire_exact::ChargePoint::{
+        BooleanResultRetain, EqualityResultRetain, IntegerArithmeticResultRetain,
+        OrderingResultRetain,
+    };
+    assert_retain_points(
+        &measured,
+        &[
+            EqualityResultRetain,
+            IntegerArithmeticResultRetain,
+            OrderingResultRetain,
+            BooleanResultRetain,
+        ],
+        "T",
+    );
     let expected_counters = vec![
         LimitKind::IntegerBits,
         LimitKind::ValueOccurrences,
@@ -658,6 +704,11 @@ fn retry_and_observation_capture_obey_every_measured_counter_boundary() {
         early.consumed(LimitKind::WorkUnits) < measured.consumed(LimitKind::WorkUnits),
         "a first-operand refusal skips the remaining retry expression"
     );
+    assert_retain_points(
+        &early,
+        &[OrderingResultRetain, BooleanResultRetain],
+        "short-circuited T",
+    );
     let mut zero = UNLIMITED;
     zero.work_units = 0;
     assert_incomplete(
@@ -675,6 +726,7 @@ fn retry_and_observation_capture_obey_every_measured_counter_boundary() {
         Some(&observation),
     );
     let captured = measured_boundaries(&package, &capture, &values, int(5));
+    assert_retain_points(&captured, &[], "C (forwarded scalar)");
     assert_eq!(
         COUNTERS
             .into_iter()
@@ -720,6 +772,20 @@ fn retry_and_observation_capture_obey_every_measured_counter_boundary() {
         after_refusal.admitted_charges(),
         measured.admitted_charges()
     );
+    let mut constant_meter = Meter::new(UNLIMITED);
+    assert_value_eq!(
+        completed(
+            package
+                .evaluate_protocol_slot(
+                    &slot(&package, "Refunds", "Closed", "constraint", None),
+                    &supply(&package, "Refunds", vec![], None),
+                    &mut constant_meter
+                )
+                .unwrap()
+        ),
+        Value::Boolean(true)
+    );
+    assert_retain_points(&constant_meter, &[], "Closed.constraint (literal constant)");
 }
 
 #[test]
@@ -736,6 +802,11 @@ fn an_explicit_dereference_capture_obeys_the_observation_charge_boundaries() {
         Some(&observation),
     );
     let measured = measured_boundaries(&package, &capture, &values, int(5));
+    assert_retain_points(
+        &measured,
+        &[],
+        "D (explicit dereference of a forwarded scalar)",
+    );
     let model_points: Vec<_> = measured
         .admitted_charges()
         .iter()
@@ -846,6 +917,28 @@ fn registration_activation_trigger_retry_and_recovery_share_the_sum_in_both_orde
             meter
         })
         .collect();
+    use quire_exact::ChargePoint::{
+        BooleanResultRetain, EqualityResultRetain, IntegerArithmeticResultRetain,
+        OrderingResultRetain,
+    };
+    let retain_points: &[(&str, &[quire_exact::ChargePoint])] = &[
+        ("R (forwarded scalar)", &[]),
+        ("A (forwarded scalar)", &[]),
+        ("G", &[OrderingResultRetain, BooleanResultRetain]),
+        (
+            "T",
+            &[
+                EqualityResultRetain,
+                IntegerArithmeticResultRetain,
+                OrderingResultRetain,
+                BooleanResultRetain,
+            ],
+        ),
+        ("V", &[EqualityResultRetain, BooleanResultRetain]),
+    ];
+    for ((call, expected), meter) in retain_points.iter().zip(&measured) {
+        assert_retain_points(meter, expected, call);
+    }
     let sum: u64 = measured
         .iter()
         .map(|meter| meter.consumed(LimitKind::WorkUnits))
@@ -1061,18 +1154,25 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
         ("Committed", vec![("committed", flag(&package, true))]),
         ("Closed", vec![]),
     ] {
+        let mut row_meter = Meter::new(UNLIMITED);
         assert_value_eq!(
             completed(
                 package
                     .evaluate_protocol_slot(
                         &slot(&package, "Refunds", owner, "constraint", None),
                         &supply(&package, "Refunds", values, None),
-                        &mut meter
+                        &mut row_meter
                     )
                     .unwrap()
             ),
             Value::Boolean(true)
         );
+        let points = if owner == "Applied" {
+            &[quire_exact::ChargePoint::OrderingResultRetain][..]
+        } else {
+            &[]
+        };
+        assert_retain_points(&row_meter, points, owner);
     }
     for ready in [true, false] {
         for (member, index, expected) in [
@@ -1081,6 +1181,7 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
             ("cases.guard", 0, !ready),
             ("cases.guard", 1, ready),
         ] {
+            let mut row_meter = Meter::new(UNLIMITED);
             assert_value_eq!(
                 completed(
                     package
@@ -1092,12 +1193,18 @@ fn both_templates_and_the_remaining_run_slots_evaluate_their_own_expressions() {
                                 vec![("got", flag(&package, ready))],
                                 None
                             ),
-                            &mut meter
+                            &mut row_meter
                         )
                         .unwrap()
                 ),
                 Value::Boolean(expected)
             );
+            let points = if member == "cases.guard" && index == 0 {
+                &[quire_exact::ChargePoint::BooleanResultRetain][..]
+            } else {
+                &[]
+            };
+            assert_retain_points(&row_meter, points, member);
         }
     }
 }

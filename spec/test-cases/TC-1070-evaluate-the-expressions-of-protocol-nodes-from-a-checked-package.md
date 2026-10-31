@@ -124,13 +124,13 @@ values are what rows 4 to 21 supply as captured values.
 
 | # | Slot | Supply | Expected |
 | --- | --- | --- | --- |
-| 1 | `Refunds.activation.guard` | `opened = Tick(ready true, count 2)` | true |
-| 2 | `Refunds.captures[0]` | `view = n5` | 5, type `M::Total` |
-| 3 | `Refund.registration_captures[0]` | `forward = Receipt(total 5)` | 5 |
+| 1 | `Refunds.activation.guard` | `opened = Tick(ready true, count 2)` | true; `result_units` zero by S6a (forwarded scalar) |
+| 2 | `Refunds.captures[0]` | `view = n5` | 5, type `M::Total`; `result_units` zero by S6a (forwarded scalar) |
+| 3 | `Refund.registration_captures[0]` | `forward = Receipt(total 5)` | 5; `result_units` zero by S6a (forwarded scalar) |
 | 4 | `Refund.trigger.guard` | `trigger = Flag(ready false)`, `target = 5` | true |
 | 5 | `Refund.trigger.guard` | `trigger = Flag(ready true)`, `target = 5` | false |
-| 6 | `Refund.activation_captures[0]` | `trigger = Flag(ready true)` | true |
-| 7 | `Refund.activation_captures[0]` | `trigger = Flag(ready false)` | false |
+| 6 | `Refund.activation_captures[0]` | `trigger = Flag(ready true)` | true; `result_units` zero by S6a (forwarded scalar) |
+| 7 | `Refund.activation_captures[0]` | `trigger = Flag(ready false)` | false; `result_units` zero by S6a (forwarded scalar) |
 | 8 | `Refund.retry.relation` | `earlier = Attempt(tally 0)`, `later = Attempt(tally 1)`, `target = 5`, `activated = false` | true |
 | 9 | `Refund.retry.relation` | row 8 with `activated = true` | false |
 | 10 | `Refund.retry.relation` | row 8 with `earlier = Attempt(tally 3)` | false |
@@ -144,22 +144,24 @@ values are what rows 4 to 21 supply as captured values.
 | 18 | `Partial.recovery.predicate` | row 17 with `partialRecovered = Receipt(total 9)` | false |
 | 19 | `Partial.recovery.predicate` | row 17 with `partialActivated = true` | false |
 | 20 | `Applied.constraint` | `order = 5` | true (`order >= 0`) |
-| 21 | `Committed.constraint` | `committed = Flag(ready true)` | true |
-| 22 | `Closed.constraint` | none | true |
-| 23 | the registration capture of row 3 again with `forward = Receipt(total 9)`, then the recovery predicate of row 12 with `recovered = Receipt(total 9)` and `target = 5` | the capture slot gives 9; the recovery predicate gives false: the total registered earlier (5) is the one it reads, whatever the record now holds |
+| 21 | `Committed.constraint` | `committed = Flag(ready true)` | true; `result_units` zero by S6a (forwarded scalar) |
+| 22 | `Closed.constraint` | none | true; `result_units` zero by S6a (literal constant) |
+| 23 | the registration capture of row 3 again with `forward = Receipt(total 9)`, then the recovery predicate of row 12 with `recovered = Receipt(total 9)` and `target = 5` | the capture slot gives 9 with `result_units` zero by S6a (forwarded scalar); the recovery predicate gives false at its existing S6a retain points: the total registered earlier (5) is the one it reads, whatever the record now holds |
 | 24 | `Refund.recovery.predicate` | `recovered = Receipt(total 9)`, `target = 9`, `activated = false` | true: the evaluator reads the captured value it is given and recomputes nothing |
 | 25 | `Refund.retry.relation` | none | refuses `invalid_runtime_input`/`missing-member` naming `target`, the lowest source |
 | 26 | each of `Refund.trigger.guard`, `Refund.recovery.predicate`, `Partial.retry.relation`, `Partial.recovery.predicate` | none | refuses `missing-member` naming `target` (`partialTarget`) |
 | 27 | `Refund.registration_captures[0]` and `Refund.activation_captures[0]` | none | refuses `missing-member` naming `forward` and `trigger` |
 | 28 | `Refund.retry.relation` | row 8's supply and `forward = Receipt(total 5)` | refuses `unknown-member` naming `forward`: the retry relation does not read it |
-| 29 | `Got.related.from[0]` (L) | `view = n5` | the reference `n5` |
-| 30 | `Got.related.to[0]` (L) | `view = n5` | the reference `n5` |
-| 31 | `Decide.visible[0]` (L) | `got = Flag(ready true)` | true (`got.ready`) |
-| 32 | `Decide.cases.guard[0]` and `[1]` (L) | `got = Flag(ready true)` | true (`yes`), false (`no`) |
-| 33 | `Decide.cases.guard[1]` (L) | `got = Flag(ready false)` | true (`no`) |
+| 29 | `Got.related.from[0]` (L) | `view = n5` | the reference `n5`; `result_units` zero by S6a (forwarded reference, no retain point) |
+| 30 | `Got.related.to[0]` (L) | `view = n5` | the reference `n5`; `result_units` zero by S6a (forwarded reference, no retain point) |
+| 31 | `Decide.visible[0]` (L) | `got = Flag(ready true)` | true (`got.ready`); `result_units` zero by S6a (forwarded scalar) |
+| 32 | `Decide.cases.guard[0]` and `[1]` (L) | `got = Flag(ready true)` | false (`no`, with `boolean.result-retain`), true (`yes`, `result_units` zero by S6a as a forwarded scalar), in UTF-8 label order |
+| 33 | `Decide.cases.guard[0]` (L) | `got = Flag(ready false)` | true (`no`, with `boolean.result-retain`) |
 
 Row 26's four refusals name `target`, the lowest source of each slot (its level
 is below the trigger's, the activation capture's and the recovery binder's).
+Case indexes name the emitted UTF-8 label order, so `no` is index 0 and `yes`
+is index 1 even though the source declares `yes` first.
 
 ## Expected Results
 
