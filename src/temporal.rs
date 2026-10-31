@@ -37,8 +37,8 @@ use formula::{Evaluator, Tri};
 
 pub use budget::{Dimension as LimitDimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 pub use mapping::{
-    classify, AuthenticatedSelection, Classification, Operators, Retained, Support, Target,
-    Unmatched, OUTSTANDING_PREMISES,
+    classify, AuthenticatedSelection, CheckedClassification, CheckedRetained, Classification,
+    Operators, Retained, Support, Target, Unmatched, OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
@@ -177,6 +177,60 @@ pub fn mapping_support(
         surrounding_execution,
         None,
     ))
+}
+
+/// Classify FR-045 directly from an S3 checked temporal-clause node.
+pub fn mapping_support_checked(
+    package: &CheckedPackage,
+    declaration: usize,
+    surrounding_execution: Closure,
+) -> Result<CheckedClassification, Error> {
+    let subject = declaration_subject(declaration);
+    let node = package
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let clause = node.clause();
+    let operators = checked_operators(clause.formula());
+    let support = match clause.profile() {
+        TemporalProfile::EventPositionFalseExtension => {
+            classify(Profile::EventPosition, operators, surrounding_execution)
+        }
+        TemporalProfile::FixedSampleFalseExtension => {
+            classify(Profile::FixedSample, operators, surrounding_execution)
+        }
+        TemporalProfile::TimestampedEventFiniteWindow => {
+            let mut dimensions = vec![Unmatched::FiniteWindow];
+            if operators.past && operators.future {
+                dimensions.push(Unmatched::MixedDirection);
+            }
+            Support::Unsupported { dimensions }
+        }
+        TemporalProfile::InfiniteTrace => {
+            let mut dimensions = vec![Unmatched::InfiniteTrace];
+            if operators.past && operators.future {
+                dimensions.push(Unmatched::MixedDirection);
+            }
+            Support::Unsupported { dimensions }
+        }
+        TemporalProfile::Timed => {
+            let mut dimensions = vec![Unmatched::TimedProfile];
+            if operators.past && operators.future {
+                dimensions.push(Unmatched::MixedDirection);
+            }
+            Support::Unsupported { dimensions }
+        }
+    };
+    Ok(CheckedClassification {
+        support,
+        retained: CheckedRetained {
+            identity: node.identity(),
+            name: clause.name().to_owned(),
+            profile: clause.profile(),
+            activation: clause.activation(),
+        },
+    })
 }
 
 /// Evaluate one strict version-2 declaration after authenticating its exact clock.
@@ -595,6 +649,24 @@ fn run_checked(
         guarded: matches!(activation, CheckedActivation::Each { guarded: true }),
         captures: clause.captures().len(),
     };
+    if shape.guarded != node.guard().is_some()
+        || (0..shape.captures).any(|capture| node.capture(capture).is_none())
+        || clause
+            .formula()
+            .nodes()
+            .iter()
+            .enumerate()
+            .any(|(index, formula)| {
+                matches!(formula, FormulaNode::Holds { .. })
+                    && clause
+                        .formula()
+                        .node_id(index)
+                        .and_then(|atom| node.condition(atom))
+                        .is_none()
+            })
+    {
+        return Err(Refusal::Reference { subject }.into());
+    }
     let premises = Premises {
         profile,
         clock: trace.clock.name.clone(),
@@ -691,12 +763,64 @@ fn checked_profile(profile: TemporalProfile) -> Option<Profile> {
     }
 }
 
+fn checked_operators(formula: &CheckedFormula) -> Operators {
+    let mut result = Operators::default();
+    let mut seen = vec![false; formula.nodes().len()];
+    let mut pending = vec![formula.root().index()];
+    while let Some(index) = pending.pop() {
+        let Some(node) = formula.nodes().get(index) else {
+            continue;
+        };
+        if std::mem::replace(&mut seen[index], true) {
+            continue;
+        }
+        match node {
+            FormulaNode::Unary {
+                operator, operand, ..
+            } => {
+                match operator {
+                    qsl_semantics::check::UnaryTemporal::Eventually
+                    | qsl_semantics::check::UnaryTemporal::Always => result.future = true,
+                    qsl_semantics::check::UnaryTemporal::Once
+                    | qsl_semantics::check::UnaryTemporal::Historically => result.past = true,
+                }
+                pending.push(operand.index());
+            }
+            FormulaNode::Binary {
+                operator,
+                left,
+                right,
+                ..
+            } => {
+                match operator {
+                    qsl_semantics::check::BinaryTemporal::Until
+                    | qsl_semantics::check::BinaryTemporal::Release => result.future = true,
+                    qsl_semantics::check::BinaryTemporal::Since
+                    | qsl_semantics::check::BinaryTemporal::Triggered => result.past = true,
+                }
+                pending.extend([left.index(), right.index()]);
+            }
+            FormulaNode::Not(value) => pending.push(value.index()),
+            FormulaNode::And(left, right)
+            | FormulaNode::Or(left, right)
+            | FormulaNode::Implies(left, right) => {
+                pending.extend([left.index(), right.index()]);
+            }
+            FormulaNode::Constant(_)
+            | FormulaNode::Holds { .. }
+            | FormulaNode::Aggregate { .. } => {}
+        }
+    }
+    result
+}
+
 fn checked_operations(
     formula: &CheckedFormula,
     subject: Subject,
 ) -> Result<Vec<w::TemporalOperation>, Error> {
     let mut operations = Vec::with_capacity(formula.nodes().len());
     for (index, node) in formula.nodes().iter().enumerate() {
+        let atom_index = u32::try_from(index).map_err(|_| Refusal::Reference { subject })?;
         let handle = |id: qsl_semantics::check::FormulaNodeId| w::Handle {
             declaration: 0,
             index: u32::try_from(id.index()).unwrap_or(u32::MAX),
@@ -706,10 +830,14 @@ fn checked_operations(
             FormulaNode::Holds { .. } => w::TemporalOperation::Holds {
                 value: w::Handle {
                     declaration: 0,
-                    index: index as u32,
+                    index: atom_index,
                 },
             },
-            FormulaNode::Aggregate { .. } => return Err(Refusal::Reference { subject }.into()),
+            FormulaNode::Aggregate { .. } => {
+                return Err(Error::Unsupported(
+                    crate::checking::composed::proofs::Unsupported::ValueRepresentation,
+                ))
+            }
             FormulaNode::Not(inner) => w::TemporalOperation::Unary {
                 operator: w::TemporalUnary::Not,
                 interval: w::Nullable(None),

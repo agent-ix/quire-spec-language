@@ -335,6 +335,10 @@ pub enum Error {
     /// A resource ceiling was reached before the work could complete.
     #[error(transparent)]
     Exhausted(Exhaustion),
+    /// The checked formula uses a proof representation with no sound evaluator
+    /// transfer. No partial assessment is returned.
+    #[error("checked temporal proof representation is unsupported: {0:?}")]
+    Unsupported(crate::checking::composed::proofs::Unsupported),
 }
 
 impl From<Exhaustion> for Error {
