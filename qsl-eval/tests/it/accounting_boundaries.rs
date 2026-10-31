@@ -278,6 +278,11 @@ struct Case {
     /// The fixture's quantity, counted from its construction; `None` for a
     /// cumulative counter or a size counted by [`marginal`] instead.
     counted: Option<u64>,
+    /// Whether the counted quantity is also the largest single charge, so the
+    /// metered usage equals it. TC-137's equality clause holds only for these
+    /// fixtures: for `integer_bits`, `decimal_digits` and `value_occurrences`
+    /// a later charge point asks for more than the counted operand quantity.
+    usage_equals_counted: bool,
 }
 
 /// The bit length of `value`, counted without the evaluator.
@@ -317,6 +322,7 @@ fn cases() -> Vec<Case> {
             arguments: integer_arguments,
             point: ChargePoint::IntegerArithmeticOperands,
             counted: Some(bit_length(LARGE.unsigned_abs())),
+            usage_equals_counted: false,
         },
         Case {
             counter: LimitKind::DecimalDigits,
@@ -324,6 +330,7 @@ fn cases() -> Vec<Case> {
             arguments: decimal_arguments,
             point: ChargePoint::DecimalOperands,
             counted: Some(WIDE_COEFFICIENT.to_string().len() as u64),
+            usage_equals_counted: false,
         },
         Case {
             counter: LimitKind::ScaleExpansion,
@@ -331,6 +338,7 @@ fn cases() -> Vec<Case> {
             arguments: decimal_arguments,
             point: ChargePoint::DecimalScaleExpansion,
             counted: Some(u64::from(NARROW_SCALE - WIDE_SCALE)),
+            usage_equals_counted: true,
         },
         Case {
             counter: LimitKind::TextInputBytes,
@@ -338,6 +346,7 @@ fn cases() -> Vec<Case> {
             arguments: text_arguments,
             point: ChargePoint::TextInputBytes,
             counted: Some(ACCENTED.len() as u64),
+            usage_equals_counted: true,
         },
         Case {
             counter: LimitKind::TextScalars,
@@ -345,6 +354,7 @@ fn cases() -> Vec<Case> {
             arguments: text_arguments,
             point: ChargePoint::TextDecodeScalars,
             counted: Some(ACCENTED.chars().count() as u64),
+            usage_equals_counted: true,
         },
         Case {
             counter: LimitKind::NormalizedScalars,
@@ -352,6 +362,7 @@ fn cases() -> Vec<Case> {
             arguments: text_arguments,
             point: ChargePoint::TextNormalizeOutput,
             counted: Some(ACCENTED_NFD.chars().count() as u64),
+            usage_equals_counted: true,
         },
         Case {
             counter: LimitKind::UnitEdges,
@@ -359,6 +370,7 @@ fn cases() -> Vec<Case> {
             arguments: none,
             point: ChargePoint::UnitEdge,
             counted: Some(CONVERSION_EDGES),
+            usage_equals_counted: true,
         },
         Case {
             counter: LimitKind::ValueOccurrences,
@@ -366,6 +378,7 @@ fn cases() -> Vec<Case> {
             arguments: none,
             point: ChargePoint::CollectionElement,
             counted: None,
+            usage_equals_counted: false,
         },
         Case {
             counter: LimitKind::WorkUnits,
@@ -373,6 +386,7 @@ fn cases() -> Vec<Case> {
             arguments: one,
             point: ChargePoint::FunctionCall,
             counted: None,
+            usage_equals_counted: false,
         },
         Case {
             counter: LimitKind::ResultUnits,
@@ -380,6 +394,7 @@ fn cases() -> Vec<Case> {
             arguments: none,
             point: ChargePoint::CollectionResultRetain,
             counted: None,
+            usage_equals_counted: false,
         },
     ]
 }
@@ -512,6 +527,14 @@ fn exercise(package: &CheckedPackage, case: &Case) {
                 "{kind:?}: the independently counted quantity is charged at {:?}",
                 case.point
             );
+            if case.usage_equals_counted {
+                assert_eq!(used, counted, "{kind:?}: usage is the counted quantity");
+            } else {
+                assert!(
+                    used > counted,
+                    "{kind:?}: a later charge point asks for more than the operand quantity"
+                );
+            }
         }
         // The first admitted charge that asks for any of the counter.
         let first = log
@@ -577,10 +600,18 @@ fn exercise(package: &CheckedPackage, case: &Case) {
 }
 
 /// TC-137 / FR-049-AC-7: for every one of FR-255's ten accounting counters,
-/// the fixture reaches the table's charge point, its independently counted
-/// quantity is the metered usage, a zero setting stops at the first request,
-/// the exact setting completes and one below it stops at the next charge with
-/// no completed value and only the successful usage retained.
+/// the fixture reaches the table's charge point; a zero setting stops at the
+/// first request; the exact setting (the largest single charge for a
+/// high-water counter, the sum for a cumulative one, both read from a
+/// sufficient run and its admitted-charge log) completes; one below it stops
+/// at the next charge with no completed value and only the successful usage
+/// retained. The independently counted quantity is asserted at the named
+/// charge point, and equal to the metered usage only for `scale_expansion`,
+/// the three text counters and `unit_edges`; for `integer_bits`,
+/// `decimal_digits` the usage is asserted to exceed it, and `value_occurrences`,
+/// `work_units` and `result_units` are checked by their per-step growth. TC-137's
+/// clause that the counted quantity equals the metered usage is therefore not
+/// claimed for those five counters.
 #[trace("TC-137", "FR-049-AC-7")]
 #[test]
 fn every_accounting_counter_has_zero_exact_and_one_short_evidence() {

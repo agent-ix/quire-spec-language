@@ -863,7 +863,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nprofile p = \"quire.protocol.finite-global/v1\";\nmodel M = {:?};\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?};\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
         selection.identity,
     );
     let parsed = qsl_cst::parse(

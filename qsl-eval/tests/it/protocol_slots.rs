@@ -905,8 +905,9 @@ fn gated_package(precondition: bool) -> CheckedPackage {
 
 /// TC-1072 rows 7 and 8 / FR-390-AC-8: a capture initializer whose
 /// dispatched call has a false precondition gives the capture slot an
-/// `Undefined` result with reason `precondition-false`, category undefined and
-/// exit status 10 and no value; the same slot with the precondition true
+/// `Undefined` result with reason `precondition-false` naming the operation
+/// and no value (the category and exit status 10 follow from the
+/// `FamilyResult::Undefined` variant and are not asserted separately); the same slot with the precondition true
 /// completes with `true` (exit status 0).
 #[trace("TC-1072", "FR-390-AC-8")]
 #[test]
@@ -968,19 +969,11 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
         cause.undefined_record().reason.as_str(),
         "precondition-false"
     );
-    // `UndefinedCoded` is the Undefined-category channel (ADR-013 O-16).
-    assert_eq!(
-        quire_semantic_value::catalog::Category::Undefined.exit_code(),
-        10
-    );
+    assert_eq!(cause.undefined_record().fields["operation"], "ready");
 
     let FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(true))) =
         capture_gate(true)
     else {
         panic!("a true precondition completes the capture");
     };
-    assert_eq!(
-        quire_semantic_value::catalog::Category::Success.exit_code(),
-        0
-    );
 }

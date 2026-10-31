@@ -450,6 +450,10 @@ fn h2_a_declaration_not_callable_by_name_is_refused_like_an_undeclared_one() {
         .check(CheckingLimits::default())
         .unwrap(),
     );
+    assert!(
+        package.graph().declares_function("internal_guard"),
+        "the package holds the declaration, so H2 is not H1"
+    );
     let held = QualifiedName::unqualified("internal_guard").unwrap();
     let undeclared = QualifiedName::unqualified("undeclared").unwrap();
     assert_eq!(
