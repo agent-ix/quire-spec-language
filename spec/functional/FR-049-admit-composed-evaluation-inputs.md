@@ -7,7 +7,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/US-003, type: implements }
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
-  - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-027, type: references }
   - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-106, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-107, type: depends_on }
@@ -96,7 +96,7 @@ The retiring public Rust surface comprises `evaluate`/`evaluate_v2`;
 | `AuthorityAdapter`, `AdapterArtifact`, `InvalidAdapterArtifact` | There is no evaluator adapter artifact input in the checked-term path. Snapshot and invocation documents enter through FR-106's typed admission; the native evaluator adapter/refusal types retire with that boundary (TC-136 verifies only the FR-106 document inputs reach evaluation) |
 | Evaluate compensation guards, captures, retry and recovery expressions | `CheckedPackageEvaluation::evaluate_protocol_slot` with `ProtocolSlot`, `ProtocolSupply` and shared `Meter` (FR-390, TC-1070–TC-1073); TC-142's eval portion is re-homed there |
 | `MissingInput`, `Refusal`, `EvaluationOutcome`, `EvaluationReport` | The owning checked-term entry point's typed `Evaluation`, `FamilyOutcome` and `CallFailure` categories; FR-107/FR-390 (TC-136, TC-1071–TC-1073) |
-| `Refusal::UnpublishedArtifact` | No corresponding runtime state exists: checked evaluation selects only a `CheckedPackage` with the identity established by its compile/read path. FR-042/FR-107 own package admission; TC-142 verifies strict read-back and evaluation through that admitted package, including that no caller-supplied artifact identity can be substituted |
+| `Refusal::UnpublishedArtifact` | No corresponding runtime state exists: checked evaluation selects only a `CheckedPackage` with the identity established by its compile/read path. FR-027/FR-264 own checked-package publication and reading; FR-107 owns the evaluation result. TC-142 verifies strict read-back and evaluation through that admitted package, including that no caller-supplied artifact identity can be substituted |
 | `version-1` state API source compatibility | Intentionally retired together with native `/1` and `/2` state entry points under ADR-011 §7.3 M-6c and FR-405 item 1; there is no compatibility promise or shim (TC-142) |
 | Bound and account evaluation work | Caller-owned `quire-exact::Meter` and the shared `quire.value.accounting/v1` contract; FR-390 and NFR-009 (TC-137, TC-1073) |
 

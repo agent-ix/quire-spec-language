@@ -7,7 +7,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/US-003, type: implements }
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
-  - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-027, type: references }
   - { target: ix://agent-ix/quire-spec-language/FR-049, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/NFR-009, type: depends_on }
@@ -144,7 +144,7 @@ merely to reuse `reaches`.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-047-AC-1 | **RETIRED (the storage identity chain is deleted).** No anchor, snapshot, window or occurrence chain is carried as an object's identity; object identity is AC-2 and AC-3, and reachability over a relationship end is FR-365. | Test (TC-129), retired |
+| FR-047-AC-1 | **RETIRED in M-6d.** The former explicit anchor/snapshot/window/record identity chain is replaced by the admitted complete observation occurrence plus model/universe/type/object identity. TC-129's axis-mutation cases and same-object pre/post rows are the named spine successor; AC-2 and AC-3 retain those identity behaviors. | Test |
 | FR-047-AC-2 | A duplicate full storage key and a dangling target in a declared-complete domain refuse, while the same logical object at distinct pre/post anchors is admitted. Foreign models/universes, wrong object/reference types, wrong edge owners and incompatible endpoint observations refuse; missing membership or closure is incomplete and cannot turn an absent offered target into a dangling or empty-graph judgment. | Test (TC-129, TC-131) |
 | FR-047-AC-3 | Dereference reads only the exact qualified environment and retains pre/post observation identity across the returned object. | Test (TC-129) |
 | FR-047-AC-4 | Reachability is positive-length: an isolated `a` does not reach itself, while `a→a` and `a→b→a` do; a direct or longer path to another target succeeds. | Test (TC-130) |
@@ -156,12 +156,11 @@ merely to reuse `reaches`.
 ## Dependencies
 
 [FR-036](FR-036-link-composed-native-packages.md) owns exact namespace and model
-binding and [FR-040](FR-040-check-composed-values.md) owns static
-type/definedness admission. The already implemented artifact-core portions of
-[FR-042](FR-042-publish-compiled-protocol-artifacts.md)—schema, strict reader,
-bounded admitted package and emitted value graph—supply the immutable graph;
-FR-042's family-completeness and consumer-handoff criteria do not precede graph
-evaluation. [FR-049](FR-049-admit-composed-evaluation-inputs.md) owns
+binding, [FR-040](FR-040-check-composed-values.md) owns static
+type/definedness admission, and [FR-027](FR-027-export-compiled-native-package.md)
+emits the checked-package/v2 artifact that carries the admitted model graph.
+The graph evaluator depends on that package and the FR-056 domain declaration
+identity, not on the retired native protocol-artifact path. [FR-049](FR-049-admit-composed-evaluation-inputs.md) owns
 the immutable storage/input admission boundary and
 [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md) owns the
 versioned work identity, default limits and charge order. The immutable standard's
