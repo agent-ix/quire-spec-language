@@ -25,7 +25,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-016
+  - target: ix://agent-ix/quire-spec-language/FR-006
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-100
     type: depends_on
@@ -525,7 +525,7 @@ evaluation inside a nested call, a recursive call of the same function
 included, is a different assignment of the claim's extent roots and is not
 observed. Each evaluation of a binder body is observed. S6a evaluates an
 occurrence only on the path its guards select (left-to-right short circuit
-and the selected conditional branch, FR-016), so every observed evaluation is
+and the selected conditional branch, FR-006), so every observed evaluation is
 one under which the record's path condition holds.
 
 The executor SHALL tell the selected call's own evaluation from a nested
@@ -644,7 +644,7 @@ QSpec FR-142's `Quantity<u>`, S1's `Quantity<qualified-name>` production and FR-
   occurrence key and its decode-time refusals.
 - [FR-062](FR-062-implement-checked-family-contract.md): the requirement
   records, their owner and result bound, which the application claim reads;
-  [FR-016](FR-016-check-native-clauses.md): the short-circuit and
+  [FR-006](FR-006-check-types-and-guarded-definedness.md): the short-circuit and
   conditional evaluation order that keeps an observation on its path.
 - [FR-100](FR-100-run-a-named-function-through-the-spine.md): S6a's
   `Evaluation` with its `location` and `frame_depth`, which tell the

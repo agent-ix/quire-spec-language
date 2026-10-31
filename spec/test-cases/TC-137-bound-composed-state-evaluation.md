@@ -23,17 +23,24 @@ Use public checked-term/family entry points over admitted checked packages and
 immutable inputs, driving each through a `quire-exact::Meter` built with the
 `quire-exact` `test-support` feature, so that the meter's admitted-charge log
 and `consumed` counters give an oracle that does not come from the evaluator
-under test.
+under test. Compute each semantic-size counter independently from every
+charge point reached by the fixture, then take its specified high-water
+maximum. For arithmetic, use the shared charge formulas for the intermediate
+size allowance (for example, integer addition charges
+`max(bits(a), bits(b)) + 1`, and decimal multiplication charges
+`digits(a) + digits(b)` after any operand-derived alignment). For collection
+construction, include both the per-element charges and the retained value's
+occurrences: a three-element collection has `max(3, occ(result)) = 4` because
+`occ` includes the outer collection. `result_units` separately sums retained
+output occurrences; temporary intermediate values are not retained results.
 
 ### Per-counter boundaries
 
 For each of the ten counters of FR-255's accounting table, build one fixture
-whose evaluation charges that counter at the charge point the second column
-names (the points are `quire-exact`'s named `ChargePoint`s). Count the fixture's
-quantity independently from its construction (the bit length of the operand,
-the digits of the literal, the UTF-8 bytes of the text, the number of elements)
-and compare it with the metered usage from a successful run under a sufficient
-meter; the two must be equal. Then run the fixture with only that counter set
+whose evaluation reaches the applicable charge points in the second column
+(the points are `quire-exact`'s named `ChargePoint`s). Derive each fixture's
+expected amount independently using the formulas in the third column. Then run
+the fixture with only that counter set
 to zero (when the fixture requires work), to its counted quantity and to one
 below it, holding the other nine sufficient. A high-water counter
 (`integer_bits`, `decimal_digits`, `scale_expansion`, `text_input_bytes`,
@@ -41,21 +48,24 @@ below it, holding the other nine sufficient. A high-water counter
 compared with the largest single charge; a cumulative counter (`work_units`,
 `result_units`) is compared with the sum.
 
-| Counter | Charge point the fixture must reach | Fixture quantity |
+| Counter | Charge point the fixture must reach | Independently counted amount |
 | --- | --- | --- |
-| `integer_bits` | `integer-arithmetic.operands` | the bit length of the larger operand of an integer addition |
-| `decimal_digits` | `decimal.operands` | the digit count of a decimal operand |
-| `scale_expansion` | `decimal.scale-expansion` | the decimal-place shift of an addition of two decimals with different scales |
+| `integer_bits` | `integer-arithmetic.operands` and `integer-arithmetic.arithmetic` | the maximum of the operand size charge and arithmetic allowance: `max(bits(a), bits(b)) + 1` for addition/subtraction, `bits(a) + bits(b)` for multiplication, or `bits(a)` for unary negation |
+| `decimal_digits` | `decimal.operands`, `decimal.scale-expansion`, `decimal.arithmetic`, applicable `decimal.rounding` and `decimal.result-retain` | the maximum amount from the full schedule: operand digits, operand-derived aligned digits, the arithmetic formula (addition/subtraction `max(G1,G2)+1`; multiplication `G1+G2`; division `max(G1,G2)`) and the retained coefficient's `sdigits(c,k)`; rounding reuses the arithmetic amount |
+| `scale_expansion` | `decimal.scale-expansion` and `decimal.result-retain` | the high-water maximum of the operand-derived alignment shift and any retained-coefficient upscaling shift; use a fixture with output scale equal to the aligned operand scale so the latter is zero |
 | `text_input_bytes` | `text.input-bytes` | the UTF-8 byte length of a text operand |
 | `text_scalars` | `text.decode-scalars` | the Unicode scalar count of the same operand |
 | `normalized_scalars` | `text.normalize-output` | the scalar count of a text operand whose normal form is longer than its input |
 | `unit_edges` | `unit.edge` | the edges of a unit conversion chain |
-| `value_occurrences` | `collection.element` | the elements of a sequence |
+| `value_occurrences` | `collection.element`, `collection.bound` and `collection.result-retain` | the high-water maximum of element, bound and retained-result charges; a collection with three elements has four occurrences including its outer value |
 | `work_units` | `function.call` | the calls of a nested predicate chain |
-| `result_units` | `collection.result-retain` | the units of a retained sequence result |
+| `result_units` | `collection.result-retain` | `occ(result)` of the completed retained sequence, including the outer collection and every nested occurrence; temporary intermediate sequences do not count as retained results |
 
-The meter's admitted-charge log must hold the named charge point for the
-fixture; a fixture whose log lacks it does not stress its counter. Include a
+The meter's admitted-charge log must hold every named charge point for the
+fixture; a fixture whose log lacks one does not stress that schedule. Derive
+the expected counter amount from the authored operands, alignment, arithmetic
+formula, and retained result shape above, then compare it with the successful
+meter usage; never use the meter reading itself as the oracle. Include a
 no-work case at zero, and raise a caller-set counter above its default to
 complete work that exceeds the default. A counter that no checked-term entry
 point charges is not applicable under FR-049-AC-7; the case records, from the
