@@ -10,17 +10,40 @@ use quire_spec_language::temporal::{
 use std::collections::BTreeMap;
 
 fn temporal_source(body: &str, profile: &str) -> String {
+    temporal_source_with_activation(body, profile, "on origin")
+}
+
+fn temporal_source_with_activation(body: &str, profile: &str, activation: &str) -> String {
     format!(
         r#"
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile t = "{profile}";
 model M = "acme/orders";
-temporal Due using t over (view: M::Widget) clock "orders" on origin {{
+temporal Due using t over (view: M::Widget) clock "orders" {activation} {{
     {body}
 }}
 "#
     )
+}
+
+fn checked_activation(
+    identity: &str,
+    body: &str,
+    activation: &str,
+) -> qsl_replay::spine::CheckedUnit {
+    let packages =
+        qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
+            .expect("checked model fixture");
+    let source = temporal_source_with_activation(body, temporal::EVENT_POSITION, activation);
+    crate::support::front_end::checked(
+        SourceIdentity::new("agent-ix", identity, "fixture", "1"),
+        "checked-temporal-activation.native",
+        source.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .expect("S1-S4 checked activation package")
 }
 
 fn checked(body: &str, profile: &str) -> qsl_replay::spine::CheckedUnit {
@@ -210,4 +233,55 @@ fn checked_progress_is_keyed_by_checked_clause_identity() {
     )
     .result()
     .is_ok());
+}
+
+/// FR-044: a missing guard outcome remains local to that trigger, false guards
+/// create no instance, and duplicate semantic identities add receipt
+/// provenance without re-establishing immutable captures.
+#[trace("TC-123", "FR-044-AC-3", "FR-044-AC-5", "FR-044-AC-8")]
+#[test]
+fn checked_activation_keeps_siblings_and_capture_identity() {
+    let checked = checked_activation(
+        "test:checked-temporal-activation",
+        "capture saved: Integer = trigger.code; always[0,1] true",
+        "on each (trigger: M::Widget) when (trigger.code > 0)",
+    );
+    let mut input = origin_trace();
+    input.anchor = "event-1".into();
+    let capture = || temporal::CaptureInput::Value {
+        anchor: "event-1".into(),
+        value: "7".into(),
+    };
+    let trigger = |identity: &str, receipt: &str, guard, payload: &str| temporal::Trigger {
+        identity: identity.into(),
+        receipt: receipt.into(),
+        anchor: "event-1".into(),
+        payload: payload.into(),
+        guard,
+        captures: vec![capture()],
+    };
+    input.triggers = vec![
+        trigger("missing-guard", "receipt-0", None, "a"),
+        trigger("good-trigger", "receipt-1", Some(true), "b"),
+        trigger("good-trigger", "receipt-2", Some(true), "b"),
+        trigger("false-guard", "receipt-3", Some(false), "c"),
+    ];
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    let obligations = report.result().expect("sibling instances assessed");
+    assert_eq!(obligations.len(), 2);
+    assert!(matches!(
+        &obligations[0],
+        temporal::Obligation::Unactivated { instance, error, .. }
+            if instance == "missing-guard"
+                && matches!(error, temporal::Error::Incomplete(incomplete)
+                    if incomplete.dimension == temporal::Dimension::Guard)
+    ));
+    let temporal::Obligation::Assessed(active) = &obligations[1] else {
+        panic!("healthy sibling remains assessed: {obligations:?}");
+    };
+    assert_eq!(active.instance.as_deref(), Some("good-trigger"));
+    assert_eq!(active.receipts, ["receipt-1", "receipt-2"]);
+    assert_eq!(active.capture_evaluations, 1);
+    assert_eq!(active.captures[0].value, "7");
 }
