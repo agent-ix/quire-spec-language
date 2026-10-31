@@ -761,7 +761,8 @@ pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typin
 
 /// The listed relationship extents of `state`: relationship identity text to
 /// `{complete, instances}`, the instances as `{source, target}` pairs
-/// ascending by canonical bytes, each pair once.
+/// ascending by canonical bytes, repeats kept (admission keeps a repeated
+/// pair when neither end is unique).
 fn extents_enc(state: &ModelState) -> Enc {
     let limits = Limits::new(u64::MAX);
     let entries = state
@@ -783,7 +784,6 @@ fn extents_enc(state: &ModelState) -> Enc {
                 })
                 .collect();
             pairs.sort_by(|left, right| left.0.cmp(&right.0));
-            pairs.dedup_by(|left, right| left.0 == right.0);
             (
                 Enc::tagged(
                     "text",

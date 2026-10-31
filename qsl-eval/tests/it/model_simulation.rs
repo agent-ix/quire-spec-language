@@ -1801,7 +1801,7 @@ fn link_identity() -> String {
 fn link_relationship() -> Json {
     let end = |role: Option<&str>| {
         let mut end = json!({"type": ident("Counter"),
-            "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}});
+            "multiplicity": {"lower": 0, "upper": 2, "ordered": false, "unique": false}});
         if let Some(role) = role {
             end["role"] = json!(role);
         }
@@ -1818,19 +1818,26 @@ fn link_relationship() -> Json {
 }
 
 fn link_between(source: &str, target: &str) -> Json {
+    link_repeated(source, target, 1)
+}
+
+/// The pair listed `times` times.
+fn link_repeated(source: &str, target: &str, times: usize) -> Json {
+    let pair = json!({
+        "source": {"population": ident("counters"), "key": source},
+        "target": {"population": ident("counters"), "key": target},
+    });
     json!([{
         "relationship": link_identity(), "complete": true,
-        "instances": [{
-            "source": {"population": ident("counters"), "key": source},
-            "target": {"population": ident("counters"), "key": target},
-        }],
+        "instances": vec![pair; times],
     }])
 }
 
 /// Deleting `c1` drops its listed link and a later `spawn` recreates `c1`
 /// with the same fields, so the recreated state has the initial state's
 /// objects and none of its extent. The two are different states, so they
-/// have different keys, and the explorer counts both.
+/// have different keys.
+#[trace("TC-471", "FR-120-AC-27")]
 #[test]
 fn states_that_differ_only_in_extents_have_different_keys() {
     let remove = operation("remove", &[], None, frame(&[], false, true));
@@ -1887,4 +1894,37 @@ fn states_that_differ_only_in_extents_have_different_keys() {
     let (_, origin_key) = system.state_key(origin).expect("encodes");
     let (_, recreated_key) = system.state_key(&recreated).expect("encodes");
     assert!(origin_key != recreated_key, "two states, two keys");
+}
+
+/// Admission keeps a pair listed twice when neither end is unique, so the
+/// states that list it once and twice are different states: two keys, and
+/// exploration counts both.
+#[trace("TC-471", "FR-120-AC-27")]
+#[test]
+fn a_repeated_extent_pair_is_a_different_state() {
+    let mut world =
+        build_world_with(vec![], "", false, vec![link_relationship()]).expect("the unit checks");
+    let objects = [Obj("c1", 0, 0, None), Obj("c2", 0, 0, None)];
+    let anchor = || json!({"kind": "initialization", "name": "start"});
+    let once = world.snapshot_with(
+        "once",
+        "current",
+        anchor(),
+        &objects,
+        link_repeated("c1", "c2", 1),
+    );
+    let twice = world.snapshot_with(
+        "twice",
+        "current",
+        anchor(),
+        &objects,
+        link_repeated("c1", "c2", 2),
+    );
+    let system = self::system(&world, vec![once, twice], &["c1", "c2"], UNLIMITED);
+    let initial = system.initial();
+    assert_eq!(initial.len(), 2, "both snapshots are admitted");
+    let (_, first) = system.state_key(&initial[0]).expect("encodes");
+    let (_, second) = system.state_key(&initial[1]).expect("encodes");
+    assert!(first != second, "one pair and a repeated pair are two keys");
+    assert_eq!(stats(&explore(&system)).0, 2);
 }
