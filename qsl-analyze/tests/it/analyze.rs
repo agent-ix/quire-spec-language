@@ -20,7 +20,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, model_item, AnalyzeItem, DispositionKind, Engine, Engines, Payload, Settlement,
+    analyze_items, model_item, AnalyzeItem, DispositionKind, Engine, Engines, Payload, Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -75,7 +75,7 @@ fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
 #[test]
 fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
     let case = case(CONTRACT, &[0]);
-    let record = only(analyze(
+    let record = only(analyze_items(
         &en1(),
         vec![model_item(index(0), case.model_item())],
         &Cancel::new(),
@@ -114,7 +114,7 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let world = world("", &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let broken = case(CONTRACT, &[0]);
-    let records = analyze(
+    let records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         vec![
             AnalyzeItem::unadapted(index(0), Capability::Monitorability),
@@ -166,7 +166,7 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
     let world = world(CONTRACT, &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let run = |item| {
-        only(analyze(
+        only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -221,7 +221,7 @@ fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
             panic!("a proved item replays nothing")
         });
         item.request.reductions.partial_order = reduced;
-        only(analyze(
+        only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -263,7 +263,7 @@ fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
             alter(&mut payload);
             replay(&case, payload)
         });
-        value(&only(analyze(
+        value(&only(analyze_items(
             &en1(),
             vec![model_item(index(0), item)],
             &Cancel::new(),
@@ -295,7 +295,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
         },
         ..ModelCheckLimits::default()
     };
-    let record = only(analyze(
+    let record = only(analyze_items(
         &en1(),
         vec![model_item(
             index(0),
@@ -313,7 +313,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
 
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
-    let records = analyze(
+    let records = analyze_items(
         &en1(),
         vec![model_item(
             index(0),
@@ -396,7 +396,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
         };
         Ok(result)
     });
-    let mut record = only(analyze(
+    let mut record = only(analyze_items(
         &en1(),
         vec![model_item(index(0), item)],
         &Cancel::new(),
@@ -499,7 +499,7 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let world = World::new(&prob_world::service(claim));
     qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
 
-    let analyzed = only(analyze(
+    let analyzed = only(analyze_items(
         &Engines::qsl().expect("they register"),
         vec![statistical_item(index(0), service_request(&world))],
         &Cancel::new(),

@@ -32,8 +32,13 @@
 
 mod items;
 
+use qsl_eval::simulation::model::{
+    ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+};
 use qsl_eval::simulation::protocol::ProtocolTransition;
+use qsl_foundation::diagnostic::{StageFailure, Staged};
 use qsl_foundation::{BackendId, RequestIndex};
+use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample};
 use qsl_replay::{
@@ -43,7 +48,11 @@ use qsl_replay::{
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
 use qsl_semantics::check::Capability;
-use quire_exact::Cancel;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::observation::{
+    AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
+};
+use quire_exact::{Cancel, ScalarLimits};
 use quire_semantic_value::catalog::CatalogCode;
 
 pub use crate::contract_check::contract_item;
@@ -169,6 +178,73 @@ impl DuplicateEngine {
 #[derive(Clone, Debug, Default)]
 pub struct Engines {
     engines: Vec<Engine>,
+}
+
+/// FR-120's caller-supplied subject members other than the checked package.
+///
+/// The provider and analyze operations combine this value with the package
+/// and [`AnalyzeLimits`] to admit one `ModelSystem` before running any item.
+#[derive(Clone)]
+pub struct SubjectBinding<'a> {
+    /// FR-056's domain package input.
+    pub packages: &'a qsl_semantics::model::intake::PackageInput,
+    /// The snapshot documents selected by `initial`.
+    pub snapshots: &'a DocumentProvision,
+    /// Initial states selected from `snapshots`, in request order.
+    pub initial: Vec<DocumentRef>,
+    /// The finite key sets for the subject's populations.
+    pub universes: Vec<PopulationUniverse>,
+}
+
+/// The caller's shared accounting, observation, normalization and deadline
+/// limits for one analyze request (FR-277, FR-281).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AnalyzeLimits {
+    /// The scalar evaluation budget.
+    pub accounting: ScalarLimits,
+    /// The snapshot observation budgets.
+    pub observation: ObservationLimits,
+    /// The model normalization budgets.
+    pub normalization: ModelNormalizationLimits,
+    /// The operation deadline in milliseconds, if one was supplied.
+    pub deadline_ms: Option<u64>,
+}
+
+impl Default for AnalyzeLimits {
+    fn default() -> Self {
+        Self {
+            accounting: ScalarLimits::default(),
+            observation: ObservationLimits::default(),
+            normalization: ModelNormalizationLimits::default(),
+            deadline_ms: None,
+        }
+    }
+}
+
+/// An admitted-for-execution request: one subject binding and its negotiated
+/// items. Each item is already typed by its layer-A adapter and carries the
+/// disposition established by the caller's negotiation.
+pub struct AnalyzeRequest<'a> {
+    /// The shared subject binding.
+    pub binding: SubjectBinding<'a>,
+    /// The negotiated items, in request order.
+    pub items: Vec<AnalyzeItem<'a>>,
+}
+
+/// The outcome of analyzing a request, preserving the typed result for each
+/// item in request order.
+#[derive(Debug)]
+pub struct AnalyzeOutcome {
+    /// The per-item outcomes.
+    pub records: Vec<AnalyzeRecord>,
+}
+
+/// Why analyze could not admit a shared subject binding.
+#[derive(Debug, thiserror::Error)]
+pub enum AnalyzeRefusal {
+    /// FR-120 did not admit the subject binding.
+    #[error("the analyze subject binding did not admit: {0:?}")]
+    Binding(AdmissionFailure),
 }
 
 impl Engines {
@@ -538,7 +614,7 @@ fn undefined_item(index: RequestIndex, evaluation: &UndefinedEvaluation) -> Outc
 /// other than `supported` runs no engine, and an item whose `Supported`
 /// candidate `engines` does not hold, or holds without advertising the
 /// item's kind and mode, settles `invalid-request`.
-pub fn analyze(
+pub fn analyze_items(
     engines: &Engines,
     items: Vec<AnalyzeItem<'_>>,
     cancel: &Cancel,
@@ -547,6 +623,69 @@ pub fn analyze(
         .into_iter()
         .map(|item| run(engines, item, cancel))
         .collect()
+}
+
+/// Analyze the negotiated items over one checked-package subject (FR-281).
+/// The subject binding is admitted before any item runs.
+pub fn analyze(
+    package: &CheckedPackage,
+    request: AnalyzeRequest<'_>,
+    engines: &Engines,
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
+    let AnalyzeRequest { binding, items } = request;
+    let simulation = ModelSimulationRequest {
+        package,
+        packages: binding.packages,
+        normalization: limits.normalization,
+        snapshots: binding.snapshots,
+        initial: binding.initial,
+        universes: binding.universes,
+        observation: limits.observation,
+        // Subject admission does not expand successors. The item's engine
+        // request owns the expansion budget used when it runs.
+        expansion: ExpansionLimits {
+            max_candidates: u64::MAX,
+        },
+        meter: limits.accounting,
+    };
+    ModelSystem::new(simulation)
+        .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
+
+    let records = analyze_items(engines, items, cancel);
+    Ok(Staged::new(AnalyzeOutcome { records }))
+}
+
+/// Analyze the negotiated items over one admitted checked-package subject
+/// (FR-281). The binding is admitted before any engine item runs.
+pub fn analyze(
+    package: &CheckedPackage,
+    request: AnalyzeRequest<'_>,
+    engines: &Engines,
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
+    let simulation = ModelSimulationRequest {
+        package,
+        packages: request.binding.packages,
+        normalization: limits.normalization,
+        snapshots: request.binding.snapshots,
+        initial: request.binding.initial,
+        universes: request.binding.universes,
+        observation: limits.observation,
+        // Admission does not expand successors. The engine item carries its
+        // own caller-selected expansion budget when it later runs.
+        expansion: ExpansionLimits {
+            max_candidates: u64::MAX,
+        },
+        meter: limits.accounting,
+    };
+    ModelSystem::new(simulation)
+        .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
+
+    let records = analyze_items(engines, request.items, cancel);
+    Ok(Staged::new(AnalyzeOutcome { records }))
 }
 
 fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeRecord {
@@ -848,7 +987,7 @@ mod tests {
         assert_eq!(refusal.backend, BackendId::new("test-a"));
         assert_eq!(refusal.catalog_code().cause(), "duplicate-backend");
         let ran = std::cell::Cell::new(false);
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![item("test-a", Capability::OperationContract, &ran)],
             &Cancel::new(),
@@ -868,7 +1007,7 @@ mod tests {
             .with(engine("test-a", Capability::ValueValidity))
             .expect("first");
         let ran = std::cell::Cell::new(false);
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![item("test-a", Capability::TemporalSatisfaction, &ran)],
             &Cancel::new(),
@@ -885,7 +1024,7 @@ mod tests {
                 mode: Mode::Bounded,
             }
         );
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![item("test-c", Capability::ValueValidity, &ran)],
             &Cancel::new(),
@@ -912,7 +1051,7 @@ mod tests {
         let ran = std::cell::Cell::new(false);
         let ambiguous =
             Diagnostic::new(CatalogCode::new("invalid_capability", "ambiguous-backend"));
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![
                 item("test-a", Capability::ValueValidity, &ran)
@@ -947,8 +1086,9 @@ mod tests {
         engines
             .with(engine("test-a", Capability::OperationContract))
             .expect("first");
-        let run =
-            |refusal: fn() -> Refusal| analyze(&engines, vec![refusing(refusal)], &Cancel::new());
+        let run = |refusal: fn() -> Refusal| {
+            analyze_items(&engines, vec![refusing(refusal)], &Cancel::new())
+        };
 
         let records = run(|| Refusal::RequiresBound);
         let settled = disposed(&records);
@@ -1002,7 +1142,7 @@ mod tests {
         ));
 
         let wrong = CatalogCode::new("invalid_runtime_input", "wrong-value-kind");
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![refusing(move || Refusal::Failed(wrong))],
             &Cancel::new(),
