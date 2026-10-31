@@ -83,6 +83,136 @@
 //! ```
 //!
 
+//! # Checked-term admission (TC-136)
+//!
+//! These public-API fixtures pair accepted typed handles with rejected raw
+//! bytes and freely constructed wire records. Each rejected call has its own
+//! fixture so an earlier type error cannot hide a later admission attempt.
+//!
+//! ```no_run
+//! use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::{check::CheckedExpression, model::object_environment::ObjectEnvironment};
+//! use quire_exact::Meter;
+//! fn accepted(package: &CheckedPackage, name: &QualifiedName, expression: &CheckedExpression,
+//!             objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let _ = package.call(name, vec![], objects, meter);
+//!     let _ = package.evaluate(expression, vec![], objects, meter);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::value::CheckedPackageEvaluation;
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! struct WireExpression { name: &'static str }
+//! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let _ = package.call(b"unchecked".as_slice(), vec![], objects, meter);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::value::CheckedPackageEvaluation;
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! struct WireExpression { name: &'static str }
+//! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let _ = package.call(&WireExpression { name: "unchecked" }, vec![], objects, meter);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::value::CheckedPackageEvaluation;
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! struct WireExpression { name: &'static str }
+//! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let _ = package.evaluate(b"unchecked".as_slice(), vec![], objects, meter);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::value::CheckedPackageEvaluation;
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! struct WireExpression { name: &'static str }
+//! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let _ = package.evaluate(&WireExpression { name: "unchecked" }, vec![], objects, meter);
+//! }
+//! ```
+//!
+//! A checked expression cannot be freely constructed, even when its result
+//! is intended to be a simple Boolean.
+//!
+//! ```compile_fail,E0616
+//! use qsl_semantics::check::CheckedExpression;
+//! use quire_semantic_value::checking::CheckingLimits;
+//! fn hand_built(expression: CheckedExpression) -> CheckedExpression {
+//!     CheckedExpression {
+//!         parameters: vec![],
+//!         root: expression.root,
+//!         slots: 0,
+//!         effective_limits: CheckingLimits::default(),
+//!     }
+//! }
+//! ```
+//!
+//! The checked call has no additional runtime authority arguments. The same
+//! typed setup above compiles without the extra pair.
+//!
+//! ```compile_fail,E0061
+//! use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! fn rejected(package: &CheckedPackage, name: &QualifiedName,
+//!             objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let authority = ("legacy", r#"{ "version": 1, "name": "orders" }"#);
+//!     let _ = package.call(name, vec![], objects, meter, authority);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0061
+//! use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! fn rejected(package: &CheckedPackage, name: &QualifiedName,
+//!             objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let authority = ("legacy", r#"{ "objects": ["Order", "Line"], "id": "orders-model" }"#);
+//!     let _ = package.call(name, vec![], objects, meter, authority);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0061
+//! use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! fn rejected(package: &CheckedPackage, name: &QualifiedName,
+//!             objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let authority = ("legacy", r#"{ "limits": {"depth": 8}, "profile": "strict" }"#);
+//!     let _ = package.call(name, vec![], objects, meter, authority);
+//! }
+//! ```
+//!
+//! ```compile_fail,E0061
+//! use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_exact::Meter;
+//! fn rejected(package: &CheckedPackage, name: &QualifiedName,
+//!             objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let authority = ("legacy", r#"{ "enabled": true, "mode": "batch" }"#);
+//!     let _ = package.call(name, vec![], objects, meter, authority);
+//! }
+//! ```
+//!
+
 pub mod automaton;
 pub mod fairness;
 pub mod hyper;

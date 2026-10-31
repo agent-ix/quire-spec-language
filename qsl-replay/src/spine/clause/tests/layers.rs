@@ -13,6 +13,8 @@ use qsl_foundation::Code;
 use qsl_semantics::check::{AssemblyCause, AssemblyError};
 use qsl_semantics::value::{always_roles, HeaderLayer, LayerForm};
 
+mod equality;
+
 const CORE: &str = "quire.state.core/v1";
 const QUERIES: &str = "quire.state.queries/v1";
 const GRAPH: &str = "quire.state.graph/v1";

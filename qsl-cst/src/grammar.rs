@@ -283,7 +283,7 @@ fn source_and_types(g: &mut Grammar) {
         P::CompleteUnit,
         s(vec![
             r(P::Header),
-            plus(r(P::Profile)),
+            star(r(P::Profile)),
             star(r(P::ImportDeclaration)),
             star(r(P::Model)),
             plus(r(P::Declaration)),
@@ -587,8 +587,7 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             x("function"),
             ident(),
-            x("using"),
-            ident(),
+            opt(s(vec![x("using"), ident()])),
             parameters(),
             x(":"),
             r(P::TypeReference),
@@ -602,8 +601,7 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             x("predicate"),
             ident(),
-            x("using"),
-            ident(),
+            opt(s(vec![x("using"), ident()])),
             parameters(),
             x(":"),
             x("Boolean"),

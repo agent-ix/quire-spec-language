@@ -80,6 +80,10 @@ pub(super) fn span_at(spans: &ExpressionSpans, location: &Location) -> Option<Sp
     SpanMemo::default().at(spans, location)
 }
 
+pub(super) fn operator_span_at(spans: &ExpressionSpans, location: &Location) -> Option<Span> {
+    spans.operator_span(SpanMemo::default().reach(spans, location)?)
+}
+
 /// The source a region is read from, and the document it is embedded in.
 #[derive(Clone, Copy)]
 struct Document<'a> {
@@ -304,6 +308,9 @@ impl DeclarationRegions {
     /// is located by its `location`.
     pub fn refusal_region(&self, refusal: &CheckRefusal) -> Option<SourceRegion> {
         match &refusal.cause {
+            CheckCause::LayerEquality {
+                span: Some(span), ..
+            } => region(&self.source, self.embedding.as_deref(), *span),
             CheckCause::ResourceExhausted(limit) if limit.region.is_some() => limit.region.clone(),
             CheckCause::ProtocolAnchor(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())

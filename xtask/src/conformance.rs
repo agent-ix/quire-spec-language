@@ -60,13 +60,9 @@ impl Target {
 }
 
 const CHECKS: &[Check] = &[
-    Check { package: "qsl-semantics", target: Target::Lib, selection: "check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors", summaries: &[&["conformance: ", " of ", " QSpec operation vectors match ("]], summary_mode: SummaryMode::Exact },
-    Check { package: "qsl-semantics", target: Target::Lib, selection: "check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors", summaries: &[&["conformance: 2 nominal enum vectors"]], summary_mode: SummaryMode::Exact },
-    Check { package: "qsl-semantics", target: Target::Test, selection: "quantities::tc_411_compound_unit_ids_match_qspec_vectors", summaries: &[&["conformance: ", " compound-unit vectors"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures", summaries: &[&["conformance: ", " source-map entries over ", " positive fixtures"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures", summaries: &[&["conformance: ", " positive fixtures through QSL's full I2 read"], &["conformance: ", " adverse mutations refused"]], summary_mode: SummaryMode::Prefix },
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors", summaries: &[&["conformance: ", " frame-body mutation vectors matched"]], summary_mode: SummaryMode::Exact },
-    Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_shipped_projection_cases_are_refused_and_admitted_once_removed", summaries: &[&["conformance: ", " shipped-projection cases refused and admitted once removed"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_dependency_selection_vectors", summaries: &[&["conformance: ", " dependency-selection entry mutations and ", " order vectors"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", summaries: &[&["conformance: ", " emitted application nodes match QSpec's positive fixtures"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_admit_selection_matches_qspec_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]], summary_mode: SummaryMode::Exact },

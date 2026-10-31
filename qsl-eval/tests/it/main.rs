@@ -13,6 +13,7 @@ const TEST_PACKAGE_NAME: &str = "qsl-eval-integration-tests";
 #[allow(dead_code)]
 mod tc235_k2;
 
+mod accounting_boundaries;
 mod automaton_kernels;
 mod automaton_key;
 mod automaton_key_bounded;

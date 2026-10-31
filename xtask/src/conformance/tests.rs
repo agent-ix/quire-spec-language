@@ -136,7 +136,7 @@ fn each_selection_refuses_missing_evidence_or_failure() {
 }
 
 #[test]
-fn zero_operation_vectors_refuse() {
+fn zero_source_map_entries_refuse() {
     let root = crate::test_support::tempdir();
     let checkout_path = root.path().join("quire-specification");
     checkout(&checkout_path);
