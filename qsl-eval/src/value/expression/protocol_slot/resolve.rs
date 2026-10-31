@@ -766,7 +766,13 @@ pub(crate) fn select<'a>(
                     .binders
                     .iter()
                     .find(|keyed| keyed.node == binder.node)
-                    .map_or(binder.level, |keyed| keyed.level);
+                    .map(|keyed| keyed.level)
+                    .ok_or_else(|| {
+                        CallFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
+                            "FR-390",
+                            "checked-protocol-source-has-a-canonical-binder-level",
+                        ))
+                    })?;
             }
         }
     }
