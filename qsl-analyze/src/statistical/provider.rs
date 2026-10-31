@@ -8,10 +8,11 @@
 //! holds a probabilistic claim (FR-185), so an entry that read an emitted
 //! package could serve no EN-4 item.
 //!
-//! No `analyze` operation exists yet (FR-281, QSL-596), so nothing here
-//! equals `analyze`'s record by test. When it lands, `analyze` must settle an
-//! EN-4 item through [`serve_request`] so the two paths stay one path
-//! (ADR-029 OP-2), and [`serve_items`] must become that path.
+//! `analyze` (FR-281) settles an EN-4 item by the same two calls,
+//! `check_statistical` and FR-192's map, in `analyze::items`. The two paths
+//! are held equal by test, not by sharing code: the `Service` item's record
+//! from `analyze` equals the one [`serve_items`] returns (FR-280-AC-5,
+//! TC-761 step 4).
 
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::{
