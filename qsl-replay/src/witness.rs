@@ -252,11 +252,13 @@ pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
 /// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
 /// is not printable ASCII-safe percent-escaped, so distinct nodes never
 /// share a name and the entry separators never occur inside one.
+#[cfg(test)]
 pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
     let json = qsl_foundation::node_wire::node_key_to_text(node).ok()?;
     Some(percent_encode(&json))
 }
 
+#[cfg(test)]
 fn percent_encode(text: &str) -> String {
     let mut bytes = Vec::with_capacity(text.len());
     for byte in text.bytes() {

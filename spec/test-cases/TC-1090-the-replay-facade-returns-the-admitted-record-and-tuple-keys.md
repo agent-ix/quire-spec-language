@@ -12,7 +12,7 @@ relationships:
 
 Verify `qsl_replay::compile_admitted`'s context lists the admitted record, tuple
 and union keys and a union's member ids, finds them by wire node id, and
-refuses as typed. Scope: FR-396-AC-1 to FR-396-AC-9.
+refuses as typed. Scope: FR-396-AC-1 to FR-396-AC-10.
 
 ## Test Procedure
 

@@ -18,7 +18,11 @@ use qsl_foundation::Code;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
 use qsl_semantics::library::LibraryName;
-use quire_exact::{Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId};
+use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
+use quire_exact::{
+    Identifier, Integer, InvalidNodeKey, NodeKey, PathSegment, UnionMember, UnitId, ValueType,
+    VariantId,
+};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
 use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
@@ -343,6 +347,57 @@ pub enum AdmittedLookupRefusal {
         /// The declaration id looked up.
         declaration: NodeKey,
     },
+    /// The by-wire lookups only: the structural wire id is not a well-formed
+    /// node identity, so it names no node of any package.
+    #[error("malformed_wire_id: the wire node id is not a well-formed node identity: {cause}")]
+    MalformedWire {
+        /// Why the wire id is not a node identity.
+        cause: InvalidNodeKey,
+    },
+}
+
+/// The node identity the structural wire id `id` names. Nested path
+/// identities are converted with an explicit stack so depth cannot consume the
+/// call stack.
+fn node_key_of_wire(id: &CheckedNodeId) -> Result<NodeKey, InvalidNodeKey> {
+    struct Frame<'a> {
+        id: &'a CheckedNodeId,
+        rest: std::slice::Iter<'a, CheckedNodePathSegment>,
+        segments: Vec<PathSegment>,
+    }
+    fn frame(id: &CheckedNodeId) -> Frame<'_> {
+        Frame {
+            id,
+            rest: id.path.iter(),
+            segments: Vec::new(),
+        }
+    }
+    let mut stack = vec![frame(id)];
+    loop {
+        let Some(top) = stack.last_mut() else {
+            return Err(InvalidNodeKey::EmptyPath);
+        };
+        match top.rest.next() {
+            Some(CheckedNodePathSegment::Name(name)) => {
+                top.segments.push(PathSegment::Text(name.to_string()));
+            }
+            Some(CheckedNodePathSegment::Node(nested)) => stack.push(frame(nested)),
+            None => {
+                let Some(done) = stack.pop() else {
+                    return Err(InvalidNodeKey::EmptyPath);
+                };
+                let key = NodeKey::new(&*done.id.package, done.segments, done.id.ordinal)?;
+                match stack.last_mut() {
+                    Some(parent) => parent.segments.push(PathSegment::Node(key)),
+                    None => return Ok(key),
+                }
+            }
+        }
+    }
+}
+
+fn wire_key(id: &CheckedNodeId) -> Result<NodeKey, AdmittedLookupRefusal> {
+    node_key_of_wire(id).map_err(|cause| AdmittedLookupRefusal::MalformedWire { cause })
 }
 
 fn unknown_what(declaration: &NodeKey, case: &Option<Identifier>) -> String {
@@ -441,6 +496,34 @@ impl AdmittedContext {
             })
     }
 
+    /// [`Self::enum_declaration`] for the structural wire id `id`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::enum_declaration`]; and
+    /// [`AdmittedLookupRefusal::MalformedWire`] when `id` is not a
+    /// well-formed node identity.
+    pub fn enum_declaration_by_wire(
+        &self,
+        id: &CheckedNodeId,
+    ) -> Result<&AdmittedEnum, AdmittedLookupRefusal> {
+        self.enum_declaration(&wire_key(id)?)
+    }
+
+    /// [`Self::enum_case`] for the structural wire id `id`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::enum_case`]; and [`AdmittedLookupRefusal::MalformedWire`]
+    /// when `id` is not a well-formed node identity.
+    pub fn enum_case_by_wire(
+        &self,
+        id: &CheckedNodeId,
+        case: &Identifier,
+    ) -> Result<&AdmittedEnumCase, AdmittedLookupRefusal> {
+        self.enum_case(&wire_key(id)?, case)
+    }
+
     /// Every record, tuple and union declaration this package admitted,
     /// ascending by `composite_type` node id.
     pub fn composites(&self) -> impl Iterator<Item = &AdmittedComposite> {
@@ -464,6 +547,20 @@ impl AdmittedContext {
             return Ok(admitted);
         }
         Err(self.refusal(declaration, &self.foreign_composites))
+    }
+
+    /// [`Self::composite_declaration`] for the structural wire id `id`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::composite_declaration`]; and
+    /// [`AdmittedLookupRefusal::MalformedWire`] when `id` is not a
+    /// well-formed node identity.
+    pub fn composite_declaration_by_wire(
+        &self,
+        id: &CheckedNodeId,
+    ) -> Result<&AdmittedComposite, AdmittedLookupRefusal> {
+        self.composite_declaration(&wire_key(id)?)
     }
 
     /// Every unit this package admitted, ascending by node id.
