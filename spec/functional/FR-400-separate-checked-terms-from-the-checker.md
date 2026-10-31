@@ -283,6 +283,55 @@ checker-side type. For every
 returned before the move, so FR-096 refusal records and FR-262's location
 and loss behaviour are unchanged.
 
+### Canonical read projections
+
+`quire-checked` SHALL own one operation vocabulary for stored expression
+nodes and borrowed reads: the existing `NodeKind` SHALL become
+`NodeKind<Child = NodeId, Literal = CheckedLiteral>`. Every `NodeId` operand
+position SHALL use `Child`, including positions nested in vectors, options,
+`RecordSlot<Child = NodeId>` and `CaseArm<Child = NodeId>`; the `Literal`
+variant SHALL carry the `Literal` parameter. All other variants, metadata,
+admitted evidence and operand ordering SHALL keep their existing meaning.
+This parameterization changes representation, not the set of operations.
+There SHALL be no parallel `TermOperation` enum or operation catalog.
+
+The shared read result SHALL be the plain descriptor
+`NodeRead<'a, Child>` with these exact public fields:
+
+```rust
+pub struct NodeRead<'a, Child> {
+    pub operation: NodeKind<Child, &'a quire_exact::Value>,
+    pub value_type: &'a quire_exact::ValueType,
+    pub location: &'a quire_semantic_value::location::Location,
+}
+```
+
+A read SHALL substitute owner-qualified handles for every child position
+and borrow the admitted literal's `Value`, checked `ValueType` and `Location`.
+Non-child metadata and admitted evidence MAY be cloned from the witnessed
+input into the descriptor; this SHALL NOT mint evidence or change identity.
+An in-process read SHALL project its stored `NodeKind` into this same generic
+enum, and a reader-backed read SHALL project retained typed admitted data
+into it. The evaluator SHALL match this single enum for both reads, with
+unchanged operation execution and charge points.
+Every cost-relevant metadata field SHALL survive this projection unchanged,
+including `NodeKind::Attribute.derefed`: a borrowed operation SHALL distinguish
+an explicit dereference from a bare field read with the same result. If the
+admitted representation lacks that fact, then it cannot supply a lossless
+`NodeRead`; FR-390's view admission SHALL report the missing charge semantics
+before yielding a view. No projection SHALL invent the fact from erased
+source information or treat the missing fact as equivalent execution.
+
+`NodeRead` and the parameterized operation descriptors are plain read data,
+not `Node`, `CheckedBody`, `CheckedGraph` or an admission witness. Constructing
+a descriptor SHALL confer no authority to evaluate it. Only the sealed,
+witness-bound input contract of
+[FR-390](FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md)
+SHALL supply these reads to S6a. No read projection SHALL construct a checked
+term, call `construct`, validate an unchecked term or duplicate checking.
+The descriptor types SHALL require only `core`, `alloc` and the existing
+layer-C dependencies, and SHALL name no QSL or IR type.
+
 ### Checking authority
 
 A checked term is a value whose existence claims that the checker or the
@@ -339,6 +388,8 @@ move MAY land in steps, in this order: expression terms; clause records;
 | FR-400-AC-8 | Before the first move step, a test over a fixture unit with a function, a dispatch table, a `model` selection, a state clause and a protocol compares, for equality between `origin/main` and the working tree: every node's `Location`, every `NodeKey` and `DeclarationKey`, every model-correspondence entry, the `SourceRegion` each `Location` resolves to, and the code, cause and locus of the FR-096 refusal record of a refusing evaluation of that unit. After each move step, the same test passes. | Test |
 | FR-400-AC-9 | `quire-checked` builds for `thumbv7em-none-eabi` with default features off, and its manifest forbids unsafe code; no normal or build dependency in QSL enables its `test-support` feature. | Test |
 | FR-400-AC-10 | After the move, `qsl_semantics::model::key::EffectiveDeclarationPreimage::identity` and `qsl_semantics::model::key::EffectiveDeclarationPreimage::validate_derivation` resolve from another crate. `identity` reproduces each published effective-declaration identity vector from QSpec FR-150-AC-6; `validate_derivation` rejects QSpec's `unsorted-derivation` mutation (TC-195) with `UnsortedDerivation` naming its position and ordinal, rejects a QSL test preimage whose first two facts have the same `rule` and equal `inputs` with `DuplicatePath{earlier: 0, later: 1}`, and accepts the unmutated vector. `quire_checked` exposes no `EffectiveDeclarationPreimage`, `Fact` or `RuleRef`, `quire-checked`'s `DeclarationKey` has no `identity` or `validate_derivation` method (a call to either fails to compile), and no `quire-checked` item names `ModelRefusalCause`. | Test |
+| FR-400-AC-11 | A stored `NodeKind` and its `NodeRead` projection match the same exhaustive generic enum: every variant, nested operand position, literal value, metadata/evidence identity, checked type and location are preserved. A probe variant makes both evaluator paths non-exhaustive. No parallel operation enum exists; the layer-C read descriptors compile without `std`, QSL or IR dependencies. | Test |
+| FR-400-AC-12 | Constructing a `NodeRead` or a parameterized operation descriptor cannot create a checked term or an admitted FR-390 view: passing a descriptor to the public evaluator as a checked input fails to compile. Existing checked-term constructor and mutation rejection checks remain failing, with their positive pairs compiling. | Test |
 
 ## Dependencies
 
