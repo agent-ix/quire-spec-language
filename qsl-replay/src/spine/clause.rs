@@ -1456,7 +1456,7 @@ fn run_function(
                     fields.insert("population", population.clone());
                     fields.insert("object", key.clone());
                     return Ok(report(ClauseDisposition::Admit(AdmissionFailure::Refused(
-                        AdmissionRecord {
+                        Box::new(AdmissionRecord {
                             catalog: quire_semantic_value::catalog::CatalogCode::new(
                                 qsl_foundation::diagnostic::Code::InvalidRuntimeInput.as_str(),
                                 "wrong-role-mapping",
@@ -1464,7 +1464,7 @@ fn run_function(
                             fields,
                             path: Vec::new(),
                             kernel: None,
-                        },
+                        }),
                     ))));
                 };
                 Value::Reference(reference.clone())

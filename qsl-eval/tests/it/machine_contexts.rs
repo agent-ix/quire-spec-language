@@ -510,7 +510,7 @@ fn population_declaration(name: &str, member: &str) -> Json {
 /// The refusal an admission gave: its code, cause and fields.
 fn refused(outcome: Result<AdmittedObservations, AdmissionFailure>) -> AdmissionRecord {
     match outcome {
-        Err(AdmissionFailure::Refused(record)) => record,
+        Err(AdmissionFailure::Refused(record)) => *record,
         other => panic!("a refusal, not {other:?}"),
     }
 }

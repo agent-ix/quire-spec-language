@@ -271,7 +271,7 @@ pub(crate) struct ProtocolClauseFrameRefusal {
 
 impl CatalogCoded for ProtocolClauseFrameRefusal {
     fn catalog_code(&self) -> CatalogCode {
-        self.record.catalog.clone()
+        self.record.catalog
     }
 
     /// The record's own input path (`population`, and `object` or `field`

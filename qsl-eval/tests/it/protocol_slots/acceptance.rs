@@ -353,7 +353,7 @@ fn ep_observation_state<'a>(
         other_nodes.push(object("ghost", "otherNodes"));
     }
     populations.push(serde_json::json!({"population":model::id("otherNodes"), "complete":other_nodes_complete, "objects":other_nodes}));
-    if let Some(_) = other_spare {
+    if other_spare.is_some() {
         populations.push(serde_json::json!({"population":model::id("otherSpare"), "complete":spare_complete, "objects":spare}));
     }
     let snapshot = serde_json::json!({
@@ -894,6 +894,58 @@ fn root_reference_occurrence_requires_the_exact_nodes_declaration() {
         assert!(record.record.path.is_empty());
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
     }
+}
+
+#[test]
+#[trace("TC-1071", "FR-390-AC-6")]
+fn observation_authority_is_bound_to_one_checked_package_instance() {
+    let (first, first_view) = fixture_ep();
+    let (second, second_view) = fixture_ep();
+    let authority = ep_observation(&first, &first_view, None, true);
+    let quire_semantic_value::admission::ObservationAdmission::Admitted(authority_value) =
+        &authority
+    else {
+        panic!("the first package admits its snapshot")
+    };
+    assert!(authority_value.is_for_package(&first));
+    assert!(!authority_value.is_for_package(&second));
+    let reference = {
+        let declaration = quire_checked::key::DeclarationKey {
+            package: model::PACKAGE.to_owned(),
+            node: model::id("Node"),
+        };
+        ObjectReference::new(
+            second_view
+                .object_universe_of(&declaration)
+                .unwrap()
+                .identity()
+                .unwrap(),
+            second_view.type_identities()[&declaration].clone(),
+            ObjectId::new("n5").unwrap(),
+        )
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let failure = second
+        .evaluate_protocol_slot(
+            &slot(&second, "Pipeline", "Got", "related.from", Some(0)),
+            &supply(
+                &second,
+                "Pipeline",
+                vec![("view", Value::Reference(reference))],
+                Some(&authority),
+            ),
+            &mut meter,
+        )
+        .unwrap_err();
+    let CallFailure::Admission(failure) = failure else {
+        panic!("cross-instance authority must refuse")
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("cross-instance authority is a refusal")
+    };
+    assert_eq!(record.record.catalog.code(), "invalid_model_binding");
+    assert_eq!(record.record.catalog.cause(), "wrong-model-selection");
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
 }
 
 fn completed(result: ProtocolSlotEvaluation) -> Value {

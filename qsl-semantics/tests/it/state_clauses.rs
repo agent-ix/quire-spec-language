@@ -3173,7 +3173,7 @@ fn assert_tc465_refused(
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
             assert_eq!(record.catalog.code(), expected_code);
             assert_eq!(record.catalog.cause(), expected_cause);
-            record
+            *record
         }
         other => panic!("expected Err(Refused({expected_code}/{expected_cause})), got {other:?}"),
     }
@@ -3191,7 +3191,7 @@ fn assert_tc465_incomplete(
         Err(qsl_semantics::model::observation::AdmissionFailure::Incomplete(record)) => {
             assert_eq!(record.catalog.code(), expected_code);
             assert_eq!(record.catalog.cause(), expected_cause);
-            record
+            *record
         }
         other => {
             panic!("expected Err(Incomplete({expected_code}/{expected_cause})), got {other:?}")

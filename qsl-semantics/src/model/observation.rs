@@ -400,12 +400,12 @@ impl AdmissionRecordExt for AdmissionRecord {
 pub enum AdmissionFailure {
     /// A real input defect: no `AdmittedObservations` and no truth value.
     #[error("admission refused: {}/{}", .0.catalog.code(), .0.catalog.cause())]
-    Refused(AdmissionRecord),
+    Refused(Box<AdmissionRecord>),
     /// Missing evidence, or an unresolved object/subtype closure: no
     /// `AdmittedObservations`, distinct from a refusal (FR-106 checks 1.1,
     /// 7).
     #[error("admission incomplete: {}/{}", .0.catalog.code(), .0.catalog.cause())]
-    Incomplete(AdmissionRecord),
+    Incomplete(Box<AdmissionRecord>),
     /// A broken invariant of admission itself (never a document defect):
     /// the re-supplied domain packages do not re-normalize the way the
     /// already-compiled package did.
@@ -414,11 +414,11 @@ pub enum AdmissionFailure {
 }
 
 fn refuse(record: AdmissionRecord) -> AdmissionFailure {
-    AdmissionFailure::Refused(record)
+    AdmissionFailure::Refused(Box::new(record))
 }
 
 fn incomplete(record: AdmissionRecord) -> AdmissionFailure {
-    AdmissionFailure::Incomplete(record)
+    AdmissionFailure::Incomplete(Box::new(record))
 }
 
 fn fault(invariant: &'static str) -> AdmissionFailure {

@@ -237,7 +237,7 @@ fn assert_refused(case: Case, code: Code, cause: &str, field: Option<&str>) -> A
     assert_eq!(record.catalog.code(), code.as_str());
     assert_eq!(record.catalog.cause(), cause);
     assert_eq!(record.fields.get("field").map(String::as_str), field);
-    record
+    *record
 }
 
 /// Trace: FR-106-AC-2, FR-106-AC-8

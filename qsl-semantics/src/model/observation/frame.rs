@@ -248,7 +248,7 @@ fn field_name<'a>(pre: &'a WireSide<'_>, object: &str, field: &'a DeclarationKey
 enum FrameStop<'a> {
     /// A wire object check 6 should already have admitted did not resolve,
     /// or a delta object's key was not a valid object identity.
-    Admission(AdmissionFailure),
+    Admission(Box<AdmissionFailure>),
     /// [`decide_frame`]'s first finding.
     Decision(Box<Decision<'a>>),
     /// A `frame.write` or `frame.redefines-link` charge the meter denied.
@@ -267,7 +267,7 @@ struct Decision<'a> {
 
 impl From<AdmissionFailure> for FrameStop<'_> {
     fn from(failure: AdmissionFailure) -> Self {
-        Self::Admission(failure)
+        Self::Admission(Box::new(failure))
     }
 }
 
@@ -411,7 +411,7 @@ pub(super) fn enforce(
         declared_deleted,
     )
     .map_err(|stop| match stop {
-        FrameStop::Admission(failure) => failure,
+        FrameStop::Admission(failure) => *failure,
         FrameStop::Decision(decision) => refuse(admission_record(
             &decision.refusal,
             decision.population,
@@ -560,16 +560,16 @@ pub(super) fn verdict(
         Err(stop) => stop,
     };
     let decision = match stop {
-        FrameStop::Admission(AdmissionFailure::Refused(record)) => {
-            return Ok(FrameVerdict::Refused(record))
-        }
-        FrameStop::Admission(AdmissionFailure::Incomplete(_)) => {
-            return Err(InternalFault::new(
-                "observation-admission",
-                "frame-check-incomplete",
-            ))
-        }
-        FrameStop::Admission(AdmissionFailure::Fault(fault)) => return Err(fault),
+        FrameStop::Admission(failure) => match *failure {
+            AdmissionFailure::Refused(record) => return Ok(FrameVerdict::Refused(*record)),
+            AdmissionFailure::Incomplete(_) => {
+                return Err(InternalFault::new(
+                    "observation-admission",
+                    "frame-check-incomplete",
+                ))
+            }
+            AdmissionFailure::Fault(fault) => return Err(fault),
+        },
         // The first denied charge ends the check with the caller's budget
         // record and no frame verdict.
         FrameStop::Denied(incomplete) => {

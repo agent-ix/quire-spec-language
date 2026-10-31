@@ -439,7 +439,7 @@ fn admission(
     assert_eq!((failure.code(), failure.cause()), (code, Some(cause)));
     assert_eq!(record.catalog.code(), code.as_str());
     assert_eq!(record.catalog.cause(), cause);
-    record.clone()
+    record.as_ref().clone()
 }
 
 /// A reference argument FR-364's `resolve` did not find present.
@@ -1202,7 +1202,7 @@ fn an_admission_fault_stays_a_fault() {
         TerminalValue::from_replay_refusal(&refusal),
         TerminalValue::Failed
     ));
-    let refused = environment_refusal(AdmissionFailure::Refused(AdmissionRecord {
+    let refused = environment_refusal(AdmissionFailure::Refused(Box::new(AdmissionRecord {
         catalog: quire_semantic_value::catalog::CatalogCode::new(
             Code::WrongSnapshot.as_str(),
             "wrong-observation",
@@ -1210,7 +1210,7 @@ fn an_admission_fault_stays_a_fault() {
         fields: BTreeMap::new(),
         path: Vec::new(),
         kernel: None,
-    }));
+    })));
     assert!(matches!(refused, ReplayRefusal::ObjectEnvironment(_)));
 }
 

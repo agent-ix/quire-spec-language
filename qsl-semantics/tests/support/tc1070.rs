@@ -148,6 +148,10 @@ pub(crate) fn document() -> Json {
 /// TC-1070's E-P reference-provenance model extension. Kept separate from
 /// `document` so the older E/L tests continue to exercise their original
 /// fixture shape.
+#[allow(
+    dead_code,
+    reason = "the E-P extension is consumed by qsl-eval acceptance tests"
+)]
 pub(crate) fn document_ep() -> Json {
     let mut doc = document();
     let optional = |mut field: Json| {

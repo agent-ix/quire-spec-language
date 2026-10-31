@@ -82,12 +82,12 @@ pub struct OverObject {
 }
 
 fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> ClauseDisposition {
-    ClauseDisposition::Admit(AdmissionFailure::Refused(AdmissionRecord {
+    ClauseDisposition::Admit(AdmissionFailure::Refused(Box::new(AdmissionRecord {
         catalog: CatalogCode::new(Code::InvalidRuntimeInput.as_str(), cause),
         fields,
         path: Vec::new(),
         kernel: None,
-    }))
+    })))
 }
 
 /// FR-330: run the temporal clause `name` over `trace`.

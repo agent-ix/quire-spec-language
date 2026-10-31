@@ -96,7 +96,7 @@ fn admission_records(
                     qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
                         .unwrap_or(qsl_foundation::diagnostic::Code::RuntimeInvariant),
                 ),
-                record.catalog.clone(),
+                record.catalog,
             ),
             AdmissionFailure::Incomplete(record) => TerminalRecord::disposition_declined(
                 item.item.request_index,
@@ -105,7 +105,7 @@ fn admission_records(
                     qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
                         .unwrap_or(qsl_foundation::diagnostic::Code::RuntimeInvariant),
                 ),
-                record.catalog.clone(),
+                record.catalog,
             ),
             AdmissionFailure::Fault(fault) => {
                 TerminalRecord::disposition_failed(item.item.request_index, fault.catalog_code())

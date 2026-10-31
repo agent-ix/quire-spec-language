@@ -2329,7 +2329,8 @@ fn admission_failure_exits_by_its_record_code_category() {
         path: Vec::new(),
         kernel: None,
     };
-    let refused = |code| ClauseDisposition::Admit(AdmissionFailure::Refused(record(code)));
+    let refused =
+        |code| ClauseDisposition::Admit(AdmissionFailure::Refused(Box::new(record(code))));
     assert_eq!(
         refused(Code::UnknownRequiredFeature).category().exit_code(),
         21
@@ -2344,7 +2345,8 @@ fn admission_failure_exits_by_its_record_code_category() {
             code.category().exit_code(),
             "{code}"
         );
-        let incomplete = ClauseDisposition::Admit(AdmissionFailure::Incomplete(record(*code)));
+        let incomplete =
+            ClauseDisposition::Admit(AdmissionFailure::Incomplete(Box::new(record(*code))));
         assert_eq!(incomplete.category().exit_code(), 22, "{code}");
     }
 }

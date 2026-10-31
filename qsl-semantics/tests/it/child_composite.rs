@@ -581,15 +581,15 @@ fn admit_order_usage(
 /// The refusal of `result`: its cause and its object, field and nested-path
 /// components.
 fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
-    let Err(AdmissionFailure::Refused(AdmissionRecord {
+    let Err(AdmissionFailure::Refused(record)) = result else {
+        panic!("a refusal, not {result:?}");
+    };
+    let AdmissionRecord {
         catalog,
         fields,
         path,
         ..
-    })) = result
-    else {
-        panic!("a refusal, not {result:?}");
-    };
+    } = *record;
     assert_eq!(catalog.code(), "invalid_runtime_input");
     let component = |name: &str| fields.get(name).cloned().unwrap_or_default();
     (
@@ -816,7 +816,7 @@ fn assert_values_limit(failure: AdmissionFailure, limit: u64) -> AdmissionRecord
     assert_eq!(field("kind"), Some("node-count-exceeded"));
     assert_eq!(field("bound"), Some(limit.to_string().as_str()));
     assert_eq!(field("actual"), Some((limit + 1).to_string().as_str()));
-    record
+    *record
 }
 
 /// FR-106-AC-16: at the exact values-per-document bound a document admits;

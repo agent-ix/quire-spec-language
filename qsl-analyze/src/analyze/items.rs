@@ -597,7 +597,7 @@ fn admission(failure: &AdmissionFailure) -> Refusal {
                 qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
                     .unwrap_or(qsl_foundation::diagnostic::Code::RuntimeInvariant),
             ),
-            record.catalog.clone(),
+            record.catalog,
         )
     };
     match failure {
@@ -712,8 +712,7 @@ mod tests {
 
     fn record(code: Code, cause: &'static str) -> AdmissionRecord {
         AdmissionRecord {
-            code,
-            cause,
+            catalog: CatalogCode::new(code.as_str(), cause),
             fields: BTreeMap::new(),
             path: Vec::new(),
             kernel: None,
@@ -735,8 +734,10 @@ mod tests {
     #[trace("TC-763", "FR-281-AC-11")]
     #[test]
     fn admission_declines_with_the_records_full_diagnostic() {
-        let refused =
-            AdmissionFailure::Refused(record(Code::InvalidRuntimeInput, "wrong-role-mapping"));
+        let refused = AdmissionFailure::Refused(Box::new(record(
+            Code::InvalidRuntimeInput,
+            "wrong-role-mapping",
+        )));
         let Refusal::Declined(cause, decline, diagnostic) = admission(&refused) else {
             panic!("expected declined");
         };
@@ -747,10 +748,10 @@ mod tests {
             "invalid_runtime_input/wrong-role-mapping"
         );
 
-        let incomplete = AdmissionFailure::Incomplete(record(
+        let incomplete = AdmissionFailure::Incomplete(Box::new(record(
             Code::UnavailableObservation,
             "missing-required-artifact",
-        ));
+        )));
         let Refusal::Declined(cause, _, diagnostic) = admission(&incomplete) else {
             panic!("expected declined");
         };
@@ -892,7 +893,10 @@ mod tests {
         );
         assert!(matches!(
             model_refusal(&ModelCheckRefusal::Admission(Box::new(
-                AdmissionFailure::Refused(record(Code::InvalidRuntimeInput, "wrong-role-mapping"))
+                AdmissionFailure::Refused(Box::new(record(
+                    Code::InvalidRuntimeInput,
+                    "wrong-role-mapping",
+                )))
             ))),
             Refusal::Declined(..)
         ));
@@ -951,7 +955,10 @@ mod tests {
         };
         assert_eq!(
             class(StatisticalRefusal::Admission(Box::new(
-                AdmissionFailure::Refused(record(Code::InvalidRuntimeInput, "wrong-role-mapping"))
+                AdmissionFailure::Refused(Box::new(record(
+                    Code::InvalidRuntimeInput,
+                    "wrong-role-mapping",
+                )))
             ))),
             Some("invalid_runtime_input/wrong-role-mapping".to_owned())
         );

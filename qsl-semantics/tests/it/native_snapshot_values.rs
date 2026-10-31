@@ -2241,7 +2241,7 @@ fn record_of<T: Debug>(
     outcome: Result<T, AdmissionFailure>,
 ) -> qsl_semantics::model::observation::AdmissionRecord {
     match outcome {
-        Err(AdmissionFailure::Refused(record)) => record,
+        Err(AdmissionFailure::Refused(record)) => *record,
         other => panic!("a refusal, not {other:?}"),
     }
 }

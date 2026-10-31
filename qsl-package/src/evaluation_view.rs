@@ -4,7 +4,6 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::marker::PhantomData;
 
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
@@ -61,7 +60,7 @@ impl<'package> AdmittedEvaluationView<'package> {
             Ok((environment, usage)) => {
                 let populations = environment.population_completeness().clone();
                 ObservationAdmission::Admitted(AdmittedProtocolObservation {
-                    _view: PhantomData,
+                    package: self.package,
                     model_selection: model.clone(),
                     identity: selected.clone(),
                     observation: Observation {
@@ -73,8 +72,8 @@ impl<'package> AdmittedEvaluationView<'package> {
                     usage,
                 })
             }
-            Err(AdmissionFailure::Refused(record)) => ObservationAdmission::Refused(record),
-            Err(AdmissionFailure::Incomplete(record)) => ObservationAdmission::Incomplete(record),
+            Err(AdmissionFailure::Refused(record)) => ObservationAdmission::Refused(*record),
+            Err(AdmissionFailure::Incomplete(record)) => ObservationAdmission::Incomplete(*record),
             Err(AdmissionFailure::Fault(fault)) => ObservationAdmission::Fault(fault),
         }
     }
@@ -102,7 +101,7 @@ impl<'package> AdmittedEvaluationView<'package> {
 /// ```
 #[derive(Clone, Debug)]
 pub struct AdmittedProtocolObservation<'view> {
-    _view: PhantomData<&'view CheckedPackage>,
+    package: &'view CheckedPackage,
     model_selection: DomainPackageRef,
     identity: DocumentRef,
     observation: Observation,
@@ -110,6 +109,12 @@ pub struct AdmittedProtocolObservation<'view> {
 }
 
 impl AdmittedProtocolObservation<'_> {
+    /// Whether this authority was admitted by the exact in-process package
+    /// instance now evaluating it.
+    pub fn is_for_package(&self, package: &CheckedPackage) -> bool {
+        core::ptr::eq(self.package, package)
+    }
+
     /// FR-106 admission usage, separate from S6a evaluation charges.
     pub fn usage(&self) -> AdmissionUsage {
         self.usage

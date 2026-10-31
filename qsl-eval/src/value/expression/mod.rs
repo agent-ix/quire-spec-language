@@ -69,8 +69,8 @@ fn protocol_reference_failure(
     failure: qsl_semantics::model::observation::AdmissionFailure,
 ) -> CallFailure {
     let (record, incomplete) = match failure {
-        qsl_semantics::model::observation::AdmissionFailure::Refused(record) => (record, false),
-        qsl_semantics::model::observation::AdmissionFailure::Incomplete(record) => (record, true),
+        qsl_semantics::model::observation::AdmissionFailure::Refused(record) => (*record, false),
+        qsl_semantics::model::observation::AdmissionFailure::Incomplete(record) => (*record, true),
         qsl_semantics::model::observation::AdmissionFailure::Fault(fault) => {
             return CallFailure::Fault(fault)
         }
@@ -1437,6 +1437,46 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             )));
                         }
                     }
+                    for (path, reference) in &occurrences {
+                        let Some(metadata) = supplied
+                            .references
+                            .iter()
+                            .find(|metadata| metadata.path == *path)
+                        else {
+                            return Err(CallFailure::Fault(InternalFault::new(
+                                "FR-390",
+                                "reference-occurrence-metadata-is-matched",
+                            )));
+                        };
+                        let Some((declaration, members)) =
+                            self.graph().protocol_population_types(&metadata.population)
+                        else {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key.clone()),
+                            ));
+                        };
+                        if declaration.package != reference.object_type().original().package() {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key.clone()),
+                            ));
+                        }
+                        if !members.iter().any(|member| {
+                            self.graph()
+                                .scope()
+                                .types()
+                                .conforms(reference.object_type().clone(), member.clone())
+                        }) {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_runtime_input",
+                                "wrong-value-kind",
+                                CallAdmissionLocus::Binder(key.clone()),
+                            ));
+                        }
+                    }
                     if !occurrences.is_empty() {
                         let Some(observation_admission) = supply.observation else {
                             return Err(CallFailure::Admission(Box::new(
@@ -1487,6 +1527,13 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             .model_selections()
                             .contains(observation.model_selection())
                         {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key),
+                            ));
+                        }
+                        if !observation.is_for_package(self) {
                             return Err(protocol_slot::resolve::refused(
                                 "invalid_model_binding",
                                 "wrong-model-selection",
