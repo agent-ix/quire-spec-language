@@ -36,14 +36,14 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::protocol::ProtocolTransition;
-use qsl_foundation::diagnostic::{StageFailure, Staged};
+use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample};
 use qsl_replay::{
     DeclineCode, IncompleteCause, ModelCheckRecord, OutcomeItem, ProofRefusalCause, TerminalRecord,
-    TerminalValue, UndefinedEvaluation,
+    TerminalValue, UnavailabilityCause, UndefinedEvaluation,
 };
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
@@ -247,7 +247,7 @@ pub struct AnalyzeRequest<'a> {
 #[derive(Debug)]
 pub struct AnalyzeOutcome {
     /// The per-item outcomes.
-    pub records: Vec<AnalyzeRecord>,
+    pub records: Vec<TerminalRecord>,
 }
 
 /// Why analyze could not admit a shared subject binding.
@@ -663,8 +663,30 @@ pub fn analyze(
     ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
 
-    let records = analyze_items(engines, request.items, cancel);
+    let records = terminal_records(analyze_items(engines, request.items, cancel));
     Ok(Staged::new(AnalyzeOutcome { records }))
+}
+
+pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {
+    records
+        .into_iter()
+        .map(|record| match record.settlement {
+            Settlement::Terminal(terminal) => *terminal,
+            Settlement::Disposed(disposed) => {
+                let value = match disposed.kind {
+                    DispositionKind::RequiresBound | DispositionKind::Unsupported => {
+                        TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+                    }
+                    DispositionKind::InvalidRequest => TerminalValue::Declined {
+                        cause: ProofRefusalCause::InvalidInput,
+                        code: DeclineCode::Qsl(Code::InvalidRequest),
+                    },
+                };
+                let diagnostic = disposed.diagnostic.map(|diagnostic| diagnostic.code);
+                TerminalRecord::from_value(record.request_index, value).with_diagnostic(diagnostic)
+            }
+        })
+        .collect()
 }
 
 fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeRecord {
