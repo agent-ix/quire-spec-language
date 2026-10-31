@@ -1,9 +1,9 @@
 ---
 id: SR-1933002
-title: "EARS review for FR-493 and the NFR-009-AC-3 change"
+title: "EARS review for FR-493 and NFR-009-AC-3"
 type: SpecReview
 analysis: ears-conformance
-scope: "Normative statements added in FR-493; NFR-009-AC-3"
+scope: "Normative statements added or changed in FR-493 and NFR-009-AC-3"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-493
@@ -14,10 +14,11 @@ relationships:
 
 ## Summary
 
-`quire validate` over spec/**/*.md reports no EARS or acceptance-criterion grammar warning for FR-493 or NFR-009-AC-3. Each Behavior bullet names the root QSL package or QSL as its subject and states one absence or one refusal.
+The Behavior bullets in FR-493 each name QSL or the root package as subject and state one absence, one retention or one refusal. The new bullet on keeping `formal_source`, `native_model` and `composed` modules states one obligation and one order.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No EARS grammar issue in the scoped statements; the bullet on removing retired requirements names the requirement as subject and states a single obligation. | FR-493 |
+| FND-001 | low | The bullet "QSL SHALL keep ... this requirement neither deletes nor forbids them" mixes an obligation with a disclaimer; acceptable, but the disclaimer carries no testable content. | FR-493 Behavior |
+| FND-002 | low | NFR-009-AC-3 is two conditions (overflow, non-limit denial) in one criterion; both are tested by separate TC-137 controls C1 and C2. | NFR-009-AC-3 |

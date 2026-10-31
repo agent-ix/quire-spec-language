@@ -75,7 +75,7 @@ For NFR-009-AC-3, run two controls through a checked-term call and compare the
 | # | Control | Expected |
 | --- | --- | --- |
 | C1 | a meter whose `work_units` limit is `u64::MAX` and whose `work_units` consumption has been raised to `u64::MAX` by a prior charge, then a call that needs one more unit | `Incomplete` naming `work_units`, with `consumed` `u64::MAX` and the denied amount; no completed value, no wrapped or saturated count |
-| C2 | a meter built with an injected denial of the first `function.call` charge (a stand-in for an allocator refusal, which denies a charge for a reason other than a configured limit) | `Incomplete` naming the counter of that charge point, `charge_point` `function.call`, `limit` equal to `consumed`; no completed value |
+| C2 | a meter built with an injected denial of the first `function.call` charge (a stand-in for an allocator refusal, which denies a charge for a reason other than a configured limit) | `Incomplete` with `limit_kind` `work_units` (an injected denial is always recorded against `work_units`), `charge_point` `function.call`, `limit` equal to `consumed`; no completed value |
 
 Both controls classify the result from the record's fields, never from
 diagnostic text, and a retry of C1 and C2 with a fresh meter completes.

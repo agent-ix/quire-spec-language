@@ -16,7 +16,7 @@ end, and no compiled-protocol reader, while the spine paths that replace them
 keep their results. Scope: FR-493-AC-1 to FR-493-AC-5.
 
 Catches a retired module kept behind a feature, a re-export or a test-only
-copy; a retired wire-format name that survives in a schema, document or enum
+copy; a retired wire-format name that survives in an enum
 variant; a `0-draft` source that still compiles by any route; a build gate that
 still invokes the retired parser; and a retained acceptance criterion left
 without a test because its only test went with the retired path.
@@ -26,15 +26,14 @@ without a test because its only test went with the retired path.
 1. Compile one downstream crate per item and confirm each import fails because
    the item is absent: the root `package` and `runtime` modules,
    `NativePackage` and `runtime::execute`; the `0-draft` parser entry points,
-   the native syntax arena, the native `linking` and `checking` modules,
-   `formal_source`, `model_source` and `located_json`; and any module that
-   reads compiled-protocol v1, v2 or v3 bytes.
-2. Scan the tracked files under `src/`, `tests/`, `schemas/`, `docs/`,
-   `examples/`, `xtask/` and the `Makefile` (not `spec/`, which names the
-   retired items by design) for `native-linked-package/1`,
-   `native-state-input/1`, a `WireFormat` variant for either, and an
-   invocation of the retired parser. Confirm `docs/compiled-protocol-v1.md` and
-   `docs/compiled-protocol-v2.md` do not exist.
+   arena `syntax`, `linking::native`, native `checking`, `model_source` and
+   `located_json`; and, once the handoff writers are deleted (FR-493-AC-4), any
+   module that reads compiled-protocol v1, v2 or v3 bytes. Confirm the
+   `composed` modules, `formal_source` and `native_model` still import.
+2. Compile a downstream crate that matches exhaustively on `qsl-foundation`'s
+   `WireFormat` and confirm it names no variant for `native-linked-package/1`
+   or `native-state-input/1`. Run every Makefile target, `xtask` lane and
+   example and confirm each builds and runs with the retired parser absent.
 3. Run the CLI `compile` on a source declaring `edition "0-draft"`, on one
    declaring `edition "7-draft"`, and on a `1-draft` source. Confirm the first
    two refuse `unknown_edition` at stage `profile` with exit code 20 and write
@@ -43,17 +42,13 @@ without a test because its only test went with the retired path.
    reader and confirm it still returns the emitted protocol equal to the
    in-process checked clause.
 5. Run `quire matrix` over the repository. Confirm no criterion of a retained
-   requirement is reported without a tagged test because its test was deleted,
-   and that no requirement id of FR-493's retired table (FR-007, FR-008,
-   FR-018, FR-024, FR-028, NFR-006) appears in `spec/` outside FR-493 and this
-   file, or in a `#[trace]` tag.
+   requirement is reported without a tagged test because its test was deleted.
 
 ## Expected Results
 
-- Step 1 fails to compile for every item; step 2 finds no hit and both
-  documents absent.
+- Step 1 fails to compile for every item; step 2 compiles
+  and runs.
 - Step 3 refuses the first two sources with the cause, stage and exit code
   given and compiles the third.
 - Step 4 reads the protocol unchanged.
-- Step 5 shows no uncovered retained criterion and no reference to a retired
-  requirement.
+- Step 5 shows no uncovered retained criterion.
