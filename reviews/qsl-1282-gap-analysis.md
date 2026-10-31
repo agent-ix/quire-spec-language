@@ -29,3 +29,9 @@ FR-101-AC-5 clauses and their tests:
 ## Verdict
 
 One medium gap, the same defect as SR-1918001 FND-001. The other AC-5 clauses each have a test that can fail. TC-474's deleted `wrong_digest` case tested the retired comparison, so deleting it loses no required behaviour.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | af6aaeefd adds `assert_eq!(sampled.steps[0].ordinal, 1)` to the TC-454 step 7 round-trip test and rewords its doc and inline comments to describe the ordinal. The key-`"2"` successor is second in canonical key order, so 1 is the right expected value. |

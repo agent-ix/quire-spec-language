@@ -30,3 +30,9 @@ One medium test gap. The production code is correct.
 - `FindingsCheck` still means something. It compares depth and the recomputed findings of the state that replay reached by following transition and ordinal. It also refuses a recorded entry left over at `finish`. Only the recorded `StateFindings.state` digest is dropped from the comparison, as FR-101-AC-5 requires.
 - `simulation::Step` is constructed only in `sample.rs` and in this test file, so no other producer is left without an ordinal.
 - No leftover `KeyMismatch` or `current_digest` remains in replay.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | af6aaeefd adds `assert_eq!(sampled.steps[0].ordinal, 1)` to the TC-454 step 7 round-trip test and rewords its doc and inline comments to describe the ordinal. The key-`"2"` successor is second in canonical key order, so 1 is the right expected value. |
