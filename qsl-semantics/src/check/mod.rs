@@ -165,6 +165,7 @@ pub use task_set::{
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
+pub mod wire_id;
 pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
     CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, KeyedCatalogClass,

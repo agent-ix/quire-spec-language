@@ -639,11 +639,14 @@ fn a_presence_reads_the_place_template_at_its_owner() {
     );
     let places = timed(&wire, "clock_place");
     assert_eq!(places.len(), 2);
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire).unwrap();
     for place in &places {
+        // The held timed graph is the emitter's, in structural ids.
+        let id = crate::emit::checked_node_id_of(&graph.key_of_value(&place["node_id"]).unwrap());
         let node = admitted_graph(&wire)
             .0
             .into_iter()
-            .find(|node| serde_json::to_value(&node.node_id).unwrap() == place["node_id"])
+            .find(|node| node.node_id == id)
             .expect("a node");
         assert_eq!(
             crate::emit::timed_model_node_id(&node).expect("a key"),
@@ -1007,17 +1010,20 @@ fn a_postcondition_presence_requirement_is_a_presence_read_with_no_clause_node()
     }
     let v = place_of(&wire, "v");
     let (_, without) = emitted(&dropping_document(), "");
-    let reads = |wire: &Value| -> Vec<Value> {
+    // Two packages: their reads compare structurally (FR-322).
+    let reads = |wire: &Value| -> Vec<(Value, Value)> {
+        let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire).unwrap();
         nodes(wire)
             .iter()
             .filter(|node| node["semantic_form"] == "presence_read")
-            .cloned()
+            .map(|node| (graph.structural_value(node).unwrap(), node.clone()))
             .collect()
     };
-    let before = reads(&without);
+    let before: Vec<Value> = reads(&without).into_iter().map(|(key, _)| key).collect();
     let added: Vec<Value> = reads(&wire)
         .into_iter()
-        .filter(|read| !before.contains(read))
+        .filter(|(key, _)| !before.contains(key))
+        .map(|(_, read)| read)
         .collect();
     let [read] = &added[..] else {
         panic!("one presence read: {added:?}");

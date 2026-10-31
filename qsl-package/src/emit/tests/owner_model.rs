@@ -102,10 +102,11 @@ pub(super) fn verdict(lowered: &Lowered, envelope: &Value) -> String {
 /// targets plus `owner`, once each in ascending structural-key order (QSpec FR-464
 /// "dependencies").
 pub(super) fn depend_on(envelope: &mut Value, position: usize, owner: &Value) {
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(envelope).unwrap();
     let node = &mut envelope["semantic_graph"]["nodes"][position];
     let mut found = vec![owner.clone()];
     targets(&node["body"], &mut found);
-    found.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
+    found.sort_by_key(|value| graph.key_of_value(value).unwrap());
     found.dedup();
     node["dependencies"] = Value::Array(found);
 }
@@ -127,9 +128,8 @@ fn a_clause_names_the_object_type_its_over_input_references() {
 
     let mut expected = vec![owner["node_id"].clone()];
     targets(&clause["body"], &mut expected);
-    expected.sort_by_key(|id| {
-        qsl_foundation::node_wire::node_key_from_json(id).expect("a structural dependency")
-    });
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire).unwrap();
+    expected.sort_by_key(|id| graph.key_of_value(id).expect("a structural dependency"));
     expected.dedup();
     assert_eq!(clause["dependencies"], Value::Array(expected));
 

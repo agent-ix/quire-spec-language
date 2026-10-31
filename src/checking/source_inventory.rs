@@ -116,18 +116,13 @@ fn stop_reason(types: &TypeReport<'_, '_>) -> Option<SourceInventoryIncompleteRe
         )
 }
 
-/// The wire identity of the checked node `key` names, through the structural
-/// node wire form.
+/// The identity of the checked node `key`, in its structural form: a source
+/// inventory is read from the checked graph, before any package graph (and
+/// so any operand index) exists.
 fn checked_node_id(
     key: &quire_exact::NodeKey,
 ) -> Result<CheckedNodeId, SourceInventoryIncompleteReason> {
-    let failed = |cause: String| SourceInventoryIncompleteReason::RequestFailed {
-        owner: SourceInventoryOwner::Qsl,
-        cause: cause.into(),
-    };
-    let text =
-        qsl_foundation::node_wire::node_key_to_text(key).map_err(|e| failed(e.to_string()))?;
-    serde_json::from_str(&text).map_err(|e| failed(e.to_string()))
+    Ok(qsl_semantics::check::wire_id::structural_id(key))
 }
 
 /// One checked unit: the selected source reference and formal identity, with

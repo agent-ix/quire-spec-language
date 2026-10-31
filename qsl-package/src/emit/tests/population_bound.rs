@@ -219,11 +219,15 @@ fn an_unbounded_walked_population_keeps_its_member_and_node_identity() {
     assert_eq!(population_nodes(&unbounded.wire), Vec::<&Value>::new());
     // The node id TC-1047 row 1 records is the one of the same clause over
     // the fixture without the extra types and population.
+    // FR-322: across two documents only the structural keys compare.
     let plain = super::reachability::lower(NO_LOOP);
-    assert_eq!(
-        applications(&unbounded.wire, "quire.op.model.reaches")[0]["node_id"],
-        applications(&plain.wire, "quire.op.model.reaches")[0]["node_id"],
-    );
+    let key = |wire: &Value| {
+        qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+            .unwrap()
+            .key_of_value(&applications(wire, "quire.op.model.reaches")[0]["node_id"])
+            .unwrap()
+    };
+    assert_eq!(key(&unbounded.wire), key(&plain.wire));
 }
 
 /// TC-1054 row 8: two reachabilities over one population
@@ -381,9 +385,8 @@ fn selections(
     applications(&lowered.wire, "quire.op.model.reaches")
         .into_iter()
         .map(|reach| {
-            let id = crate::emit::checked_node_id_of(
-                &qsl_foundation::node_wire::node_key_from_json(&reach["node_id"]).unwrap(),
-            );
+            let id: quire_contract_model::CheckedNodeId =
+                serde_json::from_str(&reach["node_id"].to_string()).unwrap();
             let selector = ir
                 .reaches_population(&id)
                 .unwrap_or_else(|error| {

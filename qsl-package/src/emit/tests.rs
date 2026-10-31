@@ -13,6 +13,7 @@ use qsl_forms::{
     FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
+use qsl_semantics::check::wire_id::WireGraph;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
@@ -513,14 +514,15 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
         })
         .collect();
     let all: Vec<&Candidate<'_>> = candidates.iter().collect();
-    graph_order(&all)
+    let mut nodes: Vec<_> = graph_order(&all)
         .into_iter()
-        .map(|candidate| {
-            let bytes = quire_canonical::to_vec(
-                &candidate.wire_node().unwrap(),
-                crate::checked::EMIT_LIMITS,
-            )
-            .unwrap();
+        .map(|candidate| candidate.wire_node().unwrap())
+        .collect();
+    write_index_segments(&mut nodes, &mut [], &mut []).expect("every operand is written");
+    nodes
+        .iter()
+        .map(|node| {
+            let bytes = quire_canonical::to_vec(node, crate::checked::EMIT_LIMITS).unwrap();
             serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
         })
         .collect()
@@ -549,6 +551,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
             .filter_map(|node| node.recursion().map(|group| (node.key(), group.ordinal())))
             .collect();
         let nodes = written_nodes(&package);
+        let graph = WireGraph::of_node_values(&nodes).unwrap();
         let members: Vec<(usize, &Value)> = nodes
             .iter()
             .enumerate()
@@ -558,7 +561,8 @@ fn recursion_group_members_are_written_in_ordinal_order() {
         assert_eq!(members[2].0 - members[0].0, 2, "the members are contiguous");
         for (ordinal, (_, member)) in members.iter().enumerate() {
             assert_eq!(
-                expected[&qsl_foundation::node_wire::node_key_from_json(&member["node_id"])
+                expected[&graph
+                    .key_of_value(&member["node_id"])
                     .expect("a structural recursion member id")],
                 ordinal
             );
@@ -573,13 +577,14 @@ fn recursion_group_members_are_written_in_ordinal_order() {
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
 /// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
-fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
-    fn walk(term: &Value, found: &mut BTreeSet<NodeKey>) {
+fn rebuilt_dependencies(graph: &WireGraph, node: &Value) -> Vec<Value> {
+    fn walk(graph: &WireGraph, term: &Value, found: &mut BTreeSet<NodeKey>) {
         match term {
             Value::Object(members) => {
                 if members.get("term") == Some(&json!("reference")) {
                     found.insert(
-                        qsl_foundation::node_wire::node_key_from_json(&members["target"])
+                        graph
+                            .key_of_value(&members["target"])
                             .expect("a structural reference target"),
                     );
                 }
@@ -589,29 +594,27 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                         .and_then(|operation| operation.get("member"))
                         .and_then(|member| member.get(key))
                     {
-                        found.insert(
-                            qsl_foundation::node_wire::node_key_from_json(named)
-                                .expect("a structural member key"),
-                        );
+                        found.insert(graph.key_of_value(named).expect("a structural member key"));
                     }
                 }
-                members.values().for_each(|value| walk(value, found));
+                members.values().for_each(|value| walk(graph, value, found));
             }
-            Value::Array(items) => items.iter().for_each(|item| walk(item, found)),
+            Value::Array(items) => items.iter().for_each(|item| walk(graph, item, found)),
             _ => {}
         }
     }
     let mut found = BTreeSet::new();
-    walk(&node["body"], &mut found);
+    walk(graph, &node["body"], &mut found);
     if node["node_tag"] == "bounded_domain" {
         found.insert(
-            qsl_foundation::node_wire::node_key_from_json(&node["semantic_type"])
+            graph
+                .key_of_value(&node["semantic_type"])
                 .expect("a structural semantic type"),
         );
     }
     found
         .into_iter()
-        .map(|key| qsl_foundation::node_wire::node_key_to_json(&key).expect("a structural key"))
+        .map(|key| graph.wire_value(&key).expect("a graph node"))
         .collect()
 }
 
@@ -623,10 +626,12 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
 #[test]
 fn dependencies_are_the_lists_the_rules_rebuild() {
     for package in tc_416_packages() {
-        for node in written_nodes(&package) {
+        let nodes = written_nodes(&package);
+        let graph = WireGraph::of_node_values(&nodes).unwrap();
+        for node in nodes.iter() {
             assert_eq!(
                 node["dependencies"],
-                json!(rebuilt_dependencies(&node)),
+                json!(rebuilt_dependencies(&graph, node)),
                 "{node}"
             );
         }
@@ -636,8 +641,8 @@ fn dependencies_are_the_lists_the_rules_rebuild() {
         .iter()
         .filter(|node| node.get("recursion_group").is_some())
         .collect();
-    let key =
-        |id: &Value| qsl_foundation::node_wire::node_key_from_json(id).expect("a structural key");
+    let graph = WireGraph::of_node_values(&nodes).unwrap();
+    let key = |id: &Value| graph.key_of_value(id).expect("a structural key");
     let ids: BTreeSet<NodeKey> = members.iter().map(|node| key(&node["node_id"])).collect();
     let mut next = BTreeMap::new();
     for member in &members {
@@ -670,12 +675,14 @@ fn every_emitted_node_has_its_recorded_occurrences() {
         .map(|(key, origin, _)| (key.to_string(), origin.role().to_string(), origin.ordinal()))
         .collect();
     let mut literal_expressions = 0;
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire).unwrap();
     for node in nodes(&wire) {
         let occurrences = node["occurrences"].as_array().unwrap();
         assert!(!occurrences.is_empty(), "{node}");
         for occurrence in occurrences {
             let key = (
-                qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                graph
+                    .key_of_value(&node["node_id"])
                     .expect("an emitted node id")
                     .to_string(),
                 occurrence["role"].as_str().unwrap().to_owned(),
@@ -847,21 +854,26 @@ fn a_declaration_without_its_occurrence_is_omitted() {
         .nodes()
         .find(|node| node.semantic_form() == "tuple")
         .expect("Pair's node");
-    let candidates: BTreeMap<CheckedNodeId, Candidate<'_>> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| {
-            let mut occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            if node.key() == point.key() {
-                occurrences.retain(|(occurrence, _)| {
-                    occurrence.role != CheckedOccurrenceRole::Declaration
-                });
-            }
-            let candidate = Candidate::of(node, occurrences).expect("a candidate");
-            (candidate.id.clone(), candidate)
-        })
-        .collect();
-    let omitted = omissions(&candidates, graph.source(), &ir_decodes, &BTreeSet::new());
+    let candidates = Candidates::new(
+        graph
+            .semantic_graph()
+            .nodes()
+            .map(|node| {
+                let mut occurrences = recorded.remove(&node.key()).unwrap_or_default();
+                if node.key() == point.key() {
+                    occurrences.retain(|(occurrence, _)| {
+                        occurrence.role != CheckedOccurrenceRole::Declaration
+                    });
+                }
+                Candidate::of(node, occurrences).expect("a candidate")
+            })
+            .collect(),
+    );
+    let omitted: Vec<OmittedNode> =
+        omissions(&candidates, graph.source(), &ir_decodes, &HashSet::new())
+            .into_iter()
+            .map(|(_, omission)| omission)
+            .collect();
     assert_eq!(
         omitted,
         [OmittedNode {
@@ -1079,7 +1091,7 @@ fn enum_declaration_and_member_nodes_are_written() {
     assert_eq!(exports.get("keep"), Some(&keep_key.to_string()));
     let wire = wire(&emission);
     let declaration = declared(&wire, "Status");
-    assert_eq!(declaration["node_id"], node_id_of(&status));
+    assert_eq!(declaration["node_id"], node_id_of(&wire, &status));
     assert_eq!(declaration["node_tag"], "scalar_type");
     assert_eq!(declaration["semantic_form"], "enum");
     assert_eq!(declaration["semantic_type"], declaration["node_id"]);
@@ -1252,6 +1264,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
+            }
+            Err(EmitRefusal::OperandNotInGraph { .. }) => {
+                panic!("every operand of a written node is a graph node")
             }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
@@ -3138,9 +3153,12 @@ fn only_node<'w>(wire: &'w Value, semantic_form: &str) -> &'w Value {
     node
 }
 
-/// `key` in the structural node-id wire shape.
-fn node_id_of(key: &quire_exact::NodeKey) -> Value {
-    qsl_foundation::node_wire::node_key_to_json(key).expect("an admitted node key")
+/// `key`'s wire node id in `wire`, each operand an index segment.
+fn node_id_of(wire: &Value, key: &quire_exact::NodeKey) -> Value {
+    WireGraph::of_package_value(wire)
+        .unwrap()
+        .wire_value(key)
+        .expect("an admitted node key")
 }
 
 /// TC-513 step 1/FR-114-AC-1: the checked attempt holds the identities of
@@ -3165,8 +3183,14 @@ fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     assert_eq!(emitted.clauses.len(), 1);
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
-    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
+    assert_eq!(
+        anchor["node_id"],
+        node_id_of(&emitted.wire, &emitted.attempt.anchor)
+    );
+    assert_eq!(
+        frame["node_id"],
+        node_id_of(&emitted.wire, &emitted.attempt.frame)
+    );
     assert_frame_modifies_version_number(frame);
     assert_eq!(emitted.frame_records, 1);
 }
@@ -3202,8 +3226,14 @@ fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
     assert!(emitted.clauses.is_empty());
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
-    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
+    assert_eq!(
+        anchor["node_id"],
+        node_id_of(&emitted.wire, &emitted.attempt.anchor)
+    );
+    assert_eq!(
+        frame["node_id"],
+        node_id_of(&emitted.wire, &emitted.attempt.frame)
+    );
     assert_frame_modifies_version_number(frame);
     assert_eq!(emitted.frame_records, 1);
 }
@@ -3222,8 +3252,14 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
     );
     let anchor = only_node(&emitted.wire, "operation_anchor");
     let frame = only_node(&emitted.wire, "frame");
-    assert_eq!(anchor["node_id"], node_id_of(&emitted.attempt.anchor));
-    assert_eq!(frame["node_id"], node_id_of(&emitted.attempt.frame));
+    assert_eq!(
+        anchor["node_id"],
+        node_id_of(&emitted.wire, &emitted.attempt.anchor)
+    );
+    assert_eq!(
+        frame["node_id"],
+        node_id_of(&emitted.wire, &emitted.attempt.frame)
+    );
     // The context both nodes name is `ConfigVersion`'s own object node:
     // the node the same unit binds over the package without `Sub`, where no
     // other object type exists for it to be.
