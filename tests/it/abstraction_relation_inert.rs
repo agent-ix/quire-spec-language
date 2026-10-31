@@ -245,8 +245,8 @@ fn a_source_relation_is_emitted_and_unbound_items_name_the_population() {
         })
         .map(|(key, _)| key.clone())
         .expect("the unit has a value-validity item");
-    let [Ok(bound)] = export_bindings(&package, std::slice::from_ref(&function_item)).as_slice()
-    else {
+    let function_export = export_bindings(&package, std::slice::from_ref(&function_item));
+    let [Ok(bound)] = function_export.as_slice() else {
         panic!("the object-reading item is bound");
     };
     assert_eq!(bound.bindings.len(), 1);
@@ -260,9 +260,8 @@ fn a_source_relation_is_emitted_and_unbound_items_name_the_population() {
         .state_clause("ParentOrder")
         .expect("the population-ranging clause");
     let population_item = OccurrenceKey::new(clause.identity(), clause.claim().clone());
-    let [Err(ExportRefusal::Unbound { elements, .. })] =
-        export_bindings(&package, std::slice::from_ref(&population_item)).as_slice()
-    else {
+    let population_export = export_bindings(&package, std::slice::from_ref(&population_item));
+    let [Err(ExportRefusal::Unbound { elements, .. })] = population_export.as_slice() else {
         panic!("the population-reading item refuses with its unbound element");
     };
     assert_eq!(elements.len(), 1);
