@@ -68,7 +68,7 @@ delivers (ADR-030 D-8 O-6):
    in bytes of the reservation that failed. It is not a limit: it names no
    bound and no setting. QSL SHALL NOT report it as a limit outcome, a
    malformed value or malformed input. Domain package intake (FR-056)
-   and package identity (FR-261) report this one outcome.
+   and the observation document reader (FR-261) report this one outcome.
 
 ## Acceptance Criteria
 
@@ -78,7 +78,7 @@ delivers (ADR-030 D-8 O-6):
 | FR-259-AC-2 | **RETIRED (node preimages are deleted).** A node key is the structural triple `{package, path, ordinal}`; no declaration preimage is encoded, so no identity byte limit applies to one. | Test (TC-728), retired |
 | FR-259-AC-3 | On a thread with a 512 KiB stack, the simulation state key QSL mints for a 100,000-long recursive list value, and the intake read of a 100,000-deep JSON package document, each equal the result on a thread with an 8 MiB stack, and the state key equals the RFC 8785 text of the state. | Test (TC-729) |
 | FR-259-AC-4 | **RETIRED (node preimages are deleted).** A node key is the structural triple `{package, path, ordinal}`; there is no node or package identity preimage whose nesting depth could be measured. | Test (TC-728), retired |
-| FR-259-AC-5 | An allocation failure of 4096 requested bytes from `quire-canonical`'s reader or encoder refuses `resource_exhausted`/`allocation-failed` carrying 4096 at domain package intake and at package identity, and none of them reports a limit, a malformed value or malformed input. | Test (TC-729) |
+| FR-259-AC-5 | An allocation failure of 4096 requested bytes from `quire-canonical`'s reader or encoder refuses `resource_exhausted`/`allocation-failed` carrying 4096 at domain package intake and at the observation document reader, and none of them reports a limit, a malformed value or malformed input. | Test (TC-729) |
 
 ## Dependencies
 

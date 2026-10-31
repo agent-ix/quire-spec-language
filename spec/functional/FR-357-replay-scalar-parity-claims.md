@@ -33,8 +33,8 @@ request the default refuses (TC-904).
 - Operator level: the original proving context as an FR-071 replay request
   (the call site's package reference, dependencies and byte
   provision; the enclosing function, which may be non-`Boolean`, as its
-  `function` replay target (QSpec FR-323); the opaque `ObligationIdentity` the caller minted from
-  the owning obligation's preimage as its `obligation_identity`, which the claim carries unchanged; its `source` is not read); the
+  `function` replay target (QSpec FR-323); the `ObligationIdentity` of the owning obligation, the structural triple
+  (node, model, ordinal), as its `obligation_identity`, which the claim carries unchanged; its `source` is not read); the
   scalar node the catalog operator is tied to, with its occurrence key and the
   `obligation_kind`; the operator (`add`, `subtract`, `multiply` or `negate`) with its ordered
   decoded `i64` operands, each with its operand identity (`GraphChild` or
@@ -55,8 +55,8 @@ request the default refuses (TC-904).
   claim inputs, selecting a function whose declared result is not
   `Boolean`, whose `source` binds that function's declared parameters and
   nothing else, whose occurrence key is the function's `declaration`
-  occurrence and whose `obligation_identity` is the one `call_site` minted
-  from FR-484's preimage; and a
+  occurrence and whose `obligation_identity` is the structural triple `call_site`
+  gives (the function's node, no model, ordinal 0); and a
   `ValueClaim` holding the generated outcome (a value, an out-of-range
   outcome, `Undefined` or `OtherRefusal`, a refusal other than for range)
   and nothing else about the artifact.
