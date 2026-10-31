@@ -296,7 +296,7 @@ const FUNCTION_PARAMETERS: &str = "parameters";
 /// Nodes are held by hash, so a lookup costs a key's hash and, for the
 /// same stored key, a pointer comparison, whatever its depth. Lowering adds
 /// nodes unranked and ranks the ascending key order [`Self::nodes`] reads
-/// once, when it finishes ([`super::key_order`]): a deep key chain is never
+/// once, when it finishes (`super::key_order`): a deep key chain is never
 /// compared position by position.
 #[derive(Clone, Default)]
 pub struct SemanticGraph {
@@ -5391,6 +5391,13 @@ fn strongly_connected_metered(
     Ok(components)
 }
 
+/// Whether `content` is a `compound_unit` scalar type. The form is the FR-322
+/// wire spelling the node was built with.
+#[ix_trace_rs::string_edge]
+fn is_compound_unit(content: &NodeContent) -> bool {
+    content.semantic_form == "compound_unit"
+}
+
 /// The operand segments of a derived node's path (QSpec FR-322: `[node_tag,
 /// semantic_form, ...operands]`, each operand a string or an operand node's
 /// key). A `reference`, `option` or collection type names its target; a
@@ -5474,7 +5481,7 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 _ => None,
             })
             .collect(),
-        NodeTag::ScalarType if content.semantic_form == "compound_unit" => {
+        NodeTag::ScalarType if is_compound_unit(content) => {
             // QSpec FR-322: one `(unit node, exponent)` pair per term, in
             // ascending root-unit node key.
             let mut terms: Vec<(&NodeKey, String)> = Vec::new();

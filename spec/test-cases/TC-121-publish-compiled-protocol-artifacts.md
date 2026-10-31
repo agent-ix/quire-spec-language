@@ -29,6 +29,14 @@ clause, model, contract, clock and instance role an explicitly authored identity
 do not substitute model ownership for native clause ownership. Concrete
 observations belong only to the later consumer fixture.
 
+**M-6d disposition:** TC-121 is retired with FR-042. Its procedure is retained
+as historical migration evidence and is not a required current test run or
+proof of the spine package contract. Current package publication/readback is
+covered by FR-027/FR-264/FR-383 and TC-1061, TC-1062, TC-1063 and TC-1210.
+The independent FR-043–FR-053 behavior disposition is recorded in FR-041;
+retiring this old artifact-path case does not retire those semantics. Retained
+behaviors without named successors are tracked by QSL-1380.
+
 ## Test Procedure
 
 1. Admit the complete source inventory through the real edition parser,

@@ -19,7 +19,8 @@ use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, value_item, AnalyzeItem, AnalyzeRecord, DispositionKind, Engine, Engines, Settlement,
+    analyze_items, value_item, AnalyzeItem, AnalyzeRecord, DispositionKind, Engine, Engines,
+    Settlement,
 };
 use qsl_analyze::value_check::{manifest, ValueRequest};
 use qsl_foundation::RequestIndex;
@@ -405,7 +406,7 @@ fn run_in(
         max_cases: ask.max_cases.and_then(NonZeroU64::new),
         reported: ask.reported,
     });
-    analyze(engines, vec![value_item(index(), request)], &guarded()).remove(0)
+    analyze_items(engines, vec![value_item(index(), request)], &guarded()).remove(0)
 }
 
 fn run(
@@ -850,7 +851,7 @@ fn an_unsatisfiable_domain_proves_no_case_and_is_vacuous_not_proved() {
         target.parameters()[0].domain(),
         ParameterDomain::Integers(None)
     ));
-    let record = analyze(
+    let record = analyze_items(
         &Engines::qsl().unwrap(),
         vec![value_item(
             index(),
@@ -1075,7 +1076,7 @@ fn a_huge_domain_and_a_huge_budget_are_enumerated_lazily() {
         max_cases: NonZeroU64::new(u64::MAX),
         reported: None,
     });
-    let huge = analyze(
+    let huge = analyze_items(
         &Engines::qsl().unwrap(),
         vec![value_item(index(), request)],
         &cancel,
@@ -1106,7 +1107,7 @@ fn a_cancelled_run_is_incomplete_cancelled_and_evaluates_nothing() {
         max_cases: None,
         reported: None,
     });
-    let records = analyze(
+    let records = analyze_items(
         &Engines::qsl().unwrap(),
         vec![value_item(index(), request)],
         &cancel,
@@ -1142,7 +1143,7 @@ fn an_unbounded_integer_parameter_needs_a_bound_and_a_bound_makes_it_bounded() {
         target.parameters()[0].domain(),
         ParameterDomain::Integers(Some(_))
     ));
-    let record = analyze(
+    let record = analyze_items(
         &Engines::qsl().unwrap(),
         vec![value_item(
             index(),
@@ -1203,7 +1204,7 @@ fn the_production_registry_holds_the_arm_and_an_absent_provider_is_refused() {
         max_cases: None,
         reported: None,
     });
-    let records = analyze(
+    let records = analyze_items(
         &Engines::default(),
         vec![value_item(index(), request)],
         &Cancel::new(),
@@ -1298,7 +1299,7 @@ fn negotiated_refusals_run_no_arm() {
             reported: None,
         });
         let item: AnalyzeItem<'_> = value_item(index(), request).disposed(disposition, None);
-        let records = analyze(&Engines::qsl().unwrap(), vec![item], &guarded());
+        let records = analyze_items(&Engines::qsl().unwrap(), vec![item], &guarded());
         let Settlement::Disposed(disposed) = &records[0].settlement else {
             panic!()
         };

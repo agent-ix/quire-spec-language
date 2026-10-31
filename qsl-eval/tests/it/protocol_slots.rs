@@ -837,7 +837,7 @@ fn check_condition(package: &CheckedPackage) -> (ProtocolSlot, quire_exact::Node
 /// TC-136 H4: a `ProtocolSlot` selected from another package's protocol, and
 /// a slot whose supply is for a different slot, are refused before any
 /// charge and leave the meter unchanged.
-#[trace("TC-136")]
+#[trace("TC-136", "FR-049-AC-1")]
 #[test]
 fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge() {
     let package = package();
@@ -882,9 +882,13 @@ fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge()
                 && record.locus == CallAdmissionLocus::Binder(opened)
     ));
     assert_eq!(meter, Meter::new(UNLIMITED), "refused before any charge");
-    assert!(package
+    // `ProtocolSlot` is a public selector: this test constructs the valid
+    // selection from its public fields, then confirms package admission is
+    // the boundary that validates it.
+    let admitted = package
         .evaluate_protocol_slot(&own_slot, &empty, &mut meter)
-        .is_ok());
+        .expect("a caller-constructed slot selected from this package is admitted");
+    assert!(matches!(admitted, ProtocolSlotEvaluation::Evaluated(_)));
 }
 
 /// Fixture U of TC-1072: a protocol over the dispatch model's object type `A`

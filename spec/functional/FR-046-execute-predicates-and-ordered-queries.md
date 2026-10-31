@@ -11,7 +11,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-040
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-042
+  - target: ix://agent-ix/quire-spec-language/FR-027
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-049
     type: depends_on
@@ -141,9 +141,9 @@ Predicate reuse supplies neither temporal/protocol family admission nor
 monitor-status truthiness. Graph navigation requires the separately selected
 graph definition. General functions, hidden I/O, ambient receivers, mutable
 captures, dynamic dispatch and unbounded recursion remain outside this scope.
-The derived artifact remains [FR-042](FR-042-publish-compiled-protocol-artifacts.md)'s
-wire contract; evaluation does not reparse native source or appoint a second
-editable formal representation.
+Evaluation consumes the checked-package/v2 artifact that FR-027 emits;
+evaluation does not reparse native source or appoint a second editable formal
+representation.
 
 Every value a predicate call or ordered query returns is a member of the one
 shared typed value domain that [FR-040](FR-040-check-composed-values.md)
@@ -177,7 +177,9 @@ predicate or query body is checked and evaluated by
 
 [FR-036](FR-036-link-composed-native-packages.md) owns binding;
 [FR-040](FR-040-check-composed-values.md) owns shared checking/definedness;
-[FR-042](FR-042-publish-compiled-protocol-artifacts.md) owns native emission;
+[FR-027](FR-027-export-compiled-native-package.md) owns checked-package
+emission and [FR-383](FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md)
+owns protocol-node emission;
 [FR-049](FR-049-admit-composed-evaluation-inputs.md) owns runtime input
 validation and the result interface; [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md)
 owns runtime accounting.

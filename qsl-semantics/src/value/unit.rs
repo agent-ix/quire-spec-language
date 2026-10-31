@@ -468,6 +468,7 @@ pub struct CompoundUnitPreimage {
 
 impl CompoundUnitPreimage {
     /// Read a preimage object; any schema violation is non-canonical.
+    #[ix_trace_rs::string_edge]
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidCompoundUnit> {
         let non_canonical = InvalidCompoundUnit {
             cause: CompoundUnitCause::NonCanonicalPreimage,

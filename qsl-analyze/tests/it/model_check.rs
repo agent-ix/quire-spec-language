@@ -631,7 +631,7 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             IncompleteCause::ResourceExhausted,
             Some(ReachedLimit {
                 limit: ModelCheckLimit::EvaluationMeter {
-                    counter: quire_exact::LimitKind::WorkUnits
+                    counter: quire_exact::LimitKind::ValueOccurrences
                 },
                 value: 0
             })
@@ -809,11 +809,11 @@ fn a_terminal_when_meter_denial_stops_deadlock_check() {
     assert_eq!(
         reached.limit,
         ModelCheckLimit::EvaluationMeter {
-            counter: quire_exact::LimitKind::WorkUnits
+            counter: quire_exact::LimitKind::ValueOccurrences
         }
     );
     assert_eq!(reached.value, 0);
-    assert_eq!(reached.limit.setting(), "accounting.work_units");
+    assert_eq!(reached.limit.setting(), "accounting.value_occurrences");
 }
 
 /// Verifies the cancelled-handle row of FR-126-AC-5 over a TP-1 clause: the

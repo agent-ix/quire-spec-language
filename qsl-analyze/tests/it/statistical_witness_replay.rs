@@ -57,7 +57,7 @@ fn decide(
 }
 
 /// `witness` replayed over `world` under `provenance`, reading `claim`.
-fn replay(
+pub(crate) fn replay(
     world: &World,
     claim: &str,
     provenance: &StatisticalProvenance,

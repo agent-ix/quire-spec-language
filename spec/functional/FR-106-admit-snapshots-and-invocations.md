@@ -218,6 +218,22 @@ required populations SHALL retain check 8's dangling-reference record.
 These are FR-106's existing model-admission checks over retained facts, not a
 second evaluator checker, a new document reader or a new refusal vocabulary.
 
+For these protocol-slot checks, FR-390 SHALL provide the exact checked
+population declaration for each supplied reference occurrence through its
+typed source supply. That declaration seeds check 7's required-population set
+even when two declarations normalize to the same universe and effective type,
+and whether the supplied key is present, absent or the declared population is
+unlisted. Check 7 SHALL then combine the seed with reference fields and
+relationship ends parsed into this authority's admitted observation, applying
+its existing recursive closure and walk order. Check 8 SHALL resolve each
+supplied reference against the exact seeded population's retained objects,
+then use its existing walk order for reference fields and relationship ends.
+Both checks use the authority's selected-model provenance and immutable
+manifest/bundles; neither changes the shared `AdmissionRecord`,
+`ObservationAdmission`, `PathStep` vocabulary, object-reference identity or
+the meter. A defect retains the original shared record and the exact population
+declaration node; no parallel checker or population inference is introduced.
+
 Shared FR-130 governs the QSV record and `quire-eval`'s downstream call-record
 and population-locus transport; QSL owns the observation API above and the
 admission decision. Runtime delivery of that consumer transport is an
@@ -1234,6 +1250,7 @@ required; check 10 settles it.
 | FR-106-AC-62 | A current snapshot admitted through the view entry returns QSV `ObservationAdmission::Admitted`; its authority retains the exact selected model, document identity, population manifest/bundles and admission usage after the caller drops the provisions. Public struct construction, mutation of its environment or completeness/provenance, and conversion from a caller-built `Observation` fail to compile; reading the documented accessors compiles. The factory's result type is QSV's generic specialized to the opaque QSL authority; no local result declaration/alias or layer-4 dependency on `quire-eval` exists. | Test |
 | FR-106-AC-63 | A snapshot of another model yields `Refused` with the original QSV `AdmissionRecord` and `invalid_model_binding`/`wrong-model-selection`; a nested-value refusal preserves every `catalog`, `fields`, `path` and `kernel` component. `authority()` on `Refused`, `Incomplete` and `Fault` returns that same distinct arm and payload; `Fault` preserves the original `InternalFault`. The QSL admission implementation uses QSV's record/path types with no local copies. | Test |
 | FR-106-AC-64 | Over TC-1071 row 20, an authority retaining `n5` but marking its required `nodes` population incomplete yields `incomplete_population`/`incomplete-scope` naming that population's exact node, before any dangling check. With `nodes` complete and a second unreferenced population incomplete, the same supplied source admits. A recursively required incomplete population is reported in FR-106 walk order; completing it exposes any subsequent check-8 dangling defect. | Test |
+| FR-106-AC-65 | For FR-390's reference-occurrence seeds, two same-universe, same-effective-type populations retain distinct checked declaration nodes, including when one is empty or unlisted. A supplied ghost reference attributed to the empty/unlisted declaration makes only that declaration and its recursive check-7 closure required; with it incomplete, the original `AdmissionRecord` is `incomplete_population`/`incomplete-scope` at that node before check 8, and with it complete check 8 reports the ghost against that same population. Snapshot reference fields and relationship ends extend the recursive closure in existing walk order. No object key, normalized type/universe pair, caller label, or mutable authority state substitutes for the declaration identity. | Test |
 
 ## Dependencies
 

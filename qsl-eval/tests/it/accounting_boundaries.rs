@@ -283,6 +283,13 @@ struct Case {
     arguments: fn() -> Vec<Value>,
     /// The charge point the fixture must reach.
     point: ChargePoint,
+    /// Other charge points in the independent schedule that this fixture
+    /// must also reach, even when they do not determine the high-water value.
+    required_points: &'static [ChargePoint],
+    /// Independently counted high-water request at every relevant charge
+    /// point. `None` marks points that contribute to another counter but do
+    /// not request this size. These amounts do not come from `Meter::consumed`.
+    expected_sizes: Vec<(ChargePoint, Option<u64>)>,
     /// The fixture's quantity, counted from its construction; `None` for a
     /// counter whose individual log entries do not carry that size.
     counted: Option<u64>,
@@ -309,6 +316,19 @@ const LARGE: i64 = 1 << 40;
 const WIDE_COEFFICIENT: i64 = 123;
 const WIDE_SCALE: u32 = 0;
 const NARROW_SCALE: u32 = 3;
+const SMALL_COEFFICIENT: i64 = 5;
+
+fn decimal_digits(value: i64) -> u64 {
+    value.unsigned_abs().to_string().len() as u64
+}
+
+fn decimal_shifted_digits(coefficient: i64, shift: u32) -> u64 {
+    decimal_digits(coefficient) + u64::from(shift)
+}
+
+fn aligned_decimal_scale(left: u32, right: u32) -> u32 {
+    left.max(right)
+}
 
 fn cases() -> Vec<Case> {
     let integer_arguments: fn() -> Vec<Value> = || vec![int(LARGE), int(3)];
@@ -321,30 +341,86 @@ fn cases() -> Vec<Case> {
     let text_arguments: fn() -> Vec<Value> = || vec![text(ACCENTED), text("")];
     let none: fn() -> Vec<Value> = Vec::new;
     let one: fn() -> Vec<Value> = || vec![int(1)];
+    let aligned_left_digits = decimal_shifted_digits(WIDE_COEFFICIENT, NARROW_SCALE - WIDE_SCALE);
+    let aligned_right_digits = decimal_digits(SMALL_COEFFICIENT);
+    let decimal_arithmetic_digits = aligned_left_digits.max(aligned_right_digits) + 1;
+    let retained_decimal_coefficient =
+        WIDE_COEFFICIENT * 10_i64.pow(NARROW_SCALE - WIDE_SCALE) + SMALL_COEFFICIENT;
+    let retained_decimal_digits = decimal_digits(retained_decimal_coefficient);
+    let aligned_scale = aligned_decimal_scale(WIDE_SCALE, NARROW_SCALE);
+    let retained_scale_expansion = NARROW_SCALE - aligned_scale;
     vec![
         Case {
             counter: LimitKind::IntegerBits,
             function: "integer_sum",
             arguments: integer_arguments,
             point: ChargePoint::IntegerArithmeticOperands,
+            required_points: &[ChargePoint::IntegerArithmeticArithmetic],
+            expected_sizes: vec![
+                (
+                    ChargePoint::IntegerArithmeticOperands,
+                    Some(bit_length(LARGE.unsigned_abs()).max(bit_length(3))),
+                ),
+                (
+                    ChargePoint::IntegerArithmeticArithmetic,
+                    Some(bit_length(LARGE.unsigned_abs()).max(bit_length(3)) + 1),
+                ),
+            ],
             counted: Some(bit_length(LARGE.unsigned_abs())),
-            expected_usage: bit_length(LARGE.unsigned_abs()) + 1,
+            expected_usage: bit_length(LARGE.unsigned_abs()).max(bit_length(3)) + 1,
         },
         Case {
             counter: LimitKind::DecimalDigits,
             function: "decimal_sum",
             arguments: decimal_arguments,
             point: ChargePoint::DecimalOperands,
-            counted: Some(WIDE_COEFFICIENT.to_string().len() as u64),
-            expected_usage: WIDE_COEFFICIENT.to_string().len() as u64
-                + u64::from(NARROW_SCALE - WIDE_SCALE)
-                + 1,
+            required_points: &[
+                ChargePoint::DecimalScaleExpansion,
+                ChargePoint::DecimalArithmetic,
+                ChargePoint::DecimalResultRetain,
+            ],
+            expected_sizes: vec![
+                (
+                    ChargePoint::DecimalOperands,
+                    Some(decimal_digits(WIDE_COEFFICIENT).max(decimal_digits(SMALL_COEFFICIENT))),
+                ),
+                (
+                    ChargePoint::DecimalScaleExpansion,
+                    Some(aligned_left_digits),
+                ),
+                (
+                    ChargePoint::DecimalArithmetic,
+                    Some(decimal_arithmetic_digits),
+                ),
+                (
+                    ChargePoint::DecimalResultRetain,
+                    Some(retained_decimal_digits),
+                ),
+            ],
+            counted: Some(decimal_digits(WIDE_COEFFICIENT)),
+            expected_usage: decimal_digits(WIDE_COEFFICIENT)
+                .max(decimal_digits(SMALL_COEFFICIENT))
+                .max(aligned_left_digits)
+                .max(aligned_right_digits)
+                .max(decimal_arithmetic_digits)
+                .max(retained_decimal_digits),
         },
         Case {
             counter: LimitKind::ScaleExpansion,
             function: "decimal_sum",
             arguments: decimal_arguments,
             point: ChargePoint::DecimalScaleExpansion,
+            required_points: &[ChargePoint::DecimalResultRetain],
+            expected_sizes: vec![
+                (
+                    ChargePoint::DecimalScaleExpansion,
+                    Some(u64::from(NARROW_SCALE - WIDE_SCALE)),
+                ),
+                (
+                    ChargePoint::DecimalResultRetain,
+                    Some(u64::from(retained_scale_expansion)),
+                ),
+            ],
             counted: Some(u64::from(NARROW_SCALE - WIDE_SCALE)),
             expected_usage: u64::from(NARROW_SCALE - WIDE_SCALE),
         },
@@ -353,6 +429,8 @@ fn cases() -> Vec<Case> {
             function: "text_order",
             arguments: text_arguments,
             point: ChargePoint::TextInputBytes,
+            required_points: &[],
+            expected_sizes: vec![(ChargePoint::TextInputBytes, Some(ACCENTED.len() as u64))],
             counted: Some(ACCENTED.len() as u64),
             expected_usage: ACCENTED.len() as u64,
         },
@@ -361,6 +439,11 @@ fn cases() -> Vec<Case> {
             function: "text_order",
             arguments: text_arguments,
             point: ChargePoint::TextDecodeScalars,
+            required_points: &[],
+            expected_sizes: vec![(
+                ChargePoint::TextDecodeScalars,
+                Some(ACCENTED.chars().count() as u64),
+            )],
             counted: Some(ACCENTED.chars().count() as u64),
             expected_usage: ACCENTED.chars().count() as u64,
         },
@@ -369,6 +452,11 @@ fn cases() -> Vec<Case> {
             function: "text_order",
             arguments: text_arguments,
             point: ChargePoint::TextNormalizeOutput,
+            required_points: &[],
+            expected_sizes: vec![(
+                ChargePoint::TextNormalizeOutput,
+                Some(ACCENTED_NFD.chars().count() as u64),
+            )],
             counted: Some(ACCENTED_NFD.chars().count() as u64),
             expected_usage: ACCENTED_NFD.chars().count() as u64,
         },
@@ -377,6 +465,8 @@ fn cases() -> Vec<Case> {
             function: "unit_chain",
             arguments: none,
             point: ChargePoint::UnitEdge,
+            required_points: &[],
+            expected_sizes: vec![(ChargePoint::UnitEdge, Some(CONVERSION_EDGES))],
             counted: Some(CONVERSION_EDGES),
             expected_usage: CONVERSION_EDGES,
         },
@@ -385,6 +475,21 @@ fn cases() -> Vec<Case> {
             function: "three_elements",
             arguments: none,
             point: ChargePoint::CollectionElement,
+            required_points: &[
+                ChargePoint::CollectionBound,
+                ChargePoint::CollectionResultRetain,
+            ],
+            expected_sizes: vec![
+                (ChargePoint::CollectionElement, None),
+                (
+                    ChargePoint::CollectionBound,
+                    Some(SEQUENCE_ELEMENTS.len() as u64),
+                ),
+                (
+                    ChargePoint::CollectionResultRetain,
+                    Some(1 + SEQUENCE_ELEMENTS.len() as u64),
+                ),
+            ],
             counted: None,
             expected_usage: 1 + SEQUENCE_ELEMENTS.len() as u64,
         },
@@ -393,6 +498,8 @@ fn cases() -> Vec<Case> {
             function: "link2",
             arguments: one,
             point: ChargePoint::FunctionCall,
+            required_points: &[],
+            expected_sizes: vec![(ChargePoint::FunctionCall, None)],
             counted: None,
             expected_usage: 3,
         },
@@ -401,6 +508,8 @@ fn cases() -> Vec<Case> {
             function: "three_elements",
             arguments: none,
             point: ChargePoint::CollectionResultRetain,
+            required_points: &[],
+            expected_sizes: vec![(ChargePoint::CollectionResultRetain, None)],
             counted: None,
             expected_usage: 1 + SEQUENCE_ELEMENTS.len() as u64,
         },
@@ -432,6 +541,23 @@ fn exercise(package: &CheckedPackage, case: &Case) {
         "{kind:?}: the admitted-charge log holds {:?}",
         case.point
     );
+    for point in case.required_points {
+        assert!(
+            log.iter().any(|charge| charge.point == *point),
+            "{kind:?}: the independent schedule reaches {point:?}"
+        );
+    }
+    for &(point, expected_size) in &case.expected_sizes {
+        let actual_size = log
+            .iter()
+            .filter(|charge| charge.point == point)
+            .filter_map(|charge| requested(charge, kind))
+            .max();
+        assert_eq!(
+            actual_size, expected_size,
+            "{kind:?}: independently counted size at {point:?}"
+        );
+    }
 
     if kind == LimitKind::WorkUnits {
         assert_eq!(
@@ -583,10 +709,9 @@ fn exercise(package: &CheckedPackage, case: &Case) {
 }
 
 /// Every accounting counter has independently counted zero, exact and
-/// one-short boundaries. Arithmetic peaks include the carry reservation;
-/// collection peaks and result units include the container occurrence.
-/// TC-137's narrower operand-only equality is not claimed where the
-/// accounting schedule requires a larger intermediate.
+/// one-short boundaries. The high-water oracle follows the full charge
+/// schedule: arithmetic includes intermediate carry/alignment sizes, and
+/// collection retention includes the container occurrence.
 #[trace("TC-137", "FR-049-AC-7")]
 #[test]
 fn every_accounting_counter_has_zero_exact_and_one_short_evidence() {

@@ -96,8 +96,6 @@ retagged afterward. Otherwise identical `/1` and `/2` models have distinct
 native bytes even when no rational is used. Raw native artifact integrity
 remains distinct from IR canonical identity and original model source integrity.
 
-If a historical link_native import selects a native-state-model/2 artifact, then the historical linker SHALL refuse the unit before exposing it to the historical checker or runtime.
-
 When composed model binding selects an admitted native-state-model/2 artifact, the composed binder SHALL retain its actual profile, exact import bytes, model ownership and existing permitted-export checks.
 
 Adding an unused `/2` input does not grant historical semantics; the selected
@@ -120,13 +118,37 @@ canonicalization or output-content checks.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-041-AC-1 | Existing constructors/FORMAT select `/1`, preserve exact historical artifact bytes and rational refusal, and never infer `/2`. Explicit `/2` survives source-read/draft/admission with the actual inspectable model profile; unknown selections refuse. | Test (TC-120) |
-| FR-041-AC-2 | A rational scalar with identical IR numerator/denominator bounds at all scalar sites admits under `/2`; missing/duplicate/empty site mappings, kind mismatch or a change to any one site's minimum, maximum or denominator refuses without a model. | Test (TC-120) |
-| FR-041-AC-3 | The closed rational JSON variant preserves i64 numerator extrema, integers adjacent to 2^53 and valid maximum-denominator boundaries exactly. Zero/negative/too-large denominator, reversed numerator bounds, missing/duplicate/unknown fields, wrong tags, floating values and out-of-width integers refuse through the actual decoder/IR constructor. | Test (TC-120) |
-| FR-041-AC-4 | Source-derived rational values and record fields under options/sequences retain exact nominal identity, unit and original scalar/site loci. Missing/null unit is dimensionless; named units remain exact. Existing integer/text/enum/object/operation meanings and wrappers are preserved under both compatible profiles. | Test (TC-120) |
-| FR-041-AC-5 | Historical link_native refuses a selected `/2` model, including an otherwise unchanged integer-only model, without a linked package. Composed bind_models accepts actual admitted `/2` exports and refuses stale models, foreign ownership or wrong exports through its existing typed boundary. | Test (TC-120) |
-| FR-041-AC-6 | `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; and set-like inventory reorderings remain deterministic. | Test (TC-120) |
-| FR-041-AC-7 | Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test (TC-120) |
+| FR-041-AC-1 | **RETIRED in M-6d.** The historical `NativeModel::new`/`FORMAT` `/1` identity and the `/2` source-read/draft profile selection are no longer acceptance obligations of this feature. | Test |
+| FR-041-AC-2 | A rational scalar with identical IR numerator/denominator bounds at all scalar sites admits under `/2`; missing/duplicate/empty site mappings, kind mismatch or a change to any one site's minimum, maximum or denominator refuses without a model. | Test |
+| FR-041-AC-3 | **RETIRED in M-6d.** The former closed rational JSON decoding boundary is not a separately maintained native acceptance obligation; IR constructors remain authoritative for rational declarations. | Test |
+| FR-041-AC-4 | **RETIRED in M-6d.** The former native source-derived rational value/site mapping is not a separately maintained acceptance obligation. | Test |
+| FR-041-AC-5 | Composed `bind_models` accepts actual admitted `/2` exports and refuses stale models, foreign ownership or wrong exports through its existing typed boundary. The historical `link_native` refusal clause is retired in M-6d. | Test |
+| FR-041-AC-6 | `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; and set-like inventory reorderings remain deterministic. | Test |
+| FR-041-AC-7 | Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test |
+
+## M-6d disposition
+
+### M-6d disposition of the rational/native spine requirements
+
+The following dispositions preserve each behavior unless a named spine test
+already succeeds it. Retiring an old requirement or carrier does not by itself
+retire the behavior. Any retained behavior without a named successor remains
+in scope for [QSL-1380](https://linear.app/agent-ix/issue/QSL-1380/track-retained-temporal-and-choreography-behaviors-through-layer-4).
+
+| Requirement | Disposition | Successor or retained behavior |
+| --- | --- | --- |
+| FR-042 | Retire in M-6d | Its checked-package publication contract is superseded by FR-027/FR-383 and TC-1061/TC-1062; no old wire artifact remains required. |
+| FR-043 | Keep | Temporal settlement semantics have no complete named spine successor in this migration; retain and track Layer-4 follow-up. |
+| FR-044 | Keep | Activation and progression behavior remains required; no complete named spine successor is identified here; retain and track Layer-4 follow-up. |
+| FR-045 | Keep | Mapping-support classification remains required; no complete named spine successor is identified here; retain and track Layer-4 follow-up. |
+| FR-046 | Keep | Predicate call identity/cycle behavior is exercised by AC-1/2, TC-126; query values and ordered semantics by AC-3..5, TC-127; missing input and accounting by AC-6/7, TC-128; emitted call records by AC-8, TC-126/127; union predicates/queries by AC-9, TC-833. The unsupported proof representations in AC-5 remain follow-up scope under QSL-1380. |
+| FR-047 | Keep | TC-129 succeeds AC-2/3 and replaces AC-1's old identity chain with exact identity-axis mutations plus same-object pre/post observation rows; TC-130 succeeds AC-4..6; TC-131 succeeds AC-7/8. |
+| FR-048 | Keep | Checked choreography evaluation succeeds to FR-390 and TC-1070..1073; retain any remaining native-only behavior not covered there and track it in the Layer-4 follow-up. |
+| FR-049 | Keep | TC-136 succeeds AC-1..6 and AC-10/11; TC-137 succeeds AC-7/8; TC-142 and TC-1070..1073 succeed AC-9's protocol-slot selection, typed outcomes and shared-meter behavior. |
+| FR-050 | Keep | Authenticated temporal artifact behavior has no complete named spine successor in this migration; retain and track Layer-4 follow-up. |
+| FR-052 | Keep behavior; retire only the M-6d request/result carrier and its API-specific criteria | FR-052-AC-9–12 define the Layer-4 checked-package evaluation-owner successor; TC-144 is its named test obligation. TC-140 and `tests/it/native_temporal_owner.rs` are historical/retiring and provide no successor evidence. |
+| FR-053 | Keep behavior; retire only the M-6d request/result carrier and its API-specific criteria | FR-053-AC-7–9 define the Layer-4 opaque trigger-identity successor; TC-149 is its named test obligation. TC-141 and `tests/it/native_temporal_owner.rs` are historical/retiring and provide no successor evidence. |
+| TC-121 | Retire in M-6d | The case verifies the FR-042 artifact contract that is superseded by the spine package tests above. |
 
 ## Dependencies
 

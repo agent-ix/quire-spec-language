@@ -550,8 +550,11 @@ fn parameter_named<'g>(graph: &'g SemanticGraph, name: &str) -> &'g SemanticNode
 fn application(graph: &SemanticGraph, identity: &str) -> Json {
     let found: Vec<Json> = graph
         .nodes()
+        .filter(|node| {
+            matches!(node.body(), BodyTerm::Application(application)
+                if application.operation.identity() == identity)
+        })
         .map(preimage)
-        .filter(|json| json["body"]["operation"]["identity"] == identity)
         .collect();
     assert_eq!(found.len(), 1, "one `{identity}` node");
     found.into_iter().next().unwrap()

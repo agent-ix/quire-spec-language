@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, derived_protocol_item, AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem,
+    analyze_items, derived_protocol_item, AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem,
 };
 use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::model_check::{ModelCheckRefusal, ProtocolCheckRequest};
@@ -1861,7 +1861,7 @@ fn written_item(
 
 /// `analyze` over EN-1 alone of `items`.
 fn analyzed(items: Vec<qsl_analyze::analyze::AnalyzeItem<'_>>) -> Vec<AnalyzeRecord> {
-    analyze(
+    analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         items,
         &Cancel::new(),

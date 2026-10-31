@@ -109,6 +109,15 @@ new path: CG names `Category` as `quire_semantic_value::catalog::Category`.
 repositories, not QSL crates for FR-059 or FR-060 T12-A, so CG's edge to
 them needs no facade.
 
+FR-390's `ProtocolSuppliedValue` and `ProtocolReferenceOccurrence` are
+QSL layer-5 admission inputs, not FR-262 evaluator-interface types. QSL SHALL
+validate each occurrence against the checked slot and admitted observation
+before starting S6a, then provide the existing typed value and object
+environment to the `quire-eval` execution path. `quire-eval` SHALL NOT import
+these wrappers, select a population, read snapshot or relationship data, or
+implement FR-106 checks 7 or 8. This keeps reference-population admission in
+QSL and preserves the S4/E dependency boundary.
+
 | Type | Owner and path | Moved by |
 | --- | --- | --- |
 | `Meter`, `Charge`, `ChargePoint`, `Incomplete`, `ScalarLimits` (the `quire.value.accounting/v1` meter the evaluator charges) | K, `quire_exact` | none. `qsl-semantics`' `model::accounting::Meter` is FR-150's normalization meter, not the evaluation meter, and is not part of the interface |

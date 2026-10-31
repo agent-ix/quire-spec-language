@@ -13,7 +13,9 @@ relationships:
 Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
-the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3.
+the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3
+and FR-390-AC-23. The E-P procedure below verifies FR-390-AC-23 without
+changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
 the current state, a caller that must supply a source the expression does not
@@ -162,6 +164,110 @@ Row 26's four refusals name `target`, the lowest source of each slot (its level
 is below the trigger's, the activation capture's and the recovery binder's).
 Case indexes name the emitted UTF-8 label order, so `no` is index 0 and `yes`
 is index 1 even though the source declares `yes` first.
+
+## Fixture E-P: reference-population provenance extension
+
+E-P is a separate variant of fixture E plus protocol L. It leaves E and L's
+existing definitions and rows unchanged. In E-P, `M` additionally declares
+`Other{marker: Boolean, next: Option<Reference<Other>>}` with populations
+`otherNodes` and `otherSpare`, both
+having effective member type `Other` and the same normalized model universe.
+It also declares `Elsewhere{marker: Boolean}` and population
+`elsewhereNodes` with effective member type `Elsewhere`. The package inputs
+include domain package `N`, which declares its own `Other` and population
+`externalOthers`; the protocol view and selected model remain `M`.
+`M` also declares the navigation relationship `OtherLinks` from `Other` to
+`Other`, with source and target ends.
+`Receipt` is the E-P variant `Receipt{total: Total, peer: Reference<Other>,
+bundle: PeerBundle}`; `PeerBundle` is the record
+`PeerBundle{nested: Reference<Other>, optional: Option<Reference<Other>>,
+sequence: Sequence<Reference<Other>>[1,1]}`. `Node`, `nodes`, `Refunds` and
+`Pipeline` otherwise retain the definitions in E and L. The extension does not
+make `Other` a direct protocol context. `forward: Receipt` remains the source
+of `Refund.registration_captures[0]`, whose initializer reads only
+`forward.total`.
+
+The test harness constructs occurrence metadata with the checked population
+declaration node keys obtained from the E-P checked package. Paths are
+`quire_semantic_value::admission::PathStep` values, relative to the supplied
+value root. The concrete path coverage is:
+
+| Supplied value occurrence | Path | Population declaration |
+| --- | --- | --- |
+| `view = n5` for `Got.related.from[0]` | `[]` | `nodes` |
+| `forward.peer` | `[Field("peer")]` | `otherSpare` |
+| `forward.bundle.nested` | `[Field("bundle"), Field("nested")]` | `otherNodes` |
+| `forward.bundle.optional = present(reference)` | `[Field("bundle"), Field("optional"), OptionValue]` | `otherSpare` |
+| `forward.bundle.sequence[0]` | `[Field("bundle"), Field("sequence"), Index(0)]` | `otherNodes` |
+
+Every `Receipt` reference has an `ObjectReference` value for the same model
+universe and effective type `Other`; `otherNodes` and `otherSpare` therefore
+cannot be distinguished by that value. The `view = n5` root reference is a
+`Node` reference attributed to `nodes`. The occurrence metadata's `population`
+is the exact checked declaration node, and is the only supplied-population
+provenance. The observation is admitted through FR-106 for the same E-P view
+and selected model. For rows 34 to 41, `otherNodes` is complete and contains
+objects keyed `ghost`, `nested-1` and `sequence-1`. Rows 42 to 46 specify their
+own `otherNodes` contents and completeness. The `otherSpare` state varies per row:
+complete with `ghost` and `option-1`; explicitly listed empty and incomplete;
+explicitly listed, complete and empty; or unlisted.
+All `Other` objects carry `next` absent unless a row gives it a reference.
+Each listed `OtherLinks` extent is complete; absent instances mean an empty
+extent. An instance end's population label maps to its exact checked
+population declaration in the admitted model.
+All rows evaluate one slot per call with a fresh default meter unless stated
+otherwise.
+
+| # | Slot / case | Supplied value and occurrence metadata | Observation state | Expected |
+| --- | --- | --- | --- | --- |
+| 34 | `Got.related.from[0]` (L), root reference | `view = n5`; path `[]` maps to checked declaration `nodes` | `nodes` complete with `n5` | Reference `n5`; forwarded-reference `result_units` zero by S6a |
+| 35 | `Refund.registration_captures[0]`, complete nested references | `forward = Receipt(total 5, peer ghost, bundle PeerBundle(nested nested-1, optional present option-1, sequence [sequence-1]))`; metadata has the four `forward` path/declaration rows above | `nodes`, `otherNodes` and `otherSpare` complete; all named objects present in their attributed populations | Evaluated value 5; admission completes despite the initializer reading only `forward.total` |
+| 36 | same slot and supplied value as row 35, incomplete seeded population with a matching key elsewhere | `forward.peer` path maps to `otherSpare`; remaining `forward` paths retain row 35 metadata | `otherSpare` is explicitly listed empty and incomplete; `otherNodes` is complete and contains `ghost` | `Incomplete`, `incomplete_population`/`incomplete-scope` naming the exact `otherSpare` declaration node; no charge |
+| 37 | same slot and supplied value as row 35, unlisted seeded population | `forward.peer` path maps to `otherSpare`; remaining `forward` paths retain row 35 metadata | `otherSpare` is unlisted; `otherNodes` is complete and contains `ghost` | `Incomplete`, `incomplete_population`/`incomplete-scope` naming the exact `otherSpare` declaration node from the closed manifest; no charge |
+| 38 | same slot and supplied value as row 35, complete empty target population | all four `forward` paths retain row 35 metadata | `otherSpare` is explicitly listed, complete and empty; `otherNodes` is complete and contains `ghost` | Refused, `dangling_reference`/`absent-target-in-complete-population` at `forward.peer`, naming `ghost` and `otherSpare`; no charge |
+| 39 | same slot and supplied value as row 35, all targets present in attributed populations | all four `forward` paths retain row 35 metadata | `otherSpare` is complete and contains `ghost` and `option-1`; other targets are in `otherNodes`; `elsewhereNodes` is incomplete and unreferenced | Evaluated value 5 |
+| 40 | same slot and value as row 39, foreign model declaration | replace `forward.peer`'s population key with `N::externalOthers` | admitted authority remains bound to `M` | Refused `invalid_model_binding`/`wrong-model-selection`, retaining the existing admission record; no charge |
+| 41 | same slot and value as row 39, wrong effective member type | replace `forward.peer`'s population key with `M::elsewhereNodes` | `elsewhereNodes` is a declaration of selected model `M` | Refused `invalid_runtime_input`/`wrong-value-kind` at `forward.peer`; no charge |
+| 42 | same slot as row 35, recursive completeness from a target object's reference field | all four supplied `forward` references explicitly map to `otherSpare`; `otherSpare::ghost.next` names `field-child` in `otherNodes` | `otherSpare` is complete with all four supplied keys; `otherNodes` is explicitly listed incomplete and contains `field-child`; `OtherLinks` is complete and empty | `Incomplete`, `incomplete_population`/`incomplete-scope` naming `otherNodes`' exact declaration node; no charge |
+| 43 | same slot as row 35, recursive completeness from a relationship end | all four supplied `forward` references explicitly map to `otherSpare`; `otherSpare::ghost.next` is absent; `OtherLinks` instance 0 has source `otherSpare::ghost` and target `otherNodes::edge-child` | `otherSpare` is complete with all four supplied keys; `otherNodes` is explicitly listed incomplete and contains `edge-child`; `OtherLinks` is complete | `Incomplete`, `incomplete_population`/`incomplete-scope` naming `otherNodes`' exact declaration node; no charge |
+| 44 | same slot as row 35, check-8 ordering across a reference field and relationship end | all four supplied `forward` references map to `otherSpare`; `otherSpare::ghost.next` names absent `field-ghost` in `otherNodes`; `OtherLinks` instance 0 has source `otherSpare::ghost` and target absent `edge-ghost` in `otherNodes` | `otherSpare` and `otherNodes` are complete; both referenced target keys are absent | Refused by check 8 as `dangling_reference`/`absent-target-in-complete-population` for `field-ghost` at `otherSpare::ghost.next`, before the relationship-end defect |
+| 45 | same slot as row 35, relationship-end closure defect after field closure succeeds | all four supplied `forward` references map to `otherSpare`; `otherSpare::ghost.next` names present `field-child` in `otherNodes`; `OtherLinks` instance 0 has source `otherSpare::ghost` and target absent `edge-ghost` in `otherNodes` | `otherSpare` and `otherNodes` are complete; `field-child` is present and `edge-ghost` is absent | Refused by check 8 as `dangling_reference`/`absent-target-in-complete-population`, naming `OtherLinks`, instance 0, end `target`, `edge-ghost` and `otherNodes` |
+| 46 | same slot as row 35, recursive closure complete | all four supplied `forward` references map to `otherSpare`; `otherSpare::ghost.next` names `field-child` in `otherNodes`; `OtherLinks` instance 0 has source `otherSpare::ghost` and target `otherNodes::edge-child` | `otherSpare` and `otherNodes` are complete; both `field-child` and `edge-child` are present | Evaluated value 5 |
+
+For each path/declaration row above, the harness separately removes that
+occurrence entry and duplicates that occurrence entry. The
+mutation matrix is:
+
+| Mutation | Exercised paths | Expected |
+| --- | --- | --- |
+| Omit occurrence entry | `view: []`; `forward: [Field("peer")]`; `forward: [Field("bundle"), Field("nested")]`; `forward: [Field("bundle"), Field("optional"), OptionValue]`; `forward: [Field("bundle"), Field("sequence"), Index(0)]` | `invalid_runtime_input`/`missing-member`, naming the listed binder and preserving the missing typed path |
+| Duplicate occurrence entry | the same five binder/path pairs, each duplicated in turn | `invalid_runtime_input`/`duplicate-member`, naming the listed binder and preserving the later typed path |
+| Add entry for scalar `forward.total` | `[Field("total")]` | `invalid_runtime_input`/`unknown-member`, naming `forward` and the extra typed path |
+| Add entry for a nonexistent nested field | `[Field("bundle"), Field("absent")]` | `invalid_runtime_input`/`unknown-member`, naming `forward` and the absent typed path |
+| Replace a same-model population declaration | each of the four `Other` reference paths, swapping `otherNodes` and `otherSpare` | Accepted as provenance for that declared population; subsequent completeness and dangling outcomes follow the population named by the replacement |
+| Replace with `M::elsewhereNodes` | `[Field("peer")]` | `invalid_runtime_input`/`wrong-value-kind` because `Elsewhere` does not conform to `Reference<Other>` |
+| Replace with `N::externalOthers` | `[Field("peer")]` | `invalid_model_binding`/`wrong-model-selection` because the declaration is outside selected model `M` |
+
+Each missing, duplicate, extra/non-reference or incompatible entry returns the
+corresponding existing `invalid_runtime_input` cause (`missing-member`,
+`duplicate-member`, `unknown-member` or `wrong-value-kind`) at the binder and
+exact typed occurrence path, except a declaration outside the selected model,
+which returns `invalid_model_binding`/`wrong-model-selection`.
+Rows 42 and 43 prove that a reference field in a target object and a parsed
+relationship end extend check 7's required-population closure independently.
+Rows 44 and 45 prove check 8's existing walk order: object reference fields
+are checked before relationship ends, and an end refusal names the exact
+relationship, instance, end and population declaration. Row 46 completes the
+recursive closure and evaluates successfully.
+
+These cases run with a present refused observation result as well; source
+selection, value shape/type and occurrence errors retain their earlier
+precedence, and every refusal leaves the meter unchanged. A second incomplete
+population that is not named by any occurrence or recursive closure leaves
+row 39 admissible, as `elsewhereNodes` demonstrates. A reference in a target object's field or in a parsed
+relationship end extends the FR-106 check-7 closure; after all required
+populations are complete, a missing target in a complete population returns
+the existing check-8 dangling-reference record in FR-106 walk order.
 
 ## Expected Results
 

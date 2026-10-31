@@ -146,6 +146,7 @@ impl fmt::Display for JsonPointer {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use alloc::vec;
     use ix_trace_rs::trace;
     use quire_exact::{NodeKey, Origin, PathSegment, Role};
