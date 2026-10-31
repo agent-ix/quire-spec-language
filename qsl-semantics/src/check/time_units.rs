@@ -19,9 +19,7 @@ use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
 use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
-use crate::check::lowering::model_declaration_key;
 use crate::check::lowering::AdmittedModel;
-use crate::check::node_key::NodeTag;
 use crate::check::temporal_clause::TimeNominalNode;
 use crate::model::domain_package::PackageUnitRecord;
 use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
@@ -417,8 +415,9 @@ fn package_unit_nominal_nodes(
         let target = target_nodes.last().map(|node| node.key.clone());
         let factor = rational(&unit.scale)?;
         let offset = rational(&unit.offset)?;
-        let key = model_declaration_key(&unit.key.package, NodeTag::Model, "unit", &unit.key.node)
-            .ok()?;
+        // The reader pins a model-owned unit's path to its wire tag and form:
+        // `[scalar_type, unit, <declaration>]`, like the `Time` dimension.
+        let key = scalar_type_key(&unit.key, "unit")?;
         let mut nodes = target_nodes;
         nodes.push(TimeNominalNode {
             key,

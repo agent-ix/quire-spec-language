@@ -1877,7 +1877,12 @@ impl<'a> Lowering<'a> {
         if let Some(key) = self.node_index.get(content) {
             return Ok(key.clone());
         }
-        let package = self.package_name.clone();
+        // The reader keys a model-owned node under its model's identity (a
+        // node owner of kind `model` names the package its key belongs to).
+        let package = match &content.owner {
+            Some(Owner::Model(owner)) => owner.identity().to_owned(),
+            _ => self.package_name.clone(),
+        };
         let operands = derived_operands(content);
         let key = self.mint_key(location, |ordinal| match &content.declaration {
             Some(names) => super::declared_node_key(
