@@ -285,3 +285,54 @@ fn checked_activation_keeps_siblings_and_capture_identity() {
     assert_eq!(active.capture_evaluations, 1);
     assert_eq!(active.captures[0].value, "7");
 }
+
+/// FR-043: checked profile and clock identity are authenticated before any
+/// position work, and a missing required valuation is unavailable rather than
+/// a false truth.
+#[trace("TC-122", "TC-123", "FR-043-AC-3", "FR-043-AC-9")]
+#[test]
+fn checked_binding_and_missing_fact_keep_distinct_outcomes() {
+    let checked = checked("always[0,1] holds(view.code > 0)", temporal::EVENT_POSITION);
+    for (clock, profile, expected) in [
+        (
+            "other",
+            temporal::EVENT_POSITION,
+            temporal::Dimension::Clock,
+        ),
+        (
+            "orders",
+            temporal::FIXED_SAMPLE,
+            temporal::Dimension::Profile,
+        ),
+    ] {
+        let mut input = origin_trace();
+        input.clock.name = clock.into();
+        input.clock.profile_identity = profile.into();
+        let report =
+            temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+        assert!(matches!(
+            report.result(),
+            Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                dimension,
+                ..
+            })) if *dimension == expected
+        ));
+        assert_eq!(report.usage().positions, 0);
+    }
+
+    let report = temporal::evaluate_checked(
+        checked.package(),
+        0,
+        &origin_trace(),
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+        panic!("the checked clause remains represented");
+    };
+    assert_eq!(assessment.truth, None);
+    assert_eq!(assessment.basis, Some(Basis::Unavailable));
+    assert_eq!(
+        assessment.incomplete.as_ref().map(|value| value.dimension),
+        Some(temporal::Dimension::Valuation)
+    );
+}
