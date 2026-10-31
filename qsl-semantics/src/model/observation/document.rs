@@ -2295,6 +2295,49 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
     }
 }
 
+/// Compute the exact FR-106 check-7 closure rooted at every declared
+/// population. The wire reference's population label is retained at the
+/// occurrence that named it; equal object references do not merge labels.
+fn population_reference_closures(
+    snapshot: &SnapshotDocument,
+    facts: &super::relationships::ModelFacts,
+    extents: &[super::relationships::CheckedExtent],
+) -> BTreeMap<String, Vec<String>> {
+    let mut closures = BTreeMap::new();
+    for seed in facts.population_identities() {
+        let mut closure = vec![seed.to_owned()];
+        let mut next = 0;
+        while next < closure.len() {
+            let population = closure[next].clone();
+            if let Some(entry) = snapshot
+                .populations
+                .iter()
+                .find(|entry| entry.population == population)
+            {
+                for object in &entry.objects {
+                    for (_, raw) in &object.fields {
+                        let mut references = Vec::new();
+                        collect_references(raw, &mut references);
+                        for (target, _) in references {
+                            if !closure.contains(&target) {
+                                closure.push(target);
+                            }
+                        }
+                    }
+                }
+            }
+            for target in super::relationships::related_population_ids(extents, &population) {
+                if !closure.contains(&target) {
+                    closure.push(target);
+                }
+            }
+            next += 1;
+        }
+        closures.insert(seed.to_owned(), closure);
+    }
+    closures
+}
+
 /// Check 6's own admitted output, carried between checks 6, 7 and 8: an
 /// invocation's pre and post snapshots each get their own [`PopulationValues`]
 /// from [`admit_population_values`], so a caller can run check 6 on both,
@@ -2312,6 +2355,8 @@ pub(super) struct PopulationValues<'t> {
     pub(super) extents: Vec<super::relationships::CheckedExtent>,
     /// The package facts the extent store is built from.
     facts: super::relationships::ModelFacts,
+    /// The check-7 closure rooted at every declared population.
+    population_reference_closures: BTreeMap<String, Vec<String>>,
     /// Each reference that named no object of this snapshot, with the wire
     /// population it named ([`References`]).
     unresolved: Vec<(String, ObjectReference)>,
@@ -2677,7 +2722,7 @@ pub(super) fn admit_population_values<'t>(
     }
 
     // 6.6 to 6.9: the `relationships` entries, after the last object.
-    let facts = super::relationships::model_facts(views, types);
+    let facts = super::relationships::model_facts(views, types)?;
     let extents =
         super::relationships::check_entries(types, &facts, &snapshot.relationships, &listed)?;
 
@@ -2692,6 +2737,7 @@ pub(super) fn admit_population_values<'t>(
         &mut references,
     )?;
 
+    let population_reference_closures = population_reference_closures(snapshot, &facts, &extents);
     Ok(PopulationValues {
         objects,
         holders,
@@ -2699,6 +2745,7 @@ pub(super) fn admit_population_values<'t>(
         keys_by_population,
         extents,
         facts,
+        population_reference_closures,
         unresolved: references.unresolved,
         out_of_range,
         read_contexts,
@@ -3170,6 +3217,8 @@ pub(super) fn finish_populations(
         widened = widen_ranges(types)?;
         &widened
     };
+    let population_provenance = values.facts.population_provenance()?;
+    let population_reference_closures = values.population_reference_closures.clone();
     let extents = super::relationships::build_extents(
         types,
         values.facts,
@@ -3239,7 +3288,9 @@ pub(super) fn finish_populations(
     .with_extents(extents)
     .with_population_sizes(population_sizes)
     .with_population_members(members)
-    .with_population_completeness(values.completeness.clone());
+    .with_population_completeness(values.completeness.clone())
+    .with_population_provenance(population_provenance)
+    .with_population_reference_closures(population_reference_closures);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,

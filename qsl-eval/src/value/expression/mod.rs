@@ -40,7 +40,10 @@ pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use closure::{PackageClosure, PackageTask};
 pub use evaluate::refusal_record;
 pub use family::{InvalidQualifiedName, QualifiedName};
-pub use protocol_slot::{ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply, SuppliedValue};
+pub use protocol_slot::{
+    ProtocolReferenceOccurrence, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSuppliedValue,
+    ProtocolSupply, SuppliedValue,
+};
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
     Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
@@ -60,20 +63,51 @@ use qsl_semantics::check::{CheckedExpression, CheckedNode};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, Evaluation};
 use quire_semantic_value::catalog::CatalogCode;
 
-fn population_node_key(
-    observation: &qsl_package::AdmittedProtocolObservation<'_>,
-    population: &str,
-) -> Result<NodeKey, InternalFault> {
-    let declaration = quire_checked::key::DeclarationKey {
-        package: observation.model_selection().identity.clone(),
-        node: population.to_owned(),
+fn protocol_reference_failure(
+    authority: &qsl_package::AdmittedProtocolObservation<'_>,
+    binder: NodeKey,
+    failure: qsl_semantics::model::observation::AdmissionFailure,
+) -> CallFailure {
+    let (record, incomplete) = match failure {
+        qsl_semantics::model::observation::AdmissionFailure::Refused(record) => (record, false),
+        qsl_semantics::model::observation::AdmissionFailure::Incomplete(record) => (record, true),
+        qsl_semantics::model::observation::AdmissionFailure::Fault(fault) => {
+            return CallFailure::Fault(fault)
+        }
     };
-    qsl_semantics::model::key::population_node_key(&declaration).map_err(|_| {
-        InternalFault::new(
-            "FR-390",
-            "admitted-population-declaration-has-a-structural-node-key",
-        )
-    })
+    let locus = match record.fields.get("population") {
+        Some(population) if matches!(record.catalog.code(), "incomplete_population") => {
+            match authority.environment().population_node(population) {
+                Some(node) => CallAdmissionLocus::Population(node.clone()),
+                None => {
+                    return CallFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "admitted-population-record-has-checked-node",
+                    ))
+                }
+            }
+        }
+        _ => CallAdmissionLocus::Binder(binder),
+    };
+    let failure = quire_eval::CallAdmissionRecord { record, locus };
+    CallFailure::Admission(Box::new(if incomplete {
+        CallAdmissionFailure::Incomplete(failure)
+    } else {
+        CallAdmissionFailure::Refused(failure)
+    }))
+}
+
+fn occurrence_record(
+    code: &'static str,
+    cause: &'static str,
+    path: Vec<quire_semantic_value::admission::PathStep>,
+) -> AdmissionRecord {
+    AdmissionRecord {
+        catalog: CatalogCode::new(code, cause),
+        fields: Default::default(),
+        path,
+        kernel: None,
+    }
 }
 
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
@@ -1306,21 +1340,25 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     "admitted-source-is-supplied",
                 )));
             };
-            match supplied {
+            match &supplied.value {
                 SuppliedValue::Value(value) => {
-                    if let (
-                        ValueType::Reference(_),
-                        Value::Reference(reference),
-                        Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
-                            observation,
-                        )),
-                    ) = (&source.value_type, value, supply.observation)
+                    if let Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
+                        observation,
+                    )) = supply.observation
                     {
-                        if protocol_slot::foreign_to_observation(reference, observation) {
+                        if protocol_slot::reference_occurrences(value, self.graph().scope().types())
+                            .iter()
+                            .any(|(_, reference)| {
+                                protocol_slot::foreign_to_observation(reference, observation)
+                                    || !observation
+                                        .environment()
+                                        .has_population_universe(reference.universe())
+                            })
+                        {
                             return Err(protocol_slot::resolve::refused(
                                 "foreign_reference",
                                 "foreign-universe",
-                                CallAdmissionLocus::Binder(key),
+                                CallAdmissionLocus::Binder(key.clone()),
                             ));
                         }
                     }
@@ -1348,19 +1386,66 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             CallAdmissionLocus::Binder(key),
                         ));
                     }
-                    for reference in protocol_slot::references(value) {
+                    let occurrences =
+                        protocol_slot::reference_occurrences(value, self.graph().scope().types());
+                    for (position, metadata) in supplied.references.iter().enumerate() {
+                        if supplied.references[..position]
+                            .iter()
+                            .any(|prior| prior.path == metadata.path)
+                        {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                    record: occurrence_record(
+                                        "invalid_runtime_input",
+                                        "duplicate-member",
+                                        metadata.path.clone(),
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        }
+                    }
+                    for metadata in &supplied.references {
+                        if !occurrences.iter().any(|(path, _)| *path == metadata.path) {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                    record: occurrence_record(
+                                        "invalid_runtime_input",
+                                        "unknown-member",
+                                        metadata.path.clone(),
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        }
+                    }
+                    for (path, _) in &occurrences {
+                        if !supplied
+                            .references
+                            .iter()
+                            .any(|metadata| metadata.path == *path)
+                        {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                    record: occurrence_record(
+                                        "invalid_runtime_input",
+                                        "missing-member",
+                                        path.clone(),
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        }
+                    }
+                    if !occurrences.is_empty() {
                         let Some(observation_admission) = supply.observation else {
                             return Err(CallFailure::Admission(Box::new(
                                 CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
-                                    record: AdmissionRecord {
-                                        catalog: CatalogCode::new(
-                                            "unavailable_observation",
-                                            "missing-required-artifact",
-                                        ),
-                                        fields: Default::default(),
-                                        path: Vec::new(),
-                                        kernel: None,
-                                    },
+                                    record: occurrence_record(
+                                        "unavailable_observation",
+                                        "missing-required-artifact",
+                                        occurrences[0].0.clone(),
+                                    ),
                                     locus: CallAdmissionLocus::Binder(key),
                                 }),
                             )));
@@ -1408,74 +1493,56 @@ impl CheckedPackageEvaluation for CheckedPackage {
                                 CallAdmissionLocus::Binder(key),
                             ));
                         }
-                        if !observation.environment().references().contains(&reference) {
-                            if protocol_slot::foreign_to_observation(&reference, observation) {
+                        let mut seeds = Vec::with_capacity(occurrences.len());
+                        for (path, reference) in occurrences {
+                            let metadata = supplied
+                                .references
+                                .iter()
+                                .find(|metadata| metadata.path == path)
+                                .ok_or_else(|| {
+                                    CallFailure::Fault(InternalFault::new(
+                                        "FR-390",
+                                        "reference-occurrence-metadata-is-matched",
+                                    ))
+                                })?;
+                            if protocol_slot::foreign_to_observation(&reference, observation)
+                                || !observation
+                                    .environment()
+                                    .has_population_universe(reference.universe())
+                            {
                                 return Err(protocol_slot::resolve::refused(
                                     "foreign_reference",
                                     "foreign-universe",
                                     CallAdmissionLocus::Binder(key),
                                 ));
                             }
+                            seeds.push((reference, metadata.population.clone(), path));
                         }
-                        if observation.populations().len() == 1
-                            && observation.populations().values().any(|complete| !complete)
+                        if let Err(failure) =
+                            qsl_semantics::model::observation::admit_protocol_reference_seeds(
+                                self.graph().scope().types(),
+                                observation.observation(),
+                                &seeds,
+                            )
                         {
-                            let (population, _) =
-                                observation.populations().iter().next().ok_or_else(|| {
-                                    CallFailure::Fault(InternalFault::new(
-                                        "FR-390",
-                                        "single-population-manifest-is-present",
-                                    ))
-                                })?;
-                            return Err(CallFailure::Admission(Box::new(
-                                CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
-                                    record: AdmissionRecord {
-                                        catalog: CatalogCode::new(
-                                            "incomplete_population",
-                                            "incomplete-scope",
-                                        ),
-                                        fields: [("population", population.clone())]
-                                            .into_iter()
-                                            .collect(),
-                                        path: Vec::new(),
-                                        kernel: None,
-                                    },
-                                    locus: CallAdmissionLocus::Population(
-                                        population_node_key(observation, population)
-                                            .map_err(CallFailure::Fault)?,
-                                    ),
-                                }),
-                            )));
-                        }
-                        if !observation.environment().references().contains(&reference) {
-                            if observation.populations().values().any(|complete| !complete) {
-                                return Err(CallFailure::Admission(Box::new(
-                                    CallAdmissionFailure::Incomplete(
-                                        quire_eval::CallAdmissionRecord {
-                                            record: AdmissionRecord {
-                                                catalog: CatalogCode::new(
-                                                    "incomplete_population",
-                                                    "incomplete-scope",
-                                                ),
-                                                fields: Default::default(),
-                                                path: Vec::new(),
-                                                kernel: None,
-                                            },
-                                            locus: CallAdmissionLocus::Binder(key),
-                                        },
-                                    ),
-                                )));
-                            }
-                            return Err(protocol_slot::resolve::refused(
-                                "dangling_reference",
-                                "absent-target-in-complete-population",
-                                CallAdmissionLocus::Binder(key),
-                            ));
+                            return Err(protocol_reference_failure(observation, key, failure));
                         }
                     }
                     frame[index] = Some(value.clone());
                 }
                 SuppliedValue::Unavailable(cause) => {
+                    if let Some(metadata) = supplied.references.first() {
+                        return Err(CallFailure::Admission(Box::new(
+                            CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                record: occurrence_record(
+                                    "invalid_runtime_input",
+                                    "unknown-member",
+                                    metadata.path.clone(),
+                                ),
+                                locus: CallAdmissionLocus::Binder(key),
+                            }),
+                        )));
+                    }
                     unavailable.insert(index, (key, *cause));
                 }
             }

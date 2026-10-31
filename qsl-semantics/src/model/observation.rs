@@ -448,6 +448,85 @@ pub struct Observation {
     pub out_of_range: Vec<OutOfRange>,
 }
 
+/// Recheck explicit protocol-reference population provenance against an
+/// admitted current snapshot, including FR-106's retained recursive closure.
+/// Each tuple is `(reference, exact population node, value-relative path)`.
+/// The population is never inferred from a reference's present membership.
+pub fn admit_protocol_reference_seeds(
+    types: &TypeEnvironment,
+    observation: &Observation,
+    seeds: &[(ObjectReference, quire_exact::NodeKey, Vec<PathStep>)],
+) -> Result<(), AdmissionFailure> {
+    let environment = &observation.environment;
+    let mut required: Vec<(String, Vec<PathStep>)> = Vec::new();
+    for (reference, node, path) in seeds {
+        let Some(provenance) = environment.population_provenance(node) else {
+            let mut record = admission_record(Code::InvalidModelBinding, "wrong-model-selection")
+                .with("population", format!("{node:?}"));
+            record.path = path.clone();
+            return Err(refuse(record));
+        };
+        let compatible = provenance.member_types().iter().any(|(member, universe)| {
+            reference.universe() == universe
+                && types.conforms(reference.object_type().clone(), member.clone())
+        });
+        if !compatible {
+            let mut record = admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                .with("population", provenance.declaration().node.clone());
+            record.path = path.clone();
+            return Err(refuse(record));
+        }
+        let identity = provenance.declaration().node.clone();
+        if !required.iter().any(|(held, _)| *held == identity) {
+            required.push((identity, path.clone()));
+        }
+    }
+
+    let mut index = 0;
+    while index < required.len() {
+        let (population, path) = required[index].clone();
+        let Some(closure) = environment.population_reference_closure(&population) else {
+            return Err(fault("admitted-population-has-reference-closure"));
+        };
+        for nested in closure {
+            if !required.iter().any(|(held, _)| held == nested) {
+                required.push((nested.clone(), path.clone()));
+            }
+        }
+        index += 1;
+    }
+
+    for (population, path) in &required {
+        if !environment.population_complete(population) {
+            let mut record = admission_record(Code::IncompletePopulation, "incomplete-scope")
+                .with("population", population.clone());
+            record.path = path.clone();
+            return Err(incomplete(record));
+        }
+    }
+
+    for (reference, node, path) in seeds {
+        let Some(provenance) = environment.population_provenance(node) else {
+            return Err(fault("validated-protocol-population-stays-admitted"));
+        };
+        let population = &provenance.declaration().node;
+        let present = environment
+            .population_members(population)
+            .is_some_and(|members| members.contains(reference));
+        if !present {
+            let mut record = admission_record(
+                Code::DanglingReference,
+                "absent-target-in-complete-population",
+            )
+            .with("population", population.clone())
+            .with("object", reference.object().to_string());
+            record.path = path.clone();
+            return Err(refuse(record));
+        }
+    }
+    Ok(())
+}
+
 /// The amount [`ObservationLimits`]' three document-shape ceilings actually
 /// consumed, across every document one [`admit_observations`] or
 /// [`admit_current_snapshot`] call successfully read (FR-109 Outputs'

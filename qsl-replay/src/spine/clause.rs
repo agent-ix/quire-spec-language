@@ -325,7 +325,10 @@ impl ClauseDisposition {
             Self::UnknownLanguage { .. }
             | Self::MissingName { .. }
             | Self::NotAPredicate { .. } => Category::Refusal,
-            Self::Admit(AdmissionFailure::Refused(record)) => record.code.category(),
+            Self::Admit(AdmissionFailure::Refused(record)) => {
+                qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
+                    .map_or(Category::InternalFailure, |code| code.category())
+            }
             Self::Admit(AdmissionFailure::Incomplete(_)) => Category::Incomplete,
             Self::Admit(AdmissionFailure::Fault(_)) | Self::EvaluateFault(_) => {
                 Category::InternalFailure
@@ -1454,8 +1457,10 @@ fn run_function(
                     fields.insert("object", key.clone());
                     return Ok(report(ClauseDisposition::Admit(AdmissionFailure::Refused(
                         AdmissionRecord {
-                            code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
-                            cause: "wrong-role-mapping",
+                            catalog: quire_semantic_value::catalog::CatalogCode::new(
+                                qsl_foundation::diagnostic::Code::InvalidRuntimeInput.as_str(),
+                                "wrong-role-mapping",
+                            ),
                             fields,
                             path: Vec::new(),
                             kernel: None,

@@ -781,7 +781,10 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
         let report = run(input);
         assert_eq!(report.disposition.stage(), ClauseRunStage::Admit, "{cause}");
         let record = admit_record(&report);
-        assert_eq!((record.code.as_str(), record.cause), (code, cause));
+        assert_eq!(
+            (record.catalog.code(), record.catalog.cause()),
+            (code, cause)
+        );
     }
 }
 
@@ -852,7 +855,7 @@ fn an_absent_pre_snapshot_is_incomplete_not_a_violation() {
         report.disposition
     );
     assert_eq!(
-        admit_record(&report).code.as_str(),
+        admit_record(&report).catalog.code(),
         "unavailable_observation"
     );
     assert_eq!(

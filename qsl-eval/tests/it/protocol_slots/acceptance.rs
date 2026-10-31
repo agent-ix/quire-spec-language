@@ -2,8 +2,12 @@
 //! TC-1070's E and L protocols, evaluated through their emitted identities.
 
 use super::*;
+use qsl_semantics::model::observation::PathStep;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use quire_exact::{FieldValue, LimitKind, NodeKey, ObjectId, ObjectReference};
+use quire_exact::{
+    CardinalityBound, CollectionKind, CollectionType, FieldValue, LimitKind, NodeKey, ObjectId,
+    ObjectReference, ValueType,
+};
 use quire_semantic_value::admission::ObservationAdmission;
 
 macro_rules! assert_value_eq {
@@ -16,13 +20,26 @@ macro_rules! assert_value_eq {
 
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
 mod tc1070;
-use tc1070::{document, model, SOURCE};
+use tc1070::{document, document_ep, model, SOURCE};
+
+#[test]
+fn ep_extension_is_admitted_by_the_shared_tc1070_fixture() {
+    let _ = fixture_ep();
+}
 
 fn fixture_with_view() -> (
     CheckedPackage,
     qsl_semantics::model::normalize::EffectiveView,
 ) {
     fixture_from_source(SOURCE)
+}
+
+fn fixture_ep() -> (
+    CheckedPackage,
+    qsl_semantics::model::normalize::EffectiveView,
+) {
+    let bytes = serde_json::to_vec(&document_ep()).unwrap();
+    fixture_from_document(SOURCE, &bytes)
 }
 
 fn fixture_from_source(
@@ -178,9 +195,704 @@ fn supply<'a>(
     ProtocolSupply {
         binders: values
             .into_iter()
-            .map(|(name, value)| (binder(package, protocol, name), SuppliedValue::Value(value)))
+            .map(|(name, value)| {
+                let references = match &value {
+                    Value::Reference(_) => vec![ProtocolReferenceOccurrence {
+                        path: Vec::new(),
+                        population: population_node("nodes"),
+                    }],
+                    _ => Vec::new(),
+                };
+                (
+                    binder(package, protocol, name),
+                    ProtocolSuppliedValue {
+                        value: SuppliedValue::Value(value),
+                        references,
+                    },
+                )
+            })
             .collect(),
         observation,
+    }
+}
+
+fn population_node(name: &str) -> NodeKey {
+    NodeKey::new(
+        model::PACKAGE,
+        vec![
+            quire_exact::PathSegment::Text("relation".to_owned()),
+            quire_exact::PathSegment::Text("population".to_owned()),
+            quire_exact::PathSegment::Text(model::id(name)),
+        ],
+        0,
+    )
+    .unwrap()
+}
+
+fn other_reference(
+    view: &qsl_semantics::model::normalize::EffectiveView,
+    key: &str,
+) -> ObjectReference {
+    let declaration = quire_checked::key::DeclarationKey {
+        package: model::PACKAGE.to_owned(),
+        node: model::id("Other"),
+    };
+    ObjectReference::new(
+        view.object_universe_of(&declaration)
+            .unwrap()
+            .identity()
+            .unwrap(),
+        view.type_identities()[&declaration].clone(),
+        ObjectId::new(key).unwrap(),
+    )
+}
+
+fn ep_receipt(package: &CheckedPackage, refs: [&ObjectReference; 4]) -> Value {
+    let types = package.graph().scope().types();
+    let other = || Value::Reference(refs[0].clone());
+    let sequence_type = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Reference(refs[3].object_type().clone()),
+        Some(CardinalityBound::new(1, 2).unwrap()),
+    );
+    let sequence =
+        quire_exact::from_admitted(sequence_type, vec![Value::Reference(refs[3].clone())]);
+    let bundle_key = types
+        .composites()
+        .find(|ty| ty.name() == "M::PeerBundle")
+        .unwrap()
+        .key();
+    let bundle = types
+        .record(
+            bundle_key,
+            vec![
+                (
+                    "nested",
+                    FieldValue::Present(Value::Reference(refs[1].clone())),
+                ),
+                (
+                    "optional",
+                    FieldValue::Present(Value::Reference(refs[2].clone())),
+                ),
+                ("sequence", FieldValue::Present(sequence)),
+            ],
+        )
+        .unwrap();
+    let receipt_key = types
+        .composites()
+        .find(|ty| ty.name() == "M::Receipt")
+        .unwrap()
+        .key();
+    types
+        .record(
+            receipt_key,
+            vec![
+                ("total", FieldValue::Present(int(5))),
+                ("peer", FieldValue::Present(other())),
+                ("bundle", FieldValue::Present(bundle)),
+            ],
+        )
+        .unwrap()
+}
+
+fn ep_observation<'a>(
+    package: &'a CheckedPackage,
+    _view: &qsl_semantics::model::normalize::EffectiveView,
+    other_spare: Option<(bool, &[&str])>,
+    other_nodes_complete: bool,
+) -> ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>> {
+    ep_observation_state(package, other_spare, other_nodes_complete, None, None, &[])
+}
+
+fn ep_observation_state<'a>(
+    package: &'a CheckedPackage,
+    other_spare: Option<(bool, &[&str])>,
+    other_nodes_complete: bool,
+    ghost_next: Option<(&str, &str)>,
+    relationship_target: Option<(&str, &str)>,
+    extra_other_nodes: &[&str],
+) -> ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>> {
+    let domain = serde_json::to_vec(&document_ep()).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
+    let selected = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "ep-current".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+    };
+    let object = |key: &str, pop: &str| {
+        let next = if key == "ghost" && pop == "otherSpare" {
+            ghost_next.map(|(population, target)| serde_json::json!({"present":{"reference":{"population":model::id(population),"key":target}}})).unwrap_or_else(|| serde_json::json!({"absent":{}}))
+        } else {
+            serde_json::json!({"absent":{}})
+        };
+        serde_json::json!({"key": key, "type": model::id("Other"), "fields": {"marker": {"boolean": true}, "next": next}})
+    };
+    let mut populations = vec![
+        serde_json::json!({"population": model::id("nodes"), "complete": true, "objects": [{"key":"n5", "type":model::id("Node"), "fields":{"total":{"integer":"5"}}}]}),
+    ];
+    let mut other_nodes = Vec::new();
+    if !other_spare.is_some_and(|(_, keys)| keys.contains(&"nested-1")) {
+        other_nodes.push(object("nested-1", "otherNodes"));
+    }
+    if !other_spare.is_some_and(|(_, keys)| keys.contains(&"sequence-1")) {
+        other_nodes.push(object("sequence-1", "otherNodes"));
+    }
+    other_nodes.extend(
+        extra_other_nodes
+            .iter()
+            .map(|key| object(key, "otherNodes")),
+    );
+    let mut spare = Vec::new();
+    let mut spare_complete = true;
+    if let Some((complete, keys)) = other_spare {
+        spare_complete = complete;
+        spare.extend(keys.iter().map(|key| object(key, "otherSpare")));
+    }
+    if !other_spare.is_some_and(|(_, keys)| keys.contains(&"ghost")) {
+        other_nodes.push(object("ghost", "otherNodes"));
+    }
+    populations.push(serde_json::json!({"population":model::id("otherNodes"), "complete":other_nodes_complete, "objects":other_nodes}));
+    if let Some(_) = other_spare {
+        populations.push(serde_json::json!({"population":model::id("otherSpare"), "complete":spare_complete, "objects":spare}));
+    }
+    let snapshot = serde_json::json!({
+        "format":"quire.state.snapshot/v1",
+        "identity":{"authority":selected.authority, "identity":selected.identity, "revision_namespace":selected.revision_namespace, "revision":selected.revision},
+        "observation":"current", "model":{"identity":model::PACKAGE,"version":"1.0.0","digest":"set at admission"},
+        "populations":populations,
+        "relationships":[{"relationship":model::id("relationship/otherLinks"),"complete":true,"instances":relationship_target.map(|(population,key)| vec![serde_json::json!({"source":{"population":model::id("otherSpare"),"key":"ghost"},"target":{"population":model::id(population),"key":key}})]).unwrap_or_default()}]
+    });
+    let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+        .into_iter()
+        .collect();
+    package.evaluation_view().admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    )
+}
+
+#[test]
+#[trace("TC-1070", "FR-390-AC-23")]
+fn nested_reference_provenance_drives_the_named_population_admission() {
+    let (package, view) = fixture_ep();
+    let peer = other_reference(&view, "ghost");
+    let nested = other_reference(&view, "nested-1");
+    let optional = other_reference(&view, "option-1");
+    let sequence = other_reference(&view, "sequence-1");
+    let receipt = ep_receipt(&package, [&peer, &nested, &optional, &sequence]);
+    let references = vec![
+        ProtocolReferenceOccurrence {
+            path: vec![PathStep::Field("peer".into())],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("nested".into()),
+            ],
+            population: population_node("otherNodes"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("optional".into()),
+                PathStep::OptionValue,
+            ],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("sequence".into()),
+                PathStep::Index(0),
+            ],
+            population: population_node("otherNodes"),
+        },
+    ];
+    let observation = ep_observation(&package, &view, Some((true, &["ghost", "option-1"])), true);
+    let mut meter = Meter::new(UNLIMITED);
+    let output = package
+        .evaluate_protocol_slot(
+            &slot(
+                &package,
+                "Refunds",
+                "Refund",
+                "registration_captures",
+                Some(0),
+            ),
+            &ep_supply(
+                &package,
+                receipt.clone(),
+                references.clone(),
+                Some(&observation),
+            ),
+            &mut meter,
+        )
+        .unwrap();
+    assert_value_eq!(
+        completed(output),
+        int(5),
+        "all four explicitly attributed nested references are admitted"
+    );
+
+    let incomplete = ep_observation(&package, &view, Some((false, &[])), true);
+    let mut meter = Meter::new(UNLIMITED);
+    let failure = package
+        .evaluate_protocol_slot(
+            &slot(
+                &package,
+                "Refunds",
+                "Refund",
+                "registration_captures",
+                Some(0),
+            ),
+            &ep_supply(&package, receipt, references.clone(), Some(&incomplete)),
+            &mut meter,
+        )
+        .unwrap_err();
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+    let CallFailure::Admission(failure) = failure else {
+        panic!("expected admission refusal")
+    };
+    let CallAdmissionFailure::Incomplete(record) = failure.as_ref() else {
+        panic!("expected incomplete population")
+    };
+    assert_eq!(record.record.catalog.code(), "incomplete_population");
+    assert_eq!(
+        record.locus,
+        CallAdmissionLocus::Population(population_node("otherSpare"))
+    );
+
+    for (state, expected_code) in [
+        (None, "incomplete_population"),
+        (Some((true, &[][..])), "dangling_reference"),
+    ] {
+        let observation = ep_observation(&package, &view, state, true);
+        let mut meter = Meter::new(UNLIMITED);
+        let failure = package
+            .evaluate_protocol_slot(
+                &slot(
+                    &package,
+                    "Refunds",
+                    "Refund",
+                    "registration_captures",
+                    Some(0),
+                ),
+                &ep_supply(
+                    &package,
+                    ep_receipt(&package, [&peer, &nested, &optional, &sequence]),
+                    references.clone(),
+                    Some(&observation),
+                ),
+                &mut meter,
+            )
+            .unwrap_err();
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+        let CallFailure::Admission(failure) = failure else {
+            panic!("expected E-P seed refusal")
+        };
+        let record = match failure.as_ref() {
+            CallAdmissionFailure::Incomplete(record) | CallAdmissionFailure::Refused(record) => {
+                record
+            }
+        };
+        assert_eq!(record.record.catalog.code(), expected_code);
+        assert_eq!(
+            record.locus,
+            if expected_code == "incomplete_population" {
+                CallAdmissionLocus::Population(population_node("otherSpare"))
+            } else {
+                CallAdmissionLocus::Binder(binder(&package, "Refunds", "forward"))
+            }
+        );
+    }
+
+    for index in 0..references.len() {
+        let mut omitted = references.clone();
+        let expected_path = omitted.remove(index).path;
+        let mut meter = Meter::new(UNLIMITED);
+        let error = package
+            .evaluate_protocol_slot(
+                &slot(
+                    &package,
+                    "Refunds",
+                    "Refund",
+                    "registration_captures",
+                    Some(0),
+                ),
+                &ep_supply(
+                    &package,
+                    ep_receipt(&package, [&peer, &nested, &optional, &sequence]),
+                    omitted,
+                    Some(&observation),
+                ),
+                &mut meter,
+            )
+            .unwrap_err();
+        let CallFailure::Admission(failure) = error else {
+            panic!("omitted occurrence must refuse")
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("omission is a refusal")
+        };
+        assert_eq!(record.record.catalog.cause(), "missing-member");
+        assert_eq!(record.record.path, expected_path);
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+
+        let mut duplicated = references.clone();
+        let repeated = duplicated[index].clone();
+        duplicated.insert(index + 1, repeated.clone());
+        let error = package
+            .evaluate_protocol_slot(
+                &slot(
+                    &package,
+                    "Refunds",
+                    "Refund",
+                    "registration_captures",
+                    Some(0),
+                ),
+                &ep_supply(
+                    &package,
+                    ep_receipt(&package, [&peer, &nested, &optional, &sequence]),
+                    duplicated,
+                    Some(&observation),
+                ),
+                &mut meter,
+            )
+            .unwrap_err();
+        let CallFailure::Admission(failure) = error else {
+            panic!("duplicate occurrence must refuse")
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("duplicate is a refusal")
+        };
+        assert_eq!(record.record.catalog.cause(), "duplicate-member");
+        assert_eq!(record.record.path, repeated.path);
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+    }
+
+    for extra_path in [
+        vec![PathStep::Field("total".into())],
+        vec![
+            PathStep::Field("bundle".into()),
+            PathStep::Field("absent".into()),
+        ],
+    ] {
+        let mut extra = references.clone();
+        extra.push(ProtocolReferenceOccurrence {
+            path: extra_path.clone(),
+            population: population_node("otherNodes"),
+        });
+        let error = package
+            .evaluate_protocol_slot(
+                &slot(
+                    &package,
+                    "Refunds",
+                    "Refund",
+                    "registration_captures",
+                    Some(0),
+                ),
+                &ep_supply(
+                    &package,
+                    ep_receipt(&package, [&peer, &nested, &optional, &sequence]),
+                    extra,
+                    Some(&observation),
+                ),
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap_err();
+        let CallFailure::Admission(failure) = error else {
+            panic!("extra occurrence must refuse")
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("extra is a refusal")
+        };
+        assert_eq!(record.record.catalog.cause(), "unknown-member");
+        assert_eq!(record.record.path, extra_path);
+    }
+
+    for (population, expected_code, expected_cause) in [
+        (
+            population_node("elsewhereNodes"),
+            "invalid_runtime_input",
+            "wrong-value-kind",
+        ),
+        (
+            NodeKey::new(
+                "other/model",
+                vec![
+                    quire_exact::PathSegment::Text("relation".into()),
+                    quire_exact::PathSegment::Text("population".into()),
+                    quire_exact::PathSegment::Text("ix://other/model/externalOthers".into()),
+                ],
+                0,
+            )
+            .unwrap(),
+            "invalid_model_binding",
+            "wrong-model-selection",
+        ),
+    ] {
+        let mut supplied = references.clone();
+        supplied[0].population = population;
+        let error = package
+            .evaluate_protocol_slot(
+                &slot(
+                    &package,
+                    "Refunds",
+                    "Refund",
+                    "registration_captures",
+                    Some(0),
+                ),
+                &ep_supply(
+                    &package,
+                    ep_receipt(&package, [&peer, &nested, &optional, &sequence]),
+                    supplied,
+                    Some(&observation),
+                ),
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap_err();
+        let CallFailure::Admission(failure) = error else {
+            panic!("incompatible provenance must refuse")
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("provenance mismatch is a refusal")
+        };
+        assert_eq!(record.record.catalog.code(), expected_code);
+        assert_eq!(record.record.catalog.cause(), expected_cause);
+    }
+}
+
+fn ep_supply<'a>(
+    package: &CheckedPackage,
+    receipt: Value,
+    references: Vec<ProtocolReferenceOccurrence>,
+    observation: Option<&'a ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>>,
+) -> ProtocolSupply<'a> {
+    ProtocolSupply {
+        binders: vec![(
+            binder(package, "Refunds", "forward"),
+            ProtocolSuppliedValue {
+                value: SuppliedValue::Value(receipt),
+                references,
+            },
+        )],
+        observation,
+    }
+}
+
+#[test]
+#[trace("TC-1070", "FR-390-AC-23")]
+fn nested_population_closure_uses_object_fields_then_relationship_ends() {
+    let (package, view) = fixture_ep();
+    let peer = other_reference(&view, "ghost");
+    let nested = other_reference(&view, "nested-1");
+    let optional = other_reference(&view, "option-1");
+    let sequence = other_reference(&view, "sequence-1");
+    let receipt = ep_receipt(&package, [&peer, &nested, &optional, &sequence]);
+    let refs = vec![
+        ProtocolReferenceOccurrence {
+            path: vec![PathStep::Field("peer".into())],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("nested".into()),
+            ],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("optional".into()),
+                PathStep::OptionValue,
+            ],
+            population: population_node("otherSpare"),
+        },
+        ProtocolReferenceOccurrence {
+            path: vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("sequence".into()),
+                PathStep::Index(0),
+            ],
+            population: population_node("otherSpare"),
+        },
+    ];
+    let call =
+        |observation: &ObservationAdmission<qsl_package::AdmittedProtocolObservation<'_>>,
+         meter: &mut Meter| {
+            package.evaluate_protocol_slot(
+                &slot(
+                    &package,
+                    "Refunds",
+                    "Refund",
+                    "registration_captures",
+                    Some(0),
+                ),
+                &ep_supply(&package, receipt.clone(), refs.clone(), Some(observation)),
+                meter,
+            )
+        };
+    let all_spare = Some((true, &["ghost", "nested-1", "option-1", "sequence-1"][..]));
+
+    for (field, relation, complete) in [
+        (Some(("otherNodes", "field-child")), None, false),
+        (None, Some(("otherNodes", "edge-child")), false),
+    ] {
+        let extra = if field.is_some() {
+            &["field-child"][..]
+        } else {
+            &["edge-child"][..]
+        };
+        let observation =
+            ep_observation_state(&package, all_spare, complete, field, relation, extra);
+        let mut meter = Meter::new(UNLIMITED);
+        let result = call(&observation, &mut meter);
+        let Err(CallFailure::Admission(failure)) = result else {
+            panic!("recursive population must be incomplete: {result:?}")
+        };
+        let CallAdmissionFailure::Incomplete(record) = failure.as_ref() else {
+            panic!("expected incomplete nested population")
+        };
+        assert_eq!(record.record.catalog.code(), "incomplete_population");
+        assert_eq!(
+            record.locus,
+            CallAdmissionLocus::Population(population_node("otherNodes"))
+        );
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+    }
+
+    let observation = ep_observation_state(
+        &package,
+        all_spare,
+        true,
+        Some(("otherNodes", "field-ghost")),
+        Some(("otherNodes", "edge-ghost")),
+        &[],
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    let Err(CallFailure::Admission(failure)) = call(&observation, &mut meter) else {
+        panic!("field closure defect must refuse")
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("expected check-8 refusal")
+    };
+    assert_eq!(record.record.catalog.code(), "dangling_reference");
+    assert_eq!(
+        record.record.fields.get("object").map(String::as_str),
+        Some("field-ghost")
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+
+    let observation = ep_observation_state(
+        &package,
+        all_spare,
+        true,
+        Some(("otherNodes", "field-child")),
+        Some(("otherNodes", "edge-ghost")),
+        &["field-child"],
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    let Err(CallFailure::Admission(failure)) = call(&observation, &mut meter) else {
+        panic!("relationship closure defect must refuse")
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("expected relationship check-8 refusal")
+    };
+    assert_eq!(record.record.catalog.code(), "dangling_reference");
+    assert_eq!(
+        record.record.fields.get("relationship").map(String::as_str),
+        Some(model::id("relationship/otherLinks").as_str())
+    );
+    assert_eq!(
+        record.record.fields.get("object").map(String::as_str),
+        Some("edge-ghost")
+    );
+    assert_eq!(
+        record.record.fields.get("instance").map(String::as_str),
+        Some("0")
+    );
+    assert_eq!(
+        record.record.fields.get("end").map(String::as_str),
+        Some("target")
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
+
+    let observation = ep_observation_state(
+        &package,
+        all_spare,
+        true,
+        Some(("otherNodes", "field-child")),
+        Some(("otherNodes", "edge-child")),
+        &["field-child", "edge-child"],
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    assert_value_eq!(completed(call(&observation, &mut meter).unwrap()), int(5));
+}
+
+#[test]
+#[trace("TC-1070", "FR-390-AC-23")]
+fn root_reference_occurrence_requires_the_exact_nodes_declaration() {
+    let (package, view) = fixture_ep();
+    let declaration = quire_checked::key::DeclarationKey {
+        package: model::PACKAGE.to_owned(),
+        node: model::id("Node"),
+    };
+    let reference = ObjectReference::new(
+        view.object_universe_of(&declaration)
+            .unwrap()
+            .identity()
+            .unwrap(),
+        view.type_identities()[&declaration].clone(),
+        ObjectId::new("n5").unwrap(),
+    );
+    let observation = ep_observation(&package, &view, None, true);
+    let slot = slot(&package, "Pipeline", "Got", "related.from", Some(0));
+    let invoke = |metadata: Vec<ProtocolReferenceOccurrence>, meter: &mut Meter| {
+        package.evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: vec![(
+                    binder(&package, "Pipeline", "view"),
+                    ProtocolSuppliedValue {
+                        value: SuppliedValue::Value(Value::Reference(reference.clone())),
+                        references: metadata,
+                    },
+                )],
+                observation: Some(&observation),
+            },
+            meter,
+        )
+    };
+    let valid = ProtocolReferenceOccurrence {
+        path: Vec::new(),
+        population: population_node("nodes"),
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    assert!(
+        matches!(completed(invoke(vec![valid.clone()], &mut meter).unwrap()), Value::Reference(actual) if actual == reference)
+    );
+    for (metadata, cause) in [
+        (vec![], "missing-member"),
+        (vec![valid.clone(), valid], "duplicate-member"),
+    ] {
+        let mut meter = Meter::new(UNLIMITED);
+        let error = invoke(metadata, &mut meter).unwrap_err();
+        let CallFailure::Admission(failure) = error else {
+            panic!("root provenance mutation must refuse")
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("root provenance mutation is a refusal")
+        };
+        assert_eq!(record.record.catalog.cause(), cause);
+        assert!(record.record.path.is_empty());
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
     }
 }
 
@@ -1168,11 +1880,11 @@ fn crossed_template_sources_and_admission_precedence_name_the_exact_binder() {
     let mut duplicate = retry_supply(&package, 0);
     duplicate.binders.push((
         binder(&package, "Refunds", "earlier"),
-        SuppliedValue::Value(attempt(&package, 0)),
+        SuppliedValue::Value(attempt(&package, 0)).into(),
     ));
     duplicate.binders.push((
         binder(&package, "Refunds", "partialTarget"),
-        SuppliedValue::Value(int(5)),
+        SuppliedValue::Value(int(5)).into(),
     ));
     duplicate
         .binders
@@ -1192,7 +1904,8 @@ fn crossed_template_sources_and_admission_precedence_name_the_exact_binder() {
                 receipt(&package, 5)
             } else {
                 int(5)
-            }),
+            })
+            .into(),
         ));
         assert_refused(
             &package,
@@ -1298,7 +2011,7 @@ fn crossed_template_sources_and_admission_precedence_name_the_exact_binder() {
             .iter_mut()
             .find(|(candidate, _)| *candidate == key)
             .unwrap()
-            .1 = SuppliedValue::Value(value);
+            .1 = SuppliedValue::Value(value).into();
         assert_refused(
             &package,
             &retry,
@@ -1387,7 +2100,12 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
             CallAdmissionFailure::Refused(record) if !incomplete => record,
             other => panic!("wrong admission outcome: {other:?}"),
         };
-        assert_eq!(record.record.catalog.code(), code.code());
+        assert_eq!(
+            record.record.catalog.code(),
+            code.code(),
+            "observed cause: {}",
+            record.record.catalog.cause()
+        );
         assert_eq!(
             record.locus,
             CallAdmissionLocus::Binder(binder(&package, "Refunds", "view"))

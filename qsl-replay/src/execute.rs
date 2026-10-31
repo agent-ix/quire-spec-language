@@ -526,7 +526,7 @@ impl ReplayRefusal {
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => record.code,
+            ) => Code::from_code(record.catalog.code()).unwrap_or(Code::RuntimeInvariant),
             Self::Admission(AdmissionFailure::Fault(_)) => Code::RuntimeInvariant,
             Self::UnfairLasso { .. }
             | Self::UnknownParameter(_)
@@ -588,7 +588,7 @@ impl ReplayRefusal {
             Self::Supplied(stop) => supplied_stop_cause(stop),
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => Some(record.cause),
+            ) => Some(record.catalog.cause()),
             Self::LimitAboveReader(_)
             | Self::SourceCount(_)
             | Self::InvalidPackageName(_)

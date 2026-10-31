@@ -12,7 +12,7 @@ use super::{admission_record, AdmissionRecordExt};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{EffectiveId, ObjectReference};
+use quire_exact::{EffectiveId, ObjectReference, UniverseId};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::{
     EndSide, NavigationRelationship, PopulationEntry, PopulationEnumerator, RelationshipEnd,
@@ -305,6 +305,7 @@ fn read_end(value: Json<'_>) -> Result<RawEnd, AdmissionRecord> {
 pub(super) struct PopulationDeclaration {
     key: DeclarationKey,
     covered: Vec<EffectiveId>,
+    member_types: Vec<(EffectiveId, UniverseId)>,
 }
 
 /// What admission reads of the package declarations: the navigation
@@ -317,7 +318,10 @@ pub(super) struct ModelFacts {
 
 /// The navigation relationships (both ends object types of the model) and the
 /// population declarations of every admitted domain package.
-pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> ModelFacts {
+pub(super) fn model_facts(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+) -> Result<ModelFacts, AdmissionFailure> {
     let mut navigation = Vec::new();
     let mut populations = Vec::new();
     for view in views {
@@ -350,6 +354,20 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
                     });
                 }
                 DomainPackageRecord::Population(population) => {
+                    let mut member_types = Vec::new();
+                    for member in &population.member_types {
+                        let Some(effective) = identities.get(member) else {
+                            continue;
+                        };
+                        let Some(universe) = view.view.object_universe_of(member) else {
+                            continue;
+                        };
+                        let universe = universe
+                            .identity()
+                            .map_err(|_| fault("population-member-universe-identity"))?
+                            .clone();
+                        member_types.push((effective.clone(), universe));
+                    }
                     populations.push(PopulationDeclaration {
                         key: population.key.clone(),
                         covered: population
@@ -357,6 +375,7 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
                             .iter()
                             .filter_map(|member| identities.get(member).cloned())
                             .collect(),
+                        member_types,
                     });
                 }
                 _ => {}
@@ -364,18 +383,58 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
         }
     }
     populations.sort_by(|left, right| left.key.cmp(&right.key));
-    ModelFacts {
+    Ok(ModelFacts {
         navigation,
         populations,
-    }
+    })
 }
 
 impl ModelFacts {
+    pub(super) fn population_identities(&self) -> impl Iterator<Item = &str> {
+        self.populations
+            .iter()
+            .map(|population| population.key.node.as_str())
+    }
+
+    pub(super) fn population_provenance(
+        &self,
+    ) -> Result<Vec<crate::model::object_environment::PopulationProvenance>, AdmissionFailure> {
+        self.populations
+            .iter()
+            .map(|population| {
+                let node = crate::model::key::population_node_key(&population.key)
+                    .map_err(|_| super::fault("population-declaration-node-key"))?;
+                Ok(crate::model::object_environment::PopulationProvenance::new(
+                    population.key.clone(),
+                    node,
+                    population.member_types.clone(),
+                ))
+            })
+            .collect()
+    }
+
     fn relationship(&self, node: &str) -> Option<&NavigationRelationship<DeclarationKey>> {
         self.navigation
             .iter()
             .find(|relationship| relationship.key.node == node)
     }
+}
+
+/// The declared endpoint populations connected to `population` by admitted
+/// relationship instances, in their original instance and end order.
+pub(super) fn related_population_ids(extents: &[CheckedExtent], population: &str) -> Vec<String> {
+    let mut related = Vec::new();
+    for extent in extents {
+        for instance in &extent.instances {
+            if instance.source.population == population {
+                related.push(instance.target.population.clone());
+            }
+            if instance.target.population == population {
+                related.push(instance.source.population.clone());
+            }
+        }
+    }
+    related
 }
 
 /// The traversal of the package's population declarations: one row per
@@ -848,7 +907,7 @@ pub(super) fn first_link_change(
     if pre.1.is_empty() && post.1.is_empty() {
         return Ok(None);
     }
-    let facts = model_facts(views, types);
+    let facts = model_facts(views, types)?;
     let pre = side_extents(views, &facts, pre.0, pre.1)?;
     let post = side_extents(views, &facts, post.0, post.1)?;
     let deleted: BTreeSet<(&str, &str)> = deleted

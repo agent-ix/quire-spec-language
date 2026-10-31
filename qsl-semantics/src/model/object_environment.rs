@@ -17,7 +17,7 @@ use crate::model::clause_observation::Observation;
 use crate::model::observation::{OutOfRange, RelationshipExtents};
 use crate::model::population::PopulationBinding;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{EffectiveId, ObjectReference, PopulationId, Value};
+use quire_exact::{EffectiveId, NodeKey, ObjectReference, PopulationId, UniverseId, Value};
 use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -29,6 +29,44 @@ use quire_semantic_value::object_closure::ObjectClosure;
 pub struct PopulationConflict {
     /// The colliding [`PopulationId`].
     pub population_id: PopulationId,
+}
+
+/// The selected-model declaration facts needed to validate one explicitly
+/// attributed protocol reference without inferring its population.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationProvenance {
+    declaration: DeclarationKey,
+    node: NodeKey,
+    member_types: Vec<(EffectiveId, UniverseId)>,
+}
+
+impl PopulationProvenance {
+    pub(crate) fn new(
+        declaration: DeclarationKey,
+        node: NodeKey,
+        member_types: Vec<(EffectiveId, UniverseId)>,
+    ) -> Self {
+        Self {
+            declaration,
+            node,
+            member_types,
+        }
+    }
+
+    /// The exact population declaration key admitted by model normalization.
+    pub fn declaration(&self) -> &DeclarationKey {
+        &self.declaration
+    }
+
+    /// The canonical checked node for the population declaration.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
+    }
+
+    /// Effective member types and their normalized universes.
+    pub fn member_types(&self) -> &[(EffectiveId, UniverseId)] {
+        &self.member_types
+    }
 }
 
 /// An object environment: SV's closed object closure, plus FR-089's
@@ -64,6 +102,11 @@ pub struct ObjectEnvironment {
     /// the population's declaration identity (FR-106); empty for an
     /// environment no snapshot document admitted.
     population_completeness: BTreeMap<String, bool>,
+    /// Exact declared population nodes and their normalized member types.
+    population_provenance: BTreeMap<NodeKey, PopulationProvenance>,
+    /// The FR-106 check-7 population closure rooted at each declared
+    /// population, retaining the snapshot's exact reference provenance.
+    population_reference_closures: BTreeMap<String, Vec<String>>,
     /// The history fields a refinement keeps for these objects, by object
     /// and field name (FR-138); empty for every other environment.
     history: BTreeMap<(ObjectReference, String), Value>,
@@ -101,6 +144,8 @@ impl ObjectEnvironment {
             references: Vec::new(),
             population_members: BTreeMap::new(),
             population_completeness: BTreeMap::new(),
+            population_provenance: BTreeMap::new(),
+            population_reference_closures: BTreeMap::new(),
             history: BTreeMap::new(),
             read_log: None,
             place_presence: PlacePresences::default(),
@@ -206,6 +251,61 @@ impl ObjectEnvironment {
     /// declaration identity (`package/node` form).
     pub fn population_completeness(&self) -> &BTreeMap<String, bool> {
         &self.population_completeness
+    }
+
+    /// Records the exact model declaration catalog for admitted populations.
+    #[must_use]
+    pub fn with_population_provenance(
+        mut self,
+        provenance: impl IntoIterator<Item = PopulationProvenance>,
+    ) -> Self {
+        self.population_provenance = provenance
+            .into_iter()
+            .map(|entry| (entry.node.clone(), entry))
+            .collect();
+        self
+    }
+
+    /// The admitted declaration facts for `node`, when it names a selected
+    /// model population.
+    pub fn population_provenance(&self, node: &NodeKey) -> Option<&PopulationProvenance> {
+        self.population_provenance.get(node)
+    }
+
+    /// The node key of a population by its exact declaration identity.
+    pub fn population_node(&self, identity: &str) -> Option<&NodeKey> {
+        self.population_provenance
+            .iter()
+            .find_map(|(node, provenance)| {
+                (provenance.declaration.node == identity).then_some(node)
+            })
+    }
+
+    /// Whether `universe` belongs to any population in the admitted model.
+    pub fn has_population_universe(&self, universe: &UniverseId) -> bool {
+        self.population_provenance.values().any(|provenance| {
+            provenance
+                .member_types
+                .iter()
+                .any(|(_, member_universe)| member_universe == universe)
+        })
+    }
+
+    /// Records the parsed check-7 closure rooted at each model population.
+    #[must_use]
+    pub fn with_population_reference_closures(
+        mut self,
+        closures: BTreeMap<String, Vec<String>>,
+    ) -> Self {
+        self.population_reference_closures = closures;
+        self
+    }
+
+    /// The exact FR-106 check-7 closure rooted at `population`.
+    pub fn population_reference_closure(&self, population: &str) -> Option<&[String]> {
+        self.population_reference_closures
+            .get(population)
+            .map(Vec::as_slice)
     }
 
     /// Records every object the snapshot admitted, so an evaluation that

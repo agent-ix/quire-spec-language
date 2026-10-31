@@ -178,7 +178,7 @@ pub(crate) fn observe_state(
     let closure = ObjectClosure::new(types, objects, &[]).map_err(map_environment_refusal)?;
     let extents = admit_supplied_extents(
         types,
-        model_facts(views, types),
+        model_facts(views, types)?,
         state.extents.clone(),
         &completeness,
     )?;

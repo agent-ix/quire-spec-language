@@ -593,8 +593,11 @@ fn admission(failure: &AdmissionFailure) -> Refusal {
     let declined = |cause, record: &qsl_semantics::model::observation::AdmissionRecord| {
         Refusal::Declined(
             cause,
-            DeclineCode::Qsl(record.code),
-            CatalogCode::new(record.code.as_str(), record.cause),
+            DeclineCode::Qsl(
+                qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
+                    .unwrap_or(qsl_foundation::diagnostic::Code::RuntimeInvariant),
+            ),
+            record.catalog.clone(),
         )
     };
     match failure {

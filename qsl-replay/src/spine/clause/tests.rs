@@ -1050,10 +1050,10 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
             record,
         )) => {
             assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+                record.catalog.code(),
+                qsl_foundation::diagnostic::Code::InvalidRuntimeInput.as_str()
             );
-            assert_eq!(record.cause, "wrong-role-mapping");
+            assert_eq!(record.catalog.cause(), "wrong-role-mapping");
         }
         other => panic!("expected Admit(Refused(..)), got {other:?}"),
     }
@@ -1259,7 +1259,7 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.cause, "unknown-member");
+            assert_eq!(record.catalog.cause(), "unknown-member");
             assert_eq!(
                 record.fields.get("field").map(String::as_str),
                 Some("zzz_unknown")
@@ -1895,8 +1895,8 @@ fn run_clause_refuses_a_dangling_parent_reference() {
             record,
         )) => {
             assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::DanglingReference
+                record.catalog.code(),
+                qsl_foundation::diagnostic::Code::DanglingReference.as_str()
             );
         }
         other => panic!("expected Admit(Refused(dangling_reference)), got {other:?}"),
@@ -1952,8 +1952,8 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
             qsl_semantics::model::observation::AdmissionFailure::Incomplete(record),
         ) => {
             assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::IncompletePopulation
+                record.catalog.code(),
+                qsl_foundation::diagnostic::Code::IncompletePopulation.as_str()
             );
         }
         other => panic!("expected Admit(Incomplete(incomplete_population)), got {other:?}"),
@@ -2070,10 +2070,10 @@ fn run_clause_evaluates_the_same_identity_family() {
             record,
         )) => {
             assert_eq!(
-                record.code,
-                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+                record.catalog.code(),
+                qsl_foundation::diagnostic::Code::InvalidRuntimeInput.as_str()
             );
-            assert_eq!(record.cause, "wrong-role-mapping");
+            assert_eq!(record.catalog.cause(), "wrong-role-mapping");
         }
         other => panic!("expected Admit(Refused(wrong-role-mapping)), got {other:?}"),
     }
@@ -2324,8 +2324,7 @@ fn admission_failure_exits_by_its_record_code_category() {
     use qsl_foundation::diagnostic::Code;
     use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord};
     let record = |code: Code| AdmissionRecord {
-        code,
-        cause: "any-cause",
+        catalog: quire_semantic_value::catalog::CatalogCode::new(code.as_str(), "any-cause"),
         fields: BTreeMap::new(),
         path: Vec::new(),
         kernel: None,
