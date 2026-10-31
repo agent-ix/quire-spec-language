@@ -299,7 +299,7 @@ impl Imported {
 /// dimension is keyed over its name, a derived one over its normalized
 /// terms, each term's map multiplied by its exponent. `None` for a term
 /// naming no dimension of the package, or a cycle, which intake refuses.
-pub(super) fn package_dimension(
+pub(crate) fn package_dimension(
     model: &AdmittedModel,
     dimension: &PackageDimensionRecord,
     visiting: &mut Vec<DeclarationKey>,

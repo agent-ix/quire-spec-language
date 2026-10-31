@@ -1415,8 +1415,10 @@ pub(crate) struct OccurrenceMap<S> {
     spans: HashMap<NodeKey, Roles<S>>,
 }
 
-/// One node's occurrences: each role's spans in ordinal order.
-type Roles<S> = BTreeMap<OccurrenceRole, Vec<S>>;
+/// One node's occurrences: each role's spans in ordinal order, an ordinal
+/// below the last that no occurrence holds being `None` (see
+/// [`OccurrenceMap::record_at`]).
+type Roles<S> = BTreeMap<OccurrenceRole, Vec<Option<S>>>;
 
 impl<S: fmt::Debug> fmt::Debug for OccurrenceMap<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1503,7 +1505,38 @@ impl<S> OccurrenceMap<S> {
             .entry(role)
             .or_insert_with(|| Vec::with_capacity(1));
         let ordinal = u64::try_from(spans.len()).unwrap_or(u64::MAX);
-        spans.push(span);
+        spans.push(Some(span));
+        Origin::new(role.kernel_role(), ordinal)
+    }
+
+    /// Record the occurrence of `identity` under `role` at exactly
+    /// `ordinal`, for a role whose ordinal is the occurrence's place among
+    /// the unit's declarations and not a repeat count (FR-322: a dimension
+    /// equivalence node's `anchor` carries the declaration's index among the
+    /// source's equivalence declarations). The ordinals below it stay
+    /// unoccupied. An `ordinal` an occurrence already holds is kept as
+    /// recorded.
+    pub(crate) fn record_at(
+        &mut self,
+        identity: NodeKey,
+        role: OccurrenceRole,
+        ordinal: u64,
+        span: S,
+    ) -> Origin {
+        let spans = self
+            .spans
+            .entry(identity)
+            .or_default()
+            .entry(role)
+            .or_default();
+        if let Ok(at) = usize::try_from(ordinal) {
+            if spans.len() <= at {
+                spans.resize_with(at + 1, || None);
+            }
+            if spans[at].is_none() {
+                spans[at] = Some(span);
+            }
+        }
         Origin::new(role.kernel_role(), ordinal)
     }
 
@@ -1525,7 +1558,7 @@ impl<S> OccurrenceMap<S> {
                 .get_mut(node)
                 .and_then(|roles| roles.get_mut(&role))
             {
-                spans.sort_by_key(&position);
+                spans.sort_by_key(|span| span.as_ref().map(&position));
             }
         }
     }
@@ -1575,7 +1608,9 @@ impl<S> OccurrenceMap<S> {
         at: impl Fn(&S) -> bool,
     ) -> Option<Origin> {
         let spans = self.spans.get(identity)?.get(&role)?;
-        let ordinal = spans.iter().position(at)?;
+        let ordinal = spans
+            .iter()
+            .position(|span| span.as_ref().is_some_and(&at))?;
         Some(Origin::new(
             role.kernel_role(),
             u64::try_from(ordinal).unwrap_or(u64::MAX),
@@ -1588,7 +1623,8 @@ impl<S> OccurrenceMap<S> {
         self.spans
             .get(&identity)?
             .get(&OccurrenceRole::of(origin.role())?)?
-            .get(ordinal)
+            .get(ordinal)?
+            .as_ref()
     }
 
     /// The nodes whose roles `admits`, ascending by key.
@@ -1616,14 +1652,14 @@ fn occurrences_of<'m, S>(
 fn role_occurrences<'m, S>(
     identity: &'m NodeKey,
     role: OccurrenceRole,
-    spans: &'m [S],
+    spans: &'m [Option<S>],
 ) -> impl Iterator<Item = (NodeKey, Origin, &'m S)> + 'm {
-    (0_u64..).zip(spans).map(move |(ordinal, span)| {
-        (
+    (0_u64..).zip(spans).filter_map(move |(ordinal, span)| {
+        Some((
             identity.clone(),
             Origin::new(role.kernel_role(), ordinal),
-            span,
-        )
+            span.as_ref()?,
+        ))
     })
 }
 

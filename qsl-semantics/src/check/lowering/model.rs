@@ -2280,10 +2280,25 @@ impl<'a> Lowering<'a> {
                 }
             };
             let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
-            let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
-            // FR-322: a node this unit declares carries its `SourceOwner`.
-            let owner =
-                (key.package() == self.package_name).then(|| Owner::Source(self.owner.clone()));
+            // FR-322: a node an admitted domain package declares carries that
+            // package's `ModelOwner` and no `declaration`; a node this unit
+            // declares carries its name as its `declaration` and its
+            // `SourceOwner`. Any other node (a definition-owned unit) keeps
+            // its name and no owner.
+            let source_owned = key.package() == self.package_name;
+            let model_owner = if source_owned {
+                None
+            } else {
+                self.foreign_nominal_owner(&key)
+            };
+            let model_alias = model_owner.as_ref().map(|(_, alias)| alias.clone());
+            let (declaration, owner) = match model_owner {
+                Some((owner, _)) => (None, Some(Owner::Model(owner))),
+                None => (
+                    Some(identifiers(qualified.iter().map(String::as_str), &site)?),
+                    source_owned.then(|| Owner::Source(self.owner.clone())),
+                ),
+            };
             let inserted = self.insert_nominal(
                 &site,
                 key.clone(),
@@ -2292,17 +2307,46 @@ impl<'a> Lowering<'a> {
                     node_tag: NodeTag::ScalarType,
                     semantic_form,
                     semantic_type: semantic_type.map(Into::into),
-                    declaration: Some(declaration),
+                    declaration,
                     owner,
                     body: BodyTerm::aggregate(Vec::new()),
                 },
                 Some(payload),
             )?;
             if inserted {
-                self.record(key, OccurrenceRole::Declaration, site);
+                match model_alias {
+                    // A model-owned node has no declaration of its own: root
+                    // it at the `model` declaration that selects its package,
+                    // as a model record is.
+                    Some(alias) => {
+                        self.record(key, OccurrenceRole::Generated, type_declaration(&alias));
+                    }
+                    None => self.record(key, OccurrenceRole::Declaration, site),
+                }
             }
         }
         Ok(())
+    }
+
+    /// The `ModelOwner` of the dimension node `key` an admitted domain
+    /// package declares: the package's identity and the dimension's IR node
+    /// identity.
+    /// The selecting model alias comes with it, the declaration its
+    /// `generated` occurrence is rooted at.
+    fn foreign_nominal_owner(&self, key: &NodeKey) -> Option<(ModelOwner, String)> {
+        self.models.iter().find_map(|model| {
+            model.dimensions.iter().find_map(|dimension| {
+                let (dimension_key, _, _) =
+                    crate::check::assemble::package_dimension(model, dimension, &mut Vec::new())?;
+                if &dimension_key != key {
+                    return None;
+                }
+                let owner =
+                    ModelOwner::new(model.selection.identity.clone(), dimension.key.node.clone())
+                        .ok()?;
+                Some((owner, model.alias()?.to_owned()))
+            })
+        })
     }
 
     /// FR-094 "Dimension equivalence", FR-322-AC-118: one
@@ -2310,7 +2354,7 @@ impl<'a> Lowering<'a> {
     /// in source order: self-typed, no `declaration`, the unit's source
     /// owner, a body referencing its two dimension nodes in ascending key
     /// order, its `root_scale` in the nominal payload, and one `anchor`
-    /// occurrence whose ordinal is the declaration's place. The two
+    /// occurrence whose ordinal is the declaration's index in source order. The two
     /// dimension nodes it depends on are built as a declared unit's are.
     pub(crate) fn dimension_equivalence_nodes(
         &mut self,
@@ -2355,7 +2399,10 @@ impl<'a> Lowering<'a> {
                 )),
             )?;
             if inserted {
-                self.record(key, OccurrenceRole::Anchor, site);
+                // FR-322: the anchor's ordinal is the declaration's index
+                // among the source's equivalence declarations.
+                let ordinal = u64::try_from(index).unwrap_or(u64::MAX);
+                self.record_at(key, OccurrenceRole::Anchor, ordinal, site);
             }
         }
         Ok(())

@@ -2887,21 +2887,29 @@ fn emit_package_inner(
                     },
                     ordinal: 0,
                 };
-                {
-                    // FR-322 follow-up: this is the timed source's region,
-                    // not yet the nominal declaration's own region. Replace
-                    // it when TimeNominalNode exposes that exact span.
-                    source_map.push(CheckedSourceMapEntry {
-                        node_id: id.clone(),
-                        role: occurrence.role.clone(),
-                        ordinal: occurrence.ordinal,
-                        regions: vec![CheckedSourceRegion {
-                            source: source_artifact(graph.source()),
-                            start: source_region.start(),
-                            end: source_region.end(),
-                        }],
-                    });
-                }
+                // FR-322: a source nominal's occurrence is located at its
+                // own declaration; a model-owned node has no source form,
+                // so its `generated` occurrence takes the timed source's
+                // region.
+                let region = match nominal.declaration_span {
+                    Some(span) => SourceRegion::new(
+                        graph.source().clone(),
+                        span.start as u64,
+                        span.end as u64,
+                    )
+                    .map_err(encoding)?,
+                    None => source_region.clone(),
+                };
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: id.clone(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(graph.source()),
+                        start: region.start(),
+                        end: region.end(),
+                    }],
+                });
                 nodes.push(CheckedSemanticNodeV2 {
                     owner_model: None,
                     node_id: id.clone(),

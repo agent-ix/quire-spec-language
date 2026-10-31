@@ -1733,6 +1733,12 @@ impl<'a> Lowering<'a> {
         }
     }
 
+    /// Record one occurrence of an admitted `key` at exactly `ordinal`
+    /// ([`OccurrenceMap::record_at`]).
+    fn record_at(&mut self, key: NodeKey, role: OccurrenceRole, ordinal: u64, location: Location) {
+        self.occurrences.record_at(key, role, ordinal, location);
+    }
+
     /// The `Origin` of one `generated` occurrence of `frame`, the operation
     /// `(declaring, name)`'s frame node (FR-104 "Requirements", FR-104-AC-5;
     /// FR-105's `frame` row): the first call for a given operation mints it,
