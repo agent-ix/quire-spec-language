@@ -435,12 +435,6 @@ that change each scenario of `tests/it/complete_package.rs` and
 | FR-087-AC-13 | The importing package's checker resolves imported names as Behavior, "E3 resolves an imported name in the importing package's checker", states. Given package `P` importing library `L@1` (which exports `R`) with no `as` qualifier, and declaring no `R` of its own, `P`'s checker refuses both `R` and `L::R` with `missing_declaration` / `missing-name`. Given `P` importing `A@1` and `B@1` both `as a`, the assembler refuses the second alias `a` with `ambiguous_declaration` / `ambiguous-name`, naming both import spans, and E3 does not run. Given `P` importing `L@1` `as l`, `l::R` resolves to R's exported structural `NodeKey` in `L@1`'s package, and `l::Q`, which `L@1` does not export, is refused `missing_declaration` / `missing-name`. Given `P` importing `L@1` `as l` with no library supplied as `L`, the import is refused `missing_import` / `missing-selection` at stage `intake`, and E3 does not run. | Test (TC-379) |
 | FR-087-AC-14 | **RETIRED (a package has no id).** The E4 link step selects each imported library by its `LibraryName`; there is no `package_id` to record, compare or unify, and no diamond rule over ids. | Test (TC-253), retired |
 
-The `library`/`ImportView` name-resolution scan does not see a node
-id returned as raw bytes, a hex `String` or a `usize` position; a
-name passed as `&[u8]`; a closure without type annotations, including one
-held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
-type inside a function body.
-
 For `ImportView`, crate-external construction
 is shown by a `compile_fail` doctest: a struct literal of the type. The doctests show only
 that a crate-external caller fails to compile; stable rustdoc does not check

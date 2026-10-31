@@ -74,7 +74,7 @@ delivers (ADR-030 D-8 O-6):
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-259-AC-1 | The checked package identity, every node key and the v2 package identity of a package holding a 100,000-term sum, minted on a thread with a 512 KiB stack under limits raised to fit it, equal those minted from the same source on a thread with an 8 MiB stack. | Test (TC-728) |
+| FR-259-AC-1 | The checked package of a package holding a 100,000-term sum, checked on a thread with a 512 KiB stack under limits raised to fit it, and its node keys, whose paths nest an operand's node key in each sum node's key, are equal to those checked from the same source on a thread with an 8 MiB stack. | Test (TC-728) |
 | FR-259-AC-2 | **RETIRED (node preimages are deleted).** A node key is the structural triple `{package, path, ordinal}`; no declaration preimage is encoded, so no identity byte limit applies to one. | Test (TC-728), retired |
 | FR-259-AC-3 | On a thread with a 512 KiB stack, the simulation state key QSL mints for a 100,000-long recursive list value, and the intake read of a 100,000-deep JSON package document, each equal the result on a thread with an 8 MiB stack, and the state key equals the RFC 8785 text of the state. | Test (TC-729) |
 | FR-259-AC-4 | **RETIRED (node preimages are deleted).** A node key is the structural triple `{package, path, ordinal}`; there is no node or package identity preimage whose nesting depth could be measured. | Test (TC-728), retired |
