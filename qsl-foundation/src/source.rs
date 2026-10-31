@@ -8,6 +8,7 @@ use alloc::sync::Arc;
 use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
 use provenance::{RawSourceRef, SourceRegion};
 
+pub mod node_table;
 pub mod provenance;
 
 /// FR-001: the four labels a caller names a source by, separate from the
