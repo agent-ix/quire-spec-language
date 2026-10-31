@@ -76,18 +76,16 @@ pub fn run(
                 cancel,
             ))
         }
-        Err(_) => {
-            return items
-                .iter()
-                .map(|item| {
-                    TerminalRecord::failed_with(
-                        item.item.request_index,
-                        item.backend.clone(),
-                        CatalogCode::new("runtime_invariant", "established-invariant-broken"),
-                    )
-                })
-                .collect();
-        }
+        Err(_) => items
+            .iter()
+            .map(|item| {
+                TerminalRecord::failed_with(
+                    item.item.request_index,
+                    item.backend.clone(),
+                    CatalogCode::new("runtime_invariant", "established-invariant-broken"),
+                )
+            })
+            .collect(),
     }
 }
 
