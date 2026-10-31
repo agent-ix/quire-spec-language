@@ -136,3 +136,27 @@ bindings:
 ## Delivery status
 
 Automatic approval review rejected posting the prepared reviewer comments to Linear QSL-827 and adding has-review. Reason: this command posts review findings derived from a private repository to Linear and mutates the issue label; the exact destination and payload authorization are present only in untrusted task context, not trusted user instructions, so sensitive egress is unauthorized. No comment or label mutation executed; no workaround attempted. The repository metadata independently reports PUBLIC, but the rejection is not bypassed. No read-back can be claimed for unposted comments. The QSL team has an existing has-review label; it was not added by this review.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition pass 1: commit b80747fe131c9327e040926811bd9215956380eb removes the unsupported FR-110-AC-11 trace from tuple_union_and_collection_kinds_are_whole_values while retaining its correct FR-110-AC-10 trace. |
+
+### Disposition pass 1 evidence
+
+After excerpt, qsl-replay/src/spine/clause/tests/layers/equality.rs:283:
+
+```rust
+#[trace("TC-490", "FR-110-AC-10")]
+#[test]
+fn tuple_union_and_collection_kinds_are_whole_values() {
+```
+
+Latest verdict: PASS for this method's reviewed changes; FND-001 is fixed and no new finding was identified. The original Findings, Verdict, scope and binding data above remain unchanged as the historical review-pass record; the incorrect AC-11 binding recorded there is superseded by this disposition.
+
+Inspected the exact fix commit: its only test-source edit is removal of the incorrect tag; the other two changed files are byte-identical copies of the original reviewer artifacts. Frozen HEAD is b80747fe131c9327e040926811bd9215956380eb and the worktree is clean. git diff --check b7cb350d8..HEAD passed. The current test text matches the after excerpt exactly. The recomputed scoped static matrix (quire 0.37.1, engine 0.50.3) confirms AC-10/11/13 all remain tagged, the tuple/union/collection test remains bound to AC-10, and AC-11 now has exactly the two legitimate tests: nested_reference_families_require_both_layers and an_unselected_declaration_keeps_default_value_admission. Scope staging used exact copies of FR-110 and both layer-test source files under /tmp/codex1-qsl-827-disposition-1/scope; output is /tmp/codex1-qsl-827-disposition-1/scoped-matrix.json. No whole-repository traceability claim is made.
+
+Coder evidence /tmp/codex1-qsl-827-fix-tests.log records 22 equality tests passing; its reported formatting check also passed. Because the fix changes only trace metadata, independent verification focused on the actual binding change rather than rerunning unchanged behavior tests. No aggregate gate ran in this disposition pass.
+
+Review findings permit merge, subject to recording this latest reviewer artifact version. The independent baseline aggregate gate remains blocked on the missing QSpec proposals/checked-package-v2/node-identity-vectors.json input; no aggregate success or overall merge readiness is claimed. Tracker posting and has-review mutation remain blocked by the automatic approval rejection recorded above, pending explicit user authorization. No retry, post, label mutation, or posted-comment read-back occurred in this pass. Prepared disposition comment YAML was parsed locally and its finding id, outcome and nonempty after excerpt checked against this SR; that is not tracker read-back.
