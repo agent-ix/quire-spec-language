@@ -10,6 +10,7 @@ use super::owner_model::targets;
 use super::population_bound::document;
 use super::protocol_graph::{argument, clause, member, target, PROFILES};
 use super::protocol_reference::clause_argument;
+use super::protocol_terminal::argument as named_argument;
 use super::reachability::{lower_with, Lowered};
 use super::*;
 use crate::checked_v2::V2ReadRefusal;
@@ -1322,15 +1323,6 @@ fn a_decision_that_calls_a_function_reads_back() {
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
 mod tc1070;
 
-fn compensation_binding<'a>(node: &'a Value, name: &str) -> &'a Value {
-    &node["body"]["arguments"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|argument| argument["name"] == name)
-        .expect("compensation binding")["value"]
-}
-
 /// Finds an existing emitted subexpression below the given expression reference.
 fn expression_with_operation<'a>(
     wire: &'a Value,
@@ -1374,13 +1366,13 @@ fn activation_capture_self_and_foreign_reads_are_refused_by_the_reader() {
     let refund_at = position(&wire, refund);
     let self_read = expression_with_operation(
         &wire,
-        member(compensation_binding(refund, "retry"), "relation"),
+        member(named_argument(refund, "retry"), "relation"),
         "quire.op.boolean.not",
     )
     .expect("Refund's retry contains not activated");
     let foreign_read = expression_with_operation(
         &wire,
-        member(compensation_binding(partial, "trigger"), "guard"),
+        member(named_argument(partial, "trigger"), "guard"),
         "quire.op.integer.ge",
     )
     .expect("Partial's guard contains partialTarget >= 0");
