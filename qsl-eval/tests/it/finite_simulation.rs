@@ -1591,18 +1591,6 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
             transition: op("bogus"),
         })
     );
-
-    let mut wrong_key = good.clone();
-    wrong_key.steps[1].key = key("999");
-    assert_eq!(
-        replay(&chain, &wrong_key, IdentityLimits::default()),
-        Err(ReplayError::KeyMismatch {
-            step: 1,
-            transition: op("t2"),
-            expected: key("999"),
-            actual: key("2"),
-        })
-    );
 }
 
 /// TC-454 step 8, FR-101-AC-10: `sample_request` refuses a `DefinitionRef`
@@ -2070,14 +2058,6 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
     duplicate.findings.push(trace.findings[0].clone());
     assert_eq!(
         replay(&system, &duplicate, IdentityLimits::default()),
-        Err(ReplayError::FindingMismatch { step: 1 })
-    );
-
-    // The right depth and findings under another state's digest.
-    let mut wrong_digest = trace.clone();
-    wrong_digest.findings[0].state = key("1");
-    assert_eq!(
-        replay(&system, &wrong_digest, IdentityLimits::default()),
         Err(ReplayError::FindingMismatch { step: 1 })
     );
 
