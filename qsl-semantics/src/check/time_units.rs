@@ -23,7 +23,7 @@ use crate::check::lowering::AdmittedModel;
 use crate::check::temporal_clause::TimeNominalNode;
 use crate::model::domain_package::PackageUnitRecord;
 use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
-use crate::value::{ModelSubject, NodeOwner, OwnerSubject};
+use crate::value::semantic_node::{ModelSubject, NodeOwner, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
 
