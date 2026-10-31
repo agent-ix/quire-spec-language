@@ -13,8 +13,6 @@ use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
-use std::collections::BTreeMap;
-
 use qsl_foundation::Span;
 
 use crate::check::{
@@ -506,6 +504,10 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
     // `Fill`'s whole graph is written (its `parallel` since QSL-1186), so
     // its clause key is recorded.
     assert!(refinement.concrete_protocol().is_some());
+    // A protocol subject writes no per-step simulation record yet: FR-146
+    // gives no extent for a protocol row's `Step` record (STD-493 comment
+    // c699936f).
+    assert_eq!(refinement.step_simulations(), []);
 }
 
 /// Selection half of FR-135-AC-10 (the header grammar is not built): the rows
@@ -915,43 +917,6 @@ fn a_row_target_gives_its_observation() {
             RowObservation::Internal,
         ]
     );
-}
-
-/// The `StepRowRef` of each of `graph`'s step rows, by its class spelling.
-fn row_refs_by_spelling(graph: &CheckedGraph) -> BTreeMap<String, u32> {
-    let refinement = only_refinement(graph);
-    refinement
-        .steps()
-        .iter()
-        .enumerate()
-        .map(|(source, row)| {
-            let reference = refinement
-                .step_row_ref(source)
-                .expect("the refinement emits");
-            (row.spelling().to_owned(), reference.index())
-        })
-        .collect()
-}
-
-/// FR-146-AC-5, protocol subject: the rows take their positions in QSpec
-/// FR-375's protocol order, the `memory` row after every row that names a
-/// declaration, and writing the rows in reverse changes none. A protocol
-/// subject writes no record yet: FR-146 gives no extent for a protocol
-/// row's `Step` record (STD-493 comment c699936f), and this interim is
-/// withdrawn when it does.
-#[trace("TC-551", "FR-146-AC-5")]
-#[test]
-fn a_protocol_subjects_rows_take_their_fr375_positions() {
-    let graph = checks(&unit(&fill(""), ROWS));
-    let refs = row_refs_by_spelling(&graph);
-    let mut positions: Vec<u32> = refs.values().copied().collect();
-    positions.sort_unstable();
-    assert_eq!(positions, (0..6).collect::<Vec<_>>());
-    assert_eq!(refs.get("memory drain"), Some(&5), "{refs:?}");
-    let reversed: Vec<&str> = ROWS.split('\n').rev().collect();
-    let backward = checks(&unit(&fill(""), &reversed.join("\n")));
-    assert_eq!(row_refs_by_spelling(&backward), refs);
-    assert_eq!(only_refinement(&graph).step_simulations(), []);
 }
 
 /// TC-1057's `Refunds`: an attempt `Tried` of `step`, the effect `Applied`,

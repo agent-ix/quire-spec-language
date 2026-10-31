@@ -2125,50 +2125,43 @@ fn population_and_object_rows_read_back() {
 
 /// QSpec FR-375-AC-22, FR-322-AC-88 and AC-128 (AC-87 does not apply: QSL
 /// derives no node per step row, the rows are members of the owner's
-/// body): each step row has
+/// body): `steps` holds the rows in declaration order, each step row has
 /// one `refinement_step_rows` entry at its own source row, keyed by the
-/// owner and its canonical ordinal, and a proof-eligible owner a
-/// `generated` occurrence per row (ordinal `i + 1` at row `i`'s region)
-/// beside the one at its declaration. Writing the rows in the other order
-/// moves the regions but not the `steps` order, the node id or the
-/// package id.
+/// owner and its ordinal, and a proof-eligible owner a `generated`
+/// occurrence per row (ordinal `i + 1` at row `i`'s region) beside the one
+/// at its declaration, whichever order the rows are written in.
 #[trace("FR-375-AC-22", "FR-322-AC-88", "FR-322-AC-128", "TC-310", "TC-233")]
 #[test]
-fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
+fn step_rows_carry_their_source_regions_by_ordinal() {
     let operations = ["attemptUpdate", "rollback"];
     let update = "step C::ConfigVersion::attemptUpdate -> A::ConfigVersion::attemptUpdate(self);";
     let rollback = "step C::ConfigVersion::rollback -> stutter;";
-    let (forward, forward_unit) = emit_rows(&format!("{MAPS}\n{update}\n{rollback}"), &operations);
-    let (reversed, reversed_unit) =
-        emit_rows(&format!("{MAPS}\n{rollback}\n{update}"), &operations);
-    let (forward_node, reversed_node) = (
-        refinement_node(&forward.emission),
-        refinement_node(&reversed.emission),
-    );
-    assert_eq!(forward_node["node_id"], reversed_node["node_id"]);
-    assert_eq!(forward_node["body"], reversed_node["body"]);
-    let classes: Vec<&str> = forward_node["body"]["steps"]
-        .as_array()
-        .expect("steps")
-        .iter()
-        .map(|step| step["source_class"].as_str().expect("a class"))
-        .collect();
-    assert_eq!(
-        classes,
-        ["ConfigVersion::attemptUpdate", "ConfigVersion::rollback"]
-    );
-    for (emitted, unit, node) in [
-        (&forward, &forward_unit, &forward_node),
-        (&reversed, &reversed_unit, &reversed_node),
+    for (rows, classes) in [
+        (
+            [update, rollback],
+            ["ConfigVersion::attemptUpdate", "ConfigVersion::rollback"],
+        ),
+        (
+            [rollback, update],
+            ["ConfigVersion::rollback", "ConfigVersion::attemptUpdate"],
+        ),
     ] {
+        let (emitted, unit) = emit_rows(&format!("{MAPS}\n{}\n{}", rows[0], rows[1]), &operations);
+        let node = refinement_node(&emitted.emission);
+        let written_classes: Vec<&str> = node["body"]["steps"]
+            .as_array()
+            .expect("steps")
+            .iter()
+            .map(|step| step["source_class"].as_str().expect("a class"))
+            .collect();
+        assert_eq!(written_classes, classes);
         let written = wire(&emitted.emission);
-        let rows = written["refinement_step_rows"]
+        let sidecar = written["refinement_step_rows"]
             .as_array()
             .expect("a step-row sidecar");
-        let at = |row: &str| span_of(unit, row);
-        let expected = [at(update), at(rollback)];
-        assert_eq!(rows.len(), 2);
-        for (ordinal, (row, (start, end))) in rows.iter().zip(expected).enumerate() {
+        let expected = [span_of(&unit, rows[0]), span_of(&unit, rows[1])];
+        assert_eq!(sidecar.len(), 2);
+        for (ordinal, (row, (start, end))) in sidecar.iter().zip(expected).enumerate() {
             assert_eq!(row["node_id"], node["node_id"]);
             assert_eq!(row["ordinal"], ordinal);
             assert_eq!(
@@ -2189,7 +2182,7 @@ fn step_rows_carry_their_source_regions_by_canonical_ordinal() {
                 )
             })
             .collect();
-        let declaration = span_of(unit, "refinement R");
+        let declaration = span_of(&unit, "refinement R");
         assert_eq!(generated.len(), 3, "{generated:?}");
         assert_eq!(generated[0].1, declaration.0);
         assert_eq!((generated[1].1, generated[1].2), expected[0]);
@@ -2406,59 +2399,6 @@ pub(super) const PROTOCOL_ROWS: [&str; 3] = [
     "step duplicate C::Impl::ch -> stutter;",
 ];
 
-/// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject's
-/// `steps` are ordered by their node key, rows of one node by their
-/// alias-free class spelling (`duplicate Impl::ch` before `lose Impl::ch`),
-/// each naming its class catalog node, whatever order they are written in.
-#[trace("FR-375-AC-19", "TC-310")]
-#[test]
-fn protocol_step_rows_order_by_node_then_class_spelling() {
-    let steps = |rows: &[&str]| {
-        let (unit, documents) = protocol_rows(rows);
-        let package = modelled_with_documents(&unit, &documents, Vec::new());
-        let emission = emit_checked(&package).expect("the protocol rows emit");
-        let node = refinement_node(&emission);
-        let catalog = node["body"]["class_catalog"]["concrete"].clone();
-        (node["body"]["steps"].clone(), catalog)
-    };
-    let (written, catalog) = steps(&PROTOCOL_ROWS);
-    let steps_of = |steps: &Value| -> Vec<(NodeKey, String)> {
-        steps
-            .as_array()
-            .expect("steps")
-            .iter()
-            .map(|step| {
-                (
-                    qsl_foundation::node_wire::node_key_from_json(&step["source_node"])
-                        .expect("a node id"),
-                    step["source_class"].as_str().expect("a class").to_owned(),
-                )
-            })
-            .collect()
-    };
-    let ordered = steps_of(&written);
-    let mut sorted = ordered.clone();
-    sorted.sort();
-    assert_eq!(ordered, sorted);
-    let classes: Vec<&str> = ordered.iter().map(|(_, class)| class.as_str()).collect();
-    let duplicate = classes
-        .iter()
-        .position(|class| *class == "duplicate Impl::ch");
-    let lose = classes.iter().position(|class| *class == "lose Impl::ch");
-    assert!(duplicate < lose && lose.is_some(), "{classes:?}");
-    for step in written.as_array().expect("steps") {
-        let entry = catalog
-            .as_array()
-            .expect("a concrete catalog")
-            .iter()
-            .find(|entry| entry["class"] == step["source_class"])
-            .unwrap_or_else(|| panic!("{} is catalogued", step["source_class"]));
-        assert_eq!(entry["node"], step["source_node"]);
-    }
-    let reversed: Vec<&str> = PROTOCOL_ROWS.iter().rev().copied().collect();
-    assert_eq!(steps(&reversed).0, written);
-}
-
 /// A protocol subject's step rows read back through IR's catalog rebuild.
 #[trace("FR-375-AC-19", "TC-310")]
 #[test]
@@ -2472,6 +2412,30 @@ fn protocol_step_rows_read_back() {
         documents,
     });
     assert!(admitted.is_ok(), "the rows read back: {admitted:?}");
+}
+
+/// QSpec FR-375-AC-19 (the declaration-naming rows): a protocol subject
+/// writes one `steps` entry per row, each naming its class catalog node.
+#[trace("FR-375-AC-19", "TC-310")]
+#[test]
+fn protocol_step_rows_name_their_class_catalog_node() {
+    let (unit, documents) = protocol_rows(&PROTOCOL_ROWS);
+    let package = modelled_with_documents(&unit, &documents, Vec::new());
+    let emission = emit_checked(&package).expect("the protocol rows emit");
+    let node = refinement_node(&emission);
+    let catalog = node["body"]["class_catalog"]["concrete"]
+        .as_array()
+        .expect("a concrete catalog");
+    let steps = node["body"]["steps"].as_array().expect("steps");
+    assert_eq!(steps.len(), PROTOCOL_ROWS.len());
+    for step in steps {
+        assert!(step.get("source_node").is_some(), "{step}");
+        let entry = catalog
+            .iter()
+            .find(|entry| entry["class"] == step["source_class"])
+            .unwrap_or_else(|| panic!("{} is catalogued", step["source_class"]));
+        assert_eq!(entry["node"], step["source_node"]);
+    }
 }
 
 /// [`PROTOCOL_ROWS`] with a `tso` parallel `Par` in `Impl`'s run: its
@@ -2500,35 +2464,28 @@ fn memory_emission(run: &str, rows: &[&str]) -> Emitted {
     }
 }
 
-/// QSpec FR-375-AC-19 (the memory rows, QSL-1181): the `memory`
-/// rows come after every declaration-naming row, `drain` before `flush`,
-/// neither with a `source_node`; writing the rows in another order changes
-/// neither the node id nor the package id.
+/// QSpec FR-375-AC-19 (the memory rows, QSL-1181): the `memory drain` and
+/// `memory flush` rows name no declaration, so they carry no
+/// `source_node`; every other row carries one.
 #[trace("FR-375-AC-19", "TC-310")]
 #[test]
-fn memory_rows_go_last_drain_before_flush() {
-    let forward = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
-    let reversed: Vec<&str> = MEMORY_ROWS.iter().rev().copied().collect();
-    let reversed = memory_emission(MEMORY_RUN, &reversed);
-    let node = refinement_node(&forward.emission);
+fn memory_rows_carry_no_source_node() {
+    let emitted = memory_emission(MEMORY_RUN, &MEMORY_ROWS);
+    let node = refinement_node(&emitted.emission);
     let steps = node["body"]["steps"].as_array().expect("steps");
-    let tail: Vec<&Value> = steps[steps.len() - 2..].iter().collect();
-    assert_eq!(
-        tail.iter()
-            .map(|step| step["source_class"].as_str().expect("a class"))
-            .collect::<Vec<_>>(),
-        ["memory drain", "memory flush"]
-    );
-    for step in &tail {
-        assert!(step.get("source_node").is_none(), "{step}");
+    assert_eq!(steps.len(), MEMORY_ROWS.len());
+    let mut memory: Vec<&str> = Vec::new();
+    for step in steps {
+        let class = step["source_class"].as_str().expect("a class");
+        if class.starts_with("memory ") {
+            assert!(step.get("source_node").is_none(), "{step}");
+            memory.push(class);
+        } else {
+            assert!(step.get("source_node").is_some(), "{step}");
+        }
     }
-    for step in &steps[..steps.len() - 2] {
-        assert!(step.get("source_node").is_some(), "{step}");
-    }
-    assert_eq!(
-        refinement_node(&reversed.emission)["node_id"],
-        node["node_id"]
-    );
+    memory.sort_unstable();
+    assert_eq!(memory, ["memory drain", "memory flush"]);
 }
 
 /// QSpec FR-375-AC-23 and AC-26: over `parallel` controls defaulting to
@@ -2705,7 +2662,8 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     let mut external = wire.clone();
     let node = &mut external["semantic_graph"]["nodes"][position];
     let local = node["body"]["abstract"].clone();
-    node["body"]["abstract"] = foreign("elsewhere");
+    node["body"]["abstract"] =
+        serde_json::json!({"package": "elsewhere", "node": foreign("elsewhere")});
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")

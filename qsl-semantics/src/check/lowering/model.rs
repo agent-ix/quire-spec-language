@@ -2233,12 +2233,21 @@ impl<'a> Lowering<'a> {
     fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
-            if self.graph.nodes.contains_key(&key) {
-                continue;
-            }
             let Some(node) = self.units.nominal_node(&key).cloned() else {
                 return Err(fault(location, KeyFault::UnheldNominal(key)));
             };
+            if let Some(held) = self.graph.nodes.get(&key) {
+                let form = match node.form {
+                    NominalUnitForm::Unit { .. } => "unit",
+                    NominalUnitForm::Dimension { .. } => "dimension",
+                };
+                if held.content.node_tag == NodeTag::ScalarType
+                    && held.content.semantic_form == form
+                {
+                    continue;
+                }
+                return Err(fault(location, KeyFault::NominalKeyClash(key)));
+            }
             let NominalDeclaration {
                 qualified_declaration: qualified,
                 ..

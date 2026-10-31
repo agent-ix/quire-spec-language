@@ -62,7 +62,7 @@ fn a_union_unit_recompiles_to_its_emitted_package() {
     let recompiled = compile_package(
         qsl_replay::CompileUnit {
             source: identity("2"),
-            package_name: crate::TEST_PACKAGE_NAME.to_owned(),
+            package_name: "union-nodes".to_owned(),
             path: "unit.native",
             bytes: original.sources()[0].text().as_bytes(),
         },
@@ -115,7 +115,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let graph = qsl_semantics::check::PackageDeclarations::assemble(
         parsed.source().reference().clone(),
-        crate::TEST_PACKAGE_NAME.to_string(),
+        "union-nodes".to_string(),
         unit,
         Vec::new(),
         Vec::new(),

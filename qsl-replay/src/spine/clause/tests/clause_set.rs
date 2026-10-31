@@ -321,3 +321,25 @@ fn a_set_naming_a_clause_twice_is_refused_naming_it() {
         Err(CallFailure::Input(InputRefusal::DuplicateClause(name))) if name == "UpdateAllowed"
     ));
 }
+
+/// FR-109-AC-9: an invariant dividing integers with no `Rational` expected
+/// type is refused at `compile` as `ill_typed` (exit 20), so no package
+/// exists to admit or evaluate.
+#[trace("FR-109-AC-9", "TC-468")]
+#[test]
+fn an_integer_division_clause_is_refused_at_compile_as_ill_typed() {
+    let (base, packages) = config_version_unit_and_packages();
+    let clause = "invariant Ratio using v on Config::ConfigVersion at current \
+        { 6 / (self.versionNumber - self.versionNumber) >= 0 }\n";
+    let refusal = compose(
+        source(),
+        super::frame_replay::IDENTITY,
+        format!("{base}{clause}").as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect_err("integer division has no Rational expected type");
+    assert_eq!(refusal.code().as_str(), "ill_typed");
+    assert_eq!(refusal.code().category().exit_code(), 20);
+}

@@ -58,8 +58,8 @@ pub struct RefutedQuery {
 }
 
 /// A refinement's per-step simulation obligations (QSpec FR-468): the
-/// refuted initial query and one refuted step query per step row, in the
-/// order of the refinement node's `steps` array (QSpec FR-375).
+/// refuted initial query and one refuted step query per step row, in
+/// declaration order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementSmtCertificate {
     /// The proofs' format.
@@ -356,7 +356,7 @@ fn step_rows(request: &RefinementCertificateRequest<'_>) -> Result<u64, Halt> {
         .iter()
         .find_map(|refinement| {
             let emission = refinement.v2_emission().ok()?;
-            (emission.identity == request.refinement).then_some(emission.step_sources.len())
+            (emission.identity == request.refinement).then_some(refinement.steps().len())
         })
         .and_then(|rows| u64::try_from(rows).ok())
         .ok_or_else(|| fault("the request names a refinement of its package"))

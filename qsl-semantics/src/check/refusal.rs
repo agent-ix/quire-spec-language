@@ -2884,6 +2884,9 @@ pub enum KeyFault {
     /// A declared unit node, or a dimension or target unit node a held unit
     /// names, whose nominal preimage the unit table does not hold.
     UnheldNominal(quire_exact::NodeKey),
+    /// A dimension or unit node whose key a node of another form already
+    /// holds.
+    NominalKeyClash(quire_exact::NodeKey),
     /// A `Population<T>[N]`-typed node whose object type `T` no population
     /// binding names.
     UntargetedPopulation,
@@ -2957,6 +2960,7 @@ impl KeyFault {
             Self::UnnamedRecordKind(_) => "record-kind-named",
             Self::UnheldUnit(_) => "compound-unit-held",
             Self::UnheldNominal(_) => "unit-nominal-preimage-held",
+            Self::NominalKeyClash(_) => "unit-nominal-key-unshared",
             Self::UntargetedPopulation => "population-target-bound",
             Self::UnbuiltLiteral => "literal-kind-built",
             Self::UnknownComposite(_) => "composite-declared",

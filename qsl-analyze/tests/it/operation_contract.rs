@@ -408,14 +408,11 @@ mod simulation {
             .iter()
             .find(|entry| match (entry.record().obligation, operation) {
                 (StepObligation::Initial, None) => true,
-                (StepObligation::Step { row }, Some(name)) => {
-                    (0..refinement.steps().len()).any(|source| {
-                        refinement.step_row_ref(source) == Some(row)
-                            && refinement.steps()[source]
-                                .concrete_operation()
-                                .is_some_and(|(_, operation)| operation == name)
-                    })
-                }
+                (StepObligation::Step { row }, Some(name)) => usize::try_from(row.index())
+                    .ok()
+                    .and_then(|source| refinement.steps().get(source))
+                    .and_then(|step| step.concrete_operation())
+                    .is_some_and(|(_, operation)| operation == name),
                 _ => false,
             })
             .map(|entry| entry.occurrence().clone())

@@ -1929,7 +1929,9 @@ impl<'a> Lowering<'a> {
             } else {
                 build(ordinal).map_err(invalid)?
             };
-            if !self.graph.nodes.contains_key(&key) {
+            // A dimension or unit key is held by the unit table whether or
+            // not its node is in the graph yet, so no other node takes it.
+            if !self.graph.nodes.contains_key(&key) && self.units.nominal_node(&key).is_none() {
                 return Ok(key);
             }
         }
@@ -2630,7 +2632,15 @@ impl<'a> Lowering<'a> {
     ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
         match self.graph.nodes.entry(key.clone()) {
-            btree_map::Entry::Occupied(_) => Ok(false),
+            btree_map::Entry::Occupied(slot) => {
+                let held = &slot.get().content;
+                if held.node_tag == content.node_tag && held.semantic_form == content.semantic_form
+                {
+                    Ok(false)
+                } else {
+                    Err(fault(location, KeyFault::NominalKeyClash(key)))
+                }
+            }
             btree_map::Entry::Vacant(slot) => {
                 slot.insert(SemanticNode {
                     key,
