@@ -368,9 +368,14 @@ pub(crate) fn node_id(key: impl std::borrow::Borrow<NodeKey>) -> CheckedNodeId {
 }
 
 fn admitted_id(reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
+    admitted(reference).map(node_id)
+}
+
+/// The admitted kernel key `reference` names.
+fn admitted(reference: &NodeRef) -> Result<NodeKey, EmitRefusal> {
     reference
         .admitted()
-        .map(node_id)
+        .cloned()
         .ok_or(EmitRefusal::UnresolvedNodeReference)
 }
 
@@ -395,8 +400,8 @@ pub fn checked_occurrence(origin: &Origin) -> Option<CheckedOccurrence> {
 /// the law definitions of its applications.
 #[derive(Default)]
 struct BodyNames {
-    dependencies: BTreeSet<CheckedNodeId>,
-    annotations: BTreeSet<CheckedNodeId>,
+    dependencies: HashSet<NodeKey>,
+    annotations: HashSet<NodeKey>,
     laws: Vec<OperationLaw>,
 }
 
@@ -410,13 +415,13 @@ impl BodyNames {
                 let operation = &application.operation;
                 names
                     .annotations
-                    .insert(admitted_id(&application.result_type)?);
+                    .insert(admitted(&application.result_type)?);
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
-                    names.dependencies.insert(node_id(declaration));
+                    names.dependencies.insert(declaration.clone());
                 }
                 // FR-380: the population node a reachability links to.
                 if let Some(population) = operation.member().and_then(Member::population) {
-                    names.dependencies.insert(node_id(population));
+                    names.dependencies.insert(population.clone());
                 }
                 let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
                 names
@@ -429,12 +434,10 @@ impl BodyNames {
             // names among the frame's own `dependencies`.
             BodyTerm::Frame(frame) => {
                 for entry in &frame.modifies {
-                    names
-                        .dependencies
-                        .insert(admitted_id(&entry.declaration())?);
+                    names.dependencies.insert(admitted(&entry.declaration())?);
                 }
                 for node in frame.creates.iter().chain(&frame.deletes) {
-                    names.dependencies.insert(admitted_id(node)?);
+                    names.dependencies.insert(admitted(node)?);
                 }
             }
             // QSpec FR-451: `dependencies` are exactly the unique set of every
@@ -442,17 +445,17 @@ impl BodyNames {
             BodyTerm::Abstraction(term) => {
                 names
                     .dependencies
-                    .extend(term.targets().map_err(encoding)?.iter().map(node_id));
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
         for leaf in body.leaves() {
             match leaf {
                 LeafTerm::Literal { ty, .. } => {
-                    names.annotations.insert(admitted_id(ty)?);
+                    names.annotations.insert(admitted(ty)?);
                 }
                 LeafTerm::Reference { target } => {
-                    names.dependencies.insert(admitted_id(target)?);
+                    names.dependencies.insert(admitted(target)?);
                 }
                 // FR-322-AC-37: a `dependency_reference` is never one of the
                 // node's `dependencies`, and names no node of this graph.
@@ -478,14 +481,16 @@ enum RecordedLocation<'g> {
 /// One checked node, read for the wire.
 struct Candidate<'g> {
     node: &'g SemanticNode,
+    key: NodeKey,
     id: CheckedNodeId,
     tag: CheckedNodeTag,
     semantic_type: CheckedNodeId,
     /// FR-093 rules 1 to 3, ascending by structural node identity.
-    dependencies: BTreeSet<CheckedNodeId>,
+    dependencies: Vec<CheckedNodeId>,
     /// Every node the written node names: its dependencies, its semantic
-    /// type and its body's type annotations.
-    names: BTreeSet<CheckedNodeId>,
+    /// type and its body's type annotations. Held by hash: two keys that
+    /// share a deep operand chain cost its depth to order, never to hash.
+    names: HashSet<NodeKey>,
     laws: Vec<OperationLaw>,
     /// The occurrences `check` recorded for the node, each with the
     /// location it was recorded at.
@@ -494,9 +499,11 @@ struct Candidate<'g> {
 
 impl<'g> Candidate<'g> {
     fn of(node: &'g SemanticNode, occurrences: Recorded<'g>) -> Result<Self, EmitRefusal> {
-        let id = node_id(node.key());
+        let key = node.key();
+        let id = node_id(&key);
         // A self-typed node names itself as its semantic type (FR-322).
-        let semantic_type = node_id(node.semantic_type().unwrap_or(node.key()));
+        let type_key = node.semantic_type().unwrap_or_else(|| key.clone());
+        let semantic_type = node_id(&type_key);
         let BodyNames {
             mut dependencies,
             annotations,
@@ -504,37 +511,42 @@ impl<'g> Candidate<'g> {
         } = BodyNames::of(node.body())?;
         // QSpec FR-464 "owner_model": a protocol clause depends on its exact
         // owner model, besides the nodes its body reaches.
-        dependencies.extend(node.owner_model().map(node_id));
+        dependencies.extend(node.owner_model());
         // Rule 3: a `bounded_domain` node depends on the type it bounds.
         if node.node_tag() == NodeTag::BoundedDomain {
-            dependencies.insert(semantic_type.clone());
+            dependencies.insert(type_key.clone());
         }
         if node.node_tag() == NodeTag::Value && node.semantic_form() == "enum_value" {
-            dependencies.insert(semantic_type.clone());
+            dependencies.insert(type_key.clone());
         }
         if let Some(nominal) = node.nominal_payload() {
             match nominal {
                 // An `enum_value` depends on its enumeration declaration.
                 NominalPayload::Enum(_) => {}
                 NominalPayload::Dimension(dimension) => {
-                    dependencies.extend(dimension.terms().iter().map(|(base, _)| node_id(base)));
+                    dependencies.extend(dimension.terms().iter().map(|(base, _)| base.clone()));
                 }
                 NominalPayload::Unit(unit) => {
-                    dependencies.insert(node_id(unit.dimension()));
-                    dependencies.extend(unit.target().map(node_id));
+                    dependencies.insert(unit.dimension().clone());
+                    dependencies.extend(unit.target().cloned());
                 }
                 NominalPayload::DimensionEquivalence(equivalence) => {
-                    dependencies.extend(equivalence.dimensions().iter().map(node_id));
+                    dependencies.extend(equivalence.dimensions().iter().cloned());
                 }
             }
         }
         let mut names = dependencies.clone();
         names.extend(annotations);
-        names.insert(semantic_type.clone());
-        names.remove(&id);
+        names.insert(type_key);
+        names.remove(&key);
+        // A node has a few dependencies, so sorting them by structural id is
+        // cheap; they are rarely deep chains of each other.
+        let mut dependencies: Vec<CheckedNodeId> = dependencies.iter().map(node_id).collect();
+        dependencies.sort_unstable();
         Ok(Self {
             node,
             tag: ir_tag(node.node_tag()),
+            key,
             id,
             semantic_type,
             dependencies,
@@ -593,7 +605,7 @@ impl<'g> Candidate<'g> {
             node_tag: self.tag.as_wire().into(),
             semantic_form: node.semantic_form().into(),
             semantic_type: self.semantic_type.clone(),
-            dependencies: self.dependencies.iter().cloned().collect(),
+            dependencies: self.dependencies.clone(),
             occurrences: self
                 .occurrences
                 .iter()
@@ -1180,14 +1192,14 @@ fn owner_is_locked(node: &SemanticNode, source: &RawSourceRef) -> bool {
 /// select, a name outside the graph, and then, transitively, a name of an
 /// omitted node.
 fn omissions(
-    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
+    candidates: &Candidates<'_>,
     source: &RawSourceRef,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
-    external: &BTreeSet<CheckedNodeId>,
-) -> Vec<OmittedNode> {
-    let mut omitted: BTreeMap<CheckedNodeId, OmissionCause> = BTreeMap::new();
-    for (id, candidate) in candidates {
-        let cause = if !candidate.form_is_supported(decodes) {
+    external: &HashSet<NodeKey>,
+) -> Vec<(usize, OmittedNode)> {
+    let mut omitted: Vec<Option<OmissionCause>> = vec![None; candidates.order.len()];
+    for (position, candidate) in candidates.values().enumerate() {
+        omitted[position] = if !candidate.form_is_supported(decodes) {
             Some(OmissionCause::UnsupportedForm {
                 node_tag: candidate.node.node_tag(),
                 semantic_form: candidate.node.semantic_form(),
@@ -1197,37 +1209,45 @@ fn omissions(
         } else if !owner_is_locked(candidate.node, source) {
             Some(OmissionCause::UnlockedOwner)
         } else {
+            // The least absent name: a node names few, and absent ones are
+            // rarer still, so ordering them is cheap.
             candidate
                 .names
                 .iter()
-                .find(|name| !candidates.contains_key(*name) && !external.contains(*name))
-                .map(|absent| OmissionCause::NamesAbsentNode(absent.clone()))
+                .filter(|name| !candidates.contains(name) && !external.contains(*name))
+                .min()
+                .map(|absent| OmissionCause::NamesAbsentNode(node_id(absent)))
         };
-        if let Some(cause) = cause {
-            omitted.insert(id.clone(), cause);
-        }
     }
-    let mut named_by: BTreeMap<&CheckedNodeId, Vec<&CheckedNodeId>> = BTreeMap::new();
-    for (id, candidate) in candidates {
+    let mut named_by: HashMap<&NodeKey, Vec<usize>> = HashMap::new();
+    for (position, candidate) in candidates.values().enumerate() {
         for name in &candidate.names {
-            named_by.entry(name).or_default().push(id);
+            named_by.entry(name).or_default().push(position);
         }
     }
-    let mut pending: VecDeque<CheckedNodeId> = omitted.keys().cloned().collect();
+    let mut pending: VecDeque<usize> = (0..omitted.len())
+        .filter(|&position| omitted[position].is_some())
+        .collect();
     while let Some(gone) = pending.pop_front() {
-        for &dependent in named_by.get(&gone).into_iter().flatten() {
-            if !omitted.contains_key(dependent) {
-                omitted.insert(
-                    dependent.clone(),
-                    OmissionCause::NamesOmittedNode(gone.clone()),
-                );
-                pending.push_back(dependent.clone());
+        let gone_key = &candidates.order[gone].key;
+        for &dependent in named_by.get(gone_key).into_iter().flatten() {
+            if omitted[dependent].is_none() {
+                omitted[dependent] = Some(OmissionCause::NamesOmittedNode(
+                    candidates.order[gone].id.clone(),
+                ));
+                pending.push_back(dependent);
             }
         }
     }
     omitted
         .into_iter()
-        .map(|(node, cause)| OmittedNode { node, cause })
+        .enumerate()
+        .filter_map(|(position, cause)| {
+            cause.map(|cause| {
+                let node = candidates.order[position].id.clone();
+                (position, OmittedNode { node, cause })
+            })
+        })
         .collect()
 }
 
@@ -1270,8 +1290,8 @@ fn split_laws(order: &[&Candidate<'_>]) -> (Vec<CheckedSelection>, Vec<Definitio
 /// whole emission, never an omission: the reference binds a key, and the key
 /// names nothing.
 fn stale_protocol_reference(
-    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
-    omitted: &[OmittedNode],
+    candidates: &Candidates<'_>,
+    dropped: &HashSet<usize>,
 ) -> Result<(), EmitRefusal> {
     for candidate in candidates.values() {
         let node = candidate.node;
@@ -1283,13 +1303,15 @@ fn stale_protocol_reference(
         let BodyTerm::Leaf(LeafTerm::Reference { target }) = node.body() else {
             continue;
         };
-        let target = admitted_id(target)?;
-        let written = candidates.contains_key(&target)
-            && !omitted.iter().any(|omission| omission.node == target);
+        let target = admitted(target)?;
+        let written = candidates
+            .index
+            .get(&target)
+            .is_some_and(|position| !dropped.contains(position));
         if !written {
             return Err(EmitRefusal::StaleProtocolReference {
                 reference: candidate.id.clone(),
-                target,
+                target: node_id(&target),
             });
         }
     }
@@ -1413,8 +1435,8 @@ fn catalog_selections(
 /// location it was recorded at.
 fn recorded_occurrences(
     graph: &CheckedGraph,
-) -> Result<BTreeMap<NodeKey, Recorded<'_>>, EmitRefusal> {
-    let mut by_node: BTreeMap<NodeKey, Recorded<'_>> = BTreeMap::new();
+) -> Result<HashMap<NodeKey, Recorded<'_>>, EmitRefusal> {
+    let mut by_node: HashMap<NodeKey, Recorded<'_>> = HashMap::new();
     for (key, origin, location) in graph.occurrences() {
         let occurrence = CheckedOccurrence {
             role: occurrence_role(&key, &origin)?,
@@ -1474,8 +1496,13 @@ fn inspection_source_map(
     entries: &[CheckedSourceMapEntry],
 ) -> Result<PackageSourceMap, EmitRefusal> {
     let mut mapped = Vec::with_capacity(entries.len());
+    // One memo for every entry: a nested operand is converted once, so the
+    // map is linear in the package, not in the sum of each id's depth.
+    let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
     for entry in entries {
-        let node = admitted_key(&entry.node_id)?;
+        let node = keys
+            .key(&entry.node_id)
+            .map_err(|_| EmitRefusal::SourceMapInvariant)?;
         let key = OccurrenceKey::new(
             node,
             Origin::new(
@@ -2360,29 +2387,65 @@ fn ir_decodes(tag: CheckedNodeTag, semantic_form: &str) -> bool {
     CheckedNodeKind::decode(tag, semantic_form).is_some()
 }
 
-/// Every node of `graph` read for the wire, by its id.
+/// Every node of `graph` read for the wire, ascending by key, and each
+/// key's position.
+///
+/// The graph yields its nodes in key order already ranked, so no two keys
+/// are compared here: comparing two keys that share a deep operand chain
+/// costs the chain's depth.
+struct Candidates<'g> {
+    order: Vec<Candidate<'g>>,
+    index: HashMap<NodeKey, usize>,
+}
+
+impl<'g> Candidates<'g> {
+    fn new(order: Vec<Candidate<'g>>) -> Self {
+        let index = (0..)
+            .zip(&order)
+            .map(|(position, candidate)| (candidate.key.clone(), position))
+            .collect();
+        Self { order, index }
+    }
+
+    fn contains(&self, key: &NodeKey) -> bool {
+        self.index.contains_key(key)
+    }
+
+    fn values(&self) -> std::slice::Iter<'_, Candidate<'g>> {
+        self.order.iter()
+    }
+}
+
 fn candidates_of<'g>(
     graph: &'g CheckedGraph,
     abstraction: Option<&'g AbstractionNodes>,
-) -> Result<BTreeMap<CheckedNodeId, Candidate<'g>>, EmitRefusal> {
+) -> Result<Candidates<'g>, EmitRefusal> {
     let mut recorded = recorded_occurrences(graph)?;
-    let mut candidates: BTreeMap<CheckedNodeId, Candidate<'g>> = graph
+    let mut candidates: Vec<Candidate<'g>> = graph
         .semantic_graph()
         .nodes()
-        .map(|node| -> Result<_, EmitRefusal> {
+        .map(|node| {
             let occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            let candidate = Candidate::of(node, occurrences)?;
-            Ok((candidate.id.clone(), candidate))
+            Candidate::of(node, occurrences)
         })
         .collect::<Result<_, _>>()?;
+    let graph_keys: HashSet<NodeKey> = candidates.iter().map(|c| c.key.clone()).collect();
     // QSpec FR-451: the relation node has one `declaration` occurrence per
     // declaration it was read from; the nodes it names that the graph does not
     // hold are `generated`, at the first.
     if let Some(nodes) = abstraction {
+        // The few abstraction nodes the graph does not hold go in at their
+        // place in key order.
+        let mut added: HashSet<NodeKey> = HashSet::new();
         let mut add =
             |node: &'g SemanticNode, occurrences: Recorded<'g>| -> Result<_, EmitRefusal> {
+                let key = node.key();
+                if graph_keys.contains(&key) || !added.insert(key.clone()) {
+                    return Ok(());
+                }
                 let candidate = Candidate::of(node, occurrences)?;
-                candidates.entry(candidate.id.clone()).or_insert(candidate);
+                let at = candidates.partition_point(|existing| existing.key < candidate.key);
+                candidates.insert(at, candidate);
                 Ok(())
             };
         let declared = (0_u64..)
@@ -2416,7 +2479,7 @@ fn candidates_of<'g>(
             add(node, generated)?;
         }
     }
-    Ok(candidates)
+    Ok(Candidates::new(candidates))
 }
 
 /// The temporal profile the lock selects for the clock-reading control nodes
@@ -2526,13 +2589,16 @@ fn emit_package_inner(
         });
     }
     let candidates = candidates_of(graph, abstraction.as_ref())?;
-    let model_roots: BTreeSet<_> = graph.model_roots().map(|(_, key)| node_id(key)).collect();
+    let model_roots: HashSet<NodeKey> = graph.model_roots().map(|(_, key)| key).collect();
     let omitted = omissions(&candidates, graph.source(), decodes, &model_roots);
-    stale_protocol_reference(&candidates, &omitted)?;
-    let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
+    let dropped: HashSet<usize> = omitted.iter().map(|(position, _)| *position).collect();
+    let omitted: Vec<OmittedNode> = omitted.into_iter().map(|(_, omission)| omission).collect();
+    stale_protocol_reference(&candidates, &dropped)?;
     let kept: Vec<&Candidate<'_>> = candidates
         .values()
-        .filter(|candidate| !dropped.contains(&candidate.id))
+        .enumerate()
+        .filter(|(position, _)| !dropped.contains(position))
+        .map(|(_, candidate)| candidate)
         .collect();
     if kept.is_empty() && graph.refinements().is_empty() {
         return Err(EmitRefusal::NothingToEmit { omitted });
@@ -3040,11 +3106,19 @@ fn emit_package_inner(
 /// declaration or population an operation record names is a dependency
 /// (FR-093 rule 2). An id held anywhere else stays structural, and IR's
 /// encoder then refuses the package, so a gap fails loudly, never silently.
-fn reachable_ids(node: &CheckedSemanticNodeV2) -> Vec<&CheckedNodeId> {
-    let mut ids = vec![&node.node_id, &node.semantic_type];
-    ids.extend(node.owner_model.iter());
-    ids.extend(node.dependencies.iter());
-    let mut pending = vec![&node.body];
+fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
+    let CheckedSemanticNodeV2 {
+        node_id,
+        semantic_type,
+        owner_model,
+        dependencies,
+        body,
+        ..
+    } = node;
+    let mut ids = vec![node_id, semantic_type];
+    ids.extend(owner_model.iter_mut());
+    ids.extend(dependencies.iter_mut());
+    let mut pending = vec![body];
     while let Some(term) = pending.pop() {
         match term {
             CheckedTerm::Literal { type_id, .. } => ids.push(type_id),
@@ -3055,16 +3129,16 @@ fn reachable_ids(node: &CheckedSemanticNodeV2) -> Vec<&CheckedNodeId> {
                 ..
             } => {
                 ids.push(result_type);
-                pending.extend(arguments.iter());
+                pending.extend(arguments.iter_mut());
             }
-            CheckedTerm::Aggregate { members } => pending.extend(members.iter()),
+            CheckedTerm::Aggregate { members } => pending.extend(members.iter_mut()),
             CheckedTerm::Binding { value, .. } => pending.push(value),
             CheckedTerm::DependencyReference { node, .. } => ids.push(node),
             CheckedTerm::Frame {
                 creates, deletes, ..
-            } => ids.extend(creates.iter().chain(deletes.iter())),
-            CheckedTerm::ExtensionForm { clauses, .. } => pending.extend(clauses.iter()),
-            CheckedTerm::OperationAnchorBody(body) => pending.extend(body.members.iter()),
+            } => ids.extend(creates.iter_mut().chain(deletes.iter_mut())),
+            CheckedTerm::ExtensionForm { clauses, .. } => pending.extend(clauses.iter_mut()),
+            CheckedTerm::OperationAnchorBody(body) => pending.extend(body.members.iter_mut()),
             _ => {}
         }
     }
@@ -3084,9 +3158,10 @@ fn holds_segment(
 /// `{"node": i}` of that node in `nodes`, whose order is now final.
 ///
 /// Linear in the package: each node's key is rebuilt once, sharing the key
-/// of every operand allocation ([`StructuralKeys`]); each graph node's wire
-/// id is written once; then each node's own reachable ids
-/// ([`reachable_ids`]) are replaced in that node alone.
+/// of every operand allocation ([`StructuralKeys`]), and each id a node
+/// reaches ([`reachable_ids`]) is rewritten in place. No two ids are
+/// compared: comparing two ids that share a deep operand chain costs the
+/// chain's depth.
 ///
 /// [`StructuralKeys`]: qsl_semantics::check::wire_id::StructuralKeys
 fn write_index_segments(
@@ -3134,30 +3209,31 @@ fn write_index_segments(
             ordinal: id.ordinal,
         })
     };
-    // Every rewrite is computed before any node changes, while the operand
-    // allocations the memo keys by are still borrowed.
-    let mut rewrites = Vec::with_capacity(nodes.len());
-    for node in nodes.iter() {
+    // The memo holds every operand allocation it keyed, so rewriting ids in
+    // place never reuses an address it has seen.
+    let mut graph_wire: HashMap<&NodeKey, CheckedNodeId> = HashMap::with_capacity(nodes.len());
+    for (node, key) in nodes.iter_mut().zip(&graph_keys) {
+        let holder = node.node_id.clone();
+        let mut seen: HashSet<NodeKey> = HashSet::new();
         let mut changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
         for id in reachable_ids(node) {
-            if holds_segment(id, is_operand) && !changes.iter().any(|(old, _)| old == id) {
-                changes.push((id.clone(), wire_of(&mut keys, &node.node_id, id)?));
+            if holds_segment(id, is_operand) {
+                let new = wire_of(&mut keys, &holder, id)?;
+                if seen.insert(keys.key(id).map_err(invariant)?) {
+                    changes.push((id.clone(), new.clone()));
+                }
+                *id = new;
             }
         }
-        rewrites.push(changes);
+        // IR's own substitution reaches the ids held where this emitter
+        // cannot (an operation's closed record and views, a nominal or
+        // refinement body). Every id it can reach already holds index
+        // segments, so it never matches a structural id deep in a chain.
+        for (old, new) in &changes {
+            node.replace_node_id(old, new);
+        }
+        graph_wire.insert(key, node.node_id.clone());
     }
-    // A graph node's own id is the first id it reaches.
-    let graph_wire: HashMap<&NodeKey, CheckedNodeId> = rewrites
-        .iter()
-        .zip(nodes.iter())
-        .zip(&graph_keys)
-        .filter_map(|((changes, node), key)| {
-            changes
-                .first()
-                .filter(|(old, _)| *old == node.node_id)
-                .map(|(_, new)| (key, new.clone()))
-        })
-        .collect();
     let mut sidecar = |id: &mut CheckedNodeId| -> Result<(), EmitRefusal> {
         if holds_segment(id, is_operand) {
             let key = keys.key(id).map_err(invariant)?;
@@ -3168,27 +3244,11 @@ fn write_index_segments(
         }
         Ok(())
     };
-    let mut sidecar_ids: Vec<CheckedNodeId> = source_map
-        .iter()
-        .map(|entry| entry.node_id.clone())
-        .chain(step_rows.iter().map(|row| row.node_id.clone()))
-        .collect();
-    for id in &mut sidecar_ids {
-        sidecar(id)?;
+    for entry in source_map.iter_mut() {
+        sidecar(&mut entry.node_id)?;
     }
-    drop(graph_wire);
-    drop(keys);
-    let (map_ids, row_ids) = sidecar_ids.split_at(source_map.len());
-    for (entry, id) in source_map.iter_mut().zip(map_ids) {
-        entry.node_id = id.clone();
-    }
-    for (row, id) in step_rows.iter_mut().zip(row_ids) {
-        row.node_id = id.clone();
-    }
-    for (node, changes) in nodes.iter_mut().zip(rewrites) {
-        for (old, new) in &changes {
-            node.replace_node_id(old, new);
-        }
+    for row in step_rows.iter_mut() {
+        sidecar(&mut row.node_id)?;
     }
     Ok(())
 }
@@ -3212,24 +3272,26 @@ fn read_index_segments(
             .map(|key| node_id(&key))
             .map_err(|_| EmitRefusal::SourceMapInvariant)
     };
-    let mut rewrites = Vec::with_capacity(nodes.len());
-    for node in nodes.iter() {
+    for node in nodes.iter_mut() {
         let mut changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
         for id in reachable_ids(node) {
-            if holds_segment(id, is_index) && !changes.iter().any(|(old, _)| old == id) {
-                changes.push((id.clone(), structural(id)?));
+            if holds_segment(id, is_index) {
+                let new = structural(id)?;
+                if !changes.iter().any(|(old, _)| old == id) {
+                    changes.push((id.clone(), new.clone()));
+                }
+                *id = new;
             }
         }
-        rewrites.push(changes);
+        // As in `write_index_segments`: IR substitutes where this reader
+        // cannot reach.
+        for (old, new) in &changes {
+            node.replace_node_id(old, new);
+        }
     }
     for entry in source_map.iter_mut() {
         if holds_segment(&entry.node_id, is_index) {
             entry.node_id = structural(&entry.node_id)?;
-        }
-    }
-    for (node, changes) in nodes.iter_mut().zip(rewrites) {
-        for (old, new) in &changes {
-            node.replace_node_id(old, new);
         }
     }
     Ok(())

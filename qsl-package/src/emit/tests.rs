@@ -854,21 +854,26 @@ fn a_declaration_without_its_occurrence_is_omitted() {
         .nodes()
         .find(|node| node.semantic_form() == "tuple")
         .expect("Pair's node");
-    let candidates: BTreeMap<CheckedNodeId, Candidate<'_>> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| {
-            let mut occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            if node.key() == point.key() {
-                occurrences.retain(|(occurrence, _)| {
-                    occurrence.role != CheckedOccurrenceRole::Declaration
-                });
-            }
-            let candidate = Candidate::of(node, occurrences).expect("a candidate");
-            (candidate.id.clone(), candidate)
-        })
-        .collect();
-    let omitted = omissions(&candidates, graph.source(), &ir_decodes, &BTreeSet::new());
+    let candidates = Candidates::new(
+        graph
+            .semantic_graph()
+            .nodes()
+            .map(|node| {
+                let mut occurrences = recorded.remove(&node.key()).unwrap_or_default();
+                if node.key() == point.key() {
+                    occurrences.retain(|(occurrence, _)| {
+                        occurrence.role != CheckedOccurrenceRole::Declaration
+                    });
+                }
+                Candidate::of(node, occurrences).expect("a candidate")
+            })
+            .collect(),
+    );
+    let omitted: Vec<OmittedNode> =
+        omissions(&candidates, graph.source(), &ir_decodes, &HashSet::new())
+            .into_iter()
+            .map(|(_, omission)| omission)
+            .collect();
     assert_eq!(
         omitted,
         [OmittedNode {

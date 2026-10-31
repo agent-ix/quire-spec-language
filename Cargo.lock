@@ -1467,6 +1467,7 @@ dependencies = [
 name = "qsl-foundation"
 version = "0.1.0"
 dependencies = [
+ "hashbrown 0.17.1",
  "ix-trace-rs",
  "quire-exact",
  "quire-semantic-value",
