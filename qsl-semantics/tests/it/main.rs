@@ -109,6 +109,9 @@ mod task_sets;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
+#[path = "../support/tc235_k2.rs"]
+mod tc235_k2;
+#[cfg(feature = "test-support")]
 mod temporal_fairness;
 #[cfg(feature = "test-support")]
 mod terminal_declarations;

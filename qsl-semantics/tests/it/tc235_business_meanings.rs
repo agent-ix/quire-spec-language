@@ -21,9 +21,7 @@ use quire_checked::key::DeclarationKey;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[path = "../support/tc235_k2.rs"]
-mod tc235_k2;
-use tc235_k2::*;
+use crate::tc235_k2::*;
 
 fn package_key(node: &str) -> DeclarationKey {
     DeclarationKey {

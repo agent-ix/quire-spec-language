@@ -10,8 +10,7 @@ use qsl_semantics::model::normalize::{normalize, EffectiveView, NormalizeOutcome
 use serde_json::{json, Value};
 use std::process::Command;
 
-#[path = "../support/tc235_k2.rs"]
-mod tc235_k2;
+use crate::tc235_k2;
 
 fn domain_package(document: &Value) -> DomainPackage {
     let bytes = serde_json::to_vec(document).expect("the K2 document serializes");
