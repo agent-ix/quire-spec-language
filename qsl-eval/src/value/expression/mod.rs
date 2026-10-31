@@ -1397,7 +1397,10 @@ impl CheckedPackageEvaluation for CheckedPackage {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
         let (condition, slots) = clause.condition(atom).ok_or_else(|| {
-            CallFailure::Fault(InternalFault::new("S6a", "holds-atom-resolved-by-clause"))
+            CallFailure::Fault(
+                InternalFault::new("S6a", "holds-atom-resolved-by-clause")
+                    .with_named(vec![("node", atom.index().to_string())]),
+            )
         })?;
         Machine::new(
             self.graph().scope(),

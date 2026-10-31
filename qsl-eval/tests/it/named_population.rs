@@ -767,8 +767,8 @@ fn a_holds_atom_naming_a_population_is_emitted() {
 }
 
 /// TC-136 H3: an existing non-holds formula node and an index valid only in
-/// a larger clause both fault before evaluation and leave the meter unchanged.
-/// The current fault identifies the invariant, but carries no node identity.
+/// a larger clause both fault with the rejected node's exact identity before
+/// evaluation and leave the meter unchanged.
 #[trace("TC-136")]
 #[test]
 fn invalid_holds_handles_fault_without_spending_the_meter() {
@@ -831,6 +831,7 @@ fn invalid_holds_handles_fault_without_spending_the_meter() {
         };
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.invariant(), "holds-atom-resolved-by-clause");
+        assert_eq!(fault.named(), &[("node", atom.index().to_string())]);
         assert_eq!(meter, Meter::new(UNLIMITED), "invalid atom charges nothing");
     }
     let mut meter = Meter::new(UNLIMITED);
