@@ -1099,8 +1099,8 @@ fn the_timed_claim_automaton_agrees_with_the_evaluator_on_random_lassos() {
 /// interval operator the negation starts at many positions with an
 /// interval not from a closed 0 (`eventually` and `always` from a positive
 /// lower end, narrow and wide, and from an open 0; `once` read at every
-/// position), on 1,000 random timed lassos (80 for the ten-clock
-/// `[2 ms, 3 ms)`) with stamps in steps of 1/4 ms and length at most 8, the automaton accepts exactly the lassos on which
+/// position), on 1,000 random timed lassos (20 for the ten-clock
+/// `[2 ms, 3 ms)` and `always(1 ms, 2 ms)`) with stamps in steps of 1/4 ms and length at most 8, the automaton accepts exactly the lassos on which
 /// the evaluator returns `false`; each form needs more clocks than one per
 /// operator. A punctual interval started at many positions is refused.
 #[trace("TC-697", "FR-242")]
@@ -1108,10 +1108,12 @@ fn the_timed_claim_automaton_agrees_with_the_evaluator_on_random_lassos() {
 fn the_repeated_interval_forms_agree_with_the_evaluator() {
     let mut stream = Stream(0x0dd5_eed5_1234_5678);
     // The capacity-5 form, `[2 ms, 3 ms)` started at many positions with
-    // ten clocks, reads fewer lassos: its run graphs are the largest.
+    // ten clocks, and `always(1 ms, 2 ms)`, read fewer lassos: their run graphs
+    // are the largest, a lasso taking seconds, and twenty already start the
+    // copies at many positions.
     for (body, lassos) in [
         ("eventually always[1 ms, 2 ms] holds(c.level = 2)", 1_000),
-        ("eventually always[2 ms, 3 ms) holds(c.level = 2)", 80),
+        ("eventually always[2 ms, 3 ms) holds(c.level = 2)", 20),
         ("eventually always (0 ms, 1 ms] holds(c.level = 2)", 1_000),
         ("eventually always (holds(c.level = 1) implies eventually[1 ms, 2 ms] holds(c.level = 2))", 1_000),
         ("eventually always (holds(c.level = 1) implies eventually(0 ms, 1 ms) holds(c.level = 2))", 1_000),
@@ -1126,7 +1128,7 @@ fn the_repeated_interval_forms_agree_with_the_evaluator() {
         ("eventually (holds(c.level = 1) and eventually(1 ms, 2 ms) holds(c.level = 2))", 1_000),
         ("eventually (holds(c.level = 1) and eventually[2 ms, 3 ms] holds(c.level = 2))", 500),
         ("eventually (holds(c.level = 1) and always[1 ms, 2 ms] holds(c.level = 2))", 500),
-        ("eventually always(1 ms, 2 ms) holds(c.level = 2)", 80),
+        ("eventually always(1 ms, 2 ms) holds(c.level = 2)", 20),
     ] {
         let fixture = timed(body);
         let mut claim = TimedClaim::new(&fixture.clause, 1 << 20).expect("the clause translates");
