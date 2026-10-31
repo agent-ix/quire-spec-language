@@ -10,7 +10,10 @@ use qsl_semantics::model::observation::Observation;
 
 pub(crate) mod resolve;
 
-/// Select one expression member of an emitted protocol node (FR-390).
+/// Caller-constructible selector for one expression member of an emitted
+/// protocol node (FR-390). The fields intentionally stay public; admission
+/// checks that the selected node, member and index identify a slot in the
+/// checked package before evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolSlot {
     /// The selected protocol node's identity.
