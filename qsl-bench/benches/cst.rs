@@ -2,11 +2,9 @@
 //! CST identity benchmarks: what building a CST, identities
 //! included, costs against the source bytes it covers.
 //!
-//! A parse computes one identity digest, over the
-//! document-revision labels, whatever its node count; node identities are
-//! fixed-size values and reuse is decided on request. The former
-//! `cst/sha256/<input>` rows timed the former per-node digests and
-//! are gone with them.
+//! Node identities are fixed-size values and reuse is decided on request.
+//! The former `cst/sha256/<input>` rows timed the former per-node digests
+//! and are gone with them.
 //!
 //! - `cst/parse/<input>`: wall time of one `qsl_cst::parse` call.
 //!   Throughput is the input's source bytes.
