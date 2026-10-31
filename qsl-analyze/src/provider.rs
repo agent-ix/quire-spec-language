@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-280's in-process provider entry for QSL-owned engines.
 
+use crate::analyze::{
+    analyze, analyze_items, statistical_item, terminal_records, AnalyzeItem, AnalyzeLimits,
+    AnalyzeRefusal, AnalyzeRequest, Engines, SubjectBinding,
+};
+use crate::statistical::StatisticalRequest;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest};
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalLimits;
-use qsl_replay::{DeclineCode, ProofRefusalCause, TerminalRecord, UnavailabilityCause};
+use qsl_replay::TerminalRecord;
 use qsl_semantics::check::CheckedProbabilisticClaim;
 use quire_exact::Cancel;
-use quire_semantic_value::catalog::CatalogCode;
-
-use crate::analyze::{
-    analyze, analyze_items, statistical_item, AnalyzeItem, AnalyzeLimits, AnalyzeRefusal,
-    AnalyzeRequest, Engines, Settlement, SubjectBinding,
-};
-use crate::statistical::StatisticalRequest;
 
 /// An EN-4 claim and its sampling settings, without the subject supplied by
 /// the provider request.
@@ -69,14 +66,14 @@ pub fn run(
         items: pending_items,
     };
 
-    let records = match analyze(package, request, engines, limits, cancel) {
+    match analyze(package, request, engines, limits, cancel) {
         Ok(staged) => staged.into_value().records,
         Err(qsl_foundation::diagnostic::StageFailure::Refused(AnalyzeRefusal::Binding(_))) => {
-            analyze_items(
+            terminal_records(analyze_items(
                 engines,
                 build_analyze_items(package, binding, items, limits),
                 cancel,
-            )
+            ))
         }
         Err(_) => {
             return items
@@ -90,34 +87,7 @@ pub fn run(
                 })
                 .collect();
         }
-    };
-
-    records
-        .into_iter()
-        .zip(items)
-        .map(|(record, item)| match &record.settlement {
-            Settlement::Terminal(terminal) => terminal.as_ref().clone(),
-            Settlement::Disposed(disposed) => match disposed.kind {
-                crate::analyze::DispositionKind::Unsupported
-                | crate::analyze::DispositionKind::RequiresBound => TerminalRecord::unsupported(
-                    item.item.request_index,
-                    item.backend.clone(),
-                    UnavailabilityCause::BackendAbsent,
-                ),
-                crate::analyze::DispositionKind::InvalidRequest => TerminalRecord::declined_with(
-                    item.item.request_index,
-                    item.backend.clone(),
-                    ProofRefusalCause::InvalidInput,
-                    DeclineCode::Qsl(Code::InvalidRequest),
-                    disposed
-                        .diagnostic
-                        .as_ref()
-                        .map(|diagnostic| diagnostic.code)
-                        .unwrap_or(CatalogCode::new("invalid_capability", "unknown-backend")),
-                ),
-            },
-        })
-        .collect()
+    }
 }
 
 fn build_analyze_items<'a>(

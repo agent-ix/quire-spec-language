@@ -20,7 +20,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze_items, model_item, AnalyzeItem, DispositionKind, Engine, Engines, Payload, Settlement,
+    analyze as analyze_request, analyze_items, model_item, statistical_item, AnalyzeItem,
+    AnalyzeLimits, AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -475,6 +476,23 @@ fn service_request<'w>(
     }
 }
 
+fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provider::RoutedItem<'_> {
+    let request = service_request(world);
+    qsl_analyze::provider::RoutedItem {
+        item: qsl_analyze::provider::ClaimItem {
+            request_index: index(0),
+            claim: request.claim,
+            method: request.method,
+            seed: request.seed,
+            sampler: request.sampler,
+            limits: request.limits,
+            max_witnesses: request.max_witnesses,
+            symmetry: request.symmetry,
+        },
+        backend: BackendId::new("en-4"),
+    }
+}
+
 /// The `analyze` half of FR-280-AC-5 (TC-761 step 4); FR-280-AC-2 stays
 /// open for EN-1, which has no provider entry yet: over
 /// `Service`, whose checked package S4 refuses to emit, the record `analyze`
@@ -488,8 +506,6 @@ fn service_request<'w>(
 #[test]
 fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     use crate::prob_world::{self, World};
-    use qsl_analyze::analyze::statistical_item;
-    use qsl_analyze::statistical::provider::serve_items;
     use qsl_replay::statistical::Decision;
 
     let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
@@ -499,23 +515,34 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let world = World::new(&prob_world::service(claim));
     qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
 
-    let analyzed = only(analyze_items(
-        &Engines::qsl().expect("they register"),
-        vec![statistical_item(index(0), service_request(&world))],
-        &Cancel::new(),
-    ))
-    .terminal()
-    .cloned()
-    .expect("the item settles a record");
-    let served = serve_items(
-        vec![qsl_analyze::statistical::provider::RoutedItem {
-            index: index(0),
-            request: service_request(&world),
-        }],
+    let engines = Engines::qsl().expect("they register");
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let analyzed = analyze_request(
+        &world.package,
+        AnalyzeRequest {
+            binding: world.binding(),
+            items: vec![statistical_item(index(0), service_request(&world))],
+        },
+        &engines,
+        &limits,
         &Cancel::new(),
     )
-    .remove(0)
-    .expect("the item settles a record");
+    .expect("Service's binding admits")
+    .into_value()
+    .records
+    .remove(0);
+    let served = qsl_analyze::provider::run(
+        &world.package,
+        &world.binding(),
+        &[routed_service_item(&world)],
+        &engines,
+        &limits,
+        &Cancel::new(),
+    )
+    .remove(0);
 
     assert_eq!(analyzed, served);
     assert_eq!(analyzed.backend().map(BackendId::as_str), Some("en-4"));
@@ -525,4 +552,42 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     assert_eq!(verdict.decision, Decision::Rejected);
     assert_eq!(verdict.witnesses.len(), 3);
     qsl_package::emit_checked(&world.package).expect_err("S4 still refuses Service");
+}
+
+/// FR-280-AC-6 (TC-761 step 5): a provider binding that omits a required
+/// population returns a declined record for the routed item.
+#[trace("TC-761", "FR-280-AC-6")]
+#[test]
+fn provider_entry_settles_an_incomplete_binding_per_item() {
+    use crate::prob_world::{self, World};
+    use qsl_replay::{ProofRefusalCause, TerminalValue};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let mut binding = world.binding();
+    binding.universes.clear();
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let records = qsl_analyze::provider::run(
+        &world.package,
+        &binding,
+        &[routed_service_item(&world)],
+        &Engines::qsl().expect("they register"),
+        &limits,
+        &Cancel::new(),
+    );
+
+    assert_eq!(records.len(), 1);
+    assert!(matches!(
+        records[0].value(),
+        TerminalValue::Declined {
+            cause: ProofRefusalCause::IncompleteInput,
+            ..
+        }
+    ));
 }
