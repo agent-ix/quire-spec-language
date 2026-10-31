@@ -77,7 +77,7 @@ exhaustion returns the same value with a fresh meter and unchanged inputs.
 | --- | --- | --- |
 | NFR-009-AC-1 | Every applicable `quire.value.accounting/v1` counter is one of FR-255's ten accounting rows, uses that row's units/default/setting name, and can be lowered or raised independently; zero remains effective and a value above the default is used as given. The retired `quire.state.evaluation-work/1` identity is not exposed by checked-term evaluation. | Test (TC-137, TC-1073) |
 | NFR-009-AC-2 | For each applicable charged dimension, the independently counted exact case completes and the one-short case stops before the denied operation, retaining successful usage only and no completed partial value. | Test (TC-137, TC-131, TC-1073) |
-| NFR-009-AC-3 | Counter overflow and allocator refusal reached by a checked-term operation preserve the meter's typed cause and affected counter; no caller classifies them from diagnostic text. | Analysis |
+| NFR-009-AC-3 | A counter overflow (a charge that would carry a consumed counter past `u64::MAX`) and a charge denied for a reason other than a configured limit (the stand-in for an allocator refusal) reached by a checked-term call each return the meter's incomplete record naming the affected counter and charge point, with no completed value and no wrapped or saturated count; no caller classifies either from diagnostic text. | Test (TC-137) |
 | NFR-009-AC-4 | Re-evaluation starts with a fresh meter, leaves the checked package and immutable environment unchanged, and returns the same result and usage when inputs and effective limits are equal; sequential protocol slots share one meter as FR-390 requires. | Test (TC-137, TC-1073, TC-142) |
 
 ## Dependencies

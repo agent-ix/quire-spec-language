@@ -23,7 +23,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-047
     type: references
-  - target: ix://agent-ix/quire-spec-language/FR-008
+  - target: ix://agent-ix/quire-spec-language/FR-049
     type: references
   - target: ix://agent-ix/quire-specification/FR-152
     type: depends_on
@@ -255,8 +255,8 @@ incomplete outcome of its charge point (`limit_kind`, `limit`, `consumed`,
 limit.
 
 Every accounting vector of the form completes at exactly its required counters
-and stops incomplete one below any nonzero required counter, as FR-008-AC-16
-states for the native evaluator. Repeated runs start with fresh counters,
+and stops incomplete one below any nonzero required counter, as FR-049-AC-7
+states for checked-term evaluation. Repeated runs start with fresh counters,
 discovered sets and queue, and neither a success nor an incomplete outcome
 changes the observation or a later run's result.
 
@@ -291,7 +291,7 @@ changes the observation or a later run's result.
   own the clause node and the application and model nodes it names;
   [FR-082](FR-082-resolve-conformance-subsetting-and-redefinition.md) supplies
   conformance. [FR-047](FR-047-evaluate-finite-object-reference-graphs.md) and
-  [FR-008](FR-008-evaluate-state-reference.md) own the field-edge reachability
+  [FR-049](FR-049-admit-composed-evaluation-inputs.md) own the field-edge reachability
   semantics and the independent-oracle and exact-budget criteria this form
   repeats over relationship extents. [FR-380](FR-380-bound-a-domain-package-population-and-link-a-reachability-to-its-node.md)
   owns the authored population bound and the population node the link names.
