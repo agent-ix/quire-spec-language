@@ -16,7 +16,7 @@ use qsl_route::{
     descriptor_from_manifest, Candidate, CandidateOutcome, EvidenceKind, ManifestMembers, Mode,
     ProviderOrigin, Registry,
 };
-use qsl_semantics::check::{Capability, RequirementRecord};
+use qsl_semantics::check::{Capability, RequirementMap, RequirementRecord};
 use qsl_semantics::family::{ClaimEvidence, ClaimExtent, Requirements};
 use quire_exact::{Origin, Role};
 
@@ -160,7 +160,7 @@ fn summary(
 #[test]
 fn the_request_builder_names_the_evidence_kind_of_each_probabilistic_item() {
     let world = World::new(&prob_world::service(CLAIMS));
-    let records = BTreeMap::from([
+    let records: RequirementMap = [
         (key(1), record(&world, "P95", 1)),
         (key(2), record(&world, "Every", 2)),
         (
@@ -170,7 +170,9 @@ fn the_request_builder_names_the_evidence_kind_of_each_probabilistic_item() {
                 node(99),
             ),
         ),
-    ]);
+    ]
+    .into_iter()
+    .collect();
     let registry = registry();
     let en4 = vec!["en-4".to_owned()];
     let en5 = vec!["en-5".to_owned()];

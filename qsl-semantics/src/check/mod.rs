@@ -208,7 +208,9 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Cancel, ValueType};
 
 pub use check::Scope;
-pub use claims::{ClaimSite, PathGuard, RequirementRecord, ResultBound, SiteGuard, ValueClaim};
+pub use claims::{
+    ClaimSite, PathGuard, RequirementMap, RequirementRecord, ResultBound, SiteGuard, ValueClaim,
+};
 pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
 pub use model_gate::{ModelFamily, ModelGateRefusal, OwnerKind};
 pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
@@ -599,7 +601,7 @@ pub struct CheckedGraph {
     /// per claim site, keyed by the site's occurrence key. Read through
     /// [`Self::requirements`], the candidate step's own input
     /// (`qsl-route`), not dropped after `check`.
-    requirements: BTreeMap<OccurrenceKey, RequirementRecord>,
+    requirements: claims::RequirementMap,
     /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
     /// checking recorded, read only through [`Self::resolve_declaration`] --
     /// a node-id-keyed accessor, never a name-keyed one (R-06). FR-094:
@@ -5067,14 +5069,14 @@ impl PackageDeclarations {
                 {
                     match requirements.entry(OccurrenceKey::new(claims::wire(node.clone()), origin))
                     {
-                        std::collections::btree_map::Entry::Vacant(slot) => {
+                        std::collections::hash_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }
                         // Every clause naming one operation keys the same
                         // frame record; any other collision is a fault.
-                        std::collections::btree_map::Entry::Occupied(existing)
+                        std::collections::hash_map::Entry::Occupied(existing)
                             if node != lowered.key && *existing.get() == record => {}
-                        std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                        std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
                     }
                 }
                 Ok(CheckedStateClause {
@@ -5307,10 +5309,10 @@ impl PackageDeclarations {
                 claims::wire(lowered.key.clone()),
                 claim.clone(),
             )) {
-                std::collections::btree_map::Entry::Vacant(slot) => {
+                std::collections::hash_map::Entry::Vacant(slot) => {
                     slot.insert(record);
                 }
-                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
             state_graph_nodes.push(
                 checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)),
@@ -5403,10 +5405,10 @@ impl PackageDeclarations {
                         claims::wire(lowered.key.clone()),
                         claim.clone(),
                     )) {
-                        std::collections::btree_map::Entry::Vacant(slot) => {
+                        std::collections::hash_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }
-                        std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                        std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
                     }
                 }
                 Ok(TemporalClauseNode {
@@ -5482,10 +5484,10 @@ impl PackageDeclarations {
                 references::ModelReferences::new(Default::default(), [], None),
             );
             match requirements.entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone())) {
-                std::collections::btree_map::Entry::Vacant(slot) => {
+                std::collections::hash_map::Entry::Vacant(slot) => {
                     slot.insert(record);
                 }
-                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
         }
         // FR-144 "Requirement record and request": one `temporal-satisfaction`
@@ -5533,11 +5535,11 @@ impl PackageDeclarations {
             // Two refinements of one meaning share one node and so one
             // record; S4 refuses the pair naming both (FR-375).
             match requirements.entry(occurrence.clone()) {
-                std::collections::btree_map::Entry::Vacant(slot) => {
+                std::collections::hash_map::Entry::Vacant(slot) => {
                     slot.insert(record);
                 }
-                std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {}
-                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                std::collections::hash_map::Entry::Occupied(slot) if *slot.get() == record => {}
+                std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
             }
             checked.requirement = Some(occurrence);
             // FR-146: the per-step simulation records beside it, each keyed
@@ -5560,12 +5562,11 @@ impl PackageDeclarations {
             let mut entries = Vec::with_capacity(written.len());
             for (entry, record) in written {
                 match requirements.entry(entry.occurrence().clone()) {
-                    std::collections::btree_map::Entry::Vacant(slot) => {
+                    std::collections::hash_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
-                    std::collections::btree_map::Entry::Occupied(slot) if *slot.get() == record => {
-                    }
-                    std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                    std::collections::hash_map::Entry::Occupied(slot) if *slot.get() == record => {}
+                    std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
                 }
                 entries.push(entry);
             }
@@ -5622,12 +5623,12 @@ impl PackageDeclarations {
                     claims::wire(frame.clone()),
                     frame_origin,
                 )) {
-                    std::collections::btree_map::Entry::Vacant(slot) => {
+                    std::collections::hash_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
-                    std::collections::btree_map::Entry::Occupied(existing)
+                    std::collections::hash_map::Entry::Occupied(existing)
                         if *existing.get() == record => {}
-                    std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                    std::collections::hash_map::Entry::Occupied(_) => return Err(unkeyable()),
                 }
                 let contracts = bound
                     .contracts
@@ -5689,12 +5690,12 @@ impl PackageDeclarations {
                     claims::wire(frame.clone()),
                     frame_origin,
                 )) {
-                    std::collections::btree_map::Entry::Vacant(slot) => {
+                    std::collections::hash_map::Entry::Vacant(slot) => {
                         slot.insert(record);
                     }
-                    std::collections::btree_map::Entry::Occupied(existing)
+                    std::collections::hash_map::Entry::Occupied(existing)
                         if *existing.get() == record => {}
-                    std::collections::btree_map::Entry::Occupied(_) => {
+                    std::collections::hash_map::Entry::Occupied(_) => {
                         return Err(vec![CheckRefusal {
                             location: location.clone(),
                             cause: CheckCause::InternalFault(Box::new(
@@ -5769,7 +5770,7 @@ impl PackageDeclarations {
             dispatch_tables,
             occurrences,
             parameter_spans,
-            requirements,
+            requirements: requirements.into(),
             model_correspondence,
             // A later entry for a key replaces an earlier one, as an insert
             // would: the ranking is stable and collecting keeps the last.
@@ -5870,6 +5871,9 @@ fn finish_step_relations(
         }]);
     }
     let mut relations = Vec::with_capacity(checked.len());
+    // The relations' records, ranked into the package's once at the end;
+    // one at an occurrence the package already keys is a fault there.
+    let mut added = std::collections::HashMap::new();
     for (index, (relation, lowered)) in checked.into_iter().zip(lowered).enumerate() {
         let location = hyper_clause::lowering::hyper_location(
             index,
@@ -5952,11 +5956,7 @@ fn finish_step_relations(
             })?;
         let record =
             claims::RequirementRecord::model_claim(requirements, claims::wire(boolean.clone()));
-        if graph
-            .requirements
-            .insert(occurrence.clone(), record)
-            .is_some()
-        {
+        if added.insert(occurrence.clone(), record).is_some() {
             return Err(vec![CheckRefusal {
                 location: root(Origin::Expression),
                 cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
@@ -5984,11 +5984,7 @@ fn finish_step_relations(
                 claims::wire(boolean),
                 references::ModelReferences::default(),
             );
-            if graph
-                .requirements
-                .insert(code_occurrence, code_record)
-                .is_some()
-            {
+            if added.insert(code_occurrence, code_record).is_some() {
                 return Err(vec![CheckRefusal {
                     location: root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
@@ -5998,6 +5994,14 @@ fn finish_step_relations(
         relations.push(relation.assembled_at(key, occurrence));
     }
     graph.step_relations = relations;
+    graph.requirements = std::mem::take(&mut graph.requirements)
+        .extended(added)
+        .map_err(|_| {
+            vec![CheckRefusal {
+                location: root(Origin::Expression),
+                cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+            }]
+        })?;
     Ok(())
 }
 
@@ -6996,7 +7000,7 @@ impl CheckedGraph {
     /// order. `qsl-route`'s request builder reads these from the
     /// in-process `CheckedPackage` through `CheckedPackage::graph().
     /// requirements()`.
-    pub fn requirements(&self) -> &BTreeMap<OccurrenceKey, RequirementRecord> {
+    pub fn requirements(&self) -> &RequirementMap {
         &self.requirements
     }
 

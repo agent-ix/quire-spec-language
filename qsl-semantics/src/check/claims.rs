@@ -974,7 +974,7 @@ pub(crate) fn key_claims(
     occurrences: &OccurrenceMap<Location>,
     graph: &SemanticGraph,
     binders: &BTreeMap<BinderSite, NodeKey>,
-) -> Result<BTreeMap<OccurrenceKey, RequirementRecord>, KeyFault> {
+) -> Result<HashMap<OccurrenceKey, RequirementRecord>, KeyFault> {
     let unkeyable = || KeyFault::UnkeyableRequirements;
     // FR-341-AC-10: a `value`/`parameter` node's own occurrence carries role
     // `expression` too, recorded at the same [`Location`] as the binder
@@ -1099,14 +1099,9 @@ pub(crate) fn key_claims(
             }
         }
     }
-    // By origin, then (stably) by node: ascending `OccurrenceKey` order.
-    let mut records: Vec<(OccurrenceKey, RequirementRecord)> = records.into_iter().collect();
-    records.sort_by(|(left, _), (right, _)| left.origin().cmp(right.origin()));
-    Ok(
-        super::key_order::sorted_by_key(records, |(occurrence, _)| occurrence.node())
-            .into_iter()
-            .collect(),
-    )
+    // Unranked: the check adds its other records, then ranks the whole
+    // map once ([`RequirementMap`]).
+    Ok(records)
 }
 
 /// The one occurrence in `here` whose node no other node in `here` names:
@@ -1141,6 +1136,9 @@ fn outermost(
     }
     Ok(outer)
 }
+
+mod map;
+pub use map::RequirementMap;
 
 #[cfg(test)]
 mod tests;
