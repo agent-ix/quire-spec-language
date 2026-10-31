@@ -17,6 +17,7 @@ use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Time
 
 use crate::value::definition::DefinitionReference;
 use crate::value::member::{AcceptedPoint, Member};
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::NodeKey;
 
 /// The owner of a declared node (ADR-013 O-04): the declaring source unit's
@@ -220,12 +221,24 @@ pub struct PlaceholderId(pub(crate) usize);
 
 /// A node reference during lowering. The pending form must be resolved to
 /// an admitted structural identity before the body crosses a wire boundary.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NodeRef {
     /// A source-supplied or producer-assigned structural node identity.
     Admitted(NodeKey),
     /// A local group member whose structural identity is not yet assigned.
     Pending(PlaceholderId),
+}
+
+impl std::fmt::Debug for NodeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Admitted(node) => f
+                .debug_tuple("Admitted")
+                .field(&NodeKeyDebug(node))
+                .finish(),
+            Self::Pending(id) => f.debug_tuple("Pending").field(id).finish(),
+        }
+    }
 }
 
 impl From<NodeKey> for NodeRef {

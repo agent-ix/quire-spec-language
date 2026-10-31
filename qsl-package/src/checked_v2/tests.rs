@@ -892,7 +892,11 @@ fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
         }))
         .unwrap()
     };
-    let reversed = super::package_source_map(&[entry(node_ref("pkg::A"), 9, 3)]).unwrap_err();
+    let reversed = super::package_source_map(
+        &mut super::KeyInterner::default(),
+        &[entry(node_ref("pkg::A"), 9, 3)],
+    )
+    .unwrap_err();
     assert_eq!(
         reversed,
         super::SourceMapDefect::Provenance(
@@ -902,11 +906,14 @@ fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
             }
         )
     );
-    let node = super::package_source_map(&[entry(
-        json!({"package": "pkg", "path": [], "ordinal": 0}),
-        0,
-        1,
-    )])
+    let node = super::package_source_map(
+        &mut super::KeyInterner::default(),
+        &[entry(
+            json!({"package": "pkg", "path": [], "ordinal": 0}),
+            0,
+            1,
+        )],
+    )
     .unwrap_err();
     assert_eq!(node, super::SourceMapDefect::NodeId);
     for defect in [reversed, node] {

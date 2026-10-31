@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::diagnostic::{Code, ALLOCATION_FAILED};
-use qsl_foundation::source::node_table::NodeTable;
+use qsl_foundation::source::node_table::{scoped, NodeMap};
 use quire_exact::NodeKey;
 
 pub mod bundle;
@@ -296,21 +296,20 @@ pub struct ImportView {
     exports: BTreeMap<NodeKey, String>,
 }
 
-/// Debug writes each distinct node once and names an export by its position,
-/// so the output stays linear however deeply the exported identities nest.
+/// Debug writes each export's node through [`NodeKeyDebug`]: once in the
+/// enclosing [`scoped`] table, so the output stays linear however deeply the
+/// exported identities nest.
 impl std::fmt::Debug for ImportView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut table = NodeTable::new();
-        let exports: Vec<_> = self
-            .exports
-            .iter()
-            .map(|(node, name)| (table.intern(node), name))
-            .collect();
-        let nodes = table.nodes();
-        f.debug_struct("ImportView")
-            .field("nodes", &nodes)
-            .field("exports", &exports)
-            .finish()
+        struct Body<'a>(&'a ImportView);
+        impl std::fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("ImportView")
+                    .field("exports", &NodeMap(self.0.exports.iter()))
+                    .finish()
+            }
+        }
+        scoped(f, &Body(self))
     }
 }
 
@@ -486,13 +485,11 @@ pub fn check_migration(
 #[cfg(test)]
 mod import_view_debug_tests {
     use super::ImportView;
-    use ix_trace_rs::trace;
     use quire_exact::{NodeKey, PathSegment};
     use std::collections::BTreeMap;
 
     /// An import view's debug output writes each nested export identity once
     /// and names an export by position, so it stays linear in the nesting.
-    #[trace("FR-264-AC-1")]
     #[test]
     fn import_view_debug_writes_each_node_once() {
         let inner = NodeKey::new("lib", vec![PathSegment::Text("f".into())], 0).unwrap();

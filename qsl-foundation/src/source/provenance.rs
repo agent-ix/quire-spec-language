@@ -22,7 +22,7 @@ use core::fmt;
 
 use quire_exact::{Location, NodeKey, Origin, Role};
 
-use super::node_table::{NodeRef, NodeTable};
+use super::node_table::{scoped, NodeKeyDebug};
 
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
@@ -187,10 +187,21 @@ impl Ord for SourceRegion {
 /// lexical over (node id, role, ordinal).
 ///
 /// quire:canonical
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OccurrenceKey {
     node: NodeKey,
     origin: Origin,
+}
+
+/// The node is written through [`NodeKeyDebug`], so a key formatted under a
+/// [`scoped`] call is its node's table position, not the node's whole text.
+impl fmt::Debug for OccurrenceKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OccurrenceKey")
+            .field("node", &NodeKeyDebug(&self.node))
+            .field("origin", &self.origin)
+            .finish()
+    }
 }
 
 impl OccurrenceKey {
@@ -268,34 +279,36 @@ pub struct PackageSourceMap {
     entries: BTreeMap<OccurrenceKey, Box<[SourceRegion]>>,
 }
 
-/// Debug writes each distinct node once (a [`NodeTable`]) and each entry as
-/// (node position, role, ordinal) with its regions, so the output is linear in
-/// the package rather than repeating every nested operand per key.
+/// Debug writes each entry as (node, role, ordinal) with its regions. The
+/// nodes are written once, in the table of the enclosing [`scoped`] call, so
+/// the output is linear in the package rather than repeating every nested
+/// operand per key.
 impl fmt::Debug for PackageSourceMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Entries<'a>(&'a [(NodeRef, &'a OccurrenceKey, &'a [SourceRegion])]);
+        struct Entries<'a>(&'a PackageSourceMap);
         impl fmt::Debug for Entries<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut map = f.debug_map();
-                for (node, key, regions) in self.0 {
-                    let role = key.origin.role();
-                    let at = (node, role, key.origin.ordinal());
+                for (key, regions) in &self.0.entries {
+                    let at = (
+                        NodeKeyDebug(&key.node),
+                        key.origin.role(),
+                        key.origin.ordinal(),
+                    );
                     map.entry(&at, regions);
                 }
                 map.finish()
             }
         }
-        let mut table = NodeTable::new();
-        let rows: Vec<_> = self
-            .entries
-            .iter()
-            .map(|(key, regions)| (table.intern(&key.node), key, &**regions))
-            .collect();
-        let nodes = table.nodes();
-        f.debug_struct("PackageSourceMap")
-            .field("nodes", &nodes)
-            .field("entries", &Entries(&rows))
-            .finish()
+        struct Body<'a>(&'a PackageSourceMap);
+        impl fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("PackageSourceMap")
+                    .field("entries", &Entries(self.0))
+                    .finish()
+            }
+        }
+        scoped(f, &Body(self))
     }
 }
 
@@ -572,7 +585,6 @@ mod tests {
 
     /// The source map's debug output is linear in the depth of its nested
     /// nodes, not quadratic, and still names each node, role and ordinal.
-    #[trace("FR-264-AC-1")]
     #[test]
     fn the_map_debug_output_grows_linearly_with_depth() {
         let (_, small) = chain_debug(500);
@@ -583,9 +595,25 @@ mod tests {
         assert!(large < 2_000 * 200, "{large} bytes for 2000 entries");
     }
 
+    /// Two maps formatted under one `scoped` call write a node they share
+    /// once, in one table, however many collections hold it.
+    #[test]
+    fn one_scope_writes_a_node_shared_by_two_maps_once() {
+        let (first, _) = chain_debug(3);
+        let (second, _) = chain_debug(3);
+        struct Both<'a>(&'a PackageSourceMap, &'a PackageSourceMap);
+        impl fmt::Debug for Both<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                super::scoped(f, &(self.0, self.1))
+            }
+        }
+        let text = alloc::format!("{:?}", Both(&first, &second));
+        assert_eq!(text.matches("\"leaf\"").count(), 1, "{text}");
+        assert_eq!(text.matches("PackageSourceMap {").count(), 2, "{text}");
+    }
+
     /// Each node is written once, its nested node named by position, and each
     /// entry names its node position, role, ordinal and regions.
-    #[trace("FR-264-AC-1")]
     #[test]
     fn the_map_debug_names_each_node_once_and_each_entry() {
         let (map, _) = chain_debug(3);
@@ -600,9 +628,12 @@ mod tests {
         assert_eq!(
             text,
             alloc::format!(
-                "PackageSourceMap {{ nodes: {{#0: pkg:[\"add\",#1,]:1, #1: pkg:[\"add\",#2,]:0, \
-                 #2: pkg:[\"leaf\",]:0}}, entries: {{(#0, Role(\"operand\"), 2): {}, \
-                 (#1, Role(\"operand\"), 1): {}, (#2, Role(\"operand\"), 0): {}}} }}",
+                "WithNodes {{ value: PackageSourceMap {{ entries: {{\
+                 (#0, Role(\"operand\"), 2): {}, \
+                 (#1, Role(\"operand\"), 1): {}, \
+                 (#2, Role(\"operand\"), 0): {}}} }}, \
+                 nodes: {{#0: pkg:[\"add\",#1,]:1, #1: pkg:[\"add\",#2,]:0, \
+                 #2: pkg:[\"leaf\",]:0}} }}",
                 region(2),
                 region(1),
                 region(0)

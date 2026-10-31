@@ -129,7 +129,6 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 /// it and `CheckedPackage`.
 ///
 /// quire:canonical
-#[derive(Debug)]
 pub struct CheckedPackage {
     graph: Arc<CheckedGraph>,
     /// E4's checked dependency closure: each directly imported package's
@@ -319,6 +318,39 @@ impl LinkRefusal {
 /// Drops the dependency closure over an explicit stack, so a chain of any
 /// length drops on a constant native stack (ADR-030 D-1): the derived drop
 /// would recurse once per link.
+/// Debug writes the graph and every dependency's graph under one node table,
+/// so a node is written once for the whole package.
+impl std::fmt::Debug for CheckedPackage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct Body<'a>(&'a CheckedPackage);
+        impl std::fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let CheckedPackage {
+                    graph,
+                    dependencies,
+                    selections,
+                    #[cfg(feature = "std")]
+                    direct_imports,
+                    abstraction,
+                    #[cfg(feature = "std")]
+                    emission,
+                } = self.0;
+                let mut out = f.debug_struct("CheckedPackage");
+                out.field("graph", graph)
+                    .field("dependencies", dependencies)
+                    .field("selections", selections);
+                #[cfg(feature = "std")]
+                out.field("direct_imports", direct_imports);
+                out.field("abstraction", abstraction);
+                #[cfg(feature = "std")]
+                out.field("emission", emission);
+                out.finish()
+            }
+        }
+        qsl_foundation::source::node_table::scoped(f, &Body(self))
+    }
+}
+
 impl Drop for CheckedPackage {
     fn drop(&mut self) {
         let mut pending = Vec::new();

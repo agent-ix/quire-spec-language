@@ -401,9 +401,39 @@ fn admitted_id(reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
         .ok_or(EmitRefusal::UnresolvedNodeReference)
 }
 
-/// Recover the structural kernel key of a node that IR has already admitted.
-/// The explicit parent stack handles nested path identities at any depth.
+/// The keys one read has built, so that structurally equal keys share one
+/// `Arc`. A [`NodeKey`] compares and orders in time proportional to its depth
+/// unless the two sides share their nested nodes, and an entry's key is built
+/// from a tree of its own on the wire, so keys built apart would make every
+/// later lookup or comparison walk the chain.
+#[derive(Default)]
+pub(crate) struct KeyInterner(std::collections::HashSet<NodeKey>);
+
+impl KeyInterner {
+    /// The key equal to `key` that this interner holds, or `key` itself,
+    /// now held.
+    fn intern(&mut self, key: NodeKey) -> NodeKey {
+        if let Some(held) = self.0.get(&key) {
+            return held.clone();
+        }
+        self.0.insert(key.clone());
+        key
+    }
+}
+
+/// [`admitted_key_in`] with an interner of its own: nested nodes repeated
+/// within `id` share, and nothing is shared with any other key.
 pub(crate) fn admitted_key(id: &CheckedNodeId) -> Result<NodeKey, EmitRefusal> {
+    admitted_key_in(&mut KeyInterner::default(), id)
+}
+
+/// Recover the structural kernel key of a node that IR has already admitted,
+/// sharing every node (nested ones too) with the equal node `keys` holds.
+/// The explicit parent stack handles nested path identities at any depth.
+pub(crate) fn admitted_key_in(
+    keys: &mut KeyInterner,
+    id: &CheckedNodeId,
+) -> Result<NodeKey, EmitRefusal> {
     struct Frame<'a> {
         package: &'a str,
         ordinal: u64,
@@ -435,6 +465,7 @@ pub(crate) fn admitted_key(id: &CheckedNodeId) -> Result<NodeKey, EmitRefusal> {
                     current.ordinal,
                 )
                 .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+                let key = keys.intern(key);
                 let Some(mut parent) = parents.pop() else {
                     return Ok(key);
                 };
@@ -1538,8 +1569,9 @@ fn inspection_source_map(
     entries: &[CheckedSourceMapEntry],
 ) -> Result<PackageSourceMap, EmitRefusal> {
     let mut mapped = Vec::with_capacity(entries.len());
+    let mut keys = KeyInterner::default();
     for entry in entries {
-        let node = admitted_key(&entry.node_id)?;
+        let node = admitted_key_in(&mut keys, &entry.node_id)?;
         let key = OccurrenceKey::new(
             node,
             Origin::new(

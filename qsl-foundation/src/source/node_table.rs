@@ -9,6 +9,12 @@
 //! each nested node by a table position ([`NodeRef`]); a collection's entries
 //! then print only a [`NodeRef`]. The output is complete (no depth or size
 //! cap) and linear in the number of distinct nodes and their direct segments.
+//!
+//! A type that holds a [`NodeKey`] writes it through [`NodeKeyDebug`]. The
+//! outermost value to format opens one table with [`scoped`] and every key
+//! written under it, whatever type holds it, joins that table, so a node
+//! shared by many collections of one package is written once for the whole
+//! package. Without `std` there is no scope and a key is written in full.
 
 use alloc::collections::BTreeMap;
 use alloc::{string::String, vec::Vec};
@@ -16,6 +22,102 @@ use core::fmt;
 use core::hash::{Hash, Hasher};
 
 use quire_exact::{NodeKey, PathSegment};
+
+#[cfg(feature = "std")]
+std::thread_local! {
+    /// The table the value being formatted on this thread writes its keys
+    /// into, while a [`scoped`] call is open.
+    static ACTIVE: core::cell::RefCell<Option<NodeTable>> = const {
+        core::cell::RefCell::new(None)
+    };
+}
+
+/// Format `value` with one [`NodeTable`] for every [`NodeKeyDebug`] under it.
+/// The outermost call writes `WithNodes { value: .., nodes: {..} }`; a call
+/// made while another is open writes only `value`, into the open table.
+pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn fmt::Debug) -> fmt::Result {
+    #[cfg(feature = "std")]
+    {
+        if ACTIVE.with(|active| active.borrow().is_some()) {
+            return value.fmt(f);
+        }
+        struct Close;
+        impl Drop for Close {
+            fn drop(&mut self) {
+                ACTIVE.with(|active| *active.borrow_mut() = None);
+            }
+        }
+        struct Active;
+        impl fmt::Debug for Active {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                ACTIVE.with(|active| match active.borrow().as_ref() {
+                    Some(table) => table.nodes().fmt(f),
+                    None => Ok(()),
+                })
+            }
+        }
+        ACTIVE.with(|active| *active.borrow_mut() = Some(NodeTable::new()));
+        let _close = Close;
+        f.debug_struct("WithNodes")
+            .field("value", value)
+            .field("nodes", &Active)
+            .finish()
+    }
+    #[cfg(not(feature = "std"))]
+    value.fmt(f)
+}
+
+/// A [`NodeKey`] written as its position in the table of the open
+/// [`scoped`] call, or in full when none is open.
+pub struct NodeKeyDebug<'a>(pub &'a NodeKey);
+
+impl fmt::Debug for NodeKeyDebug<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "std")]
+        {
+            let at = ACTIVE.with(|active| active.borrow_mut().as_mut().map(|t| t.intern(self.0)));
+            if let Some(at) = at {
+                return at.fmt(f);
+            }
+        }
+        self.0.fmt(f)
+    }
+}
+
+/// A map keyed by node identities, each key written through [`NodeKeyDebug`].
+/// `I` is the map's `iter()`.
+pub struct NodeMap<I>(pub I);
+
+impl<'a, I, V> fmt::Debug for NodeMap<I>
+where
+    I: Iterator<Item = (&'a NodeKey, V)> + Clone,
+    V: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .clone()
+                    .map(|(key, value)| (NodeKeyDebug(key), value)),
+            )
+            .finish()
+    }
+}
+
+/// A sequence or set of node identities, each written through
+/// [`NodeKeyDebug`]. `I` is the collection's `iter()`.
+pub struct NodeList<I>(pub I);
+
+impl<'a, I> fmt::Debug for NodeList<I>
+where
+    I: Iterator<Item = &'a NodeKey> + Clone,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.clone().map(NodeKeyDebug))
+            .finish()
+    }
+}
 
 /// The position of one node in a [`NodeTable`], written `#n`.
 #[derive(Clone, Copy, Eq, PartialEq)]

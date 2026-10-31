@@ -33,6 +33,8 @@ use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::ops::ControlFlow;
 
+use qsl_foundation::source::node_table::{scoped, NodeKeyDebug, NodeList};
+
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
@@ -119,11 +121,21 @@ pub(crate) use timed_clause::TimedClauseInput;
 /// A node's place in its recursion group (FR-092 "Recursion groups"): the
 /// node's ordinal and the number of the group's nodes.
 /// FR-093's emission writes a group's nodes in ordinal order.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct NodeRecursion {
     ordinal: usize,
     size: usize,
     members: std::sync::Arc<[NodeKey]>,
+}
+
+impl fmt::Debug for NodeRecursion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NodeRecursion")
+            .field("ordinal", &self.ordinal)
+            .field("size", &self.size)
+            .field("members", &NodeList(self.members.iter()))
+            .finish()
+    }
 }
 
 impl NodeRecursion {
@@ -152,7 +164,7 @@ impl NodeRecursion {
 }
 
 /// One lowered, keyed node of the checked semantic graph.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SemanticNode {
     key: NodeKey,
     recursion: Option<NodeRecursion>,
@@ -160,6 +172,17 @@ pub struct SemanticNode {
     /// Outside every recursion group, the content [`Self::key`] keys; a
     /// group member's names its group's members by their keys.
     content: NodeContent,
+}
+
+impl fmt::Debug for SemanticNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SemanticNode")
+            .field("key", &NodeKeyDebug(&self.key))
+            .field("recursion", &self.recursion)
+            .field("nominal", &self.nominal)
+            .field("content", &self.content)
+            .finish()
+    }
 }
 
 impl SemanticNode {
@@ -311,13 +334,19 @@ impl fmt::Debug for SemanticGraph {
         impl fmt::Debug for Ordered<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_map()
-                    .entries(self.0.nodes().map(|node| (&node.key, node)))
+                    .entries(self.0.nodes().map(|node| (NodeKeyDebug(&node.key), node)))
                     .finish()
             }
         }
-        f.debug_struct("SemanticGraph")
-            .field("nodes", &Ordered(self))
-            .finish()
+        struct Body<'g>(&'g SemanticGraph);
+        impl fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("SemanticGraph")
+                    .field("nodes", &Ordered(self.0))
+                    .finish()
+            }
+        }
+        scoped(f, &Body(self))
     }
 }
 
