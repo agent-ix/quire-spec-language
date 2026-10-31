@@ -3096,11 +3096,11 @@ pub struct AdmittedInvocation<'t> {
     /// The frame node identity the invocation was admitted for (the S6a
     /// arm's mismatch check, as [`AdmittedObservations::clause`] is).
     pub frame: quire_exact::NodeKey,
-    /// The invocation document's identity and digest.
+    /// The invocation document's identity.
     pub invocation: DocumentRef,
-    /// The pre snapshot's identity and digest.
+    /// The pre snapshot's identity.
     pub pre: DocumentRef,
-    /// The post snapshot's identity and digest.
+    /// The post snapshot's identity.
     pub post: DocumentRef,
     views: Vec<ModelView>,
     types: &'t TypeEnvironment,

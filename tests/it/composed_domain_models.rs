@@ -161,8 +161,6 @@ pub(crate) fn admitted_with_bytes(bundle: &Path) -> (AdmittedPackage, Vec<u8>) {
 /// real lifted document: a `populations[]` node, under one `constructs[]`
 /// entry for `fixture-domain`' `population` construct with the
 /// module version and manifest digest the lift recorded for that module.
-/// The document is re-encoded as RFC 8785 bytes, so its raw-byte and
-/// `sha256-jcs` digests agree as the lift's own do.
 pub(crate) fn admitted_with_populations(
     bundle: &Path,
     populations: &[(&str, &[&str])],

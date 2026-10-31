@@ -279,7 +279,7 @@ pub enum ObservationOrigin {
 /// when every component is equal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BundleKey {
-    /// The checked unit's source reference (authority, identity and digest).
+    /// The checked unit's source reference (authority and identity).
     pub source: RawSourceRef,
     /// The selected clause.
     pub clause: NodeKey,

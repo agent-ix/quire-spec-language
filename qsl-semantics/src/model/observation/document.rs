@@ -180,9 +180,7 @@ impl ContextMember {
 }
 
 /// The four FR-001 labels of an invocation document's own `identity`: how
-/// a snapshot names the invocation it observes. No digest: the
-/// invocation's digest covers its `pre` and `post` references, whose
-/// digests cover these snapshots.
+/// a snapshot names the invocation it observes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct InvocationLabels {
     authority: String,

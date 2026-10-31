@@ -3,7 +3,7 @@
 //! objects by their full reference (population and key) and their field
 //! values. A field value is written by [`SnapshotValue::to_json`], the one
 //! writer of FR-106's value forms; the document is put in RFC 8785 form by
-//! the shared canonical encoder, which is also what admission digests.
+//! the shared canonical encoder.
 
 use serde_json::{json, Map, Value as Json};
 
@@ -11,8 +11,8 @@ use quire_checked::key::DeclarationKey;
 
 use super::{fault, AdmissionFailure, SnapshotValue};
 
-/// The four FR-001 labels of a document. Admission selects a document by
-/// digest alone and never compares these with the document's own identity.
+/// The four FR-001 labels of a document. Admission never compares these with the
+/// document's own identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentLabels {
     /// The `authority` label.
