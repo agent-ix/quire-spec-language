@@ -23,6 +23,7 @@ use std::collections::BTreeMap;
 
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::diagnostic::{Code, ALLOCATION_FAILED};
+use qsl_foundation::source::node_table::NodeTable;
 use quire_exact::NodeKey;
 
 pub mod bundle;
@@ -290,9 +291,27 @@ pub(crate) fn verify_package(
 /// data (ADR-013 R-06): `ImportView` has no method that takes a name.
 ///
 /// quire:canonical
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ImportView {
     exports: BTreeMap<NodeKey, String>,
+}
+
+/// Debug writes each distinct node once and names an export by its position,
+/// so the output stays linear however deeply the exported identities nest.
+impl std::fmt::Debug for ImportView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut table = NodeTable::new();
+        let exports: Vec<_> = self
+            .exports
+            .iter()
+            .map(|(node, name)| (table.intern(node), name))
+            .collect();
+        let nodes = table.nodes();
+        f.debug_struct("ImportView")
+            .field("nodes", &nodes)
+            .field("exports", &exports)
+            .finish()
+    }
 }
 
 impl ImportView {
@@ -462,4 +481,39 @@ pub fn check_migration(
         from: from.library.clone(),
         to: to.library.clone(),
     })
+}
+
+#[cfg(test)]
+mod import_view_debug_tests {
+    use super::ImportView;
+    use ix_trace_rs::trace;
+    use quire_exact::{NodeKey, PathSegment};
+    use std::collections::BTreeMap;
+
+    /// An import view's debug output writes each nested export identity once
+    /// and names an export by position, so it stays linear in the nesting.
+    #[trace("FR-264-AC-1")]
+    #[test]
+    fn import_view_debug_writes_each_node_once() {
+        let inner = NodeKey::new("lib", vec![PathSegment::Text("f".into())], 0).unwrap();
+        let outer = NodeKey::new(
+            "lib",
+            vec![
+                PathSegment::Text("g".into()),
+                PathSegment::Node(inner.clone()),
+            ],
+            0,
+        )
+        .unwrap();
+        let view = ImportView {
+            exports: BTreeMap::from([(inner, "f".to_owned()), (outer, "g".to_owned())]),
+        };
+        let text = format!("{view:?}");
+        assert_eq!(
+            text.matches("lib:[").count(),
+            2,
+            "the inner node is written once, not again inside the outer: {text}"
+        );
+        assert!(text.contains("\"f\"") && text.contains("\"g\""), "{text}");
+    }
 }

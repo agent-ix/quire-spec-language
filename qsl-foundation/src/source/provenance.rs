@@ -22,6 +22,8 @@ use core::fmt;
 
 use quire_exact::{Location, NodeKey, Origin, Role};
 
+use super::node_table::{NodeRef, NodeTable};
+
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -261,9 +263,40 @@ pub enum UnresolvedOccurrence {
 
 /// ADR-013 O-12: one package's source map, keyed by the O-07 occurrence
 /// key, each key mapping to its ordered, non-empty regions.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct PackageSourceMap {
     entries: BTreeMap<OccurrenceKey, Box<[SourceRegion]>>,
+}
+
+/// Debug writes each distinct node once (a [`NodeTable`]) and each entry as
+/// (node position, role, ordinal) with its regions, so the output is linear in
+/// the package rather than repeating every nested operand per key.
+impl fmt::Debug for PackageSourceMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Entries<'a>(&'a [(NodeRef, &'a OccurrenceKey, &'a [SourceRegion])]);
+        impl fmt::Debug for Entries<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut map = f.debug_map();
+                for (node, key, regions) in self.0 {
+                    let role = key.origin.role();
+                    let at = (node, role, key.origin.ordinal());
+                    map.entry(&at, regions);
+                }
+                map.finish()
+            }
+        }
+        let mut table = NodeTable::new();
+        let rows: Vec<_> = self
+            .entries
+            .iter()
+            .map(|(key, regions)| (table.intern(&key.node), key, &**regions))
+            .collect();
+        let nodes = table.nodes();
+        f.debug_struct("PackageSourceMap")
+            .field("nodes", &nodes)
+            .field("entries", &Entries(&rows))
+            .finish()
+    }
 }
 
 impl PackageSourceMap {
@@ -501,6 +534,79 @@ mod tests {
                 (key(1, "type", 0), vec![region("a", 2, 3)]),
             ]),
             Err(InvalidProvenance::DuplicateOccurrence(key(1, "type", 0)))
+        );
+    }
+
+    /// Counts complete debug output without retaining its bytes.
+    struct ByteCount(usize);
+
+    impl fmt::Write for ByteCount {
+        fn write_str(&mut self, text: &str) -> fmt::Result {
+            self.0 += text.len();
+            Ok(())
+        }
+    }
+
+    /// A source map of `depth` occurrences whose nodes nest one in the next
+    /// (a sum's operand chain), and the byte count of its debug output.
+    fn chain_debug(depth: u64) -> (PackageSourceMap, usize) {
+        let mut node = NodeKey::new("pkg", vec![PathSegment::Text("leaf".into())], 0).unwrap();
+        let mut entries = Vec::new();
+        for level in 0..depth {
+            entries.push((
+                OccurrenceKey::new(node.clone(), Origin::new(Role::new("operand"), level)),
+                vec![region("a", level, level + 1)],
+            ));
+            node = NodeKey::new(
+                "pkg",
+                vec![PathSegment::Text("add".into()), PathSegment::Node(node)],
+                level,
+            )
+            .unwrap();
+        }
+        let map = PackageSourceMap::from_entries(entries).unwrap();
+        let mut count = ByteCount(0);
+        fmt::Write::write_fmt(&mut count, format_args!("{map:?}")).unwrap();
+        (map, count.0)
+    }
+
+    /// The source map's debug output is linear in the depth of its nested
+    /// nodes, not quadratic, and still names each node, role and ordinal.
+    #[trace("FR-264-AC-1")]
+    #[test]
+    fn the_map_debug_output_grows_linearly_with_depth() {
+        let (_, small) = chain_debug(500);
+        let (_, middle) = chain_debug(1_000);
+        let (_, large) = chain_debug(2_000);
+        assert!(middle < small * 5 / 2, "500 -> 1k: {small} -> {middle}");
+        assert!(large < middle * 5 / 2, "1k -> 2k: {middle} -> {large}");
+        assert!(large < 2_000 * 200, "{large} bytes for 2000 entries");
+    }
+
+    /// Each node is written once, its nested node named by position, and each
+    /// entry names its node position, role, ordinal and regions.
+    #[trace("FR-264-AC-1")]
+    #[test]
+    fn the_map_debug_names_each_node_once_and_each_entry() {
+        let (map, _) = chain_debug(3);
+        let text = alloc::format!("{map:?}");
+        let region = |at: u64| {
+            alloc::format!(
+                "[SourceRegion {{ source: RawSourceRef {{ authority: \"a\", identity: \"unit\" }}, \
+                 start: {at}, end: {} }}]",
+                at + 1
+            )
+        };
+        assert_eq!(
+            text,
+            alloc::format!(
+                "PackageSourceMap {{ nodes: {{#0: pkg:[\"add\",#1,]:1, #1: pkg:[\"add\",#2,]:0, \
+                 #2: pkg:[\"leaf\",]:0}}, entries: {{(#0, Role(\"operand\"), 2): {}, \
+                 (#1, Role(\"operand\"), 1): {}, (#2, Role(\"operand\"), 0): {}}} }}",
+                region(2),
+                region(1),
+                region(0)
+            )
         );
     }
 }
