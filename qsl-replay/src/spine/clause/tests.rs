@@ -2878,7 +2878,7 @@ fn config_version_probe_invocation_bytes(
 
 /// One `probe` invocation's provisioned documents: the invocation's own
 /// label (what a `ReachesTarget` selection names), and the snapshot and
-/// invocation provisions keyed by digest, ready for a `ClauseRunRequest`
+/// invocation provisions keyed by label, ready for a `ClauseRunRequest`
 /// or a hand-built `Provisions`.
 struct ProbeDocuments {
     invocation: DocumentRef,
@@ -4801,7 +4801,7 @@ fn s4_state_package_reads_back_through_i2() {
 
     let emission = qsl_package::emit_checked(&first.package)
         .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
-    let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
+    let library = LibraryName::new("fixture".to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
     let view = qsl_package::read_import_view(
         &first.package,

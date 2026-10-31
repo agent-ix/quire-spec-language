@@ -157,8 +157,8 @@ step row, or a history update.
   for a mapped state to hold.
 - `map_state` SHALL read the rows in a fixed order that does not depend on
   the order they were written in: the populations in ascending node-key order of
-  the row's first named declaration, the abstract population (QSpec FR-375;
-  FR-146 uses the same wording for `steps`), within each population its objects in ascending key order, and per
+  the row's first named declaration, the abstract population (QSpec FR-375),
+  within each population its objects in ascending key order, and per
   object its type's object row and then that type's field rows in ascending
   field name as UTF-8 bytes (QSpec FR-377 "Failure precedence").
   `map_state` SHALL return the first `MappingFailure::Undefined` in that

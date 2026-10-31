@@ -161,14 +161,14 @@ pub fn certify_step_records(
 /// A refinement's per-step simulation records and its safety half, settled.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StepRecordsSettlement {
-    /// The `Initial` record's settlement, then each row's in `steps` order.
+    /// The `Initial` record's settlement, then each row's in declaration order.
     pub records: Vec<StepSimulationSettlement>,
     /// The safety half (QSpec FR-468 "Settlement").
     pub safety: StepSimulationSettlement,
 }
 
 /// FR-146 and QSpec FR-468: settle each record of `verdicts` (the `Initial`
-/// record's, then each row's in `steps` order) under `certification`, and
+/// record's, then each row's in declaration order) under `certification`, and
 /// the safety half from them and `hypotheses` (each invariant clause's node
 /// and its item's result, in the records' `hypotheses` order). A
 /// counterexample to the `Initial` record settles `refuted` only when
@@ -218,7 +218,7 @@ fn settled(row: Row) -> StepSimulationSettlement {
 /// wrong, then another backend result (no candidate, and a certificate
 /// check that stopped or faulted, included), then the proof. Within a rule
 /// the first query triggering it wins: the initial query, the hypothesis
-/// items, then the step rows in `steps` order.
+/// items, then the step rows in declaration order.
 fn safety_of(
     verdicts: &[StepRecordVerdict],
     records: &[StepSimulationSettlement],

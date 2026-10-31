@@ -125,11 +125,9 @@ fn checked_node_id(
         owner: SourceInventoryOwner::Qsl,
         cause: cause.into(),
     };
-    let value =
-        qsl_foundation::node_wire::node_key_to_json(key).map_err(|e| failed(e.to_string()))?;
-    let text = serde_json::to_string(&value).map_err(|e| failed(e.to_string()));
-    qsl_foundation::node_wire::discard_node_json(value);
-    serde_json::from_str(&text?).map_err(|e| failed(e.to_string()))
+    let text =
+        qsl_foundation::node_wire::node_key_to_text(key).map_err(|e| failed(e.to_string()))?;
+    serde_json::from_str(&text).map_err(|e| failed(e.to_string()))
 }
 
 /// One checked unit: the selected source reference and formal identity, with
@@ -255,4 +253,28 @@ pub fn qsl_inventory(
     unit: &CheckedUnit<'_, '_, '_>,
 ) -> Result<SourceInventoryOutcome, SourceInventoryOutcomeError> {
     SourceInventoryOutcome::from_enumerator(Traversal::new(unit))
+}
+
+#[cfg(test)]
+mod deep_node_tests {
+    use super::*;
+
+    #[test]
+    fn a_deeply_nested_checked_node_id_converts() {
+        let mut key = quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("leaf".into())],
+            0,
+        )
+        .expect("a fixture key");
+        for ordinal in 1..=200 {
+            key = quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Node(key)],
+                ordinal,
+            )
+            .expect("a nested key");
+        }
+        assert!(checked_node_id(&key).is_ok());
+    }
 }

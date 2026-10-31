@@ -327,8 +327,8 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
             omitted: emission.omitted().len(),
         });
     }
-    let library =
-        LibraryName::new("pkg").map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
+    let library = LibraryName::new("spine-model")
+        .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
         .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let mut admitted = AdmittedPackages::default();

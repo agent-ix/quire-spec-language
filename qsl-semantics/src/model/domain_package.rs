@@ -425,7 +425,7 @@ pub struct FieldMemberRecord {
     pub redefines: Option<DeclarationKey>,
     /// This field's position in its owner's `fields` array: its declaration
     /// order, which orders a record's components in an enumerated value
-    /// domain (FR-120, FR-215). Data only: slot order, keys and digests
+    /// domain (FR-120, FR-215). Data only: slot order and keys
     /// stay name-sorted.
     pub position: usize,
 }

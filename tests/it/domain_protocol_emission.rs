@@ -116,8 +116,7 @@ fn domain_model(models: &[w::Model]) -> (u32, &w::Model) {
 }
 
 /// A domain-typed declaration checks and emits; the compiled protocol's
-/// `Model` for the package names its identity, version and `sha256-jcs`
-/// digest directly, equal to the selection FR-056 admitted, while the native
+/// `Model` for the package names its identity and version directly, equal to the selection FR-056 admitted, while the native
 /// model beside it keeps an explicit `null`; field reads and parameter types
 /// name the package's own exports; and the strict reader reads the bytes
 /// back unchanged.

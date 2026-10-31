@@ -1095,8 +1095,18 @@ impl<'a> ModelSystem<'a> {
     /// creatable type declares, and each population the initial states hold.
     /// A type this module cannot enumerate is listed as an unbounded domain.
     pub fn domains(&self) -> Vec<(NodeKey, ValueType)> {
+        self.rooted_domains()
+            .into_iter()
+            .map(|(node, _, value_type)| (node, value_type))
+            .collect()
+    }
+
+    /// [`Self::domains`], each with the child-index path below its node at
+    /// which the root sits (QSpec FR-331): empty for a population, `[0, f]`
+    /// for a field, `[1, o, p]` for a parameter, `[2, o]` for a result.
+    pub fn rooted_domains(&self) -> Vec<(NodeKey, Vec<u32>, ValueType)> {
         let mut roots = Vec::new();
-        let mut root = |node: Option<NodeKey>, value_type: &ValueType| {
+        let mut root = |node: Option<NodeKey>, base: Vec<u32>, value_type: &ValueType| {
             let Some(node) = node else {
                 return;
             };
@@ -1111,11 +1121,45 @@ impl<'a> ModelSystem<'a> {
             } else {
                 ValueType::Integer
             };
-            roots.push((node, bounded));
+            roots.push((node, base, bounded));
+        };
+        // QSpec FR-331 "Model member domain keys": a member's domain is the
+        // model declaration node of its declaring type and the member's path
+        // (field `[0, f]`, parameter `[1, o, p]`, result `[2, o]`), `f` and
+        // `o` the ordinal among the type's own fields and operations in
+        // UTF-8 name order and `p` the declared parameter position.
+        let type_node = |id: &EffectiveId| {
+            let original = id.original();
+            qsl_semantics::model::key::model_node_key(
+                original.package(),
+                "model",
+                "object_type",
+                original.node(),
+            )
+            .ok()
         };
         for declaration in self.types.object_types() {
-            for operation in self.operations.declared_by(declaration.key()) {
-                for (position, (name, value_type)) in operation.parameters().iter().enumerate() {
+            let owner = declaration.key();
+            let declared = self.operations.declared_by(owner.clone());
+            let mut names: Vec<&str> = declared.iter().map(|operation| operation.name()).collect();
+            names.sort_unstable();
+            for operation in declared {
+                let Some(ordinal) = names
+                    .binary_search(&operation.name())
+                    .ok()
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                else {
+                    continue;
+                };
+                let clocks: BTreeSet<usize> = operation
+                    .clock_parameters()
+                    .iter()
+                    .map(|(position, _)| *position)
+                    .collect();
+                let mut declared_positions =
+                    (0_usize..).filter(|position| !clocks.contains(position));
+                for (position, (_, value_type)) in operation.parameters().iter().enumerate() {
+                    let declared_position = declared_positions.next().unwrap_or(position);
                     // A random parameter's finite domain is its support
                     // (ADR-024 PM-1), whatever its declared type.
                     if !domain::enumerable(value_type)
@@ -1126,12 +1170,17 @@ impl<'a> ModelSystem<'a> {
                     {
                         continue;
                     }
-                    // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): admitted node for operation parameter roots
-                    let _ = (name, value_type);
+                    let Ok(declared_position) = u32::try_from(declared_position) else {
+                        continue;
+                    };
+                    root(
+                        type_node(&owner),
+                        vec![1, ordinal, declared_position],
+                        value_type,
+                    );
                 }
                 if let Some(result) = operation.result() {
-                    // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): admitted node for operation result roots
-                    let _ = result;
+                    root(type_node(&owner), vec![2, ordinal], result);
                 }
             }
         }
@@ -1152,14 +1201,82 @@ impl<'a> ModelSystem<'a> {
                 )
             })
             .collect();
+        // Each field's declaring type and ordinal among that type's own
+        // fields, found through the effective attribute set of every type
+        // (which lists a field in the same order as `self.fields`).
+        let graph = self.package.graph();
+        let mut field_homes: BTreeMap<&DeclarationKey, (EffectiveId, u32)> = BTreeMap::new();
+        for declaration in self.types.object_types() {
+            let Some(type_key) = self.model.type_key(declaration.key()) else {
+                continue;
+            };
+            let (Some(fields), Some(attributes)) = (
+                self.fields.get(type_key),
+                self.types.attributes(declaration.key()),
+            ) else {
+                continue;
+            };
+            let attributes: Vec<_> = attributes.into_iter().collect();
+            for field in fields {
+                // A field is found by name in the effective set: an eval-side
+                // member (a clock count or presence bit) is named for the
+                // clock field it stands for.
+                let Some(attribute) = attributes
+                    .iter()
+                    .find(|attribute| attribute.field().name() == field.name)
+                else {
+                    continue;
+                };
+                let owner = attribute.owner();
+                let Some(ordinal) = graph
+                    .own_field_ordinal(&owner, attribute.field().name())
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                else {
+                    continue;
+                };
+                field_homes.insert(&field.key, (owner, ordinal));
+            }
+        }
+        // An eval-side clock member stands for a clock field its owner
+        // declares in a `time` declaration, outside the owner's data
+        // attributes: it is keyed under that owner by its place in the
+        // owner's one name-ordered sequence of own fields.
+        let mut clock_fields: BTreeMap<EffectiveId, BTreeMap<String, &DeclarationKey>> =
+            BTreeMap::new();
+        for timed in self.package.graph().timed_models() {
+            for clock in timed.clocks() {
+                let Some(qsl_semantics::check::PlaceStep::Field(name)) = clock.path().first()
+                else {
+                    continue;
+                };
+                if field_homes.contains_key(clock.field()) {
+                    continue;
+                }
+                clock_fields
+                    .entry(clock.owner())
+                    .or_default()
+                    .insert(name.clone(), clock.field());
+            }
+        }
+        for (owner, named) in &clock_fields {
+            for (name, key) in named {
+                if let Some(ordinal) = graph
+                    .own_field_ordinal(owner, name)
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                {
+                    field_homes.insert(key, (owner.clone(), ordinal));
+                }
+            }
+        }
         // A pure-clock collection's count is a root only where a frame
         // grants it: with no declared maximum it is then unbounded. An
         // ungranted one ranges its initial count up to `max_clocks` (FR-230
         // "Initial element count").
         for key in &granted {
-            if let Some(value_type) = field_types.get(key) {
-                // BLOCKED-BY QSL-1309 (owner: planner titan:QSL:plan): admitted node for granted-field roots
-                let _ = value_type;
+            if let (Some(value_type), Some((owner, ordinal))) =
+                (field_types.get(key), field_homes.get(key))
+            {
+                root(type_node(owner), vec![0, *ordinal], value_type);
             }
         }
         let held: BTreeSet<&DeclarationKey> = self
@@ -1174,6 +1291,7 @@ impl<'a> ModelSystem<'a> {
                 .map(|keys| u64::try_from(keys.len()).unwrap_or(u64::MAX));
             root(
                 qsl_semantics::model::key::population_node_key(population).ok(),
+                Vec::new(),
                 &ValueType::Population(bound),
             );
         }
@@ -1429,10 +1547,10 @@ pub fn check_model_bounds(
     system: &ModelSystem<'_>,
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
-    let domains = system.domains();
-    let roots: Vec<(NodeKey, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (id.clone(), value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     crate::simulation::not_simulated::check_requires_bound(&roots, system.types, position_limit)
 }
@@ -1450,10 +1568,10 @@ pub fn explore_model(
     limits: Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<Exploration<ModelFinding>, NotSimulated> {
-    let domains = system.domains();
-    let roots: Vec<(NodeKey, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (id.clone(), value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     explore_request(
         system,
@@ -1487,10 +1605,10 @@ pub fn sample_model(
     trace: u64,
     max_steps: usize,
 ) -> Result<ModelTrace, ModelSampleError> {
-    let domains = system.domains();
-    let roots: Vec<(NodeKey, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (id.clone(), value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     let trace = sample_request(
         system,
@@ -1567,10 +1685,10 @@ pub fn sample_model_walk(
         .cloned()
         .ok_or(NotSimulated::EmptyInitial)?;
     let view = OneInitial { system, start };
-    let domains = system.domains();
-    let roots: Vec<(NodeKey, &ValueType)> = domains
+    let domains = system.rooted_domains();
+    let roots: Vec<(NodeKey, Vec<u32>, &ValueType)> = domains
         .iter()
-        .map(|(id, value_type)| (id.clone(), value_type))
+        .map(|(id, base, value_type)| (id.clone(), base.clone(), value_type))
         .collect();
     sample_request_until(
         &view,
@@ -1625,7 +1743,8 @@ fn effects_of(
         };
         let matched = successors
             .into_iter()
-            .find(|successor| successor.transition == step.transition && successor.key == step.key)
+            .filter(|successor| successor.transition == step.transition)
+            .nth(step.ordinal)
             .ok_or_else(missing)?;
         effects.push(matched.state.reached_by.clone().ok_or_else(missing)?);
         current = matched.state;

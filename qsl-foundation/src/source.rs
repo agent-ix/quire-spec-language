@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-001: immutable exact source bytes, integrity, the caller-named source
+//! FR-001: immutable source text, the caller-named source
 //! reference and checked scalar coordinates.
 //!
 //! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
 //! and package source map.
-use crate::ByteDigest;
 use alloc::sync::Arc;
 use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
 use provenance::{RawSourceRef, SourceRegion};
@@ -12,7 +11,7 @@ use provenance::{RawSourceRef, SourceRegion};
 pub mod provenance;
 
 /// FR-001: the four labels a caller names a source by, separate from the
-/// path and from any digest. QSL defaults none of them and derives none
+/// path or the source text. QSL defaults none of them and derives none
 /// from the path, the bytes or another label. Ordering is lexical over the
 /// four labels in declaration order.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
@@ -24,8 +23,7 @@ pub struct SourceIdentity {
     pub identity: String,
     /// The revision system the revision value belongs to, such as `git`.
     pub revision_namespace: String,
-    /// The revision value within that namespace, distinct from the byte
-    /// digest.
+    /// The revision value within that namespace.
     pub revision: String,
 }
 
@@ -178,7 +176,6 @@ struct Document {
     text: Box<str>,
     line_starts: Vec<usize>,
     indentation_ends: Vec<usize>,
-    digest: ByteDigest,
     // End byte and cumulative excess bytes over Unicode scalar count.
     wide_ends: Vec<(usize, usize)>,
 }
@@ -267,7 +264,7 @@ pub struct SourceReadError {
     pub path: String,
     /// FR-001: the refusal's region, under a `RawSourceRef` minted over the
     /// offered bytes, for invalid UTF-8, a BOM and NUL; `None` for an
-    /// unnamed source and a byte-budget refusal.
+    /// unnamed source or a byte-budget refusal.
     pub region: Option<SourceRegion>,
     /// Human-readable detail.
     pub message: String,
@@ -364,7 +361,6 @@ impl Source {
                 &format!("source byte budget exhausted (limit {byte_limit})"),
             ));
         }
-        let digest = ByteDigest::of(bytes);
         // Every label is non-blank here, so the reference is minted unless
         // provenance itself refuses the values.
         let reference = match identity.reference() {
@@ -413,17 +409,11 @@ impl Source {
                 "NUL is forbidden in source bytes",
             ));
         }
-        Ok(Self::admit(identity, reference, path, text, digest))
-    }
-
-    /// SHA-256 of the exact admitted bytes, without normalization.
-    pub fn digest(&self) -> ByteDigest {
-        self.0.digest
+        Ok(Self::admit(identity, reference, path, text))
     }
 
     /// FR-001: the `RawSourceRef` admission minted, the caller's four labels
-    /// exactly as supplied and the `quire.source.bytes/v1` digest of the
-    /// admitted bytes. Every later stage names this source by it.
+    /// exactly as supplied. Every later stage names this source by it.
     pub fn reference(&self) -> &RawSourceRef {
         &self.0.reference
     }
@@ -458,13 +448,7 @@ impl Source {
         self.0.indentation_ends[line]
     }
 
-    fn admit(
-        identity: SourceIdentity,
-        reference: RawSourceRef,
-        path: String,
-        text: &str,
-        digest: ByteDigest,
-    ) -> Self {
+    fn admit(identity: SourceIdentity, reference: RawSourceRef, path: String, text: &str) -> Self {
         let mut line_starts = vec![0];
         let mut wide_ends = Vec::new();
         let mut excess = 0;
@@ -494,7 +478,6 @@ impl Source {
             text: text.into(),
             line_starts,
             indentation_ends,
-            digest,
             wide_ends,
         }))
     }
@@ -682,11 +665,11 @@ mod tests {
         }
     }
 
-    /// FR-001-AC-10: an empty revision namespace, five bytes under a
-    /// four-byte ceiling each refuse with no region.
+    /// FR-001-AC-10: an empty revision namespace and five bytes under a
+    /// four-byte ceiling refuse with no region.
     #[trace("TC-424", "FR-001-AC-10")]
     #[test]
-    fn unnamed_over_budget_and_mismatched_refusals_have_no_region() {
+    fn unnamed_and_over_budget_refusals_have_no_region() {
         let unnamed = refusal(labels("a", "u", "", "1"), b"b", MAX_SOURCE_BYTES);
         assert_eq!(
             unnamed.cause,

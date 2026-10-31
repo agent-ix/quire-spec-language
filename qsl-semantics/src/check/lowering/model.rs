@@ -18,6 +18,7 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
 use crate::check::assemble::DimensionEquivalence;
 use crate::check::family::OccurrenceRole;
+use crate::check::navigation::EndSide;
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeRef, NodeTag,
     Owner,
@@ -1935,6 +1936,27 @@ impl<'a> Lowering<'a> {
         Ok(None)
     }
 
+    /// FR-322: the model declaration node of the object type at the end of
+    /// `relationship` opposite `near`, the end a navigation or reachability
+    /// from `near` arrives at.
+    pub(super) fn destination_type_node(
+        &mut self,
+        relationship: &DeclarationKey,
+        near: EndSide,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let far = match near {
+            EndSide::Source => EndSide::Target,
+            EndSide::Target => EndSide::Source,
+        };
+        let object = self
+            .scope
+            .relationships()
+            .end_object(relationship, far)
+            .ok_or_else(|| mismatch(location))?;
+        self.object_node(object, location)
+    }
+
     /// The model declaration node of `declaration`, recorded in the model
     /// correspondence.
     pub(super) fn model_node(
@@ -2211,12 +2233,21 @@ impl<'a> Lowering<'a> {
     fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
-            if self.graph.nodes.contains_key(&key) {
-                continue;
-            }
             let Some(node) = self.units.nominal_node(&key).cloned() else {
                 return Err(fault(location, KeyFault::UnheldNominal(key)));
             };
+            if let Some(held) = self.graph.nodes.get(&key) {
+                let form = match node.form {
+                    NominalUnitForm::Unit { .. } => "unit",
+                    NominalUnitForm::Dimension { .. } => "dimension",
+                };
+                if held.content.node_tag == NodeTag::ScalarType
+                    && held.content.semantic_form == form
+                {
+                    continue;
+                }
+                return Err(fault(location, KeyFault::NominalKeyClash(key)));
+            }
             let NominalDeclaration {
                 qualified_declaration: qualified,
                 ..
@@ -2288,7 +2319,11 @@ impl<'a> Lowering<'a> {
         for (index, equivalence) in equivalences.iter().enumerate() {
             let site = type_declaration(&equivalence_origin(index));
             for dimension in &equivalence.dimensions {
-                self.unit_nodes(dimension.clone(), &site)?;
+                // A model-owned dimension is no node of this unit's table:
+                // its own model emits it.
+                if self.units.nominal_node(dimension).is_some() {
+                    self.unit_nodes(dimension.clone(), &site)?;
+                }
             }
             let key = equivalence.key.clone();
             let inserted = self.insert_nominal(

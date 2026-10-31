@@ -112,23 +112,19 @@ during implementation.**
    `resolve_libraries`, covering qualified imports, transitive-closure
    locking, diamond unification and cycle refusal), re-exported flatly at
    `value::*` (`src/value/mod.rs:154`) and verified today by TC-227
-   (`tests/library_resolution.rs`). `src/value/package_identity.rs` is "a
-   structural preimage reader with no wire I/O" that `library` already
-   imports (`value/library.rs:25`). ADR-011's module table (`:744`) reads:
+   (`tests/library_resolution.rs`). `src/value/package_identity.rs` held the package
+   identity code that `library` imported (`value/library.rs:25`); package
+   identity is deleted, so none of it survives the move. ADR-011's module table (`:744`) reads:
    "`value::library`, `value::package_identity`, `value::model_query` |
    3 `library`, 3 `library`, 3 `model`" — both `value::library` and
    `value::package_identity` are ADR-011's own relocation target for this
    requirement's `library` module, not a naming coincidence next to it.
    ADR-011 `:187` further lists `value::library` among the modules that
-   *today* implement part of the S3 check stage. `library`'s own current
-   source calls a `NodeKey`-shaped constructor:
-   `value/package_identity.rs`'s `node_key` function (`:177-182`) builds a
-   `NodeKey` with `NodeKey::from_hex` from a wire-read JSON preimage, which
-   ADR-013 O-04/R-10 forbid once this code sits in a layer-3 module
-   ordered ahead of `check`, per this requirement's own R-10 boundary
-   (Behavior, "R-10: checked typestate is never built from wire bytes";
-   FR-087-AC-6, FR-087-AC-11). This requirement's Outputs accordingly
-   include relocating `value::library` and `value::package_identity` into
+   *today* implement part of the S3 check stage. A node id read from the
+   wire is the structural `NodeKey` `{package, path, ordinal}` it spells,
+   so reading one mints nothing a wire value could forge. This
+   requirement's Outputs accordingly
+   include relocating `value::library` into
    the new top-level `library` module — not copying them, and not leaving
    `value::library` behind as a second, un-relocated home for the same
    code (FR-087-AC-11).
@@ -143,13 +139,13 @@ during implementation.**
    performed by the importing package's own check stage, which reads
    `ImportView` and `LibraryLock` (read-only) from `library`, a permitted
    layer-3 edge under FR-068-AC-6's layer rule (FR-087-AC-9, TC-256).
-   `ImportView::of(&LibraryPackage)` validates the package's identity
-   preimage structurally (`verify_package`) and holds each export as a
+   `ImportView::of(&LibraryPackage)` checks the package's exports
+   (`verify_package`: every export name is a qualified declaration name and
+   no name is exported twice) and holds each export as a
    `(name, NodeKey)` entry, where the key is the structural `node_id`
-   (`{package, path, ordinal}`) of the preimage node that declares the
-   name. `library` defines no type that resolves a name to a node.
+   (`{package, path, ordinal}`) of the node that declares the name. `library` defines no type that resolves a name to a node.
    `resolve_libraries`' refusal set (`LibraryRefusal`) is classified across
-   ADR-011 I2's package import graph rules, the preimage admission
+   ADR-011 I2's package import graph rules, the per-package export checks
    `ImportView::of` performs, and E3 name resolution (FR-087-AC-12,
    TC-282); that classification is this requirement's own scope, not a new
    refusal `resolve_libraries` gains.
@@ -181,23 +177,18 @@ during implementation.**
   `check` core in the intra-layer-3 order). This module is the relocation
   target ADR-011's module table (`:744`) names for `value::library`
   (FR-307) and `value::package_identity`, not a module built independently
-  of them (Description, item 3): both relocate into it, carrying FR-307's
+  of them (Description, item 3): `value::library` relocates into it, carrying FR-307's
   existing acceptance criteria and TC-227's vectors forward, updated to the
-  shapes item 3's owner ruling requires (below); `value::library` is not
-  left behind as a second home for the same code. `value::library`'s
-  current `NodeKey::from_hex` call inside `package_identity`'s `node_key`
-  function (ADR-011 `:187`; Description, item 3) does not survive the move:
-  after relocation, `library` calls no `NodeKey` constructor and mints no
-  `NodeKey` from a `WireNodeId` (FR-087-AC-6 and FR-087-AC-11 govern this
-  directly once the code is inside `library`). The module holds:
+  shapes item 3's owner ruling requires (below), and
+  `value::package_identity` is deleted rather than relocated; `value::library` is not
+  left behind as a second home for the same code. The module holds:
   - `LibraryName`, `LibraryPackage`, `ImportDeclaration`, `LibraryLock`,
     `resolve_libraries` and the rest of `value::library`'s public surface
     (relocated), except `ExportIdentity` and `resolve_name`, which do not
-    relocate; `value::package_identity`'s preimage-reading surface
-    (relocated), which reads each node id as the structural `NodeKey` the
-    preimage names. A package is identified by its `LibraryName` alone.
+    relocate. `value::package_identity` does not relocate: a package is
+    identified by its `LibraryName` alone.
   - `ImportView`: built only by `ImportView::of(&LibraryPackage)`, which
-    validates the package's identity preimage structurally and exposes the
+    checks the package's exports (`verify_package`) and exposes the
     package's exported declarations as `(name, NodeKey)` data for an
     importing package's own check stage to resolve by (O-04, R-06). Not
     checked typestate. Name resolution against it is E3's own, not
@@ -208,7 +199,7 @@ during implementation.**
     `NodeKey`, whose `package` component names the package. Equality is
     structural: package, path and ordinal (ADR-013 §2).
   - `resolve_libraries`' whole-graph refusal set, classified across
-    ADR-011 I2's package import graph rules, the preimage admission
+    ADR-011 I2's package import graph rules, the per-package export checks
     `ImportView::of` performs, and E3 name resolution (FR-087-AC-12).
 - `CheckedGraph` (S3 output, new type, private constructors in `check`).
   `PackageDeclarations::check` (`qsl-semantics/src/check/mod.rs:291`) SHALL return
@@ -310,10 +301,10 @@ ADR-011 §4 "Checking precedes lowering").
 ### `ImportView::of` is the only constructor of an import view
 
 QSL SHALL construct an `ImportView` only through
-`ImportView::of(&LibraryPackage)`, defined in `library`. `of` validates the
-package's identity preimage structurally and refuses with a named cause
-and yields nothing when the preimage is malformed or an export names no
-declaration; no fallback to the file bytes or the source exists. A package
+`ImportView::of(&LibraryPackage)`, defined in `library`. `of` checks the
+package's exports and refuses with a named cause (`InvalidExportName`,
+`AmbiguousDeclaration`) and yields nothing when an export name is not a
+qualified declaration name or one name is exported twice; no fallback to the file bytes or the source exists. A package
 is identified by its `LibraryName` alone. The layer-4 `package` reader reads
 the bytes into a `LibraryPackage` and calls `library` (ADR-011 §4).
 
@@ -351,12 +342,12 @@ FR-099-AC-3).
 
 The canonical cross-package node reference is the structural `NodeKey`
 (`{package, path, ordinal}`), whose `package` component names the package
-(T-3). `library` defines no second reference shape. A `NodeKey` is
-constructed in `check` for its own package's nodes (ADR-013 O-04, "In QSL
-only `check` calls it"); a key read from a dependency's preimage is
-resolved by lookup against an already-checked package: at E4, against the
-dependency's own checked package, compiled independently from its
-identity-addressed source; at E9 in the `replay` facade, against the package
+(T-3). `library` defines no second reference shape. `check` constructs
+the `NodeKey`s of its own package's nodes (ADR-013 O-04). A key a
+dependency's package or a replay request carries is the structural triple
+it spells, read back as data, and names a node of an already-checked
+package: at E4, the dependency's own checked package, compiled
+independently from its source; at E9 in the `replay` facade, the package
 recompiled from source. Two keys compare equal iff package, path and ordinal
 compare equal (ADR-013 §2).
 
@@ -431,24 +422,18 @@ that change each scenario of `tests/it/complete_package.rs` and
 | --- | --- | --- |
 | FR-087-AC-1 | Each of `CheckedGraph` (in `check`), `CheckedPackage` (in `package`), `EmittedPackage` (in `package`), `ImportView` (in `library`) has exactly one defining location, with every field and every constructor (the implicit struct-literal constructor, or an explicit `new`) private to that owning module, and every external read of the type's state goes through a named accessor. This is TC-171's own established claim (constructor/field privacy plus accessor-only reachability), extended to four types instead of three; TC-171 itself records why a `compile_fail` doctest cannot demonstrate it (a doctest links the crate externally, so it shows only crate-external inaccessibility, never that an in-crate sibling module — `value::expression` with respect to `check`'s types, or `check` with respect to `package`'s — cannot reach private state; and where a field is already module-private, not merely `pub(crate)`, a doctest's before/after comparison passes identically regardless of the module boundary this requirement draws, demonstrating nothing about it). This criterion is accordingly verified the same way TC-171 verifies its own claim: direct inspection of declared visibility and of the accessor surface, not a doctest. **Amended.** `ImportView` stays in layer-3 `library` with its fields private; `ImportView::of(&LibraryPackage)` is its only constructor, and a package is identified by its `LibraryName` alone. | Inspection (TC-243) |
 | FR-087-AC-2 | No conversion function exists from `ParsedSource` to `CheckedGraph` or `CheckedPackage` other than the S3 checker's own entry and the S4 link step's own entry; no conversion function exists from `ImportView` or any `protocol_artifact`-read value to `CheckedGraph` or `CheckedPackage`. A source scan of every function returning `CheckedGraph` or `CheckedPackage` confirms each is defined inside the S3 checker or the S4 link step (Inspection, primary evidence, since this rules out an in-crate bypass a doctest's external vantage cannot see); a `compile_fail` doctest per forbidden path (Behavior, "R-10"; TC-244), each naming a specific expected error code, additionally demonstrates the crate-external case. | Test (TC-244) |
-| FR-087-AC-3 | **RETIRED (the verified binding is deleted).** `ImportView::of(&LibraryPackage)` validates the identity preimage structurally and refuses with a named cause (`InvalidPreimage`, `UndeclaredExport`) and no partial output; a package is identified by its `LibraryName` alone. | Test (TC-253), retired |
+| FR-087-AC-3 | **RETIRED (the verified binding is deleted).** A package is identified by its `LibraryName` alone; `ImportView::of(&LibraryPackage)` checks only its exports (AC-12). | Test (TC-253), retired |
 | FR-087-AC-4 | `ImportView::of(&LibraryPackage)` builds an `ImportView` without resolving any name: `ImportView`'s exported-declaration data is keyed for structural `NodeKey` lookup by the importing package's own checker, and no function in `library` takes a name (`QualifiedName` or bare string) and returns a declaration or node id after the exporting package's own check stage has run. | Test (TC-254) |
 | FR-087-AC-5 | **RETIRED (`PackageNodeKey` is deleted).** A cross-package node reference is the structural `NodeKey`, whose `package` component names the package; two keys compare equal iff package, path and ordinal are equal. | Test (TC-245), retired |
-| FR-087-AC-6 | No `NodeKey` constructor call anywhere in the crate is fed, directly or transitively, by an `ImportView` entry, or any other wire-read value: `library`, `package`'s E4 dependency resolution, and `replay`'s E9 lookup each make zero `NodeKey`-constructor calls, resolving a wire-read node id to a `NodeKey` only by lookup against an already-minted `NodeKey` in an already-checked package (ADR-013 O-04, `:173,175`). This is scoped to what this requirement (S-3) owns: the crate-wide claim "only `check` calls the `NodeKey` constructor" is FR-060 T12-B's own allow-list, whose named debt list (FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists") holds the real minting sites outside `check` this requirement does not touch or gate on — pre-existing debt this requirement neither fixes nor is blocked by (Remaining work: agent-ix/quire-spec-language#211). This criterion fails only if `library`, `package`'s E4 path, or `replay`'s E9 path gains a `NodeKey`-constructor call, or if any such call anywhere in the crate is fed by an `ImportView` entry. This is a call-site and data-provenance policy (which module is permitted to mint, and what may feed a mint, not which shape a lookup returns), enforced by the FR-060 T-12 API-surface scan and a call-graph trace rather than by the type system, so it is verified by that scan and trace, not by a `compile_fail` doctest (a mismatched-type attempt at some other call site would fail identically regardless of location, proving nothing about it). | Test (TC-255) |
+| FR-087-AC-6 | **RETIRED (a structural `NodeKey` read from the wire is the node's identity).** A wire-read node id is decoded into its `{package, path, ordinal}` triple; there is no minted key a wire value could forge, and no call-graph or API-surface scan performs this check. | Test (TC-255), retired |
 | FR-087-AC-7 | Once FR-110 is implemented (the dependency half is FR-099), `ResolvedSourcePackage`, `resolve_source_package`, `SourceAuthority`, `ModelCatalog`, `ModelArtifact` and `command::resolve_parsed_source` are absent from every crate of the workspace under every feature combination, and `qsl_semantics::complete` no longer exists: its closure, bundle, limits and identity are `library::bundle` (FR-111). Each scenario of `tests/it/complete_package.rs` and `complete::package_tests` has a test against its row's successor in Behavior's disposition table, keeping its QSpec FR-131/FR-339 tags, written `QSpec-FR-131-AC-n` and `QSpec-FR-339-AC-n`. A whole-workspace definition scan confirms the absence. | Test (TC-246) |
 | FR-087-AC-8 | The canonical `EmittedPackage` (this requirement, layer-4 `package`) and `protocol_artifact::native::EmittedPackage` (SEAM-3, unrelated) remain two distinct types under two distinct module paths, with no `pub use` or re-export that would place both names into one import scope, and with no field, method, or shape shared between them (Description), for as long as the SEAM-3 type exists: ADR-011 §4 records that the two-public-types-named-`CheckedPackage` rule is met by *deleting* the native-v1 type with SEAM-1, not by permanent coexistence, and this requirement's own `CheckedPackage`/`checking::CheckedPackage<'a>` pair follows the same disposition (Description, item 2). The expiry condition for `EmittedPackage`'s two-module coexistence is SEAM-3's own deletion of `protocol_artifact::native::EmittedPackage` (ADR-011 §7.3), not an indefinite steady state this requirement asserts. | Inspection (TC-247) |
-| FR-087-AC-9 | After this requirement's implementation, the `check`/`package` edge runs one way: `package` (layer 4) may import from `check` (layer 3), the layer-4 row's own direction (§6.1: "Depends on: 3, F, K"), and `check` imports nothing from `package` (the crate `qsl-package` since X-7) at either the `use`-line or the inline-path level (Cargo refuses the edge: `qsl-package` depends on `qsl-semantics`; this criterion reconfirms it). `check` defines no type, method, or field named `CheckedPackage`. `package`'s `CheckedPackage` is built by the S4 link step from a `CheckedGraph` and holds that `CheckedGraph` as a field (this package's own checked declarations) plus the S4-only checked dependency closure; it reaches check-owned state (`Node`, `Signature`, and the rest) through that field (`graph()` or named delegating accessors) and never re-declares, copies or re-derives a check-owned type in `package`. This design statement is kept because it is the S3-to-S4 typestate chain ADR-013 T-1 requires: S4's output is made from S3's output and nothing else, and every checked declaration has one owner. `check` imports from `library` only as layer 3's own order permits (`library` before `check` core); `check` reads `LibraryLock` only through its read-only accessors and never constructs or mutates one. `value::expression` (layer 5) imports `CheckedPackage` from `package` (`use qsl_package::CheckedPackage;`), the layer-5 row's own direction (§6.1: "Depends on: 4, 3, F, K"). **Amended (X-7).** This sentence used to require the single closed re-export `pub use crate::checked_package::CheckedPackage;` in `value::expression`. Once `CheckedPackage` is in `qsl-package`, that line is a root-crate re-export of a moved item, which ADR-011 §7.2 and the X-7 extraction's acceptance criteria forbid; they are the later and more specific rules, as lead ruling R3 ruled for FR-068-AC-10. The root crate re-exports no layer-crate item, and a `pub use` of one fails this criterion. This criterion demonstrates that the layering violation FR-068 recorded is closed, not relocated: a build in which `check` names `CheckedPackage`, imports from `package`, or in which `package`'s `CheckedPackage` holds anything other than a `CheckedGraph` for its own checked declarations, fails this criterion. **Amended by the layer-rule ruling (2026-09-22).** The number of `check` items `package` imports, and the number of `library` items `check` imports, are not bounded. A count of `package`'s `check` imports is met by a `package` that copies check-owned data into re-declared types, and fails a `package` that imports `Node` to name an accessor's return type, which is layer 4's permitted direction; the design statement above guards the property instead. Every `library` item is a permitted edge for `check`, because `library` precedes `check` core in §6.1's layer-3 order. That no `NodeKey` is minted from an `ImportView` entry is data provenance, held by FR-087-AC-6 and FR-060 T12-B. | Test (TC-256) |
+| FR-087-AC-9 | After this requirement's implementation, the `check`/`package` edge runs one way: `package` (layer 4) may import from `check` (layer 3), the layer-4 row's own direction (§6.1: "Depends on: 3, F, K"), and `check` imports nothing from `package` (the crate `qsl-package` since X-7) at either the `use`-line or the inline-path level (Cargo refuses the edge: `qsl-package` depends on `qsl-semantics`; this criterion reconfirms it). `check` defines no type, method, or field named `CheckedPackage`. `package`'s `CheckedPackage` is built by the S4 link step from a `CheckedGraph` and holds that `CheckedGraph` as a field (this package's own checked declarations) plus the S4-only checked dependency closure; it reaches check-owned state (`Node`, `Signature`, and the rest) through that field (`graph()` or named delegating accessors) and never re-declares, copies or re-derives a check-owned type in `package`. This design statement is kept because it is the S3-to-S4 typestate chain ADR-013 T-1 requires: S4's output is made from S3's output and nothing else, and every checked declaration has one owner. `check` imports from `library` only as layer 3's own order permits (`library` before `check` core); `check` reads `LibraryLock` only through its read-only accessors and never constructs or mutates one. `value::expression` (layer 5) imports `CheckedPackage` from `package` (`use qsl_package::CheckedPackage;`), the layer-5 row's own direction (§6.1: "Depends on: 4, 3, F, K"). **Amended (X-7).** This sentence used to require the single closed re-export `pub use crate::checked_package::CheckedPackage;` in `value::expression`. Once `CheckedPackage` is in `qsl-package`, that line is a root-crate re-export of a moved item, which ADR-011 §7.2 and the X-7 extraction's acceptance criteria forbid; they are the later and more specific rules, as lead ruling R3 ruled for FR-068-AC-10. The root crate re-exports no layer-crate item, and a `pub use` of one fails this criterion. This criterion demonstrates that the layering violation FR-068 recorded is closed, not relocated: a build in which `check` names `CheckedPackage`, imports from `package`, or in which `package`'s `CheckedPackage` holds anything other than a `CheckedGraph` for its own checked declarations, fails this criterion. **Amended by the layer-rule ruling (2026-09-22).** The number of `check` items `package` imports, and the number of `library` items `check` imports, are not bounded. A count of `package`'s `check` imports is met by a `package` that copies check-owned data into re-declared types, and fails a `package` that imports `Node` to name an accessor's return type, which is layer 4's permitted direction; the design statement above guards the property instead. Every `library` item is a permitted edge for `check`, because `library` precedes `check` core in §6.1's layer-3 order. | Test (TC-256) |
 | FR-087-AC-10 | `src/package/features.rs` and `src/package/view.rs` continue to import `CheckedPackage` from `crate::checking` (the lane-private `checking::CheckedPackage<'a>`), unchanged by this requirement's introduction of a canonical `CheckedPackage` elsewhere in `package`'s own module tree, for as long as `checking`'s lane exists. No file in `package` re-exports or glob-imports both the lane-private and the canonical `CheckedPackage` into one scope where a bare `CheckedPackage` reference would be ambiguous; a source scan of `features.rs` and `view.rs` confirms their `crate::checking::CheckedPackage` import is present and unrenamed while that lane exists, and a build with both names in one import scope (an ambiguity error) fails this criterion while the import is present. This two-name coexistence is not asserted as a permanent steady state: ADR-011 §8 (Q209-1) records that `checking`'s lane retires (lane A) or converges into its replacement (lane B/D) — "each other lane is deleted with its replacement" — and the expiry condition for `features.rs`/`view.rs`'s `crate::checking::CheckedPackage` import is that lane's own deletion, per its own convergence PR, not an indefinite state this criterion treats as final. After that deletion, this criterion no longer applies to those two files (there is only one `CheckedPackage` left to import). | Test (TC-247) |
-| FR-087-AC-11 | **RETIRED (the `PackageId` selection and `WireNodeId`-typed `library` shapes are deleted).** `value::library` and `value::package_identity` no longer exist as modules under `value`; `LibraryName`, `LibraryPackage`, `ImportDeclaration`, `LibraryLock`, `resolve_libraries` and `package_identity`'s preimage-reading functions are reachable only from the top-level `library` module. A package is identified by its `LibraryName` alone, `LibraryLock::selections()` returns `Vec<LibraryName>`, and `library` defines no function resolving a name to a declaration or node id. | Test (TC-281), retired |
-| FR-087-AC-12 | Every `LibraryRefusal` variant `resolve_libraries` (in `library`) can return classifies to exactly one of: an ADR-011 I2 graph rule, the preimage admission `ImportView::of` performs, or E3 name resolution. Concretely: `InvalidPreimage` and `UndeclaredExport` classify to preimage admission as per-package checks (raised by `verify_package`); `InvalidQualifier` classifies to E3 name resolution; `MissingImport` classifies to I2's first rule (missing or unlisted identity); `ConflictingDefinition` (two supplied packages of one library identity) classifies to I2's second rule; `ImportCycle` classifies to I2's third rule. This criterion does not require `resolve_libraries` to gain a new refusal variant; it requires every variant to be classified to one of the three, with none left unclassified or misclassified. | Test (TC-282) |
+| FR-087-AC-11 | **RETIRED (the `PackageId` selection and `WireNodeId`-typed `library` shapes are deleted).** `value::library` and `value::package_identity` no longer exist as modules under `value`; `LibraryName`, `LibraryPackage`, `ImportDeclaration`, `LibraryLock`, `resolve_libraries` are reachable only from the top-level `library` module. A package is identified by its `LibraryName` alone, `LibraryLock::selections()` returns `Vec<LibraryName>`, and `library` defines no function resolving a name to a declaration or node id. | Test (TC-281), retired |
+| FR-087-AC-12 | Every `LibraryRefusal` variant `resolve_libraries` (in `library`) can return classifies to exactly one of: an ADR-011 I2 graph rule, the per-package export checks `ImportView::of` performs, or E3 name resolution. Concretely: `InvalidExportName` and `AmbiguousDeclaration` classify to the per-package export checks (raised by `verify_package`); `InvalidQualifier` classifies to E3 name resolution; `MissingImport` classifies to I2's first rule (missing or unlisted identity); `ConflictingDefinition` (two supplied packages of one library identity) classifies to I2's second rule; `ImportCycle` classifies to I2's third rule. This criterion does not require `resolve_libraries` to gain a new refusal variant; it requires every variant to be classified to one of the three, with none left unclassified or misclassified. | Test (TC-282) |
 | FR-087-AC-13 | The importing package's checker resolves imported names as Behavior, "E3 resolves an imported name in the importing package's checker", states. Given package `P` importing library `L@1` (which exports `R`) with no `as` qualifier, and declaring no `R` of its own, `P`'s checker refuses both `R` and `L::R` with `missing_declaration` / `missing-name`. Given `P` importing `A@1` and `B@1` both `as a`, the assembler refuses the second alias `a` with `ambiguous_declaration` / `ambiguous-name`, naming both import spans, and E3 does not run. Given `P` importing `L@1` `as l`, `l::R` resolves to R's exported structural `NodeKey` in `L@1`'s package, and `l::Q`, which `L@1` does not export, is refused `missing_declaration` / `missing-name`. Given `P` importing `L@1` `as l` with no library supplied as `L`, the import is refused `missing_import` / `missing-selection` at stage `intake`, and E3 does not run. | Test (TC-379) |
 | FR-087-AC-14 | **RETIRED (a package has no id).** The E4 link step selects each imported library by its `LibraryName`; there is no `package_id` to record, compare or unify, and no diamond rule over ids. | Test (TC-253), retired |
-
-The `library`/`ImportView` name-resolution scan does not see a node
-id returned as raw bytes, a hex `String` or a `usize` position; a
-name passed as `&[u8]`; a closure without type annotations, including one
-held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
-type inside a function body.
 
 For `ImportView`, crate-external construction
 is shown by a `compile_fail` doctest: a struct literal of the type. The doctests show only

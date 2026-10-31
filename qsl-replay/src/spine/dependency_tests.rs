@@ -277,6 +277,29 @@ fn a_library_header_that_does_not_resolve_is_refused() {
     assert_eq!(covered(&a_source, &wrapped), "\"test:unknown-profile\"");
 }
 
+/// FR-099-AC-1 (TC-446 step 1): an import that nothing references still
+/// selects its library, and a supplied library the unit does not import
+/// changes nothing in the emitted bytes.
+#[trace("FR-099-AC-1", "TC-446")]
+#[test]
+fn an_unreferenced_import_selects_its_library_and_an_unimported_one_changes_nothing() {
+    let source = unit(&format!("{}{H}", import("test/geometry", "g")));
+    let geometry = library("test/geometry", "geometry", F);
+    let alone = compile_as("u", &source, &input(vec![geometry.clone()])).expect("compiles");
+    assert_eq!(
+        alone
+            .package
+            .dependency_selections()
+            .keys()
+            .collect::<Vec<_>>(),
+        [&lib("test/geometry")]
+    );
+
+    let other = library("test/other", "other", H);
+    let with_other = compile_as("u", &source, &input(vec![geometry, other])).expect("compiles");
+    assert_eq!(alone.emitted.bytes(), with_other.emitted.bytes());
+}
+
 /// FR-099-AC-4 (TC-446 step 4): a library identity is any non-empty string,
 /// and the closure is listed in UTF-8 byte order of identity whatever the
 /// import order.
@@ -517,7 +540,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         SpineLimits::default(),
     )
     .unwrap();
-    let view = view_of(&alone.package, "test/geometry").unwrap();
+    let view = view_of(&alone.package, "fixture").unwrap();
     let source = unit(&format!(
         "{}{}{H}",
         import("test/geometry", "g"),
@@ -884,7 +907,7 @@ fn an_imported_call_over_each_independent_scalar_kind_checks_and_reads() {
         ));
         let compiled = compile_as("u", &source, &input(vec![geometry]))
             .unwrap_or_else(|refusal| panic!("{kind}: {refusal}"));
-        view_of(&compiled.package, "u")
+        view_of(&compiled.package, "fixture")
             .unwrap_or_else(|refusal| panic!("{kind}: the I2 read admits p: {refusal}"));
     }
 }

@@ -38,12 +38,11 @@ Deleting `Value::Population` would remove that evaluation path; moving
 This requirement follows the O-14 `VariantId` precedent instead: the kernel
 carries an opaque identity, and `model` keeps the binding.
 
-The code still mints over the three-fact preimage (domain package
-selection, `population_key`, admission role), so two bindings that differ
-only in members, declared maximum or pre binding share an id today, and
-`ObjectEnvironment::with_population` refuses the second with
-`PopulationConflict`. [ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
-ID-5 decided the seven-member preimage the Behavior section now states.
+A `PopulationId` is the structural node key of the population declaration
+that `population_key` names, so two bindings that differ only in members,
+declared maximum, admission role or pre binding share an id, and
+`ObjectEnvironment::with_population` refuses the second, unequal one with
+`PopulationConflict`.
 
 ## Inputs
 
@@ -65,54 +64,27 @@ ID-5 decided the seven-member preimage the Behavior section now states.
 
 ## Behavior
 
-### PopulationId is opaque and structurally keyed over the admission
+### PopulationId is the population declaration's node key
 
-`model` SHALL compute a binding's `PopulationId` as the canonical byte string of the
-binding's own preimage: the domain package identity it was admitted against,
-the `population_key` declaring it, the binding's declared maximum, its
-member set, the `PopulationId` of its pre binding when it is a `Post`
-binding, and a closed three-state admission-role
-discriminator applied to every admission, not only the ones
-`admit_invocation` attaches: `Direct` for a binding `admit_binding` mints
-standalone, and `Pre`/`Post` for the two bindings `admit_invocation`
-attaches to one invocation frame. `admit_invocation` SHALL tag its own two
-constituent bindings `Pre` and `Post`; a directly-called `admit_binding`
-SHALL mint `Direct`. Two admissions inside one evaluation that share every
-one of these facts SHALL share a `PopulationId`; two admissions that differ
-in any of them SHALL NOT collide -- including a standalone `Direct`
-admission and an invocation's `Post` binding that share the same domain
-package and `population_key`, which would otherwise carry an identical
-preimage under a two-state (`pre`/`post`-only) discriminator.
+`model` SHALL compute a binding's `PopulationId` as
+`PopulationId::new(population_node_key(population_key))`: the structural
+node key `{package, path: [relation, population, <population_key>],
+ordinal: 0}` of the population declaration `population_key` names, with
+`package` the domain package declaring it. The binding's members, declared
+maximum, admission role (`Direct`, `Pre` or `Post`) and pre binding SHALL
+NOT enter it, and no byte string is encoded for it. Two admissions against
+one `population_key` therefore share a `PopulationId`, and admissions
+against different `population_key`s do not.
 
-The preimage is exactly this RFC 8785 object, encoded through
-`quire-canonical` and used directly, compared and ordered as a byte string, under the unchanged
-`POPULATION_ID_DOMAIN` version label ([ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
-ID-5):
-
-- `version`: `POPULATION_ID_DOMAIN`;
-- `domain_package_selection`: the full `DomainPackageRef` header;
-- `population_key`: the `$defs.DeclarationKey` preimage object;
-- `admission_role`: `"direct"`, `"pre"` or `"post"`;
-- `declared_maximum`: the maximum as a decimal string, or `null` when the
-  population declares none;
-- `members`: an array with one object per member,
-  `{"universe": <the universe's structural key>, "type": <the
-  EffectiveId's structural key>, "object": <the authored object identity>, "declaration":
-  <$defs.DeclarationKey preimage object>}`, in ascending order of each
-  object's RFC 8785 bytes; `[]` for an empty population;
-- `pre`: for a `Post` binding, its pre binding's
-  `PopulationId`; otherwise `null`.
-
-A binding's field values are not in its preimage: a `PopulationBinding`
-carries membership only, and field values belong to the `ObjectEnvironment`
-entries its references key. `ObjectEnvironment::with_population` keeps its
-typed `PopulationConflict` refusal for a second, unequal binding under an id
-already recorded; with this preimage it is reached only by two bindings that
-differ in their admission limits (`ancestor_steps`).
-`PopulationId` SHALL have exactly one public constructor, taking this
-preimage byte string, defined in `quire-exact` and callable only from QSL
-`model` -- mirroring `EffectiveId`'s O-05 constructor discipline (ADR-011
-T-12's API-surface check enforces both).
+A binding's field values are not part of its identity: a
+`PopulationBinding` carries membership only, and field values belong to the
+`ObjectEnvironment` entries its references key.
+`ObjectEnvironment::with_population` keeps its typed `PopulationConflict`
+refusal for a second binding, unequal to the first, recorded under an id
+already recorded; an equal re-admission is accepted. `PopulationId`'s
+constructor takes the node key, is defined in `quire-exact` and is called
+only from QSL `model`, mirroring `EffectiveId`'s O-05 constructor
+discipline.
 
 ### Kernel `Value::Population` carries the identity only
 
@@ -161,11 +133,11 @@ key of its own: it calls `quire_exact::member_equal` and
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key`, domain package identity and declared maximum, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or admission-role (`Direct`, `Pre` or `Post`), the minted `PopulationId` differs from the first; in particular, a standalone `Direct` admission and an `admit_invocation`-attached `Post` binding that share the same domain package and `population_key` mint distinct identities. | Test (TC-291, TC-296) |
+| FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key`, both admissions mint the same `PopulationId`; given a second admission against a different `population_key`, the minted `PopulationId` differs from the first. | Test (TC-291, TC-296) |
 | FR-089-AC-3 | Given a `Value::Population(population_id)` whose `population_id` was minted for an admitted binding earlier in the same evaluation, evaluating an expression that consumes it (the `evaluate.rs:921`/`:934` sites) resolves the same `PopulationBinding` that admission produced, by lookup in the recorded correspondence, never by a payload the `Value` itself carries. | Test (TC-293) |
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
 | FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)`, the QSL layer resolves `population_id` to its `PopulationBinding` through the recorded correspondence and admits the value when that binding's declared maximum equals `maximum`, and refuses it when the declared maximum differs. | Test (TC-295) |
-| FR-089-AC-7 | Given two `Direct` admissions that agree on domain package, `population_key` and declared maximum and differ only in one member, the two `PopulationId`s differ; given two that agree on everything except the declared maximum (3 and 7), they differ; given two `Post` bindings with equal post members whose pre bindings differ, they differ. | Test (TC-291) |
+| FR-089-AC-7 | The `PopulationId` of an admission against `population_key` `k` of domain package `p` is the node key `p:[relation,population,k]:0` of the population declaration. Two `Direct` admissions that differ only in one member, two that differ only in the declared maximum (3 and 7), and two `Post` bindings with equal post members whose pre bindings differ each mint equal `PopulationId`s: members, maximum and admission role do not enter it. | Test (TC-291) |
 
 ## Dependencies
 

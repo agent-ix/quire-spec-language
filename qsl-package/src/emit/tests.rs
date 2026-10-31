@@ -2214,9 +2214,8 @@ fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Va
 /// omitted. The assembler declares `M::Gadget` and `M::Widget` in the
 /// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
 /// declared supertype. The lock and the identity preimage select the domain
-/// package by identity and the `sha256-jcs` digest of the supplied
-/// document, with no version, while the emitted model nodes are keyed by the
-/// content-only `ModelOwner`, which carries no version. QSL's I2 read, given that digest
+/// package by identity alone, with no version, while the emitted model nodes are keyed by the
+/// content-only `ModelOwner`, which carries no version. QSL's I2 read, given the package
 /// as domain package evidence, returns Verified exporting `keep` and `held`.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]
@@ -2685,7 +2684,6 @@ fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
 /// FR-307's diamond rule admits two separately allocated packages with
 /// identical canonical bytes under the same library name. The first path
 /// remains the selected path.
-#[trace("FR-087-AC-14", "TC-253")]
 #[test]
 fn a_diamond_selecting_one_package_unifies() {
     let first = Arc::new(dependency("test/units"));
@@ -2807,7 +2805,6 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 /// `invalid_package`/`conflicting-definition` listing both dependency
 /// paths. A dependency that does not emit refuses too. None yields a
 /// package.
-#[trace("FR-087-AC-14", "TC-253")]
 #[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {

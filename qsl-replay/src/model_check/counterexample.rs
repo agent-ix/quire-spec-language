@@ -300,7 +300,7 @@ impl<T: SubjectTransition> FamilyPayload for TemporalCounterexample<T> {
 }
 
 /// One step in QSpec FR-364's observed temporal counterexample. The
-/// `document` is a digest-addressed admitted snapshot; its bytes are
+/// `document` is an admitted snapshot named by its labels; its bytes are
 /// supplied by the replay request's byte provision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservedTemporalStep {

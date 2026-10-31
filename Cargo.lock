@@ -1511,7 +1511,6 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
 ]
 
@@ -1577,7 +1576,6 @@ dependencies = [
  "quire-walk",
  "serde",
  "serde_json",
- "sha2",
  "syn 2.0.119",
  "tempfile",
  "thiserror",
@@ -1655,7 +1653,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#01de9dcfd29e9edb65bad6fce84ca5a631e7440f"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#8320ebe7d85d61ed86af866ee0836aebc623ef33"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1689,7 +1687,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#eea6b1220c47494ac338434e2d213d41a2aceb16"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#532d87b67f5c5866e9aa231f2cdc245c4aa350bc"
 dependencies = [
  "allocator-api2",
  "num-bigint",

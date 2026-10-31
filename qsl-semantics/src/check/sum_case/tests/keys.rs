@@ -5,8 +5,6 @@
 //! Every id compared here is read from the checked graph the public `check`
 //! returns; none is minted by the test.
 
-use std::collections::BTreeSet;
-
 use ix_trace_rs::trace;
 use quire_exact::{NodeKey, VariantId};
 
@@ -102,43 +100,6 @@ fn ids(graph: &CheckedGraph) -> Ids {
     }
 }
 
-/// The keys `node` names: its semantic type, the nodes its body references
-/// and its application's result type.
-fn names(node: &SemanticNode) -> Vec<NodeKey> {
-    let result = node
-        .body()
-        .application_term()
-        .and_then(|application| application.result_type.admitted().cloned());
-    node.semantic_type()
-        .into_iter()
-        .chain(result)
-        .chain(
-            node.body()
-                .leaves()
-                .into_iter()
-                .filter_map(|leaf| leaf.key()),
-        )
-        .collect()
-}
-
-/// The keys of every node of `graph` that names `target`, directly or
-/// through the nodes that name it.
-fn naming(graph: &CheckedGraph, target: NodeKey) -> BTreeSet<NodeKey> {
-    let mut named = BTreeSet::from([target.clone()]);
-    loop {
-        let before = named.len();
-        for node in graph.semantic_graph().nodes() {
-            if names(node).iter().any(|key| named.contains(key)) {
-                named.insert(node.key());
-            }
-        }
-        if named.len() == before {
-            named.remove(&target);
-            return named;
-        }
-    }
-}
-
 #[trace("FR-319-AC-1", "TC-826")]
 #[test]
 fn compiling_twice_and_changing_only_trivia_and_arm_order_keeps_every_id() {
@@ -163,61 +124,6 @@ fn compiling_twice_and_changing_only_trivia_and_arm_order_keeps_every_id() {
         base,
         "trivia changed and the arms reordered"
     );
-}
-
-#[trace("FR-319-AC-1", "TC-826")]
-#[test]
-fn renaming_adding_or_retyping_a_member_changes_the_union_and_every_node_naming_it() {
-    let base = graph(&format!("{SHAPE_DECL}{AREA}{RECT}"));
-    let base_ids = ids(&base);
-    let naming_shape = naming(&base, base_ids.union.clone());
-    // The parameter, the `case`, `area`, the construction and `rect` name it.
-    assert!(naming_shape.len() >= 5, "{naming_shape:?}");
-    assert!(base_ids
-        .cases
-        .iter()
-        .all(|case| naming_shape.contains(case)));
-    assert!(base_ids
-        .values
-        .iter()
-        .all(|value| naming_shape.contains(value)));
-
-    let area = |arms: &str| {
-        format!("function area using v(s: Shape): Integer pure {{ case s {{ {arms} }} }}\n")
-    };
-    for (label, union, area) in [
-        (
-            "renamed member",
-            "union Shape { Nothing, Circle(Integer), Rect(Integer, Integer) }\n",
-            area("Nothing: 0; Circle(r): r; Rect(w, h): w * h;"),
-        ),
-        (
-            "added member",
-            "union Shape { Empty, Circle(Integer), Rect(Integer, Integer), Line(Integer) }\n",
-            area("Empty: 0; Circle(r): r; Rect(w, h): w * h; Line(n): n;"),
-        ),
-        (
-            "changed payload type",
-            "union Shape { Empty, Circle(Boolean), Rect(Integer, Integer) }\n",
-            area("Empty: 0; Circle(r): 1; Rect(w, h): w * h;"),
-        ),
-    ] {
-        let changed = graph(&format!("{union}{area}{RECT}"));
-        let changed_ids = ids(&changed);
-        assert_ne!(changed_ids.union, base_ids.union, "{label}: union id");
-        assert_ne!(changed_ids.cases, base_ids.cases, "{label}: case id");
-        let kept: BTreeSet<NodeKey> = changed
-            .semantic_graph()
-            .nodes()
-            .map(SemanticNode::key)
-            .collect();
-        for node in &naming_shape {
-            assert!(
-                !kept.contains(node),
-                "{label}: {node} names the union and survived"
-            );
-        }
-    }
 }
 
 #[trace("FR-319-AC-2", "TC-826")]

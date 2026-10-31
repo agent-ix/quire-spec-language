@@ -75,6 +75,19 @@ pub(crate) struct Case {
 impl Case {
     /// `body` from one initial snapshot per value of `c.v` in `values`.
     pub(crate) fn new(body: &str, values: &[i64]) -> Self {
+        Self::with_profile(PROTOCOL_PROFILE, body, values)
+    }
+
+    /// [`Self::new`] without the protocol profile: for a case that only
+    /// explores the protocol and uses a form the protocol clause node does
+    /// not write yet (a `visible` binder, a repeat that steps through a
+    /// nested repeat), so its package has no protocol clause node and the
+    /// case cannot replay.
+    pub(crate) fn unprofiled(body: &str, values: &[i64]) -> Self {
+        Self::with_profile("", body, values)
+    }
+
+    fn with_profile(profile: &str, body: &str, values: &[i64]) -> Self {
         let mut documents = Documents::new();
         let initial = values
             .iter()
@@ -85,7 +98,7 @@ impl Case {
             body: body.to_owned(),
             documents,
             initial,
-            checked: package_with(PROTOCOL_PROFILE, body),
+            checked: package_with(profile, body),
         }
     }
 

@@ -20,6 +20,27 @@ use thiserror::Error;
 use super::{BudgetRefusal, InconclusiveCause, SolverBudget};
 use crate::proof_result::{read_plugin_inconclusive_cause, PluginResultRefusal, TerminalRecord};
 
+/// A package document that may nest as deeply as the admitted package does;
+/// dropped without recursing.
+struct DeepValue(Value);
+
+impl Drop for DeepValue {
+    fn drop(&mut self) {
+        qsl_foundation::node_wire::discard_node_json(std::mem::take(&mut self.0));
+    }
+}
+
+/// `bytes` as a JSON value with serde_json's recursion limit disabled: the
+/// package was already admitted under the reader's own limits, so node ids
+/// nest as deeply as that admission allows.
+fn read_deep_value(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+    let mut decoder = serde_json::Deserializer::from_slice(bytes);
+    decoder.disable_recursion_limit();
+    let value = <Value as Deserialize>::deserialize(&mut decoder)?;
+    decoder.end()?;
+    Ok(value)
+}
+
 /// QSL-owned admission context for a hybrid process request's checked package.
 ///
 /// The checked-package reader uses bounded local limits. Callers provide the
@@ -245,8 +266,10 @@ impl HybridProcessRequest {
         let package = admit_package(&package_bytes, context)?;
         let hybrids = read_hybrids(&package, context.limits.nodes)
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
-        let package_wire: Value = serde_json::from_slice(&package_bytes)
-            .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
+        let package_wire = DeepValue(
+            read_deep_value(&package_bytes)
+                .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?,
+        );
         if wire.deadline_ms == 0 || wire.deadline_ms > MAX_SAFE_COUNT {
             return Err(HybridProcessRequestRefusal::MalformedRequest);
         }
@@ -282,7 +305,7 @@ impl HybridProcessRequest {
             if claim_occurrence["role"] != "claim" {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            let package_node = package_wire["semantic_graph"]["nodes"]
+            let package_node = package_wire.0["semantic_graph"]["nodes"]
                 .as_array()
                 .and_then(|nodes| {
                     nodes
@@ -430,3 +453,17 @@ fn admit_package(
 }
 
 const MAX_SAFE_COUNT: u64 = (1_u64 << 53) - 1;
+
+#[cfg(test)]
+mod deep_package_tests {
+    use super::*;
+
+    #[test]
+    fn a_package_document_nesting_past_the_library_limit_reads() {
+        let depth = 300;
+        let text = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+        assert!(serde_json::from_slice::<Value>(text.as_bytes()).is_err());
+        let value = DeepValue(read_deep_value(text.as_bytes()).expect("reads"));
+        assert!(value.0.is_array());
+    }
+}

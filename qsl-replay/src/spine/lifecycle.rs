@@ -53,6 +53,7 @@
 //! fn control(parsed: &ParsedSource) {
 //!     let _ = check(
 //!         parsed,
+//!         "fixture".to_owned(),
 //!         &AdmittedModels::default(),
 //!         &DependencyInput::default(),
 //!         SpineLimits::default(),
@@ -443,7 +444,7 @@ impl CheckedUnit {
 }
 
 /// A checked package emitted as `quire.checked-package/v2` bytes, with the
-/// digest-addressed sources another party needs to import or replay it.
+/// sources another party needs to import or replay it.
 #[derive(Clone, Debug)]
 pub struct EmittedUnit {
     package: pkg::EmittedPackage,
@@ -452,7 +453,7 @@ pub struct EmittedUnit {
 }
 
 impl EmittedUnit {
-    /// The v2 wire bytes with their `package_id`.
+    /// The v2 wire bytes for the compiled package.
     pub fn package(&self) -> &pkg::EmittedPackage {
         &self.package
     }
@@ -783,7 +784,7 @@ fn emit_unit(
 pub(crate) struct ComposedUnit {
     /// The S4 in-process package.
     pub(crate) package: Arc<pkg::CheckedPackage>,
-    /// The emitted wire bytes with their `package_id`.
+    /// The emitted wire bytes for the compiled package.
     pub(crate) emitted: pkg::EmittedPackage,
     /// The unit's own source.
     pub(crate) source: Source,
@@ -1027,8 +1028,8 @@ impl<'a> Resolution<'a> {
         let models = charged(cancel, &mut self.work.i1, || {
             select_models(&parsed, packages, limits.model, cancel)
         })?;
-        // A library is compiled independently of whoever imports it, so its
-        // recomputed `package_id` cannot depend on the importer.
+        // A library is compiled under its own identity, independently of
+        // whoever imports it.
         Ok(Library {
             identity: identity.clone(),
             source: parsed.source().clone(),

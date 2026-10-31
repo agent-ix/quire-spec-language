@@ -178,7 +178,7 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
 
 /// FR-264-AC-1: the 100,000-term sum, emitted under limits raised to fit it,
 /// reads back through the I2 read with `i2.*` raised to fit it and verifies at
-/// its emitted `package_id`. The `V2Read` clones, compares equal to its clone,
+/// its emitted package. The `V2Read` clones, compares equal to its clone,
 /// formats for debug and drops, all on a 512 KiB stack.
 #[trace("TC-738", "FR-264-AC-1")]
 #[test]
@@ -211,7 +211,7 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
                 limits,
                 &read_evidence(&emission),
             )
-            .unwrap_or_else(|failure| panic!("verifies at its package_id: {failure:?}"))
+            .unwrap_or_else(|failure| panic!("verifies the emitted package: {failure:?}"))
             .into_value();
             let clone = read.clone();
             assert!(read == clone, "the read equals its clone");

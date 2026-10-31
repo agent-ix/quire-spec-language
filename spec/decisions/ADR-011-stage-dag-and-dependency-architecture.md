@@ -481,7 +481,7 @@ selections, sources, required features and dependency selections. They are
 admitted at E3, where node identity is minted, and not at E4. The inputs they
 are derived from are the source bytes, the QSL build, and the domain and
 dependency sources, because E9 recompiles from those alone (ADR-013 O-26).
-The wire members that carry them are QSpec's FR-322 members. `package_id` composition is QSpec FR-322's (BLOCKED-BY STD-583, owner: planner titan:QSL:plan).
+The wire members that carry them are QSpec's FR-322 members. `package_id` composition is QSpec FR-322's.
 The package holds no definition rows; a law's
 `DefinitionRef` is the QSpec definition prose's `{authority, identity}` for
 that role (FR-110's layer table).

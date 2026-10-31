@@ -251,9 +251,8 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// reader (ADR-030 D-4.6), and derives from that one tree both the
 /// `agent-ix-semantic-ir` `Json` that `validate_with_semantic_ir` must be
 /// handed (its `decide` accepts only that crate's own `Json`) and this
-/// crate's `serde_json::Value` view. [`admit`]'s JCS digest encodes the
-/// reader's tree itself, and [`read_records`]'s per-node reader reads the
-/// derived view, so the three can never disagree about what the document is.
+/// crate's `serde_json::Value` view. [`read_records`]'s per-node reader reads
+/// the derived view, so the two can never disagree about what the document is.
 ///
 /// The reader refuses malformed input with its byte offset: bytes that are
 /// not UTF-8, a byte order mark, a lone UTF-16 surrogate escape (RFC 8785,
@@ -261,36 +260,34 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// departure from the JSON grammar.
 /// Each refuses as `invalid_model_binding`/`malformed-declaration` at the
 /// document root `$`, carrying that offset (FR-260 B4). That refusal is this
-/// parse's own: FR-154 admission ([`admit`]) and [`package_input`] digest
-/// bytes the reader refuses raw (FR-056). A number with no finite double
+/// parse's own: FR-154 admission ([`admit`]) never reads bytes the reader
+/// refuses. A number with no finite double
 /// (`1e400`) is not among them: it refuses `noncanonical_wire` below.
 ///
 /// A number with no exact RFC 8785 spelling (`inexactness`) refuses
 /// `noncanonical_wire`, carrying the RFC 6901 `document_pointer` of the
-/// first such number in document order, before any digest is taken. The
+/// first such number in document order. The
 /// exception is a number with no finite double: the reader refuses it when it
 /// reaches it, before any tree exists, so it is named ahead of an earlier
 /// inexact number, and ahead of a repeated member name the reader would
 /// detect only when that object closes. When the bytes carry several reader
 /// faults, the first one `quire_canonical::read` returns decides.
 /// The cause is `inexact-integer` for a whole value beyond ±2^53 and
-/// `inexact-number` for a value that is not its nearest double's shortest round-trip text. RFC 8785
-/// writes that text in its place, so the digest of such a document would be
-/// the digest of a different value, shared with every document differing
-/// from it only in that number. [`admit`] returns this refusal where it
+/// `inexact-number` for a value that is not its nearest double's shortest round-trip text.
+/// [`admit`] returns this refusal where it
 /// returns a limit refusal, before check 3 (FR-056).
 ///
 /// Every number that remains is exactly the value of its double's RFC 8785
 /// text: the derived view keeps an integer as `serde_json` reads it, exact
 /// within ±2^53, and takes a non-whole number's correctly rounded double
-/// from `quire_canonical`, the double the digest spells (`serde_json`'s own
+/// from `quire_canonical` (`serde_json`'s own
 /// float parse can land one unit in the last place away from it).
 ///
 /// The caller's `IntakeLimits::input_bytes` refuses as
 /// [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit, never as a
 /// malformed document. Nesting depth is no limit (ADR-030): the reader, the
 /// `serde_json` view and their drops all run without recursion. A read
-/// or digest that cannot reserve memory refuses as
+/// that cannot reserve memory refuses as
 /// [`ModelRefusalCause::AllocationFailed`] (FR-259 B6).
 ///
 pub struct PackageDocument {
@@ -322,14 +319,13 @@ impl PackageDocument {
     ///
     /// Input over the caller's `input_bytes` limit refuses
     /// `resource_exhausted`/`intake-limit-exceeded` naming the limit and its
-    /// bound. A read or digest that cannot reserve memory refuses
+    /// bound. A read that cannot reserve memory refuses
     /// `resource_exhausted`/`allocation-failed` carrying the bytes requested.
     /// Bytes the shared reader refuses as malformed refuse
     /// `invalid_model_binding`/`malformed-declaration` against the document
     /// root `$`, carrying the reader's byte offset. A document holding a
     /// number with no exact RFC 8785 spelling refuses `noncanonical_wire`
-    /// (`inexact-integer` or `inexact-number`) at that number's pointer,
-    /// before the digest is taken.
+    /// (`inexact-integer` or `inexact-number`) at that number's pointer.
     pub fn parse(bytes: &[u8], limits: IntakeLimits) -> Result<Self, ModelRefusal> {
         let max_input_bytes = limits.input_bytes;
         // `usize` is at most 64 bits on every target Rust supports: lossless.
@@ -703,7 +699,7 @@ pub(super) fn first_inexact_number(
     }
 }
 
-/// FR-259 B6: reading or digesting a package document could not reserve
+/// FR-259 B6: reading a package document could not reserve
 /// `requested` bytes of memory.
 fn allocation_failed(requested: usize) -> ModelRefusal {
     ModelRefusal {
@@ -885,8 +881,8 @@ fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, BuildFault<&str
                     let lexeme = number.text();
                     let parsed: serde_json::Number = lexeme.parse().map_err(|_| lexeme)?;
                     // serde_json's float parser can land one unit in the last
-                    // place off; the digest encodes the correctly rounded
-                    // double, so the tree takes that same double.
+                    // place off; the tree takes the correctly rounded double
+                    // `quire_canonical` reads.
                     Value::Number(if parsed.is_f64() {
                         serde_json::Number::from_f64(number.value()).ok_or(lexeme)?
                     } else {
@@ -6658,13 +6654,8 @@ mod tests {
     /// A field whose multiplicity `upper` is 2^60 + 1, a whole number no
     /// double equals, is refused at the parse `noncanonical_wire` at that
     /// bound's pointer. Admission returns that refusal before check 3
-    /// (FR-056, IR FR-038-AC-93), whatever digest selects the bytes: under
-    /// the RFC 8785 digest of the document with the bound read as its
-    /// double, 2^60, which ECMAScript spells `1152921504606847000`
-    /// (`JSON.stringify(JSON.parse("1152921504606846977"))` in Node prints
-    /// exactly that) and under which the document used to admit, and under
-    /// the bytes' raw digest, never `byte-digest-mismatch` or
-    /// `wrong-model-selection`.
+    /// (FR-056, IR FR-038-AC-93): the bound is never read as its double,
+    /// 2^60, and the document never admits.
     #[trace("TC-145", "FR-056-AC-13")]
     #[test]
     fn a_u64_bound_above_2_53_refuses_at_its_pointer() {
@@ -9422,7 +9413,7 @@ mod tests {
     // PR #379 review F1: a lone UTF-16 surrogate escape refuses at the one
     // parse. The reader would replace it with U+FFFD, so without this check
     // `"\ud800"`, `"\udc00"` and `"�"` would read as one tree and admit
-    // under one JCS digest.
+    // as one document.
 
     /// `text` refuses at the one parse as a lone surrogate at the offset of
     /// `escape`'s first occurrence.
@@ -9524,8 +9515,7 @@ mod tests {
         }
     }
 
-    // PR #379 review F2: a document over a parse limit that arrives with its
-    // correct JCS digest refuses naming the limit, not as a digest mismatch.
+    // PR #379 review F2: a document over a parse limit refuses naming the limit.
 
     /// `depth` arrays nested around `inner`.
     fn nested_arrays(depth: usize, inner: &str) -> String {
@@ -9949,9 +9939,7 @@ mod tests {
     /// A repeated member name, which `serde_json` resolves last-wins, is
     /// refused by the one parse as malformed at the repeated name, and a
     /// leading byte order mark at byte 0: RFC 8785 requires I-JSON, so
-    /// neither document has a JCS digest. Admission digests such bytes raw,
-    /// so a repeated-name document offered under the JCS digest of its
-    /// last-wins value refuses `byte-digest-mismatch`.
+    /// neither document parses.
     #[trace("TC-145", "FR-056-AC-12")]
     #[test]
     fn a_repeated_member_name_or_byte_order_mark_does_not_parse() {

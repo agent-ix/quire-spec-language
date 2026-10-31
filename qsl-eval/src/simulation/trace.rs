@@ -7,17 +7,19 @@ use quire_semantic_value::catalog::CatalogCode;
 
 use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::EncodingRefusal;
-use crate::simulation::key::StateKey;
+use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use qsl_foundation::IdentityLimits;
 
-/// One executed transition and the canonical key of the state it produced.
+/// One executed transition and the ordinal of the chosen matching successor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Step<T> {
     /// The transition taken.
     pub transition: T,
-    /// The resulting state's canonical key.
+    /// The zero-based position of the chosen successor among the current
+    /// state's successors that share `transition`, in canonical order.
+    pub ordinal: usize,
+    /// The complete canonical key of the successor.
     pub key: StateKey,
 }
 
@@ -51,13 +53,13 @@ pub struct SampleProvenance {
     pub stopped: StopReason,
 }
 
-/// One executable path: the starting state's key, the ordered
-/// transitions taken from it and the findings of the states it expanded.
+/// One executable path: the starting state's complete canonical key, the
+/// ordered transitions taken from it and the findings of the states it expanded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trace<T, F> {
-    /// The canonical key of the state the path starts from.
+    /// The complete canonical key of the state the path starts from.
     pub initial: StateKey,
-    /// The transitions taken and the resulting canonical key at each step, in
+    /// The transitions taken, each with its matching-successor ordinal, in
     /// order.
     pub steps: Vec<Step<T>>,
     /// One entry per state on the trace with at least one finding, in step
@@ -75,33 +77,17 @@ pub enum ReplayError<T: std::fmt::Debug> {
     /// No state returned by `TransitionSystem::initial` has this key.
     #[error("no initial state has key {expected:?}")]
     UnknownInitial {
-        /// The trace's recorded starting digest.
+        /// The trace.s recorded starting key.
         expected: StateKey,
     },
     /// At `step`, the current state offers no successor with this
-    /// transition identity.
+    /// transition identity at the step's ordinal.
     #[error("step {step}: no successor offers transition {transition:?}")]
     MissingTransition {
         /// The zero-based index into `Trace::steps`.
         step: usize,
         /// The transition the trace expected to be available.
         transition: T,
-    },
-    /// At `step`, a successor with this transition identity exists, but
-    /// none of them produced the trace's recorded key.
-    #[error(
-        "step {step}: transition {transition:?} produced {actual:?}, trace recorded {expected:?}"
-    )]
-    KeyMismatch {
-        /// The zero-based index into `Trace::steps`.
-        step: usize,
-        /// The transition taken.
-        transition: T,
-        /// The digest the trace recorded.
-        expected: StateKey,
-        /// The digest of the first matching-transition successor the system
-        /// actually produced, in canonical order.
-        actual: StateKey,
     },
     /// The state at step index `step` (0 for the initial state) expanded to
     /// findings other than the recorded ones.
@@ -129,24 +115,21 @@ pub enum ReplayError<T: std::fmt::Debug> {
 }
 
 /// Re-run `trace` against `system`, refusing at the first state whose
-/// expansion, successor or resulting key differs from what the trace
-/// recorded.
+/// expansion or successor differs from what the trace recorded.
 ///
 /// A trace that replays to completion is executable by `system` exactly as
 /// recorded; nothing in the replay path depends on the simulator. Replay
 /// expands every state on the trace again, the last included, and requires
 /// the same findings and the same stop: a stop with the recorded cause at
 /// the last state exactly when the trace ended `StopReason::Stopped`, and no
-/// stop anywhere else (FR-101-AC-14). It recomputes each candidate state's
-/// key and compares it with the recorded key (FR-101).
+/// stop anywhere else (FR-101-AC-14). It recomputes each candidate initial
+/// state's key to find the recorded initial state (FR-101-AC-5).
 ///
-/// A step matches by transition identity *and* recorded key together:
-/// when several successors of the current state share a transition
-/// identity, replay picks the one whose key equals the trace's recorded key,
-/// not simply the first one the system happens to list; when none
-/// does, the reported `actual` is the first match in canonical order (the
-/// same order `explore` and `sample` themselves walk), not the
-/// `TransitionSystem`'s own listing order.
+/// A step matches by transition identity, then by ordinal: replay takes the
+/// successor at the step's `ordinal` among the current state's successors
+/// whose transition equals the step's, in canonical order (the same order
+/// `explore` and `sample` themselves walk). An ordinal past the last such
+/// successor refuses `MissingTransition`. It compares no recorded step key.
 ///
 /// # Errors
 ///
@@ -173,7 +156,6 @@ pub fn replay<S: TransitionSystem>(
         .is_some_and(|provenance| provenance.stopped == StopReason::Reached);
     let last = trace.steps.len();
     let mut check = FindingsCheck::new(&trace.findings);
-    let mut current_key = trace.initial.clone();
 
     for index in 0..=last {
         // A trace its end condition ended never expanded its last state.
@@ -202,51 +184,26 @@ pub fn replay<S: TransitionSystem>(
                 replayed: None,
             });
         }
-        check.expanded(current_key.clone(), index, findings)?;
+        check.expanded(index, findings)?;
         let Some(step) = trace.steps.get(index) else {
             break;
         };
-        let mut first_match_key: Option<StateKey> = None;
-        let mut matched_state = None;
-        for successor in successors {
-            if successor.transition != step.transition {
-                continue;
-            }
-            if first_match_key.is_none() {
-                first_match_key = Some(successor.key.clone());
-            }
-            if successor.key == step.key {
-                matched_state = Some(successor.state);
-                break;
-            }
-        }
-        current = match (matched_state, first_match_key) {
-            (Some(next), _) => {
-                current_key = step.key.clone();
-                next
-            }
-            (None, Some(actual)) => {
-                return Err(ReplayError::KeyMismatch {
-                    step: index,
-                    transition: step.transition.clone(),
-                    expected: step.key.clone(),
-                    actual,
-                });
-            }
-            (None, None) => {
-                return Err(ReplayError::MissingTransition {
-                    step: index,
-                    transition: step.transition.clone(),
-                });
-            }
-        };
+        current = successors
+            .into_iter()
+            .filter(|successor| successor.transition == step.transition)
+            .nth(step.ordinal)
+            .map(|successor| successor.state)
+            .ok_or_else(|| ReplayError::MissingTransition {
+                step: index,
+                transition: step.transition.clone(),
+            })?;
     }
     check.finish()
 }
 
 /// Compares the findings replay recomputes with the trace's recorded
-/// `findings`, entry by entry in step order: depth, state key and
-/// findings all must match, and the recorded list must hold no other entry.
+/// `findings`, entry by entry in step order: depth and findings must match
+/// (the recorded state key is not compared), and the recorded list must hold no other entry.
 struct FindingsCheck<'a, F> {
     recorded: &'a [StateFindings<F>],
     /// How many recorded entries have matched a recomputed one.
@@ -261,24 +218,17 @@ impl<'a, F: PartialEq> FindingsCheck<'a, F> {
         }
     }
 
-    /// The state at step index `depth`, with key `state`, expanded to
-    /// `findings`. Refuses at the first recorded entry, at or before
+    /// The state at step index `depth` expanded to `findings`. Refuses at the first recorded entry, at or before
     /// `depth`, that differs from the recomputed entries.
     fn expanded<T: std::fmt::Debug>(
         &mut self,
-        state: StateKey,
         depth: usize,
         findings: Vec<F>,
     ) -> Result<(), ReplayError<T>> {
         let next = self.recorded.get(self.matched);
         if !findings.is_empty() {
-            let expected = StateFindings {
-                state,
-                depth,
-                findings,
-            };
             return match next {
-                Some(entry) if *entry == expected => {
+                Some(entry) if entry.depth == depth && entry.findings == findings => {
                     self.matched += 1;
                     Ok(())
                 }

@@ -175,7 +175,7 @@ impl Snapshot {
 }
 
 /// `clause` over `snapshot`, self `self_key`: the selection and the
-/// snapshot's bytes by digest.
+/// snapshot's bytes by label.
 fn selection(
     clause: &str,
     snapshot: Snapshot,
@@ -2174,9 +2174,9 @@ fn tc_744_every_deciding_element_kind_round_trips() {
 /// that unit's id.
 fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
-    let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example"});
+    let owner = json!({"kind": "source", "authority": "agent-ix", "identity": "example", "package_name": "example"});
     let length = DimensionPreimage::from_json(json!({
         "version": "quire.dimension-node/v1",
         "owner": owner,
@@ -2184,36 +2184,24 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
         "terms": [],
     }))
     .expect("a base dimension");
-    let length_key = quire_exact::NodeKey::new(
-        "example",
-        vec![quire_exact::PathSegment::Text("Length".to_owned())],
-        0,
-    )
-    .expect("a base dimension key");
+    let length_key = length.key().expect("a dimension declaration key");
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
         "qualified_declaration": ["Example", "metre"],
-        "dimension_node_id": {"package": "example", "path": ["Length"], "ordinal": 0},
+        "dimension_node_id": qsl_foundation::node_wire::node_key_to_json(&length_key)
+            .expect("a structural dimension key"),
         "target_unit_node_id": null,
         "scale": {"numerator": "1", "denominator": "1"},
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let metre_key = quire_exact::NodeKey::new(
-        "example",
-        vec![quire_exact::PathSegment::Text("metre".to_owned())],
-        0,
-    )
-    .expect("a root unit key");
+    let metre_key = metre.key().expect("a unit declaration key");
+    let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
         [(length, length_key)],
         [(metre, metre_key.clone())],
-        &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-            authority: "agent-ix".into(),
-            identity: "example".into(),
-            package_name: "example".into(),
-        })]),
+        &OwnerSelection::new([selection]),
     )
     .expect("the unit graph admits");
     let units = quire_semantic_value::quantity::UnitTable::declared(&graph);

@@ -3351,8 +3351,8 @@ fn an_invocation_result_past_the_values_bound_refuses_stage_limit_exceeded() {
 }
 
 /// `run_tc465_current_with_limits` over snapshot text built by `build`
-/// (which may nest to any depth, as `serde_json::Value` cannot), digested
-/// under its own digest unless `selected` gives another.
+/// (which may nest to any depth, as `serde_json::Value` cannot), provisioned
+/// under the snapshot's own labels.
 fn run_tc465_current_text(
     document: &[u8],
     build: impl FnOnce(&str) -> String,

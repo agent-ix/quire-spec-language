@@ -97,7 +97,7 @@ use qsl_eval::simulation::model::{
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_package::CheckedPackage;
+use qsl_package::{CheckedPackage, EmitRefusal, EmittedPackage};
 use qsl_semantics::check::{
     CheckedRefinement, ClockOp, FormulaNodeId, TemporalProfile, TimedPropertyForm,
 };
@@ -179,6 +179,10 @@ pub struct RefinementPart {
 pub struct RefinementIdentity {
     /// The refinement node's id.
     pub refinement_node: NodeKey,
+    /// The emitted package the abstract side is opened over, compared
+    /// structurally: the certified refinement's own package on the listed
+    /// side, the request's `abstract_package` on the recompiled side.
+    pub abstract_package: EmittedPackage,
 }
 
 /// What a node of FR-240's liveness product carries beyond a search
@@ -627,6 +631,8 @@ pub enum ZoneCertificateRefusal<O> {
         /// The recompiled.
         recompiled: Box<RefinementIdentity>,
     },
+    /// A package of the refinement form does not emit.
+    Package(Box<EmitRefusal>),
     /// FR-106's admission of the subject failed.
     Admission(Box<AdmissionFailure>),
     /// The model's timed reading does not build (FR-231).
@@ -649,6 +655,7 @@ impl<O> ZoneCertificateRefusal<O> {
             Self::ObligationMismatch { .. }
             | Self::IdentityMismatch { .. }
             | Self::RefinementMismatch { .. } => Code::StaleDependency,
+            Self::Package(refusal) => refusal.code(),
             Self::UnsupportedItem => Code::UnsupportedConstruct,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Admission(_) | Self::TimedSubject(_) | Self::Unbounded | Self::Undecided => {
@@ -819,11 +826,18 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                     recompiled: Box::new(recompiled),
                 });
             };
+            let emitted = |package: &CheckedPackage| {
+                qsl_package::emit_checked(package)
+                    .map(|emission| emission.package().clone())
+                    .map_err(|refusal| ZoneCertificateRefusal::Package(Box::new(refusal)))
+            };
             let recompiled = RefinementIdentity {
                 refinement_node: occurrence.node().clone(),
+                abstract_package: emitted(abstract_package)?,
             };
             let listed = RefinementIdentity {
                 refinement_node: part.refinement_node.clone(),
+                abstract_package: emitted(request.simulation.package)?,
             };
             if listed != recompiled {
                 return Err(ZoneCertificateRefusal::RefinementMismatch {

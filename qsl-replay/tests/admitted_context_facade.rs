@@ -248,7 +248,7 @@ fn alone(library: &SuppliedLibrary, dependencies: &DependencyInput) -> AdmittedC
     compile_admitted(
         qsl_replay::CompileUnit {
             source: library.source.clone(),
-            package_name: "fixture".to_owned(),
+            package_name: library.identity.clone(),
             path: &library.path,
             bytes: &library.bytes,
         },

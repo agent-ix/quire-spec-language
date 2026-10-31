@@ -193,7 +193,7 @@ impl SemanticNode {
         }
     }
 
-    /// The node's `quire.checked-semantic-node/v1` key.
+    /// The node's structural `NodeKey`.
     pub fn key(&self) -> NodeKey {
         self.key.clone()
     }
@@ -564,6 +564,8 @@ pub(crate) struct Lowering<'a> {
     placeholder_count: u64,
     /// The drafts, by their local handle.
     drafts: BTreeMap<PlaceholderId, Draft>,
+    /// The handle of each draft's content: equal content is one draft.
+    draft_index: HashMap<NodeContent, PlaceholderId>,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeRef, OccurrenceRole, Location)>,
     /// Each binder's parameter node, by its [`BinderSite`].
@@ -1573,6 +1575,7 @@ impl<'a> Lowering<'a> {
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
             drafts: BTreeMap::new(),
+            draft_index: HashMap::new(),
             draft_occurrences: Vec::new(),
             binders: BTreeMap::new(),
             draft_binders: Vec::new(),
@@ -1830,7 +1833,11 @@ impl<'a> Lowering<'a> {
             .for_each_ref(&mut |named| names_pending |= Self::pending(named));
         if names_pending {
             // Admitted by `settle`; until then a local handle names the draft.
+            if let Some(handle) = self.draft_index.get(&content) {
+                return Ok(NodeRef::Pending(*handle));
+            }
             let handle = self.fresh_handle();
+            self.draft_index.insert(content.clone(), handle);
             self.drafts.insert(
                 handle,
                 Draft {
@@ -1877,7 +1884,12 @@ impl<'a> Lowering<'a> {
         if let Some(key) = self.node_index.get(content) {
             return Ok(key.clone());
         }
-        let package = self.package_name.clone();
+        // The reader keys a model-owned node under its model's identity (a
+        // node owner of kind `model` names the package its key belongs to).
+        let package = match &content.owner {
+            Some(Owner::Model(owner)) => owner.identity().to_owned(),
+            _ => self.package_name.clone(),
+        };
         let operands = derived_operands(content);
         let key = self.mint_key(location, |ordinal| match &content.declaration {
             Some(names) => super::declared_node_key(
@@ -1917,7 +1929,9 @@ impl<'a> Lowering<'a> {
             } else {
                 build(ordinal).map_err(invalid)?
             };
-            if !self.graph.nodes.contains_key(&key) {
+            // A dimension or unit key is held by the unit table whether or
+            // not its node is in the graph yet, so no other node takes it.
+            if !self.graph.nodes.contains_key(&key) && self.units.nominal_node(&key).is_none() {
                 return Ok(key);
             }
         }
@@ -1925,7 +1939,7 @@ impl<'a> Lowering<'a> {
 
     /// The admitted keys of one recursion group's members, in member order.
     /// A declared member is keyed by its declaration's path; any other
-    /// member by the anchor's (first declared member's) path with no
+    /// member by the anchor's (least declared member's) path with no
     /// operand, the producer's ordinal telling the members apart. A group
     /// with no declared member has no anchor, which is an internal fault.
     fn admitted_group_keys(
@@ -1947,13 +1961,14 @@ impl<'a> Lowering<'a> {
                 None => None,
             });
         }
-        // The group's anchor is its first declared member. The pinned
+        // The group's anchor is its least declared member, so the keys do
+        // not depend on the order the members are declared in. The pinned
         // reader (quire-contract-model `validate_recursion`) requires every
         // undeclared member's path to equal the sole declared member's path.
         let anchor_path: Vec<String> = keys
             .iter()
             .flatten()
-            .next()
+            .min()
             .ok_or_else(|| fault(location, KeyFault::InvalidGroup))?
             .view()
             .path()
@@ -2318,7 +2333,6 @@ impl<'a> Lowering<'a> {
         }
         // FR-359 item 3: a model record value type or event type is a
         // model-owned node, never a `composite_type`.
-        // BLOCKED-BY QSL-1282 (owner: planner titan:QSL:plan): model record declaration lookup was keyed by a digest node key; needs the structural model-record key source
         if let Some(model_record) = self.model_record_declaration(declaration.clone(), location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the
@@ -2618,7 +2632,15 @@ impl<'a> Lowering<'a> {
     ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
         match self.graph.nodes.entry(key.clone()) {
-            btree_map::Entry::Occupied(_) => Ok(false),
+            btree_map::Entry::Occupied(slot) => {
+                let held = &slot.get().content;
+                if held.node_tag == content.node_tag && held.semantic_form == content.semantic_form
+                {
+                    Ok(false)
+                } else {
+                    Err(fault(location, KeyFault::NominalKeyClash(key)))
+                }
+            }
             btree_map::Entry::Vacant(slot) => {
                 slot.insert(SemanticNode {
                     key,
@@ -2856,6 +2878,7 @@ impl<'a> Lowering<'a> {
     fn settle(&mut self) -> Result<(), CheckRefusal> {
         let placeholders = std::mem::take(&mut self.placeholders);
         let drafts = std::mem::take(&mut self.drafts);
+        self.draft_index.clear();
         let occurrences = std::mem::take(&mut self.draft_occurrences);
         let draft_binders = std::mem::take(&mut self.draft_binders);
         let unsettled_functions = std::mem::take(&mut self.unsettled_functions);
@@ -3759,6 +3782,7 @@ impl<'a> Lowering<'a> {
                 reference,
                 relationship,
                 role,
+                near,
                 ..
             } => {
                 // FR-093/FR-094 (FR-363): one `quire.op.model.navigate` over
@@ -3766,6 +3790,8 @@ impl<'a> Lowering<'a> {
                 // node and the role. No `deref` node: the reference is the
                 // argument.
                 let declaration = self.model_node(relationship, node.location())?;
+                let destination_type =
+                    self.destination_type_node(relationship, *near, node.location())?;
                 let name = Identifier::new(role.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -3779,6 +3805,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::RelationshipEnd {
                                 declaration,
                                 name,
+                                destination_type,
                                 population: None,
                             }),
                             ..plain("quire.op.model.navigate")
@@ -4245,6 +4272,8 @@ impl<'a> Lowering<'a> {
                 // node and the role. No `deref` node: the references are
                 // the arguments.
                 let declaration = self.model_node(relationship, node.location())?;
+                let destination_type =
+                    self.destination_type_node(relationship, *near, node.location())?;
                 let name = Identifier::new(role.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -4276,6 +4305,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::RelationshipEnd {
                                 declaration,
                                 name,
+                                destination_type,
                                 population,
                             }),
                             ..plain("quire.op.model.reaches")
@@ -5316,6 +5346,52 @@ fn strongly_connected_metered(
 /// repeat of its path takes the next producer ordinal.
 fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     use quire_exact::PathSegment;
+    if content.node_tag == NodeTag::State {
+        match (content.semantic_form, &content.body) {
+            // A clause's name is no part of its identity, so neither is its
+            // source position: its kind, anchor and condition tell clauses
+            // apart whatever order they are written in.
+            ("state_clause", BodyTerm::Application(application)) => {
+                let mut operands = Vec::new();
+                if let Some(Member::StateClause { clause, .. }) = &application.operation.member {
+                    operands.push(PathSegment::Text(format!("{clause:?}").to_lowercase()));
+                }
+                for argument in application.arguments.iter().skip(1) {
+                    if let MemberTerm::Leaf(LeafTerm::Reference {
+                        target: NodeRef::Admitted(key),
+                    }) = argument
+                    {
+                        operands.push(PathSegment::Node(key.clone()));
+                    }
+                }
+                return operands;
+            }
+            // An operation's anchor is keyed by its declaring type and its
+            // name, one node per operation whatever clause names it first.
+            ("operation_anchor", BodyTerm::Aggregate(aggregate)) => {
+                let mut operands = Vec::new();
+                for member in &aggregate.members {
+                    let MemberTerm::Binding(binding) = member else {
+                        continue;
+                    };
+                    match (binding.name.as_str(), &binding.value) {
+                        (
+                            "context",
+                            BindingValue::Leaf(LeafTerm::Reference {
+                                target: NodeRef::Admitted(key),
+                            }),
+                        ) => operands.push(PathSegment::Node(key.clone())),
+                        ("operation", BindingValue::Leaf(LeafTerm::Literal { value, .. })) => {
+                            operands.push(PathSegment::Text(literal_operand_text(value)));
+                        }
+                        _ => {}
+                    }
+                }
+                return operands;
+            }
+            _ => {}
+        }
+    }
     if matches!(
         content.node_tag,
         NodeTag::Value

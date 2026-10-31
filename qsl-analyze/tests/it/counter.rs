@@ -345,7 +345,7 @@ impl Documents {
         }
     }
 
-    /// The bytes of each provisioned snapshot, by digest.
+    /// The bytes of each provisioned snapshot, by label.
     pub(crate) fn snapshot_bytes(
         &self,
     ) -> impl Iterator<Item = (&qsl_semantics::model::observation::DocumentRef, &Vec<u8>)> {

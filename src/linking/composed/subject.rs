@@ -7,10 +7,7 @@
 //! requirements. This module retains exactly those components from a
 //! completed binding report and compares two subjects component by component.
 //!
-//! No canonical digest, structural hash or JSON fingerprint is derived here.
-//! The contract states that canonical identity is unavailable until its exact
-//! domain, version and algorithm are selected and qualified; an equality over
-//! the declared components is the only comparison this stage may claim.
+//! Equality over the declared components is the comparison this stage claims.
 //!
 //! Build provenance is retained separately. A resource-only configuration change
 //! is visible in [`BuildProvenance`] and changes no static component.
@@ -58,7 +55,7 @@ pub struct LanguageComponent {
     pub language: String,
     /// Inventory edition selection.
     pub edition: String,
-    /// Exact supplied edition definition identity, revision and byte digest.
+    /// Exact supplied edition definition identity.
     pub definition: Selection,
     /// Checked edition closure, empty when the edition selection refused.
     pub closure: Vec<RegisteredDefinition>,

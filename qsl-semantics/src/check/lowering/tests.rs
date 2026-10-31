@@ -1239,6 +1239,65 @@ fn parameter_type(form: TypeForm, aliases: Vec<(String, ValueType)>) -> NodeKey 
         .expect("a typed parameter")
 }
 
+/// TC-413 (FR-092-AC-1): the base, bounded, option and collection types give
+/// the type nodes the Type nodes table names: their tags and forms, no owner
+/// or declaration, and the semantic type of the bounded forms.
+#[trace("FR-092-AC-1", "TC-413")]
+#[test]
+fn type_nodes_carry_the_tags_forms_and_semantic_types_of_the_type_table() {
+    let text = ValueType::Text(TextType::new(0, 8, quire_exact::TextProfile::Nfc).unwrap());
+    let cases = [
+        (ValueType::Boolean, "scalar_type", "boolean"),
+        (ValueType::Integer, "scalar_type", "integer"),
+        (int(0, 9), "bounded_domain", "integer_range"),
+        (ValueType::option(int(0, 9)), "composite_type", "option"),
+        (
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Sequence,
+                int(0, 9),
+                None,
+            )),
+            "composite_type",
+            "sequence",
+        ),
+        (
+            sequence(int(0, 9), Some((1, 3))),
+            "bounded_domain",
+            "collection_bounds",
+        ),
+        (text, "bounded_domain", "text_bounds"),
+    ];
+    let types: Vec<ValueType> = cases
+        .iter()
+        .map(|(value_type, ..)| value_type.clone())
+        .collect();
+    let (graph, keys) = type_nodes(
+        &empty_scope(),
+        &SourceOwner::from(&fixture_source()),
+        &types,
+    );
+    for ((_, tag, form), key) in cases.iter().zip(&keys) {
+        let node = preimage(graph.node(key.clone()).expect("the type node"));
+        assert_eq!(node["node_tag"], *tag, "{form}");
+        assert_eq!(node["semantic_form"], *form);
+        assert!(node["declaration"].is_null() && node["owner"].is_null());
+    }
+    let semantic_type = |index: usize| {
+        preimage(graph.node(keys[index].clone()).unwrap())["semantic_type"]["digest"].clone()
+    };
+    assert_eq!(
+        semantic_type(2),
+        json!(keys[1].to_string()),
+        "Int[0, 9] is typed at Integer"
+    );
+    assert!(semantic_type(3).is_null(), "an option is its own type");
+    assert_eq!(
+        semantic_type(5),
+        json!(keys[4].to_string()),
+        "bounds type at the collection"
+    );
+}
+
 /// TC-413 step 4 (FR-092-AC-3): an alias adds no node; the parameter is
 /// typed at the aliased type's node.
 #[trace("FR-092-AC-3", "TC-413")]
@@ -1306,11 +1365,11 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         again.node(again_keys[0].clone())
     );
     let d1 = preimage(under_u.node(u_keys[0].clone()).unwrap());
-    assert!(d1.get("owner").is_some() && !d1["declaration"].is_null());
+    assert!(!d1["owner"].is_null() && !d1["declaration"].is_null());
     let d2 = preimage(under_w.node(w_keys[0].clone()).unwrap());
     assert_eq!(d2["owner"]["identity"], "w");
     let t4 = preimage(under_u.node(u_keys[1].clone()).unwrap());
-    assert!(t4.get("owner").is_none() && t4["declaration"].is_null());
+    assert!(t4["owner"].is_null() && t4["declaration"].is_null());
 
     let g1 = function(
         "g1",
@@ -1382,7 +1441,7 @@ fn unread_parameters_keep_the_arity_and_parameter_nodes_are_shared() {
 /// application; every function is a structural-node key carrying the
 /// owner; `a and b` and `both(a, true)` are application-node keys with no
 /// owner.
-#[trace("FR-092-AC-6", "TC-414", "FR-065-AC-8", "TC-163")]
+#[trace("FR-092-AC-6", "FR-092-AC-4", "TC-414", "FR-065-AC-8", "TC-163")]
 #[test]
 fn functions_are_structural_and_applications_carry_no_owner() {
     let graph = check(vec![
@@ -1421,7 +1480,7 @@ fn functions_are_structural_and_applications_carry_no_owner() {
         "`a and b`, `both(a, true)` and the let each build an application node"
     );
     for application in &applications {
-        assert!(application.get("owner").is_none());
+        assert!(application["owner"].is_null());
     }
 }
 
@@ -1723,7 +1782,7 @@ fn record_projection_and_record_values_name_their_record_node() {
 
 /// FR-092 L6: a literal `1` that is not an operand of an FR-357 operator is
 /// a `value`/`literal` node.
-#[trace("FR-092-AC-11", "TC-413")]
+#[trace("FR-092-AC-11", "FR-092-AC-4", "TC-413")]
 #[test]
 fn a_standalone_integer_literal_is_a_node() {
     let one = function("one", &[], integer_form(), None, integer_expr(1));

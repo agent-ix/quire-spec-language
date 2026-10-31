@@ -651,21 +651,6 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
         },
     ));
 
-    // An identity over `[0, 9]` on the first `x` with the supplied harness
-    // bound `[0, 8]`: both digests are named, and they differ.
-    let mut narrower = claim();
-    narrower.harness_bounds[0] = bound(unit.parameter("f", 0), &[0], range(0, 8));
-    cases.push((
-        "an identity over a different harness bound",
-        unit.wire("f", &claim(), vec![]),
-        narrower,
-        |refusal| {
-            matches!(refusal, ReplayRefusal::ScalarIdentity(cause)
-                if matches!(&**cause, crate::ScalarIdentityMismatch::Obligation {
-                    claimed, recomputed } if claimed != recomputed))
-        },
-    ));
-
     let mut elsewhere = claim();
     elsewhere.node = unit.node("h");
     cases.push((
@@ -792,9 +777,9 @@ fn tc_907_a_covering_harness_proves() {
     proved(&settle(&unit, "c", bounds, vec![], exhausted));
 }
 
-/// FR-358-AC-9 (TC-907 step 5): evidence short of covering the claim's
+/// FR-358-AC-5 (TC-907 step 5): evidence short of covering the claim's
 /// domain is `Tested`, never `Proved`.
-#[trace("TC-907", "FR-358-AC-9")]
+#[trace("TC-907", "FR-358-AC-5")]
 #[test]
 fn tc_907_anything_short_of_covering_is_tested() {
     let unit = unit();
@@ -1213,7 +1198,7 @@ fn tc_907_a_refinement_disagreement_overrides_every_row() {
 /// collection is a `Cardinality` position no harness bound covers until a
 /// request `DeclaredDomain` substitutes its maximum, and the element's range
 /// is covered as authored.
-#[trace("TC-907", "FR-358-AC-4")]
+#[trace("TC-907", "FR-358-AC-4", "FR-358-AC-5")]
 #[test]
 fn tc_907_an_unbounded_collection_is_covered_only_by_a_declared_cardinality() {
     use crate::execute::composite_domain::derive;

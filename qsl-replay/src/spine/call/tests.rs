@@ -1698,7 +1698,10 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 );
                 assert_eq!(
                     fields,
-                    BTreeMap::from([("required", "01".repeat(32)), ("supplied", "02".repeat(32)),])
+                    BTreeMap::from([
+                        ("required", "fixture:[\"n1\",]:0".to_owned()),
+                        ("supplied", "fixture:[\"n2\",]:0".to_owned()),
+                    ])
                 );
                 let locus = locus.expect("a record locus");
                 assert_eq!(locus.span.start.byte, 132);
@@ -1802,7 +1805,10 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
             );
             assert_eq!(
                 fields,
-                BTreeMap::from([("required", "02".repeat(32)), ("supplied", "01".repeat(32)),])
+                BTreeMap::from([
+                    ("required", "fixture:[\"n2\",]:0".to_owned()),
+                    ("supplied", "fixture:[\"1\",]:0".to_owned()),
+                ])
             );
         }
         other => panic!("{other:?}"),

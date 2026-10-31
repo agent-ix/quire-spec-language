@@ -466,11 +466,13 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     );
     assert!(m1_preimage["declaration"].is_null());
     let r = preimage(graph.node(r_type.clone()).unwrap());
-    assert!(r.get("owner").is_none());
+    assert!(r["owner"].is_null());
+    // The view renders a key as its display text, which JSON escapes.
+    let escaped = serde_json::to_string(&m1.to_string()).unwrap();
     assert!(
         serde_json::to_string(&r["body"])
             .unwrap()
-            .contains(&m1.to_string()),
+            .contains(escaped.trim_matches('"')),
         "the reference type's body references Order's model node"
     );
 
@@ -492,7 +494,8 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     // FR-094-CON-2: every owned node without a source declaration is
     // model-owned and carries a `ModelOwner`.
     for node in graph.nodes().filter(|node| node.declaration().is_none()) {
-        if let Some(owner) = preimage(node).get("owner") {
+        let owner = &preimage(node)["owner"];
+        if !owner.is_null() {
             assert_eq!(owner["kind"], json!("model"), "{}", node.key());
         }
     }

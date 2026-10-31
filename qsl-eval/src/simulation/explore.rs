@@ -6,8 +6,6 @@ use std::collections::{HashSet, VecDeque};
 
 use qsl_foundation::diagnostic::category_of;
 use quire_canonical::Encode;
-use quire_exact::NodeKey;
-use quire_exact::ValueType;
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -16,7 +14,7 @@ use crate::simulation::expansion::{Expansion, ExpansionStop, StateFindings};
 use crate::simulation::footprint::Footprint;
 use crate::simulation::frontier::{Frontier, Limit};
 use crate::simulation::key::{EncodingRefusal, StateKey};
-use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
+use crate::simulation::not_simulated::{check_requires_bound, NotSimulated, Root};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
@@ -468,9 +466,9 @@ pub(crate) fn explore<S: TransitionSystem>(
     clippy::too_many_arguments,
     reason = "FR-101 pins this exact signature; the parameters are the request's own fields, not an accretion of unrelated flags"
 )]
-pub fn explore_request<S: TransitionSystem>(
+pub fn explore_request<S: TransitionSystem, R: Root>(
     system: &S,
-    domains: &[(NodeKey, &ValueType)],
+    domains: &[R],
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,
