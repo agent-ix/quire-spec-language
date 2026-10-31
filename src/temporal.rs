@@ -526,8 +526,44 @@ fn run(
         guarded: matches!(activation, w::Activation::Each { guard, .. } if guard.0.is_some()),
         captures: captures.len(),
     };
+    let root = usize::try_from(root.index).map_err(|_| Refusal::Reference { subject })?;
+    let operations: Vec<_> = selected
+        .declaration
+        .temporal
+        .iter()
+        .map(|node| node.operation.clone())
+        .collect();
+    run_view(
+        EvaluationView {
+            declaration,
+            profile: selected.profile,
+            shape,
+            root,
+            operations,
+        },
+        trace,
+        watermark,
+        work,
+    )
+}
+
+struct EvaluationView {
+    declaration: usize,
+    profile: Profile,
+    shape: Shape,
+    root: usize,
+    operations: Vec<w::TemporalOperation>,
+}
+
+fn run_view(
+    view: EvaluationView,
+    trace: &Trace,
+    watermark: i64,
+    work: &mut budget::Work,
+) -> Result<Vec<Obligation>, Error> {
+    let subject = declaration_subject(view.declaration);
     let premises = Premises {
-        profile: selected.profile,
+        profile: view.profile,
         clock: trace.clock.name.clone(),
         clock_parameters: trace.clock.parameters.clone(),
         watermark,
@@ -538,17 +574,8 @@ fn run(
         authoritative_origin: trace.authoritative_origin,
         limits: work.limits,
     };
-
-    let root = usize::try_from(root.index).map_err(|_| Refusal::Reference { subject })?;
-    let operations: Vec<_> = selected
-        .declaration
-        .temporal
-        .iter()
-        .map(|node| node.operation.clone())
-        .collect();
     let ordered = trace.ordered();
-
-    match activation::resolve(shape, trace, declaration, work)? {
+    match activation::resolve(view.shape, trace, view.declaration, work)? {
         Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
             subject,
             instance: None,
@@ -582,24 +609,22 @@ fn run(
                     }
                 };
                 let mut evaluator = Evaluator {
-                    profile: selected.profile,
+                    profile: view.profile,
                     trace,
                     ordered: ordered.clone(),
-                    nodes: &operations,
-                    declaration,
+                    nodes: &view.operations,
+                    declaration: view.declaration,
                     instance: ordinal,
                     watermark,
                     support: Vec::new(),
                 };
-                let outcome = evaluator.root(root, work);
+                let outcome = evaluator.root(view.root, work);
                 work.charge(LimitDimension::Retention, evaluator.support.len())?;
                 let (truth, basis, incomplete) = match outcome {
                     Ok(value) => {
                         let (truth, basis) = settle(value, trace);
                         (Some(truth), Some(basis), None)
                     }
-                    // A required fact inside the decision support is missing, so
-                    // the truth is unavailable. It is not false and not pending.
                     Err(Error::Incomplete(incomplete)) => {
                         (None, Some(Basis::Unavailable), Some(incomplete))
                     }
@@ -677,91 +702,18 @@ fn run_checked(
     {
         return Err(Refusal::Reference { subject }.into());
     }
-    let premises = Premises {
-        profile,
-        clock: trace.clock.name.clone(),
-        clock_parameters: trace.clock.parameters.clone(),
+    run_view(
+        EvaluationView {
+            declaration,
+            profile,
+            shape,
+            root,
+            operations,
+        },
+        trace,
         watermark,
-        decision_scope: trace.decision_scope,
-        surrounding_execution: trace.surrounding_execution,
-        execution: trace.execution,
-        completeness: trace.completeness,
-        authoritative_origin: trace.authoritative_origin,
-        limits: work.limits,
-    };
-    let ordered = trace.ordered();
-    match activation::resolve(shape, trace, declaration, work)? {
-        Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
-            subject,
-            instance: None,
-            receipts: Vec::new(),
-            captures: Vec::new(),
-            capture_evaluations: 0,
-            activation: disposition,
-            truth: None,
-            basis: None,
-            incomplete: None,
-            support: Vec::new(),
-            premises,
-        }))]),
-        Outcome::Instances(instances) => {
-            let mut assessed = Vec::with_capacity(instances.len());
-            for (ordinal, instance) in instances.into_iter().enumerate() {
-                let subject = Subject {
-                    instance: ordinal,
-                    ..subject
-                };
-                work.subject = subject;
-                let instance = match instance {
-                    Ok(instance) => instance,
-                    Err(failed) => {
-                        assessed.push(Obligation::Unactivated {
-                            subject,
-                            instance: failed.identity,
-                            error: failed.error,
-                        });
-                        continue;
-                    }
-                };
-                let mut evaluator = Evaluator {
-                    profile,
-                    trace,
-                    ordered: ordered.clone(),
-                    nodes: &operations,
-                    declaration,
-                    instance: ordinal,
-                    watermark,
-                    support: Vec::new(),
-                };
-                let outcome = evaluator.root(root, work);
-                work.charge(LimitDimension::Retention, evaluator.support.len())?;
-                let (truth, basis, incomplete) = match outcome {
-                    Ok(value) => {
-                        let (truth, basis) = settle(value, trace);
-                        (Some(truth), Some(basis), None)
-                    }
-                    Err(Error::Incomplete(incomplete)) => {
-                        (None, Some(Basis::Unavailable), Some(incomplete))
-                    }
-                    Err(error) => return Err(error),
-                };
-                assessed.push(Obligation::Assessed(Box::new(Assessment {
-                    subject,
-                    instance: Some(instance.identity),
-                    receipts: instance.receipts,
-                    captures: instance.captures,
-                    capture_evaluations: instance.capture_evaluations,
-                    activation: Activation::Active,
-                    truth,
-                    basis,
-                    incomplete,
-                    support: evaluator.support,
-                    premises: premises.clone(),
-                })));
-            }
-            Ok(assessed)
-        }
-    }
+        work,
+    )
 }
 
 fn checked_profile(profile: TemporalProfile) -> Option<Profile> {
