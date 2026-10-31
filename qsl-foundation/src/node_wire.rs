@@ -234,79 +234,167 @@ pub fn node_key_to_text(key: &NodeKey) -> Result<String, NodeWireError> {
     Ok(out)
 }
 
-/// The node identity `text` spells, read with an explicit stack: `serde_json`
-/// scans the nested objects as raw text, so depth is bounded only by memory
-/// and no recursion limit applies.
+/// The node identity `text` spells, read in one pass with an explicit stack
+/// and a hand-written tokenizer for the fixed shape, so depth is bounded only
+/// by memory and cost is linear in the text.
 ///
 /// # Errors
 ///
 /// A [`NodeWireError`] for malformed text, a failed storage reservation, or the
 /// identity's own refusal ([`InvalidNodeKey`]).
 pub fn node_key_from_text(text: &str) -> Result<NodeKey, NodeWireError> {
-    use alloc::collections::BTreeMap;
-    use serde_json::value::RawValue;
-    enum Task<'a> {
-        Parse(&'a RawValue),
-        Finish {
-            package: String,
-            ordinal: u64,
-            len: usize,
-        },
+    #[derive(Clone, Copy)]
+    enum State {
+        ObjStart,
+        ObjNext,
+        ObjAfter,
+        PathStart,
+        PathNext,
+        PathAfter,
     }
-    fn read<'a, T: serde::Deserialize<'a>>(raw: &'a str) -> Result<T, NodeWireError> {
-        serde_json::from_str(raw).map_err(|_| NodeWireError::Shape)
+    struct Frame {
+        state: State,
+        package: Option<String>,
+        ordinal: Option<u64>,
+        path_seen: bool,
+        segments: Vec<PathSegment>,
     }
-    let root: &RawValue = read(text)?;
-    let mut tasks = alloc::vec![Task::Parse(root)];
-    let mut segments: Vec<PathSegment> = Vec::new();
-    while let Some(task) = tasks.pop() {
-        match task {
-            Task::Parse(raw) if raw.get().starts_with('"') => {
-                let name: String = read(raw.get())?;
-                push(&mut segments, PathSegment::Text(name))?;
-            }
-            Task::Parse(raw) => {
-                let mut members: BTreeMap<&str, &RawValue> = read(raw.get())?;
-                if members.len() != 3 {
-                    return Err(NodeWireError::Shape);
-                }
-                let package = members.remove("package").ok_or(NodeWireError::Shape)?;
-                let path = members.remove("path").ok_or(NodeWireError::Shape)?;
-                let ordinal = members.remove("ordinal").ok_or(NodeWireError::Shape)?;
-                let package: String = read(package.get()).map_err(|_| NodeWireError::Package)?;
-                let path: Vec<&RawValue> = read(path.get()).map_err(|_| NodeWireError::Path)?;
-                let ordinal: u64 = read(ordinal.get()).map_err(|_| NodeWireError::Ordinal)?;
-                push(
-                    &mut tasks,
-                    Task::Finish {
-                        package,
-                        ordinal,
-                        len: path.len(),
-                    },
-                )?;
-                tasks
-                    .try_reserve(path.len())
-                    .map_err(|_| NodeWireError::Allocation)?;
-                tasks.extend(path.into_iter().rev().map(Task::Parse));
-            }
-            Task::Finish {
-                package,
-                ordinal,
-                len,
-            } => {
-                let start = segments
-                    .len()
-                    .checked_sub(len)
-                    .ok_or(NodeWireError::Shape)?;
-                let path = segments.split_off(start);
-                let key = NodeKey::try_new(package, path, ordinal)?;
-                push(&mut segments, PathSegment::Node(key))?;
-            }
+    fn frame() -> Frame {
+        Frame {
+            state: State::ObjStart,
+            package: None,
+            ordinal: None,
+            path_seen: false,
+            segments: Vec::new(),
         }
     }
-    match segments.pop() {
-        Some(PathSegment::Node(key)) if segments.is_empty() => Ok(key),
-        _ => Err(NodeWireError::Shape),
+    fn skip(bytes: &[u8], at: &mut usize) {
+        while matches!(bytes.get(*at), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+            *at += 1;
+        }
+    }
+    fn expect(bytes: &[u8], at: &mut usize, want: u8) -> Result<(), NodeWireError> {
+        skip(bytes, at);
+        if bytes.get(*at) == Some(&want) {
+            *at += 1;
+            Ok(())
+        } else {
+            Err(NodeWireError::Shape)
+        }
+    }
+    // A JSON string starting at `at`; the cursor moves past it.
+    fn string(text: &str, at: &mut usize) -> Result<String, NodeWireError> {
+        let bytes = text.as_bytes();
+        let start = *at;
+        if bytes.get(start) != Some(&b'"') {
+            return Err(NodeWireError::Shape);
+        }
+        let mut end = start + 1;
+        loop {
+            match bytes.get(end) {
+                Some(b'\\') => end += 2,
+                Some(b'"') => break,
+                Some(_) => end += 1,
+                None => return Err(NodeWireError::Shape),
+            }
+        }
+        *at = end + 1;
+        let literal = text.get(start..*at).ok_or(NodeWireError::Shape)?;
+        serde_json::from_str(literal).map_err(|_| NodeWireError::Shape)
+    }
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    expect(bytes, &mut at, b'{')?;
+    let mut stack = Vec::new();
+    push(&mut stack, frame())?;
+    loop {
+        skip(bytes, &mut at);
+        let Some(top) = stack.last_mut() else {
+            return Err(NodeWireError::Shape);
+        };
+        let next = bytes.get(at).copied();
+        match top.state {
+            State::ObjAfter if next == Some(b',') => {
+                at += 1;
+                top.state = State::ObjNext;
+            }
+            State::ObjAfter | State::ObjStart if next == Some(b'}') => {
+                at += 1;
+                let Some(done) = stack.pop() else {
+                    return Err(NodeWireError::Shape);
+                };
+                if !done.path_seen {
+                    return Err(NodeWireError::Shape);
+                }
+                let package = done.package.ok_or(NodeWireError::Shape)?;
+                let ordinal = done.ordinal.ok_or(NodeWireError::Shape)?;
+                let key = NodeKey::try_new(package, done.segments, ordinal)?;
+                match stack.last_mut() {
+                    Some(parent) => push(&mut parent.segments, PathSegment::Node(key))?,
+                    None => {
+                        skip(bytes, &mut at);
+                        return if at == bytes.len() {
+                            Ok(key)
+                        } else {
+                            Err(NodeWireError::Shape)
+                        };
+                    }
+                }
+            }
+            State::ObjStart | State::ObjNext => {
+                let name = string(text, &mut at)?;
+                expect(bytes, &mut at, b':')?;
+                skip(bytes, &mut at);
+                match name.as_str() {
+                    "package" if top.package.is_none() => {
+                        top.package =
+                            Some(string(text, &mut at).map_err(|_| NodeWireError::Package)?);
+                    }
+                    "ordinal" if top.ordinal.is_none() => {
+                        let start = at;
+                        while matches!(bytes.get(at), Some(b'0'..=b'9')) {
+                            at += 1;
+                        }
+                        let digits = text.get(start..at).ok_or(NodeWireError::Ordinal)?;
+                        if digits.len() > 1 && digits.starts_with('0') {
+                            return Err(NodeWireError::Ordinal);
+                        }
+                        top.ordinal = Some(digits.parse().map_err(|_| NodeWireError::Ordinal)?);
+                    }
+                    "path" if !top.path_seen => {
+                        expect(bytes, &mut at, b'[')?;
+                        top.path_seen = true;
+                        top.state = State::PathStart;
+                        continue;
+                    }
+                    _ => return Err(NodeWireError::Shape),
+                }
+                top.state = State::ObjAfter;
+            }
+            State::ObjAfter => return Err(NodeWireError::Shape),
+            State::PathAfter if next == Some(b',') => {
+                at += 1;
+                top.state = State::PathNext;
+            }
+            State::PathAfter | State::PathStart if next == Some(b']') => {
+                at += 1;
+                top.state = State::ObjAfter;
+            }
+            State::PathStart | State::PathNext => match next {
+                Some(b'"') => {
+                    let name = string(text, &mut at).map_err(|_| NodeWireError::Path)?;
+                    push(&mut top.segments, PathSegment::Text(name))?;
+                    top.state = State::PathAfter;
+                }
+                Some(b'{') => {
+                    at += 1;
+                    top.state = State::PathAfter;
+                    push(&mut stack, frame())?;
+                }
+                _ => return Err(NodeWireError::Path),
+            },
+            State::PathAfter => return Err(NodeWireError::Path),
+        }
     }
 }
 
@@ -343,6 +431,31 @@ mod tests {
             node_key_to_text(&shallow).unwrap(),
             serde_json::to_string(&value).unwrap()
         );
+    }
+
+    #[test]
+    fn two_thousand_deep_text_reads_in_one_pass() {
+        let key = nested(2000);
+        let text = node_key_to_text(&key).unwrap();
+        assert_eq!(node_key_from_text(&text).unwrap(), key);
+    }
+
+    #[test]
+    fn malformed_text_is_refused() {
+        for bad in [
+            "",
+            "{}",
+            r#"{"ordinal":1,"package":"p"}"#,
+            r#"{"ordinal":1,"package":"p","path":[],"x":1}"#,
+            r#"{"ordinal":01,"package":"p","path":["a"]}"#,
+            r#"{"ordinal":1,"package":"p","path":[1]}"#,
+            r#"{"ordinal":1,"package":"p","path":["a"]} x"#,
+            r#"{"ordinal":1,"ordinal":1,"package":"p","path":["a"]}"#,
+        ] {
+            assert!(node_key_from_text(bad).is_err(), "{bad}");
+        }
+        let any_order = r#" {"path":["a"], "package":"p","ordinal":2} "#;
+        assert!(node_key_from_text(any_order).is_ok());
     }
 
     #[test]
