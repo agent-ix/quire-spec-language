@@ -497,6 +497,103 @@ fn a_missing_required_temporal_refuses_at_its_authored_name() {
     assert_eq!(&text[span.start..span.end], "Missing");
 }
 
+/// Graph membership is checked before the activation relation is available.
+/// Missing dependency edges and missing target nodes are different defects.
+#[trace("TC-1194", "FR-449-AC-5", "FR-383-AC-2", "FR-383-AC-13")]
+#[test]
+fn activation_targets_must_exist_and_be_clause_dependencies() {
+    use quire_contract_model::{
+        CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageRefusalCause,
+        CheckedPackageRefusalCode,
+    };
+
+    let unit = format!(
+        "temporal Due using t over (c: M::Order) clock \"model-steps\" \
+         on origin {{ always true }}\n{}",
+        flow_over(
+            "M::Order",
+            "on each (opened: M::Order)",
+            "role Buyer on M::Order;\nrequires temporal Due;",
+        )
+    );
+    let valid = lower_with(model(), PROFILES, &unit);
+    assert!(valid.verified, "{}", valid.text);
+    assert_eq!(
+        valid
+            .ir
+            .as_ref()
+            .expect("admitted control")
+            .protocol_activation_relation()
+            .len(),
+        1
+    );
+    let index = protocol_clause_index(&valid.wire);
+    let base = format!("/semantic_graph/nodes/{index}");
+    for (target_path, missing_path) in [
+        ("/body/arguments/7/value/members/0/target", "requirements"),
+        ("/body/arguments/1/value/members/1/value/target", "trigger"),
+    ] {
+        let clause = &valid.wire["semantic_graph"]["nodes"][index];
+        let target = clause
+            .pointer(target_path)
+            .unwrap_or_else(|| panic!("{missing_path} target: {clause}"));
+        assert!(target.is_object(), "a structural node key: {target}");
+        for absent_node in [false, true] {
+            let mut wire = valid.wire.clone();
+            let clause = &mut wire["semantic_graph"]["nodes"][index];
+            clause["dependencies"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|dependency| dependency != target);
+            if absent_node {
+                let mut absent = target.clone();
+                absent["path"] = json!(["absent"]);
+                *clause.pointer_mut(target_path).unwrap() = absent.clone();
+                clause["dependencies"].as_array_mut().unwrap().push(absent);
+                sort_dependencies(clause);
+            }
+            let mut evidence = CheckedPackageEvidence::new();
+            for feature in valid.wire["lock"]["required_features"].as_array().unwrap() {
+                evidence.support_feature(feature.as_str().unwrap());
+            }
+            let document = model();
+            evidence
+                .insert_domain_package_document(package_identity(&document), document.as_slice())
+                .unwrap();
+            let CheckedPackageDispatchResult::Refused(refusal) =
+                quire_contract_model::read_checked_package(
+                    &jcs(&wire),
+                    CheckedPackageReadLimits::bounded(),
+                    &evidence,
+                )
+            else {
+                panic!(
+                    "{missing_path}, absent node {absent_node}: refusal required before any map"
+                );
+            };
+            let (code, cause, path) = if absent_node {
+                (
+                    CheckedPackageRefusalCode::MissingDeclaration,
+                    Some(CheckedPackageRefusalCause::MissingName),
+                    format!("{base}{target_path}"),
+                )
+            } else {
+                (
+                    CheckedPackageRefusalCode::InvalidSemanticGraph,
+                    None,
+                    format!("{base}/dependencies"),
+                )
+            };
+            assert_eq!(
+                refusal.code, code,
+                "{missing_path}, absent node {absent_node}"
+            );
+            assert_eq!(refusal.cause, cause);
+            assert_eq!(refusal.loci[0].path.as_ref().unwrap().as_str(), path);
+        }
+    }
+}
+
 /// FR-383-AC-17: a unit that selects no protocol profile emits no protocol
 /// node and no refusal for a protocol declaration, whatever it requires; the
 /// temporal clause it requires is still emitted and read back verified, and

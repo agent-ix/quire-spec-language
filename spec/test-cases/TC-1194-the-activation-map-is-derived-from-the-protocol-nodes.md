@@ -36,7 +36,7 @@ Fixture **W** is TC-1061's.
 | 5 | **W** with a temporal clause `OrderPaidBounded` and `requires temporal OrderPaidBounded` | two rows, in ascending node-key order of the two temporal clause nodes |
 | 6 | **W** with a temporal clause `RefundBounded` on the clock `refund-clock`, not required by the protocol | the map of step 1 |
 | 7 | **W**, compiled twice; **W** reformatted with a comment added; **W**'s emitted package read back through the I2 reader | every map equals step 1's |
-| 8 | **W**'s emitted package with the `requirements` entry naming a node absent from the clause's `dependencies`; separately, with the `each` trigger naming such a node | the I2 reader refuses `missing_declaration`/`missing-name` at the target; no map |
+| 8 | **W**'s emitted package with the `requirements` entry naming an existing node absent from the clause's `dependencies`; separately, with the `each` trigger naming such a node; separately for each reference, retarget it to a key present in the clause's `dependencies` but naming no node | the missing dependency edge refuses `invalid_semantic_graph` at the clause's `/dependencies`; the missing target node refuses `missing_declaration`/`missing-name` at the target; neither refusal returns a map |
 | 9 | **W** with `requires temporal Missing` and no temporal clause `Missing` | S3 refuses `missing_declaration`/`missing-name` at the name; no package, no map |
 
 Tag the tests `#[trace("TC-1194", "FR-449-AC-n")]`: steps 1 for AC-1, 2
