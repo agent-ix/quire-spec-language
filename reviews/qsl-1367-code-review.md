@@ -45,3 +45,12 @@ Ticket: QSL-1367. PR: quire-spec-language#1948, head a8823ee74. Method: code-rev
 - `ModelState` has only `populations` and `extents`. The anchor is left out of the key on purpose (FR-120). No other field is missing.
 - No shipped fixture or golden output uses snapshot extents with a model state key. The only snapshot `relationships` listing in qsl-eval and qsl-analyze tests is the new test. Package-level `"relationships": []` entries are type declarations, not extents.
 - Rust idioms. The limits and sort pattern matches `map_enc`. `unwrap_or_default` on `to_vec` mirrors `map_enc`, and a reference triple cannot fail at u64::MAX limits. Clippy (`-p qsl-eval --all-targets --all-features -D warnings`) and `cargo fmt --check` are clean.
+
+## Dispositions
+
+Disposition pass 1, head 0ce03bf5f (fix commit 0ce03bf5f over a8823ee74).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `dedup_by` removed (encode.rs:786 now only sorts) and the doc comment at encode.rs:764 says repeats are kept. The new test `a_repeated_extent_pair_is_a_different_state` (model_simulation.rs:1902-1930) checks the 1x vs 2x listing: 2 admitted initial states, different keys, 2 explored states. It fails with a8823ee74's encode.rs (model_simulation.rs:1928) and passes at 0ce03bf5f. |
+| FND-002 | fixed | The doc comment no longer claims the explorer counts both (model_simulation.rs:1839), and both extent tests carry `#[trace("TC-471", "FR-120-AC-27")]` (model_simulation.rs:1840,1902). The changed `link` fixture (0..2, neither end unique) is used only by these two tests, so no other test relied on the old multiplicity. |

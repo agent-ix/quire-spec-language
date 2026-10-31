@@ -39,3 +39,19 @@ Ticket: QSL-1367. Plan completion: not assessed. The PR changes no spec. `quire 
 ## Coverage
 
 Plan completion: not assessed. The criteria-to-test check was done by hand over the diff, because the `quire matrix` run timed out after 300 s. Semantic review: run over the diff, comparing FR-120 text with encode.rs.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | TC-471 is now cited by the AC-27 tests, but its `Scope:` line still lists only FR-120-AC-1 to AC-4, and it has no step or expected result for AC-27. TC-1270 shows the convention: a Scope line naming each AC and a step per AC. TC-471 needs AC-27 in Scope, plus a step and an expected result (remove then spawn; a 1x and a 2x listing). | spec/test-cases/TC-471-model-successors-follow-operations-arguments-and-frames.md:17,19-80 |
+| FND-004 | low | Two sentences of FR-120-AC-27 have no AC-27-tagged test that could fail them. "A state that lists no extents has the key of FR-120-AC-4" is asserted only by the AC-4-tagged test. "Key equality is state equality, extents included" is a universal that no single test can fail. Point the first at FR-120-AC-4 as context, or tag that test with AC-27 as well. Drop the second, or restate it as the spec text's rule. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:764 |
+
+## Dispositions
+
+Disposition pass 1, head 0ce03bf5f (fix commit 0ce03bf5f over a8823ee74).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-120 "State, state key and anchor" now defines the `relationships` entry: its text key, the `{complete, instances}` value, ordering by RFC 8785 bytes, repeats kept, zero-instance vs unlisted, and no entry without extents (FR-120 lines 211-225). The new FR-120-AC-27 (line 764) fixes the behavior. The spec matches encode.rs: the key is `Enc::tagged("text", ..)`, the value object is `complete`/`instances`, and pairs are `source`/`target` reference triples. |
+| FND-002 | fixed | Both extent tests carry `#[trace("TC-471", "FR-120-AC-27")]` (model_simulation.rs:1840,1902). |
