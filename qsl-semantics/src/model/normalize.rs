@@ -14,8 +14,8 @@
 //! supertype's member, and its phase-4 subset and redefine facts. A fact
 //! states one edge or one relation between original declarations; the path
 //! from `T` to an owner is the sequence of links, and the expansion into
-//! path form is [`crate::model::links::Links::expand`], never encoded or
-//! hashed here. So hashed bytes, retained facts and work units are linear in
+//! path form is [`crate::model::links::Links::expand`], never encoded here.
+//! So retained facts and work units are linear in
 //! the effective types plus the direct edges, not in the number of ancestor
 //! paths, and a diamond lattice with exponentially many paths is walked once
 //! per edge.
@@ -33,11 +33,11 @@
 //!   stack). Each edge of a placed type charges one `normalize.cycle-check`
 //!   (`L = 1`) and one `normalize.fact`, and counts one step against
 //!   `ancestor_steps`, however many paths reach its target. Types are then
-//!   hashed, parents first: an effective type's identity is the one hash made
-//!   before its `normalize.hash` charge, because phase 4's charge order uses
-//!   it; its preimage holds only its own key and its direct edges, each
-//!   already admitted. Members follow, charging one `normalize.fact` per
-//!   inherit fact.
+//!   given their identities, parents first: an effective type's identity is
+//!   settled before phase 4, because phase 4's charge order uses it; its
+//!   preimage holds only its own key and its direct edges, each already
+//!   admitted. Members follow, charging one `normalize.fact` per inherit
+//!   fact.
 //! - A type on or below a supertype cycle is not placed. Only those types
 //!   are explored by path (`cycle_walk`), charging each extension its
 //!   path length, to report the cycles; an acyclic package never pays it. A
@@ -53,17 +53,15 @@
 //!   `Lineage`; no ancestor closure is built for every type. Every
 //!   refusal a stage exposes is reported together, in charge order, when its
 //!   charges have admitted (`value-accounting.md:505-511`).
-//! - Phase 5 charges `normalize.declaration` and `normalize.hash` for every
-//!   declaration from a length counted from its parts (a parent identity is
-//!   fixed width, so a length does not wait for the digest it holds), then
-//!   hashes the members, parents first, then the object universes and the
-//!   view.
+//! - Phase 5 charges `normalize.declaration` for every declaration, then
+//!   gives the members their identities, parents first, then the object
+//!   universes and the view.
 //!
 //! This engine takes a [`DomainPackage`] value the caller constructs; it holds
-//! no ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of
-//! a preimage built here, replayed exactly for the same [`DomainPackage`] and
+//! no ambient registry. Every identity is the structural key of a
+//! preimage built here, replayed exactly for the same [`DomainPackage`] and
 //! [`ModelNormalizationLimits`] -- the same inputs always retrace the same
-//! derivation and the same bytes.
+//! derivation.
 //!
 //! Phase 4 covers TC-195 N06's field members' and operation members' own
 //! explicit `redefines` property (`model-complete.md`), resolved by the same
@@ -394,8 +392,8 @@ struct ViewBody {
     types: Arc<TypeCatalog>,
     /// The object universes this normalization produced, one per connected
     /// component of the object-type supertype graph (ADR-013 §8 OQ-E),
-    /// ascending by each universe's own first root type identity -- the
-    /// exact `normalize.hash` charge order (`value-accounting.md`:495).
+    /// ascending by each universe's own first root type identity
+    /// (`value-accounting.md`:495).
     /// Non-empty by type: a domain package with no declared object type
     /// still gets one universe, with empty `root_types`. Not part of the
     /// view's own preimage (`wire`), so it adds no identity of its own.
