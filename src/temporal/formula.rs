@@ -63,7 +63,7 @@ pub(super) struct Evaluator<'a> {
     pub trace: &'a Trace,
     /// Trace position indices in admitted clock order.
     pub ordered: Vec<usize>,
-    pub nodes: &'a [w::Temporal],
+    pub nodes: &'a [w::TemporalOperation],
     pub declaration: usize,
     pub instance: usize,
     /// Progress in force for this binding, in the profile's clock domain. It is
@@ -118,13 +118,9 @@ impl<'a> Evaluator<'a> {
         work.subject = self.locate(node, offset);
         work.visit()?;
         work.charge(Charge::Depth, depth)?;
-        let operation =
-            self.nodes
-                .get(node)
-                .map(|entry| &entry.operation)
-                .ok_or(Refusal::Reference {
-                    subject: work.subject,
-                })?;
+        let operation = self.nodes.get(node).ok_or(Refusal::Reference {
+            subject: work.subject,
+        })?;
         match operation {
             // A source constant keeps its authored value at every offset,
             // including beyond a closed decision scope.

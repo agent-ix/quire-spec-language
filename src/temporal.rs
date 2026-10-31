@@ -27,6 +27,10 @@ mod trace;
 use std::collections::BTreeMap;
 
 use crate::protocol_artifact::{v2, wire as w, AdmittedPackage, ClockNames};
+use qsl_package::CheckedPackage;
+use qsl_semantics::check::{
+    Activation as CheckedActivation, CheckedFormula, CheckedInterval, FormulaNode, TemporalProfile,
+};
 
 use activation::{Outcome, Shape};
 use formula::{Evaluator, Tri};
@@ -67,6 +71,48 @@ pub fn evaluate(
         trace.watermark,
         &mut work,
     );
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated: None,
+    }
+}
+
+/// Evaluate a temporal clause directly from its checked package graph.
+///
+/// The formula, profile, activation shape and clock binding are read from S3's
+/// checked nodes. The checked graph is the authority; this path does not emit,
+/// serialize, or reconstruct a protocol artifact.
+pub fn evaluate_checked(
+    package: &CheckedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let result = run_checked(package, declaration, trace, trace.watermark, &mut work);
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated: None,
+    }
+}
+
+/// Checked-package counterpart of [`evaluate_with_progress`].
+pub fn evaluate_checked_with_progress(
+    package: &CheckedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+    ledger: &mut Ledger,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let result = match ledger.record(Binding::of(declaration, trace), Progress::of(trace)) {
+        Ok(retained) => run_checked(package, declaration, trace, retained.watermark, &mut work),
+        Err(refusal) => Err(refusal.into()),
+    };
     Report {
         result,
         limits: work.limits,
@@ -505,6 +551,245 @@ fn run(
             }
             Ok(assessed)
         }
+    }
+}
+
+fn run_checked(
+    package: &CheckedPackage,
+    declaration: usize,
+    trace: &Trace,
+    watermark: i64,
+    work: &mut budget::Work,
+) -> Result<Vec<Obligation>, Error> {
+    let subject = declaration_subject(declaration);
+    work.subject = subject;
+    let node = package
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let clause = node.clause();
+    let profile = checked_profile(clause.profile()).ok_or(Refusal::Binding {
+        dimension: Dimension::Profile,
+        subject,
+    })?;
+    if trace.clock.profile_identity != clause.profile().identity() {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    check_clock_name(Some(clause.clock()), &trace.clock.name, subject)?;
+    let operations = checked_operations(clause.formula(), subject)?;
+    let root = clause.formula().root().index();
+    let activation = clause.activation();
+    let shape = Shape {
+        origin: matches!(activation, CheckedActivation::Origin),
+        guarded: matches!(activation, CheckedActivation::Each { guarded: true }),
+        captures: clause.captures().len(),
+    };
+    let premises = Premises {
+        profile,
+        clock: trace.clock.name.clone(),
+        clock_parameters: trace.clock.parameters.clone(),
+        watermark,
+        decision_scope: trace.decision_scope,
+        surrounding_execution: trace.surrounding_execution,
+        execution: trace.execution,
+        completeness: trace.completeness,
+        authoritative_origin: trace.authoritative_origin,
+        limits: work.limits,
+    };
+    let ordered = trace.ordered();
+    match activation::resolve(shape, trace, declaration, work)? {
+        Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
+            subject,
+            instance: None,
+            receipts: Vec::new(),
+            captures: Vec::new(),
+            capture_evaluations: 0,
+            activation: disposition,
+            truth: None,
+            basis: None,
+            incomplete: None,
+            support: Vec::new(),
+            premises,
+        }))]),
+        Outcome::Instances(instances) => {
+            let mut assessed = Vec::with_capacity(instances.len());
+            for (ordinal, instance) in instances.into_iter().enumerate() {
+                let subject = Subject {
+                    instance: ordinal,
+                    ..subject
+                };
+                work.subject = subject;
+                let instance = match instance {
+                    Ok(instance) => instance,
+                    Err(failed) => {
+                        assessed.push(Obligation::Unactivated {
+                            subject,
+                            instance: failed.identity,
+                            error: failed.error,
+                        });
+                        continue;
+                    }
+                };
+                let mut evaluator = Evaluator {
+                    profile,
+                    trace,
+                    ordered: ordered.clone(),
+                    nodes: &operations,
+                    declaration,
+                    instance: ordinal,
+                    watermark,
+                    support: Vec::new(),
+                };
+                let outcome = evaluator.root(root, work);
+                work.charge(LimitDimension::Retention, evaluator.support.len())?;
+                let (truth, basis, incomplete) = match outcome {
+                    Ok(value) => {
+                        let (truth, basis) = settle(value, trace);
+                        (Some(truth), Some(basis), None)
+                    }
+                    Err(Error::Incomplete(incomplete)) => {
+                        (None, Some(Basis::Unavailable), Some(incomplete))
+                    }
+                    Err(error) => return Err(error),
+                };
+                assessed.push(Obligation::Assessed(Box::new(Assessment {
+                    subject,
+                    instance: Some(instance.identity),
+                    receipts: instance.receipts,
+                    captures: instance.captures,
+                    capture_evaluations: instance.capture_evaluations,
+                    activation: Activation::Active,
+                    truth,
+                    basis,
+                    incomplete,
+                    support: evaluator.support,
+                    premises: premises.clone(),
+                })));
+            }
+            Ok(assessed)
+        }
+    }
+}
+
+fn checked_profile(profile: TemporalProfile) -> Option<Profile> {
+    match profile {
+        TemporalProfile::EventPositionFalseExtension => Some(Profile::EventPosition),
+        TemporalProfile::FixedSampleFalseExtension => Some(Profile::FixedSample),
+        TemporalProfile::TimestampedEventFiniteWindow => Some(Profile::TimestampedWindow),
+        TemporalProfile::InfiniteTrace | TemporalProfile::Timed => None,
+    }
+}
+
+fn checked_operations(
+    formula: &CheckedFormula,
+    subject: Subject,
+) -> Result<Vec<w::TemporalOperation>, Error> {
+    let mut operations = Vec::with_capacity(formula.nodes().len());
+    for (index, node) in formula.nodes().iter().enumerate() {
+        let handle = |id: qsl_semantics::check::FormulaNodeId| w::Handle {
+            declaration: 0,
+            index: u32::try_from(id.index()).unwrap_or(u32::MAX),
+        };
+        let operation = match node {
+            FormulaNode::Constant(value) => w::TemporalOperation::Constant { value: *value },
+            FormulaNode::Holds { .. } => w::TemporalOperation::Holds {
+                value: w::Handle {
+                    declaration: 0,
+                    index: index as u32,
+                },
+            },
+            FormulaNode::Aggregate { .. } => return Err(Refusal::Reference { subject }.into()),
+            FormulaNode::Not(inner) => w::TemporalOperation::Unary {
+                operator: w::TemporalUnary::Not,
+                interval: w::Nullable(None),
+                value: handle(*inner),
+            },
+            FormulaNode::And(left, right)
+            | FormulaNode::Or(left, right)
+            | FormulaNode::Implies(left, right) => {
+                let operator = match node {
+                    FormulaNode::And(..) => w::TemporalBinary::And,
+                    FormulaNode::Or(..) => w::TemporalBinary::Or,
+                    _ => w::TemporalBinary::Implies,
+                };
+                w::TemporalOperation::Binary {
+                    operator,
+                    interval: w::Nullable(None),
+                    left: handle(*left),
+                    right: handle(*right),
+                }
+            }
+            FormulaNode::Unary {
+                operator,
+                interval,
+                operand,
+            } => w::TemporalOperation::Unary {
+                operator: match operator {
+                    qsl_semantics::check::UnaryTemporal::Eventually => w::TemporalUnary::Eventually,
+                    qsl_semantics::check::UnaryTemporal::Always => w::TemporalUnary::Always,
+                    qsl_semantics::check::UnaryTemporal::Once => w::TemporalUnary::Once,
+                    qsl_semantics::check::UnaryTemporal::Historically => {
+                        w::TemporalUnary::Historically
+                    }
+                },
+                interval: checked_interval(interval.as_ref(), subject)?,
+                value: handle(*operand),
+            },
+            FormulaNode::Binary {
+                operator,
+                interval,
+                left,
+                right,
+            } => w::TemporalOperation::Binary {
+                operator: match operator {
+                    qsl_semantics::check::BinaryTemporal::Until => w::TemporalBinary::Until,
+                    qsl_semantics::check::BinaryTemporal::Release => w::TemporalBinary::Release,
+                    qsl_semantics::check::BinaryTemporal::Since => w::TemporalBinary::Since,
+                    qsl_semantics::check::BinaryTemporal::Triggered => w::TemporalBinary::Triggered,
+                },
+                interval: checked_interval(interval.as_ref(), subject)?,
+                left: handle(*left),
+                right: handle(*right),
+            },
+        };
+        operations.push(operation);
+    }
+    Ok(operations)
+}
+
+fn checked_interval(
+    interval: Option<&CheckedInterval>,
+    subject: Subject,
+) -> Result<w::Nullable<w::Interval>, Error> {
+    match interval {
+        None => Ok(w::Nullable(None)),
+        Some(CheckedInterval::Steps(interval)) => {
+            let upper = match interval.upper() {
+                qsl_foundation::bound::TemporalUpper::Finite(value) => value,
+                qsl_foundation::bound::TemporalUpper::Open => {
+                    return Err(Refusal::Binding {
+                        dimension: Dimension::Interval,
+                        subject,
+                    }
+                    .into())
+                }
+            };
+            let lower = serde_json::from_value(serde_json::Value::from(interval.lower()))
+                .map_err(|_| Refusal::Reference { subject })?;
+            let upper = serde_json::from_value(serde_json::Value::from(upper))
+                .map_err(|_| Refusal::Reference { subject })?;
+            Ok(w::Nullable(Some(w::Interval { lower, upper })))
+        }
+        Some(CheckedInterval::Timed(_)) => Err(Refusal::Binding {
+            dimension: Dimension::Interval,
+            subject,
+        }
+        .into()),
     }
 }
 
