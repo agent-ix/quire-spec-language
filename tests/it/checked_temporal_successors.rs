@@ -9,24 +9,28 @@ use quire_spec_language::temporal::{
 };
 use std::collections::BTreeMap;
 
-const TEMPORAL_SOURCE: &str = r#"
+fn temporal_source(body: &str, profile: &str) -> String {
+    format!(
+        r#"
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
-profile t = "quire.temporal.event-position.false-extension/v1";
+profile t = "{profile}";
 model M = "acme/orders";
 temporal Due using t over (view: M::Widget) clock "orders" on origin {
-    always[0,1] true
+    {body}
 }
-"#;
+"#
+    )
+}
 
-fn checked() -> qsl_replay::spine::CheckedUnit {
+fn checked(body: &str, profile: &str) -> qsl_replay::spine::CheckedUnit {
     let packages =
         qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
             .expect("checked model fixture");
     crate::support::front_end::checked(
         SourceIdentity::new("agent-ix", "test:checked-temporal", "fixture", "1"),
         "checked-temporal.native",
-        TEMPORAL_SOURCE.as_bytes(),
+        temporal_source(body, profile).as_bytes(),
         &packages,
         &DependencyInput::default(),
     )
@@ -75,7 +79,7 @@ fn origin_trace() -> temporal::Trace {
 #[trace("TC-122", "TC-123", "FR-043-AC-1", "FR-044-AC-1")]
 #[test]
 fn checked_package_formula_uses_the_shared_bounded_evaluator() {
-    let checked = checked();
+    let checked = checked("always[0,1] true", temporal::EVENT_POSITION);
     let report = temporal::evaluate_checked(
         checked.package(),
         0,
@@ -95,7 +99,7 @@ fn checked_package_formula_uses_the_shared_bounded_evaluator() {
 #[trace("TC-125", "FR-045-AC-1")]
 #[test]
 fn checked_mapping_retains_the_checked_selection() {
-    let checked = checked();
+    let checked = checked("always[0,1] true", temporal::EVENT_POSITION);
     let classification = temporal::mapping_support_checked(checked.package(), 0, Closure::Open)
         .expect("checked temporal mapping classified");
     assert_eq!(classification.retained.name, "Due");
@@ -110,4 +114,56 @@ fn checked_mapping_retains_the_checked_selection() {
             ..
         }
     ));
+}
+
+/// FR-043: checked atomic valuations remain distinct from constants, and the
+/// report retains only positions in the exact decision support.
+#[trace("TC-122", "TC-123", "FR-043-AC-4", "FR-043-AC-5")]
+#[test]
+fn checked_atom_has_exact_decision_support_and_false_extension() {
+    let checked = checked("always[0,1] holds(view.code > 0)", temporal::EVENT_POSITION);
+    let clause = &checked.package().graph().temporal_clauses()[0];
+    let atom = clause
+        .clause()
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .expect("checked holds atom") as u32;
+    let mut input = origin_trace();
+    input.positions[0].valuations.insert(atom, true);
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    let assessed = match &report.result().expect("checked atom assessed")[0] {
+        temporal::Obligation::Assessed(assessment) => assessment,
+        other => panic!("expected assessed checked clause, got {other:?}"),
+    };
+    assert_eq!(assessed.truth, Some(Truth::False));
+    assert_eq!(assessed.support, vec![0]);
+}
+
+/// FR-045: the checked classifier accumulates finite-window and mixed-direction
+/// limitations and retains the exact profile selection.
+#[trace("TC-125", "FR-045-AC-2", "FR-045-AC-3")]
+#[test]
+fn checked_mapping_accumulates_finite_window_and_direction_limits() {
+    let checked = checked(
+        "once[0,1] true and eventually[0,1] true",
+        "quire.temporal.timestamped-event.finite-window/v1",
+    );
+    let classification = temporal::mapping_support_checked(checked.package(), 0, Closure::Closed)
+        .expect("checked temporal mapping classified");
+    assert_eq!(
+        classification.support,
+        temporal::Support::Unsupported {
+            dimensions: vec![
+                temporal::Unmatched::FiniteWindow,
+                temporal::Unmatched::MixedDirection,
+            ],
+        }
+    );
+    assert_eq!(
+        classification.retained.profile.identity(),
+        temporal::TIMESTAMPED_WINDOW
+    );
 }
