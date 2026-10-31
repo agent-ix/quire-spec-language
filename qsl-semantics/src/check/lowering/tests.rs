@@ -1240,8 +1240,8 @@ fn parameter_type(form: TypeForm, aliases: Vec<(String, ValueType)>) -> NodeKey 
 }
 
 /// TC-413 (FR-092-AC-1): the base, bounded, option and collection types give
-/// the type nodes the Type nodes table names: their tags and forms, a bounded
-/// form typed at its base, and every key structural.
+/// the type nodes the Type nodes table names: their tags and forms, no owner
+/// or declaration, and the semantic type of the bounded forms.
 #[trace("FR-092-AC-1", "TC-413")]
 #[test]
 fn type_nodes_carry_the_tags_forms_and_semantic_types_of_the_type_table() {

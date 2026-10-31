@@ -590,10 +590,8 @@ mod tests {
     }
 
     /// FR-255-AC-8: each accounting setting sets its counter alone, no
-    /// operand gives the defaults, and `u64::MAX` is a bound. NFR-009-AC-1:
-    /// a counter is lowered or raised independently of the others, and zero
-    /// stays effective.
-    #[trace("TC-921", "FR-255-AC-8", "NFR-009-AC-1")]
+    /// operand gives the defaults, and `u64::MAX` is a bound.
+    #[trace("TC-921", "FR-255-AC-8")]
     #[test]
     fn each_accounting_setting_sets_its_counter_alone() {
         let defaults = CallerLimits::from_operands([]).unwrap().accounting;

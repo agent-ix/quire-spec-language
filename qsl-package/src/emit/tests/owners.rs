@@ -441,5 +441,6 @@ fn a_source_enum_and_member_carry_structural_ids_path_and_source_owner() {
     for node in std::iter::once(declaration).chain(members) {
         qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
             .expect("a structural node id");
+        assert!(node.get("nominal_identity_preimage").is_none());
     }
 }
