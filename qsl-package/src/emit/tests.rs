@@ -2685,7 +2685,6 @@ fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
 /// FR-307's diamond rule admits two separately allocated packages with
 /// identical canonical bytes under the same library name. The first path
 /// remains the selected path.
-#[trace("FR-087-AC-14", "TC-253")]
 #[test]
 fn a_diamond_selecting_one_package_unifies() {
     let first = Arc::new(dependency("test/units"));
@@ -2807,7 +2806,6 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 /// `invalid_package`/`conflicting-definition` listing both dependency
 /// paths. A dependency that does not emit refuses too. None yields a
 /// package.
-#[trace("FR-087-AC-14", "TC-253")]
 #[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {

@@ -799,7 +799,7 @@ fn refused(emission: &Emission, wire: &Value, envelope: &Value) -> (CheckedPacka
 }
 
 /// FR-447-AC-13, AC-16 (QSpec FR-481 "Reader order"): with `dependencies`,
-/// keys and `package_id` rebuilt after each edit, QSL's I2 read refuses a
+/// keys rebuilt after each edit, QSL's I2 read refuses a
 /// mode with a fourth rate, every variable classed `clock`, a claim clock
 /// `wall`, a model body with `modes` before `variables`, a written default
 /// `initial` and a fairness member naming `Halted`, each at its FR-481 locus.

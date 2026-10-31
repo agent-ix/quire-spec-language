@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-011 §6.1 layer-3 `library`: FR-307 reusable semantic libraries
-//! (qualified imports bound to a library `package_id`, transitive closure
-//! into a lock with one selection per library identity, diamond
-//! unification, cycle refusal and identity-preserving migration).
+//! (qualified imports bound by library name, transitive closure into a lock
+//! with one selection per library identity, structural diamond conflict,
+//! cycle refusal and identity-preserving migration).
 //!
 //! A package is identified by its [`LibraryName`] alone; there is no digest
 //! of its content. [`LibraryPackage`] carries its declared exports as typed
@@ -93,9 +93,6 @@ pub type ImportPath = Vec<LibraryName>;
 /// The closed FR-272 cause of a library or name refusal.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LibraryCause {
-    /// No supplied library of the imported identity has the imported
-    /// `package_id`.
-    ContentMismatch,
     /// No library of the imported identity is supplied.
     MissingSelection,
     /// Two imports bind one qualifier.
@@ -122,7 +119,6 @@ impl LibraryCause {
     /// The cause tag.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::ContentMismatch => "content-mismatch",
             Self::MissingSelection => "missing-selection",
             Self::AmbiguousName => "ambiguous-name",
             Self::ConflictingDefinition => "conflicting-definition",
@@ -399,9 +395,7 @@ pub fn resolve_libraries(
         if selected.contains_key(&import.library) {
             continue;
         }
-        // An import selects by identity alone, from the one supplied package
-        // of that identity. Its content is bound by its `package_id` in the
-        // lock.
+        // An import selects the one supplied package by library identity.
         let Some(&package) = by_library.get(&import.library) else {
             return Err(LibraryRefusal::MissingImport { path });
         };
