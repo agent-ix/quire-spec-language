@@ -531,7 +531,8 @@ fn entry(values: Value) -> Value {
 #[trace("TC-774", "FR-290-AC-10")]
 #[test]
 fn tc_774_assignment_reader_reads_and_refuses_in_order() {
-    let parameter = "11".repeat(32);
+    let parameter = qsl_foundation::node_wire::node_key_to_json(&crate::fixture_node(0x11))
+        .expect("a fixture node spells");
     let value = json!({"type": "integer", "value": "0"});
     assert_eq!(
         read_plugin_assignments(&entry(json!([{"parameter": parameter, "value": value}]))),
@@ -544,7 +545,7 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
     let counterexample = |body: Value| json!({"counterexample": body});
     let mut with_extra = entry(json!([]));
     with_extra["extra"] = json!(1);
-    let element = |parameter: &str, value: Value| json!({"parameter": parameter, "value": value});
+    let element = |parameter: &Value, value: Value| json!({"parameter": parameter, "value": value});
     let cases: Vec<(Value, PluginResultRefusal)> = vec![
         (json!([]), wrong("")),
         (
@@ -589,12 +590,15 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
             missing("/counterexample/values/0/value"),
         ),
         (
-            entry(json!([element(&"1".repeat(63), value.clone())])),
+            entry(json!([element(
+                &json!({"package": "fixture"}),
+                value.clone()
+            )])),
             invalid("/counterexample/values/0/parameter"),
         ),
         (
-            entry(json!([element(&"A1".repeat(32), value.clone())])),
-            invalid("/counterexample/values/0/parameter"),
+            entry(json!([element(&json!("11".repeat(32)), value.clone())])),
+            wrong("/counterexample/values/0/parameter"),
         ),
         (
             entry(json!([element(

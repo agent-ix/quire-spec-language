@@ -53,6 +53,7 @@
 //! fn control(parsed: &ParsedSource) {
 //!     let _ = check(
 //!         parsed,
+//!         "fixture".to_owned(),
 //!         &AdmittedModels::default(),
 //!         &DependencyInput::default(),
 //!         SpineLimits::default(),

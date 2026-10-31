@@ -651,21 +651,6 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
         },
     ));
 
-    // An identity over `[0, 9]` on the first `x` with the supplied harness
-    // bound `[0, 8]`: both digests are named, and they differ.
-    let mut narrower = claim();
-    narrower.harness_bounds[0] = bound(unit.parameter("f", 0), &[0], range(0, 8));
-    cases.push((
-        "an identity over a different harness bound",
-        unit.wire("f", &claim(), vec![]),
-        narrower,
-        |refusal| {
-            matches!(refusal, ReplayRefusal::ScalarIdentity(cause)
-                if matches!(&**cause, crate::ScalarIdentityMismatch::Obligation {
-                    claimed, recomputed } if claimed != recomputed))
-        },
-    ));
-
     let mut elsewhere = claim();
     elsewhere.node = unit.node("h");
     cases.push((

@@ -685,21 +685,21 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
         key("ConfigVersion", "parent"),
         crate::DomainKey::Node {
             node: config_version.clone(),
-            path: vec![0]
+            path: vec![0, 0]
         }
     );
     assert_eq!(
         key("ConfigVersion", "versionNumber"),
         crate::DomainKey::Node {
             node: config_version.clone(),
-            path: vec![1]
+            path: vec![0, 1]
         }
     );
     assert_eq!(
         key("Sub", "versionNumber"),
         crate::DomainKey::Node {
             node: config_version,
-            path: vec![1]
+            path: vec![0, 1]
         },
         "an inherited field is keyed under its declaring type"
     );
@@ -707,14 +707,14 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
         key("Sub", "alpha"),
         crate::DomainKey::Node {
             node: sub.clone(),
-            path: vec![0]
+            path: vec![0, 0]
         }
     );
     assert_eq!(
         key("Sub", "zeta"),
         crate::DomainKey::Node {
             node: sub,
-            path: vec![1]
+            path: vec![0, 1]
         }
     );
 
@@ -824,7 +824,7 @@ fn a_field_key_and_a_population_key_with_one_ordinal_are_distinct() {
         parent,
         crate::DomainKey::Node {
             node: config_version,
-            path: vec![0]
+            path: vec![0, 0]
         }
     );
     assert_ne!(parent, population);

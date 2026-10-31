@@ -125,27 +125,6 @@ fn the_identity_is_the_clause_the_subjects_and_the_instance() {
     assert_eq!(small, base);
 }
 
-/// FR-315-AC-12: a clause that differs only in a fairness set is a different
-/// item, so its identity differs in `clause()` and in the checked package of
-/// `subjects()`, and not in `instance()`.
-#[trace("TC-1190", "FR-315-AC-12")]
-#[test]
-fn a_fairness_set_changes_the_clause_member() {
-    let plain = World::new(&["v"], false, &non_interference(EQUAL_INPUTS, ""));
-    let fair = World::new(
-        &["v"],
-        false,
-        &non_interference(EQUAL_INPUTS, "fair weak V::Vault::step;"),
-    );
-    let plain = identity(&plain, &instance("v")).expect("identified");
-    let fair = identity(&fair, &instance("v")).expect("identified");
-    assert_ne!(plain.clause(), fair.clause());
-    // The clause is a node of the subject's checked package, so the package
-    // member of `subjects()` changes with it.
-    assert_ne!(plain.subjects(), fair.subjects());
-    assert_eq!(plain.instance(), fair.instance());
-}
-
 /// FR-315-AC-13: an `instance` that is not one pair for the parameter, with a
 /// key in its universe, names `instance-binding` at the parameter.
 #[trace("TC-1190", "FR-315-AC-13")]

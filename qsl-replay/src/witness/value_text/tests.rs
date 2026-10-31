@@ -85,7 +85,9 @@ fn fault(text: &str) -> EntryFault {
 }
 
 fn h(fill: u8) -> String {
-    id(fill).to_string()
+    let text = crate::id_text::node_text(&id(fill)).expect("a fixture node spells");
+    let quoted = serde_json::to_string(&text).expect("text quotes");
+    quoted[1..quoted.len() - 1].to_owned()
 }
 
 /// FR-070-AC-8 (TC-905): a transcript with one `Canonical` entry and one
@@ -356,7 +358,9 @@ fn tc_905_entries_must_ascend_by_parameter_node_id() {
     let descending = witness(&[(b.clone(), "2"), (a.clone(), "1")]);
     assert_eq!(
         descending.decode(&[scalar(a.clone()), scalar(b.clone())]),
-        Err(DecodeRefusal::EntryOrder(a.to_string()))
+        Err(DecodeRefusal::EntryOrder(
+            qsl_foundation::node_wire::node_key_to_text(&a).unwrap()
+        ))
     );
     let repeated = witness(&[(a.clone(), "1"), (a.clone(), "2")]);
     assert_eq!(

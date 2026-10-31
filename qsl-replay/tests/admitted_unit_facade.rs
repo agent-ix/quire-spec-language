@@ -356,7 +356,7 @@ fn a_dependencys_unit_is_foreign() {
     let alone = compile_admitted(
         qsl_replay::CompileUnit {
             source: mass.source.clone(),
-            package_name: "fixture".to_owned(),
+            package_name: mass.identity.clone(),
             path: &mass.path,
             bytes: &mass.bytes,
         },

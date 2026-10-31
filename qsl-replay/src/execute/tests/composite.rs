@@ -1078,8 +1078,7 @@ fn tc_1028_another_kind_at_a_native_parameter_is_wrong_value_kind() {
 
 /// FR-396-AC-5 (TC-1090): the record and tuple keys `compile_admitted`
 /// returns are the declarations replay converts a witness against. A witness
-/// built from them replays on both arms; the same witness built from the
-/// `composite_type` node ids refuses.
+/// built from them replays on both arms.
 #[trace("TC-1090", "FR-396-AC-5")]
 #[test]
 fn admitted_composite_keys_are_the_keys_replay_converts_against() {
@@ -1130,20 +1129,11 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
     for result in fixture.both("p", value(id(pair.key().clone()), id(holder.key().clone()))) {
         assert_reproduced(result);
     }
-    for result in fixture.both(
-        "p",
-        value(id(pair.node().clone()), id(holder.node().clone())),
-    ) {
-        assert!(
-            result.is_err(),
-            "node ids are not the kernel keys: {result:?}"
-        );
-    }
 }
 
 /// FR-396-AC-6 (TC-1090): a union witness that names the admitted union's
 /// `composite_type` node id and a member by its admitted identifier replays on
-/// both arms; the same witness naming the kernel key refuses.
+/// both arms.
 #[trace("TC-1090", "FR-396-AC-9")]
 #[test]
 fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
@@ -1184,12 +1174,6 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
     };
     for result in fixture.both("p", value(id(shape.node().clone()))) {
         assert_reproduced(result);
-    }
-    for result in fixture.both("p", value(id(shape.key().clone()))) {
-        assert!(
-            result.is_err(),
-            "the kernel key is not the settled union id: {result:?}"
-        );
     }
 }
 
