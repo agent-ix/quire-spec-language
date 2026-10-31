@@ -413,6 +413,9 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // ADR-013 O-06's structured member identity, which the FR-093
     // lowering's operation members name (ADR-011 §6.2: 3 `semantic_value`).
     "value::member",
+    // Nominal declaration payloads (FR-322 "Nominal nodes"): plain data over
+    // the permitted `enumeration`, `semantic_node` and `unit` modules and K.
+    "value::nominal_payload",
     "model",
     "value::model_query",
     // The type environment's stage-limit mapping (F and SV imports only).
