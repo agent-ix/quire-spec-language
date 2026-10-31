@@ -16,9 +16,9 @@ language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile t = "{profile}";
 model M = "acme/orders";
-temporal Due using t over (view: M::Widget) clock "orders" on origin {
+temporal Due using t over (view: M::Widget) clock "orders" on origin {{
     {body}
-}
+}}
 "#
     )
 }
