@@ -165,7 +165,14 @@ fn measured(output: &str, name: &str) -> u64 {
         .unwrap_or_else(|error| panic!("{name} is a number: {error}"))
 }
 
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-12", "QSpec-FR-081-AC-13")]
+#[trace(
+    "TC-1025",
+    "FR-081-AC-12",
+    "FR-081-AC-13",
+    "QSpec-TC-195",
+    "QSpec-FR-150-AC-15",
+    "QSpec-FR-150-AC-16"
+)]
 #[test]
 fn ten_thousand_edge_chain() {
     if std::env::var_os(CHILD_ENV).is_some() {

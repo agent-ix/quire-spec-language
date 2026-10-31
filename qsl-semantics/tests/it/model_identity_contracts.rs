@@ -61,6 +61,11 @@ fn changing_only_a_display_name_preserves_keys_identities_and_order() {
 #[trace("TC-217", "FR-081-AC-5")]
 #[test]
 fn an_intervening_package_does_not_change_normalization_results() {
+    if std::env::var_os("QSL_TC217_CHILD").is_some() {
+        println!("QSL_TC217_OUTPUT={}", identity_output(&tc235_k2::k2()));
+        return;
+    }
+
     let package = tc235_k2::k2();
     let before = identity_output(&package);
 
@@ -82,7 +87,7 @@ fn an_intervening_package_does_not_change_normalization_results() {
 
     let output = Command::new(std::env::current_exe().expect("the test executable path"))
         .arg("--exact")
-        .arg("model_identity_contracts::tc217_child_reports_normalization_output")
+        .arg("model_identity_contracts::an_intervening_package_does_not_change_normalization_results")
         .arg("--nocapture")
         .env("QSL_TC217_CHILD", "1")
         .output()
@@ -98,11 +103,4 @@ fn an_intervening_package_does_not_change_normalization_results() {
         .find_map(|line| line.strip_prefix("QSL_TC217_OUTPUT="))
         .expect("the child emitted its normalized identities");
     assert_eq!(before, child_output);
-}
-
-#[test]
-fn tc217_child_reports_normalization_output() {
-    if std::env::var_os("QSL_TC217_CHILD").is_some() {
-        println!("QSL_TC217_OUTPUT={}", identity_output(&tc235_k2::k2()));
-    }
 }
