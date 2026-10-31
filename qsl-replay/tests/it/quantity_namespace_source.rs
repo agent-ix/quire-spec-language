@@ -103,3 +103,13 @@ fn record_used_before_same_name_dimension_keeps_dimension_node() {
         "{HEADER}dimension m;\nunit u : m = rational(1, 1);\nrecord m {{ sample: Boolean; }}\nfunction f using v(r: m, a: Quantity<u>): Boolean pure {{ r.sample }}\n"
     ));
 }
+
+/// An enum named like a used dimension is a different namespace; both nodes
+/// are emitted and keep distinct keys.
+#[trace("TC-483", "FR-091-AC-44", "FR-142-AC-13")]
+#[test]
+fn enum_named_like_used_dimension_passes_strict_v2() {
+    assert_admitted(&format!(
+        "{HEADER}dimension m;\nunit u : m = rational(1, 1);\nenum m {{ a, b }}\nfunction f using v(x: Quantity<u>, e: m): Boolean pure {{ e = m::a }}\n"
+    ));
+}

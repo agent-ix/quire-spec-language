@@ -246,8 +246,9 @@ pub struct UnitPreimage {
     offset: SpelledRational,
 }
 
-/// The ordinal of a dimension's key, which a unit of the same name follows.
-pub const DIMENSION_ORDINAL: u64 = 0;
+/// The ordinal of a dimension's key. Ordinal 0 stays with records, tuples
+/// and enums, which a same-named dimension must not share a key with.
+pub const DIMENSION_ORDINAL: u64 = 1;
 /// The ordinal of a unit's key: the one after the same-named dimension's.
 pub const UNIT_ORDINAL: u64 = DIMENSION_ORDINAL + 1;
 
