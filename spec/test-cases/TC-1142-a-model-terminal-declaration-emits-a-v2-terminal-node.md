@@ -35,6 +35,15 @@ Use FR-126-AC-9's `Counter` unit.
    the empty aggregate; after each edit set `dependencies` to the body's
    targets, recompute the node key and the
    `package_id`, and feed the package to the I2 reader.
+5. Write the request over step 1's `when` package and over its
+   no-declaration package, and build each deadlock-freedom item's
+   obligation. Through the FR-281 derived-item adapter, settle the `when`
+   item with the run and certificate request over the no-declaration
+   package, with only the certificate request over it, and over the `when`
+   package; settle the no-declaration item over the `when` package and over
+   its own. Then settle the no-declaration item over its own run with its
+   replay recompiling a package that declares `terminal Done using v on
+   Counter when { self.value = 2 };`.
 
 Tag the tests `#[trace("TC-1142", "FR-411-AC-n")]` with the AC each step
 backs.
@@ -51,9 +60,9 @@ backs.
   settles as FR-128-AC-6 states (FR-411-AC-3 is retired).
 - Step 4 (FR-411-AC-4): `invalid_package`/`invalid-value` at `mode`;
   `invalid_semantic_graph` at `condition`.
-- Step 5 (FR-411-AC-5): the deadlock-freedom obligation identity 3-tuple and
-  record fields are equal for the `when` and no-declaration packages; the
-  run over the no-declaration package refuses
-  `stale_dependency`/`content-mismatch` naming `v`, the `when` terminal node
-  key and `none`, with no verdict settled; the run over the `when` package
-  settles the item.
+- Step 5 (FR-411-AC-5): the two obligations are equal; each mismatched
+  run or check refuses `stale_dependency`/`content-mismatch` naming `v` and
+  the two node keys (`none` for no declaration), with no verdict settled;
+  the `when` item over the `when` package settles `proved` and the
+  no-declaration item over its own package `refuted`; with the other
+  `when` replay it settles `inconclusive`, `replay_refused`.
