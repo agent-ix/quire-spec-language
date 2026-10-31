@@ -40,7 +40,7 @@ pub struct SampledRecord<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SampledDisagreement {
     /// The recomputed step at this 0-based index differs from the recorded
-    /// one: its transition, post-state digest, selections, drawn values,
+    /// one: its transition, post-state key, selections, drawn values,
     /// probability or rewards.
     Step {
         /// The step's index.
@@ -303,7 +303,7 @@ mod tests {
         );
     }
 
-    /// A recorded step whose post-state digest is not the recomputed one
+    /// A recorded step whose post-state key is not the recomputed one
     /// disagrees at that step.
     #[trace("TC-628")]
     #[test]
@@ -312,7 +312,7 @@ mod tests {
         let behaviour = service_sample(&world);
         let path = product(&behaviour.steps);
         let mut moved = behaviour.steps.clone();
-        moved[1].post_digest = moved[0].post_digest;
+        moved[1].post_state = moved[0].post_state.clone();
         assert_ne!(
             moved[1], behaviour.steps[1],
             "steps 0 and 1 reach distinct states"

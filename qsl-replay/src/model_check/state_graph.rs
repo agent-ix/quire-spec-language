@@ -10,8 +10,8 @@ use std::collections::BTreeSet;
 use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection};
 use crate::witness::FamilyPayload;
 use qsl_eval::simulation::SampleProvenance;
+use qsl_eval::simulation::StateKey;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::BackendId;
 use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
@@ -31,7 +31,7 @@ use crate::proof_result::{AppliedReduction, IncompleteCause};
 pub struct ModelPath {
     /// The index of the path's initial state in the subject's initial list.
     pub initial: u32,
-    /// The steps, in order: transition identity and post-state digest.
+    /// The steps, in order: transition identity and post-state key.
     pub steps: Vec<ModelStep>,
 }
 
@@ -379,7 +379,7 @@ pub struct GraphUndefined {
     /// The transition whose guard has no value, when this names a guard.
     pub transition: Option<quire_semantic_value::model_transition::ModelTransition>,
     /// The `quire.simulation.state-key/v1` digest of the node.
-    pub state_key: DigestRecord,
+    pub state_key: StateKey,
     /// The expression with no value, when the evaluator located it.
     pub locus: Option<Location>,
     /// The catalogued reason.

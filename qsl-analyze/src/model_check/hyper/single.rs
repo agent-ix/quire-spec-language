@@ -57,7 +57,6 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{Limit, Outcome, SampleProvenance, StopReason, TransitionSystem};
 use qsl_eval::temporal::{evaluate_tuple, ComponentTrace, TemporalOutcome};
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     ExistentialInstanceOutcome, ExistentialOutcome, IncompleteCause, LassoWitness, ModelCheckLimit,
@@ -236,7 +235,7 @@ struct Decision<'r, 'x, 'a> {
     /// The product states the run did not fully expand, with the reason.
     open: BTreeMap<ProductStateId, OpenCause>,
     /// The digest of each initial state of the subject, in subject order.
-    initials: Vec<DigestRecord>,
+    initials: Vec<qsl_eval::simulation::StateKey>,
 }
 
 struct Run<'r, 'a> {
@@ -289,7 +288,9 @@ impl<'a> Run<'_, 'a> {
                         .map(|state| {
                             self.system
                                 .state_key(state)
-                                .map(|(_, digest)| digest)
+                                .map(|(bytes, _)| {
+                                    qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+                                })
                                 .map_err(ModelCheckRefusal::Encoding)
                         })
                         .collect::<Result<Vec<_>, _>>()?;
@@ -877,15 +878,18 @@ impl<'a> Decision<'_, '_, 'a> {
 
     /// The index of the initial state of the subject whose digest is
     /// `digest`: the first with it.
-    fn initial_of(&self, digest: &DigestRecord) -> Result<usize, ModelCheckRefusal> {
+    fn initial_of(&self, key: &qsl_eval::simulation::StateKey) -> Result<usize, ModelCheckRefusal> {
         self.initials
             .iter()
-            .position(|known| known == digest)
+            .position(|known| known == key)
             .ok_or_else(|| fault("a-root-component-is-an-initial-state"))
     }
 
     /// The digest of the model state of product state `id`.
-    fn model_digest(&self, id: ProductStateId) -> Result<DigestRecord, ModelCheckRefusal> {
+    fn model_digest(
+        &self,
+        id: ProductStateId,
+    ) -> Result<qsl_eval::simulation::StateKey, ModelCheckRefusal> {
         let state = self
             .product
             .graph
@@ -895,7 +899,7 @@ impl<'a> Decision<'_, '_, 'a> {
         self.run
             .system
             .state_key(state)
-            .map(|(_, digest)| digest)
+            .map(|(bytes, _)| qsl_eval::simulation::StateKey::from_canonical_bytes(bytes))
             .map_err(ModelCheckRefusal::Encoding)
     }
 

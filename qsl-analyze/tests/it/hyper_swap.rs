@@ -582,7 +582,7 @@ fn an_undefined_letter_is_reported_for_the_copies_as_they_stepped() {
         .traces
         .iter()
         .map(|trace| match trace.steps.last() {
-            Some(qsl_replay::HyperStep::Model(step)) => step.post_state,
+            Some(qsl_replay::HyperStep::Model(step)) => step.post_state.clone(),
             other => panic!("a model step, not {other:?}"),
         })
         .collect();
@@ -625,7 +625,10 @@ fn an_undefined_contract_names_the_variable_of_the_concrete_tuple() {
     let Some(qsl_replay::HyperStep::Model(step)) = counterexample.traces[1].steps.last() else {
         panic!("a model step");
     };
-    assert_eq!(undefined.state_keys, [step.post_state]);
+    assert_eq!(
+        undefined.state_keys.as_slice(),
+        std::slice::from_ref(&step.post_state)
+    );
 }
 
 /// Partial-order reduction settles `NonInterference`

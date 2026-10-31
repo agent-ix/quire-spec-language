@@ -20,8 +20,8 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_model_trace, settle_model_check, CertificateRequest, CounterexampleKind, DigestDomain,
-    DigestRecord, DisagreementCause, EnvelopeSource, Execution, IncompleteCause, InconclusiveCause,
+    replay_model_trace, settle_model_check, CertificateRequest, CounterexampleKind,
+    DisagreementCause, EnvelopeSource, Execution, IncompleteCause, InconclusiveCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
     ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
     QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
@@ -374,15 +374,21 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     let payload = counterexample(&case);
 
     let mut altered = payload.clone();
-    let recorded = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
-    altered.prefix[1].post_state = recorded;
+    let request = case.request();
+    let system = qsl_eval::simulation::model::ModelSystem::new(request.subject.simulation)
+        .expect("the model admits");
+    let (bytes, _) = system
+        .state_key(&system.initial_states()[0])
+        .expect("encodes");
+    let recorded = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
+    altered.prefix[1].post_state = recorded.clone();
     let (cause, code, tag) = refusal(replay(&case, altered));
     assert_eq!(
         cause,
         ModelTraceRefusal::PostState {
             step: 1,
-            recorded,
-            reached: vec![payload.prefix[1].post_state]
+            recorded: recorded.clone(),
+            reached: vec![payload.prefix[1].post_state.clone()]
         }
     );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
@@ -828,7 +834,7 @@ fn a_deadlock_violation_settles_refuted_through_its_replay() {
 /// FR-127-AC-10, and FR-127-AC-3's replay rows over a deadlock: a replay
 /// that disagrees by `Verdicts` settles `inconclusive`, cause
 /// `ReplayParity`, spelled `replay-parity`; a replay refused for a
-/// post-state digest settles `inconclusive`, `ReplayRefused` with the
+/// post-state key settles `inconclusive`, `ReplayRefused` with the
 /// refusal's code; a replay reproduced against another package than the
 /// run's settles `ReplayRefused(stale_dependency)`; a replay that faults
 /// settles `failed`, category failed.
@@ -863,7 +869,13 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     assert_eq!(parity.label, ResultLabel::Inconclusive);
 
     let mut altered = counterexample(&case);
-    altered.prefix[0].post_state = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
+    let request = case.request();
+    let system = qsl_eval::simulation::model::ModelSystem::new(request.subject.simulation)
+        .expect("the model admits");
+    let (bytes, _) = system
+        .state_key(&system.initial_states()[0])
+        .expect("encodes");
+    altered.prefix[0].post_state = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
     let refused = settle_model_check(
         &violated(altered),
         &ModelCheckLimits::default(),

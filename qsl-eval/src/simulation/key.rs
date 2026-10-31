@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-101: the simulator state key, its typed canonical form and its digest.
+//! FR-101: the simulator state key, its typed canonical form and bytes.
 //!
 //! A `TransitionSystem` hands the engine a `quire_canonical::Encode` view of
 //! a state (or a transition identity); this module is the one place that turns that view
-//! into RFC 8785 JCS bytes and, for a state, its `quire.simulation.state-key/
-//! v1` digest. It never interprets the value beyond that: what the view
+//! into RFC 8785 JCS bytes. It never interprets the value beyond that: what the view
 //! contains is the `TransitionSystem` implementer's concern (QSpec FR-181's
 //! typed canonical form, in a real caller).
 
 use qsl_foundation::diagnostic::LimitExceeded;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::{ByteDigest, IdentityLimits, Setting};
+use qsl_foundation::{IdentityLimits, Setting};
 use quire_canonical::{Encode, Limits};
 
 /// The limit the sampler's own draw preimage encodes under. A draw preimage
@@ -20,15 +18,36 @@ const DRAW_LIMITS: Limits = Limits::new(u64::MAX);
 
 /// The full canonical state-key bytes a `TransitionSystem` implies for one
 /// state, through `quire-canonical`. Two states are the same state to the
-/// engine exactly when their full key bytes are equal (FR-101); the digest
-/// alone is never compared for coalescing.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub(crate) struct StateKey(Vec<u8>);
+/// engine exactly when their full key bytes are equal (FR-101).
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StateKey(Vec<u8>);
 
 impl StateKey {
     /// The wrapped canonical key bytes.
-    pub(crate) fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+
+    /// Construct a key from bytes already encoded as RFC 8785 JCS.
+    pub fn from_canonical_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    /// Lowercase hexadecimal form of the complete canonical key bytes.
+    pub fn hex(&self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut out = String::with_capacity(self.0.len().saturating_mul(2));
+        for byte in &self.0 {
+            out.push(char::from(HEX[usize::from(byte >> 4)]));
+            out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        out
+    }
+}
+
+impl From<Vec<u8>> for StateKey {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::from_canonical_bytes(bytes)
     }
 }
 
@@ -78,12 +97,7 @@ impl EncodingRefusal {
     }
 }
 
-/// `value`'s canonical key bytes and its `quire.simulation.state-key/v1`
-/// digest, from one `TransitionSystem::key` result. The digest hashes the
-/// already-produced canonical bytes directly (`ByteDigest::of`), rather
-/// than re-encoding `value` a second time, exactly as
-/// `qsl_semantics::model::key::sha256_and_len` hashes its own preimage
-/// bytes once.
+/// `value`'s RFC 8785 canonical state-key bytes and full key identity.
 ///
 /// # Errors
 ///
@@ -91,14 +105,20 @@ impl EncodingRefusal {
 pub(crate) fn state_key(
     value: &impl Encode,
     identity: IdentityLimits,
-) -> Result<(StateKey, DigestRecord), EncodingRefusal> {
+) -> Result<(Vec<u8>, StateKey), EncodingRefusal> {
     let bytes = quire_canonical::to_vec(value, Limits::new(identity.input_bytes))
         .map_err(|error| EncodingRefusal::of(&error, identity))?;
-    let digest = ByteDigest::of(&bytes);
-    Ok((
-        StateKey(bytes),
-        DigestRecord::mint(DigestDomain::SimulationStateKeyV1, digest.as_bytes()),
-    ))
+    Ok((bytes.clone(), StateKey::from_canonical_bytes(bytes)))
+}
+
+/// `value`'s full RFC 8785 canonical state-key bytes.
+pub(crate) fn canonical_state_key(
+    value: &impl Encode,
+    identity: IdentityLimits,
+) -> Result<StateKey, EncodingRefusal> {
+    quire_canonical::to_vec(value, Limits::new(identity.input_bytes))
+        .map(StateKey)
+        .map_err(|error| EncodingRefusal::of(&error, identity))
 }
 
 /// `value`'s RFC 8785 canonical bytes, used to order transition identities
@@ -172,14 +192,12 @@ mod tests {
     #[test]
     fn a_state_key_of_a_100_000_long_recursive_list_needs_no_deep_stack() {
         let mint = || {
-            let (key, digest) =
-                state_key(&NestedList { depth: 100_000 }, IdentityLimits::default()).unwrap();
-            (key, digest)
+            canonical_state_key(&NestedList { depth: 100_000 }, IdentityLimits::default()).unwrap()
         };
         let small = on_stack(512 * 1024, mint);
         let large = on_stack(8 * 1024 * 1024, mint);
         assert_eq!(small, large);
-        assert!(small.0.as_bytes().starts_with(b"[0,["));
+        assert!(small.as_bytes().starts_with(b"[0,["));
     }
 
     /// FR-255-AC-1 for `identity.input_bytes`: a state key past the caller's

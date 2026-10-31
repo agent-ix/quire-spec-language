@@ -32,9 +32,8 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{
-    ExpansionLimit, ExpansionStop, NotSimulated, Permutation, SymmetryGroup,
+    ExpansionLimit, ExpansionStop, NotSimulated, Permutation, StateKey, SymmetryGroup,
 };
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::ReplayRefusal;
 use qsl_replay::{
@@ -135,8 +134,8 @@ pub struct PredicateLabel {
 /// One explored node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GraphNode {
-    /// The node's `quire.simulation.state-key/v1` digest.
-    pub key: DigestRecord,
+    /// The node's full canonical state key.
+    pub key: StateKey,
     /// Its breadth-first depth.
     pub depth: u64,
     /// Every predicate's reading, by item, instance and predicate; empty for

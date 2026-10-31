@@ -516,7 +516,6 @@ fn reject(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateChec
 mod tests {
     use ix_trace_rs::trace;
     use qsl_eval::automaton::AutomatonStateKey;
-    use qsl_foundation::digest::{DigestDomain, DigestRecord};
     use quire_exact::CancelCause;
 
     use super::*;
@@ -528,7 +527,7 @@ mod tests {
         let mut digest = [0; 32];
         digest[..2].copy_from_slice(&model);
         ProductStateRef {
-            model_state: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, digest),
+            model_state: qsl_eval::simulation::StateKey::from_canonical_bytes(digest.to_vec()),
             automaton_state: AutomatonStateKey::imported(automaton.as_bytes().to_vec()),
         }
     }

@@ -20,8 +20,8 @@ use qsl_analyze::model_check::{
 };
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{StopReason, TransitionSystem};
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     CounterexampleKind, GraphWitness, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
     ModelCheckOutcome, ModelPath, ModelStep, OpenCause, ReachedLimit, RunEnd, StateGraphOutcome,
@@ -48,18 +48,19 @@ pub(crate) fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
 }
 
 /// Every reachable state of `world` over universe `keys`, by breadth-first
-/// enumeration of its `ModelSystem`, with its state-key digest, and the
+/// enumeration of its `ModelSystem`, with its state key, and the
 /// number of edges.
 pub(crate) fn reachable(
     world: &World,
     keys: &[&str],
-) -> (BTreeMap<DigestRecord, ModelSimState>, usize) {
+) -> (BTreeMap<StateKey, ModelSimState>, usize) {
     let system = system(world, keys);
     let mut seen = BTreeMap::new();
     let mut edges = 0;
     let mut queue: VecDeque<ModelSimState> = system.initial().into();
     while let Some(state) = queue.pop_front() {
-        let (_, digest) = system.state_key(&state).expect("encodes");
+        let (bytes, _) = system.state_key(&state).expect("encodes");
+        let digest = StateKey::from_canonical_bytes(bytes);
         if seen.contains_key(&digest) {
             continue;
         }
@@ -664,7 +665,8 @@ fn positions(world: &World, keys: &[&str], path: &ModelPath) -> Vec<ModelSimStat
             .into_iter()
             .find(|(transition, state)| {
                 *transition == step.transition
-                    && system.state_key(state).expect("encodes").1 == step.post_state
+                    && system.state_key(state).expect("encodes").0.as_slice()
+                        == step.post_state.as_bytes()
             })
             .map(|(_, state)| state)
             .expect("the step is a successor");
@@ -715,7 +717,7 @@ fn edge_names(run: &StateGraphRun, node: NodeIndex) -> Vec<String> {
         .map(|edge: &GraphEdge| {
             operation(&ModelStep {
                 transition: edge.transition.clone(),
-                post_state: run.graph.nodes[edge.target.index()].key,
+                post_state: run.graph.nodes[edge.target.index()].key.clone(),
                 delay: None,
             })
         })
@@ -744,22 +746,18 @@ fn versions(world: &World, path: &ModelPath) -> Vec<(i64, i64)> {
 }
 
 /// The digest of the one reachable state where `select` holds.
-fn digest_where(
-    world: &World,
-    keys: &[&str],
-    select: impl Fn(&ModelSimState) -> bool,
-) -> DigestRecord {
+fn digest_where(world: &World, keys: &[&str], select: impl Fn(&ModelSimState) -> bool) -> StateKey {
     let (states, _) = reachable(world, keys);
     let found: Vec<_> = states
         .iter()
         .filter(|(_, state)| select(state))
-        .map(|(digest, _)| *digest)
+        .map(|(digest, _)| digest.clone())
         .collect();
     assert_eq!(found.len(), 1, "one state selected");
-    found[0]
+    found[0].clone()
 }
 
-fn node_of(run: &StateGraphRun, digest: DigestRecord) -> NodeIndex {
+fn node_of(run: &StateGraphRun, digest: StateKey) -> NodeIndex {
     let index = run
         .graph
         .nodes
@@ -775,12 +773,12 @@ fn node_of(run: &StateGraphRun, digest: DigestRecord) -> NodeIndex {
 /// Every node handle the graph names: its initial states, its edges'
 /// endpoints and its open nodes.
 fn nodes(run: &StateGraphRun) -> Vec<NodeIndex> {
-    let mut all: BTreeSet<NodeIndex> = run.graph.initial().iter().copied().collect();
+    let mut all: BTreeSet<NodeIndex> = run.graph.initial().iter().cloned().collect();
     for edge in &run.graph.edges {
         all.insert(edge.source);
         all.insert(edge.target);
     }
-    all.extend(run.graph.open.keys().copied());
+    all.extend(run.graph.open.keys().cloned());
     all.into_iter().collect()
 }
 
@@ -837,7 +835,7 @@ fn expected_steps(
             .find(|(transition, _)| {
                 let step = ModelStep {
                     transition: transition.clone(),
-                    post_state: system.state_key(&current).expect("encodes").1,
+                    post_state: system.state_key(&current).expect("encodes").0.into(),
                     delay: None,
                 };
                 operation(&step) == *name && receiver(&step) == *key
@@ -845,7 +843,7 @@ fn expected_steps(
             .expect("the operation is enabled");
         steps.push(ModelStep {
             transition,
-            post_state: system.state_key(&next).expect("encodes").1,
+            post_state: system.state_key(&next).expect("encodes").0.into(),
             delay: None,
         });
         current = next;
@@ -876,8 +874,13 @@ fn each_worked_example_explores_once_to_its_graph() {
     assert_eq!(result.graph.stats.edges, 18);
     assert!(result.graph.open.is_empty(), "{:?}", result.graph.open);
     assert_eq!(result.graph.end, RunEnd::Completed);
-    let keys: BTreeSet<_> = result.graph.nodes.iter().map(|node| node.key).collect();
-    assert_eq!(keys, states.keys().copied().collect());
+    let keys: BTreeSet<_> = result
+        .graph
+        .nodes
+        .iter()
+        .map(|node| node.key.clone())
+        .collect();
+    assert_eq!(keys, states.keys().cloned().collect());
 
     let game = game_world(false, false, CAN_STILL_WIN);
     let result = run(game.request(&["g"], vec![game.item("CanStillWin")], no_samples()));
@@ -917,11 +920,11 @@ fn a_horizon_and_a_state_limit_leave_their_nodes_open() {
     request.max_depth = Some(1);
     let result = run(request);
     assert_eq!(result.graph.end, RunEnd::Completed);
-    let open: BTreeMap<DigestRecord, OpenCause> = result
+    let open: BTreeMap<StateKey, OpenCause> = result
         .graph
         .open
         .iter()
-        .map(|(node, cause)| (result.graph.nodes[node.index()].key, *cause))
+        .map(|(node, cause)| (result.graph.nodes[node.index()].key.clone(), *cause))
         .collect();
     assert_eq!(
         open,

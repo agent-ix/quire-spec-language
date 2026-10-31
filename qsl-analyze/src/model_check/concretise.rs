@@ -22,7 +22,6 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
     EncodingRefusal, ExpansionStop, Permutation, SubjectSystem, SymmetryGroup, TransitionSystem,
 };
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{CounterexampleKind, ModelStep};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -122,7 +121,7 @@ pub(super) struct Lift<'s, S: SubjectSystem> {
     permuter: Option<PermuterOf<'s, S>>,
     sigma: Permutation,
     concrete: S::State,
-    digest: DigestRecord,
+    key: qsl_eval::simulation::StateKey,
     steps: Vec<ModelStep<S::TransitionId>>,
     /// The concrete steps still allowed (reduced paths only).
     budget: usize,
@@ -161,7 +160,8 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
             if system.state_key(&canonical)?.0 != wanted {
                 continue;
             }
-            let digest = system.state_key(&initial)?.1;
+            let (bytes, _) = system.state_key(&initial)?;
+            let key = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
             return Ok((
                 index,
                 Self {
@@ -169,7 +169,7 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
                     permuter,
                     sigma: permutation.inverse(),
                     concrete: initial,
-                    digest,
+                    key,
                     steps: Vec::new(),
                     budget,
                 },
@@ -193,14 +193,15 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
         permutation: &Permutation,
     ) -> Result<(), LiftStop> {
         let Some(permuter) = self.permuter else {
-            self.digest = self.system.state_key(target)?.1;
+            let (bytes, _) = self.system.state_key(target)?;
+            self.key = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
             self.concrete = target.clone();
             self.steps.push(ModelStep {
                 transition: self
                     .system
                     .reported(transition.clone(), target)
                     .map_err(LiftStop::Expansion)?,
-                post_state: self.digest,
+                post_state: self.key.clone(),
                 delay: None,
             });
             return Ok(());
@@ -216,14 +217,15 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
         let next = permuter
             .permute(target, &sigma)
             .map_err(LiftStop::Expansion)?;
-        let digest = self.system.state_key(&next)?.1;
+        let (bytes, _) = self.system.state_key(&next)?;
+        let key = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
         let expansion = self
             .system
             .successors(&self.concrete)
             .map_err(LiftStop::Expansion)?;
         let mut matched = false;
         for (candidate, state) in &expansion.successors {
-            if *candidate == step && self.system.state_key(state)?.1 == digest {
+            if *candidate == step && self.system.state_key(state)?.0 == key.as_bytes() {
                 matched = true;
                 break;
             }
@@ -233,12 +235,12 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
         }
         self.steps.push(ModelStep {
             transition: step,
-            post_state: digest,
+            post_state: key.clone(),
             delay: None,
         });
         self.sigma = sigma;
         self.concrete = next;
-        self.digest = digest;
+        self.key = key;
         Ok(())
     }
 
@@ -248,8 +250,8 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
     }
 
     /// The concrete state's digest.
-    pub(super) fn digest(&self) -> DigestRecord {
-        self.digest
+    pub(super) fn key(&self) -> qsl_eval::simulation::StateKey {
+        self.key.clone()
     }
 
     /// The number of concrete steps so far.
@@ -288,7 +290,7 @@ impl<'s, S: SubjectSystem> Lift<'s, S> {
         let Some(permuter) = self.permuter else {
             return Ok(());
         };
-        evaluation.site.state_key = self.digest;
+        evaluation.site.state_key = self.key.clone();
         if let Some(guard) = &evaluation.site.transition {
             let guard = permuter
                 .permute_model_transition(guard, &self.sigma)

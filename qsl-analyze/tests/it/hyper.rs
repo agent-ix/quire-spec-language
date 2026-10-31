@@ -102,7 +102,8 @@ pub(crate) fn positions(
             .into_iter()
             .find(|(transition, next)| {
                 *transition == step.transition
-                    && system.state_key(next).expect("a key").1 == step.post_state
+                    && system.state_key(next).expect("a key").0.as_slice()
+                        == step.post_state.as_bytes()
             })
             .unwrap_or_else(|| panic!("{step:?} is not a step of the vault"))
             .1;

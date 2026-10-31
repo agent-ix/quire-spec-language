@@ -316,7 +316,7 @@ mod tests {
     /// A non-unique post-state of a `tick` with no argument.
     fn not_markov() -> qsl_eval::simulation::model::NotMarkov {
         qsl_eval::simulation::model::NotMarkov {
-            state: qsl_foundation::digest::DigestRecord::raw_artifact(b"healthy"),
+            state: qsl_eval::simulation::StateKey::from_canonical_bytes(b"\"healthy\"".to_vec()),
             transition: qsl_eval::simulation::model::ScheduledIdentity {
                 operation: "tick".to_owned(),
                 receiver: quire_exact::ObjectReference::new(

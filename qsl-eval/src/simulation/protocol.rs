@@ -44,7 +44,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckedActivation, CheckedGraph, CheckedProtocol, CheckedTerminalMember,
@@ -1630,9 +1629,18 @@ impl<'a, M: MemoryModel> TransitionSystem for ProtocolSystem<'a, M> {
 }
 
 impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
-    fn state_key(&self, state: &Self::State) -> Result<(Vec<u8>, DigestRecord), EncodingRefusal> {
-        let (key, digest) = key::state_key(&self.key(state), identity_limits())?;
-        Ok((key.as_bytes().to_vec(), digest))
+    fn state_key(
+        &self,
+        state: &Self::State,
+    ) -> Result<(Vec<u8>, crate::simulation::StateKey), EncodingRefusal> {
+        key::state_key(&self.key(state), identity_limits())
+    }
+
+    fn canonical_state_key(
+        &self,
+        state: &Self::State,
+    ) -> Result<crate::simulation::StateKey, EncodingRefusal> {
+        key::canonical_state_key(&self.key(state), identity_limits())
     }
 
     fn transition_key(&self, transition: &ProtocolTransition) -> Result<Vec<u8>, EncodingRefusal> {

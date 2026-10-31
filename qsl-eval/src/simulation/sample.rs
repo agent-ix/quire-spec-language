@@ -130,8 +130,8 @@ pub(crate) fn sample<S: TransitionSystem>(
     // `start < m == initial.len()`, so `swap_remove` never panics.
     let chosen = initial.swap_remove(start);
     let mut current = chosen.state;
-    let mut current_digest = chosen.digest;
-    let initial_digest = chosen.digest;
+    let mut current_key = chosen.key.clone();
+    let initial_key = chosen.key;
 
     let mut generator = PinnedSampler::new(seed, trace_index);
     let mut steps = Vec::new();
@@ -149,7 +149,7 @@ pub(crate) fn sample<S: TransitionSystem>(
         };
         if !state_findings.is_empty() {
             findings.push(StateFindings {
-                state: current_digest,
+                state: current_key.clone(),
                 depth: steps.len(),
                 findings: state_findings,
             });
@@ -166,15 +166,15 @@ pub(crate) fn sample<S: TransitionSystem>(
         let index = generator.next_index(n);
         let chosen = successors.swap_remove(index);
         current = chosen.state;
-        current_digest = chosen.digest;
+        current_key = chosen.key.clone();
         steps.push(Step {
             transition: chosen.transition,
-            key: chosen.digest,
+            key: chosen.key,
         });
     };
 
     Ok(Some(Trace {
-        initial: initial_digest,
+        initial: initial_key,
         steps,
         findings,
         provenance: Some(SampleProvenance {

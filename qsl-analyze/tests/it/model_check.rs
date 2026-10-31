@@ -136,7 +136,7 @@ fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
 
 /// The value of `object` at each position of `counterexample`, read by
 /// re-executing its steps: each step's post-state is the successor of its
-/// transition identity whose state-key digest it records.
+/// transition identity whose state key it records.
 fn positions(
     world: &World,
     keys: &[&str],
@@ -152,7 +152,8 @@ fn positions(
             .into_iter()
             .find(|(transition, state)| {
                 *transition == step.transition
-                    && system.state_key(state).expect("encodes").1 == step.post_state
+                    && system.state_key(state).expect("encodes").0.as_slice()
+                        == step.post_state.as_bytes()
             })
             .map(|(_, state)| state)
             .expect("the recorded step is a successor");

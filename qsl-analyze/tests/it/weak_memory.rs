@@ -2408,7 +2408,7 @@ fn a_tso_counterexample_replays_only_under_tso() {
         .prefix
         .iter()
         .all(|step| step.transition.memory_component().is_none()));
-    // An `sc` step that carries a component, its post-state digest right,
+    // An `sc` step that carries a component, its post-state key right,
     // is refused on the component alone.
     let mut forged_sc = under_sc.as_ref().clone();
     forged_sc.prefix[1].transition =

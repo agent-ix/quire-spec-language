@@ -145,7 +145,7 @@ fn follow(
         .into_iter()
         .find(|candidate| {
             candidate.transition == step.transition
-                && system.state_key(&candidate.post).expect("key").1 == step.post_digest
+                && system.canonical_state_key(&candidate.post).expect("key") == step.post_state
         })
         .expect("the sampled step is one of FR-187's");
     assert_eq!(matched.probability, step.probability);
@@ -180,7 +180,10 @@ fn service_samples_reproduce_and_follow_the_step_structure() {
 
     let system = world.system();
     let mut state = initial(&system);
-    assert_eq!(behaviour.start, system.state_key(&state).expect("key").1);
+    assert_eq!(
+        behaviour.start,
+        system.canonical_state_key(&state).expect("key")
+    );
     let mut phases = Vec::new();
     for step in &behaviour.steps {
         let pre_phase = integer_of(&field(&state, "phase"));

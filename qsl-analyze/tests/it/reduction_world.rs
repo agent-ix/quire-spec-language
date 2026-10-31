@@ -404,7 +404,7 @@ impl World {
     /// The model state at each position of `counterexample`, read by
     /// re-executing its steps from its initial state: each step's
     /// post-state is the successor of its transition identity whose
-    /// state-key digest it records.
+    /// state key it records.
     pub(crate) fn positions(&self, counterexample: &TemporalCounterexample) -> Vec<ModelSimState> {
         let system = self.system();
         let mut current = system.initial()[counterexample.initial_state].clone();
@@ -416,7 +416,8 @@ impl World {
                 .into_iter()
                 .find(|(transition, state)| {
                     *transition == step.transition
-                        && system.state_key(state).expect("encodes").1 == step.post_state
+                        && system.state_key(state).expect("encodes").0.as_slice()
+                            == step.post_state.as_bytes()
                 })
                 .map(|(_, state)| state)
                 .expect("the recorded step is a subject step");

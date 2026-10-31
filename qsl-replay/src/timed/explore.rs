@@ -188,8 +188,8 @@ fn explore_ticks(
 ) -> Result<Closure, ExploreStop> {
     let identity = |state: &TimedState| {
         timed
-            .state_digest(state)
-            .map(|digest| *digest.as_bytes())
+            .state_key(state)
+            .map(|key| key.as_bytes().to_vec())
             .map_err(|_| ExploreStop::StateKey)
     };
     let mut graph = Graph::new();

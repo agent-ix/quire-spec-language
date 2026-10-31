@@ -36,7 +36,6 @@ mod walk;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::IdentityLimits;
 use qsl_package::CheckedPackage;
@@ -378,9 +377,9 @@ pub enum ModelFinding {
     ContractUndetermined {
         /// The application the clause belongs to.
         transition: ModelTransition,
-        /// The candidate's state-key digest for a postcondition; `None` for a
+        /// The candidate's canonical state key for a postcondition; `None` for a
         /// precondition.
-        candidate: Option<DigestRecord>,
+        candidate: Option<crate::simulation::StateKey>,
         /// The clause's name.
         clause: String,
         /// Why it was not decided.
@@ -391,7 +390,7 @@ pub enum ModelFinding {
 /// A sampled trace and the effect of each of its steps (FR-120 "Outputs").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelTrace {
-    /// FR-181's transition identities, state-key digests and findings.
+    /// FR-181's transition identities, canonical state keys and findings.
     pub trace: Trace<ModelTransition, ModelFinding>,
     /// One effect per step, derived by replaying the trace.
     pub effects: Vec<StepEffect>,
@@ -898,8 +897,8 @@ impl<'a> ModelSystem<'a> {
         Ok(system)
     }
 
-    /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
-    /// full key bytes, under the identity limits exploration encodes with.
+    /// The RFC 8785 key bytes and `quire.simulation.state-key/v1` digest of
+    /// `state`, under the identity limits exploration encodes with.
     ///
     /// # Errors
     ///
@@ -908,12 +907,22 @@ impl<'a> ModelSystem<'a> {
     pub fn state_key(
         &self,
         state: &ModelSimState,
-    ) -> Result<(Vec<u8>, DigestRecord), crate::simulation::EncodingRefusal> {
-        let (key, digest) = crate::simulation::key::state_key(
+    ) -> Result<(Vec<u8>, crate::simulation::StateKey), crate::simulation::EncodingRefusal> {
+        crate::simulation::key::state_key(
             &encode::model_key(&self.model, &state.state, self.typing()),
             identity_limits(),
-        )?;
-        Ok((key.as_bytes().to_vec(), digest))
+        )
+    }
+
+    /// The full canonical state key used by the FR-101 simulator.
+    pub(crate) fn canonical_state_key(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<crate::simulation::StateKey, crate::simulation::EncodingRefusal> {
+        crate::simulation::key::canonical_state_key(
+            &encode::model_key(&self.model, &state.state, self.typing()),
+            identity_limits(),
+        )
     }
 
     /// The evaluation meter limits each reading of the system starts from.
@@ -1580,7 +1589,8 @@ pub fn sample_model_walk(
 }
 
 /// The effect of each step of a trace that replayed: the state each step's
-/// transition and digest select carries the effect of the step that reached
+/// transition and canonical key select carries the effect of the step that
+/// reached
 /// it.
 #[allow(
     clippy::result_large_err,
@@ -1595,10 +1605,10 @@ fn effects_of(
     let mut current = sorted_initial(system, identity)
         .map_err(encoding)?
         .into_iter()
-        .find(|item| item.digest == trace.initial)
+        .find(|item| item.key == trace.initial)
         .map(|item| item.state)
         .ok_or(ModelSampleError::Replay(ReplayError::UnknownInitial {
-            expected: trace.initial,
+            expected: trace.initial.clone(),
         }))?;
     let mut effects = Vec::with_capacity(trace.steps.len());
     for (index, step) in trace.steps.iter().enumerate() {
@@ -1615,9 +1625,7 @@ fn effects_of(
         };
         let matched = successors
             .into_iter()
-            .find(|successor| {
-                successor.transition == step.transition && successor.digest == step.key
-            })
+            .find(|successor| successor.transition == step.transition && successor.key == step.key)
             .ok_or_else(missing)?;
         effects.push(matched.state.reached_by.clone().ok_or_else(missing)?);
         current = matched.state;
@@ -1633,15 +1641,15 @@ fn handler_anchor(operation: &str) -> SelectedAnchor {
     }
 }
 
-/// A synthesized state's document reference (FR-120 "Frame and observation
-/// seam"): authority `quire`, identity `quire.simulation.state/<digest>`,
-/// the state-key as its revision.
-fn state_document(digest: &DigestRecord) -> DocumentRef {
+/// A synthesized state's observation document reference. The state key is
+/// retained by the enclosing finding, so the source label is stable and
+/// carries no duplicate content identity.
+fn state_document() -> DocumentRef {
     DocumentRef {
         authority: "quire".to_owned(),
-        identity: format!("quire.simulation.state/{}", digest.hex()),
+        identity: "quire.simulation.state".to_owned(),
         revision_namespace: "quire.simulation.state-key".to_owned(),
-        revision: digest.hex(),
+        revision: "runtime".to_owned(),
     }
 }
 

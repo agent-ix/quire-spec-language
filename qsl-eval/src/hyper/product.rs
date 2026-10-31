@@ -34,7 +34,6 @@
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_canonical::{Encode, Sink, Writer};
@@ -403,7 +402,7 @@ pub enum HyperFinding {
         /// The joint step.
         step: HyperTransition,
         /// The digest of each component's post-state, in quantifier order.
-        posts: Vec<DigestRecord>,
+        posts: Vec<crate::simulation::StateKey>,
         /// The index of the conjunct that has no value.
         conjunct: usize,
         /// Why it has no value.
@@ -418,7 +417,7 @@ pub enum HyperFinding {
         /// The joint step, every component's.
         step: HyperTransition,
         /// The digest of each component's post-state, in quantifier order.
-        posts: Vec<DigestRecord>,
+        posts: Vec<crate::simulation::StateKey>,
         /// The index of the conjunct among the existential conjuncts.
         conjunct: usize,
         /// Why it has no value.

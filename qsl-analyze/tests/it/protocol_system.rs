@@ -1477,7 +1477,7 @@ fn sc_is_the_identity_of_the_memory_seam() {
 }
 
 /// FR-217-AC-2 (TC-662): the deadlock counterexample reproduces; changing
-/// its second step's post-state digest refuses `stale_dependency`/
+/// its second step's post-state key refuses `stale_dependency`/
 /// `content-mismatch` naming the step, the recorded digest and the digest
 /// the step reaches; replacing the second
 /// step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`.
@@ -1494,8 +1494,8 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
         "{replayed:?}"
     );
     let mut stale = counterexample.clone();
-    let recorded = stale.prefix[0].post_state;
-    stale.prefix[1].post_state = recorded;
+    let recorded = stale.prefix[0].post_state.clone();
+    stale.prefix[1].post_state = recorded.clone();
     let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay("Fill", stale) else {
         panic!("a stale digest refuses");
     };
@@ -1504,7 +1504,7 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
         ModelTraceRefusal::PostState {
             step: 1,
             recorded,
-            reached: vec![counterexample.prefix[1].post_state]
+            reached: vec![counterexample.prefix[1].post_state.clone()]
         }
     );
     assert_eq!(
@@ -1618,11 +1618,11 @@ fn a_protocol_replay_checks_each_send_record() {
 
     let mut missing = counterexample.clone();
     missing.prefix[1].transition = missing.prefix[1].transition.clone().carrying(None);
-    // The shape check runs before any step: with step 0's post-state digest
+    // The shape check runs before any step: with step 0's post-state key
     // also stale, a misplaced record on step 3 still refuses as a shape
     // defect, not as step 0's stale digest.
     let mut first = counterexample.clone();
-    first.prefix[0].post_state = first.prefix[1].post_state;
+    first.prefix[0].post_state = first.prefix[1].post_state.clone();
     first.prefix[3].transition = first.prefix[3].transition.clone().carrying(None);
     let mut extra = counterexample;
     extra.prefix[0].transition = extra.prefix[0]

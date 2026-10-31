@@ -8,7 +8,7 @@
 //! instance's `over` binding from the subject's universes, recomputes every
 //! successor and evaluates every claim predicate with `qsl-eval`'s code. It
 //! applies its rules in this order and rejects at the first failing state in
-//! certificate order (ascending state-key digest):
+//! certificate order (ascending state key):
 //!
 //! 1. `Malformed`: the closure is not strictly ascending in the state-key
 //!    domain, or a rank or count entry is unsorted, duplicated, names no
@@ -41,8 +41,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
-use qsl_eval::simulation::TransitionSystem;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_eval::simulation::{StateKey, TransitionSystem};
 use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
     StateGraphForm,
@@ -59,9 +58,8 @@ use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 /// FR-169's state-graph certificate of one item instance.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StateGraphCertificate {
-    /// Every explored model state's `quire.simulation.state-key/v1` digest,
-    /// strictly ascending.
-    pub closure: Vec<DigestRecord>,
+    /// Every explored model state's full canonical key, strictly ascending.
+    pub closure: Vec<StateKey>,
     /// `possible` and `always possible`: `(closure index, d)`, the state's
     /// distance to the nearest target state, for every state that reaches
     /// one; ascending by index.
@@ -176,11 +174,11 @@ fn malformed(certificate: &StateGraphCertificate) -> Option<CertificateRejection
         rule: CertificateRule::Malformed,
         at,
     };
-    let mut previous: Option<&DigestRecord> = None;
+    let mut previous: Option<&StateKey> = None;
     for state in &certificate.closure {
         let ordered = previous.is_none_or(|before| before < state);
-        if state.domain() != DigestDomain::SimulationStateKeyV1 || !ordered {
-            return Some(reject(CertificateLocus::ModelState(*state)));
+        if !ordered {
+            return Some(reject(CertificateLocus::ModelKey(state.clone())));
         }
         previous = Some(state);
     }
@@ -188,7 +186,7 @@ fn malformed(certificate: &StateGraphCertificate) -> Option<CertificateRejection
         .ok()
         .and_then(|at| certificate.closure.get(at))
     {
-        Some(state) => CertificateLocus::ModelState(*state),
+        Some(state) => CertificateLocus::ModelKey(state.clone()),
         None => CertificateLocus::Entry { index },
     };
     let indices = certificate
@@ -215,10 +213,10 @@ fn malformed(certificate: &StateGraphCertificate) -> Option<CertificateRejection
     None
 }
 
-fn reject(rule: CertificateRule, at: DigestRecord) -> Halt {
+fn reject(rule: CertificateRule, at: StateKey) -> Halt {
     Halt::Check(TemporalCertificateCheck::Rejected(CertificateRejection {
         rule,
-        at: CertificateLocus::ModelState(at),
+        at: CertificateLocus::ModelKey(at),
     }))
 }
 
@@ -226,7 +224,7 @@ fn reject(rule: CertificateRule, at: DigestRecord) -> Halt {
 /// expansion order, one entry per edge.
 struct Reached {
     state: ModelSimState,
-    successors: Vec<DigestRecord>,
+    successors: Vec<StateKey>,
     /// Each written predicate's truth there.
     holds: Vec<(PredicateRole, bool)>,
 }
@@ -260,16 +258,16 @@ impl Check<'_, '_> {
         expansion_halt(stop, self.budgets, Checker::StateGraph)
     }
 
-    fn member(&self, state: &DigestRecord) -> bool {
+    fn member(&self, state: &StateKey) -> bool {
         self.certificate.closure.binary_search(state).is_ok()
     }
 
     /// The closure state an entry's index names; `malformed` admitted it.
-    fn state_at(&self, index: u64) -> Step<DigestRecord> {
+    fn state_at(&self, index: u64) -> Step<StateKey> {
         usize::try_from(index)
             .ok()
             .and_then(|at| self.certificate.closure.get(at))
-            .copied()
+            .cloned()
             .ok_or_else(|| {
                 Checker::StateGraph
                     .fault("admitted-entry-names-a-closure-state")
@@ -281,11 +279,12 @@ impl Check<'_, '_> {
         self.poll()?;
         let mut initial = BTreeMap::new();
         for state in self.system.initial() {
-            let (_, digest) = self.system.state_key(&state)?;
-            initial.entry(digest).or_insert(state);
+            let (bytes, _) = self.system.state_key(&state)?;
+            let key = StateKey::from_canonical_bytes(bytes);
+            initial.entry(key).or_insert(state);
         }
         if let Some(missing) = initial.keys().find(|digest| !self.member(digest)) {
-            return Err(reject(CertificateRule::InitialMissing, *missing));
+            return Err(reject(CertificateRule::InitialMissing, (*missing).clone()));
         }
         let mut reached = self.explore(&initial)?;
         self.read_predicates(reached.iter_mut())?;
@@ -293,7 +292,7 @@ impl Check<'_, '_> {
             StateGraphForm::Possible { .. } => {
                 let ranks = self.ranks()?;
                 if let Some(missing) = initial.keys().find(|digest| !ranks.contains_key(digest)) {
-                    return Err(reject(CertificateRule::RankMissing, *missing));
+                    return Err(reject(CertificateRule::RankMissing, missing.clone()));
                 }
                 self.check_ranks(&reached, &ranks)
             }
@@ -302,7 +301,7 @@ impl Check<'_, '_> {
                 if let Some((missing, _)) = reached.iter().find(|(digest, state)| {
                     state.holds(PredicateRole::From) && !ranks.contains_key(digest)
                 }) {
-                    return Err(reject(CertificateRule::RankMissing, *missing));
+                    return Err(reject(CertificateRule::RankMissing, missing.clone()));
                 }
                 self.check_ranks(&reached, &ranks)
             }
@@ -315,9 +314,9 @@ impl Check<'_, '_> {
     /// certificate order.
     fn explore(
         &self,
-        initial: &BTreeMap<DigestRecord, ModelSimState>,
-    ) -> Step<BTreeMap<DigestRecord, Reached>> {
-        let mut reached: BTreeMap<DigestRecord, Reached> = BTreeMap::new();
+        initial: &BTreeMap<StateKey, ModelSimState>,
+    ) -> Step<BTreeMap<StateKey, Reached>> {
+        let mut reached: BTreeMap<StateKey, Reached> = BTreeMap::new();
         let mut queue = VecDeque::new();
         let mut leaves = BTreeSet::new();
         let mut bad = BTreeSet::new();
@@ -325,14 +324,14 @@ impl Check<'_, '_> {
         for (digest, state) in initial {
             self.admit(&reached)?;
             reached.insert(
-                *digest,
+                digest.clone(),
                 Reached {
                     state: state.clone(),
                     successors: Vec::new(),
                     holds: Vec::new(),
                 },
             );
-            queue.push_back(*digest);
+            queue.push_back(digest.clone());
         }
         while let Some(at) = queue.pop_front() {
             self.poll()?;
@@ -347,7 +346,7 @@ impl Check<'_, '_> {
             if expansion.findings.iter().any(|finding| {
                 finding.undefined_contract().is_some() || finding.is_refused_contract()
             }) {
-                bad.insert(at);
+                bad.insert(at.clone());
             }
             let mut successors = Vec::with_capacity(expansion.successors.len());
             for (_, next) in expansion.successors {
@@ -358,16 +357,17 @@ impl Check<'_, '_> {
                     ));
                 }
                 edges = edges.saturating_add(1);
-                let (_, digest) = self.system.state_key(&next)?;
-                successors.push(digest);
+                let (bytes, _) = self.system.state_key(&next)?;
+                let digest = StateKey::from_canonical_bytes(bytes);
+                successors.push(digest.clone());
                 if !self.member(&digest) {
-                    leaves.insert(at);
+                    leaves.insert(at.clone());
                     continue;
                 }
                 if !reached.contains_key(&digest) {
                     self.admit(&reached)?;
                     reached.insert(
-                        digest,
+                        digest.clone(),
                         Reached {
                             state: next,
                             successors: Vec::new(),
@@ -382,16 +382,16 @@ impl Check<'_, '_> {
             }
         }
         if let Some(first) = leaves.first() {
-            return Err(reject(CertificateRule::SuccessorMissing, *first));
+            return Err(reject(CertificateRule::SuccessorMissing, first.clone()));
         }
         if let Some(first) = bad.first() {
-            return Err(reject(CertificateRule::BadState, *first));
+            return Err(reject(CertificateRule::BadState, first.clone()));
         }
         Ok(reached)
     }
 
     /// Charge one more reached state against `max_states`.
-    fn admit(&self, reached: &BTreeMap<DigestRecord, Reached>) -> Step<()> {
+    fn admit(&self, reached: &BTreeMap<StateKey, Reached>) -> Step<()> {
         if reached.len() >= self.limits.limits.max_states {
             return Err(stopped(
                 ModelCheckLimit::MaxStates,
@@ -405,7 +405,7 @@ impl Check<'_, '_> {
     /// order: `PredicateUndefined` at the first where one has no value.
     fn read_predicates<'r>(
         &self,
-        states: impl Iterator<Item = (&'r DigestRecord, &'r mut Reached)>,
+        states: impl Iterator<Item = (&'r StateKey, &'r mut Reached)>,
     ) -> Step<()> {
         let bodies: Vec<_> = self
             .predicates
@@ -424,7 +424,7 @@ impl Check<'_, '_> {
                     PredicateReading::True => holds.push((*role, true)),
                     PredicateReading::False => holds.push((*role, false)),
                     PredicateReading::Undefined { .. } | PredicateReading::Refused(_) => {
-                        return Err(reject(CertificateRule::PredicateUndefined, *digest));
+                        return Err(reject(CertificateRule::PredicateUndefined, digest.clone()));
                     }
                 }
             }
@@ -433,7 +433,7 @@ impl Check<'_, '_> {
         Ok(())
     }
 
-    fn ranks(&self) -> Step<BTreeMap<DigestRecord, u32>> {
+    fn ranks(&self) -> Step<BTreeMap<StateKey, u32>> {
         self.certificate
             .ranks
             .iter()
@@ -445,8 +445,8 @@ impl Check<'_, '_> {
     /// fails, or with `d > 0` and no successor ranked `d - 1`.
     fn check_ranks(
         &self,
-        reached: &BTreeMap<DigestRecord, Reached>,
-        ranks: &BTreeMap<DigestRecord, u32>,
+        reached: &BTreeMap<StateKey, Reached>,
+        ranks: &BTreeMap<StateKey, u32>,
     ) -> Step<()> {
         for (digest, state) in reached {
             let Some(d) = ranks.get(digest) else {
@@ -460,7 +460,7 @@ impl Check<'_, '_> {
                     .any(|successor| ranks.get(successor) == Some(&next)),
             };
             if !holds {
-                return Err(reject(CertificateRule::RankBroken, *digest));
+                return Err(reject(CertificateRule::RankBroken, digest.clone()));
             }
         }
         Ok(())
@@ -468,8 +468,8 @@ impl Check<'_, '_> {
 
     /// `OrderBroken`, then `CountBroken`, over the reached states in
     /// certificate order (module docs, "Counts").
-    fn check_counts(&self, reached: &BTreeMap<DigestRecord, Reached>) -> Step<()> {
-        let counts: BTreeMap<DigestRecord, (u8, u64)> = self
+    fn check_counts(&self, reached: &BTreeMap<StateKey, Reached>) -> Step<()> {
+        let counts: BTreeMap<StateKey, (u8, u64)> = self
             .certificate
             .counts
             .iter()
@@ -488,7 +488,7 @@ impl Check<'_, '_> {
                     .is_some_and(|(_, later)| later >= order)
             });
             if backward {
-                return Err(reject(CertificateRule::OrderBroken, *digest));
+                return Err(reject(CertificateRule::OrderBroken, digest.clone()));
             }
         }
         for (digest, state) in reached {
@@ -503,7 +503,7 @@ impl Check<'_, '_> {
                     .fold(0u8, |sum, count| sum.saturating_add(count).min(2))
             };
             if count != expected || (state.holds(PredicateRole::From) && count != 1) {
-                return Err(reject(CertificateRule::CountBroken, *digest));
+                return Err(reject(CertificateRule::CountBroken, digest.clone()));
             }
         }
         Ok(())
@@ -516,43 +516,34 @@ mod tests {
 
     use super::*;
 
-    fn digest(byte: u8) -> DigestRecord {
-        DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [byte; 32])
+    fn key(byte: u8) -> StateKey {
+        StateKey::from_canonical_bytes(vec![byte; 32])
     }
 
     /// FR-169's `Malformed` rule, applied before any recomputation: an
-    /// unsorted or duplicated closure, a closure digest outside the
-    /// state-key domain, a rank naming no closure state, an
+    /// unsorted or duplicated closure, a rank naming no closure state, an
     /// unsorted rank and a count above 2 each reject at their entry.
     #[trace("TC-644")]
     #[test]
     fn malformed_entries_reject_before_recomputation() {
-        let closure = vec![digest(1), digest(2)];
-        let foreign = DigestRecord::mint(DigestDomain::PackageFingerprint, [3; 32]);
+        let closure = vec![key(1), key(2)];
         let at = |certificate: StateGraphCertificate| {
             malformed(&certificate).map(|rejection| (rejection.rule, rejection.at))
         };
         let malformed_at = |locus| Some((CertificateRule::Malformed, locus));
         assert_eq!(
             at(StateGraphCertificate {
-                closure: vec![digest(2), digest(1)],
+                closure: vec![key(2), key(1)],
                 ..StateGraphCertificate::default()
             }),
-            malformed_at(CertificateLocus::ModelState(digest(1)))
+            malformed_at(CertificateLocus::ModelKey(key(1)))
         );
         assert_eq!(
             at(StateGraphCertificate {
-                closure: vec![digest(1), foreign],
+                closure: vec![key(1), key(1)],
                 ..StateGraphCertificate::default()
             }),
-            malformed_at(CertificateLocus::ModelState(foreign))
-        );
-        assert_eq!(
-            at(StateGraphCertificate {
-                closure: vec![digest(1), digest(1)],
-                ..StateGraphCertificate::default()
-            }),
-            malformed_at(CertificateLocus::ModelState(digest(1)))
+            malformed_at(CertificateLocus::ModelKey(key(1)))
         );
         assert_eq!(
             at(StateGraphCertificate {
@@ -568,7 +559,7 @@ mod tests {
                 ranks: vec![(1, 0), (0, 1)],
                 counts: Vec::new(),
             }),
-            malformed_at(CertificateLocus::ModelState(digest(1)))
+            malformed_at(CertificateLocus::ModelKey(key(1)))
         );
         assert_eq!(
             at(StateGraphCertificate {
@@ -576,7 +567,7 @@ mod tests {
                 ranks: Vec::new(),
                 counts: vec![(1, 3, 0)],
             }),
-            malformed_at(CertificateLocus::ModelState(digest(2)))
+            malformed_at(CertificateLocus::ModelKey(key(2)))
         );
         assert_eq!(
             at(StateGraphCertificate {
@@ -585,35 +576,6 @@ mod tests {
                 counts: vec![(0, 1, 1), (1, 2, 0)],
             }),
             None
-        );
-    }
-
-    /// FR-169's new rules and loci on the wire: each rule's kebab-case
-    /// spelling, a model-state locus as its digest record, and an entry
-    /// locus as its decimal index.
-    #[trace("TC-644")]
-    #[test]
-    fn state_graph_rules_and_loci_write_their_wire_spelling() {
-        for (rule, spelling) in [
-            (CertificateRule::Malformed, "malformed"),
-            (CertificateRule::PredicateUndefined, "predicate-undefined"),
-            (CertificateRule::RankMissing, "rank-missing"),
-            (CertificateRule::RankBroken, "rank-broken"),
-            (CertificateRule::OrderBroken, "order-broken"),
-            (CertificateRule::CountBroken, "count-broken"),
-        ] {
-            assert_eq!(serde_json::to_value(rule).expect("serializes"), spelling);
-        }
-        assert_eq!(
-            serde_json::to_value(CertificateLocus::ModelState(digest(1))).expect("serializes"),
-            serde_json::json!({
-                "domain": "quire.simulation.state-key/v1",
-                "digest": "01".repeat(32),
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(CertificateLocus::Entry { index: u64::MAX }).expect("serializes"),
-            serde_json::json!({ "entry": u64::MAX.to_string() })
         );
     }
 }

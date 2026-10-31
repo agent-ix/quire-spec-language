@@ -18,9 +18,9 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
     check_closure, settle_model_check, CertificateLocus, CertificateRejection, CertificateRequest,
-    CertificateRule, ClauseIdentity, ClosureCertificate, DigestRecord, IncompleteCause,
-    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef,
-    ResultLabel, TemporalCertificateCheck,
+    CertificateRule, ClauseIdentity, ClosureCertificate, IncompleteCause, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ResultLabel,
+    TemporalCertificateCheck,
 };
 use quire_exact::{Cancel, Value};
 
@@ -95,7 +95,7 @@ impl Bounded {
     }
 
     /// The digest of the model state `c = v`.
-    fn digest(&self, v: i64) -> DigestRecord {
+    fn digest(&self, v: i64) -> qsl_eval::simulation::StateKey {
         let fixture = &self.fixture;
         let system = ModelSystem::new(
             subject(
@@ -117,7 +117,10 @@ impl Bounded {
                 .remove(0)
                 .1;
         }
-        system.state_key(&state).expect("encodes").1
+        {
+            let (bytes, _) = system.state_key(&state).expect("encodes");
+            qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+        }
     }
 
     /// The product state of `c = v` read to `state`.

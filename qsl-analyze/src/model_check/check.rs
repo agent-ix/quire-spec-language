@@ -85,13 +85,13 @@ use qsl_eval::simulation::protocol::{
     ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SubjectMemory,
     WeakAccessShape,
 };
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{
     ConstraintValue, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, FairLoop,
     Location, NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition,
     SymmetryGroup, TransitionSystem, ZeroProgress, ZeroProgressError,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
@@ -315,7 +315,8 @@ impl Item<'_> {
 /// undefined there keeps the state it read the position from.
 struct Node<State, Transition> {
     state: State,
-    digest: DigestRecord,
+    key: qsl_eval::simulation::StateKey,
+    digest: StateKey,
     depth: usize,
     /// The counted steps from the initial state (ADR-027 PB-3): the depth
     /// when every step counts.
@@ -376,7 +377,7 @@ type Reading = (Vec<StateId>, Vec<BoundedState>, Option<Finding>);
 type Successor<S> = (
     Vec<u8>,
     Vec<u8>,
-    DigestRecord,
+    StateKey,
     Option<<S as TransitionSystem>::TransitionId>,
     <S as TransitionSystem>::State,
     Permutation,
@@ -1552,14 +1553,14 @@ struct Run<'r, S: SubjectSystem> {
     /// The distinct model states, by digest, whose expansion cut a step at
     /// the memory bound (ADR-025 MB-3); a model state read under several
     /// monitor states counts once.
-    bound_limited: BTreeSet<DigestRecord>,
+    bound_limited: BTreeSet<StateKey>,
     /// The instance bound the subject's `activation on each` runs under
     /// (ADR-027 AE-4); `None` for a subject with none.
     instance_bound: Option<InstanceBound>,
     /// The distinct model states, by digest, left with an `activate` step
     /// unexpanded at the instance bound (ADR-027 AE-4); a model state read
     /// under several monitor states counts once.
-    instance_limited: BTreeSet<DigestRecord>,
+    instance_limited: BTreeSet<StateKey>,
 }
 
 struct DeferredLocalAccess {
@@ -1651,7 +1652,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 Translation::Safety(translation) => {
                     let key = translation.key(SafetyState::Carried)?;
                     states.extend(self.nodes.iter().map(|node| ProductStateRef {
-                        model_state: node.digest,
+                        model_state: node.key.clone(),
                         automaton_state: key.clone(),
                     }));
                 }
@@ -1669,7 +1670,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                             return Err(fault("a-proved-run-reaches-no-rejecting-state"));
                         }
                         states.push(ProductStateRef {
-                            model_state: node.digest,
+                            model_state: node.key.clone(),
                             automaton_state: translation.key(*state)?,
                         });
                     }
@@ -1844,6 +1845,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             }
             let node = Node {
                 state,
+                key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
                 digest,
                 depth: 0,
                 distance: 0,
@@ -1882,7 +1884,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             self.record_weak_access_classification(&expansion.findings)?;
             self.contracts(at, &expansion.findings)?;
             if cut.memory {
-                self.bound_limited.insert(self.nodes[at].digest);
+                self.bound_limited.insert(self.nodes[at].digest.clone());
                 // ADR-025 MB-3: a state whose only enabled steps are cut
                 // stores is a boundary state: never stutter-extended and
                 // never a deadlock.
@@ -1894,7 +1896,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             // no expanded successor it is a boundary state, as MB-3's is:
             // never closed, stutter-extended or a deadlock.
             if cut.instances {
-                self.instance_limited.insert(self.nodes[at].digest);
+                self.instance_limited.insert(self.nodes[at].digest.clone());
                 if expansion.successors.is_empty() {
                     continue;
                 }
@@ -1954,6 +1956,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     Some((_, key, digest, None, state, permutation)) => {
                         let node = Node {
                             state,
+                            key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
                             digest,
                             depth: depth.saturating_add(1),
                             distance: self.distance_after(at, None),
@@ -1987,6 +1990,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 self.edges += 1;
                 let node = Node {
                     state,
+                    key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
                     digest,
                     depth: depth.saturating_add(1),
                     distance: self.distance_after(at, transition.as_ref()),
@@ -2039,7 +2043,8 @@ impl<S: SubjectSystem> Run<'_, S> {
         for (_, key, digest, transition, state, permutation) in steps.iter() {
             let node = Node {
                 state: state.clone(),
-                digest: *digest,
+                key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
+                digest: digest.clone(),
                 depth: depth.saturating_add(1),
                 distance: self.distance_after(at, transition.as_ref()),
                 parent: Some((at, transition.clone())),
@@ -2318,7 +2323,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     .system
                     .reported(transition.clone(), &node.state)
                     .map_err(|stop| self.expansion_stop(stop))?,
-                post_state: node.digest,
+                post_state: node.key.clone(),
                 delay: None,
             });
         }
@@ -2656,7 +2661,7 @@ impl<S: SubjectSystem> Run<'_, S> {
     ) -> UndefinedSite {
         UndefinedSite {
             position: widen(node.depth),
-            state_key: node.digest,
+            state_key: node.key.clone(),
             locus,
             transition,
             time: None,
@@ -2833,7 +2838,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     .system
                     .reported(transition.clone(), &node.state)
                     .map_err(|stop| self.expansion_stop(stop))?,
-                post_state: node.digest,
+                post_state: node.key.clone(),
                 delay: None,
             });
         }

@@ -34,9 +34,9 @@ use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{ClauseOutcome, ScheduledIdentity};
 use qsl_eval::simulation::model::{NotMarkov, UndecidedSuccessor};
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{ExpansionStop, NotSimulated};
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::ModelCheckLimit;
 use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
@@ -396,8 +396,8 @@ pub struct UndefinedPath {
     pub probability: Rational,
     /// The trace position of the state: the number of steps.
     pub position: u64,
-    /// The `quire.simulation.state-key/v1` digest of the model state.
-    pub state_key: DigestRecord,
+    /// The complete canonical key of the model state.
+    pub state_key: StateKey,
     /// The complete product key at the undefined read, before its letter is
     /// read and the monitor or accumulator advances.
     pub key: Box<ProbKey>,

@@ -22,7 +22,6 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::simulation::model::{GuardedStep, PlaceConstraint};
-use qsl_foundation::digest::DigestRecord;
 use quire_exact::{Integer, Rational};
 
 use super::{
@@ -173,15 +172,17 @@ impl<O> Checker<'_, '_, O> {
     /// The valuations of each model state the certificate reaches with a
     /// time-divergent continuation, by the state's digest; under a dense
     /// source over the clock places and `z`.
-    fn divergent_valuations(&self) -> Step<BTreeMap<DigestRecord, Federation>, O> {
+    fn divergent_valuations(
+        &self,
+    ) -> Step<BTreeMap<qsl_eval::simulation::StateKey, Federation>, O> {
         let dense = self.timed.tick_period().is_none();
-        let mut index: BTreeMap<DigestRecord, usize> = BTreeMap::new();
+        let mut index: BTreeMap<qsl_eval::simulation::StateKey, usize> = BTreeMap::new();
         let mut states = Vec::new();
         for state in self.states.iter().flatten() {
             let digest = self.digest(state)?;
-            if let std::collections::btree_map::Entry::Vacant(entry) = index.entry(digest) {
+            if let std::collections::btree_map::Entry::Vacant(entry) = index.entry(digest.clone()) {
                 entry.insert(states.len());
-                states.push((digest, state.clone()));
+                states.push((digest.clone(), state.clone()));
             }
         }
         let mut places = Vec::with_capacity(states.len());

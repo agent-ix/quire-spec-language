@@ -15,11 +15,10 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
     check_simulation_certificate, check_step, map_state, open_systems, settle_refinement_safety,
     CertificateLocus, CertificateRule, Certification, CertifiedEdge, CertifiedPosition,
-    ConcreteStep, DigestRecord, FailedStep, HistoryValues, IncompleteCause, InconclusiveCause,
-    ModelCheckLimit, ModelCheckLimits, ProofBasis, RefinementFailure, RefinementPosition,
-    SafetyOutcome, SettlementBasis, SimulationCertificate, SimulationCertificateRequest,
-    SimulationRefusal, StaleIdentity, StepRejection, StepVerdict, Taken, TemporalCertificateCheck,
-    TerminalValue,
+    ConcreteStep, FailedStep, HistoryValues, IncompleteCause, InconclusiveCause, ModelCheckLimit,
+    ModelCheckLimits, ProofBasis, RefinementFailure, RefinementPosition, SafetyOutcome,
+    SettlementBasis, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
+    StaleIdentity, StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
 };
 use qsl_replay::{EvalFailure, MappingRowRef, MappingUndetermined, Undetermined, UndeterminedStep};
 use qsl_semantics::model::state::ModelState;
@@ -97,8 +96,9 @@ fn rejected(check: TemporalCertificateCheck) -> (CertificateRule, CertificateLoc
 }
 
 /// The digest of the concrete state `state` in `system`.
-fn digest(system: &ModelSystem<'_>, state: &ModelState) -> DigestRecord {
-    system.state_key_of(state).expect("a key").1
+fn digest(system: &ModelSystem<'_>, state: &ModelState) -> qsl_eval::simulation::StateKey {
+    let (bytes, _) = system.state_key_of(state).expect("a key");
+    qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
 }
 
 /// The index of the certificate position of the concrete state
@@ -282,7 +282,7 @@ fn each_corrupted_field_is_rejected() {
 
     // A later position's digests are met as the post of an edge.
     let mut later = certificate.clone();
-    later.positions[1].concrete = certificate.positions[0].concrete;
+    later.positions[1].concrete = certificate.positions[0].concrete.clone();
     assert_eq!(
         rejected(check(&world, &later)).0,
         CertificateRule::PostDiffers
@@ -349,7 +349,7 @@ fn a_malformed_certificate_is_rejected() {
     );
     let mut stray = certificate.clone();
     stray.positions.push(CertifiedPosition {
-        concrete: certificate.positions[0].concrete,
+        concrete: certificate.positions[0].concrete.clone(),
         history: Vec::new(),
         abstract_states: Vec::new(),
     });
@@ -395,17 +395,20 @@ fn listed(world: &World) -> SimulationCertificate {
         abstract_states: position
             .abstract_states
             .iter()
-            .map(|state| abstract_system.state_key_of(state).expect("a key").1)
+            .map(|state| {
+                let (bytes, _) = abstract_system.state_key_of(state).expect("a key");
+                qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+            })
             .collect(),
     };
-    let mut index: BTreeMap<DigestRecord, u64> = BTreeMap::new();
+    let mut index: BTreeMap<qsl_eval::simulation::StateKey, u64> = BTreeMap::new();
     let mut states = Vec::new();
     let mut positions = Vec::new();
     let mut add =
         |state: &ModelSimState, states: &mut Vec<_>, positions: &mut Vec<CertifiedPosition>| {
             let at = position(state.state());
             let certified = certified(&at);
-            *index.entry(certified.concrete).or_insert_with(|| {
+            *index.entry(certified.concrete.clone()).or_insert_with(|| {
                 states.push((state.clone(), at));
                 positions.push(certified);
                 u64::try_from(positions.len() - 1).expect("an index")

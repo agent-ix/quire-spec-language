@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::ModelSimState;
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::TransitionSystem;
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     check_state_graph, CertificateLocus, CertificateRejection, CertificateRule, IncompleteCause,
     ModelCheckLimit, ModelCheckLimits, StateGraphCertificate, StateGraphCertificateRequest,
@@ -71,10 +71,10 @@ fn check_cancelled(
     check_state_graph(&request, certificate, limits, cancel).expect("the request admits")
 }
 
-fn rejected(rule: CertificateRule, at: DigestRecord) -> TemporalCertificateCheck {
+fn rejected(rule: CertificateRule, at: StateKey) -> TemporalCertificateCheck {
     TemporalCertificateCheck::Rejected(CertificateRejection {
         rule,
-        at: CertificateLocus::ModelState(at),
+        at: CertificateLocus::ModelKey(at),
     })
 }
 
@@ -83,19 +83,19 @@ pub(crate) fn state_where(
     world: &World,
     keys: &[&str],
     select: impl Fn(&ModelSimState) -> bool,
-) -> DigestRecord {
-    let found: Vec<DigestRecord> = reachable(world, keys)
+) -> StateKey {
+    let found: Vec<StateKey> = reachable(world, keys)
         .0
         .into_iter()
         .filter(|(_, state)| select(state))
         .map(|(digest, _)| digest)
         .collect();
     assert_eq!(found.len(), 1, "one state selected");
-    found[0]
+    found[0].clone()
 }
 
 /// §7.1's state `(va, vb)`.
-pub(crate) fn config(world: &World, va: i64, vb: i64) -> DigestRecord {
+pub(crate) fn config(world: &World, va: i64, vb: i64) -> StateKey {
     state_where(world, AB, |state| {
         world.value(state, "a", "versionNumber") == va
             && world.value(state, "b", "versionNumber") == vb
@@ -103,13 +103,13 @@ pub(crate) fn config(world: &World, va: i64, vb: i64) -> DigestRecord {
 }
 
 /// A certificate's ranks by state.
-pub(crate) fn ranks_of(certificate: &StateGraphCertificate) -> BTreeMap<DigestRecord, u32> {
+pub(crate) fn ranks_of(certificate: &StateGraphCertificate) -> BTreeMap<StateKey, u32> {
     certificate
         .ranks
         .iter()
         .map(|(index, d)| {
             let at = usize::try_from(*index).expect("fits");
-            (certificate.closure[at], *d)
+            (certificate.closure[at].clone(), *d)
         })
         .collect()
 }
@@ -117,8 +117,8 @@ pub(crate) fn ranks_of(certificate: &StateGraphCertificate) -> BTreeMap<DigestRe
 /// The certificate over `closure` with `ranks`, re-indexed; a rank of a
 /// state outside `closure` is dropped.
 pub(crate) fn with_ranks(
-    closure: Vec<DigestRecord>,
-    ranks: &BTreeMap<DigestRecord, u32>,
+    closure: Vec<StateKey>,
+    ranks: &BTreeMap<StateKey, u32>,
 ) -> StateGraphCertificate {
     let ranks = closure
         .iter()
@@ -164,9 +164,9 @@ fn the_checker_accepts_the_engines_rank_certificates() {
     assert_eq!(states.len(), 9);
     assert_eq!(
         certificate.closure,
-        states.keys().copied().collect::<Vec<_>>()
+        states.keys().cloned().collect::<Vec<_>>()
     );
-    let expected: BTreeMap<DigestRecord, u32> = states
+    let expected: BTreeMap<StateKey, u32> = states
         .iter()
         .map(|(digest, state)| {
             let d = match world.value(state, "a", "versionNumber") {
@@ -175,7 +175,7 @@ fn the_checker_accepts_the_engines_rank_certificates() {
                 0 => 2,
                 other => panic!("va = {other}"),
             };
-            (*digest, d)
+            (digest.clone(), d)
         })
         .collect();
     assert_eq!(ranks_of(&certificate), expected);
@@ -223,7 +223,7 @@ fn the_checker_accepts_the_engines_rank_certificates() {
 }
 
 /// The successor digests of each reachable state of `world`, one per edge.
-fn successors(world: &World, keys: &[&str]) -> BTreeMap<DigestRecord, Vec<DigestRecord>> {
+fn successors(world: &World, keys: &[&str]) -> BTreeMap<StateKey, Vec<StateKey>> {
     let system = system(world, keys);
     reachable(world, keys)
         .0
@@ -234,7 +234,7 @@ fn successors(world: &World, keys: &[&str]) -> BTreeMap<DigestRecord, Vec<Digest
                 .expect("expands")
                 .successors
                 .into_iter()
-                .map(|(_, next)| system.state_key(&next).expect("encodes").1)
+                .map(|(_, next)| system.state_key(&next).expect("encodes").0.into())
                 .collect();
             (digest, next)
         })
@@ -257,16 +257,16 @@ fn the_checker_accepts_the_engines_count_certificate() {
     assert_eq!(graph.len(), 4);
     assert_eq!(
         certificate.closure,
-        graph.keys().copied().collect::<Vec<_>>()
+        graph.keys().cloned().collect::<Vec<_>>()
     );
     assert_eq!(certificate.counts.len(), 4);
-    let order: BTreeMap<DigestRecord, u64> = certificate
+    let order: BTreeMap<StateKey, u64> = certificate
         .counts
         .iter()
         .map(|(index, count, order)| {
             assert_eq!(*count, 1);
             (
-                certificate.closure[usize::try_from(*index).expect("fits")],
+                certificate.closure[usize::try_from(*index).expect("fits")].clone(),
                 *order,
             )
         })
@@ -315,8 +315,8 @@ fn the_checker_rejects_altered_rank_certificates() {
     let closure: Vec<_> = certificate
         .closure
         .iter()
-        .copied()
-        .filter(|state| *state != removed)
+        .filter(|&state| *state != removed)
+        .cloned()
         .collect();
     let first_reaching = config(&world, 1, 2).min(config(&world, 2, 1));
     assert_eq!(
@@ -364,22 +364,22 @@ fn the_checker_rejects_a_certificate_over_an_undefined_target() {
     let world = config_world(DIVIDES, &[(0, 0)]);
     let states = reachable(&world, AB).0;
     let va = |state: &ModelSimState| world.value(state, "a", "versionNumber");
-    let ranks: BTreeMap<DigestRecord, u32> = states
+    let ranks: BTreeMap<StateKey, u32> = states
         .iter()
         .map(|(digest, state)| {
             (
-                *digest,
+                digest.clone(),
                 [1, 0, 2][usize::try_from(va(state)).expect("fits")],
             )
         })
         .collect();
-    let undefined: BTreeSet<DigestRecord> = states
+    let undefined: BTreeSet<StateKey> = states
         .iter()
         .filter(|(_, state)| va(state) == 2)
-        .map(|(digest, _)| *digest)
+        .map(|(digest, _)| digest.clone())
         .collect();
     assert!(undefined.contains(&config(&world, 2, 0)));
-    let certificate = with_ranks(states.keys().copied().collect(), &ranks);
+    let certificate = with_ranks(states.keys().cloned().collect(), &ranks);
     assert_eq!(
         check(
             &world,
@@ -391,7 +391,7 @@ fn the_checker_rejects_a_certificate_over_an_undefined_target() {
         ),
         rejected(
             CertificateRule::PredicateUndefined,
-            *undefined.first().expect("a state with va = 2")
+            undefined.first().expect("a state with va = 2").clone()
         )
     );
 }
@@ -414,7 +414,7 @@ fn the_checker_rejects_altered_count_certificates() {
     };
     let states = reachable(&world, &["j"]).0;
     assert_eq!(states.len(), 5);
-    let closure: Vec<DigestRecord> = states.keys().copied().collect();
+    let closure: Vec<StateKey> = states.keys().cloned().collect();
     // A reverse topological order of `H`: `done` first, `000` last.
     let order = |state: &ModelSimState| match flags(state) {
         (1, 1, 1) => 0,
@@ -569,8 +569,8 @@ fn an_undetermined_contract_at_a_reached_state_is_bad() {
          possible ReachesOne using v over (x: F::Fork) { x.pos = 1 }\n",
     );
     let states = reachable(&world, &["f"]).0;
-    let ranks: BTreeMap<DigestRecord, u32> = BTreeMap::new();
-    let certificate = with_ranks(states.keys().copied().collect(), &ranks);
+    let ranks: BTreeMap<StateKey, u32> = BTreeMap::new();
+    let certificate = with_ranks(states.keys().cloned().collect(), &ranks);
     let two = state_where(&world, &["f"], |state| world.value(state, "f", "pos") == 2);
     assert_eq!(
         check(
@@ -609,12 +609,12 @@ fn a_count_two_cycle_certifies_only_where_no_from_node_sits() {
             world.value(state, "f", "pos") == value
         })
     };
-    let counts: BTreeMap<DigestRecord, u8> = certificate
+    let counts: BTreeMap<StateKey, u8> = certificate
         .counts
         .iter()
         .map(|(index, count, _)| {
             (
-                certificate.closure[usize::try_from(*index).expect("fits")],
+                certificate.closure[usize::try_from(*index).expect("fits")].clone(),
                 *count,
             )
         })
@@ -673,7 +673,7 @@ fn an_undefined_guard_at_a_reached_state_rejects_bad_state() {
             })
         };
         let ranks = BTreeMap::from([(va(0), 2), (va(1), 1), (va(2), 0)]);
-        let certificate = with_ranks(states.keys().copied().collect(), &ranks);
+        let certificate = with_ranks(states.keys().cloned().collect(), &ranks);
         let result = check(
             &world,
             &["a"],

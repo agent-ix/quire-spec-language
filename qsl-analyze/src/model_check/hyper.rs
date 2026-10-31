@@ -125,7 +125,6 @@ use qsl_eval::temporal::{
     evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
     TemporalPosition, TupleLetters,
 };
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     AppliedReduction, BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus,
@@ -548,7 +547,7 @@ enum Found {
     /// `μ_E` has no value on a joint step of an HP-3 member of the state.
     Existential {
         step: HyperTransition,
-        posts: Vec<DigestRecord>,
+        posts: Vec<qsl_eval::simulation::StateKey>,
         conjunct: usize,
         cause: qsl_eval::temporal::UndefinedCause,
         partner: Rc<Partner>,
@@ -556,7 +555,7 @@ enum Found {
     /// `μ_U` has no value on a joint step out of the state.
     Match {
         step: HyperTransition,
-        posts: Vec<DigestRecord>,
+        posts: Vec<qsl_eval::simulation::StateKey>,
         conjunct: usize,
         cause: qsl_eval::temporal::UndefinedCause,
     },
@@ -1664,14 +1663,17 @@ impl<'a> Run<'_, 'a> {
     }
 
     /// The digest of each component of `state`, in quantifier order.
-    fn digests(&self, state: &HyperState) -> Result<Vec<DigestRecord>, ModelCheckRefusal> {
+    fn digests(
+        &self,
+        state: &HyperState,
+    ) -> Result<Vec<qsl_eval::simulation::StateKey>, ModelCheckRefusal> {
         self.slots
             .iter()
             .zip(&state.components)
             .map(|(slot, component)| {
                 self.systems[*slot]
                     .state_key(component)
-                    .map(|(_, digest)| digest)
+                    .map(|(bytes, _)| qsl_eval::simulation::StateKey::from_canonical_bytes(bytes))
                     .map_err(ModelCheckRefusal::Encoding)
             })
             .collect()
@@ -1710,7 +1712,7 @@ impl<'a> Run<'_, 'a> {
         &self,
         run: &Explored<'_, '_>,
         lifted: &Lifted,
-        last: Option<(&HyperTransition, &[DigestRecord])>,
+        last: Option<(&HyperTransition, &[qsl_eval::simulation::StateKey])>,
         partner: Option<&PartnerPath<'_>>,
         marked: bool,
     ) -> Result<Vec<HyperTrace>, ModelCheckRefusal> {
@@ -1731,14 +1733,14 @@ impl<'a> Run<'_, 'a> {
                 let start = system
                     .state_key(&root_state.components[component])
                     .map_err(ModelCheckRefusal::Encoding)?
-                    .1;
+                    .0;
                 let initial = system
                     .initial()
                     .iter()
                     .position(|state| {
                         system
                             .state_key(state)
-                            .is_ok_and(|(_, digest)| digest == start)
+                            .is_ok_and(|(bytes, _)| bytes == start)
                     })
                     .and_then(|index| u32::try_from(index).ok())
                     .ok_or_else(|| fault("a-root-component-is-an-initial-state"))?;
@@ -1796,7 +1798,7 @@ impl<'a> Run<'_, 'a> {
                 .zip(posts.get(offset))
                 .ok_or_else(|| fault("a-partner-step-has-a-component-per-variable"))?;
             steps.push(
-                component_step(step, *post)
+                component_step(step, post.clone())
                     .ok_or_else(|| fault("a-partner-component-moves-in-lockstep"))?,
             );
         }
@@ -1952,7 +1954,7 @@ impl<'a> Run<'_, 'a> {
                 let digests = self.digests(state)?;
                 let digest = digests
                     .get(component)
-                    .copied()
+                    .cloned()
                     .ok_or_else(|| fault("a-contract-finding-names-a-component"))?;
                 let named = variables
                     .get(component)
@@ -1972,7 +1974,7 @@ impl<'a> Run<'_, 'a> {
         let path_of = partner.as_deref().map(|partner| PartnerPath {
             partner,
             last: partner_last.as_ref().map(
-                |(steps, posts): &(Vec<ComponentStep>, Vec<DigestRecord>)| {
+                |(steps, posts): &(Vec<ComponentStep>, Vec<qsl_eval::simulation::StateKey>)| {
                     (steps.as_slice(), posts.as_slice())
                 },
             ),
@@ -2301,7 +2303,7 @@ impl<'a> Run<'_, 'a> {
 /// digest of its post-state; `None` when the component does not move in it.
 fn hyper_step(
     transition: &HyperTransition,
-    posts: &[DigestRecord],
+    posts: &[qsl_eval::simulation::StateKey],
     component: usize,
 ) -> Result<Option<HyperStep>, ModelCheckRefusal> {
     let step = transition
@@ -2311,12 +2313,12 @@ fn hyper_step(
     let post = posts
         .get(component)
         .ok_or_else(|| fault("a-joint-step-has-a-post-state-per-component"))?;
-    Ok(component_step(step, *post))
+    Ok(component_step(step, post.clone()))
 }
 
 /// A component's `step` as a trace's step, with the digest of its post-state;
 /// `None` for a component that stays.
-fn component_step(step: &ComponentStep, post: DigestRecord) -> Option<HyperStep> {
+fn component_step(step: &ComponentStep, post: qsl_eval::simulation::StateKey) -> Option<HyperStep> {
     match step {
         ComponentStep::Model(taken) => Some(HyperStep::Model(ModelStep {
             transition: taken.clone(),

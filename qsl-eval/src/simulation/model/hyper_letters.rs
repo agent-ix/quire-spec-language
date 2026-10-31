@@ -15,7 +15,6 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId};
 use quire_checked::key::DeclarationKey;
@@ -29,11 +28,12 @@ use super::walk::{rows_of, stop};
 use super::{state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN};
 use crate::hyper::{HyperLetters, HyperSlot, ParameterBinding};
 use crate::model_subject::{AtomStop, ModelInstance};
+use crate::simulation::StateKey;
 use crate::temporal::AtomReading;
 use crate::value::CheckedPackageEvaluation;
 
 /// A component's observation of the state it was last read at.
-type Cached = Option<(DigestRecord, Rc<Observed>)>;
+type Cached = Option<(StateKey, Rc<Observed>)>;
 
 /// The `holds` atoms of one checked hyper clause, read at the joint positions
 /// of the [`ModelSystem`]s of its trace variables.
@@ -41,7 +41,7 @@ type Cached = Option<(DigestRecord, Rc<Observed>)>;
 /// A refused or faulted `holds` evaluation, a state that cannot be observed
 /// and a broken invariant are each an [`AtomStop`] of [`HyperLetters::atom`],
 /// never a panic. Each component state is observed once however many atoms
-/// and instances read it: the state's digest keys the last observation of the
+/// and instances read it: the state's key selects the last observation of the
 /// component, which is kept for the reads that follow. The observation is not
 /// charged to the engine's meter.
 pub struct CheckedHyperLetters<'s, 'a> {
@@ -52,7 +52,7 @@ pub struct CheckedHyperLetters<'s, 'a> {
     /// For each atom slot, the populations of its component's system that
     /// overlap the type of its object parameter.
     overlapping: Vec<BTreeSet<DeclarationKey>>,
-    /// The last state of each component observed, by its digest.
+    /// The last state of each component observed, by its canonical key.
     observed: Vec<RefCell<Cached>>,
 }
 
@@ -114,24 +114,24 @@ impl<'s, 'a> CheckedHyperLetters<'s, 'a> {
             .observed
             .get(component)
             .ok_or_else(|| fault("a-component-has-a-system"))?;
-        let (_, digest) = system
-            .state_key(state)
+        let key = system
+            .canonical_state_key(state)
             .map_err(|_| AtomStop::Unobservable(stop(BROKEN)))?;
         let known = cache
             .borrow()
             .as_ref()
-            .filter(|(known, _)| *known == digest)
+            .filter(|(known, _)| *known == key)
             .map(|(_, observed)| Rc::clone(observed));
         if let Some(observed) = known {
             return Ok(observed);
         }
         let observation = system
             .model
-            .observation(&state.state, state_document(&digest))
+            .observation(&state.state, state_document())
             .map_err(|_| AtomStop::Unobservable(stop(BROKEN)))?;
         let rows = rows_of(system, &state.state).map_err(AtomStop::Unobservable)?;
         let observed = Rc::new(Observed { observation, rows });
-        *cache.borrow_mut() = Some((digest, Rc::clone(&observed)));
+        *cache.borrow_mut() = Some((key, Rc::clone(&observed)));
         Ok(observed)
     }
 

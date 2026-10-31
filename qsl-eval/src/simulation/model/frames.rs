@@ -37,7 +37,6 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
 use crate::value::{CheckedPackageEvaluation, Provenance, WrittenCollection};
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::CollectionWrite;
 use quire_exact::Meter;
 use quire_semantic_value::catalog::CatalogCode;
@@ -528,8 +527,8 @@ impl Dimension<'_> {
 /// A refusal by the frame decision, with its catalog code.
 struct FrameRefused(CatalogCode);
 
-/// A candidate's state-key bytes and digest, and its observation.
-type Evidence = (Vec<u8>, DigestRecord, Observation);
+/// A candidate's state key and its observation.
+type Evidence = (crate::simulation::StateKey, Observation);
 
 /// The (population, object key, field) triples a frame lets an application
 /// write.
@@ -1173,12 +1172,12 @@ impl Run<'_, '_, '_> {
         let system = self.walk.system;
         if evidence.is_none() {
             let state_key = encode::model_key(&system.model, candidate, system.typing());
-            let (bytes, digest) =
-                key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
-            let observation = self.post_observation(candidate, &digest)?;
-            *evidence = Some((bytes.as_bytes().to_vec(), digest, observation));
+            let state_key = key::canonical_state_key(&state_key, identity_limits())
+                .map_err(|_| stop(BROKEN))?;
+            let observation = self.post_observation(candidate)?;
+            *evidence = Some((state_key, observation));
         }
-        let (_, _, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
+        let (_, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
         let check = self
             .walk
             .enforcement
@@ -1287,19 +1286,15 @@ impl Run<'_, '_, '_> {
         Ok((candidate, written))
     }
 
-    /// The observation of `candidate` as a post-state, keyed `digest`, with
+    /// The observation of `candidate` as a post-state, with
     /// the presence of each guarded clock place it holds, which a
     /// postcondition's `present(self.v)` reads (QSpec FR-322 `CW-05`).
-    fn post_observation(
-        &self,
-        candidate: &ModelState,
-        digest: &DigestRecord,
-    ) -> Result<Observation, ExpansionStop> {
+    fn post_observation(&self, candidate: &ModelState) -> Result<Observation, ExpansionStop> {
         let mut observation = self
             .walk
             .system
             .model
-            .observation(candidate, state_document(digest))
+            .observation(candidate, state_document())
             .map_err(|_| stop(BROKEN))?;
         if let Some(presence) = self.walk.post_presence {
             observation
@@ -1319,9 +1314,8 @@ impl Run<'_, '_, '_> {
     ) -> Result<AdmittedObservations, ExpansionStop> {
         let system = self.walk.system;
         let state_key = encode::model_key(&system.model, candidate, system.typing());
-        let (_, digest) =
-            key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
-        let post = self.post_observation(candidate, &digest)?;
+        let _state_key = key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
+        let post = self.post_observation(candidate)?;
         let effect = self.effect_of(candidate, delta)?;
         Ok(AdmittedObservations {
             usage: AdmissionUsage::default(),
@@ -1421,15 +1415,15 @@ impl Run<'_, '_, '_> {
                 }
                 Conjunction::False(_) => {}
                 Conjunction::Undecided(undecided) => {
-                    let (bytes, digest, _) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
+                    let (state_key, _) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
                     for (clause, evaluation) in undecided {
                         contract.push(ContractFinding {
                             transition: self.transition_bytes.to_vec(),
-                            candidate: Some(bytes.clone()),
+                            candidate: Some(state_key.as_bytes().to_vec()),
                             clause: clause.clone(),
                             finding: ModelFinding::ContractUndetermined {
                                 transition: self.transition.clone(),
-                                candidate: Some(*digest),
+                                candidate: Some(state_key.clone()),
                                 clause,
                                 evaluation,
                             },

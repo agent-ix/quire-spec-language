@@ -2,8 +2,8 @@
 //! What one expansion of one state returns, and the findings the engine
 //! records from it (FR-101).
 
+use crate::simulation::key::StateKey;
 use qsl_foundation::diagnostic::category_of;
-use qsl_foundation::digest::DigestRecord;
 use quire_exact::LimitKind;
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::Category;
@@ -53,8 +53,8 @@ pub enum ExpansionLimit {
 /// The findings of one expanded state (FR-101-AC-13).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateFindings<F> {
-    /// The state's `quire.simulation.state-key/v1` digest.
-    pub state: DigestRecord,
+    /// The state's RFC 8785 canonical key.
+    pub state: StateKey,
     /// The state's breadth-first depth in an exploration, or its step index
     /// in a sampled trace.
     pub depth: usize,

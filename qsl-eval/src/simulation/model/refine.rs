@@ -7,7 +7,6 @@
 //! system's own states by FR-101's state key. Both need the system's private
 //! state model, so this module is the one place the refinement reads it.
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::CheckedRow;
 use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::{ModelState, StateField};
@@ -115,10 +114,10 @@ impl ModelSystem<'_> {
         state: &ModelState,
         history: BTreeMap<(ObjectReference, String), Value>,
     ) -> Result<StateObservation, ExpansionStop> {
-        let (_, digest) = self.state_key_of(state).map_err(|_| stop(BROKEN))?;
+        let _key = self.state_key_of(state).map_err(|_| stop(BROKEN))?;
         let mut observation = self
             .model
-            .observation(state, state_document(&digest))
+            .observation(state, state_document())
             .map_err(|_| stop(BROKEN))?;
         observation.environment = observation.environment.with_history(history);
         Ok(StateObservation(observation))
@@ -196,8 +195,7 @@ impl ModelSystem<'_> {
             .collect())
     }
 
-    /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
-    /// full key bytes, for a state built outside this system's expansion
+    /// FR-101's canonical key of `state`, for a state built outside this system's expansion
     /// (a mapped abstract state).
     ///
     /// # Errors
@@ -207,12 +205,11 @@ impl ModelSystem<'_> {
     pub fn state_key_of(
         &self,
         state: &ModelState,
-    ) -> Result<(Vec<u8>, DigestRecord), crate::simulation::EncodingRefusal> {
-        let (key, digest) = key::state_key(
+    ) -> Result<(Vec<u8>, crate::simulation::StateKey), crate::simulation::EncodingRefusal> {
+        key::state_key(
             &encode::model_key(&self.model, state, self.typing()),
             identity_limits(),
-        )?;
-        Ok((key.as_bytes().to_vec(), digest))
+        )
     }
 
     /// The reference to the object `object` of the type `type_key`.

@@ -34,13 +34,14 @@
 //! verdict writes its `where` and `cause` as kinds only; FR-127's full
 //! encoding of them is remaining work on QSL-549.
 
+use base64::Engine as _;
 use qsl_eval::simulation::model::{
     check_model_bounds, ClauseOutcome, ModelFinding, ModelSimState, ModelSimulationRequest,
     ModelSystem,
 };
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{TransitionSystem, BOUND_POSITIONS};
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -51,7 +52,6 @@ use serde::{Serialize, Serializer};
 use crate::certificate::check::{
     expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step,
 };
-use crate::certificate::closure::DigestWire;
 use crate::certificate::closure::{CertificateRejection, ClosureRefusal, TemporalCertificateCheck};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::counterexample::{UndefinedEvaluation, UndefinedLocus};
@@ -65,19 +65,19 @@ use crate::refinement::{
 /// One position of a simulation certificate: a product state EN-1 stored.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedPosition {
-    /// The concrete state's `quire.simulation.state-key/v1` digest.
-    pub concrete: DigestRecord,
+    /// The concrete state's canonical key.
+    pub concrete: StateKey,
     /// The refinement's history values at it, as their typed canonical key
     /// (QSpec FR-378's encoding): two positions with one concrete state and
     /// different history are different positions.
     pub history: Vec<u8>,
-    /// The abstract states it stands for, as digests, in the order
+    /// The abstract states it stands for, as canonical keys, in the order
     /// [`check_step`] gives them.
-    pub abstract_states: Vec<DigestRecord>,
+    pub abstract_states: Vec<StateKey>,
 }
 
 /// Whether the listed position `listed` is `position`: its concrete
-/// state's digest, its history key and its abstract states' digests, in
+/// state's key, its history key and its abstract states' keys, in
 /// order (FR-149, and FR-245's refinement form).
 pub(crate) fn position_matches(
     concrete: &ModelSystem<'_>,
@@ -85,18 +85,20 @@ pub(crate) fn position_matches(
     listed: &CertifiedPosition,
     position: &RefinementPosition,
 ) -> Result<bool, qsl_eval::simulation::EncodingRefusal> {
-    let (_, state) = concrete.state_key_of(&position.concrete)?;
+    let (bytes, _) = concrete.state_key_of(&position.concrete)?;
+    let state = StateKey::from_canonical_bytes(bytes);
     if listed.concrete != state {
         return Ok(false);
     }
     if listed.history != position.history.key(concrete)? {
         return Ok(false);
     }
-    let mut digests = Vec::with_capacity(position.abstract_states.len());
+    let mut keys = Vec::with_capacity(position.abstract_states.len());
     for candidate in &position.abstract_states {
-        digests.push(abstract_system.state_key_of(candidate)?.1);
+        let (bytes, _) = abstract_system.state_key_of(candidate)?;
+        keys.push(StateKey::from_canonical_bytes(bytes));
     }
-    Ok(listed.abstract_states == digests)
+    Ok(listed.abstract_states == keys)
 }
 
 /// One edge a simulation certificate retains.
@@ -286,7 +288,8 @@ impl FailedStep {
                 "kind": "UndefinedEvaluation",
                 "where": {
                     "position": decimal(evaluation.site.position),
-                    "state_key": DigestWire::of(&evaluation.site.state_key),
+                    "state_key": base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .encode(evaluation.site.state_key.as_bytes()),
                     "locus": locus_kind(&evaluation.site.locus),
                 },
                 "cause": undefined_cause_kind(&evaluation.cause),

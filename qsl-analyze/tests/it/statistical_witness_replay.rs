@@ -275,7 +275,7 @@ fn an_undefined_witness_replays_and_a_changed_cause_is_inconclusive() {
 /// Checks FR-193 "The qualitative claim" (FR-193-AC-3's conversion): a
 /// witness of ADR-024 §7.1's fault claim, one with a fault, converts to the
 /// counterexample of its subject: the initial state and binding its test
-/// records and its steps and post-state digests; an undefined witness
+/// records and its steps and post-state keys; an undefined witness
 /// converts to the undefined-evaluation counterexample of its evaluation.
 #[trace("TC-628", "FR-193-AC-3")]
 #[test]
@@ -307,7 +307,7 @@ fn a_witness_is_the_counterexample_of_the_qualitative_claim() {
             panic!("an operation step");
         };
         assert_eq!(&step.transition, transition);
-        assert_eq!(step.post_state, taken.post_digest);
+        assert_eq!(step.post_state, taken.post_state);
     }
 
     let unknown = SampledWitness {
@@ -418,7 +418,7 @@ fn a_measure_witness_converts_to_a_formula_counterexample() {
             panic!("an operation step");
         };
         assert_eq!(&step.transition, transition);
-        assert_eq!(step.post_state, taken.post_digest);
+        assert_eq!(step.post_state, taken.post_state);
     }
 }
 

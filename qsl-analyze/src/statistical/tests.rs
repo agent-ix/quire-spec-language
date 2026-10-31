@@ -14,7 +14,6 @@ use std::rc::Rc;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::{weighted_choice, ChoicePoint, TotalAboveDrawRange, WeightsRefusal};
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{
     ClaimForm, Confidence, Coverage, Decision, MeasureValue, StatisticalLimit, StatisticalLimits,
@@ -30,7 +29,7 @@ use super::*;
 /// A non-unique post-state of a `tick` with no argument.
 fn not_markov() -> NotMarkov {
     NotMarkov {
-        state: DigestRecord::raw_artifact(b"healthy"),
+        state: qsl_eval::simulation::StateKey::from_canonical_bytes(b"\"healthy\"".to_vec()),
         transition: qsl_eval::simulation::model::ScheduledIdentity {
             operation: "tick".to_owned(),
             receiver: quire_exact::ObjectReference::new(
@@ -603,7 +602,9 @@ impl ClaimSampler for Coin {
             Some(position) => Sample::Undefined(UndefinedEvaluation {
                 site: UndefinedSite {
                     position,
-                    state_key: DigestRecord::raw_artifact(b"v = 1"),
+                    state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                        b"\"v = 1\"".to_vec(),
+                    ),
                     locus: UndefinedLocus::Contract("holds(1 / (1 - c.v) = 1)".to_owned()),
                     transition: None,
                     time: None,
@@ -1371,7 +1372,9 @@ fn undefined_evaluation(position: u64) -> UndefinedEvaluation {
     UndefinedEvaluation {
         site: UndefinedSite {
             position,
-            state_key: DigestRecord::raw_artifact(b"z.v = 1"),
+            state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                b"\"z.v = 1\"".to_vec(),
+            ),
             locus: UndefinedLocus::Contract("holds(1 / (1 - z.v) = 1)".to_owned()),
             transition: None,
             time: None,
@@ -1743,7 +1746,9 @@ impl BehaviourSampler for ServiceSteps {
             .into_iter()
             .map(|(duration, failed)| SampledStep {
                 transition: qsl_eval::simulation::model::TransitionId::Stutter,
-                post_digest: DigestRecord::raw_artifact(b"attempt"),
+                post_state: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                    b"\"attempt\"".to_vec(),
+                ),
                 choices: vec![u32::try_from(duration).expect("small"), u32::from(failed)],
                 random: vec![
                     quire_exact::Value::Integer(Integer::from(MILLISECONDS[duration])),

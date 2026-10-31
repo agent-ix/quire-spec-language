@@ -303,7 +303,7 @@ impl SampledWitness {
             .map_while(|step| match &step.transition {
                 TransitionId::Operation(transition) => Some(ModelStep {
                     transition: transition.clone(),
-                    post_state: step.post_digest,
+                    post_state: step.post_state.clone(),
                     delay: None,
                 }),
                 TransitionId::Stutter => None,
@@ -357,7 +357,7 @@ mod tests {
             UNSUPPORTED
         );
         let not_markov = NotMarkov {
-            state: qsl_foundation::digest::DigestRecord::raw_artifact(b"s"),
+            state: qsl_eval::simulation::StateKey::from_canonical_bytes(b"\"s\"".to_vec()),
             transition: ScheduledIdentity {
                 operation: "tick".to_owned(),
                 receiver: ObjectReference::new(

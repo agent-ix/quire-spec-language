@@ -18,7 +18,6 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::family::ClassifyFailure;
@@ -69,15 +68,11 @@ fn op_int(name: &str, value: i64) -> Transition {
     }
 }
 
-/// The `quire.simulation.state-key/v1` digest a `String`-keyed `EdgeGraph`
-/// state computes: the same RFC 8785 JCS + SHA-256 the engine itself runs
-/// (FR-101), duplicated here as the fixed spelling test fixtures assert
-/// against, exactly as the previous toy `Graph::key` duplicated its own
-/// encoding.
-fn key(label: &str) -> DigestRecord {
-    let digest = quire_canonical::sha256(&label.to_owned(), quire_canonical::Limits::new(u64::MAX))
+/// The full RFC 8785 state key of a `String`-keyed `EdgeGraph` state.
+fn key(label: &str) -> qsl_eval::simulation::StateKey {
+    let bytes = quire_canonical::to_vec(label, quire_canonical::Limits::new(u64::MAX))
         .expect("a string encodes");
-    DigestRecord::mint(DigestDomain::SimulationStateKeyV1, *digest.as_bytes())
+    qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
 }
 
 /// An authored, unsorted edge list over `String`-labelled states: the
@@ -545,44 +540,11 @@ fn cancellation_frontier_keeps_fifo_order_not_key_order() {
     assert_eq!(cause, CatalogCode::new("cancelled", "caller-cancelled"));
 }
 
-/// TC-453 step 6, FR-101-AC-2: the state key of each signed-zero and
-/// distinct-NaN-payload float64 state is the SHA-256 of its hand-written RFC
-/// 8785 envelope text (hashed here with `sha2`, independent of
-/// `quire_canonical`), and the two of each pair remain two states.
+/// TC-453 step 6, FR-101-AC-2: the signed-zero and distinct-NaN-payload
+/// float64 states remain distinct.
 #[trace("TC-453", "FR-101-AC-2")]
 #[test]
-fn float64_state_keys_are_the_hash_of_their_envelope_and_stay_distinct() {
-    let bits_list = [
-        "0000000000000000",
-        "8000000000000000",
-        "7ff8000000000000",
-        "7ff8000000000001",
-    ];
-    let vectors = bits_list.map(|bits| {
-        use sha2::{Digest, Sha256};
-        let text = format!(
-            r#"{{"bounds":{{"entries":[],"type":"map"}},"control":{{"entries":[],"type":"map"}},"observations":{{"entries":[],"type":"map"}},"queues":{{"entries":[],"type":"map"}},"roles":{{"entries":[],"type":"map"}},"semantic":{{"bits":"{bits}","type":"float64"}},"type":"simulation-state"}}"#
-        );
-        let hex: String = Sha256::digest(text.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        (bits, hex)
-    });
-    for (bits, expected_hex) in &vectors {
-        let system = EnvelopeGraph {
-            states: vec![float64_envelope(bits)],
-            edges: vec![],
-        };
-        let outcome = explore_to_horizon(&system, generous_limits(), 0);
-        let Outcome::BoundReached { frontier, .. } = outcome else {
-            panic!("expected BoundReached, got {outcome:?}");
-        };
-        assert_eq!(frontier.len(), 1);
-        assert_eq!(frontier[0].domain(), DigestDomain::SimulationStateKeyV1);
-        assert_eq!(frontier[0].hex(), *expected_hex);
-    }
-
+fn float64_state_keys_stay_distinct() {
     for (a, b) in [
         ("0000000000000000", "8000000000000000"),
         ("7ff8000000000000", "7ff8000000000001"),

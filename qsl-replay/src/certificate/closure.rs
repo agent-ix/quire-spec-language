@@ -24,7 +24,7 @@
 //! state's key is admitted against one instance's context; a key no
 //! instance admits (malformed, non-canonical, another item's, profile's or
 //! activation's) rejects the whole certificate `ShapeMismatch` at the least
-//! refused state, by model-state digest octets then key octets. The checker
+//! refused state, by model-state key octets then key octets. The checker
 //! expands only model states the certificate holds, so its work is bounded
 //! by the certificate. A budget or a cancellation stops it with the typed
 //! `Stopped` cause, which is never an acceptance.
@@ -72,12 +72,12 @@ use qsl_eval::simulation::protocol::{
     activates_on_each, check_protocol_bounds, live_instance_bound, ProtocolFairnessError,
     ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
 };
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{
     ConstraintError, Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem,
     SubjectTransition, TransitionSystem, ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ScalarLimits};
 use quire_semantic_value::catalog::InternalFault;
@@ -102,39 +102,25 @@ use qsl_eval::smt::SmtEncodingLimits;
 /// canonical key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProductStateRef {
-    /// The model state's state-key digest.
-    pub model_state: DigestRecord,
+    /// The model state's complete canonical key bytes.
+    pub model_state: StateKey,
     /// The translation's canonical key of the automaton state.
     pub automaton_state: AutomatonStateKey,
 }
 
 impl Serialize for ProductStateRef {
-    /// `{"model_state": {"domain", "digest"}, "automaton_state": <base64url
-    /// of the key octets>}`; base64url is FR-331's transport of the octets.
+    /// `{"model_state": <base64url key octets>, "automaton_state": <base64url
+    /// key octets>}`; base64url is FR-331's transport of the octets.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use base64::Engine as _;
         let mut object = serializer.serialize_struct("ProductStateRef", 2)?;
-        object.serialize_field("model_state", &DigestWire::of(&self.model_state))?;
+        let model_state =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(self.model_state.as_bytes());
+        object.serialize_field("model_state", &model_state)?;
         let octets = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(self.automaton_state.as_bytes());
         object.serialize_field("automaton_state", &octets)?;
         object.end()
-    }
-}
-
-/// A digest record's wire object: `{"domain", "digest"}`.
-#[derive(Serialize)]
-pub(crate) struct DigestWire {
-    domain: &'static str,
-    digest: String,
-}
-
-impl DigestWire {
-    pub(crate) fn of(record: &DigestRecord) -> Self {
-        Self {
-            domain: record.domain().as_str(),
-            digest: record.hex(),
-        }
     }
 }
 
@@ -559,16 +545,15 @@ fn check_system<S: SubjectSystem>(
                 widen(limits.limits.max_states),
             )));
         }
-        let admitted = state.model_state.domain() == DigestDomain::SimulationStateKeyV1
-            && instances.iter().any(|instance| {
-                instance
-                    .translation
-                    .admits(state.automaton_state.as_bytes())
-            });
+        let admitted = instances.iter().any(|instance| {
+            instance
+                .translation
+                .admits(state.automaton_state.as_bytes())
+        });
         if !admitted {
             let order = |state: &ProductStateRef| {
                 (
-                    *state.model_state.as_bytes(),
+                    state.model_state.as_bytes().to_vec(),
                     state.automaton_state.as_bytes().to_vec(),
                 )
             };
@@ -581,10 +566,10 @@ fn check_system<S: SubjectSystem>(
             continue;
         }
         members.insert(state.clone());
-        models.insert(state.model_state);
+        models.insert(state.model_state.clone());
     }
     // FR-338: one refused key rejects the whole certificate, at the least
-    // refused state by model-state digest octets then key octets, so the
+    // refused state by model-state key octets then key octets, so the
     // locus does not depend on the order of `states`.
     if let Some(least) = refused {
         return Ok(rejected(CertificateRule::ShapeMismatch, least));
@@ -653,7 +638,7 @@ struct Pending<S: SubjectSystem> {
 
 /// An initial state of the subject: its key bytes, its position in the
 /// subject's list, its digest and the state.
-type Initial<S> = (Vec<u8>, usize, DigestRecord, <S as TransitionSystem>::State);
+type Initial<S> = (Vec<u8>, usize, StateKey, <S as TransitionSystem>::State);
 
 /// A reached product state of a bounded instance waiting to be expanded.
 struct BoundedPending<S: SubjectSystem> {
@@ -676,15 +661,15 @@ struct LivenessPending<S: SubjectSystem> {
 
 /// The reached product states of one TP-4 instance, with the recording
 /// index each has.
-type Reached = BTreeMap<(DigestRecord, StateId), usize>;
+type Reached = BTreeMap<(StateKey, StateId), usize>;
 
 /// A product state of a bounded instance, as the run tells two apart.
-type BoundedKey = (DigestRecord, BoundedState, u64);
+type BoundedKey = (StateKey, BoundedState, u64);
 
-/// A successor of an expansion with its state-key digest.
+/// A successor of an expansion with its state key.
 type Keyed<S> = (
     <S as TransitionSystem>::TransitionId,
-    DigestRecord,
+    StateKey,
     <S as TransitionSystem>::State,
 );
 
@@ -706,7 +691,7 @@ struct BoundedRun<'i> {
     binding: &'i qsl_eval::model_subject::ModelInstance,
     visited: BTreeSet<BoundedKey>,
     /// The atom at each model state read so far; `None` is undefined.
-    readings: BTreeMap<DigestRecord, Option<bool>>,
+    readings: BTreeMap<StateKey, Option<bool>>,
 }
 
 /// One expansion of a subject's state, and what a method bound left of it
@@ -724,16 +709,16 @@ struct Check<'c, S: SubjectSystem> {
     budgets: Budgets,
     cancel: &'c Cancel,
     members: &'c BTreeSet<ProductStateRef>,
-    models: &'c BTreeSet<DigestRecord>,
+    models: &'c BTreeSet<StateKey>,
     reached: usize,
     edges: usize,
     keys: BTreeSet<AutomatonStateKey>,
     /// The reached model states whose expansion cut a step at the memory
     /// bound (ADR-025 MB-3).
-    limited: BTreeSet<DigestRecord>,
+    limited: BTreeSet<StateKey>,
     /// The reached model states whose expansion left an `activate` step
     /// unexpanded at the instance bound (ADR-027 AE-4).
-    instance_limited: BTreeSet<DigestRecord>,
+    instance_limited: BTreeSet<StateKey>,
     /// The product graph a component check partitions (FR-339): the reached
     /// states, the edges computed between them and each state's enabled
     /// transitions. Only a component certificate's check records it.
@@ -783,8 +768,9 @@ impl<S: SubjectSystem> Check<'_, S> {
         self.poll()?;
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
-            let (key, digest) = self.system.state_key(&state)?;
-            initial.push((key, index, digest, state));
+            let (key, _) = self.system.state_key(&state)?;
+            let state_key = StateKey::from_canonical_bytes(key.clone());
+            initial.push((key, index, state_key, state));
         }
         initial.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         initial.dedup_by(|later, earlier| later.0 == earlier.0);
@@ -821,7 +807,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 binding,
                 translation,
                 state.clone(),
-                *digest,
+                digest.clone(),
                 before,
                 CertificateRule::InitialMissing,
                 &mut visited,
@@ -886,7 +872,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             let Some(letter) =
                 self.liveness_letter(translation, *letters, clause, binding, state, true, true)?
             else {
-                let at = self.product_liveness(translation, *digest, start)?;
+                let at = self.product_liveness(translation, digest.clone(), start)?;
                 return Err(Self::reject(CertificateRule::BadState, at));
             };
             let successors = translation
@@ -897,7 +883,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let (_, pending) = self.reach_liveness(
                     translation,
                     state.clone(),
-                    *digest,
+                    digest.clone(),
                     automaton,
                     CertificateRule::InitialMissing,
                     &mut visited,
@@ -941,7 +927,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let Some(letter) = letter else {
                     let at = self.product_liveness(
                         translation,
-                        pending.at.model_state,
+                        pending.at.model_state.clone(),
                         pending.automaton,
                     )?;
                     return Err(Self::reject(CertificateRule::BadState, at));
@@ -956,7 +942,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     let (to, next) = self.reach_liveness(
                         translation,
                         pending.state.clone(),
-                        pending.at.model_state,
+                        pending.at.model_state.clone(),
                         automaton,
                         CertificateRule::SuccessorMissing,
                         &mut visited,
@@ -993,7 +979,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     let (to, next) = self.reach_liveness(
                         translation,
                         state.clone(),
-                        digest,
+                        digest.clone(),
                         automaton,
                         CertificateRule::SuccessorMissing,
                         &mut visited,
@@ -1106,15 +1092,15 @@ impl<S: SubjectSystem> Check<'_, S> {
         &mut self,
         translation: &LivenessTranslation,
         state: S::State,
-        digest: DigestRecord,
+        digest: StateKey,
         automaton: StateId,
         missing: CertificateRule,
         visited: &mut Reached,
     ) -> Step<(usize, Option<LivenessPending<S>>)> {
-        if let Some(index) = visited.get(&(digest, automaton)) {
+        if let Some(index) = visited.get(&(digest.clone(), automaton)) {
             return Ok((*index, None));
         }
-        let at = self.product_liveness(translation, digest, automaton)?;
+        let at = self.product_liveness(translation, digest.clone(), automaton)?;
         if self.reached >= self.limits.limits.max_states {
             return Err(stopped(
                 ModelCheckLimit::MaxStates,
@@ -1151,7 +1137,7 @@ impl<S: SubjectSystem> Check<'_, S> {
     fn product_liveness(
         &mut self,
         translation: &LivenessTranslation,
-        digest: DigestRecord,
+        digest: StateKey,
         state: StateId,
     ) -> Step<ProductStateRef> {
         let buchi = match translation
@@ -1209,7 +1195,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             let (pending, _, _) = self.reach_bounded(
                 &mut run,
                 state.clone(),
-                *digest,
+                digest.clone(),
                 None,
                 CertificateRule::InitialMissing,
             )?;
@@ -1223,7 +1209,11 @@ impl<S: SubjectSystem> Check<'_, S> {
             self.poll()?;
             let (expansion, cut) = self.expand(&pending.state, &pending.at)?;
             if owes && matches!(pending.automaton, BoundedState::Open { .. }) {
-                let key = (pending.at.model_state, pending.automaton, pending.distance);
+                let key = (
+                    pending.at.model_state.clone(),
+                    pending.automaton,
+                    pending.distance,
+                );
                 let enabled = expansion
                     .successors
                     .iter()
@@ -1252,13 +1242,17 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let (next, after, distance) = self.reach_bounded(
                     &mut run,
                     state,
-                    digest,
+                    digest.clone(),
                     Some((pending.automaton, pending.distance, counted)),
                     CertificateRule::SuccessorMissing,
                 )?;
                 queue.extend(next);
                 if holds_open && matches!(after, BoundedState::Open { .. }) {
-                    let from = (pending.at.model_state, pending.automaton, pending.distance);
+                    let from = (
+                        pending.at.model_state.clone(),
+                        pending.automaton,
+                        pending.distance,
+                    );
                     zero.edges
                         .push((from, (digest, after, distance), transition));
                 }
@@ -1291,8 +1285,8 @@ impl<S: SubjectSystem> Check<'_, S> {
         let mut vertex_of = BTreeMap::new();
         let mut keys = Vec::with_capacity(zero.enabled.len());
         for (key, enabled) in &zero.enabled {
-            vertex_of.insert(*key, graph.vertex(self.system, enabled)?);
-            keys.push(*key);
+            vertex_of.insert(key.clone(), graph.vertex(self.system, enabled)?);
+            keys.push(key.clone());
         }
         for (from, to, transition) in &zero.edges {
             let (Some(from), Some(to)) = (vertex_of.get(from), vertex_of.get(to)) else {
@@ -1338,7 +1332,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             .translation
             .key(key.1)
             .map_err(|_| ClosureRefusal::Encoding)?;
-        self.product_of(key.0, automaton)
+        self.product_of(key.0.clone(), automaton)
     }
 
     /// Reach `state`, whose digest is `digest`, from the monitor state and
@@ -1352,7 +1346,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         &mut self,
         run: &mut BoundedRun<'_>,
         state: S::State,
-        digest: DigestRecord,
+        digest: StateKey,
         before: Option<(BoundedState, u64, bool)>,
         missing: CertificateRule,
     ) -> Step<(Option<BoundedPending<S>>, BoundedState, u64)> {
@@ -1376,7 +1370,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     .translation
                     .key(BoundedState::Reject)
                     .map_err(|_| ClosureRefusal::Encoding)?;
-                let at = self.product_of(digest, key)?;
+                let at = self.product_of(digest.clone(), key)?;
                 return Err(Self::reject(CertificateRule::BadState, at));
             }
             let reading = match run.readings.get(&digest) {
@@ -1388,7 +1382,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                         run.binding,
                         &self.system.atom_state(&state),
                     )?;
-                    run.readings.insert(digest, reading);
+                    run.readings.insert(digest.clone(), reading);
                     reading
                 }
             };
@@ -1399,7 +1393,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                         .translation
                         .key(BoundedState::Reject)
                         .map_err(|_| ClosureRefusal::Encoding)?;
-                    let at = self.product_of(digest, key)?;
+                    let at = self.product_of(digest.clone(), key)?;
                     return Err(Self::reject(CertificateRule::BadState, at));
                 }
             }
@@ -1414,11 +1408,11 @@ impl<S: SubjectSystem> Check<'_, S> {
             .translation
             .key(after)
             .map_err(|_| ClosureRefusal::Encoding)?;
-        let at = self.product_of(digest, key)?;
+        let at = self.product_of(digest.clone(), key)?;
         if after.is_rejecting() {
             return Err(Self::reject(CertificateRule::BadState, at));
         }
-        if run.visited.contains(&(digest, after, distance)) {
+        if run.visited.contains(&(digest.clone(), after, distance)) {
             return Ok((None, after, distance));
         }
         if self.reached >= self.limits.limits.max_states {
@@ -1428,7 +1422,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             ));
         }
         self.reached += 1;
-        run.visited.insert((digest, after, distance));
+        run.visited.insert((digest.clone(), after, distance));
         if !self.members.contains(&at) {
             return Err(Self::reject(missing, at));
         }
@@ -1442,18 +1436,19 @@ impl<S: SubjectSystem> Check<'_, S> {
     }
 
     /// The successors of an expansion in FR-101's canonical order, each
-    /// with its state-key digest.
+    /// with its state key.
     fn ordered(&self, successors: Vec<(S::TransitionId, S::State)>) -> Step<Vec<Keyed<S>>> {
         let mut keyed = Vec::with_capacity(successors.len());
         for (transition, state) in successors {
             let order = self.system.transition_key(&transition)?;
-            let (key, digest) = self.system.state_key(&state)?;
-            keyed.push((order, key, digest, transition, state));
+            let (key, _) = self.system.state_key(&state)?;
+            let state_key = StateKey::from_canonical_bytes(key);
+            keyed.push((order, state_key, transition, state));
         }
         keyed.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         Ok(keyed
             .into_iter()
-            .map(|(_, _, digest, transition, state)| (transition, digest, state))
+            .map(|(_, state_key, transition, state)| (transition, state_key, state))
             .collect())
     }
 
@@ -1479,10 +1474,10 @@ impl<S: SubjectSystem> Check<'_, S> {
         binding: Option<&qsl_eval::model_subject::ModelInstance>,
         translation: &SafetyTranslation,
         state: S::State,
-        digest: DigestRecord,
+        digest: StateKey,
         before: Option<SafetyState>,
         missing: CertificateRule,
-        visited: &mut BTreeSet<DigestRecord>,
+        visited: &mut BTreeSet<StateKey>,
     ) -> Step<Option<Pending<S>>> {
         if visited.contains(&digest) {
             return Ok(None);
@@ -1513,10 +1508,10 @@ impl<S: SubjectSystem> Check<'_, S> {
             SafetyItem::RaceFreedom => (translation.read(before, true), None),
             SafetyItem::DeadlockFreedom => {
                 if !self.models.contains(&digest) {
-                    let at = self.product(translation, digest, SafetyState::Carried)?;
+                    let at = self.product(translation, digest.clone(), SafetyState::Carried)?;
                     return Err(Self::reject(missing, at));
                 }
-                let carried = self.product(translation, digest, SafetyState::Carried)?;
+                let carried = self.product(translation, digest.clone(), SafetyState::Carried)?;
                 let (expansion, cut) = self.expand(&state, &carried)?;
                 // ADR-025 MB-3: a state whose only enabled steps were cut at
                 // the memory bound is a boundary state, never a deadlock; the
@@ -1540,7 +1535,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 (translation.read(before, holds), Some((expansion, cut)))
             }
         };
-        let at = self.product(translation, digest, after)?;
+        let at = self.product(translation, digest.clone(), after)?;
         if after.is_rejecting() {
             return Err(Self::reject(CertificateRule::BadState, at));
         }
@@ -1574,10 +1569,10 @@ impl<S: SubjectSystem> Check<'_, S> {
             .successors_bounded(state)
             .map_err(|stop| self.expansion_stop(stop))?;
         if cut.memory {
-            self.limited.insert(at.model_state);
+            self.limited.insert(at.model_state.clone());
         }
         if cut.instances {
-            self.instance_limited.insert(at.model_state);
+            self.instance_limited.insert(at.model_state.clone());
         }
         if expansion.findings.iter().any(|finding| {
             matches!(
@@ -1596,7 +1591,7 @@ impl<S: SubjectSystem> Check<'_, S> {
     fn product(
         &mut self,
         translation: &SafetyTranslation,
-        digest: DigestRecord,
+        digest: StateKey,
         state: SafetyState,
     ) -> Step<ProductStateRef> {
         let key = translation
@@ -1607,11 +1602,7 @@ impl<S: SubjectSystem> Check<'_, S> {
 
     /// The product state of `digest` and the automaton key `key`, charging
     /// a newly materialized key.
-    fn product_of(
-        &mut self,
-        digest: DigestRecord,
-        key: AutomatonStateKey,
-    ) -> Step<ProductStateRef> {
+    fn product_of(&mut self, digest: StateKey, key: AutomatonStateKey) -> Step<ProductStateRef> {
         if !self.keys.contains(&key) {
             let count = widen(self.keys.len());
             if count >= self.limits.max_automaton_states {
@@ -1700,44 +1691,4 @@ impl<S: SubjectSystem> Check<'_, S> {
 
 fn fault(invariant: &'static str) -> ClosureRefusal {
     Checker::Closure.fault(invariant)
-}
-
-#[cfg(test)]
-mod tests {
-    use base64::Engine as _;
-    use ix_trace_rs::trace;
-    use qsl_eval::automaton::{SafetyState, SafetyTranslation};
-
-    use super::*;
-
-    /// A product-state locus is written as its model-state digest record
-    /// and its automaton key's octets in unpadded base64url, which decode
-    /// back to the exact key.
-    #[trace("TC-525")]
-    #[test]
-    fn a_product_state_locus_writes_its_digest_and_key_octets() {
-        let key = SafetyTranslation::deadlock_freedom()
-            .and_then(|translation| translation.key(SafetyState::Carried))
-            .expect("the key encodes");
-        let at = CertificateLocus::ProductState(ProductStateRef {
-            model_state: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [1; 32]),
-            automaton_state: key.clone(),
-        });
-        let written = serde_json::to_value(&at).expect("serializes");
-        assert_eq!(
-            written["model_state"],
-            serde_json::json!({
-                "domain": "quire.simulation.state-key/v1",
-                "digest": "01".repeat(32),
-            })
-        );
-        let octets = written["automaton_state"].as_str().expect("a string");
-        assert!(!octets.contains(['=', '+', '/']), "{octets}");
-        assert_eq!(
-            base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(octets)
-                .expect("base64url"),
-            key.as_bytes()
-        );
-    }
 }

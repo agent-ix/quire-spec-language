@@ -25,7 +25,7 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use qsl_eval::simulation::model::PredicateReading;
-use qsl_foundation::digest::DigestRecord;
+use qsl_eval::simulation::StateKey;
 use qsl_replay::{
     GraphUndefined, GraphWitness, ModelPath, ModelStep, OpenCause, RunEnd, StateGraphCertificate,
     StateGraphOutcome, WitnessSource,
@@ -139,7 +139,7 @@ impl<'g> Reader<'g> {
                     GraphUndefined {
                         predicate: Some(label.role),
                         transition: None,
-                        state_key: self.graph.nodes[node].key,
+                        state_key: self.graph.nodes[node].key.clone(),
                         locus: location.clone(),
                         cause: cause.clone(),
                     },
@@ -208,7 +208,7 @@ impl<'g> Reader<'g> {
         let edge = &self.graph.edges[edge];
         ModelStep {
             transition: edge.transition.clone(),
-            post_state: self.graph.nodes[edge.target.0].key,
+            post_state: self.graph.nodes[edge.target.0].key.clone(),
             delay: None,
         }
     }
@@ -436,10 +436,15 @@ impl<'g> Reader<'g> {
         (counts, order)
     }
 
-    /// The certificate's closure: every explored node's digest, sorted, and
+    /// The certificate's closure: every explored node's key, sorted, and
     /// each node's index in it.
-    fn closure(&self) -> Result<(Vec<DigestRecord>, Vec<u64>), ModelCheckRefusal> {
-        let mut closure: Vec<DigestRecord> = self.graph.nodes.iter().map(|node| node.key).collect();
+    fn closure(&self) -> Result<(Vec<StateKey>, Vec<u64>), ModelCheckRefusal> {
+        let mut closure: Vec<StateKey> = self
+            .graph
+            .nodes
+            .iter()
+            .map(|node| node.key.clone())
+            .collect();
         closure.sort();
         closure.dedup();
         let index = self
@@ -749,7 +754,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use qsl_eval::simulation::model::{ClauseOutcome, PredicateReading};
-    use qsl_foundation::digest::{DigestDomain, DigestRecord};
+    use qsl_eval::simulation::StateKey;
     use qsl_replay::{
         GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphOutcome, WitnessSource,
     };
@@ -781,7 +786,7 @@ mod tests {
     fn a_refused_reading_opens_its_node_for_its_own_instance_only() {
         let graph = ExploredStateGraph {
             nodes: vec![GraphNode {
-                key: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [0; 32]),
+                key: StateKey::from_canonical_bytes(b"0".to_vec()),
                 depth: 0,
                 labels: vec![PredicateLabel {
                     item: 0,
@@ -845,10 +850,7 @@ mod tests {
         ExploredStateGraph {
             nodes: (0..count)
                 .map(|node| GraphNode {
-                    key: DigestRecord::mint(
-                        DigestDomain::SimulationStateKeyV1,
-                        [u8::try_from(node).expect("a small graph"); 32],
-                    ),
+                    key: StateKey::from_canonical_bytes(node.to_string().into_bytes()),
                     depth: 0,
                     labels: Vec::new(),
                 })

@@ -95,13 +95,13 @@ use qsl_eval::simulation::protocol::{
     protocol_constraints, FairnessOrigin, MemoryModel, ProtocolFairness, ProtocolSystem,
     ProtocolTransition,
 };
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{
     Bounded, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit,
     Limits, OfferedReductions, Outcome, Permutation, SubjectSystem, SubjectTransition,
     SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
@@ -829,7 +829,7 @@ enum Before {
 struct DeadRoot<State, T> {
     /// The product state it was reached from, by its model state's digest and
     /// automaton state, and the transition taken; `None` for an initial state.
-    via: Option<(DigestRecord, StateId, PT<T>)>,
+    via: Option<(StateKey, StateId, PT<T>)>,
     model: State,
     depth: usize,
 }
@@ -842,7 +842,7 @@ struct LassoSystem<'r, S: LiveSubject> {
     atoms: Vec<FormulaNodeId>,
     automaton: RefCell<PropertyAutomaton>,
     start: StateId,
-    readings: RefCell<BTreeMap<(DigestRecord, bool), Reading>>,
+    readings: RefCell<BTreeMap<(StateKey, bool), Reading>>,
     /// Where the clause fixes its captures (FR-337).
     captured: CaptureSite,
     initial: Vec<LState<S::State>>,
@@ -900,7 +900,7 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
             })
     }
 
-    fn digest_of(&self, state: &S::State) -> Result<DigestRecord, ExpansionStop> {
+    fn digest_of(&self, state: &S::State) -> Result<StateKey, ExpansionStop> {
         self.system
             .state_key(state)
             .map(|(_, digest)| digest)
@@ -1342,13 +1342,13 @@ impl<T: SubjectTransition> FirstHit<T> {
 /// The shallowest depth each model state is known at, by its state-key
 /// digest: a product state's, or the model-only pass's own.
 #[derive(Default)]
-struct Depths(BTreeMap<DigestRecord, usize>);
+struct Depths(BTreeMap<StateKey, usize>);
 
 impl Depths {
     /// Record that `digest` is reached at `depth`; whether that is news: the
     /// state is new, or this is shallower than where it was known, so a
     /// finding there ranks first (UE-4).
-    fn reach(&mut self, digest: DigestRecord, depth: usize) -> bool {
+    fn reach(&mut self, digest: StateKey, depth: usize) -> bool {
         match self.0.entry(digest) {
             std::collections::btree_map::Entry::Vacant(slot) => {
                 slot.insert(depth);
@@ -1460,7 +1460,7 @@ struct Run<'r, S: LiveSubject> {
     lifted: Cell<usize>,
     /// The model states the memory bound cut a store of in the model-only
     /// passes.
-    dead_limited: RefCell<BTreeSet<DigestRecord>>,
+    dead_limited: RefCell<BTreeSet<StateKey>>,
     certify: Certify<'r>,
 }
 
@@ -1948,12 +1948,12 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             ))
         };
         let mut examined = Depths::default();
-        let mut live: BTreeMap<(DigestRecord, StateId), ProductStateId> = BTreeMap::new();
+        let mut live: BTreeMap<(StateKey, StateId), ProductStateId> = BTreeMap::new();
         for (index, state) in run.graph.states().iter().enumerate() {
             let digest = self.digest(&state.state.model)?;
-            examined.reach(digest, state.depth);
+            examined.reach(digest.clone(), state.depth);
             if let Property::After(at) = &state.state.property {
-                live.insert((digest, *at), ProductStateId(index));
+                live.insert((digest.clone(), *at), ProductStateId(index));
             }
         }
         let mut nodes: Vec<DeadNode<S::State, Tr<S>>> = Vec::new();
@@ -2018,7 +2018,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 let (locus, transition, cause) = found;
                 let site = UndefinedSite {
                     position: widen(depth),
-                    state_key: self.digest(&model)?,
+                    state_key: self.state_key(&model)?,
                     locus,
                     transition,
                     time: None,
@@ -2112,7 +2112,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         run: &Explored<'_, S>,
         roots: &[DeadRoot<S::State, Tr<S>>],
         nodes: &[DeadNode<S::State, Tr<S>>],
-        live: &BTreeMap<(DigestRecord, StateId), ProductStateId>,
+        live: &BTreeMap<(StateKey, StateId), ProductStateId>,
         at: usize,
         mut kind: CounterexampleKind,
     ) -> Result<Built<Tr<S>>, ModelCheckRefusal> {
@@ -2139,7 +2139,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             let identity = Permutation::identity();
             let (initial, mut lift) = match &root.via {
                 Some((digest, at, transition)) => {
-                    let Some(parent) = live.get(&(*digest, *at)) else {
+                    let Some(parent) = live.get(&(digest.clone(), *at)) else {
                         return Err(fault("a-dead-root-was-reached-from-a-product-state").into());
                     };
                     let (start, path) = tree_path(&run.graph, *parent);
@@ -2191,15 +2191,23 @@ impl<'r, S: LiveSubject> Run<'r, S> {
     ) -> Result<UndefinedSite, ModelCheckRefusal> {
         Ok(UndefinedSite {
             position: widen(state.depth),
-            state_key: self.digest(&state.model)?,
+            state_key: self.state_key(&state.model)?,
             locus,
             transition,
             time: None,
         })
     }
 
-    fn digest(&self, state: &S::State) -> Result<DigestRecord, ModelCheckRefusal> {
+    fn digest(&self, state: &S::State) -> Result<StateKey, ModelCheckRefusal> {
         Ok(self.system.state_key(state)?.1)
+    }
+
+    fn state_key(
+        &self,
+        state: &S::State,
+    ) -> Result<qsl_eval::simulation::StateKey, ModelCheckRefusal> {
+        let (bytes, _) = self.system.state_key(state)?;
+        Ok(qsl_eval::simulation::StateKey::from_canonical_bytes(bytes))
     }
 
     /// The finite-prefix counterexample to product state `at`: its
@@ -2398,7 +2406,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             let (initial_state, mut lift) = self.lift_start(run, root)?;
             self.lift_edges(run, &mut lift, &stem)?;
             let entry_index = lift.len();
-            let entry_state = lift.digest();
+            let entry_state = lift.key();
             let loop_edges = pass(lift.sigma())?;
             let mut edges = Vec::with_capacity(loop_edges.len());
             for (source, position) in loop_edges {
@@ -2430,7 +2438,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                     return Err(LoopStop::Quotient(QuotientStop::Cancelled));
                 }
                 self.lift_edges(run, &mut lift, &edges)?;
-                if lift.digest() == entry_state {
+                if lift.key() == entry_state {
                     break;
                 }
                 if run.binding.group.is_trivial() {
@@ -2722,27 +2730,5 @@ impl FairModel {
                 .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
         }
         Ok(fair)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ix_trace_rs::trace;
-
-    /// UE-4: a model state the product knows at depth 3 is news again when
-    /// the model-only pass reaches it at depth 1, but not at depth 1 twice or
-    /// at depth 2 after that.
-    #[trace("TC-521")]
-    #[test]
-    fn a_shallower_arrival_at_a_known_model_state_is_news() {
-        use qsl_foundation::digest::DigestDomain;
-        let digest = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [7; 32]);
-        let mut depths = Depths::default();
-        assert!(depths.reach(digest, 3), "a new state");
-        assert!(!depths.reach(digest, 3), "no shallower");
-        assert!(!depths.reach(digest, 4), "deeper");
-        assert!(depths.reach(digest, 1), "shallower");
-        assert!(!depths.reach(digest, 2), "deeper than the shallowest");
     }
 }

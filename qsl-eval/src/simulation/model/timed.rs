@@ -2423,7 +2423,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         Ok(found)
     }
 
-    /// FR-236's post-state digest of `state`: the canonical identity of its
+    /// FR-236's canonical key of `state`: the canonical identity of its
     /// model state (FR-181's `simulation-state`) together with its exact
     /// clock valuation, each clock named by its object, the field it is
     /// under and its path below the object (FR-230 "Places"). A clock of
@@ -2434,10 +2434,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     ///
     /// [`crate::simulation::EncodingRefusal`] when the state has no
     /// canonical encoding within the identity limits.
-    pub fn state_digest(
-        &self,
-        state: &TimedState,
-    ) -> Result<qsl_foundation::digest::DigestRecord, crate::simulation::EncodingRefusal> {
+    fn state_key_encoding(&self, state: &TimedState) -> super::encode::Enc {
         let clocks = self
             .places
             .iter()
@@ -2477,7 +2474,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 )
             })
             .collect();
-        let enc = super::encode::Enc::tagged(
+        super::encode::Enc::tagged(
             "timed-state",
             vec![
                 (
@@ -2491,8 +2488,19 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 ),
                 ("clocks", super::encode::Enc::Array(clocks)),
             ],
-        );
-        crate::simulation::key::state_key(&enc, super::identity_limits()).map(|(_, digest)| digest)
+        )
+    }
+
+    /// FR-236's complete canonical timed-state key: discrete state and exact
+    /// clock valuation.
+    pub fn state_key(
+        &self,
+        state: &TimedState,
+    ) -> Result<crate::simulation::StateKey, crate::simulation::EncodingRefusal> {
+        crate::simulation::key::canonical_state_key(
+            &self.state_key_encoding(state),
+            super::identity_limits(),
+        )
     }
 
     /// The time a step of `operation` advances a tick source's time stamp:
@@ -2816,7 +2824,7 @@ fn is_case(value: &quire_exact::Value, case: &str) -> bool {
     matches!(value, quire_exact::Value::Union(union) if union.member().identifier() == case)
 }
 
-/// One step of a clock place's path in the state digest's byte form: a
+/// One step of a clock place's path in the state key's byte form: a
 /// field by name, a union case by name, a slot by its index, taken from
 /// `slots` in path order.
 fn place_step_enc<'s>(

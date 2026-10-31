@@ -20,7 +20,6 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedProbabilisticModel, Reward, Workload};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{
@@ -36,6 +35,7 @@ use super::frames::{identity_bytes, text_of};
 use super::walk::{exhausted, expand_enabled, stop};
 use super::{refused, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, BROKEN};
 use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
+use crate::simulation::StateKey;
 use crate::value::evaluate_reward;
 
 /// A transition identity without its random arguments (ADR-024 PM-2): the
@@ -123,8 +123,8 @@ pub struct WeightedStep {
 /// (ADR-024 PM-3).
 #[derive(Clone, Debug)]
 pub struct NotMarkov {
-    /// The state's `quire.simulation.state-key/v1` digest.
-    pub state: DigestRecord,
+    /// The state's canonical key.
+    pub state: StateKey,
     /// The scheduled identity.
     pub transition: ScheduledIdentity,
     /// The drawn random values, in declared order.
@@ -149,10 +149,10 @@ impl Eq for NotMarkov {}
 /// was undecided at the state (FR-120's `ContractUndetermined` finding), so
 /// its successors, and its step probabilities, are not exactly known
 /// (FR-187).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UndecidedSuccessor {
-    /// The state's `quire.simulation.state-key/v1` digest.
-    pub state: DigestRecord,
+    /// The state's canonical key.
+    pub state: StateKey,
 }
 
 /// Why [`ModelSystem::weighted_steps`] gives a state no step probabilities
@@ -598,8 +598,8 @@ impl ModelSystem<'_> {
             .iter()
             .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
         {
-            let (_, digest) = self.state_key(state).map_err(|_| stop(BROKEN))?;
-            return Ok(Err(UndecidedSuccessor { state: digest }));
+            let key = self.canonical_state_key(state).map_err(|_| stop(BROKEN))?;
+            return Ok(Err(UndecidedSuccessor { state: key }));
         }
         let mut successors: Vec<Option<(ModelTransition, ModelSimState)>> =
             expansion.successors.into_iter().map(Some).collect();
@@ -640,7 +640,9 @@ impl ModelSystem<'_> {
                     .get_mut(index)
                     .and_then(Option::take)
                     .ok_or_else(|| stop(BROKEN))?;
-                let (key, _) = self.state_key(&successor.1).map_err(|_| stop(BROKEN))?;
+                let key = self
+                    .canonical_state_key(&successor.1)
+                    .map_err(|_| stop(BROKEN))?;
                 reached.push((key, successor));
             }
             reached.sort_by(|left, right| left.0.cmp(&right.0));
@@ -726,12 +728,12 @@ impl ModelSystem<'_> {
                 rewards: self.zero_rewards(),
             }]));
         }
-        let (_, digest) = self.state_key(state).map_err(|_| stop(BROKEN))?;
+        let key = self.canonical_state_key(state).map_err(|_| stop(BROKEN))?;
         for action in &actions {
             for draw in &action.draws {
                 if draw.successors.len() != 1 {
                     return Ok(Err(Unsteppable::NotMarkov(NotMarkov {
-                        state: digest,
+                        state: key.clone(),
                         transition: action.identity.clone(),
                         random: draw.random.clone(),
                         post_states: u32::try_from(draw.successors.len()).unwrap_or(u32::MAX),

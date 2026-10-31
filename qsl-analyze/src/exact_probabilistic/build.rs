@@ -11,9 +11,9 @@ use qsl_eval::simulation::model::{
     same_rewards, Action, ModelSimState, ModelSystem, NotMarkov, PredicateReading,
     ScheduledIdentity, Unsteppable,
 };
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::ModelCheckLimit;
 use qsl_semantics::check::{CheckedPredicate, Workload};
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
@@ -213,7 +213,7 @@ struct Builder<'r, 'c> {
 struct Hit {
     read: UndefinedRead,
     cause: UndefinedCause,
-    state_key: DigestRecord,
+    state_key: StateKey,
     model: Vec<u8>,
 }
 
@@ -668,12 +668,12 @@ impl Builder<'_, '_> {
             let mut successors = draw.successors;
             match successors.len() {
                 0 => {
-                    let (_, state) = self
+                    let (state, _) = self
                         .system
                         .state_key(model)
                         .map_err(|_| fault("state-key-encodes"))?;
                     return Err(ProductRefusal::NotMarkov(Box::new(NotMarkov {
-                        state,
+                        state: qsl_eval::simulation::StateKey::from_canonical_bytes(state),
                         transition: action.identity,
                         random: draw.random,
                         post_states: 0,

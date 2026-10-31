@@ -531,31 +531,8 @@ fn fmt_input_source(
     assignments: &[CanonicalAssignment],
     f: &mut fmt::Formatter<'_>,
 ) -> fmt::Result {
-    let mut buf = Vec::with_capacity(assignments.len() * 40);
-    for assignment in assignments {
-        buf.extend_from_slice(
-            parameter_name(&assignment.parameter)
-                .unwrap_or_default()
-                .as_bytes(),
-        );
-        match &assignment.value {
-            WitnessValue::Boolean(value) => buf.extend_from_slice(&[0, u8::from(*value)]),
-            WitnessValue::Integer(value) => {
-                buf.push(1);
-                buf.extend_from_slice(&value.to_le_bytes());
-            }
-            other => {
-                buf.push(2);
-                match other.to_value_text() {
-                    Ok(text) => buf.extend_from_slice(text.as_bytes()),
-                    Err(_) => buf.push(0xff),
-                }
-            }
-        }
-    }
     f.debug_struct("Input")
         .field("entries", &assignments.len())
-        .field("digest", &ByteDigest::of(&buf))
         .finish()
 }
 
@@ -583,7 +560,7 @@ pub type ObservedTemporalEnvelope =
 
 /// FR-073-AC-2/AC-3: no arm's rendering reproduces its full content.
 /// The `Witness` arm delegates to [`Witness`]'s own redacted `Debug`; the
-/// `Input` arm renders only its entry count and a content digest, never any
+/// `Input` arm renders only its entry count, never any
 /// [`CanonicalAssignment::value`] (the concrete-argument payload FR-073's
 /// Behavior names).
 impl fmt::Debug for ReplaySource {

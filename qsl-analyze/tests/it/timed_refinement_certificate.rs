@@ -408,7 +408,7 @@ fn three_initial_states_one_time_locked_are_certified() {
         verdict(&world, &marked),
         rejected(CertificateRule::InitialMismatch, node(first))
     );
-    let missing = CertificateLocus::ModelState(certificate.nodes[last].state_key);
+    let missing = CertificateLocus::ModelState(certificate.nodes[last].state_key.clone());
     let mut replaced = certificate.clone();
     replaced.initials[2] = first;
     assert_eq!(

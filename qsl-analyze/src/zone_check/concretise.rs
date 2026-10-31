@@ -69,7 +69,7 @@ pub(super) enum Target {
 
 /// A concretised path.
 pub(super) struct Concrete {
-    /// Its steps, each with its delay and post-state digest; a stutter
+    /// Its steps, each with its delay and post-state key; a stutter
     /// position adds none.
     pub prefix: Vec<ModelStep>,
     /// Its last clock valuation, every place in order.
@@ -337,14 +337,14 @@ pub(super) fn concretise(
                 last_reset[*place] = at;
             }
         }
-        // The post-state digest names the model's clock places only.
+        // The post-state key names the model's clock places only.
         let model_clocks = values.get(..timed.places().len()).unwrap_or(&values);
         let state = TimedState::new(
             step.post().clone(),
             ClockValuation::new(model_clocks.to_vec()),
         );
         let post_state = timed
-            .state_digest(&state)
+            .state_key(&state)
             .map_err(|_| NotConcretised::Digest)?;
         prefix.push(ModelStep {
             transition: step.transition().clone(),

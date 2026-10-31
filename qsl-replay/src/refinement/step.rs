@@ -21,7 +21,6 @@ use qsl_eval::simulation::model::{
     ModelSystem, Rejection, ResolvedStep, RowReading,
 };
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
 use qsl_semantics::model::state::ModelState;
 use quire_checked::key::DeclarationKey;
@@ -137,11 +136,7 @@ pub fn check_initial(
     ) {
         Ok(mapped) => mapped,
         Err(failure) => {
-            return mapping_verdict(
-                || state_digest(concrete_system, concrete_initial),
-                0,
-                failure,
-            )
+            return mapping_verdict(|| state_key(concrete_system, concrete_initial), 0, failure)
         }
     };
     let Ok((mapped_key, _)) = abstract_system.state_key_of(&mapped.visible) else {
@@ -324,7 +319,7 @@ fn decide_step(
         Ok(advanced) => advanced,
         Err(failure) => {
             return mapping_verdict(
-                || state_digest(concrete_system, step.post.state()),
+                || state_key(concrete_system, step.post.state()),
                 step.position,
                 failure,
             )
@@ -332,7 +327,7 @@ fn decide_step(
     };
     for failure in advanced.outcomes.into_failures() {
         let verdict = mapping_verdict(
-            || state_digest(concrete_system, step.post.state()),
+            || state_key(concrete_system, step.post.state()),
             step.position,
             failure,
         );
@@ -354,7 +349,7 @@ fn decide_step(
         Ok(mapped) => Some(mapped),
         Err(failure) => {
             let verdict = mapping_verdict(
-                || state_digest(concrete_system, step.post.state()),
+                || state_key(concrete_system, step.post.state()),
                 step.position,
                 failure,
             );
@@ -410,14 +405,17 @@ fn decide_step(
             };
             let mut matched = Vec::new();
             let mut undecided = false;
-            let mapped_digests: Vec<DigestRecord> = match completions(abstract_system, &mapped) {
-                Ok(states) => states
-                    .iter()
-                    .filter_map(|state| abstract_system.state_key_of(state).ok())
-                    .map(|(_, digest)| digest)
-                    .collect(),
-                Err(verdict) => return verdict,
-            };
+            let mapped_keys: Vec<qsl_eval::simulation::StateKey> =
+                match completions(abstract_system, &mapped) {
+                    Ok(states) => states
+                        .iter()
+                        .filter_map(|state| abstract_system.state_key_of(state).ok())
+                        .map(|(bytes, _)| {
+                            qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+                        })
+                        .collect(),
+                    Err(verdict) => return verdict,
+                };
             for candidate in &pre.abstract_states {
                 let expansion = match abstract_system.expand_state(candidate) {
                     Ok(expansion) => expansion,
@@ -443,7 +441,7 @@ fn decide_step(
                     matches!(
                         finding,
                         ModelFinding::ContractUndetermined { candidate, .. }
-                            if candidate.as_ref().is_none_or(|digest| mapped_digests.contains(digest))
+                            if candidate.as_ref().is_none_or(|key| mapped_keys.contains(key))
                     )
                 });
             }
@@ -614,13 +612,13 @@ fn evaluate_arguments(
                     )
                 }
                 Ok(RowReading::Undefined(cause)) => {
-                    let Ok((_, digest)) = concrete_system.state_key_of(step.post.state()) else {
+                    let Ok((bytes, _)) = concrete_system.state_key_of(step.post.state()) else {
                         return Err(fault("post-state-encodes"));
                     };
                     Err(StepVerdict::Undefined(UndefinedEvaluation {
                         site: UndefinedSite {
                             position: step.position,
-                            state_key: digest,
+                            state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(bytes),
                             locus: UndefinedLocus::Mapping(Box::new(MappingSite {
                                 row: at,
                                 object: object.clone(),
@@ -868,27 +866,33 @@ fn judge_operation(
     }
 }
 
-/// The state-key digest of `state` in `system`.
-fn state_digest(system: &ModelSystem<'_>, state: &ModelState) -> Option<DigestRecord> {
-    system.state_key_of(state).ok().map(|(_, digest)| digest)
+/// The canonical state key of `state` in `system`.
+fn state_key(
+    system: &ModelSystem<'_>,
+    state: &ModelState,
+) -> Option<qsl_eval::simulation::StateKey> {
+    system
+        .state_key_of(state)
+        .ok()
+        .map(|(bytes, _)| qsl_eval::simulation::StateKey::from_canonical_bytes(bytes))
 }
 
 /// The verdict of a mapping that gave no state, for the state at `position`,
-/// whose state-key digest `digest` reads.
+/// whose state key the evaluation reads.
 fn mapping_verdict(
-    digest: impl FnOnce() -> Option<DigestRecord>,
+    state_key: impl FnOnce() -> Option<qsl_eval::simulation::StateKey>,
     position: u64,
     failure: MappingFailure,
 ) -> StepVerdict {
     match failure {
         MappingFailure::Undefined { row, object, cause } => {
-            let Some(digest) = digest() else {
+            let Some(state_key) = state_key() else {
                 return fault("concrete-state-encodes");
             };
             StepVerdict::Undefined(UndefinedEvaluation {
                 site: UndefinedSite {
                     position,
-                    state_key: digest,
+                    state_key,
                     locus: UndefinedLocus::Mapping(Box::new(MappingSite { row, object })),
                     transition: None,
                     time: None,
@@ -936,12 +940,10 @@ mod tests {
     #[trace("TC-555")]
     #[test]
     fn an_undefined_row_outranks_an_undetermined_one_recorded_first() {
-        use qsl_foundation::digest::{DigestDomain, DigestRecord};
-
         let undefined = StepVerdict::Undefined(UndefinedEvaluation {
             site: UndefinedSite {
                 position: 2,
-                state_key: DigestRecord::mint(DigestDomain::Sha256Jcs, [0; 32]),
+                state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(b"null".to_vec()),
                 locus: UndefinedLocus::Constraint("c".to_owned()),
                 transition: None,
                 time: None,

@@ -551,7 +551,7 @@ pub(crate) struct QueueEvent {
 /// A step's post-state memory component in QSpec FR-181's typed canonical
 /// form, as its JCS text (ADR-025 MK-1, FR-227): under `tso`, every store
 /// buffer. It is data for the reader and for replay, which recomputes it;
-/// the post-state digest already binds it.
+/// the post-state key already binds it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CarriedComponent(String);
 

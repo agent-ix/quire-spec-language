@@ -109,14 +109,14 @@ impl Walk {
     fn insert(
         &mut self,
         state: ModelSimState,
-        digest: qsl_foundation::digest::DigestRecord,
+        key: qsl_eval::simulation::StateKey,
         depth: usize,
         parent: Option<usize>,
         root: usize,
     ) -> usize {
         let node = self.graph.nodes.len();
         self.graph.nodes.push(GraphNode {
-            key: digest,
+            key,
             depth: widen(depth),
             labels: Vec::new(),
         });
@@ -150,8 +150,8 @@ impl Exploration<'_, '_, '_> {
                     return self.finish(walk);
                 }
             };
-            let (key, digest) = self.system.state_key(&state)?;
-            initial.push((key, index, digest, state));
+            let (key, _) = self.system.state_key(&state)?;
+            initial.push((key, index, state));
         }
         let count = initial.len();
         initial.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
@@ -170,12 +170,18 @@ impl Exploration<'_, '_, '_> {
             .end();
             return self.finish(walk);
         }
-        for (key, index, digest, state) in initial {
+        for (key, index, state) in initial {
             // Equal keys coalesce into the first initial state that has the key.
             let node = match known.get(&key) {
                 Some(node) => *node,
                 None => {
-                    let node = walk.insert(state, digest, 0, None, index);
+                    let node = walk.insert(
+                        state,
+                        qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
+                        0,
+                        None,
+                        index,
+                    );
                     known.insert(key, node);
                     node
                 }
@@ -283,22 +289,22 @@ impl Exploration<'_, '_, '_> {
                 Ok(canonical) => canonical,
                 Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
             };
-            let (key, digest) = self.system.state_key(&state)?;
-            successors.push((order, key, digest, transition, state, permutation));
+            let (key, _) = self.system.state_key(&state)?;
+            successors.push((order, key, transition, state, permutation));
         }
         successors.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         let root = walk.graph.root[at];
         let selected = if let Some(por) = self.por {
             let mut enabled: Vec<_> = successors
                 .iter()
-                .map(|(_, _, _, transition, _, _)| transition.clone())
+                .map(|(_, _, transition, _, _)| transition.clone())
                 .collect();
             enabled.sort();
             let fresh = |transition: &ModelTransition| {
                 successors
                     .iter()
-                    .find(|(_, _, _, candidate, _, _)| candidate == transition)
-                    .is_some_and(|(_, key, _, _, _, _)| !known.contains_key(key))
+                    .find(|(_, _, candidate, _, _)| candidate == transition)
+                    .is_some_and(|(_, key, _, _, _)| !known.contains_key(key))
             };
             match por.ample(&walk.states[at], &enabled, &fresh) {
                 Ok(selected) => Some(selected),
@@ -314,7 +320,7 @@ impl Exploration<'_, '_, '_> {
             walk.reduced = true;
             walk.partial_order_reduced = true;
         }
-        for (_, key, digest, transition, state, permutation) in successors {
+        for (_, key, transition, state, permutation) in successors {
             if selected
                 .as_ref()
                 .is_some_and(|chosen| !chosen.contains(&transition))
@@ -337,8 +343,13 @@ impl Exploration<'_, '_, '_> {
                             widen(self.limits.limits.max_states),
                         )));
                     }
-                    let node =
-                        walk.insert(state, digest, depth.saturating_add(1), Some(edge), root);
+                    let node = walk.insert(
+                        state,
+                        qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
+                        depth.saturating_add(1),
+                        Some(edge),
+                        root,
+                    );
                     known.insert(key, node);
                     node
                 }
@@ -371,7 +382,7 @@ impl Exploration<'_, '_, '_> {
     ) -> Result<Result<Option<DeadlockEvent>, Halt>, ModelCheckRefusal> {
         let site = |locus, transition| UndefinedSite {
             position: walk.graph.nodes[at].depth,
-            state_key: walk.graph.nodes[at].key,
+            state_key: walk.graph.nodes[at].key.clone(),
             locus,
             transition,
             time: None,
@@ -506,7 +517,7 @@ fn deadlock_certificate(
         .nodes
         .iter()
         .map(|node| ProductStateRef {
-            model_state: node.key,
+            model_state: node.key.clone(),
             automaton_state: key.clone(),
         })
         .collect();
@@ -526,7 +537,7 @@ impl ExploredStateGraph {
             };
             steps.push(ModelStep {
                 transition: edge.transition.clone(),
-                post_state: self.nodes[cursor].key,
+                post_state: self.nodes[cursor].key.clone(),
                 delay: None,
             });
             cursor = edge.source.0;

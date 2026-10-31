@@ -2,24 +2,23 @@
 //! Executable, replayable traces of one sampled path, and replaying one
 //! against a `TransitionSystem` (FR-101, ADR-014 TR-1, TR-6, TR-7).
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use quire_semantic_value::catalog::CatalogCode;
 
 use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
+use crate::simulation::key::StateKey;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use qsl_foundation::IdentityLimits;
 
-/// One executed transition and the state-key digest of the state it
-/// produced.
+/// One executed transition and the canonical key of the state it produced.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Step<T> {
     /// The transition taken.
     pub transition: T,
-    /// The resulting state's `quire.simulation.state-key/v1` digest.
-    pub key: DigestRecord,
+    /// The resulting state's canonical key.
+    pub key: StateKey,
 }
 
 /// Why a sampled run stopped.
@@ -52,14 +51,13 @@ pub struct SampleProvenance {
     pub stopped: StopReason,
 }
 
-/// One executable path: the starting state's key digest, the ordered
+/// One executable path: the starting state's key, the ordered
 /// transitions taken from it and the findings of the states it expanded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trace<T, F> {
-    /// The `quire.simulation.state-key/v1` digest of the state the path
-    /// starts from.
-    pub initial: DigestRecord,
-    /// The transitions taken and the resulting digest at each step, in
+    /// The canonical key of the state the path starts from.
+    pub initial: StateKey,
+    /// The transitions taken and the resulting canonical key at each step, in
     /// order.
     pub steps: Vec<Step<T>>,
     /// One entry per state on the trace with at least one finding, in step
@@ -74,11 +72,11 @@ pub struct Trace<T, F> {
 /// Why a trace refused to replay.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayError<T: std::fmt::Debug> {
-    /// No state returned by `TransitionSystem::initial` has this digest.
-    #[error("no initial state has digest {expected:?}")]
+    /// No state returned by `TransitionSystem::initial` has this key.
+    #[error("no initial state has key {expected:?}")]
     UnknownInitial {
         /// The trace's recorded starting digest.
-        expected: DigestRecord,
+        expected: StateKey,
     },
     /// At `step`, the current state offers no successor with this
     /// transition identity.
@@ -90,7 +88,7 @@ pub enum ReplayError<T: std::fmt::Debug> {
         transition: T,
     },
     /// At `step`, a successor with this transition identity exists, but
-    /// none of them produced the trace's recorded digest.
+    /// none of them produced the trace's recorded key.
     #[error(
         "step {step}: transition {transition:?} produced {actual:?}, trace recorded {expected:?}"
     )]
@@ -100,10 +98,10 @@ pub enum ReplayError<T: std::fmt::Debug> {
         /// The transition taken.
         transition: T,
         /// The digest the trace recorded.
-        expected: DigestRecord,
+        expected: StateKey,
         /// The digest of the first matching-transition successor the system
         /// actually produced, in canonical order.
-        actual: DigestRecord,
+        actual: StateKey,
     },
     /// The state at step index `step` (0 for the initial state) expanded to
     /// findings other than the recorded ones.
@@ -131,7 +129,7 @@ pub enum ReplayError<T: std::fmt::Debug> {
 }
 
 /// Re-run `trace` against `system`, refusing at the first state whose
-/// expansion, successor or resulting digest differs from what the trace
+/// expansion, successor or resulting key differs from what the trace
 /// recorded.
 ///
 /// A trace that replays to completion is executable by `system` exactly as
@@ -140,12 +138,12 @@ pub enum ReplayError<T: std::fmt::Debug> {
 /// the same findings and the same stop: a stop with the recorded cause at
 /// the last state exactly when the trace ended `StopReason::Stopped`, and no
 /// stop anywhere else (FR-101-AC-14). It recomputes each candidate state's
-/// digest and compares it with the recorded digest (FR-101).
+/// key and compares it with the recorded key (FR-101).
 ///
-/// A step matches by transition identity *and* recorded digest together:
+/// A step matches by transition identity *and* recorded key together:
 /// when several successors of the current state share a transition
-/// identity, replay picks the one whose digest equals the trace's recorded
-/// digest, not simply the first one the system happens to list; when none
+/// identity, replay picks the one whose key equals the trace's recorded key,
+/// not simply the first one the system happens to list; when none
 /// does, the reported `actual` is the first match in canonical order (the
 /// same order `explore` and `sample` themselves walk), not the
 /// `TransitionSystem`'s own listing order.
@@ -160,10 +158,10 @@ pub fn replay<S: TransitionSystem>(
 ) -> Result<(), ReplayError<S::TransitionId>> {
     let mut current = sorted_initial(system, identity)?
         .into_iter()
-        .find(|item| item.digest == trace.initial)
+        .find(|item| item.key == trace.initial)
         .map(|item| item.state)
         .ok_or(ReplayError::UnknownInitial {
-            expected: trace.initial,
+            expected: trace.initial.clone(),
         })?;
     let recorded_stop = match trace.provenance.as_ref().map(|p| p.stopped) {
         Some(StopReason::Stopped(cause)) => Some(cause),
@@ -175,7 +173,7 @@ pub fn replay<S: TransitionSystem>(
         .is_some_and(|provenance| provenance.stopped == StopReason::Reached);
     let last = trace.steps.len();
     let mut check = FindingsCheck::new(&trace.findings);
-    let mut current_digest = trace.initial;
+    let mut current_key = trace.initial.clone();
 
     for index in 0..=last {
         // A trace its end condition ended never expanded its last state.
@@ -204,34 +202,34 @@ pub fn replay<S: TransitionSystem>(
                 replayed: None,
             });
         }
-        check.expanded(current_digest, index, findings)?;
+        check.expanded(current_key.clone(), index, findings)?;
         let Some(step) = trace.steps.get(index) else {
             break;
         };
-        let mut first_match_digest: Option<DigestRecord> = None;
+        let mut first_match_key: Option<StateKey> = None;
         let mut matched_state = None;
         for successor in successors {
             if successor.transition != step.transition {
                 continue;
             }
-            if first_match_digest.is_none() {
-                first_match_digest = Some(successor.digest);
+            if first_match_key.is_none() {
+                first_match_key = Some(successor.key.clone());
             }
-            if successor.digest == step.key {
+            if successor.key == step.key {
                 matched_state = Some(successor.state);
                 break;
             }
         }
-        current = match (matched_state, first_match_digest) {
+        current = match (matched_state, first_match_key) {
             (Some(next), _) => {
-                current_digest = step.key;
+                current_key = step.key.clone();
                 next
             }
             (None, Some(actual)) => {
                 return Err(ReplayError::KeyMismatch {
                     step: index,
                     transition: step.transition.clone(),
-                    expected: step.key,
+                    expected: step.key.clone(),
                     actual,
                 });
             }
@@ -247,7 +245,7 @@ pub fn replay<S: TransitionSystem>(
 }
 
 /// Compares the findings replay recomputes with the trace's recorded
-/// `findings`, entry by entry in step order: depth, state digest and
+/// `findings`, entry by entry in step order: depth, state key and
 /// findings all must match, and the recorded list must hold no other entry.
 struct FindingsCheck<'a, F> {
     recorded: &'a [StateFindings<F>],
@@ -263,12 +261,12 @@ impl<'a, F: PartialEq> FindingsCheck<'a, F> {
         }
     }
 
-    /// The state at step index `depth`, with digest `state`, expanded to
+    /// The state at step index `depth`, with key `state`, expanded to
     /// `findings`. Refuses at the first recorded entry, at or before
     /// `depth`, that differs from the recomputed entries.
     fn expanded<T: std::fmt::Debug>(
         &mut self,
-        state: DigestRecord,
+        state: StateKey,
         depth: usize,
         findings: Vec<F>,
     ) -> Result<(), ReplayError<T>> {

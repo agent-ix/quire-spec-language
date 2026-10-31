@@ -6,8 +6,7 @@ use std::collections::{BTreeMap, VecDeque};
 use qsl_eval::simulation::model::{
     ModelSimState, ModelSimulationRequest, ModelSystem, PredicateReading, TerminalClass,
 };
-use qsl_eval::simulation::TransitionSystem;
-use qsl_foundation::digest::DigestRecord;
+use qsl_eval::simulation::{StateKey, TransitionSystem};
 use qsl_semantics::check::{
     CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole, StateGraphForm,
 };
@@ -175,7 +174,7 @@ pub fn replay_model_graph_with_cancel(
     Ok(crate::result::ReplayResult::ModelGraph(result))
 }
 
-pub(super) type Position = (ModelSimState, DigestRecord);
+pub(super) type Position = (ModelSimState, StateKey);
 
 /// Replay typed graph evidence against the recompiled claim and its admitted
 /// model system. The facade performs package and identity admission first.
@@ -619,11 +618,11 @@ fn replay_steps(
     start: ModelSimState,
     steps: &[ModelStep],
 ) -> Result<Vec<Position>, ReplayRefusal> {
-    let digest = system
+    let (bytes, _) = system
         .state_key(&start)
-        .map_err(|_| fault("state-graph-state-key"))?
-        .1;
-    let mut positions = vec![(start, digest)];
+        .map_err(|_| fault("state-graph-state-key"))?;
+    let key = StateKey::from_canonical_bytes(bytes);
+    let mut positions = vec![(start, key)];
     for (index, step) in steps.iter().enumerate() {
         let current = positions
             .last()
@@ -638,13 +637,13 @@ fn replay_steps(
                 continue;
             }
             enabled = true;
-            let digest = system
+            let (bytes, _) = system
                 .state_key(&next)
-                .map_err(|_| fault("state-graph-state-key"))?
-                .1;
-            reached.push(digest);
-            if digest == step.post_state {
-                positions.push((next, digest));
+                .map_err(|_| fault("state-graph-state-key"))?;
+            let key = StateKey::from_canonical_bytes(bytes);
+            reached.push(key.clone());
+            if key == step.post_state {
+                positions.push((next, key));
                 break;
             }
         }
@@ -660,7 +659,7 @@ fn replay_steps(
         {
             return Err(refused(ModelTraceRefusal::PostState {
                 step: index,
-                recorded: step.post_state,
+                recorded: step.post_state.clone(),
                 reached,
             }));
         }
@@ -703,13 +702,13 @@ fn explore_closure(
     max_states: usize,
     max_transitions: usize,
     evaluated: &mut Vec<(PredicateRole, bool)>,
-) -> Result<(u64, Option<DigestRecord>, Option<ReachedLimit>), ReplayRefusal> {
-    let digest = system
+) -> Result<(u64, Option<StateKey>, Option<ReachedLimit>), ReplayRefusal> {
+    let (bytes, _) = system
         .state_key(initial)
-        .map_err(|_| fault("state-graph-state-key"))?
-        .1;
-    let mut seen = BTreeMap::from([(digest, initial.clone())]);
-    let mut queue = VecDeque::from([(digest, initial.clone())]);
+        .map_err(|_| fault("state-graph-state-key"))?;
+    let key = StateKey::from_canonical_bytes(bytes);
+    let mut seen = BTreeMap::from([(key.clone(), initial.clone())]);
+    let mut queue = VecDeque::from([(key, initial.clone())]);
     let mut transitions = 0usize;
     while let Some((key, state)) = queue.pop_front() {
         let reading = read_predicate(system, target, &state, over)?;
@@ -740,18 +739,18 @@ fn explore_closure(
                     }),
                 ));
             }
-            let digest = system
+            let (bytes, _) = system
                 .state_key(&next)
-                .map_err(|_| fault("state-graph-state-key"))?
-                .1;
+                .map_err(|_| fault("state-graph-state-key"))?;
+            let key = StateKey::from_canonical_bytes(bytes);
             let transition_key = system
                 .transition_key(&transition)
                 .map_err(|_| fault("state-graph-transition-key"))?;
-            keyed.push((transition_key, digest, next));
+            keyed.push((transition_key, key, next));
         }
-        keyed.sort_by(|left, right| (&left.0, left.1).cmp(&(&right.0, right.1)));
-        for (_, digest, next) in keyed {
-            if seen.contains_key(&digest) {
+        keyed.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
+        for (_, key, next) in keyed {
+            if seen.contains_key(&key) {
                 continue;
             }
             if seen.len() >= max_states {
@@ -764,8 +763,8 @@ fn explore_closure(
                     }),
                 ));
             }
-            seen.insert(digest, next.clone());
-            queue.push_back((digest, next));
+            seen.insert(key.clone(), next.clone());
+            queue.push_back((key, next));
         }
     }
     Ok((seen.len() as u64, None, None))
@@ -782,7 +781,7 @@ pub(super) fn result(
     settlement: GraphReplaySettlement,
     evaluated_predicates: Vec<(PredicateRole, bool)>,
     closure_nodes: Option<u64>,
-    first_target: Option<DigestRecord>,
+    first_target: Option<StateKey>,
 ) -> GraphReplayResult {
     GraphReplayResult {
         settlement,

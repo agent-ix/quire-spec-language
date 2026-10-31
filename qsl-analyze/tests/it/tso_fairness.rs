@@ -698,7 +698,7 @@ fn replay_refuses_the_lasso_that_never_flushes_w() {
             transition: system
                 .reported(transition.clone(), &states[*at].0)
                 .expect("the step reports"),
-            post_state: system.state_key(&states[*at].0).expect("a key").1,
+            post_state: system.state_key(&states[*at].0).expect("a key").0.into(),
             delay: None,
         })
         .collect();
@@ -770,7 +770,7 @@ fn replay_refuses_an_ra_lasso_that_never_loads_the_mo_last_message() {
             transition: system
                 .reported(transition.clone(), &states[*at].0)
                 .expect("the step reports"),
-            post_state: system.state_key(&states[*at].0).expect("a key").1,
+            post_state: system.state_key(&states[*at].0).expect("a key").0.into(),
             delay: None,
         })
         .collect();

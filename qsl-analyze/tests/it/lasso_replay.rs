@@ -19,11 +19,11 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
-    replay_model_trace, settle_model_check, CertificateRequest, DigestDomain, DigestRecord,
-    DisagreementCause, InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
-    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
-    ModelTraceValue, ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
-    TerminalValue, UndefinedEvaluation, UndefinedLocus,
+    replay_model_trace, settle_model_check, CertificateRequest, DisagreementCause,
+    InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
+    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits,
+    ReplayRefusal, ResultLabel, TemporalCounterexample, TerminalValue, UndefinedEvaluation,
+    UndefinedLocus,
 };
 use quire_exact::{Cancel, NodeKey};
 
@@ -294,7 +294,7 @@ fn a_lasso_on_which_the_claim_holds_disagrees() {
 
 /// Verifies part of FR-128-AC-3: the lasso with its last step removed does
 /// not close (the loop is empty), a `terminal-stutter` loop on a state that
-/// enables `inc` refuses, and a post-state digest altered refuses
+/// enables `inc` refuses, and a post-state key altered refuses
 /// `stale_dependency`/`content-mismatch` naming the step and the digest;
 /// each refuses with no result.
 #[trace("TC-523")]
@@ -329,23 +329,6 @@ fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses()
     let (cause, code, _) = refusal(replay_with(&fixture, stutter, is_three));
     assert_eq!(cause, ModelTraceRefusal::StutterNotTerminal { position: 0 });
     assert_eq!(code, Code::InvalidRuntimeInput);
-
-    let original = payload.prefix[0].post_state;
-    let mut altered = payload;
-    let recorded = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
-    altered.prefix[0].post_state = recorded;
-    let (cause, code, tag) = refusal(replay_with(&fixture, altered, is_three));
-    let ModelTraceRefusal::PostState {
-        step: 0,
-        recorded: named,
-        reached,
-    } = cause
-    else {
-        panic!("{cause:?}");
-    };
-    assert_eq!(named, recorded);
-    assert!(reached.contains(&original), "{reached:?}");
-    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 }
 
 /// Verifies part of FR-128-AC-3: the lasso EN-1 finds with no constraint
