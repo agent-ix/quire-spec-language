@@ -16,19 +16,48 @@ mod fixture_w;
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
 
-/// Compare the pre-emission projection with the admitted byte-reader view.
-fn activation_rows(lowered: &Lowered) -> &[quire_contract_model::CheckedProtocolActivationRow] {
-    let read_back = lowered
+/// Compare the pre-emission projection with the admitted byte-reader view,
+/// each read-back id resolved through the emitted graph to its structural
+/// form, and return the rows in that form, comparable across documents.
+fn activation_rows(lowered: &Lowered) -> Vec<quire_contract_model::CheckedProtocolActivationRow> {
+    use quire_contract_model::{CheckedProtocolActivation, CheckedProtocolActivationRow};
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&lowered.wire)
+        .expect("the emitted graph");
+    let structural = |id: &CheckedNodeId| {
+        qsl_semantics::check::wire_id::structural_id(&graph.key(id).expect("an emitted node"))
+    };
+    let read_back: Vec<CheckedProtocolActivationRow> = lowered
         .ir
         .as_ref()
         .expect("the admitted checked package")
-        .protocol_activation_relation();
+        .protocol_activation_relation()
+        .iter()
+        .map(|row| CheckedProtocolActivationRow {
+            clause: structural(&row.clause),
+            activation: match &row.activation {
+                CheckedProtocolActivation::Origin => CheckedProtocolActivation::Origin,
+                CheckedProtocolActivation::Each { trigger } => CheckedProtocolActivation::Each {
+                    trigger: structural(trigger),
+                },
+            },
+            required_temporal: structural(&row.required_temporal),
+        })
+        .collect();
     assert_eq!(
         lowered.activation_rows, read_back,
         "in-process/read-back parity: {}",
         lowered.text
     );
-    &lowered.activation_rows
+    read_back
+}
+
+/// The structural id of the node the wire id `id` names in `wire`'s graph.
+fn structural(wire: &Value, id: &Value) -> CheckedNodeId {
+    let key = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .expect("the emitted graph")
+        .key_of_value(id)
+        .expect("an id of the emitted graph");
+    qsl_semantics::check::wire_id::structural_id(&key)
 }
 
 #[trace(
@@ -69,12 +98,12 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
     let rows = activation_rows(&lowered);
     assert_eq!(rows.len(), 1);
     assert_eq!(
-        serde_json::to_value(&rows[0].clause).unwrap(),
-        clause["node_id"]
+        rows[0].clause,
+        structural(&lowered.wire, &clause["node_id"])
     );
     assert_eq!(
-        serde_json::to_value(&rows[0].required_temporal).unwrap(),
-        target["node_id"]
+        rows[0].required_temporal,
+        structural(&lowered.wire, &target["node_id"])
     );
     assert_eq!(
         rows[0].activation,
@@ -410,15 +439,15 @@ fn a_required_clause_relation_carries_the_each_trigger() {
     else {
         panic!("an each activation row: {:?}", rows[0]);
     };
-    assert_eq!(serde_json::to_value(row_trigger).unwrap(), *trigger);
+    assert_eq!(*row_trigger, structural(&lowered.wire, trigger));
     assert_eq!(
-        serde_json::to_value(&rows[0].clause).unwrap(),
-        clause["node_id"]
+        rows[0].clause,
+        structural(&lowered.wire, &clause["node_id"])
     );
     let temporal = node_of(&lowered.wire, "temporal", "temporal_clause");
     assert_eq!(
-        serde_json::to_value(&rows[0].required_temporal).unwrap(),
-        temporal["node_id"]
+        rows[0].required_temporal,
+        structural(&lowered.wire, &temporal["node_id"])
     );
 }
 
