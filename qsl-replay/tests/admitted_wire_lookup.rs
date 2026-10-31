@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1090 (FR-396-AC-10): the by-wire lookups take the structural wire id
-//! and answer as the NodeKey lookups do, with the same refusals.
+//! TC-1090 (FR-396-AC-10): a structural wire id resolves through the
+//! package's wire graph to the key the NodeKey lookups answer for, with
+//! their refusals.
 
 use ix_trace_rs::trace;
 use qsl_foundation::Setting;
 use qsl_replay::{
-    compile_admitted, AdmittedCompilation, AdmittedLookupRefusal, DependencyInput, Identifier,
-    NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary, WireIdError,
+    compile_admitted, AdmittedCompilation, AdmittedContext, AdmittedLookupRefusal, DependencyInput,
+    Identifier, NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary, WireIdError,
 };
 use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
 use quire_exact::{InvalidNodeKey, PathSegment};
@@ -30,6 +31,11 @@ fn id(text: &str) -> Identifier {
 /// it: its declaration path, all strings.
 fn wire(key: &NodeKey) -> CheckedNodeId {
     qsl_semantics::check::wire_id::declared_id(key).expect("a declared node")
+}
+
+/// The key `id` names in `context`'s package, resolved through its wire graph.
+fn resolve(context: &AdmittedContext, id: &CheckedNodeId) -> NodeKey {
+    context.wire_graph().key(id).expect("a well-formed wire id")
 }
 
 fn library() -> SuppliedLibrary {
@@ -96,9 +102,9 @@ fn enum_by_wire_is_found() {
     let context = admitted.context();
     let color = context.enums().next().expect("the enum");
     let key = wire(color.key());
-    assert_eq!(context.enum_declaration_by_wire(&key), Ok(color));
+    assert_eq!(context.enum_declaration(&resolve(context, &key)), Ok(color));
     assert_eq!(
-        context.enum_case_by_wire(&key, &id("RED")),
+        context.enum_case(&resolve(context, &key), &id("RED")),
         Ok(color.case(&id("RED")).expect("the case"))
     );
 }
@@ -113,14 +119,11 @@ fn enum_by_wire_refuses_foreign() {
         declaration,
         package: lib.context().package_name().clone(),
     });
+    let context = unit.context();
+    let key = resolve(context, &wire(shade.key()));
+    assert_eq!(context.enum_declaration(&key), foreign);
     assert_eq!(
-        unit.context().enum_declaration_by_wire(&wire(shade.key())),
-        foreign
-    );
-    assert_eq!(
-        unit.context()
-            .enum_case_by_wire(&wire(shade.key()), &id("DARK"))
-            .map(|_| ()),
+        context.enum_case(&key, &id("DARK")).map(|_| ()),
         foreign.map(|_| ())
     );
 }
@@ -132,7 +135,7 @@ fn enum_by_wire_refuses_unknown() {
     let context = admitted.context();
     let nobody = nobody();
     assert_eq!(
-        context.enum_declaration_by_wire(&wire(&nobody)),
+        context.enum_declaration(&resolve(context, &wire(&nobody))),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nobody.clone(),
             case: None
@@ -140,7 +143,7 @@ fn enum_by_wire_refuses_unknown() {
     );
     let color = context.enums().next().expect("the enum").key().clone();
     assert_eq!(
-        context.enum_case_by_wire(&wire(&color), &id("PURPLE")),
+        context.enum_case(&resolve(context, &wire(&color)), &id("PURPLE")),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: color,
             case: Some(id("PURPLE"))
@@ -155,7 +158,7 @@ fn enum_by_wire_never_refuses_wrong_kind() {
     let context = admitted.context();
     let record = context.composites().next().expect("the record").node();
     assert_eq!(
-        context.enum_declaration_by_wire(&wire(record)),
+        context.enum_declaration(&resolve(context, &wire(record))),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: record.clone(),
             case: None
@@ -170,7 +173,7 @@ fn composite_by_wire_is_found() {
     let context = admitted.context();
     let left = context.composites().next().expect("the record");
     assert_eq!(
-        context.composite_declaration_by_wire(&wire(left.node())),
+        context.composite_declaration(&resolve(context, &wire(left.node()))),
         Ok(left)
     );
 }
@@ -184,9 +187,9 @@ fn composite_by_wire_refuses_foreign() {
         .composites()
         .next()
         .expect("the library record");
+    let context = unit.context();
     assert_eq!(
-        unit.context()
-            .composite_declaration_by_wire(&wire(point.node())),
+        context.composite_declaration(&resolve(context, &wire(point.node()))),
         Err(AdmittedLookupRefusal::Foreign {
             declaration: point.node().clone(),
             package: lib.context().package_name().clone(),
@@ -198,11 +201,10 @@ fn composite_by_wire_refuses_foreign() {
 #[test]
 fn composite_by_wire_refuses_unknown() {
     let admitted = own();
+    let context = admitted.context();
     let nobody = nobody();
     assert_eq!(
-        admitted
-            .context()
-            .composite_declaration_by_wire(&wire(&nobody)),
+        context.composite_declaration(&resolve(context, &wire(&nobody))),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nobody,
             case: None
@@ -217,7 +219,7 @@ fn composite_by_wire_refuses_wrong_kind() {
     let context = admitted.context();
     let color = context.enums().next().expect("the enum").key().clone();
     assert_eq!(
-        context.composite_declaration_by_wire(&wire(&color)),
+        context.composite_declaration(&resolve(context, &wire(&color))),
         Err(AdmittedLookupRefusal::WrongKind { declaration: color })
     );
 }
@@ -251,7 +253,7 @@ fn index_segment_and_malformed_wire_ids() {
     )
     .expect("a nested node");
     assert_eq!(
-        context.composite_declaration_by_wire(&derived(at)),
+        context.composite_declaration(&resolve(context, &derived(at))),
         Err(AdmittedLookupRefusal::Unknown {
             declaration: nested_key,
             case: None
@@ -259,12 +261,10 @@ fn index_segment_and_malformed_wire_ids() {
     );
     let len = graph.keys().len();
     assert_eq!(
-        context.composite_declaration_by_wire(&derived(len as u64)),
-        Err(AdmittedLookupRefusal::MalformedWire {
-            cause: WireIdError::IndexOutOfRange {
-                index: len as u64,
-                len
-            }
+        graph.key(&derived(len as u64)),
+        Err(WireIdError::IndexOutOfRange {
+            index: len as u64,
+            len
         })
     );
 
@@ -274,9 +274,7 @@ fn index_segment_and_malformed_wire_ids() {
         ordinal: 0,
     };
     assert_eq!(
-        context.composite_declaration_by_wire(&empty),
-        Err(AdmittedLookupRefusal::MalformedWire {
-            cause: WireIdError::Key(InvalidNodeKey::EmptyPath)
-        })
+        graph.key(&empty),
+        Err(WireIdError::Key(InvalidNodeKey::EmptyPath))
     );
 }
