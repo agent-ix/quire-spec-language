@@ -29,6 +29,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-383
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-400
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-016
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-049
     type: references
   - target: ix://agent-ix/quire-specification/FR-322
@@ -94,8 +98,10 @@ names the counter or the value that stopped the evaluation.
 
 ## Inputs
 
-- A `CheckedPackage` that carries the protocol as the v2 protocol nodes FR-383
-  emits (QSpec FR-464).
+- One admitted evaluation view of either an in-process `CheckedPackage` or
+  the complete package admitted by the contract reader from the v2 protocol
+  nodes FR-383 emits (QSpec FR-464), as the bridge below defines. An
+  `ImportView`, a free-standing term and a decoded wire graph are not inputs.
 - A `ProtocolSlot { node, member, index }`:
   - `node` is the node key of a `protocol` node;
   - `member` is the name of the node's body binding that holds the expression,
@@ -189,6 +195,97 @@ left incomplete before S6a is `CallFailure::Admission(Box<CallAdmissionFailure>)
 and an S6a invariant break is `CallFailure::Fault(InternalFault)`. The protocol
 slot is selected only by this call: `run_clause` and FR-312's request carry no
 protocol slot.
+
+### One admitted checked-term view
+
+QSL SHALL define one sealed `qsl_eval::value::CheckedTermView` contract in
+layer 5. Its concrete layer-4 input carrier SHALL be
+`qsl_package::evaluation_view::AdmittedEvaluationView<'a>`, with private variants
+that borrow either `&'a CheckedPackage` or the successful I2 read's retained
+admitted package, source map, effective limits and admitted dependency closure.
+The in-process entry SHALL be `CheckedPackage::evaluation_view(&self) ->
+AdmittedEvaluationView<'_>`; the successful I2 read SHALL expose
+`evaluation_view(&self) -> AdmittedEvaluationView<'_>` over its retained
+`Arc<quire_contract_model::CheckedPackageV2>`. The reader-result entry and its
+IR variant SHALL exist only with `std`. The view contract and in-process
+variant SHALL introduce no IR or `std` dependency into the no_std path.
+
+The reader's retained admitted package is the witness: a caller SHALL NOT
+construct the reader variant from `CheckedSemanticGraphV2`, `CheckedTerm`,
+`ImportView`, bytes, or a deserialized value. A refused, limited, cancelled or
+faulted I2 read SHALL yield no view. The view SHALL retain the reader's exact
+identity, source-map and dependency associations for its entire lifetime.
+Exposing the successful reader result does not change I2 admission or its
+existing staged refusal vocabulary.
+
+Under `std`, `qsl-package` SHALL expose its existing
+`read_checked_package_v2(bytes: &[u8], identity: LibraryName,
+limits: V2ReadLimits, evidence: &CheckedPackageEvidence) -> V2ReadOutcome`
+and the successful `V2Read` carrier, with its fields private. `V2ReadOutcome`
+SHALL remain `Result<Staged<V2Read>, StageFailure<V2ReadRefusal>>`.
+`V2Read::evaluation_view(&self)` SHALL be the reader-result entry above.
+This exposes the existing admission result; it does not add a second reader.
+
+The layer-5 `CheckedTermView` SHALL select a slot with
+`select_protocol_slot(&self, slot: &ProtocolSlot) ->
+Result<SelectedProtocolTerm<'_>, CallFailure>`. `SelectedProtocolTerm` SHALL
+have private fields and read accessors for its expression handle and ordered
+source descriptors. Each descriptor SHALL expose the admitted binder's
+`NodeKey`, level, `ValueType` and read location. The expression handle
+`TermHandle<'a>` SHALL be opaque, tied to the exact borrowed view and owning
+body, and unavailable from an integer, a node key, a free-standing term or
+another view. Operand handles SHALL retain that same owner; dependency calls
+SHALL resolve within the witness's exact admitted closure. Slot selection and
+source ordering SHALL obey the selection and supply admission rules below.
+`ProtocolSlot`, `SelectedProtocolTerm`, source descriptors and `CallFailure`
+SHALL remain layer-5 inputs and results; layer 4 SHALL import none of them.
+
+The view SHALL expose each selected term's operation, ordered operands,
+literal value, checked type and location through the one shared checked-term
+read vocabulary governed by [FR-400](FR-400-separate-checked-terms-from-the-checker.md).
+This is a read projection of admitted data; it SHALL neither build a
+`CheckedBody`, `Node` or another checked proof nor call `construct`. The
+in-process and reader projections SHALL be consumed by the existing S6a
+`Machine`, using the same operation execution, function and dispatch lookup,
+model reads and family-result mapping. The bridge SHALL add no interpreter,
+family-dispatch table, checking pass, source recompilation or serialized-term
+execution path. The sealed `CheckedPackageEvaluation` seam SHALL evaluate
+`AdmittedEvaluationView` as well as `CheckedPackage`; the latter SHALL
+delegate slot evaluation through its view to the same `ProtocolClause` hook.
+
+View creation, term projection and slot/supply admission SHALL charge no
+evaluation counter. Once evaluation starts, the same caller meter SHALL reach
+the existing machine unchanged. Admission failures SHALL retain their code,
+cause and node/member/binder locus with no charge; an impossible foreign
+handle or broken admitted projection SHALL be an `InternalFault`, never a
+successful value or a new admission authority.
+
+The bridge SHALL preserve ADR-011 §6.1's layer edges and ADR-016's execution
+arrows: byte admission and typed projection live in layer 4, execution lives
+in layer 5, and the shared checked-term vocabulary stays below both. It SHALL
+NOT enable `quire-checked/construct` outside FR-400's existing allowlist or
+place IR types in `quire-checked`, `quire-eval` or the no_std evaluation closure.
+
+### Upstream interface dependency
+
+The shared read vocabulary above is an implementation dependency, not an
+assertion that the current reader already supplies it. At the repository's
+locked IR revision `8320ebe`, `CheckedPackageV2::term` returns
+`Option<&CheckedTerm>` and `graph()` exposes node identities, dependencies and
+`semantic_type`; however `CheckedTerm::Literal.value` is `serde_json::Value`,
+`CheckedBindingName::kind` is private, and the public admitted operation views
+cover specific member shapes rather than the complete expression/type/binder
+view the machine needs. The locked `quire-checked` revision `78e1b2e` also
+precedes FR-400's expression-term separation.
+
+Implementation of the reader-backed branch depends on the owning IR/shared
+checked-model lane specifying and delivering typed read access to those
+admitted literal values, operation members and binder/type facts. This
+requirement does not define upstream signatures or authorize new upstream
+constructors. Until that dependency is delivered, AC-11's reader equivalence
+remains unverified; a source-backed call or inspection of JSON SHALL NOT stand
+in for it. Projection MAY traverse already admitted typed data, but SHALL NOT
+repeat admission or give a free-standing decoded term checked authority.
 
 ### Charge points and their order
 
@@ -324,6 +421,9 @@ value; check 6 does not apply to it.
 | FR-390-AC-11 | Running one call twice gives equal results and charge logs; a call over the package the contract reader returns for FR-383's emitted nodes gives the same result and charge log as over the checked package that was emitted; a refused call leaves the meter as it was. | Test (TC-1073) |
 | FR-390-AC-12 | A package whose capture initializer reads itself, a later capture or another template's capture is refused at S3 (FR-381) and no package is built; a package mutated in its bytes so an activation capture's initializer reads its own binder, or another template's capture binder, is refused by the contract reader with `missing_declaration`/`missing-name` (`read` `forward` and `foreign`), and no evaluation call is possible. | Test (TC-1074) |
 | FR-390-AC-13 | With the S6a probe variant of FR-107-AC-6 added, the build fails with E0004 at exactly the checked-in S6a seam list: the arm serving state clauses and protocol slots is the one `ProtocolClause` arm. | Test (TC-1074) |
+| FR-390-AC-14 | A consumer can obtain a view from an in-process package and from a successful I2 reader result. Construction of a reader view or expression handle from a decoded graph, free-standing term, `ImportView`, raw bytes, integer or node key fails to compile. A refused, limited, cancelled or faulted read exposes no evaluation view. | Test |
+| FR-390-AC-15 | For every TC-1070 slot, AC-11 compares the in-process view with a view obtained by emitting and actually admitting that package's bytes: the complete result (including value, unavailable binder, catalog code/cause, location and losses) and every ordered charge-log entry are equal. Repeat for unavailable and short-circuited supplies, each AC-9 counter boundary, and AC-10's shared-meter sequence; each selection/supply refusal has the same locus and leaves its meter unchanged. No fixture recompiles source to produce the reader-side evaluation. | Test |
+| FR-390-AC-16 | Inspection finds one slot-selection view contract and one existing machine/ProtocolClause execution path for both input variants, no checked-term reconstruction, no new `construct` caller and no second family dispatch. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
 
 ## Dependencies
 
