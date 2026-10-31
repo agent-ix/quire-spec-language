@@ -13,7 +13,7 @@ use crate::simulation::choice::{choose, ChoicePoint, Weights};
 use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
-use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
+use crate::simulation::not_simulated::{check_requires_bound, NotSimulated, Root};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
 use qsl_foundation::IdentityLimits;
@@ -214,9 +214,9 @@ pub(crate) fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
     clippy::too_many_arguments,
     reason = "FR-101 pins this exact signature; the parameters are the request's own fields, not an accretion of unrelated flags"
 )]
-pub fn sample_request<S: TransitionSystem>(
+pub fn sample_request<S: TransitionSystem, R: Root>(
     system: &S,
-    domains: &[(NodeKey, &ValueType)],
+    domains: &[R],
     types: &TypeEnvironment,
     position_limit: u64,
     sampler: &DefinitionRef,
@@ -242,9 +242,9 @@ pub fn sample_request<S: TransitionSystem>(
 }
 
 /// [`sample_request`]'s inputs.
-pub struct SampleRequest<'r> {
+pub struct SampleRequest<'r, R: Root = (NodeKey, &'r ValueType)> {
     /// The requires-bound roots.
-    pub domains: &'r [(NodeKey, &'r ValueType)],
+    pub domains: &'r [R],
     /// The type environment the roots are classified under.
     pub types: &'r TypeEnvironment,
     /// The requires-bound pre-check's position budget.
@@ -271,9 +271,9 @@ pub struct SampleRequest<'r> {
 /// # Errors
 ///
 /// As [`sample_request`].
-pub fn sample_request_until<S: TransitionSystem>(
+pub fn sample_request_until<S: TransitionSystem, R: Root>(
     system: &S,
-    request: SampleRequest<'_>,
+    request: SampleRequest<'_, R>,
     end: impl FnMut(&S::State) -> bool,
 ) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
     if !is_pinned_sampler(request.sampler) {
