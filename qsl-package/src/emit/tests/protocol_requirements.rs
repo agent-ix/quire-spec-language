@@ -14,6 +14,21 @@ use super::*;
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
 
+/// Compare the pre-emission projection with the admitted byte-reader view.
+fn activation_rows(lowered: &Lowered) -> &[quire_contract_model::CheckedProtocolActivationRow] {
+    let read_back = lowered
+        .ir
+        .as_ref()
+        .expect("the admitted checked package")
+        .protocol_activation_relation();
+    assert_eq!(
+        lowered.activation_rows, read_back,
+        "in-process/read-back parity: {}",
+        lowered.text
+    );
+    &lowered.activation_rows
+}
+
 #[trace(
     "FR-383-AC-2",
     "FR-383-AC-13",
@@ -49,11 +64,7 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
         .as_array()
         .unwrap()
         .contains(&target["node_id"]));
-    let rows = lowered
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation();
+    let rows = activation_rows(&lowered);
     assert_eq!(rows.len(), 1);
     assert_eq!(
         serde_json::to_value(&rows[0].clause).unwrap(),
@@ -67,6 +78,16 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
         rows[0].activation,
         quire_contract_model::CheckedProtocolActivation::Origin
     );
+    let single = lower_with(
+        model(),
+        PROFILES,
+        &unit.replace(
+            "requires temporal Due;\nrequires temporal Due;",
+            "requires temporal Due;",
+        ),
+    );
+    assert!(single.verified, "{}", single.text);
+    assert_eq!(rows, activation_rows(&single));
 }
 
 fn protocol_clause_index(wire: &Value) -> usize {
@@ -254,11 +275,8 @@ fn requirement_order_does_not_change_the_emitted_set() {
             .unwrap()
             .contains(&target["node_id"]));
     }
-    let rows = first
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation();
+    let rows = activation_rows(&first);
+    assert_eq!(rows, activation_rows(&second));
     assert_eq!(rows.len(), 2);
     assert_eq!(
         keys.iter().map(checked_node_id_of).collect::<Vec<_>>(),
@@ -269,7 +287,7 @@ fn requirement_order_does_not_change_the_emitted_set() {
     assert!(rows
         .windows(2)
         .all(|pair| pair[0].required_temporal < pair[1].required_temporal));
-    for row in &rows {
+    for row in rows {
         assert_eq!(
             serde_json::to_value(&row.clause).unwrap(),
             clause["node_id"]
@@ -345,12 +363,8 @@ fn a_protocol_requirement_changes_the_clause_key_and_empty_set_has_no_row() {
         clause_argument(empty_clause, "requirements")["members"],
         json!([])
     );
-    assert!(empty
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation()
-        .is_empty());
+    assert!(activation_rows(&empty).is_empty());
+    assert_eq!(activation_rows(&required).len(), 1);
     assert!(!empty_clause["dependencies"]
         .as_array()
         .unwrap()
@@ -385,11 +399,7 @@ fn a_required_clause_relation_carries_the_each_trigger() {
         .find(|member| member["name"] == "trigger")
         .map(|member| &member["value"]["target"])
         .unwrap();
-    let rows = lowered
-        .ir
-        .as_ref()
-        .expect("the checked package")
-        .protocol_activation_relation();
+    let rows = activation_rows(&lowered);
     assert_eq!(rows.len(), 1);
     let quire_contract_model::CheckedProtocolActivation::Each {
         trigger: row_trigger,
@@ -424,14 +434,14 @@ fn activation_rows_ignore_unrequired_temporals_and_source_trivia() {
     let unit = format!("{temporal}\n{protocol}");
     let original = lower_with(model(), PROFILES, &unit);
     assert!(original.verified, "{}", original.text);
-    let expected = original
-        .ir
-        .as_ref()
-        .expect("admitted original")
-        .protocol_activation_relation();
+    let expected = activation_rows(&original);
     assert_eq!(expected.len(), 1);
     for variant in [
         unit.clone(),
+        unit.replace(
+            "requires temporal Due;",
+            "requires temporal Due;\nrequires temporal Due;",
+        ),
         format!(
             "// the same protocol, with source trivia\n{}",
             unit.replace(';', ";\n\n")
@@ -447,16 +457,7 @@ fn activation_rows_ignore_unrequired_temporals_and_source_trivia() {
     ] {
         let lowered = lower_with(model(), PROFILES, &variant);
         assert!(lowered.verified, "{}", lowered.text);
-        assert_eq!(
-            lowered
-                .ir
-                .as_ref()
-                .expect("admitted variant")
-                .protocol_activation_relation(),
-            expected,
-            "{}",
-            lowered.text
-        );
+        assert_eq!(activation_rows(&lowered), expected, "{}", lowered.text);
     }
 }
 
@@ -518,15 +519,7 @@ fn activation_targets_must_exist_and_be_clause_dependencies() {
     );
     let valid = lower_with(model(), PROFILES, &unit);
     assert!(valid.verified, "{}", valid.text);
-    assert_eq!(
-        valid
-            .ir
-            .as_ref()
-            .expect("admitted control")
-            .protocol_activation_relation()
-            .len(),
-        1
-    );
+    assert_eq!(activation_rows(&valid).len(), 1);
     let index = protocol_clause_index(&valid.wire);
     let base = format!("/semantic_graph/nodes/{index}");
     for (target_path, missing_path) in [
