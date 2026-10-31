@@ -313,21 +313,18 @@ pub use spine::{
 // (`qsl_foundation`'s `RawSourceRef`, `Revision` and `InvalidProvenance`)
 // are not re-exported, so CG builds no source region.
 pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
-// The kernel identity and digest types a `ReplayRequestWire`'s or a frame
+// The kernel identity types a `ReplayRequestWire`'s or a frame
 // counterexample's members are built from -- `quire_exact`'s identifier,
-// occurrence origin and role, and value-accounting limits, and
-// `qsl_foundation`'s digest-record vocabulary -- re-exported so
+// occurrence origin and role, and value-accounting limits -- re-exported so
 // CG, which reaches QSL only through this crate (ADR-011 FB-05), builds one
 // without its own direct dependency on `quire-exact` or `qsl-foundation`.
 // These re-exports add constructors CG can call directly:
-// `DigestRecord::mint`, `NodeKey::new`,
-// `SourceIdentity::new`, `Identifier::new` and `Origin::new`/`Role::new`
+// `NodeKey::new`, `SourceIdentity::new`, `Identifier::new` and `Origin::new`/`Role::new`
 // among them, and with `Origin` the occurrence key's own
 // `OccurrenceKey::new(NodeKey, Origin)` becomes callable. None is a
 // T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
-pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not

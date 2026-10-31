@@ -321,8 +321,6 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
         "-o",
         "ci-docs",
         "-o",
-        "arch-lint-canonical-encoder",
-        "-o",
         "arch-lint-api-surface-qsl",
         "-o",
         "arch-lint-qualified-core",

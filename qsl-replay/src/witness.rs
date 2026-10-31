@@ -25,7 +25,6 @@ use crate::identity::{DeclaredDomain, ObligationIdentity, ProfileSelection, Trac
 use crate::model_check::state_graph::GraphEvidenceEnvelope;
 use crate::target::{ReplayTarget, ReplayTargetMembers, TargetMember, TargetSelectionRefusal};
 use qsl_foundation::bound::{DomainKey, FiniteBound};
-use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::BackendId;
 
@@ -252,11 +251,13 @@ pub(crate) fn parameter_node(name: &str) -> Option<NodeKey> {
 /// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
 /// is not printable ASCII-safe percent-escaped, so distinct nodes never
 /// share a name and the entry separators never occur inside one.
+#[cfg(test)]
 pub(crate) fn parameter_name(node: &NodeKey) -> Option<String> {
     let json = qsl_foundation::node_wire::node_key_to_text(node).ok()?;
     Some(percent_encode(&json))
 }
 
+#[cfg(test)]
 fn percent_encode(text: &str) -> String {
     let mut bytes = Vec::with_capacity(text.len());
     for byte in text.bytes() {
@@ -372,18 +373,11 @@ pub enum DecodeRefusal {
 }
 
 /// FR-073: `Debug` never reproduces the full transcript -- only a bounded
-/// descriptor (its byte length and a content digest).
+/// descriptor (its byte length).
 impl fmt::Debug for Witness {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Witness")
             .field("transcript_len", &self.transcript.len())
-            .field(
-                "transcript_digest",
-                &DigestRecord::mint(
-                    DigestDomain::VerificationJcs,
-                    ByteDigest::of(self.transcript.as_bytes()).as_bytes(),
-                ),
-            )
             .finish()
     }
 }

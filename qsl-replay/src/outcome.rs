@@ -26,7 +26,6 @@
 use crate::hybrid::{BoundDimension, SolverHorizon};
 use qsl_cst::format::FormatRefusal;
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -1027,14 +1026,6 @@ pub struct OutcomeArtifact {
 }
 
 impl OutcomeArtifact {
-    /// A generated artifact's content identity.
-    pub fn generated(digest: &DigestRecord) -> Self {
-        Self {
-            kind: ArtifactKind::Generated,
-            id: digest.hex(),
-        }
-    }
-
     /// The identity, lower-case hex.
     pub fn id(&self) -> &str {
         &self.id
