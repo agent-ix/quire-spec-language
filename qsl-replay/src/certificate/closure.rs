@@ -98,7 +98,7 @@ use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBou
 use qsl_eval::smt::SmtEncodingLimits;
 
 /// One product state of a certificate: its model state's
-/// `quire.simulation.state-key/v1` digest and its automaton state's
+/// `quire.simulation.state-key/v1` state key and its automaton state's
 /// canonical key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProductStateRef {
@@ -637,7 +637,7 @@ struct Pending<S: SubjectSystem> {
 }
 
 /// An initial state of the subject: its key bytes, its position in the
-/// subject's list, its digest and the state.
+/// subject's list, its state key and the state.
 type Initial<S> = (Vec<u8>, usize, StateKey, <S as TransitionSystem>::State);
 
 /// A reached product state of a bounded instance waiting to be expanded.
@@ -801,13 +801,13 @@ impl<S: SubjectSystem> Check<'_, S> {
     ) -> Step<()> {
         let mut visited = BTreeSet::new();
         let mut queue = VecDeque::new();
-        for (_, _, digest, state) in initial {
+        for (_, _, state_key, state) in initial {
             let before = None;
             if let Some(pending) = self.reach(
                 binding,
                 translation,
                 state.clone(),
-                digest.clone(),
+                state_key.clone(),
                 before,
                 CertificateRule::InitialMissing,
                 &mut visited,
@@ -821,20 +821,20 @@ impl<S: SubjectSystem> Check<'_, S> {
                 Some(expansion) => expansion,
                 None => self.expand(&pending.state, &pending.at)?,
             };
-            for (transition, digest, state) in self.ordered(expansion.successors)? {
+            for (transition, state_key, state) in self.ordered(expansion.successors)? {
                 self.poll()?;
                 self.charge_edge()?;
                 // FR-224: the race-freedom item is bad at the post-state of a
                 // step that completes a data race, whichever state it reaches.
                 if translation.item() == SafetyItem::RaceFreedom && transition.race().is_some() {
-                    let at = self.product(translation, digest, SafetyState::Rejected)?;
+                    let at = self.product(translation, state_key, SafetyState::Rejected)?;
                     return Err(Self::reject(CertificateRule::BadState, at));
                 }
                 if let Some(next) = self.reach(
                     binding,
                     translation,
                     state,
-                    digest,
+                    state_key,
                     Some(SafetyState::Carried),
                     CertificateRule::SuccessorMissing,
                     &mut visited,
@@ -867,12 +867,12 @@ impl<S: SubjectSystem> Check<'_, S> {
         }
         let mut visited = Reached::new();
         let mut queue = VecDeque::new();
-        for (_, _, digest, state) in initial {
+        for (_, _, state_key, state) in initial {
             self.poll()?;
             let Some(letter) =
                 self.liveness_letter(translation, *letters, clause, binding, state, true, true)?
             else {
-                let at = self.product_liveness(translation, digest.clone(), start)?;
+                let at = self.product_liveness(translation, state_key.clone(), start)?;
                 return Err(Self::reject(CertificateRule::BadState, at));
             };
             let successors = translation
@@ -883,7 +883,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let (_, pending) = self.reach_liveness(
                     translation,
                     state.clone(),
-                    digest.clone(),
+                    state_key.clone(),
                     automaton,
                     CertificateRule::InitialMissing,
                     &mut visited,
@@ -954,7 +954,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 }
                 continue;
             }
-            for (transition, digest, state) in self.ordered(expansion.successors)? {
+            for (transition, state_key, state) in self.ordered(expansion.successors)? {
                 self.poll()?;
                 let counted = self.system.counts_step(&transition);
                 let Some(letter) = self.liveness_letter(
@@ -967,7 +967,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     false,
                 )?
                 else {
-                    let at = self.product_liveness(translation, digest, pending.automaton)?;
+                    let at = self.product_liveness(translation, state_key, pending.automaton)?;
                     return Err(Self::reject(CertificateRule::BadState, at));
                 };
                 let successors = translation
@@ -979,7 +979,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     let (to, next) = self.reach_liveness(
                         translation,
                         state.clone(),
-                        digest.clone(),
+                        state_key.clone(),
                         automaton,
                         CertificateRule::SuccessorMissing,
                         &mut visited,
@@ -1084,7 +1084,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         Ok(Some(letter))
     }
 
-    /// Reach `state`, whose digest is `digest`, in the automaton state
+    /// Reach `state` by its state key `state_key` in the automaton state
     /// `automaton`: require it in the certificate under `missing`. The state
     /// is pending unless this instance reached it before; its recording
     /// index comes back either way.
@@ -1092,15 +1092,15 @@ impl<S: SubjectSystem> Check<'_, S> {
         &mut self,
         translation: &LivenessTranslation,
         state: S::State,
-        digest: StateKey,
+        state_key: StateKey,
         automaton: StateId,
         missing: CertificateRule,
         visited: &mut Reached,
     ) -> Step<(usize, Option<LivenessPending<S>>)> {
-        if let Some(index) = visited.get(&(digest.clone(), automaton)) {
+        if let Some(index) = visited.get(&(state_key.clone(), automaton)) {
             return Ok((*index, None));
         }
-        let at = self.product_liveness(translation, digest.clone(), automaton)?;
+        let at = self.product_liveness(translation, state_key.clone(), automaton)?;
         if self.reached >= self.limits.limits.max_states {
             return Err(stopped(
                 ModelCheckLimit::MaxStates,
@@ -1122,7 +1122,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             }
             None => 0,
         };
-        visited.insert((digest, automaton), index);
+        visited.insert((state_key, automaton), index);
         Ok((
             index,
             Some(LivenessPending {
@@ -1137,7 +1137,7 @@ impl<S: SubjectSystem> Check<'_, S> {
     fn product_liveness(
         &mut self,
         translation: &LivenessTranslation,
-        digest: StateKey,
+        state_key: StateKey,
         state: StateId,
     ) -> Step<ProductStateRef> {
         let buchi = match translation
@@ -1154,7 +1154,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             .keys
             .key(&buchi)
             .map_err(|_| ClosureRefusal::Encoding)?;
-        self.product_of(digest, key)
+        self.product_of(state_key, key)
     }
 
     fn automaton_error(&self, error: qsl_eval::automaton::AutomatonError) -> Halt {
@@ -1191,11 +1191,11 @@ impl<S: SubjectSystem> Check<'_, S> {
             enabled: BTreeMap::new(),
             edges: Vec::new(),
         };
-        for (_, _, digest, state) in initial {
+        for (_, _, state_key, state) in initial {
             let (pending, _, _) = self.reach_bounded(
                 &mut run,
                 state.clone(),
-                digest.clone(),
+                state_key.clone(),
                 None,
                 CertificateRule::InitialMissing,
             )?;
@@ -1233,7 +1233,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 }
                 continue;
             }
-            for (transition, digest, state) in self.ordered(expansion.successors)? {
+            for (transition, state_key, state) in self.ordered(expansion.successors)? {
                 self.poll()?;
                 self.charge_edge()?;
                 let counted = self.system.counts_step(&transition);
@@ -1242,7 +1242,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let (next, after, distance) = self.reach_bounded(
                     &mut run,
                     state,
-                    digest.clone(),
+                    state_key.clone(),
                     Some((pending.automaton, pending.distance, counted)),
                     CertificateRule::SuccessorMissing,
                 )?;
@@ -1254,7 +1254,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                         pending.distance,
                     );
                     zero.edges
-                        .push((from, (digest, after, distance), transition));
+                        .push((from, (state_key, after, distance), transition));
                 }
             }
         }
@@ -1335,7 +1335,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         self.product_of(key.0.clone(), automaton)
     }
 
-    /// Reach `state`, whose digest is `digest`, from the monitor state and
+    /// Reach `state` by its state key `state_key` from the monitor state and
     /// counted distance `before` (`None` at position zero) by a step that
     /// counts or not: read its letter when the claim reads its distance,
     /// reject a bad state, then require it in the certificate under
@@ -1346,7 +1346,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         &mut self,
         run: &mut BoundedRun<'_>,
         state: S::State,
-        digest: StateKey,
+        state_key: StateKey,
         before: Option<(BoundedState, u64, bool)>,
         missing: CertificateRule,
     ) -> Step<(Option<BoundedPending<S>>, BoundedState, u64)> {
@@ -1370,10 +1370,10 @@ impl<S: SubjectSystem> Check<'_, S> {
                     .translation
                     .key(BoundedState::Reject)
                     .map_err(|_| ClosureRefusal::Encoding)?;
-                let at = self.product_of(digest.clone(), key)?;
+                let at = self.product_of(state_key.clone(), key)?;
                 return Err(Self::reject(CertificateRule::BadState, at));
             }
-            let reading = match run.readings.get(&digest) {
+            let reading = match run.readings.get(&state_key) {
                 Some(reading) => *reading,
                 None => {
                     let reading = self.atom(
@@ -1382,7 +1382,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                         run.binding,
                         &self.system.atom_state(&state),
                     )?;
-                    run.readings.insert(digest.clone(), reading);
+                    run.readings.insert(state_key.clone(), reading);
                     reading
                 }
             };
@@ -1393,7 +1393,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                         .translation
                         .key(BoundedState::Reject)
                         .map_err(|_| ClosureRefusal::Encoding)?;
-                    let at = self.product_of(digest.clone(), key)?;
+                    let at = self.product_of(state_key.clone(), key)?;
                     return Err(Self::reject(CertificateRule::BadState, at));
                 }
             }
@@ -1408,11 +1408,11 @@ impl<S: SubjectSystem> Check<'_, S> {
             .translation
             .key(after)
             .map_err(|_| ClosureRefusal::Encoding)?;
-        let at = self.product_of(digest.clone(), key)?;
+        let at = self.product_of(state_key.clone(), key)?;
         if after.is_rejecting() {
             return Err(Self::reject(CertificateRule::BadState, at));
         }
-        if run.visited.contains(&(digest.clone(), after, distance)) {
+        if run.visited.contains(&(state_key.clone(), after, distance)) {
             return Ok((None, after, distance));
         }
         if self.reached >= self.limits.limits.max_states {
@@ -1422,7 +1422,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             ));
         }
         self.reached += 1;
-        run.visited.insert((digest.clone(), after, distance));
+        run.visited.insert((state_key.clone(), after, distance));
         if !self.members.contains(&at) {
             return Err(Self::reject(missing, at));
         }
@@ -1464,7 +1464,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         Ok(())
     }
 
-    /// Reach `state`, whose digest is `digest`, from the automaton state
+    /// Reach `state` by its state key `state_key` from the automaton state
     /// `before` (`None` at position zero): read its letter, reject a bad
     /// state, then require it in the certificate under `missing`. `None`
     /// when this instance reached it before.
@@ -1474,12 +1474,12 @@ impl<S: SubjectSystem> Check<'_, S> {
         binding: Option<&qsl_eval::model_subject::ModelInstance>,
         translation: &SafetyTranslation,
         state: S::State,
-        digest: StateKey,
+        state_key: StateKey,
         before: Option<SafetyState>,
         missing: CertificateRule,
         visited: &mut BTreeSet<StateKey>,
     ) -> Step<Option<Pending<S>>> {
-        if visited.contains(&digest) {
+        if visited.contains(&state_key) {
             return Ok(None);
         }
         let (after, expansion) = match translation.item() {
@@ -1494,29 +1494,29 @@ impl<S: SubjectSystem> Check<'_, S> {
                     &self.system.atom_state(&state),
                     before.is_none(),
                 )? {
-                    let at = self.product(translation, digest, SafetyState::Rejected)?;
+                    let at = self.product(translation, state_key, SafetyState::Rejected)?;
                     return Err(Self::reject(CertificateRule::BadState, at));
                 }
                 match self.atom(*letters, atom, bound, &self.system.atom_state(&state))? {
                     Some(holds) => (translation.read(before, holds), None),
                     None => {
-                        let at = self.product(translation, digest, SafetyState::Rejected)?;
+                        let at = self.product(translation, state_key, SafetyState::Rejected)?;
                         return Err(Self::reject(CertificateRule::BadState, at));
                     }
                 }
             }
             SafetyItem::RaceFreedom => (translation.read(before, true), None),
             SafetyItem::DeadlockFreedom => {
-                if !self.models.contains(&digest) {
-                    let at = self.product(translation, digest.clone(), SafetyState::Carried)?;
+                if !self.models.contains(&state_key) {
+                    let at = self.product(translation, state_key.clone(), SafetyState::Carried)?;
                     return Err(Self::reject(missing, at));
                 }
-                let carried = self.product(translation, digest.clone(), SafetyState::Carried)?;
+                let carried = self.product(translation, state_key.clone(), SafetyState::Carried)?;
                 let (expansion, cut) = self.expand(&state, &carried)?;
                 // ADR-025 MB-3: a state whose only enabled steps were cut at
                 // the memory bound is a boundary state, never a deadlock; the
                 // check then settles `MemoryBoundReached`.
-                let boundary = expansion.successors.is_empty() && self.limited.contains(&digest);
+                let boundary = expansion.successors.is_empty() && self.limited.contains(&state_key);
                 let class = if boundary {
                     TerminalClass::NotTerminal
                 } else {
@@ -1528,14 +1528,14 @@ impl<S: SubjectSystem> Check<'_, S> {
                     TerminalClass::NotTerminal | TerminalClass::Intended => true,
                     TerminalClass::Deadlocked => false,
                     TerminalClass::Undefined { .. } | TerminalClass::Undecided { .. } => {
-                        let at = self.product(translation, digest, SafetyState::Rejected)?;
+                        let at = self.product(translation, state_key, SafetyState::Rejected)?;
                         return Err(Self::reject(CertificateRule::BadState, at));
                     }
                 };
                 (translation.read(before, holds), Some((expansion, cut)))
             }
         };
-        let at = self.product(translation, digest.clone(), after)?;
+        let at = self.product(translation, state_key.clone(), after)?;
         if after.is_rejecting() {
             return Err(Self::reject(CertificateRule::BadState, at));
         }
@@ -1546,7 +1546,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             ));
         }
         self.reached += 1;
-        visited.insert(digest);
+        visited.insert(state_key);
         if !self.members.contains(&at) {
             return Err(Self::reject(missing, at));
         }
@@ -1586,23 +1586,23 @@ impl<S: SubjectSystem> Check<'_, S> {
         Ok((expansion, cut))
     }
 
-    /// The product state of `digest` and `state` under `instance`'s
+    /// The product state of `state_key` and `state` under `instance`'s
     /// context, charging a newly materialized automaton key.
     fn product(
         &mut self,
         translation: &SafetyTranslation,
-        digest: StateKey,
+        state_key: StateKey,
         state: SafetyState,
     ) -> Step<ProductStateRef> {
         let key = translation
             .key(state)
             .map_err(|_| ClosureRefusal::Encoding)?;
-        self.product_of(digest, key)
+        self.product_of(state_key, key)
     }
 
-    /// The product state of `digest` and the automaton key `key`, charging
+    /// The product state of `state_key` and the automaton key `key`, charging
     /// a newly materialized key.
-    fn product_of(&mut self, digest: StateKey, key: AutomatonStateKey) -> Step<ProductStateRef> {
+    fn product_of(&mut self, state_key: StateKey, key: AutomatonStateKey) -> Step<ProductStateRef> {
         if !self.keys.contains(&key) {
             let count = widen(self.keys.len());
             if count >= self.limits.max_automaton_states {
@@ -1614,7 +1614,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             self.keys.insert(key.clone());
         }
         Ok(ProductStateRef {
-            model_state: digest,
+            model_state: state_key,
             automaton_state: key,
         })
     }

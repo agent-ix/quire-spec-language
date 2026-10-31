@@ -492,11 +492,11 @@ fn an_undefined_atom_refutes_at_the_first_position_it_is_undefined() {
         UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
     );
     let last = positions(&world, &["c"], counterexample);
-    let digest = system(&world, &["c"])
+    let state_key = system(&world, &["c"])
         .state_key(last.last().expect("a state"))
         .expect("encodes")
         .1;
-    assert_eq!(evaluation.site.state_key, digest);
+    assert_eq!(evaluation.site.state_key, state_key);
     assert_eq!(counterexample.trace_position(), Some(2));
 }
 

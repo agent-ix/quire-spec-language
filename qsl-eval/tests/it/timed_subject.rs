@@ -454,12 +454,12 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
     );
 }
 
-/// FR-236-AC-1's digest half (TC-691): over `Rpc` with `T = 3 ms`, the steps of
+/// FR-236-AC-1's state key half (TC-691): over `Rpc` with `T = 3 ms`, the steps of
 /// `NoLateReply`'s counterexample, `send` after 0, `timeout` after 3 and
-/// `reply` after 0, reach post-states whose FR-236 digest changes when only
+/// `reply` after 0, reach post-states whose FR-236 state key changes when only
 /// the resulting clock value changes, and is equal for an equal timed state.
 /// The counterexample's steps and delays are the zone search's
-/// (`qsl-analyze` `zone_search`), which writes this digest as each step's
+/// (`qsl-analyze` `zone_search`), which writes this state key as each step's
 /// `post_state`; its steps, delays and `trace_position` are asserted there.
 #[trace("TC-691", "FR-236-AC-1")]
 #[test]
@@ -483,16 +483,16 @@ fn a_timed_post_state_key_changes_with_its_clock_value_alone() {
         .collect();
     assert_eq!(posts.len(), 3);
     for (index, post) in posts.iter().enumerate() {
-        let digest = timed.state_key(post).expect("a digest");
+        let state_key = timed.state_key(post).expect("a state_key");
         assert_eq!(
-            timed.state_key(&post.clone()).expect("a digest"),
-            digest,
-            "step {index}: an equal timed state has an equal digest"
+            timed.state_key(&post.clone()).expect("a state_key"),
+            state_key,
+            "step {index}: an equal timed state has an equal state_key"
         );
         let shifted = TimedState::new(post.discrete().clone(), post.clocks().delayed(&exact(1, 2)));
         assert_ne!(
-            timed.state_key(&shifted).expect("a digest"),
-            digest,
+            timed.state_key(&shifted).expect("a state_key"),
+            state_key,
             "step {index}: only the clock value changed"
         );
     }
@@ -1167,8 +1167,8 @@ fn timer_document() -> Vec<u8> {
 /// Part of FR-230-AC-11 (TC-685): with the record `Timer { x: Clock; y:
 /// Clock; n }` held by `Call.t` over a universe of three objects, every
 /// object holds its own clock of each place, `t.x`, `t.y` and `x`: nine
-/// clocks. The digest of a state holding the record value is defined: an
-/// equal state has an equal digest, and it changes with a clock value and
+/// clocks. The state key of a state holding the record value is defined: an
+/// equal state has an equal state key, and it changes with a clock value and
 /// with the record's data field (FR-181's `record` form).
 #[trace("TC-685")]
 #[test]
@@ -1204,15 +1204,18 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         .filter(|place| place.present(initial.discrete()))
         .count();
     assert_eq!(held, 3);
-    let digest = timed
+    let state_key = timed
         .state_key(initial)
-        .expect("a record state has a digest");
-    assert_eq!(timed.state_key(&initial.clone()).expect("a digest"), digest);
+        .expect("a record state has a state_key");
+    assert_eq!(
+        timed.state_key(&initial.clone()).expect("a state_key"),
+        state_key
+    );
     let shifted = TimedState::new(
         initial.discrete().clone(),
         initial.clocks().delayed(&exact(1, 2)),
     );
-    assert_ne!(timed.state_key(&shifted).expect("a digest"), digest);
+    assert_ne!(timed.state_key(&shifted).expect("a state_key"), state_key);
     // One value at `t.x` and the other at `t.y` are two states.
     let at = |name: &str| {
         timed
@@ -1232,7 +1235,7 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
                 initial.discrete().clone(),
                 ClockValuation::new(values),
             ))
-            .expect("a digest")
+            .expect("a state_key")
     };
     assert_ne!(one_at(at("t.x")), one_at(at("t.y")));
     let other = holding("1");
@@ -1242,8 +1245,8 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         panic!("one initial state");
     };
     assert_ne!(
-        other_timed.state_key(other_initial).expect("a digest"),
-        digest,
+        other_timed.state_key(other_initial).expect("a state_key"),
+        state_key,
         "the record's data field is in the state key"
     );
 }
@@ -1251,7 +1254,7 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
 /// Part of FR-230-AC-11 (TC-685): a state holding a record value steps.
 /// From `Call.t = Timer { n: 0 }`, after a delay of 2, `send` (whose
 /// postcondition writes `phase` and keeps `t.n`) has its four successors,
-/// each keeping `t` and every clock at 2, and each post state has a digest.
+/// each keeping `t` and every clock at 2, and each post state has a state key.
 /// `t`'s frame grants it, so its data part ranges over its finite domain
 /// where the postcondition leaves it free
 /// ([`a_granted_field_ranges_over_its_finite_domain_or_stops`]).
@@ -1314,7 +1317,9 @@ fn a_record_holding_state_steps() {
             format!("{:?}", after.slots()),
             "send keeps t"
         );
-        timed.state_key(post).expect("the post state has a digest");
+        timed
+            .state_key(post)
+            .expect("the post state has a state_key");
     }
 }
 
@@ -1630,9 +1635,9 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
                 initial.discrete().clone(),
                 ClockValuation::new(values),
             ))
-            .expect("a digest")
+            .expect("a state_key")
     };
-    let base = timed.state_key(initial).expect("a digest");
+    let base = timed.state_key(initial).expect("a state_key");
     assert_eq!(one_at(3), base, "slot 1 is not live");
     assert_ne!(one_at(2), base);
     assert_ne!(one_at(2), one_at(4), "ts[0].x and ts[0].y are two places");
@@ -1652,7 +1657,7 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
             .values()
             .iter()
             .all(|value| value == &exact(2, 1)));
-        timed.state_key(post).expect("a digest");
+        timed.state_key(post).expect("a state_key");
     }
 }
 

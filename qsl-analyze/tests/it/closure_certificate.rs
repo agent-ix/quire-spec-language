@@ -153,12 +153,12 @@ impl World {
         let mut queue: Vec<ModelSimState> = system.initial();
         while let Some(state) = queue.pop() {
             let (bytes, _) = system.state_key(&state).expect("encodes");
-            let digest = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
-            if seen.iter().any(|(known, _)| known == &digest) {
+            let state_key = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
+            if seen.iter().any(|(known, _)| known == &state_key) {
                 continue;
             }
             seen.push((
-                digest,
+                state_key,
                 self.keys.iter().map(|key| value(&state, key)).collect(),
             ));
             let expansion = system.successors(&state).expect("expands");
@@ -168,11 +168,11 @@ impl World {
     }
 
     /// The model state with these counter values.
-    fn digest(&self, values: &[i64]) -> qsl_eval::simulation::StateKey {
+    fn state_key(&self, values: &[i64]) -> qsl_eval::simulation::StateKey {
         self.reachable()
             .into_iter()
             .find(|(_, at)| at == values)
-            .map(|(digest, _)| digest)
+            .map(|(state_key, _)| state_key)
             .unwrap_or_else(|| panic!("{values:?} is reachable"))
     }
 
@@ -328,8 +328,8 @@ fn closure(
     ClosureCertificate {
         states: states
             .iter()
-            .map(|(digest, _)| ProductStateRef {
-                model_state: digest.clone(),
+            .map(|(state_key, _)| ProductStateRef {
+                model_state: state_key.clone(),
                 automaton_state: key.clone(),
             })
             .collect(),
@@ -373,7 +373,7 @@ fn a_certificate_missing_a_reached_state_is_rejected_at_it() {
     let a = invariant.translation(&world.objects()[0]);
     let without = |values: &[i64]| {
         let at = ProductStateRef {
-            model_state: world.digest(values),
+            model_state: world.state_key(values),
             automaton_state: a.key(SafetyState::Carried).expect("encodes"),
         };
         let mut certificate = full.clone();
@@ -413,7 +413,7 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
         rejected(
             CertificateRule::BadState,
             ProductStateRef {
-                model_state: world.digest(&[3]),
+                model_state: world.state_key(&[3]),
                 automaton_state: deadlock.key(SafetyState::Rejected).expect("encodes"),
             }
         )
@@ -451,7 +451,7 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
         rejected(
             CertificateRule::BadState,
             ProductStateRef {
-                model_state: world.digest(&[2]),
+                model_state: world.state_key(&[2]),
                 automaton_state: translation.key(SafetyState::Carried).expect("encodes"),
             }
         )
@@ -478,7 +478,7 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
             rejected(
                 CertificateRule::BadState,
                 ProductStateRef {
-                    model_state: world.digest(&[2]),
+                    model_state: world.state_key(&[2]),
                     automaton_state: translation.key(SafetyState::Rejected).expect("encodes"),
                 }
             ),
@@ -490,7 +490,7 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
 /// The certificate is checked against the request's own item: the
 /// deadlock-freedom item's certificate offered for a clause is rejected
 /// `ShapeMismatch`, before any key is used for membership; a model state
-/// digest of another domain is rejected the same way. Every key refused, the
+/// state key of another domain is rejected the same way. Every key refused, the
 /// locus is the least refused state.
 #[trace("TC-525")]
 #[test]
@@ -708,7 +708,7 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
         panic!("a proof");
     };
     let mut tampered = closure_proof(&certificate).clone();
-    let one = world.digest(&[1]);
+    let one = world.state_key(&[1]);
     let index = tampered
         .states
         .iter()
@@ -792,7 +792,7 @@ fn a_certificate_check_settles_accepted_rejected_or_stopped_with_the_named_setti
     };
     let a = invariant.translation(&world.objects()[0]);
     let at = ProductStateRef {
-        model_state: world.digest(&[1, 0]),
+        model_state: world.state_key(&[1, 0]),
         automaton_state: a.key(SafetyState::Carried).expect("encodes"),
     };
     let mut tampered = closure_proof(certificate).clone();

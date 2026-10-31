@@ -652,7 +652,7 @@ fn key_equal_coalescing_merges_two_paths_to_the_same_state() {
 
 /// TC-453 step 8, FR-101-AC-9: initial states are admitted in ascending
 /// state-key order, whatever order the system lists them in; a `max_states`
-/// cap during admission puts every initial state's digest in the frontier,
+/// cap during admission puts every initial state's key in the frontier,
 /// in canonical order.
 #[trace("TC-453", "FR-101-AC-9")]
 #[test]
@@ -1879,7 +1879,7 @@ fn tc_474_an_expansion_stop_ends_exploration_stopped() {
 }
 
 /// TC-474 step 2, FR-101-AC-13: each expanded state with a finding gets one
-/// entry with its digest and depth; horizon states, states a limit put back
+/// entry with its state key and depth; horizon states, states a limit put back
 /// in the frontier and a stopped state get none.
 #[trace("TC-474", "FR-101-AC-13")]
 #[test]

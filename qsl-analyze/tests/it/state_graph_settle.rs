@@ -548,9 +548,9 @@ fn undefined_and_altered_count_certificates_never_settle_proved() {
     let va = |state: &ModelSimState| world.value(state, "a", "versionNumber");
     let ranks: BTreeMap<StateKey, u32> = states
         .iter()
-        .map(|(digest, state)| {
+        .map(|(state_key, state)| {
             (
-                digest.clone(),
+                state_key.clone(),
                 [1, 0, 2][usize::try_from(va(state)).expect("fits")],
             )
         })
@@ -558,7 +558,7 @@ fn undefined_and_altered_count_certificates_never_settle_proved() {
     let first_undefined = states
         .iter()
         .find(|(_, state)| va(state) == 2)
-        .map(|(digest, _)| digest.clone())
+        .map(|(state_key, _)| state_key.clone())
         .expect("a state with va = 2");
     let hand_built = StateGraphInstanceOutcome {
         over: Some(world.reference("a")),
@@ -649,7 +649,7 @@ fn undefined_and_altered_count_certificates_never_settle_proved() {
         .0
         .into_iter()
         .find(|(_, state)| sequenced.value(state, "j", "done") == 0)
-        .map(|(digest, _)| digest)
+        .map(|(state_key, _)| state_key)
         .expect("a node other than `to`");
     assert_rejected(
         &settle(

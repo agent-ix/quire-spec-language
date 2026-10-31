@@ -266,9 +266,9 @@ fn replay_lasso(
     };
     let replay_positions: Vec<ReplayPosition> = positions
         .iter()
-        .map(|(state, digest)| ReplayPosition {
+        .map(|(state, state_key)| ReplayPosition {
             state: state.clone(),
-            digest: digest.clone(),
+            state_key: state_key.clone(),
         })
         .collect();
     close_loop(system, &replay_positions, trace_lasso)?;
@@ -343,7 +343,7 @@ fn replay_lasso(
 fn replay_positions_as_positions(positions: &[ReplayPosition]) -> Vec<Position> {
     positions
         .iter()
-        .map(|position| (position.state.clone(), position.digest.clone()))
+        .map(|position| (position.state.clone(), position.state_key.clone()))
         .collect()
 }
 
@@ -362,10 +362,10 @@ fn replay_undefined(
     let Some(expected_locus) = undefined.locus.as_ref() else {
         return Ok(false);
     };
-    let Some((_, digest)) = positions.last() else {
+    let Some((_, state_key)) = positions.last() else {
         return Err(fault("an-HP-5-undefined-path-has-an-initial-state"));
     };
-    if *digest != undefined.state_key {
+    if *state_key != undefined.state_key {
         return Ok(false);
     }
     let mut meter = Meter::new(accounting).with_cancel(cancel.clone());
@@ -468,7 +468,7 @@ fn replay_product_trap(
             state.components.first().is_some_and(|component| {
                 system
                     .state_key(component)
-                    .is_ok_and(|(_, digest)| digest == wanted)
+                    .is_ok_and(|(_, state_key)| state_key == wanted)
             })
         })
         .collect();

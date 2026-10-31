@@ -430,10 +430,10 @@ fn forged_race_under<M: MemoryModel>(
                 }
             })
             .unwrap_or_else(|| panic!("a step for the hop of the path is enabled"));
-        let (_, digest) = SubjectSystem::state_key(&system, &next).expect("a key");
+        let (_, state_key) = SubjectSystem::state_key(&system, &next).expect("a key");
         prefix.push(ModelStep {
             transition: system.reported(transition, &next).expect("reports"),
-            post_state: digest,
+            post_state: state_key,
             delay: None,
         });
         state = next;

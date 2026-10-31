@@ -549,7 +549,7 @@ fn compiled_with(
     )
 }
 
-/// One reachable state of a protocol system: its key digest, the state, and
+/// One reachable state of a protocol system: its key state key, the state, and
 /// each successor's identity and index.
 pub(crate) struct Reached<M: MemoryModel = Sc> {
     pub(crate) state: ProtocolState<M>,
@@ -570,7 +570,7 @@ pub(crate) fn class_of<M: MemoryModel>(
 /// each once by its state key, successors in the engine's order.
 pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
     // State identity is the full canonical key, so equality cannot collapse
-    // distinct states through a digest collision.
+    // distinct states through a state key collision.
     let mut known: HashMap<StateKey, usize> = HashMap::new();
     let mut reached: Vec<Reached<M>> = Vec::new();
     let mut queue = std::collections::VecDeque::new();

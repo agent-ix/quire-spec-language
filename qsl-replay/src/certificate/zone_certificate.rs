@@ -381,7 +381,7 @@ pub struct FairnessMember {
 /// One certificate node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertNode {
-    /// The digest of the model state's state key.
+    /// The state key of the model state's state key.
     pub state_key: qsl_eval::simulation::StateKey,
     /// The claim-automaton state; 0 for an item that needs no automaton.
     pub automaton_state: usize,
@@ -1019,7 +1019,7 @@ struct Successor {
     /// Whether the successor frees the horizon clock: past the point where
     /// the claim is decided.
     frees: bool,
-    digest: qsl_eval::simulation::StateKey,
+    state_key: qsl_eval::simulation::StateKey,
     /// The checker's automaton state.
     q: usize,
     zone: Zone,
@@ -1038,7 +1038,7 @@ fn equivalent_successor(left: &Successor, right: &Successor) -> bool {
         == right.step.as_ref().map(GuardedStep::transition)
         && left.part == right.part
         && left.horizon == right.horizon
-        && left.digest == right.digest
+        && left.state_key == right.state_key
         && left.q == right.q
         && left.zone == right.zone
         && left.silent == right.silent
@@ -1436,11 +1436,11 @@ impl<O> Checker<'_, '_, O> {
         Ok(())
     }
 
-    fn digest(&self, state: &ModelSimState) -> Step<qsl_eval::simulation::StateKey, O> {
+    fn state_key(&self, state: &ModelSimState) -> Step<qsl_eval::simulation::StateKey, O> {
         self.timed
             .system()
             .state_key(state)
-            .map(|(_, digest)| digest)
+            .map(|(_, state_key)| state_key)
             .or_else(undecided)
     }
 
@@ -1515,7 +1515,7 @@ impl<O> Checker<'_, '_, O> {
         for start in self.timed.initial() {
             self.poll()?;
             let state = start.discrete().clone();
-            let digest = self.digest(&state)?;
+            let state_key = self.state_key(&state)?;
             let zero = Rational::from_integer(Integer::zero());
             let q = self.read(None, &state, Stamp::At(&zero), false)?;
             let mut zone = Zone::zero(self.dim());
@@ -1526,7 +1526,7 @@ impl<O> Checker<'_, '_, O> {
             let mut covered = None;
             for &node in &certificate.initials {
                 let listed = &certificate.nodes[node];
-                if listed.state_key == digest
+                if listed.state_key == state_key
                     && zone.alu_covered_by(&listed.zone, &self.cover)?
                     && self.binds(listed.automaton_state, q)
                 {
@@ -1537,7 +1537,7 @@ impl<O> Checker<'_, '_, O> {
             let Some(node) = covered else {
                 return reject(
                     CertificateRule::InitialMissing,
-                    CertificateLocus::ModelState(digest.clone()),
+                    CertificateLocus::ModelState(state_key.clone()),
                 );
             };
             self.states[node].get_or_insert(state);
@@ -1567,7 +1567,7 @@ impl<O> Checker<'_, '_, O> {
         for (index, start) in self.timed.initial().iter().enumerate() {
             self.poll()?;
             let state = start.discrete().clone();
-            let digest = self.digest(&state)?;
+            let state_key = self.state_key(&state)?;
             let mut zone = Zone::zero(self.dim());
             self.settle(&state, &mut zone)?;
             if zone.is_empty() {
@@ -1576,15 +1576,16 @@ impl<O> Checker<'_, '_, O> {
             let covering = match listed.next() {
                 Some(&node) => {
                     let entry = &certificate.nodes[node];
-                    (entry.state_key == digest && zone.alu_covered_by(&entry.zone, &self.cover)?)
-                        .then_some(node)
+                    (entry.state_key == state_key
+                        && zone.alu_covered_by(&entry.zone, &self.cover)?)
+                    .then_some(node)
                 }
                 None => None,
             };
             let Some(node) = covering else {
                 return reject(
                     CertificateRule::InitialMissing,
-                    CertificateLocus::ModelState(digest.clone()),
+                    CertificateLocus::ModelState(state_key.clone()),
                 );
             };
             let entry = &certificate.nodes[node];
@@ -1755,11 +1756,11 @@ impl<O> Checker<'_, '_, O> {
         for start in self.timed.initial() {
             self.poll()?;
             let state = start.discrete().clone();
-            let digest = self.digest(&state)?;
+            let state_key = self.state_key(&state)?;
             let missing = || {
                 reject(
                     CertificateRule::InitialMissing,
-                    CertificateLocus::ModelState(digest.clone()),
+                    CertificateLocus::ModelState(state_key.clone()),
                 )
             };
             let Some(starts) = self.live_initial(&state)? else {
@@ -1770,7 +1771,7 @@ impl<O> Checker<'_, '_, O> {
                 let mut covered = None;
                 for &node in &certificate.initials {
                     let listed = &certificate.nodes[node];
-                    if listed.state_key == digest
+                    if listed.state_key == state_key
                         && listed.product == Some(mark)
                         && zone.alu_covered_by(&listed.zone, &self.cover)?
                         && cell.includes(&listed.zone)?
@@ -1825,7 +1826,7 @@ impl<O> Checker<'_, '_, O> {
                         == edge.transition.as_ref()
                         && successor.part == edge.part
                         && successor.horizon == edge.horizon
-                        && successor.digest == target.state_key
+                        && successor.state_key == target.state_key
                         && successor.silent == edge.silent
                         && successor.mark == target.product
                         && successor.zone.alu_covered_by(&target.zone, &self.cover)?
@@ -1888,7 +1889,7 @@ impl<O> Checker<'_, '_, O> {
         if !tail || decided {
             for step in self.timed.guarded_steps(state).or_else(undecided)? {
                 let target = self.invariants(step.post())?;
-                let digest = self.digest(step.post())?;
+                let state_key = self.state_key(step.post())?;
                 let tick =
                     self.timed.tick_of(step.operation()) > Rational::from_integer(Integer::zero());
                 for (part, constraints) in step.parts().iter().enumerate() {
@@ -1914,7 +1915,7 @@ impl<O> Checker<'_, '_, O> {
                                 part: Some(part),
                                 horizon: None,
                                 frees: self.window.is_some(),
-                                digest: digest.clone(),
+                                state_key: state_key.clone(),
                                 q,
                                 zone: next,
                                 silent: None,
@@ -1949,7 +1950,7 @@ impl<O> Checker<'_, '_, O> {
                             part: Some(part),
                             horizon: period.is_none().then_some(constraints),
                             frees: false,
-                            digest: digest.clone(),
+                            state_key: state_key.clone(),
                             q: read,
                             zone: at,
                             silent: None,
@@ -1971,7 +1972,7 @@ impl<O> Checker<'_, '_, O> {
             None => self.timed.is_quiescent(state).or_else(undecided)? && self.elapses(state)?,
         };
         if idles {
-            let digest = self.digest(state)?;
+            let state_key = self.state_key(state)?;
             for (constraints, stamp) in self.pieces() {
                 let mut at = zone.clone();
                 self.constrain(&mut at, &constraints)?;
@@ -1992,7 +1993,7 @@ impl<O> Checker<'_, '_, O> {
                     part: None,
                     horizon: period.is_none().then_some(constraints),
                     frees: false,
-                    digest: digest.clone(),
+                    state_key: state_key.clone(),
                     q: read,
                     zone: at,
                     silent: None,
@@ -2398,7 +2399,7 @@ impl<O> Checker<'_, '_, O> {
         let listed = &self.certificate.nodes[node];
         for start in self.timed.initial() {
             let state = start.discrete();
-            if self.digest(state)? != listed.state_key {
+            if self.state_key(state)? != listed.state_key {
                 continue;
             }
             let mut zone = Zone::zero(self.dim());

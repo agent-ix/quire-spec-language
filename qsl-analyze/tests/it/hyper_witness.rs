@@ -1546,7 +1546,7 @@ fn the_lasso_rotates_to_entry_zero_and_goes_on_by_a_connecting_step_when_the_loo
 /// an `Undefined` counterexample at position 1 with cause `division-by-zero`,
 /// whose trace for `a` takes `step(0)` and whose trace for `b` is the first
 /// member's path, from the initial state `(1, 0)` with no step, one step short
-/// of `a`'s; `variables` and `state_keys` hold two entries. With a second
+/// of `a`'s; the `variables` and `state_keys` fields hold two entries. With a second
 /// universal variable `c` before `b` they hold three, in the order `a`, `c`, `b`.
 ///
 /// No production `StepMatch` exists, so the division-by-zero cause comes from
