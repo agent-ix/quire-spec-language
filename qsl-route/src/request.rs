@@ -47,7 +47,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
-use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
+use qsl_semantics::check::{Capability, PathGuard, RequirementMap, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
@@ -930,7 +930,7 @@ pub enum EvidenceSelection {
 /// evidence selection: [`items_with_evidence`] with
 /// [`EvidenceSelection::Record`].
 pub fn items_from_requirements(
-    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    records: &RequirementMap,
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> Vec<RequirementItem> {
@@ -949,7 +949,7 @@ pub fn items_from_requirements(
 /// `n + j`. An item whose candidate set is empty or whose extent is
 /// unbounded is written like any other; negotiation settles it.
 pub fn items_with_evidence(
-    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    records: &RequirementMap,
     registry: &Registry,
     named: Option<&BackendId>,
     selection: EvidenceSelection,
@@ -964,7 +964,7 @@ pub fn items_with_evidence(
 /// the restriction leaves with none names the reduction it settles V-8 on
 /// ([`RequirementItem::unsupported_reduction`]).
 pub fn items_with_reductions(
-    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    records: &RequirementMap,
     registry: &Registry,
     named: Option<&BackendId>,
     selection: EvidenceSelection,

@@ -3,8 +3,6 @@
 //! FR-290 kind `schedulability`, and FR-075's request writer routes it to EN-7,
 //! the one backend whose manifest advertises that kind.
 
-use std::collections::BTreeMap;
-
 use ix_trace_rs::trace;
 use qsl_analyze::schedulability::manifest;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -12,7 +10,8 @@ use qsl_foundation::Span;
 use qsl_route::request::items_from_requirements;
 use qsl_route::{CandidateOutcome, ProviderOrigin, Registry};
 use qsl_semantics::check::{
-    Capability, CheckedScheduleClaim, RequirementRecord, ScheduleClaim, SchedulingPolicy,
+    Capability, CheckedScheduleClaim, RequirementMap, RequirementRecord, ScheduleClaim,
+    SchedulingPolicy,
 };
 use quire_exact::{Origin, Role};
 
@@ -34,7 +33,7 @@ fn en_7_registers_and_a_schedulability_claim_routes_to_it() {
             manifest::descriptor(ProviderOrigin::Linked).expect("EN-7's manifest is admitted"),
         )
         .expect("EN-7 registers");
-    let records: BTreeMap<OccurrenceKey, RequirementRecord> = [
+    let records: RequirementMap = [
         ("CtlFp", SchedulingPolicy::FixedPriority, 1_u8),
         ("CtlEdf", SchedulingPolicy::Edf, 2),
     ]

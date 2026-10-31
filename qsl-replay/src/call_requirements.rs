@@ -9,11 +9,9 @@
 //! reaches [`run_with_requirements`] and its result types through the
 //! `qsl_replay` root and never names [`crate::spine`] (FR-060 T12-A).
 
-use std::collections::BTreeMap;
-
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{RequestIndex, SourceIdentity};
-use qsl_semantics::check::{Capability, CheckedGraph, RequirementRecord};
+use qsl_semantics::check::{Capability, CheckedGraph, RequirementMap};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{planned_equality, Cancel, Meter, Outcome, Value};
@@ -224,7 +222,7 @@ pub(crate) fn package_name_of(name: &str) -> Result<LibraryName, Box<RunRefusal>
 /// `value-validity` record must have an owner that names a function of
 /// `graph`, a function synthesized from a clause included; otherwise no member list is returned.
 pub(crate) fn associate(
-    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    records: &RequirementMap,
     graph: &CheckedGraph,
     function: &str,
 ) -> Result<Vec<CallRequirement>, InternalFault> {
@@ -248,6 +246,8 @@ pub(crate) fn associate(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;
 
