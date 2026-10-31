@@ -3114,7 +3114,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &candidate);
         match outcome {
             Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
-                assert_eq!(refusal.code, expected_code, "{name}: code");
+                assert_eq!(refusal.code, expected_code, "{name}: code ({refusal:?})");
                 assert_eq!(refusal.cause, expected_cause, "{name}: cause");
                 assert_eq!(
                     refusal
