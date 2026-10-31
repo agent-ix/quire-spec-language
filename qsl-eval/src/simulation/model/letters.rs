@@ -20,7 +20,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode};
 use qsl_semantics::model::observation::Observation;
@@ -33,6 +32,7 @@ use super::contracts::{verdict, Verdict};
 use super::walk::{rows_of, stop, Row};
 use super::{state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN};
 use crate::model_subject::{AtomStop, ModelInstance, ModelLetters};
+use crate::simulation::StateKey;
 use crate::temporal::{AtomReading, CaptureReading};
 use crate::value::{
     evaluate_activation_guard, evaluate_activation_guard_at_absent_key, evaluate_capture,
@@ -65,7 +65,7 @@ pub enum LettersRefusal {
 /// each an [`AtomStop`] of [`ModelLetters::atom`], never a panic (QSL-1039).
 ///
 /// The letters observe a state once, however many atoms and instances read
-/// it: the state's digest keys the last observation, which is kept for the
+/// it: the state's key selects the last observation, which is kept for the
 /// reads that follow. The observation is not charged to the engine's meter,
 /// as `state_predicates` does not charge it; charging it needs a ruling.
 pub struct ClauseLetters<'s, 'a> {
@@ -75,8 +75,8 @@ pub struct ClauseLetters<'s, 'a> {
     /// The declaration key of the parameter's object type.
     type_key: DeclarationKey,
     overlapping: BTreeSet<DeclarationKey>,
-    /// The last state observed, by its digest.
-    observed: RefCell<Option<(DigestRecord, Rc<Observed>)>>,
+    /// The last state observed, by its canonical key.
+    observed: RefCell<Option<(StateKey, Rc<Observed>)>>,
     /// How many states have been observed (not read from `observed`).
     observations: Cell<u64>,
 }
@@ -185,15 +185,15 @@ impl ClauseLetters<'_, '_> {
 
     /// `state`, observed once however many reads follow.
     fn observe(&self, state: &ModelSimState) -> Result<Rc<Observed>, AtomStop> {
-        let (_, digest) = self
+        let key = self
             .system
-            .state_key(state)
+            .canonical_state_key(state)
             .map_err(|_| AtomStop::Unobservable(stop(BROKEN)))?;
         let known = self
             .observed
             .borrow()
             .as_ref()
-            .filter(|(known, _)| *known == digest)
+            .filter(|(known, _)| *known == key)
             .map(|(_, observed)| Rc::clone(observed));
         match known {
             Some(observed) => Ok(observed),
@@ -201,13 +201,13 @@ impl ClauseLetters<'_, '_> {
                 let observation = self
                     .system
                     .model
-                    .observation(&state.state, state_document(&digest))
+                    .observation(&state.state, state_document())
                     .map_err(|_| AtomStop::Unobservable(stop(BROKEN)))?;
                 let rows = rows_of(self.system, &state.state).map_err(AtomStop::Unobservable)?;
                 let observed = Rc::new(Observed { observation, rows });
                 self.observations
                     .set(self.observations.get().saturating_add(1));
-                *self.observed.borrow_mut() = Some((digest, Rc::clone(&observed)));
+                *self.observed.borrow_mut() = Some((key, Rc::clone(&observed)));
                 Ok(observed)
             }
         }

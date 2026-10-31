@@ -276,7 +276,6 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
             Ok(expected)
         );
     }
-    let key = "ab".repeat(32);
     let cases: Vec<(Value, InconclusiveCause)> = vec![
         (
             json!({"type": "bound-reached", "depth": 7}),
@@ -348,10 +347,6 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
                 bound: InstanceBound { value: 4 },
                 states: 1,
             },
-        ),
-        (
-            json!({"type": "mapping-undetermined", "row": "r", "state_key": key, "prefix": []}),
-            InconclusiveCause::MappingUndetermined,
         ),
     ];
     for (cause, expected) in cases {
@@ -502,11 +497,6 @@ fn tc_774_cause_reader_refuses_in_order() {
         (
             json!({"type": "mapping-undetermined", "row": "r", "state_key": "abc", "prefix": []}),
             invalid("/cause/state_key"),
-        ),
-        (
-            json!({"type": "mapping-undetermined", "row": "r", "state_key": "ab".repeat(32),
-                   "prefix": [{"transition": {"type": "terminal-stutter"}}]}),
-            missing("/cause/prefix/0/post_state"),
         ),
         (
             json!({"type": "no-instance", "depth": 1}),

@@ -96,7 +96,6 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{CheckedPackage, EmitRefusal, EmittedPackage};
 use qsl_semantics::check::{
@@ -383,7 +382,7 @@ pub struct FairnessMember {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertNode {
     /// The digest of the model state's state key.
-    pub state_key: DigestRecord,
+    pub state_key: qsl_eval::simulation::StateKey,
     /// The claim-automaton state; 0 for an item that needs no automaton.
     pub automaton_state: usize,
     /// The zone, in scaled units, over the reference clock, the clock
@@ -1020,7 +1019,7 @@ struct Successor {
     /// Whether the successor frees the horizon clock: past the point where
     /// the claim is decided.
     frees: bool,
-    digest: DigestRecord,
+    digest: qsl_eval::simulation::StateKey,
     /// The checker's automaton state.
     q: usize,
     zone: Zone,
@@ -1437,7 +1436,7 @@ impl<O> Checker<'_, '_, O> {
         Ok(())
     }
 
-    fn digest(&self, state: &ModelSimState) -> Step<DigestRecord, O> {
+    fn digest(&self, state: &ModelSimState) -> Step<qsl_eval::simulation::StateKey, O> {
         self.timed
             .system()
             .state_key(state)
@@ -1538,7 +1537,7 @@ impl<O> Checker<'_, '_, O> {
             let Some(node) = covered else {
                 return reject(
                     CertificateRule::InitialMissing,
-                    CertificateLocus::ModelState(digest),
+                    CertificateLocus::ModelState(digest.clone()),
                 );
             };
             self.states[node].get_or_insert(state);
@@ -1585,7 +1584,7 @@ impl<O> Checker<'_, '_, O> {
             let Some(node) = covering else {
                 return reject(
                     CertificateRule::InitialMissing,
-                    CertificateLocus::ModelState(digest),
+                    CertificateLocus::ModelState(digest.clone()),
                 );
             };
             let entry = &certificate.nodes[node];
@@ -1760,7 +1759,7 @@ impl<O> Checker<'_, '_, O> {
             let missing = || {
                 reject(
                     CertificateRule::InitialMissing,
-                    CertificateLocus::ModelState(digest),
+                    CertificateLocus::ModelState(digest.clone()),
                 )
             };
             let Some(starts) = self.live_initial(&state)? else {
@@ -1915,7 +1914,7 @@ impl<O> Checker<'_, '_, O> {
                                 part: Some(part),
                                 horizon: None,
                                 frees: self.window.is_some(),
-                                digest,
+                                digest: digest.clone(),
                                 q,
                                 zone: next,
                                 silent: None,
@@ -1950,7 +1949,7 @@ impl<O> Checker<'_, '_, O> {
                             part: Some(part),
                             horizon: period.is_none().then_some(constraints),
                             frees: false,
-                            digest,
+                            digest: digest.clone(),
                             q: read,
                             zone: at,
                             silent: None,
@@ -1993,7 +1992,7 @@ impl<O> Checker<'_, '_, O> {
                     part: None,
                     horizon: period.is_none().then_some(constraints),
                     frees: false,
-                    digest,
+                    digest: digest.clone(),
                     q: read,
                     zone: at,
                     silent: None,

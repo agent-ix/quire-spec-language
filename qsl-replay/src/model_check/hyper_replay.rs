@@ -65,7 +65,6 @@ use qsl_eval::temporal::{
 };
 use std::collections::BTreeSet;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits};
 use quire_semantic_value::catalog::Category;
@@ -115,7 +114,7 @@ pub struct HyperReplay<'a, 's> {
 /// Refuses, with no partial result, a counterexample whose traces do not
 /// match the clause's variables, whose step counts differ or whose loop entry
 /// is not a step (`HyperShape`); an `initial` outside its subject, a step
-/// that is not enabled, a post-state digest no successor has, a loop that does
+/// that is not enabled, a post-state key no successor has, a loop that does
 /// not close and a stutter step at a state that is not terminal, as FR-128
 /// does; an `Undefined` counterexample of an `align skip` clause,
 /// `HyperProjected`; a `Projected` counterexample with a mark that does not
@@ -373,7 +372,7 @@ fn reexecute(
                 }
                 Position {
                     state: current.state.clone(),
-                    digest: current.digest,
+                    digest: current.digest.clone(),
                 }
             }
             HyperStep::Model(step) => {
@@ -391,7 +390,7 @@ fn reexecute(
                     }
                     enabled = true;
                     let digest = digest_of(system, &next)?;
-                    digests.push(digest);
+                    digests.push(digest.clone());
                     if digest == step.post_state {
                         reached = Some(Position {
                             state: next,
@@ -409,7 +408,7 @@ fn reexecute(
                 reached.ok_or_else(|| {
                     refused(ModelTraceRefusal::PostState {
                         step: index,
-                        recorded: step.post_state,
+                        recorded: step.post_state.clone(),
                         reached: digests,
                     })
                 })?
@@ -980,10 +979,10 @@ fn evaluated(
     found: &Found,
 ) -> Result<HyperUndefined, ReplayRefusal> {
     let quantifiers = replay.clause.quantifiers();
-    let mut state_keys: Vec<DigestRecord> = Vec::new();
+    let mut state_keys: Vec<qsl_eval::simulation::StateKey> = Vec::new();
     let mut variables = Vec::new();
     for component in &found.components {
-        state_keys.push(executed[*component][found.position].digest);
+        state_keys.push(executed[*component][found.position].digest.clone());
         let quantifier = &quantifiers[*component];
         variables.push((
             quantifier.variable.clone(),

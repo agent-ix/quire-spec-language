@@ -15,9 +15,9 @@
 
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
-use qsl_foundation::digest::DigestRecord;
+use qsl_eval::simulation::StateKey;
 
-use crate::certificate::closure::{DigestWire, ProductStateRef};
+use crate::certificate::closure::ProductStateRef;
 use crate::certificate::simulation::FailedStep;
 
 /// FR-314's part of an SMT proof obligation.
@@ -120,7 +120,9 @@ pub enum CertificateLocus {
     },
     /// The model state of a state-graph certificate at which a rule failed
     /// (FR-169): its `quire.simulation.state-key/v1` digest.
-    ModelState(DigestRecord),
+    ModelState(StateKey),
+    /// The full canonical model state key of an FR-169 certificate rejection.
+    ModelKey(StateKey),
     /// A state-graph certificate entry whose closure index names no closure
     /// state (FR-169).
     Entry {
@@ -251,7 +253,18 @@ impl Serialize for CertificateLocus {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             Self::ProductState(state) => state.serialize(serializer),
-            Self::ModelState(state) => DigestWire::of(state).serialize(serializer),
+            Self::ModelState(state) => {
+                use base64::Engine as _;
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(state.as_bytes())
+                    .serialize(serializer)
+            }
+            Self::ModelKey(state) => {
+                use base64::Engine as _;
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(state.as_bytes())
+                    .serialize(serializer)
+            }
             Self::Entry { index } => {
                 let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
                 let index = index.to_string();

@@ -28,7 +28,8 @@ fn reset_loop(world: &World, variable: &str, initial: usize) -> qsl_replay::Hype
         .into_iter()
         .nth(initial)
         .expect("initial index");
-    let (_, digest) = system.state_key(&state).expect("state key");
+    let (key, _) = system.state_key(&state).expect("state key");
+    let key = qsl_eval::simulation::StateKey::from_canonical_bytes(key);
     let expansion = system
         .successors(&state)
         .expect("the initial state expands");
@@ -37,7 +38,9 @@ fn reset_loop(world: &World, variable: &str, initial: usize) -> qsl_replay::Hype
         .into_iter()
         .find(|(transition, post)| {
             transition.operation().contains("Vault/reset")
-                && system.state_key(post).is_ok_and(|(_, key)| key == digest)
+                && system
+                    .state_key(post)
+                    .is_ok_and(|(bytes, _)| bytes == key.as_bytes())
         })
         .expect("reset has a self-loop");
     qsl_replay::HyperTrace {
@@ -46,7 +49,7 @@ fn reset_loop(world: &World, variable: &str, initial: usize) -> qsl_replay::Hype
         initial: u32::try_from(initial).expect("initial index fits"),
         steps: vec![qsl_replay::HyperStep::Model(qsl_replay::ModelStep {
             transition,
-            post_state: digest,
+            post_state: key,
             delay: None,
         })],
         marks: Vec::new(),
@@ -597,7 +600,7 @@ fn a_reproduced_smt_counterexample_settles_refuted() {
 /// A counterexample whose replay does not reproduce remains inconclusive.
 #[trace("TC-1190", "FR-182-AC-12")]
 #[test]
-fn an_smt_counterexample_with_a_wrong_post_state_digest_is_replay_refused() {
+fn an_smt_counterexample_with_a_wrong_post_state_key_is_replay_refused() {
     let world = World::new(
         &["v"],
         false,
@@ -607,10 +610,9 @@ fn an_smt_counterexample_with_a_wrong_post_state_digest_is_replay_refused() {
     let qsl_replay::HyperStep::Model(step) = &mut a.steps[0] else {
         unreachable!("reset_loop makes model steps")
     };
-    let mut wrong_digest = *step.post_state.as_bytes();
-    wrong_digest[0] ^= 1;
-    step.post_state =
-        qsl_foundation::digest::DigestRecord::mint(step.post_state.domain(), wrong_digest);
+    let mut wrong_key = step.post_state.as_bytes().to_vec();
+    wrong_key[0] ^= 1;
+    step.post_state = qsl_eval::simulation::StateKey::from_canonical_bytes(wrong_key);
     let counterexample = qsl_replay::HyperCounterexample {
         kind: qsl_replay::HyperCounterexampleKind::Lockstep { loop_entry: 0 },
         instance: instance("v"),

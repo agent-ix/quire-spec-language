@@ -290,7 +290,7 @@ pub(crate) fn operations(counterexample: &TemporalCounterexample) -> Vec<String>
 /// `0`, `3`, `0`; the deadlock-freedom item holds under both. Each step's
 /// `post_state` is the digest of the timed state the subject reaches by the
 /// same steps after the same delays; with `qsl-eval`'s
-/// `a_timed_post_state_digest_changes_with_its_clock_value_alone`, this is
+/// `a_timed_post_state_key_changes_with_its_clock_value_alone`, this is
 /// FR-236-AC-1.
 #[trace("TC-694", "FR-239-AC-1")]
 #[trace("TC-696", "FR-241-AC-1")]
@@ -338,9 +338,7 @@ fn no_late_reply_holds_at_four_and_is_refuted_at_three() {
             )
             .expect("the counterexample's step is admitted");
         assert_eq!(
-            timed
-                .state_digest(behaviour.last().state())
-                .expect("a digest"),
+            timed.state_key(behaviour.last().state()).expect("a digest"),
             step.post_state
         );
     }
@@ -534,7 +532,7 @@ fn an_undefined_atom_refutes_only_where_time_diverges() {
             clocks: vec![exact(0, 1)],
         }))
     );
-    // The site's key names the model state; the step's post-state digest
+    // The site's key names the model state; the step's post-state key
     // names it with its clocks.
     assert_ne!(
         undefined.site.state_key,

@@ -41,7 +41,7 @@ pub use expansion::{Expansion, ExpansionLimit, ExpansionStop, StateFindings};
 pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
 pub use footprint::{any_affects, independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
-pub use key::EncodingRefusal;
+pub use key::{EncodingRefusal, StateKey};
 pub use not_simulated::{NotSimulated, RequiresBound, Root, BOUND_POSITIONS};
 pub use progress::{FairLoop, ZeroProgress, ZeroProgressError};
 pub use reduction::{

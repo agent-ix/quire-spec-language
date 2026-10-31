@@ -10,12 +10,12 @@ use qsl_eval::hyper::{
 };
 use qsl_eval::model_subject::AtomStop;
 use qsl_eval::simulation::model::ModelSystem;
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{ExpansionLimit, TransitionSystem};
 use qsl_eval::temporal::{
     evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
     TemporalPosition, TupleLetters,
 };
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedHyperClause, FormulaNode, HyperForm, PredicateRole};
 use quire_exact::{Cancel, LimitKind, Meter, ScalarLimits};
 use quire_semantic_value::catalog::Category;
@@ -268,7 +268,7 @@ fn replay_lasso(
         .iter()
         .map(|(state, digest)| ReplayPosition {
             state: state.clone(),
-            digest: *digest,
+            digest: digest.clone(),
         })
         .collect();
     close_loop(system, &replay_positions, trace_lasso)?;
@@ -343,7 +343,7 @@ fn replay_lasso(
 fn replay_positions_as_positions(positions: &[ReplayPosition]) -> Vec<Position> {
     positions
         .iter()
-        .map(|position| (position.state.clone(), position.digest))
+        .map(|position| (position.state.clone(), position.digest.clone()))
         .collect()
 }
 
@@ -477,7 +477,7 @@ fn replay_product_trap(
     }
 
     let mut nodes = Vec::<ProductNode>::new();
-    let mut by_key = BTreeMap::<(DigestRecord, Option<usize>), usize>::new();
+    let mut by_key = BTreeMap::<(StateKey, Option<usize>), usize>::new();
     let mut queue = VecDeque::<usize>::new();
     for root in roots {
         let key = product_key(system, &root)?;
@@ -602,15 +602,15 @@ fn replay_product_trap(
 fn product_key(
     system: &ModelSystem<'_>,
     state: &HyperState,
-) -> Result<(DigestRecord, Option<usize>), ReplayRefusal> {
+) -> Result<(StateKey, Option<usize>), ReplayRefusal> {
     let component = state
         .components
         .first()
         .ok_or_else(|| fault("an-HP-5-product-state-has-one-component"))?;
-    let digest = system
+    let (bytes, _) = system
         .state_key(component)
-        .map_err(|_| fault("HP-5-product-model-state-key"))?
-        .1;
+        .map_err(|_| fault("HP-5-product-model-state-key"))?;
+    let key = StateKey::from_canonical_bytes(bytes);
     let property = match &state.property {
         Property::After(state) => Some(state.index()),
         Property::Dead | Property::Undefined { .. } => None,
@@ -618,7 +618,7 @@ fn product_key(
             return Err(fault("an-HP-5-product-has-an-ordinary-property-state"));
         }
     };
-    Ok((digest, property))
+    Ok((key, property))
 }
 
 fn state_has_open_finding(findings: &[HyperFinding]) -> bool {

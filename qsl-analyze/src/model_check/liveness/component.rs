@@ -113,7 +113,10 @@ impl<S: LiveSubject> Run<'_, S> {
                     .buchi_state(*at, keys.max_key_bytes())
                     .map_err(ModelCheckRefusal::Translation)?;
                 Ok(ProductStateRef {
-                    model_state: self.digest(&state.state.model)?,
+                    model_state: {
+                        let (bytes, _) = self.system.state_key(&state.state.model)?;
+                        qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+                    },
                     automaton_state: keys.key(&structural)?,
                 })
             })

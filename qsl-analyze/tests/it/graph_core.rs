@@ -415,7 +415,7 @@ fn cancellation_and_model_stops_preserve_frontier_and_findings() {
     .unwrap();
     let expected: Vec<_> = stopped.graph.states()[1..]
         .iter()
-        .map(|state| state.digest)
+        .map(|state| qsl_eval::simulation::StateKey::from_canonical_bytes(state.key.clone()))
         .collect();
     assert!(
         matches!(stopped.outcome, Outcome::Stopped { cause, ref frontier, .. } if cause == STOP && frontier == &expected)

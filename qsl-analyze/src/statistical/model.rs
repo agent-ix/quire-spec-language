@@ -711,7 +711,7 @@ impl Shared<'_, '_, '_> {
         at: u64,
         reads: &[(UndefinedLocus, &CheckedPredicate)],
     ) -> Result<Truths, SampleHalt> {
-        let key = (binding, position.key().to_vec());
+        let key = (binding, position.key().as_bytes().to_vec());
         let readings = match self.truths.get(&key) {
             Some(known) => known.clone(),
             None => {
@@ -740,7 +740,7 @@ impl Shared<'_, '_, '_> {
                     return Ok(Err(Box::new(UndefinedEvaluation {
                         site: UndefinedSite {
                             position: at,
-                            state_key: position.digest(),
+                            state_key: position.key().clone(),
                             locus: locus.clone(),
                             transition: None,
                             time: None,
@@ -963,7 +963,7 @@ impl<'c> Shared<'_, '_, 'c> {
                 Err(undefined) => return Ok(Read::Undefined(undefined)),
             };
             let holds = truths.first().copied().ok_or_else(broken)?;
-            last = Some(cursor.position.digest());
+            last = Some(cursor.position.key().clone());
             let weight = match &fraction.weight {
                 None => Rational::from_integer(Integer::one()),
                 // The step that leaves the position weighs it.
@@ -1054,7 +1054,7 @@ impl ModelWalk<'_, '_, '_> {
                 Walking {
                     binding,
                     start,
-                    initial: position.key().to_vec(),
+                    initial: position.key().as_bytes().to_vec(),
                     position,
                     taken: 0,
                 }
@@ -1091,7 +1091,7 @@ impl ModelWalk<'_, '_, '_> {
             None => Rational::from_integer(Integer::one()),
             Some(name) => magnitude(&step, name)?,
         };
-        let returned = position.key() == walk.initial.as_slice();
+        let returned = position.key().as_bytes() == walk.initial.as_slice();
         self.walk = Some(Walking {
             position,
             taken: walk.taken.checked_add(1).ok_or_else(broken)?,

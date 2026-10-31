@@ -1513,8 +1513,10 @@ fn an_undecided_contract_is_an_undecided_successor() {
         let world = OrdersWorld::over(&format!("{undecided}{workload}"), wobble);
         let system = world.system();
         let state = system.initial().remove(0);
-        let (_, digest) = system.state_key(&state).expect("a key");
-        let expected = UndecidedSuccessor { state: digest };
+        let (bytes, _) = system.state_key(&state).expect("a key");
+        let expected = UndecidedSuccessor {
+            state: qsl_eval::simulation::StateKey::from_canonical_bytes(bytes),
+        };
         assert_eq!(
             system
                 .actions(&state)
@@ -1586,13 +1588,8 @@ fn an_undecided_precondition_is_a_contract_finding() {
         let key_bytes =
             quire_canonical::to_vec(&system.key(&state), quire_canonical::Limits::new(1 << 20))
                 .expect("a key encodes");
-        let digest = qsl_foundation::digest::DigestRecord::mint(
-            qsl_foundation::digest::DigestDomain::SimulationStateKeyV1,
-            qsl_foundation::ByteDigest::of(&key_bytes)
-                .as_bytes()
-                .to_owned(),
-        );
-        (expansion.successors.len(), expansion.findings, digest)
+        let key = qsl_eval::simulation::StateKey::from_canonical_bytes(key_bytes);
+        (expansion.successors.len(), expansion.findings, key)
     };
 
     let (successors, findings, _) = run("pre Low using v on M::A::ready { self.ready() }");
@@ -1624,9 +1621,8 @@ fn an_undecided_precondition_is_a_contract_finding() {
     );
 
     // The postcondition half: the finding names the candidate by its
-    // state-key digest, and no candidate is a successor.
-    let (successors, findings, digest) =
-        run("post LowPost using v on M::A::ready { self.ready() }");
+    // state key, and no candidate is a successor.
+    let (successors, findings, key) = run("post LowPost using v on M::A::ready { self.ready() }");
     assert_eq!(successors, 0);
     assert!(!findings.is_empty());
     for finding in &findings {
@@ -1640,7 +1636,7 @@ fn an_undecided_precondition_is_a_contract_finding() {
             panic!("a contract finding: {finding:?}")
         };
         assert_eq!(clause, "LowPost");
-        assert_eq!(*candidate, Some(digest));
+        assert_eq!(*candidate, Some(key.clone()));
         assert_eq!(
             *evaluation,
             ClauseOutcome::FamilyUndefined(
@@ -1675,7 +1671,7 @@ fn precondition_clauses_stop_at_the_first_non_true_clause_in_name_order() {
             .map(|finding| match finding {
                 ModelFinding::ContractUndetermined {
                     candidate, clause, ..
-                } => (clause.clone(), *candidate),
+                } => (clause.clone(), candidate.clone()),
                 other => panic!("a contract finding: {other:?}"),
             })
             .collect::<Vec<_>>()

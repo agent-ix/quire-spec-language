@@ -551,7 +551,7 @@ fn component_work_charges_no_budget_and_the_closure_check_stops_first() {
 
 /// The model-state phase, as the digest of the state it is: `Fork`'s
 /// product states are told apart by their model state and automaton key.
-fn digest_of(fixture: &Fixture, phase: u8) -> qsl_replay::DigestRecord {
+fn digest_of(fixture: &Fixture, phase: u8) -> qsl_eval::simulation::StateKey {
     let system = fixture.system();
     let mut state = fixture.start();
     if phase != 0 {
@@ -560,7 +560,10 @@ fn digest_of(fixture: &Fixture, phase: u8) -> qsl_replay::DigestRecord {
         let pick = usize::from(phase == 2);
         state = successors[pick].1.clone();
     }
-    system.state_key(&state).expect("encodes").1
+    {
+        let (bytes, _) = system.state_key(&state).expect("encodes");
+        qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+    }
 }
 
 /// FR-126-AC-18, the `Fork` unit: the five product states are `(0,q0)`,
@@ -599,7 +602,10 @@ fn components_are_listed_by_the_least_vertex_whose_predecessors_are_listed() {
         digest_of(&fixture, 2),
     ];
     assert_eq!(
-        listed.iter().map(|at| at.model_state).collect::<Vec<_>>(),
+        listed
+            .iter()
+            .map(|at| at.model_state.clone())
+            .collect::<Vec<_>>(),
         phases
     );
     // `q0` reads any letter; `q1` is the accepting state.
@@ -856,7 +862,10 @@ fn a_guarded_each_activation_has_its_own_acceptance_set_in_the_certificate() {
         })
         .expect("a's update is a step")
         .1;
-    let one_zero = system.state_key(&updated).expect("encodes").1;
+    let one_zero = {
+        let (bytes, _) = system.state_key(&updated).expect("encodes");
+        qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+    };
     let removed = certificate.components[1]
         .states
         .iter()
@@ -870,7 +879,10 @@ fn a_guarded_each_activation_has_its_own_acceptance_set_in_the_certificate() {
         rejected(CertificateRule::SuccessorMissing, &removed)
     );
 
-    let initial = system.state_key(&start).expect("encodes").1;
+    let initial = {
+        let (bytes, _) = system.state_key(&start).expect("encodes");
+        qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+    };
     let waiting = certificate.components[0]
         .states
         .iter()

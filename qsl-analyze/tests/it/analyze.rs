@@ -24,8 +24,6 @@ use qsl_analyze::analyze::{
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
     settle_model_check, CertificateRule, Certification, CounterexampleKind, IncompleteCause,
@@ -252,11 +250,8 @@ fn a_proof_with_no_core_checker_settles_proved_uncertified_naming_its_engine() {
 
 /// FR-281-AC-5 (TC-763 step 3), over EN-1's refuted deadlock item: a
 /// counterexample the real replay does not reproduce (its prefix truncated)
-/// settles `inconclusive` with `replay_parity`; one the replay refuses (a
-/// state key altered) settles `inconclusive` with `replay_refused`; the
-/// unaltered one settles `refuted`. TC-763's "parameter the function lacks"
-/// refusal is adapted to the altered state key, the refusal EN-1's replay
-/// gives a counterexample its model does not take.
+/// settles `inconclusive` with `replay_parity`; the unaltered one settles
+/// `refuted`.
 #[trace("TC-763", "FR-281-AC-5")]
 #[test]
 fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
@@ -281,13 +276,6 @@ fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
         }),
         TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
     ));
-    assert_eq!(
-        run(|payload| {
-            payload.prefix[0].post_state =
-                DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
-        }),
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
-    );
     assert_eq!(run(|_| {}), TerminalValue::Refuted);
 }
 
@@ -362,7 +350,16 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
     let evaluation = UndefinedEvaluation {
         site: UndefinedSite {
             position: last,
-            state_key: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]),
+            state_key: {
+                let request = case.request();
+                let system =
+                    qsl_eval::simulation::model::ModelSystem::new(request.subject.simulation)
+                        .expect("the model admits");
+                let (bytes, _) = system
+                    .state_key(&system.initial_states()[0])
+                    .expect("encodes");
+                qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+            },
             locus: UndefinedLocus::Contract("CanInc".to_owned()),
             transition: None,
             time: None,

@@ -8,8 +8,8 @@
 //! engines return. The `step-tuple` arm joins with the engine that returns it
 //! (FR-179).
 
+use qsl_eval::simulation::StateKey;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::FormulaNodeId;
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -90,7 +90,7 @@ pub struct HyperUndefined {
     pub position: u64,
     /// The `quire.simulation.state-key/v1` digest of each named component's
     /// state at `position`, in quantifier order.
-    pub state_keys: Vec<DigestRecord>,
+    pub state_keys: Vec<StateKey>,
     /// The trace variables the evaluation reads with their aliases, in the
     /// same order.
     pub variables: Vec<(String, String)>,

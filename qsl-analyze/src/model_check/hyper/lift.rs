@@ -13,7 +13,6 @@
 
 use qsl_eval::hyper::{copy_population, HyperState, HyperTransition};
 use qsl_eval::simulation::Permutation;
-use qsl_foundation::digest::DigestRecord;
 
 use crate::model_check::check::fault;
 use crate::model_check::graph::{ProductStateId, RetainedEdge};
@@ -27,7 +26,7 @@ pub(super) struct Lifted {
     pub(super) states: Vec<HyperState>,
     /// The joint step into each position after the first, with the digest of
     /// each component's post-state.
-    pub(super) steps: Vec<(HyperTransition, Vec<DigestRecord>)>,
+    pub(super) steps: Vec<(HyperTransition, Vec<qsl_eval::simulation::StateKey>)>,
     /// Component `k` of the last concrete state is component `positions[k]` of
     /// the stored state it stands for.
     pub(super) positions: Vec<usize>,

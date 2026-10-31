@@ -14,7 +14,7 @@
 //! row alike.
 
 use qsl_eval::model_subject::ModelSubject;
-use qsl_foundation::digest::DigestRecord;
+use qsl_eval::simulation::StateKey;
 use qsl_semantics::check::CheckedStateGraphClaim;
 use quire_exact::Cancel;
 
@@ -58,7 +58,7 @@ pub struct GraphReplayResult {
     /// The number of states in a replayed trap closure.
     pub closure_nodes: Option<u64>,
     /// The first target state's key in a replayed trap closure.
-    pub first_target: Option<DigestRecord>,
+    pub first_target: Option<StateKey>,
 }
 
 /// The method parameters of the run that decided the outcome: what every

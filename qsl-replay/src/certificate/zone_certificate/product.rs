@@ -36,7 +36,6 @@ use qsl_eval::automaton::{Atom, AutomatonError, ClockedEdge, Letter, PositionAut
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{GuardedStep, ModelSimState, PlaceConstraint};
 use qsl_eval::temporal::{AtomReading, CaptureReading};
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::CaptureSite;
 use quire_exact::{Integer, Meter, Rational};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
@@ -62,7 +61,7 @@ pub(super) struct LiveClaim<'c> {
     /// Each letter read, by the state's digest, the instance and whether
     /// it is position 0 of an `on origin` clause with captures; `None` when
     /// undefined.
-    readings: RefCell<BTreeMap<(DigestRecord, usize, bool), Option<Letter>>>,
+    readings: RefCell<BTreeMap<(qsl_eval::simulation::StateKey, usize, bool), Option<Letter>>>,
 }
 
 /// Where a clock lies against one cell constant.
@@ -185,7 +184,7 @@ impl<O> Checker<'_, '_, O> {
         let live = self.live()?;
         let digest = self.digest(state)?;
         let key = (
-            digest,
+            digest.clone(),
             instance,
             initial && live.capture == CaptureSite::Origin,
         );
@@ -523,7 +522,7 @@ impl<O> Checker<'_, '_, O> {
                                 part: Some(part),
                                 horizon: None,
                                 frees: false,
-                                digest: post_digest,
+                                digest: post_digest.clone(),
                                 q: read.target.index(),
                                 zone: entered,
                                 silent: None,
@@ -557,7 +556,7 @@ impl<O> Checker<'_, '_, O> {
                     part: None,
                     horizon: None,
                     frees: false,
-                    digest,
+                    digest: digest.clone(),
                     q,
                     zone: entered,
                     silent: Some(SilentMove::Wait),
@@ -584,7 +583,7 @@ impl<O> Checker<'_, '_, O> {
                         part: None,
                         horizon: None,
                         frees: false,
-                        digest,
+                        digest: digest.clone(),
                         q,
                         zone: entered,
                         silent: Some(SilentMove::Diverge),
@@ -616,7 +615,7 @@ impl<O> Checker<'_, '_, O> {
                         part: None,
                         horizon: None,
                         frees: false,
-                        digest,
+                        digest: digest.clone(),
                         q: read.target.index(),
                         zone: entered,
                         silent: None,

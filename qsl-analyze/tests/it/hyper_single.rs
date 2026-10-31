@@ -21,12 +21,12 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{HyperRefusal, ModelCheckRefusal};
 use qsl_eval::hyper::HyperLetters;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{StopReason, TransitionSystem};
 use qsl_eval::temporal::{
     evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
     TemporalPosition, TupleLetters, UndefinedCause,
 };
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     ExistentialInstanceOutcome, ExistentialOutcome, IncompleteCause, LassoWitness, ModelCheckLimit,
     ModelCheckLimits, ModelLasso, ModelPath, OpenCause, ReachedLimit, RunEnd, WitnessSource,
@@ -130,10 +130,10 @@ fn is_reset(operation: &str) -> bool {
     operation.contains("/Vault/reset\"")
 }
 
-/// A state with its state-key digest, which is slow to compute.
+/// A state with its state key, which is slow to compute.
 struct Node {
     state: ModelSimState,
-    key: DigestRecord,
+    key: StateKey,
 }
 
 /// The vault's own system, which the oracle re-executes lassos through, and
@@ -142,7 +142,7 @@ struct Oracle<'w> {
     world: &'w World,
     system: ModelSystem<'w>,
     /// Whether `reset` is enabled at the state with the digest.
-    enables_reset: RefCell<HashMap<DigestRecord, bool>>,
+    enables_reset: RefCell<HashMap<StateKey, bool>>,
 }
 
 impl<'w> Oracle<'w> {
@@ -155,14 +155,16 @@ impl<'w> Oracle<'w> {
     }
 
     fn node(&self, state: ModelSimState) -> Node {
-        let key = self.system.state_key(&state).expect("a key").1;
+        let (bytes, _) = self.system.state_key(&state).expect("a key");
+        let key = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
         Node { state, key }
     }
 
     /// The states of `lasso` by re-executing its steps: one for the initial
     /// state and one for each step.
     fn replayed(&self, lasso: &ModelLasso) -> Vec<Node> {
-        let mut nodes = vec![self.node(self.system.initial()[lasso.path.initial as usize].clone())];
+        let mut nodes =
+            vec![self.node(self.system.initial_states()[lasso.path.initial as usize].clone())];
         for step in &lasso.path.steps {
             let last = &nodes.last().expect("a state").state;
             let next = self
@@ -186,7 +188,7 @@ impl<'w> Oracle<'w> {
         *self
             .enables_reset
             .borrow_mut()
-            .entry(node.key)
+            .entry(node.key.clone())
             .or_insert_with(|| {
                 self.system
                     .successors(&node.state)
@@ -283,7 +285,7 @@ impl<'w> Oracle<'w> {
     /// Whether some lasso of at most `depth` steps from initial state
     /// `initial` is a witness: the brute-force search.
     fn exists(&self, initial: usize, fairness: Fairness, depth: usize) -> bool {
-        let start = self.node(self.system.initial()[initial].clone());
+        let start = self.node(self.system.initial_states()[initial].clone());
         // Each prefix: the steps taken and the nodes reached.
         let mut stack = vec![(Vec::new(), vec![start])];
         while let Some((steps, nodes)) = stack.pop() {
@@ -313,14 +315,14 @@ impl<'w> Oracle<'w> {
                     let mut next_steps = steps.clone();
                     next_steps.push(qsl_replay::ModelStep {
                         transition,
-                        post_state: post.key,
+                        post_state: post.key.clone(),
                         delay: None,
                     });
                     let mut next_nodes: Vec<Node> = nodes
                         .iter()
                         .map(|node| Node {
                             state: node.state.clone(),
-                            key: node.key,
+                            key: node.key.clone(),
                         })
                         .collect();
                     next_nodes.push(post);

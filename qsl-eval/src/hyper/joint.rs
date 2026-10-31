@@ -7,7 +7,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter, ScalarLimits};
@@ -82,7 +81,7 @@ pub(super) struct Joint<'r, 's> {
     instance: &'r [ParameterBinding],
     seams: Seams<'r>,
     atoms: Vec<FormulaNodeId>,
-    readings: RefCell<BTreeMap<Vec<DigestRecord>, Reading>>,
+    readings: RefCell<BTreeMap<Vec<crate::simulation::StateKey>, Reading>>,
     meter: ScalarLimits,
     cancel: &'r Cancel,
     halt: RefCell<Option<Halt>>,
@@ -136,18 +135,18 @@ impl<'r, 's> Joint<'r, 's> {
         Ok(())
     }
 
-    /// The FR-101 state-key digest of each component.
+    /// The FR-101 state key of each component.
     pub(super) fn digests(
         &self,
         components: &[ModelSimState],
-    ) -> Result<Vec<DigestRecord>, ExpansionStop> {
+    ) -> Result<Vec<crate::simulation::StateKey>, ExpansionStop> {
         self.systems
             .iter()
             .zip(components)
             .map(|(system, state)| {
                 system
                     .state_key(state)
-                    .map(|(_, digest)| digest)
+                    .map(|(bytes, _)| crate::simulation::StateKey::from_canonical_bytes(bytes))
                     .map_err(|refusal| self.record(Halt::Encoding(refusal)))
             })
             .collect()

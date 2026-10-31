@@ -111,7 +111,7 @@ fn walk(world: &World, moves: &[(&str, Rational)]) -> Vec<ModelStep> {
             .unwrap_or_else(|| panic!("`{operation}` is enabled"));
         steps.push(ModelStep {
             transition: step.transition().clone(),
-            post_state: timed.state_digest(&next).expect("a digest"),
+            post_state: timed.state_key(&next).expect("a key"),
             delay: Some(delay.clone()),
         });
         state = next;
@@ -207,7 +207,7 @@ fn a_counterexample_that_breaks_time_is_refused() {
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
     let mut altered = counterexample;
-    altered.prefix[2].post_state = altered.prefix[0].post_state;
+    altered.prefix[2].post_state = altered.prefix[0].post_state.clone();
     let (cause, code) = refusal(replay(&three, &altered));
     assert!(
         matches!(cause, ModelTraceRefusal::PostState { step: 2, .. }),
@@ -993,7 +993,7 @@ fn fairness_is_judged_on_the_recorded_successor() {
             &world,
             vec![ModelStep {
                 transition: step.transition().clone(),
-                post_state: timed.state_digest(next).expect("a digest"),
+                post_state: timed.state_key(next).expect("a key"),
                 delay: Some(whole(0)),
             }],
             CounterexampleKind::Formula,
@@ -1150,7 +1150,7 @@ fn malformed_timed_counterexamples_are_refused() {
         &world,
         vec![ModelStep {
             transition: go.transition().clone(),
-            post_state: timed.state_digest(&reached).expect("a digest"),
+            post_state: timed.state_key(&reached).expect("a key"),
             delay: Some(whole(2)),
         }],
         CounterexampleKind::Formula,

@@ -58,7 +58,7 @@ fn take(world: &World, state: &ModelSimState, input: i64) -> (ModelStep, ModelSi
                 && transition.arguments()[0].contains(&format!("\"value\":\"{input}\""))
         })
         .expect("step(i) is enabled");
-    let post_state = system.state_key(&next).expect("a key").1;
+    let post_state = system.state_key(&next).expect("a key").0.into();
     (
         ModelStep {
             transition,
@@ -99,7 +99,7 @@ fn the_leaky_lockstep_counterexample_replays_to_its_evaluated_witness() {
 
 /// FR-183 criterion 3, the refusals that settle no result: a counterexample with one
 /// trace one step shorter; with `b`'s inputs changed to 1, which makes `μ_U`
-/// false; with one post-state digest altered; with a loop that does not
+/// false; with one post-state key altered; with a loop that does not
 /// close; and with a stutter marker on a state that is not terminal.
 #[trace("TC-608")]
 #[test]
@@ -132,7 +132,11 @@ fn a_counterexample_that_breaks_a_replay_rule_is_refused() {
     let HyperStep::Model(step) = &mut altered.traces[0].steps[1] else {
         panic!("a model step");
     };
-    step.post_state = system.state_key(&system.initial()[1]).expect("a key").1;
+    step.post_state = system
+        .state_key(&system.initial()[1])
+        .expect("a key")
+        .0
+        .into();
     assert!(matches!(
         refusal(world.replay(&altered)),
         ModelTraceRefusal::PostState { step: 1, .. }
@@ -1149,7 +1153,7 @@ fn a_projected_prefix_that_is_bad_early_reproduces_at_the_position_that_fixes_it
                 .into_iter()
                 .find(|(transition, _)| transition.operation().contains("/Vault/mix\""))
                 .expect("mix is enabled");
-            let post_state = system.state_key(&next).expect("a key").1;
+            let post_state = system.state_key(&next).expect("a key").0.into();
             trace.steps.push(HyperStep::Model(ModelStep {
                 transition,
                 post_state,
@@ -1216,7 +1220,7 @@ fn a_projected_counterexample_of_a_lockstep_clause_is_refused() {
 /// FR-183-AC-3: every refusal it lists settles no result: §8.1's counterexample
 /// with one trace one step shorter, with `b`'s inputs changed to 1 (both of
 /// its steps, to keep its loop closed) so `μ_U` is false,
-/// with one post-state digest altered, a `Projected` counterexample with a
+/// with one post-state key altered, a `Projected` counterexample with a
 /// `step` marked skipped, and the `Lockstep` counterexample whose loop is unfair
 /// under its own fairness set.
 #[trace("TC-608", "FR-183-AC-3")]

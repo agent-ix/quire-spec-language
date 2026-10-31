@@ -5,7 +5,6 @@
 use std::collections::{HashSet, VecDeque};
 
 use qsl_foundation::diagnostic::category_of;
-use qsl_foundation::digest::DigestRecord;
 use quire_canonical::Encode;
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::catalog::Category;
@@ -26,7 +25,7 @@ use qsl_foundation::{IdentityLimits, Setting, SettingLimits};
 ///
 /// An implementation owns the typed canonical view of its own state and
 /// transition identities (QSpec FR-181's exploration contract); the engine
-/// encodes and hashes them itself (FR-101) and never otherwise interprets
+/// encodes them itself (FR-101) and never otherwise interprets
 /// them.
 pub trait TransitionSystem {
     /// One point in the system's state space.
@@ -203,7 +202,7 @@ pub enum Outcome {
     Bounded {
         /// Counts at the moment the run stopped.
         stats: Stats,
-        /// The unexpanded state-key digests, in the order the run would
+        /// The unexpanded state keys, in the order the run would
         /// have expanded them next.
         frontier: Frontier,
         /// The limit that stopped the run, with its value.
@@ -214,7 +213,7 @@ pub enum Outcome {
     Cancelled {
         /// Counts at the moment the run stopped.
         stats: Stats,
-        /// The unexpanded state-key digests, in the order the run would
+        /// The unexpanded state keys, in the order the run would
         /// have expanded them next.
         frontier: Frontier,
         /// Always `CatalogCode::new("cancelled", "caller-cancelled")`
@@ -277,14 +276,14 @@ pub struct Exploration<F> {
 /// One queued, not-yet-expanded discovered state.
 struct Queued<S> {
     state: S,
-    digest: DigestRecord,
+    key: StateKey,
     depth: usize,
 }
 
-/// `head`, then every still-queued state's digest, in queue order.
-fn frontier_of<S>(head: DigestRecord, queue: &VecDeque<Queued<S>>) -> Frontier {
+/// `head`, then every still-queued state's key, in queue order.
+fn frontier_of<S>(head: StateKey, queue: &VecDeque<Queued<S>>) -> Frontier {
     std::iter::once(head)
-        .chain(queue.iter().map(|item| item.digest))
+        .chain(queue.iter().map(|item| item.key.clone()))
         .collect()
 }
 
@@ -312,7 +311,7 @@ pub(crate) fn explore<S: TransitionSystem>(
     let mut findings = Vec::new();
     let initial = sorted_initial(system, identity)?;
     if initial.len() > limits.max_states {
-        let frontier: Frontier = initial.iter().map(|item| item.digest).collect();
+        let frontier: Frontier = initial.iter().map(|item| item.key.clone()).collect();
         return Ok(Exploration {
             outcome: Outcome::Bounded {
                 stats: Stats {
@@ -332,7 +331,7 @@ pub(crate) fn explore<S: TransitionSystem>(
         .into_iter()
         .map(|item| Queued {
             state: item.state,
-            digest: item.digest,
+            key: item.key,
             depth: 0,
         })
         .collect();
@@ -341,12 +340,7 @@ pub(crate) fn explore<S: TransitionSystem>(
     let mut depth_reached = 0usize;
 
     let outcome = 'run: loop {
-        let Some(Queued {
-            state,
-            digest,
-            depth,
-        }) = queue.pop_front()
-        else {
+        let Some(Queued { state, key, depth }) = queue.pop_front() else {
             break Outcome::Exhaustive(Stats {
                 states,
                 transitions,
@@ -365,7 +359,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                     depth: depth_reached,
                 },
                 depth: horizon,
-                frontier: frontier_of(digest, &queue),
+                frontier: frontier_of(key, &queue),
             };
         }
         if poll() {
@@ -375,7 +369,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                     transitions,
                     depth: depth_reached,
                 },
-                frontier: frontier_of(digest, &queue),
+                frontier: frontier_of(key, &queue),
                 cause: CANCELLED_CAUSE,
             };
         }
@@ -391,7 +385,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                         transitions,
                         depth: depth_reached,
                     },
-                    frontier: frontier_of(digest, &queue),
+                    frontier: frontier_of(key.clone(), &queue),
                     cause: stop.cause,
                 };
             }
@@ -404,7 +398,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                         transitions,
                         depth: depth_reached,
                     },
-                    frontier: frontier_of(digest, &queue),
+                    frontier: frontier_of(key.clone(), &queue),
                     limit: Limit::Transitions(limits.max_transitions),
                 };
             }
@@ -413,8 +407,8 @@ pub(crate) fn explore<S: TransitionSystem>(
                 continue;
             }
             if states >= limits.max_states {
-                let mut frontier = frontier_of(digest, &queue);
-                frontier.push(successor.digest);
+                let mut frontier = frontier_of(key.clone(), &queue);
+                frontier.push(successor.key.clone());
                 break 'run Outcome::Bounded {
                     stats: Stats {
                         states,
@@ -425,13 +419,13 @@ pub(crate) fn explore<S: TransitionSystem>(
                     limit: Limit::States(limits.max_states),
                 };
             }
-            visited.insert(successor.key);
+            visited.insert(successor.key.clone());
             states += 1;
             let successor_depth = depth + 1;
             depth_reached = depth_reached.max(successor_depth);
             queue.push_back(Queued {
                 state: successor.state,
-                digest: successor.digest,
+                key: successor.key,
                 depth: successor_depth,
             });
         }
@@ -439,7 +433,7 @@ pub(crate) fn explore<S: TransitionSystem>(
         // back in the frontier is unexpanded and has no entry.
         if !state_findings.is_empty() {
             findings.push(StateFindings {
-                state: digest,
+                state: key,
                 depth,
                 findings: state_findings,
             });

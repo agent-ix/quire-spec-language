@@ -734,7 +734,7 @@ fn a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof() {
     let cycle: Vec<_> = counterexample
         .prefix
         .iter()
-        .map(|step| step.post_state)
+        .map(|step| step.post_state.clone())
         .collect();
     let ProofCertificate::Closure(certificate) = &certificate else {
         panic!("a safety clause holds with a closure: {certificate:?}");

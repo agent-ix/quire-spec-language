@@ -5,7 +5,7 @@
 //! Every clock starts at 0. Each step's delay must be admissible where it
 //! starts (FR-231 "Delay"); after it, the step's transition identity must
 //! be enabled (a convex part of its guard holds), its successor is the one
-//! whose post-state digest, clocks included, is the recorded one, and the
+//! whose post-state key, clocks included, is the recorded one, and the
 //! target's time invariants must hold after the resets. A lasso's loop must
 //! return to its entry's clock values with a positive total delay, and be
 //! fair over time (FR-232). The formula is evaluated over the timed lasso,
@@ -57,13 +57,13 @@ pub(super) fn timed_subject<'s, 'a>(
 }
 
 /// One replayed timed position: the timed state, its time stamp, its
-/// FR-236 digest and the step that reached it.
+/// FR-236 key and the step that reached it.
 struct TimedPosition {
     state: TimedState,
     stamp: Rational,
-    /// The timed state's FR-236 digest, clocks included.
-    digest: qsl_foundation::digest::DigestRecord,
-    /// The step that reached it, the one whose post-state digest is the
+    /// The timed state's complete FR-236 key, clocks included.
+    digest: qsl_eval::simulation::StateKey,
+    /// The step that reached it, the one whose post-state key is the
     /// recorded one; `None` at position 0.
     step: Option<GuardedStep>,
 }
@@ -205,7 +205,7 @@ fn behaviour_of(timed: &TimedSystem<'_, '_>, replayed: &[TimedPosition]) -> Opti
             .advance_where(timed, &delay, |candidate, state| {
                 candidate.transition() == step.transition()
                     && timed
-                        .state_digest(state)
+                        .state_key(state)
                         .is_ok_and(|digest| digest == after.digest)
             })
             .ok()?;
@@ -331,7 +331,7 @@ fn replay_prefix(
         let (candidate, next, digest) = reached.ok_or_else(|| {
             refused(ModelTraceRefusal::PostState {
                 step: index,
-                recorded: step.post_state,
+                recorded: step.post_state.clone(),
                 reached: digests,
             })
         })?;
@@ -399,9 +399,9 @@ pub(crate) fn timed_prefix(
 fn timed_digest(
     timed: &TimedSystem<'_, '_>,
     state: &TimedState,
-) -> Result<qsl_foundation::digest::DigestRecord, ReplayRefusal> {
+) -> Result<qsl_eval::simulation::StateKey, ReplayRefusal> {
     timed
-        .state_digest(state)
+        .state_key(state)
         .map_err(|_| fault("replayed-timed-state-encodes"))
 }
 

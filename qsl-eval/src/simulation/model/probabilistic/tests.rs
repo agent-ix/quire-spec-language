@@ -240,7 +240,7 @@ fn health_variants_are_not_markov() {
     let world = World::new(&world::loose_health());
     let system = world.system();
     let start = initial(&system);
-    let (_, digest) = system.state_key(&start).expect("a key");
+    let digest = system.canonical_state_key(&start).expect("a key");
     let not_markov = not_markov_of(
         system
             .weighted_steps(&start, world.workload("Steady"))
@@ -413,7 +413,7 @@ fn an_identity_with_no_post_state_for_any_draw_is_not_markov() {
     let world = World::new(&world::gate("", "self.up = x and self.up = (not x)", ""));
     let system = world.system();
     let start = initial(&system);
-    let (_, digest) = system.state_key(&start).expect("a key");
+    let digest = system.canonical_state_key(&start).expect("a key");
     let not_markov = not_markov_of(
         system
             .weighted_steps(&start, world.workload("Unit"))

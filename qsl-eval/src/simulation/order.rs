@@ -3,18 +3,15 @@
 //! successor order. `explore`, `sample` and `replay` walk the same ordered lists,
 //! so this module is the one place that computes them.
 
-use qsl_foundation::digest::DigestRecord;
-
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::{canonical_bytes, state_key, EncodingRefusal, StateKey};
+use crate::simulation::key::{canonical_bytes, canonical_state_key, EncodingRefusal, StateKey};
 use qsl_foundation::IdentityLimits;
 
-/// One initial state, keyed and digested, before admission.
+/// One initial state, keyed before admission.
 pub(crate) struct InitialState<S> {
     pub(crate) state: S,
     pub(crate) key: StateKey,
-    pub(crate) digest: DigestRecord,
 }
 
 /// Every distinct initial state `system` declares, in ascending state-key
@@ -32,8 +29,8 @@ pub(crate) fn sorted_initial<S: TransitionSystem>(
         .initial()
         .into_iter()
         .map(|state| -> Result<InitialState<S::State>, EncodingRefusal> {
-            let (key, digest) = state_key(&system.key(&state), identity)?;
-            Ok(InitialState { state, key, digest })
+            let key = canonical_state_key(&system.key(&state), identity)?;
+            Ok(InitialState { state, key })
         })
         .collect::<Result<Vec<_>, _>>()?;
     items.sort_by(|a, b| a.key.as_bytes().cmp(b.key.as_bytes()));
@@ -41,13 +38,12 @@ pub(crate) fn sorted_initial<S: TransitionSystem>(
     Ok(items)
 }
 
-/// One successor, keyed, digested and with its transition identity's
+/// One successor, keyed and with its transition identity's
 /// canonical bytes, ready to sort.
 pub(crate) struct OrderedSuccessor<T, S> {
     pub(crate) transition: T,
     pub(crate) state: S,
     pub(crate) key: StateKey,
-    pub(crate) digest: DigestRecord,
 }
 
 /// One successor paired with its transition identity's canonical bytes,
@@ -93,14 +89,13 @@ pub(crate) fn expand<S: TransitionSystem>(
         .into_iter()
         .map(|(transition, next)| -> Result<_, EncodingRefusal> {
             let transition_bytes = canonical_bytes(&transition, identity)?;
-            let (key, digest) = state_key(&system.key(&next), identity)?;
+            let key = canonical_state_key(&system.key(&next), identity)?;
             Ok((
                 transition_bytes,
                 OrderedSuccessor {
                     transition,
                     state: next,
                     key,
-                    digest,
                 },
             ))
         })

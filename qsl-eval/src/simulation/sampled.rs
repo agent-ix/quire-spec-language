@@ -16,7 +16,6 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_semantics::check::Workload;
 use quire_exact::{Cancel, CancelCause, Identifier, Integer, Rational, Value};
@@ -25,6 +24,7 @@ use crate::simulation::choice::{
     weighted_choice_counted, ChoicePoint, TotalAboveDrawRange, WeightsRefusal,
 };
 use crate::simulation::expansion::ExpansionStop;
+use crate::simulation::key::StateKey;
 use crate::simulation::model::probabilistic::{
     order_key, same_rewards, same_values, sorted_by_key,
 };
@@ -44,8 +44,8 @@ pub use replay::{
 pub struct SampledStep {
     /// The transition taken: an operation's, or the terminal stutter step.
     pub transition: TransitionId,
-    /// The post-state's `quire.simulation.state-key/v1` digest.
-    pub post_digest: DigestRecord,
+    /// The post-state's canonical key.
+    pub post_state: StateKey,
     /// The selected item index of each choice that drew, in choice-index
     /// order; a one-item choice records none.
     pub choices: Vec<u32>,
@@ -62,7 +62,7 @@ pub struct SampledStep {
 impl PartialEq for SampledStep {
     fn eq(&self, other: &Self) -> bool {
         self.transition == other.transition
-            && self.post_digest == other.post_digest
+            && self.post_state == other.post_state
             && self.choices == other.choices
             && same_values(&self.random, &other.random)
             && self.probability == other.probability
@@ -77,8 +77,8 @@ impl Eq for SampledStep {}
 pub struct SampledBehaviour {
     /// The trace index the behaviour was drawn at.
     pub trace: u64,
-    /// The start state's `quire.simulation.state-key/v1` digest.
-    pub start: DigestRecord,
+    /// The start state's canonical key.
+    pub start: StateKey,
     /// One step per position after the first.
     pub steps: Vec<SampledStep>,
 }
@@ -202,7 +202,7 @@ fn sample(
     request: &Sampling<'_>,
 ) -> Result<SampledBehaviour, SampleStop> {
     let mut current = sampler.position(request.start.clone())?;
-    let start = current.digest;
+    let start = current.key.clone();
     let mut steps = Vec::new();
     for step in 0..request.positions.saturating_sub(1) {
         if let Some(cause) = request.cancel.cause() {
@@ -237,12 +237,11 @@ pub struct StepAt {
 }
 
 /// One position of a sampled behaviour: its state and that state's
-/// `quire.simulation.state-key/v1` key and digest.
+/// Its state and canonical state key.
 #[derive(Clone, Debug)]
 pub struct SampledPosition {
     state: ModelSimState,
-    key: Vec<u8>,
-    digest: DigestRecord,
+    key: StateKey,
 }
 
 impl SampledPosition {
@@ -251,15 +250,10 @@ impl SampledPosition {
         &self.state
     }
 
-    /// The state's canonical state-key bytes: two positions hold the same
+    /// The state's canonical key: two positions hold the same
     /// state exactly when their keys are equal.
-    pub fn key(&self) -> &[u8] {
+    pub fn key(&self) -> &StateKey {
         &self.key
-    }
-
-    /// The state's state-key digest.
-    pub fn digest(&self) -> DigestRecord {
-        self.digest
     }
 }
 
@@ -276,7 +270,7 @@ pub struct ProbabilisticSampler<'s, 'a> {
     /// undecided there, by state key. It grows with the states a run visits;
     /// no FR-191 budget bounds it, a known memory cost over a large
     /// reachable space.
-    actions: BTreeMap<Vec<u8>, Option<Rc<[Action]>>>,
+    actions: BTreeMap<StateKey, Option<Rc<[Action]>>>,
     /// The draw digests computed.
     digests: u64,
 }
@@ -322,8 +316,11 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
         reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
     )]
     pub fn position(&self, state: ModelSimState) -> Result<SampledPosition, SampleStop> {
-        let (key, digest) = self.system.state_key(&state).map_err(|_| broken())?;
-        Ok(SampledPosition { state, key, digest })
+        let key = self
+            .system
+            .canonical_state_key(&state)
+            .map_err(|_| broken())?;
+        Ok(SampledPosition { state, key })
     }
 
     /// `from`'s enabled actions, expanded once per state key.
@@ -380,7 +377,7 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
                 from.clone(),
                 SampledStep {
                     transition: TransitionId::Stutter,
-                    post_digest: from.digest,
+                    post_state: from.key.clone(),
                     choices: Vec::new(),
                     random: Vec::new(),
                     probability: Rational::from_integer(Integer::one()),
@@ -396,19 +393,13 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
             choices: Vec::new(),
             digests: 0,
         };
-        let taken = take_step(
-            self.system,
-            self.workload,
-            &actions,
-            &from.digest,
-            &mut draws,
-        );
+        let taken = take_step(self.system, self.workload, &actions, &from.key, &mut draws);
         self.digests = self.digests.saturating_add(draws.digests);
         let taken = taken?;
         let position = self.position(taken.post)?;
         let sampled = SampledStep {
             transition: taken.transition,
-            post_digest: position.digest,
+            post_state: position.key.clone(),
             choices: draws.choices,
             random: taken.random,
             probability: taken.probability,
@@ -428,7 +419,7 @@ struct Taken {
 }
 
 /// The step `draws` selects among `actions`, the enabled actions of the
-/// state whose digest is `state`.
+/// state whose canonical key is `state`.
 #[allow(
     clippy::result_large_err,
     reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
@@ -437,7 +428,7 @@ fn take_step(
     system: &ModelSystem<'_>,
     workload: &Workload,
     actions: &[Action],
-    state: &DigestRecord,
+    state: &StateKey,
     draws: &mut StepDraws,
 ) -> Result<Taken, SampleStop> {
     // The enabled operations in canonical operation order (ascending
@@ -492,7 +483,7 @@ fn take_step(
     let [(transition, post)] =
         <[_; 1]>::try_from(draw.successors.clone()).map_err(|successors: Vec<_>| {
             SampleStop::NotMarkov(NotMarkov {
-                state: *state,
+                state: state.clone(),
                 transition: action.identity.clone(),
                 random: random.clone(),
                 post_states: u32::try_from(successors.len()).unwrap_or(u32::MAX),

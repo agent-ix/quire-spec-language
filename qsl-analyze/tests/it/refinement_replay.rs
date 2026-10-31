@@ -251,7 +251,7 @@ fn a_failure_recorded_at_another_position_disagrees() {
 }
 
 /// TC-550 step 4): a counterexample whose initial index is out
-/// of range, whose step is not enabled or whose post-state digest differs
+/// of range, whose step is not enabled or whose post-state key differs
 /// refuses with no result, and replaying one counterexample twice gives
 /// equal results.
 #[trace("TC-550")]
@@ -278,7 +278,7 @@ fn a_counterexample_that_does_not_re_execute_refuses() {
         Err(ReplayRefusal::ModelTrace(refusal)) if matches!(*refusal, ModelTraceRefusal::NotEnabled { .. })
     ));
     let mut altered = payload;
-    altered.prefix[0].post_state = altered.prefix[1].post_state;
+    altered.prefix[0].post_state = altered.prefix[1].post_state.clone();
     assert!(matches!(
         replay(&subject, &altered),
         Err(ReplayRefusal::ModelTrace(refusal)) if matches!(*refusal, ModelTraceRefusal::PostState { .. })
@@ -569,7 +569,7 @@ fn drifting_lasso(world: &AuxWorld<'_>) -> TemporalCounterexample {
             .expect("write(r, 1)");
         prefix.push(ModelStep {
             transition,
-            post_state: system.state_key(&next).expect("a key").1,
+            post_state: system.state_key(&next).expect("a key").0.into(),
             delay: None,
         });
         state = next;
@@ -714,7 +714,7 @@ fn walk(system: &ModelSystem<'_>, operations: &[String]) -> Vec<ModelStep> {
             .unwrap_or_else(|| panic!("{operation} is enabled"));
         steps.push(ModelStep {
             transition,
-            post_state: system.state_key(&next).expect("a key").1,
+            post_state: system.state_key(&next).expect("a key").0.into(),
             delay: None,
         });
         state = next;

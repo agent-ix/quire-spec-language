@@ -2094,7 +2094,7 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                 concrete
             }
         };
-        let (_, discrete_key) = self
+        let (discrete_key, _) = self
             .timed
             .system()
             .state_key(&state)
@@ -2122,7 +2122,9 @@ impl<'r, 's, 'a> Run<'r, 's, 'a> {
                     CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                         site: UndefinedSite {
                             position: widen(concrete.prefix.len()),
-                            state_key: discrete_key,
+                            state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                                discrete_key,
+                            ),
                             locus,
                             transition: None,
                             time: Some(Box::new(TimedPoint {

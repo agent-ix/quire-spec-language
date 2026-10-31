@@ -434,7 +434,7 @@ impl Run<'_, '_> {
             edges.push((Vec::new(), key, digest, None, state));
         }
         let mut listed = Vec::with_capacity(edges.len());
-        for (_, key, digest, transition, state) in edges {
+        for (_, key, _digest, transition, state) in edges {
             if self.transitions >= self.limits.limits.max_transitions {
                 return Err(Self::stopped(
                     ModelCheckLimit::MaxTransitions,
@@ -462,7 +462,7 @@ impl Run<'_, '_> {
                 .saturating_add(usize::try_from(abstract_successors).unwrap_or(usize::MAX));
             let step = transition.clone().map(|transition| ModelStep {
                 transition,
-                post_state: digest,
+                post_state: qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone()),
                 delay: None,
             });
             let initial_index = self.nodes[at].initial_index;
@@ -574,11 +574,12 @@ impl Run<'_, '_> {
         let encodes = |_| InternalFault::new("refinement-check", "state-encodes");
         let mut positions = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
-            let concrete = self
+            let concrete_bytes = self
                 .concrete
                 .state_key_of(&node.position.concrete)
                 .map_err(encodes)?
-                .1;
+                .0;
+            let concrete = qsl_eval::simulation::StateKey::from_canonical_bytes(concrete_bytes);
             let abstract_states = node
                 .position
                 .abstract_states
@@ -586,7 +587,9 @@ impl Run<'_, '_> {
                 .map(|state| {
                     self.abstract_system
                         .state_key_of(state)
-                        .map(|(_, digest)| digest)
+                        .map(|(bytes, _)| {
+                            qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+                        })
                         .map_err(encodes)
                 })
                 .collect::<Result<_, _>>()?;
@@ -874,11 +877,13 @@ impl Run<'_, '_> {
             taking |= certified.taken != Taken::Stutter;
             match transition {
                 Some(transition) => {
-                    let (_, post_state) =
+                    let (post_state, _) =
                         Self::encoding(self.concrete.state_key(&self.nodes[target].state))?;
                     prefix.push(ModelStep {
                         transition,
-                        post_state,
+                        post_state: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                            post_state,
+                        ),
                         delay: None,
                     });
                 }

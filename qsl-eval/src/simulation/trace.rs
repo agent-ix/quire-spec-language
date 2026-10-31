@@ -2,18 +2,16 @@
 //! Executable, replayable traces of one sampled path, and replaying one
 //! against a `TransitionSystem` (FR-101, ADR-014 TR-1, TR-6, TR-7).
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use quire_semantic_value::catalog::CatalogCode;
 
 use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::EncodingRefusal;
+use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use qsl_foundation::IdentityLimits;
 
-/// One executed transition and the state-key digest of the state it
-/// produced.
+/// One executed transition and the ordinal of the chosen matching successor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Step<T> {
     /// The transition taken.
@@ -21,9 +19,8 @@ pub struct Step<T> {
     /// The zero-based position of the chosen successor among the current
     /// state's successors that share `transition`, in canonical order.
     pub ordinal: usize,
-    /// The resulting state's `quire.simulation.state-key/v1` digest, kept
-    /// for display and reproduction; replay never compares it.
-    pub key: DigestRecord,
+    /// The complete canonical key of the successor.
+    pub key: StateKey,
 }
 
 /// Why a sampled run stopped.
@@ -56,14 +53,13 @@ pub struct SampleProvenance {
     pub stopped: StopReason,
 }
 
-/// One executable path: the starting state's key digest, the ordered
-/// transitions taken from it and the findings of the states it expanded.
+/// One executable path: the starting state's complete canonical key, the
+/// ordered transitions taken from it and the findings of the states it expanded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trace<T, F> {
-    /// The `quire.simulation.state-key/v1` digest of the state the path
-    /// starts from.
-    pub initial: DigestRecord,
-    /// The transitions taken and the resulting digest at each step, in
+    /// The complete canonical key of the state the path starts from.
+    pub initial: StateKey,
+    /// The transitions taken, each with its matching-successor ordinal, in
     /// order.
     pub steps: Vec<Step<T>>,
     /// One entry per state on the trace with at least one finding, in step
@@ -78,11 +74,11 @@ pub struct Trace<T, F> {
 /// Why a trace refused to replay.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayError<T: std::fmt::Debug> {
-    /// No state returned by `TransitionSystem::initial` has this digest.
-    #[error("no initial state has digest {expected:?}")]
+    /// No state returned by `TransitionSystem::initial` has this key.
+    #[error("no initial state has key {expected:?}")]
     UnknownInitial {
-        /// The trace's recorded starting digest.
-        expected: DigestRecord,
+        /// The trace.s recorded starting key.
+        expected: StateKey,
     },
     /// At `step`, the current state offers no successor with this
     /// transition identity at the step's ordinal.
@@ -145,10 +141,10 @@ pub fn replay<S: TransitionSystem>(
 ) -> Result<(), ReplayError<S::TransitionId>> {
     let mut current = sorted_initial(system, identity)?
         .into_iter()
-        .find(|item| item.digest == trace.initial)
+        .find(|item| item.key == trace.initial)
         .map(|item| item.state)
         .ok_or(ReplayError::UnknownInitial {
-            expected: trace.initial,
+            expected: trace.initial.clone(),
         })?;
     let recorded_stop = match trace.provenance.as_ref().map(|p| p.stopped) {
         Some(StopReason::Stopped(cause)) => Some(cause),

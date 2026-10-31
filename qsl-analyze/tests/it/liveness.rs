@@ -194,7 +194,7 @@ impl Fixture {
 
     /// The model states a counterexample's steps reach, position by
     /// position: each step's post-state is the successor of its transition
-    /// identity whose state-key digest it records.
+    /// identity whose state key it records.
     fn positions(&self, counterexample: &TemporalCounterexample) -> Vec<ModelSimState> {
         let system = self.system();
         let mut current = system.initial()[counterexample.initial_state].clone();
@@ -206,7 +206,8 @@ impl Fixture {
                 .into_iter()
                 .find(|(transition, state)| {
                     *transition == step.transition
-                        && system.state_key(state).expect("encodes").1 == step.post_state
+                        && system.state_key(state).expect("encodes").0.as_slice()
+                            == step.post_state.as_bytes()
                 })
                 .map(|(_, state)| state)
                 .expect("the recorded step is a successor");

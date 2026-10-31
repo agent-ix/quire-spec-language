@@ -7,12 +7,10 @@
 
 use std::borrow::Cow;
 
-use qsl_foundation::digest::DigestRecord;
-
 use crate::fairness::{Constraint, Identity, Strength};
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::EncodingRefusal;
+use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::protocol::{
@@ -96,13 +94,18 @@ pub enum ConstraintError {
 pub trait SubjectSystem:
     TransitionSystem<Finding = ModelFinding, State: Clone, TransitionId: SubjectTransition>
 {
-    /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
-    /// full key bytes.
+    /// FR-101's complete RFC 8785 canonical state-key bytes for `state`.
     ///
     /// # Errors
     ///
     /// [`EncodingRefusal`] when the key has no RFC 8785 encoding.
-    fn state_key(&self, state: &Self::State) -> Result<(Vec<u8>, DigestRecord), EncodingRefusal>;
+    fn state_key(
+        &self,
+        state: &Self::State,
+    ) -> Result<(Vec<u8>, crate::simulation::StateKey), EncodingRefusal>;
+
+    /// FR-101's canonical state key for internal simulation ordering.
+    fn canonical_state_key(&self, state: &Self::State) -> Result<StateKey, EncodingRefusal>;
 
     /// FR-101's canonical bytes of `transition`, which order successors.
     ///
@@ -225,8 +228,15 @@ pub trait SubjectSystem:
 }
 
 impl SubjectSystem for ModelSystem<'_> {
-    fn state_key(&self, state: &ModelSimState) -> Result<(Vec<u8>, DigestRecord), EncodingRefusal> {
+    fn state_key(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<(Vec<u8>, crate::simulation::StateKey), EncodingRefusal> {
         ModelSystem::state_key(self, state)
+    }
+
+    fn canonical_state_key(&self, state: &ModelSimState) -> Result<StateKey, EncodingRefusal> {
+        ModelSystem::canonical_state_key(self, state)
     }
 
     fn transition_key(&self, transition: &Self::TransitionId) -> Result<Vec<u8>, EncodingRefusal> {

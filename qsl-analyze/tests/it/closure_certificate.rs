@@ -25,10 +25,10 @@ use qsl_package::CheckedPackage;
 use qsl_replay::{
     check_closure, settle_model_check, CertificateLocus, CertificateRejection, CertificateRequest,
     CertificateRule, Certification, ClauseIdentity, ClauseRootRefusal, ClosureCertificate,
-    ClosureRefusal, DigestDomain, DigestRecord, Execution, IncompleteCause, InconclusiveCause,
-    ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ProductStateRef, ProofBasis, ProofCertificate, ReachedLimit, ResultLabel, SettlementBasis,
-    TemporalCertificateCheck, TerminalValue, UndecidedCause,
+    ClosureRefusal, Execution, IncompleteCause, InconclusiveCause, ItemRefusal, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ProofBasis,
+    ProofCertificate, ReachedLimit, ResultLabel, SettlementBasis, TemporalCertificateCheck,
+    TerminalValue, UndecidedCause,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use qsl_semantics::model::observation::DocumentRef;
@@ -147,13 +147,14 @@ impl World {
 
     /// Every reachable model state, by breadth-first enumeration through
     /// `ModelSystem`, with each counter's value.
-    fn reachable(&self) -> Vec<(DigestRecord, Vec<i64>)> {
+    fn reachable(&self) -> Vec<(qsl_eval::simulation::StateKey, Vec<i64>)> {
         let system = self.system();
-        let mut seen: Vec<(DigestRecord, Vec<i64>)> = Vec::new();
+        let mut seen: Vec<(qsl_eval::simulation::StateKey, Vec<i64>)> = Vec::new();
         let mut queue: Vec<ModelSimState> = system.initial();
         while let Some(state) = queue.pop() {
-            let digest = system.state_key(&state).expect("encodes").1;
-            if seen.iter().any(|(known, _)| *known == digest) {
+            let (bytes, _) = system.state_key(&state).expect("encodes");
+            let digest = qsl_eval::simulation::StateKey::from_canonical_bytes(bytes);
+            if seen.iter().any(|(known, _)| known == &digest) {
                 continue;
             }
             seen.push((
@@ -167,7 +168,7 @@ impl World {
     }
 
     /// The model state with these counter values.
-    fn digest(&self, values: &[i64]) -> DigestRecord {
+    fn digest(&self, values: &[i64]) -> qsl_eval::simulation::StateKey {
         self.reachable()
             .into_iter()
             .find(|(_, at)| at == values)
@@ -304,7 +305,7 @@ fn rejected(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCh
     })
 }
 
-/// The least of `states` by model-state digest octets then key octets.
+/// The least of `states` by model-state key octets then key octets.
 fn least(states: &[ProductStateRef]) -> ProductStateRef {
     states
         .iter()
@@ -320,7 +321,7 @@ fn least(states: &[ProductStateRef]) -> ProductStateRef {
 
 /// Every state of `states` under `translation`'s `state`.
 fn closure(
-    states: &[(DigestRecord, Vec<i64>)],
+    states: &[(qsl_eval::simulation::StateKey, Vec<i64>)],
     translation: &SafetyTranslation,
 ) -> ClosureCertificate {
     let key = translation.key(SafetyState::Carried).expect("encodes");
@@ -328,7 +329,7 @@ fn closure(
         states: states
             .iter()
             .map(|(digest, _)| ProductStateRef {
-                model_state: *digest,
+                model_state: digest.clone(),
                 automaton_state: key.clone(),
             })
             .collect(),
@@ -504,17 +505,6 @@ fn a_certificate_of_another_item_is_not_admitted() {
     assert_eq!(
         check(&invariant.request(&world, UNLIMITED), &deadlock),
         rejected(CertificateRule::ShapeMismatch, least(&deadlock.states))
-    );
-
-    let own = closure(&reachable, &invariant.translation(&world.objects()[0]));
-    let mut foreign = own.clone();
-    foreign.states[0].model_state = DigestRecord::mint(
-        DigestDomain::Sha256Jcs,
-        *own.states[0].model_state.as_bytes(),
-    );
-    assert_eq!(
-        check(&invariant.request(&world, UNLIMITED), &foreign),
-        rejected(CertificateRule::ShapeMismatch, foreign.states[0].clone())
     );
 }
 

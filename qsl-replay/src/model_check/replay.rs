@@ -5,7 +5,7 @@
 //! It recompiles the request's package by FR-098's rules,
 //! re-admits the subject from the byte provision and the
 //! request's universes, re-executes each step of the prefix through FR-120's
-//! `ModelSystem` (a step's post-state digest selects its successor among the
+//! `ModelSystem` (a step's post-state key selects its successor among the
 //! post-states of its transition identity), and then checks what the
 //! counterexample claims of the prefix:
 //!
@@ -59,7 +59,6 @@ use qsl_eval::temporal::{
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
@@ -440,20 +439,16 @@ pub enum ModelTraceRefusal {
     #[error("{0}")]
     Protocol(ProtocolRefusal),
     /// No successor of a step's transition identity has the recorded
-    /// post-state digest (FR-101's key mismatch).
-    #[error(
-        "stale_dependency/content-mismatch: step {step} reaches no state {}; it reaches {}",
-        .recorded.hex(),
-        .reached.iter().map(DigestRecord::hex).collect::<Vec<_>>().join(", ")
-    )]
+    /// post-state key (FR-101).
+    #[error("stale_dependency/content-mismatch: step {step} reaches no state; recorded {recorded:?}, reached {reached:?}")]
     PostState {
         /// The step's zero-based index in the prefix.
         step: usize,
-        /// The recorded post-state digest.
-        recorded: DigestRecord,
-        /// The post-state digests the step's transition identity does
+        /// The recorded post-state key.
+        recorded: qsl_eval::simulation::StateKey,
+        /// The post-state keys the step's transition identity does
         /// reach, in successor order.
-        reached: Vec<DigestRecord>,
+        reached: Vec<qsl_eval::simulation::StateKey>,
     },
     /// The subject's roots are not simulated (FR-215's requires-bound
     /// pre-check): a ranged root of an unbounded type, which no check
@@ -697,7 +692,7 @@ fn no_value() -> ModelTraceSettlement {
 /// of a clause the recompiled package does not hold or whose occurrence or
 /// fairness set differ, when the subject does not admit (FR-106's record),
 /// on an `initial_state` outside the subject, on a step that is not
-/// enabled, on a post-state digest no successor has, on a loop that does
+/// enabled, on a post-state key no successor has, on a loop that does
 /// not close, on a `terminal-stutter` loop at a state that is not terminal,
 /// and on an unfair lasso. An expansion that stops while replaying
 /// completes no value and settles `NoValue`.
@@ -744,7 +739,7 @@ pub fn replay_model_trace(
 /// FR-237: the replay of a counterexample over the timed subject `timed`,
 /// once [`replay_model_trace`] has recompiled the package, resolved the
 /// item (`clause`, `None` for a derived item) and re-admitted the subject:
-/// each delay, guard, post-state digest and time invariant is checked in
+/// each delay, guard, post-state key and time invariant is checked in
 /// exact arithmetic, a lasso's closure, total delay and fairness over time,
 /// the formula over the timed lasso, a finite violation's admitted
 /// endpoint and a time-lock's arm, the last two by a fresh exploration
@@ -1156,7 +1151,7 @@ pub(super) fn fault(invariant: &'static str) -> ReplayRefusal {
 /// One replayed position: its state and digest.
 pub(super) struct Position<State = ModelSimState> {
     pub(super) state: State,
-    pub(super) digest: DigestRecord,
+    pub(super) digest: qsl_eval::simulation::StateKey,
 }
 
 /// One expansion of a subject's state.
@@ -1319,7 +1314,7 @@ fn settle(
 }
 
 /// Re-execute a model counterexample's prefix from its initial state, one
-/// position per state: a step's post-state digest selects its successor
+/// position per state: a step's post-state key selects its successor
 /// among the post-states of its transition identity. `None` when an
 /// expansion stops (the replay then completes no value).
 ///
@@ -1363,7 +1358,7 @@ type Replayed<S> = (
 
 /// Re-execute the payload's prefix from its initial state: each step's
 /// identity must be enabled (else `rules.not_enabled` refuses), reach its
-/// recorded post-state digest, and give the result it records (else
+/// recorded post-state key, and give the result it records (else
 /// `rules.result` refuses). `None` when an expansion stops.
 fn replay_prefix<S: SubjectSystem>(
     system: &S,
@@ -1425,7 +1420,7 @@ fn replay_prefix<S: SubjectSystem>(
         let (next, replayed) = reached.ok_or_else(|| {
             refused(ModelTraceRefusal::PostState {
                 step: index,
-                recorded: step.post_state,
+                recorded: step.post_state.clone(),
                 reached: digests,
             })
         })?;
@@ -2040,10 +2035,8 @@ pub(super) fn hints_of(
 pub(super) fn digest_of<S: SubjectSystem>(
     system: &S,
     state: &S::State,
-) -> Result<DigestRecord, ReplayRefusal> {
-    SubjectSystem::state_key(system, state)
-        .map(|(_, digest)| digest)
-        .map_err(|_| fault("replayed-state-encodes"))
+) -> Result<qsl_eval::simulation::StateKey, ReplayRefusal> {
+    SubjectSystem::canonical_state_key(system, state).map_err(|_| fault("replayed-state-encodes"))
 }
 
 /// ADR-018 DL-5 and ADR-027 PX-2: the last replayed state enables no
@@ -2085,7 +2078,7 @@ fn deadlock<S: SubjectSystem>(
             value: ModelTraceValue::Undefined(UndefinedEvaluation {
                 site: UndefinedSite {
                     position: position_of(positions.len() - 1),
-                    state_key: last.digest,
+                    state_key: last.digest.clone(),
                     locus: UndefinedLocus::Terminal(model),
                     transition: None,
                     time: None,
@@ -2169,7 +2162,7 @@ fn undefined<S: SubjectSystem>(
     for (index, position) in positions.iter().enumerate() {
         let site = |locus, transition| UndefinedSite {
             position: position_of(index),
-            state_key: position.digest,
+            state_key: position.digest.clone(),
             locus,
             transition,
             time: None,

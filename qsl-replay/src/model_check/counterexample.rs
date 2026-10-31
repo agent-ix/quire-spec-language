@@ -13,11 +13,11 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
 use qsl_eval::simulation::Location;
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::TemporalPosition;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::bound::TemporalInterval;
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Rational;
@@ -29,14 +29,14 @@ use crate::witness::FamilyPayload;
 
 /// One step of a behaviour: the transition identity it took (FR-120's for a
 /// model subject, ADR-027 TS-2's for a protocol subject) and its
-/// post-state's `quire.simulation.state-key/v1` digest, which selects the
-/// successor among the post-states of that identity.
+/// post-state's complete canonical state key, which selects the successor
+/// among the post-states of that identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelStep<T = ModelTransition> {
     /// The step's transition identity.
     pub transition: T,
-    /// The post-state's state-key digest.
-    pub post_state: DigestRecord,
+    /// The post-state's canonical state key.
+    pub post_state: StateKey,
     /// QSpec FR-181's `delay` (FR-236): over a timed subject the exact time
     /// that elapses before the step, 0 under a tick source; `None` over an
     /// untimed subject.
@@ -99,8 +99,8 @@ pub struct MappingSite {
 pub struct UndefinedSite {
     /// The trace position: the prefix's last position.
     pub position: u64,
-    /// The state-key digest of the state at `position`.
-    pub state_key: DigestRecord,
+    /// The canonical state key of the state at `position`.
+    pub state_key: StateKey,
     /// The expression that has no value.
     pub locus: UndefinedLocus,
     /// For an undefined guard only: the transition identity it guards.

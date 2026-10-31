@@ -2,13 +2,12 @@
 //! The unexplored remainder of a stopped exploration run (FR-101, ADR-014
 //! TR-7).
 
-use qsl_foundation::digest::DigestRecord;
+use crate::simulation::key::StateKey;
 use qsl_foundation::Setting;
 
 /// Canonical states not yet expanded when a run stopped, in the exact order
-/// the engine would expand them next: each a `quire.simulation.state-key/v1`
-/// digest, never the full key bytes (FR-101).
-pub type Frontier = Vec<DigestRecord>;
+/// the engine would expand them next (FR-101).
+pub type Frontier = Vec<StateKey>;
 
 /// Which resource limit stopped a run before its frontier went empty, with
 /// the value it was set to. The search horizon `max_depth` is not a limit

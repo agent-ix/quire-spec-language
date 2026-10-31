@@ -782,15 +782,19 @@ impl Product<'_, '_> {
                 .map(|state| {
                     self.abstract_system
                         .state_key_of(state)
-                        .map(|(_, digest)| digest)
+                        .map(|(bytes, _)| {
+                            qsl_eval::simulation::StateKey::from_canonical_bytes(bytes)
+                        })
                         .map_err(encodes)
                 })
                 .collect::<Result<_, _>>()?;
             positions.push(CertifiedPosition {
-                concrete: concrete
-                    .state_key_of(&position.concrete)
-                    .map_err(encodes)?
-                    .1,
+                concrete: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                    concrete
+                        .state_key_of(&position.concrete)
+                        .map_err(encodes)?
+                        .0,
+                ),
                 history: position.history.key(concrete).map_err(encodes)?,
                 abstract_states,
             });

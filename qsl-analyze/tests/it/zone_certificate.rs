@@ -202,7 +202,7 @@ fn each_tampering_is_rejected_at_its_rule_and_locus() {
     }) else {
         panic!("the initial discrete state's locus");
     };
-    assert_eq!(digest, certificate.nodes[0].state_key);
+    assert_eq!(digest, certificate.nodes[0].state_key.clone());
 }
 
 /// Part of FR-245-AC-3 (TC-700): `NoLateReply`'s certificate checked for the
@@ -320,10 +320,14 @@ fn a_locked_node_is_checked_for_divergence() {
         .find(|(step, _)| step.operation().contains("Call/go\""))
         .expect("`go` is enabled");
     let b = key(gone.discrete());
-    let old_a = certificate.nodes[certificate.initials[0]].state_key;
+    let old_a = certificate.nodes[certificate.initials[0]].state_key.clone();
     let mut reset_bounds = certificate.clone();
     for listed in &mut reset_bounds.nodes {
-        listed.state_key = if listed.state_key == old_a { a } else { b };
+        listed.state_key = if listed.state_key == old_a {
+            a.clone()
+        } else {
+            b.clone()
+        };
     }
     let transition = |state: &qsl_eval::simulation::model::ModelSimState, operation: &str| {
         timed
@@ -697,13 +701,13 @@ fn a_zeno_set_is_bounded_by_its_own_invariants() {
         transition(start.discrete(), "go"),
         transition(gone.discrete(), "ping"),
     );
-    let initial_key = certificate.nodes[certificate.initials[0]].state_key;
+    let initial_key = certificate.nodes[certificate.initials[0]].state_key.clone();
     let mut moved = retarget(certificate, &resetting);
     for listed in &mut moved.nodes {
         listed.state_key = if listed.state_key == initial_key {
-            a
+            a.clone()
         } else {
-            b
+            b.clone()
         };
     }
     for edge in &mut moved.edges {

@@ -34,7 +34,6 @@ use std::cell::{Ref, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_exact::{Cancel, ScalarLimits};
 use quire_semantic_value::catalog::InternalFault;
@@ -61,7 +60,7 @@ pub enum Partner {
         /// subject's initial states, in quantifier order.
         indices: Vec<u32>,
         /// The digest of each existential component's state.
-        digests: Vec<DigestRecord>,
+        digests: Vec<crate::simulation::StateKey>,
     },
     /// A tuple reached from another by an existential joint step.
     Step {
@@ -70,13 +69,13 @@ pub enum Partner {
         /// The existential components' steps, in quantifier order.
         step: Vec<ComponentStep>,
         /// The digest of each existential component's post-state.
-        posts: Vec<DigestRecord>,
+        posts: Vec<crate::simulation::StateKey>,
     },
 }
 
 impl Partner {
     /// The digest of each existential component's state, in quantifier order.
-    pub fn digests(&self) -> &[DigestRecord] {
+    pub fn digests(&self) -> &[crate::simulation::StateKey] {
         match self {
             Self::Initial { digests, .. } => digests,
             Self::Step { posts, .. } => posts,
@@ -109,7 +108,7 @@ impl Partner {
 
 /// One step of a [`Partner`]'s path: the existential components' steps and
 /// the digest of each one's post-state.
-pub type PartnerStep<'a> = (&'a [ComponentStep], &'a [DigestRecord]);
+pub type PartnerStep<'a> = (&'a [ComponentStep], &'a [crate::simulation::StateKey]);
 
 /// One member of a witness set: an existential tuple of model states and the
 /// safety automaton state it is in.
@@ -136,7 +135,7 @@ impl Member {
         &self.partner
     }
 
-    fn identity(&self) -> (&[DigestRecord], usize) {
+    fn identity(&self) -> (&[crate::simulation::StateKey], usize) {
         (self.partner.digests(), self.automaton.index())
     }
 }
@@ -202,7 +201,7 @@ pub struct WitnessInputs<'r, 's> {
 }
 
 /// The members a successor's `X'` has collected, by identity.
-type Collected = BTreeMap<(Vec<DigestRecord>, usize), Member>;
+type Collected = BTreeMap<(Vec<crate::simulation::StateKey>, usize), Member>;
 
 /// The existential joint steps of one member in canonical order, each with the
 /// existential components' post-states; `None` when a contract conjunction of

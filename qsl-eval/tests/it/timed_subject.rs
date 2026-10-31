@@ -463,7 +463,7 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
 /// `post_state`; its steps, delays and `trace_position` are asserted there.
 #[trace("TC-691", "FR-236-AC-1")]
 #[test]
-fn a_timed_post_state_digest_changes_with_its_clock_value_alone() {
+fn a_timed_post_state_key_changes_with_its_clock_value_alone() {
     let world = world(&rpc_unit(3, ""));
     let system = system(&world);
     let timed = TimedSystem::new(&system, "M").expect("a timed subject");
@@ -483,15 +483,15 @@ fn a_timed_post_state_digest_changes_with_its_clock_value_alone() {
         .collect();
     assert_eq!(posts.len(), 3);
     for (index, post) in posts.iter().enumerate() {
-        let digest = timed.state_digest(post).expect("a digest");
+        let digest = timed.state_key(post).expect("a digest");
         assert_eq!(
-            timed.state_digest(&post.clone()).expect("a digest"),
+            timed.state_key(&post.clone()).expect("a digest"),
             digest,
             "step {index}: an equal timed state has an equal digest"
         );
         let shifted = TimedState::new(post.discrete().clone(), post.clocks().delayed(&exact(1, 2)));
         assert_ne!(
-            timed.state_digest(&shifted).expect("a digest"),
+            timed.state_key(&shifted).expect("a digest"),
             digest,
             "step {index}: only the clock value changed"
         );
@@ -1205,17 +1205,14 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         .count();
     assert_eq!(held, 3);
     let digest = timed
-        .state_digest(initial)
+        .state_key(initial)
         .expect("a record state has a digest");
-    assert_eq!(
-        timed.state_digest(&initial.clone()).expect("a digest"),
-        digest
-    );
+    assert_eq!(timed.state_key(&initial.clone()).expect("a digest"), digest);
     let shifted = TimedState::new(
         initial.discrete().clone(),
         initial.clocks().delayed(&exact(1, 2)),
     );
-    assert_ne!(timed.state_digest(&shifted).expect("a digest"), digest);
+    assert_ne!(timed.state_key(&shifted).expect("a digest"), digest);
     // One value at `t.x` and the other at `t.y` are two states.
     let at = |name: &str| {
         timed
@@ -1231,7 +1228,7 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         let mut values = vec![exact(0, 1); timed.places().len()];
         values[place] = exact(1, 1);
         timed
-            .state_digest(&TimedState::new(
+            .state_key(&TimedState::new(
                 initial.discrete().clone(),
                 ClockValuation::new(values),
             ))
@@ -1245,7 +1242,7 @@ fn every_object_holds_its_own_clock_of_every_record_place() {
         panic!("one initial state");
     };
     assert_ne!(
-        other_timed.state_digest(other_initial).expect("a digest"),
+        other_timed.state_key(other_initial).expect("a digest"),
         digest,
         "the record's data field is in the state key"
     );
@@ -1317,9 +1314,7 @@ fn a_record_holding_state_steps() {
             format!("{:?}", after.slots()),
             "send keeps t"
         );
-        timed
-            .state_digest(post)
-            .expect("the post state has a digest");
+        timed.state_key(post).expect("the post state has a digest");
     }
 }
 
@@ -1569,7 +1564,7 @@ fn ungranted(document: Vec<u8>, fields: &[&str]) -> Vec<u8> {
 /// `ts.[slot].x` and of `ts.[slot].y` for each slot up to the maximum, 7
 /// places in all. A slot is live exactly while the sequence holds it: from
 /// `ts = [Timer { n: 0 }]` slot 0 is live and slot 1 is not, so a value of
-/// slot 1 is no part of the state digest while those of slot 0 are, each
+/// slot 1 is no part of the state key while those of slot 0 are, each
 /// by its slot. The state steps, every live clock advancing with the delay.
 /// A sequence with no declared maximum is bounded by `max_clocks`
 /// ([`an_unbounded_collection_is_bounded_by_max_clocks`]).
@@ -1631,13 +1626,13 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
         let mut values = vec![exact(0, 1); timed.places().len()];
         values[place] = exact(1, 1);
         timed
-            .state_digest(&TimedState::new(
+            .state_key(&TimedState::new(
                 initial.discrete().clone(),
                 ClockValuation::new(values),
             ))
             .expect("a digest")
     };
-    let base = timed.state_digest(initial).expect("a digest");
+    let base = timed.state_key(initial).expect("a digest");
     assert_eq!(one_at(3), base, "slot 1 is not live");
     assert_ne!(one_at(2), base);
     assert_ne!(one_at(2), one_at(4), "ts[0].x and ts[0].y are two places");
@@ -1657,7 +1652,7 @@ fn every_slot_of_a_record_sequence_holds_its_own_clocks() {
             .values()
             .iter()
             .all(|value| value == &exact(2, 1)));
-        timed.state_digest(post).expect("a digest");
+        timed.state_key(post).expect("a digest");
     }
 }
 

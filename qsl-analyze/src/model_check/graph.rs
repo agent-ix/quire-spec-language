@@ -8,11 +8,11 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
+use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{
     ExpansionStop, Limit, Limits, Outcome, Permutation, Stats, SymmetryGroup, TransitionSystem,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::{ByteDigest, IdentityLimits};
+use qsl_foundation::IdentityLimits;
 use quire_canonical::Encode;
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -81,8 +81,6 @@ pub struct RetainedState<S, F> {
     pub state: S,
     /// Full RFC 8785 bytes used for coalescing, not merely a digest.
     pub key: Vec<u8>,
-    /// FR-101 state-key digest.
-    pub digest: DigestRecord,
     /// Shortest breadth-first depth.
     pub depth: usize,
     /// Findings, only when every successor was processed.
@@ -128,11 +126,9 @@ impl<S, T, F> RetainedGraph<S, T, F> {
 
     fn insert(&mut self, state: S, key: Vec<u8>, depth: usize) -> ProductStateId {
         let id = ProductStateId(self.states.len());
-        let digest = digest(&key);
         self.states.push(RetainedState {
             state,
             key,
-            digest,
             depth,
             findings: Vec::new(),
             expanded: false,
@@ -154,14 +150,10 @@ impl<S, T, F> RetainedGraph<S, T, F> {
         }
     }
 
-    fn frontier(
-        &self,
-        head: ProductStateId,
-        queue: &VecDeque<ProductStateId>,
-    ) -> Vec<DigestRecord> {
+    fn frontier(&self, head: ProductStateId, queue: &VecDeque<ProductStateId>) -> Vec<StateKey> {
         std::iter::once(head)
             .chain(queue.iter().copied())
-            .map(|id| self.states[id.0].digest)
+            .map(|id| StateKey::from_canonical_bytes(self.states[id.0].key.clone()))
             .collect()
     }
 }
@@ -189,13 +181,6 @@ fn encode(
     identity: IdentityLimits,
 ) -> Result<Vec<u8>, quire_canonical::Error> {
     quire_canonical::to_vec(value, quire_canonical::Limits::new(identity.input_bytes))
-}
-
-fn digest(key: &[u8]) -> DigestRecord {
-    DigestRecord::mint(
-        DigestDomain::SimulationStateKeyV1,
-        ByteDigest::of(key).as_bytes(),
-    )
 }
 
 /// Retain the reachable graph in FR-101's canonical breadth-first order.
@@ -291,7 +276,10 @@ pub fn retain_reduced<S: TransitionSystem>(
     }
     initial.sort_by(|(a, _), (b, _)| a.cmp(b));
     initial.dedup_by(|(a, _), (b, _)| a == b);
-    let initial_frontier = initial.iter().map(|(key, _)| digest(key)).collect();
+    let initial_frontier = initial
+        .iter()
+        .map(|(key, _)| StateKey::from_canonical_bytes(key.clone()))
+        .collect();
     let mut known = BTreeMap::new();
     let too_many_initial = initial.len() > limits.max_states;
     for (key, state) in initial.into_iter().take(limits.max_states) {
@@ -393,7 +381,7 @@ pub fn retain_reduced<S: TransitionSystem>(
             } else {
                 if graph.states.len() >= limits.max_states {
                     let mut frontier = graph.frontier(source, &queue);
-                    frontier.push(digest(&key));
+                    frontier.push(StateKey::from_canonical_bytes(key));
                     break 'run Outcome::Bounded {
                         stats: graph.stats(transitions),
                         frontier,

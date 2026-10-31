@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_and_settle_state_graph, StateGraphItem, StateGraphRequest};
 use qsl_eval::simulation::model::ModelSimState;
+use qsl_eval::simulation::StateKey;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     settle_state_graph, AppliedReduction, CertificateLocus, CertificateRule, Certification,
     DisagreementCause, Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness,
@@ -143,12 +143,12 @@ fn with_certificate(
 
 /// Assert `record` settles `inconclusive`, `unsettled`,
 /// `CertificateRejected{rule, at}`, never `proved`.
-fn assert_rejected(record: &StateGraphRecord, rule: CertificateRule, at: DigestRecord) {
+fn assert_rejected(record: &StateGraphRecord, rule: CertificateRule, at: StateKey) {
     assert_eq!(
         record.value,
         TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
             rule,
-            at: CertificateLocus::ModelState(at),
+            at: CertificateLocus::ModelKey(at),
         })
     );
     assert_eq!(
@@ -468,8 +468,8 @@ fn altered_rank_certificates_never_settle_proved() {
     let closure = certificate
         .closure
         .iter()
-        .copied()
-        .filter(|state| *state != removed)
+        .filter(|&state| *state != removed)
+        .cloned()
         .collect();
     assert_rejected(
         &settled(with_ranks(closure, &ranks), no_samples()),
@@ -546,11 +546,11 @@ fn undefined_and_altered_count_certificates_never_settle_proved() {
     let world = config_world(DIVIDES, &[(0, 0)]);
     let states = reachable(&world, AB).0;
     let va = |state: &ModelSimState| world.value(state, "a", "versionNumber");
-    let ranks: BTreeMap<DigestRecord, u32> = states
+    let ranks: BTreeMap<StateKey, u32> = states
         .iter()
         .map(|(digest, state)| {
             (
-                *digest,
+                digest.clone(),
                 [1, 0, 2][usize::try_from(va(state)).expect("fits")],
             )
         })
@@ -558,13 +558,13 @@ fn undefined_and_altered_count_certificates_never_settle_proved() {
     let first_undefined = states
         .iter()
         .find(|(_, state)| va(state) == 2)
-        .map(|(digest, _)| *digest)
+        .map(|(digest, _)| digest.clone())
         .expect("a state with va = 2");
     let hand_built = StateGraphInstanceOutcome {
         over: Some(world.reference("a")),
         outcome: StateGraphOutcome::Witnessed {
             paths: stand_ins(1),
-            certificate: with_ranks(states.keys().copied().collect(), &ranks),
+            certificate: with_ranks(states.keys().cloned().collect(), &ranks),
         },
         sampled: Vec::new(),
         walks_stopped: 0,
@@ -604,7 +604,7 @@ fn undefined_and_altered_count_certificates_never_settle_proved() {
         over: Some(unsequenced.reference("j")),
         outcome: StateGraphOutcome::Holds {
             certificate: StateGraphCertificate {
-                closure: states.keys().copied().collect(),
+                closure: states.keys().cloned().collect(),
                 ranks: Vec::new(),
                 counts: states
                     .values()
@@ -692,7 +692,7 @@ fn a_bad_state_certificate_settles_certificate_rejected() {
         over: Some(world.reference("a")),
         outcome: StateGraphOutcome::Witnessed {
             paths: stand_ins(1),
-            certificate: with_ranks(states.keys().copied().collect(), &ranks),
+            certificate: with_ranks(states.keys().cloned().collect(), &ranks),
         },
         sampled: Vec::new(),
         walks_stopped: 0,
@@ -1136,7 +1136,7 @@ fn an_undefined_target_settles_refuted_with_its_site() {
     assert_eq!(replays, 1);
     assert_refuted(&record, SettlementBasis::DecisiveCounterexample);
     let undefined = record.undefined.expect("the record names the site");
-    assert_eq!(undefined.state_key, config(&world, 2, 0));
+    assert_eq!(undefined.state_key.clone(), config(&world, 2, 0));
     assert_eq!(
         undefined.cause,
         UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
