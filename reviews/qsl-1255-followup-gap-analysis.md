@@ -193,3 +193,21 @@ Plan completion: not assessed
 Optional separate semantic-analysis pass: not run; the required code-review lane assessed assertion intent. No spec/plan diff exists, so spec-review and its subanalyses are inapplicable. No new behavior without an owning requirement was found in the delta. Full repository reverse-gap/stub inventory and evidence-store reconciliation are outside this assigned scope and unavailable here.
 
 The inherited SR-1939001 FND-006 tracker discrepancy remains open and is owned by the lead; this review does not silently close or rewrite it.
+
+## Dispositions
+
+Round 1.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Deferred to [QSL-1363](https://linear.app/agent-ix/issue/QSL-1363/resolve-tc-136-protocolslot-construction-contract-against-the-public) (Specify); code lead adopted this pre-existing contract/production gap outside the user-authorized tests-only PR. The gap remains unresolved; no production or specification fix is claimed. |
+| FND-002 | deferred | Deferred to [QSL-1364](https://linear.app/agent-ix/issue/QSL-1364/name-the-rejected-holds-node-in-the-tc-136-h3-internal-fault) (Specced); code lead adopted this pre-existing contract/production gap outside the user-authorized tests-only PR. The gap remains unresolved; no production or specification fix is claimed. |
+| FND-003 | deferred | Deferred to [QSL-1365](https://linear.app/agent-ix/issue/QSL-1365/reconcile-tc-137-operand-quantities-with-intermediate-and-retained) (Specify); code lead adopted this pre-existing contract/production gap outside the user-authorized tests-only PR. The gap remains unresolved; no production or specification fix is claimed. |
+
+## Disposition verdict (round 1)
+
+At head `907cd223883c3798475d07ad783daf51483f457e`, the only change since reviewed `4eea75ef7` is the report-only commit copying SR-1939002 and SR-1939003 verbatim into reviews/. Byte comparison passed, and git diff over qsl-eval is empty. No new code review or aggregate run was needed. No new finding or regression was identified.
+
+Live tracker verification: QSL-1255 is In Progress, assigned to Peter Krenesky, with has-review retained. Comment f3bbb401-f26f-4833-888a-c1254f7d07ec, created 2026-10-31T16:59:53.155Z, explicitly retains the remaining scope and defers the three gaps to child tickets QSL-1363 (Specify), QSL-1364 (Specced), and QSL-1365 (Specify). All three child-parent links were verified. The children currently have no individual assignee; the dispatching code lead has adopted their routing and the parent remains assigned. This is tracked deferral, not a claim of completed implementation.
+
+The original finding rows and verdict remain unchanged as historical review evidence. The disposition below is current: partial tests-only delivery is mergeable from the review standpoint, subject to the lead's remaining gates and existing baseline policy. Normative assurance completion still FAILS until the linked work is resolved. The inherited completion-state discrepancy SR-1939001 FND-006 is separately fixed by the reopened parent and recorded remaining scope; none of the production gaps is fixed by that administrative repair.
