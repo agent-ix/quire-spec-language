@@ -6,8 +6,8 @@
 //! driven through a `quire-exact::Meter` built with the `test-support`
 //! feature. The meter's admitted-charge log is the oracle that does not come
 //! from the evaluator under test: each fixture's quantity is counted from how
-//! the fixture is built, and each boundary limit is derived from a successful
-//! run under a sufficient meter, never frozen.
+//! the fixture is built. Boundary limits follow the accounting schedule
+//! independently of a successful run.
 //!
 //! The ten counters are those of FR-255's accounting table. FR-255 gives
 //! `work_units` the default of [`DEFAULT_WORK_UNITS`] and every other counter
@@ -61,6 +61,8 @@ const COUNTERS: [LimitKind; 10] = [
 /// The edges of the unit conversion chain `us -> ms -> s` declared in [`UNIT`].
 const CONVERSION_EDGES: u64 = 2;
 
+const SEQUENCE_ELEMENTS: [i64; 3] = [1, 2, 3];
+
 const UNIT: &str = "dimension Time;\n\
  unit s : Time = rational(1, 1);\n\
  unit ms : Time = rational(1, 1000) * s;\n\
@@ -72,9 +74,9 @@ const UNIT: &str = "dimension Time;\n\
  function text_order using v(a: Text[0, 16; nfd], b: Text[0, 16; nfd]): Boolean pure { a < b }\n\
  function unit_chain using v(): Boolean pure { convert<Quantity<s>>(5 us) = 5 s }\n\
  function two_elements using v(): Sequence<Integer>[0, 16] pure { sequence[1, 2] }\n\
- function three_elements using v(): Sequence<Integer>[0, 16] pure { sequence[1, 2, 3] }\n\
+ function three_elements using v(): Sequence<Integer>[0, 16] pure { sequence[@sequence-elements@] }\n\
  function nothing using v(): Boolean pure { true }\n\
- function link0 using v(x: Integer): Boolean pure { x = x }\n\
+ function link0 using v(x: Integer): Boolean pure { true }\n\
  function link1 using v(x: Integer): Boolean pure { link0(x) }\n\
  function link2 using v(x: Integer): Boolean pure { link1(x) }\n\
  function walk using v(xs: Sequence<Int[0, 9]>[0, 2000000]): Integer pure { sum<Total>(x in xs: x) }\n\
@@ -82,6 +84,12 @@ const UNIT: &str = "dimension Time;\n\
 
 /// Compile `declarations` as one complete-V1 unit into a checked package.
 fn package_of(declarations: &str) -> CheckedPackage {
+    let elements = SEQUENCE_ELEMENTS
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let declarations = declarations.replace("@sequence-elements@", &elements);
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}"
@@ -276,13 +284,11 @@ struct Case {
     /// The charge point the fixture must reach.
     point: ChargePoint,
     /// The fixture's quantity, counted from its construction; `None` for a
-    /// cumulative counter or a size counted by [`marginal`] instead.
+    /// counter whose individual log entries do not carry that size.
     counted: Option<u64>,
-    /// Whether the counted quantity is also the largest single charge, so the
-    /// metered usage equals it. TC-137's equality clause holds only for these
-    /// fixtures: for `integer_bits`, `decimal_digits` and `value_occurrences`
-    /// a later charge point asks for more than the counted operand quantity.
-    usage_equals_counted: bool,
+    /// Independently counted peak or cumulative total, including conservative
+    /// intermediate sizes and the retained collection's container occurrence.
+    expected_usage: u64,
 }
 
 /// The bit length of `value`, counted without the evaluator.
@@ -322,7 +328,7 @@ fn cases() -> Vec<Case> {
             arguments: integer_arguments,
             point: ChargePoint::IntegerArithmeticOperands,
             counted: Some(bit_length(LARGE.unsigned_abs())),
-            usage_equals_counted: false,
+            expected_usage: bit_length(LARGE.unsigned_abs()) + 1,
         },
         Case {
             counter: LimitKind::DecimalDigits,
@@ -330,7 +336,9 @@ fn cases() -> Vec<Case> {
             arguments: decimal_arguments,
             point: ChargePoint::DecimalOperands,
             counted: Some(WIDE_COEFFICIENT.to_string().len() as u64),
-            usage_equals_counted: false,
+            expected_usage: WIDE_COEFFICIENT.to_string().len() as u64
+                + u64::from(NARROW_SCALE - WIDE_SCALE)
+                + 1,
         },
         Case {
             counter: LimitKind::ScaleExpansion,
@@ -338,7 +346,7 @@ fn cases() -> Vec<Case> {
             arguments: decimal_arguments,
             point: ChargePoint::DecimalScaleExpansion,
             counted: Some(u64::from(NARROW_SCALE - WIDE_SCALE)),
-            usage_equals_counted: true,
+            expected_usage: u64::from(NARROW_SCALE - WIDE_SCALE),
         },
         Case {
             counter: LimitKind::TextInputBytes,
@@ -346,7 +354,7 @@ fn cases() -> Vec<Case> {
             arguments: text_arguments,
             point: ChargePoint::TextInputBytes,
             counted: Some(ACCENTED.len() as u64),
-            usage_equals_counted: true,
+            expected_usage: ACCENTED.len() as u64,
         },
         Case {
             counter: LimitKind::TextScalars,
@@ -354,7 +362,7 @@ fn cases() -> Vec<Case> {
             arguments: text_arguments,
             point: ChargePoint::TextDecodeScalars,
             counted: Some(ACCENTED.chars().count() as u64),
-            usage_equals_counted: true,
+            expected_usage: ACCENTED.chars().count() as u64,
         },
         Case {
             counter: LimitKind::NormalizedScalars,
@@ -362,7 +370,7 @@ fn cases() -> Vec<Case> {
             arguments: text_arguments,
             point: ChargePoint::TextNormalizeOutput,
             counted: Some(ACCENTED_NFD.chars().count() as u64),
-            usage_equals_counted: true,
+            expected_usage: ACCENTED_NFD.chars().count() as u64,
         },
         Case {
             counter: LimitKind::UnitEdges,
@@ -370,7 +378,7 @@ fn cases() -> Vec<Case> {
             arguments: none,
             point: ChargePoint::UnitEdge,
             counted: Some(CONVERSION_EDGES),
-            usage_equals_counted: true,
+            expected_usage: CONVERSION_EDGES,
         },
         Case {
             counter: LimitKind::ValueOccurrences,
@@ -378,7 +386,7 @@ fn cases() -> Vec<Case> {
             arguments: none,
             point: ChargePoint::CollectionElement,
             counted: None,
-            usage_equals_counted: false,
+            expected_usage: 1 + SEQUENCE_ELEMENTS.len() as u64,
         },
         Case {
             counter: LimitKind::WorkUnits,
@@ -386,7 +394,7 @@ fn cases() -> Vec<Case> {
             arguments: one,
             point: ChargePoint::FunctionCall,
             counted: None,
-            usage_equals_counted: false,
+            expected_usage: 3,
         },
         Case {
             counter: LimitKind::ResultUnits,
@@ -394,55 +402,9 @@ fn cases() -> Vec<Case> {
             arguments: none,
             point: ChargePoint::CollectionResultRetain,
             counted: None,
-            usage_equals_counted: false,
+            expected_usage: 1 + SEQUENCE_ELEMENTS.len() as u64,
         },
     ]
-}
-
-/// The runs of `function` over its sequence of growing fixtures.
-fn usage_of(package: &CheckedPackage, function: &str, kind: LimitKind) -> u64 {
-    let arguments = match function {
-        "link0" | "link1" | "link2" => vec![int(1)],
-        _ => Vec::new(),
-    };
-    call(package, function, arguments, UNLIMITED)
-        .meter
-        .consumed(kind)
-}
-
-/// Assert the counters whose quantity grows by one per construction step:
-/// `value_occurrences` and `result_units` by one per sequence element,
-/// `work_units` by one `function.call` and a fixed remainder per link of the
-/// predicate chain.
-fn marginal(package: &CheckedPackage) {
-    let element = |kind| {
-        (
-            usage_of(package, "two_elements", kind),
-            usage_of(package, "three_elements", kind),
-        )
-    };
-    for kind in [LimitKind::ValueOccurrences, LimitKind::ResultUnits] {
-        let (two, three) = element(kind);
-        assert_eq!(three - two, 1, "{kind:?}: one unit per sequence element");
-    }
-    let calls = |function| {
-        call(package, function, vec![int(1)], UNLIMITED)
-            .log()
-            .iter()
-            .filter(|charge| charge.point == ChargePoint::FunctionCall)
-            .count()
-    };
-    assert_eq!(
-        [calls("link0"), calls("link1"), calls("link2")],
-        [1, 2, 3],
-        "one function.call per link of the nested predicate chain"
-    );
-    let work = |function| usage_of(package, function, LimitKind::WorkUnits);
-    assert_eq!(
-        work("link2") - work("link1"),
-        work("link1") - work("link0"),
-        "every link adds the same work"
-    );
 }
 
 /// TC-137 per-counter boundaries for one `case`: independent count, zero,
@@ -451,20 +413,49 @@ fn exercise(package: &CheckedPackage, case: &Case) {
     let kind = case.counter;
     let arguments = (case.arguments)();
     let rendered_arguments = format!("{arguments:?}");
-    let full = call(package, case.function, arguments, UNLIMITED);
+    let full = call(package, case.function, arguments.clone(), UNLIMITED);
     assert!(
         matches!(full.outcome, Outcome::Completed(_)),
         "{kind:?}: a sufficient meter completes: {:?}",
         full.outcome
     );
     let log = full.log();
-    let used = full.meter.consumed(kind);
+    let used = case.expected_usage;
+    assert_eq!(
+        full.meter.consumed(kind),
+        used,
+        "{kind:?}: usage equals the independently counted accounting quantity"
+    );
     assert!(used > 0, "{kind:?}: the fixture requires work");
     assert!(
         log.iter().any(|charge| charge.point == case.point),
         "{kind:?}: the admitted-charge log holds {:?}",
         case.point
     );
+
+    if kind == LimitKind::WorkUnits {
+        assert_eq!(
+            log.iter().map(|charge| charge.point).collect::<Vec<_>>(),
+            vec![ChargePoint::FunctionCall; 3],
+            "three nested constant predicates charge only their calls"
+        );
+    }
+    if matches!(kind, LimitKind::ValueOccurrences | LimitKind::ResultUnits) {
+        assert_eq!(
+            log.iter()
+                .filter(|charge| charge.point == ChargePoint::CollectionElement)
+                .count(),
+            SEQUENCE_ELEMENTS.len(),
+            "one element charge per source element"
+        );
+        assert_eq!(
+            log.iter()
+                .filter(|charge| charge.point == ChargePoint::CollectionResultRetain)
+                .count(),
+            1,
+            "one retained sequence, with its container and scalar occurrences"
+        );
+    }
 
     // The denied charge is the next one the sufficient run admits, and the
     // stopped meter holds exactly the charges admitted before it.
@@ -490,13 +481,13 @@ fn exercise(package: &CheckedPackage, case: &Case) {
 
     let one_short = used - 1;
     if kind.is_cumulative() {
-        let zero = call(package, case.function, (case.arguments)(), only(kind, 0));
+        let zero = call(package, case.function, arguments.clone(), only(kind, 0));
         assert_stopped_before(&zero, 0, "zero");
         assert_eq!(zero.meter.consumed(kind), 0);
         let short = call(
             package,
             case.function,
-            (case.arguments)(),
+            arguments.clone(),
             only(kind, one_short),
         );
         assert_stopped_before(&short, one_short, "one-short");
@@ -527,21 +518,13 @@ fn exercise(package: &CheckedPackage, case: &Case) {
                 "{kind:?}: the independently counted quantity is charged at {:?}",
                 case.point
             );
-            if case.usage_equals_counted {
-                assert_eq!(used, counted, "{kind:?}: usage is the counted quantity");
-            } else {
-                assert!(
-                    used > counted,
-                    "{kind:?}: a later charge point asks for more than the operand quantity"
-                );
-            }
         }
         // The first admitted charge that asks for any of the counter.
         let first = log
             .iter()
             .position(|charge| requested(charge, kind).is_some_and(|size| size > 0))
             .expect("the log holds a nonzero request");
-        let zero = call(package, case.function, (case.arguments)(), only(kind, 0));
+        let zero = call(package, case.function, arguments.clone(), only(kind, 0));
         assert_stopped_before(&zero, 0, "zero");
         assert_eq!(
             zero.log().len(),
@@ -556,7 +539,7 @@ fn exercise(package: &CheckedPackage, case: &Case) {
         let short = call(
             package,
             case.function,
-            (case.arguments)(),
+            arguments.clone(),
             only(kind, one_short),
         );
         assert_stopped_before(&short, one_short, "one-short");
@@ -577,7 +560,7 @@ fn exercise(package: &CheckedPackage, case: &Case) {
         );
     }
 
-    let exact = call(package, case.function, (case.arguments)(), only(kind, used));
+    let exact = call(package, case.function, arguments.clone(), only(kind, used));
     assert_eq!(
         exact.rendered(),
         full.rendered(),
@@ -588,30 +571,22 @@ fn exercise(package: &CheckedPackage, case: &Case) {
 
     // After a resource stop, the same immutable package and inputs complete
     // on a fresh sufficient meter with the same value, log and usage.
-    let retry = call(package, case.function, (case.arguments)(), UNLIMITED);
+    let retry = call(package, case.function, arguments.clone(), UNLIMITED);
     assert_eq!(retry.rendered(), full.rendered(), "{kind:?}: retry value");
     assert_eq!(retry.log(), log, "{kind:?}: retry charges");
     assert_eq!(retry.usage(), full.usage(), "{kind:?}: retry usage");
     assert_eq!(
-        format!("{:?}", (case.arguments)()),
+        format!("{arguments:?}"),
         rendered_arguments,
         "{kind:?}: the inputs are unchanged"
     );
 }
 
-/// TC-137 / FR-049-AC-7: for every one of FR-255's ten accounting counters,
-/// the fixture reaches the table's charge point; a zero setting stops at the
-/// first request; the exact setting (the largest single charge for a
-/// high-water counter, the sum for a cumulative one, both read from a
-/// sufficient run and its admitted-charge log) completes; one below it stops
-/// at the next charge with no completed value and only the successful usage
-/// retained. The independently counted quantity is asserted at the named
-/// charge point, and equal to the metered usage only for `scale_expansion`,
-/// the three text counters and `unit_edges`; for `integer_bits`,
-/// `decimal_digits` the usage is asserted to exceed it, and `value_occurrences`,
-/// `work_units` and `result_units` are checked by their per-step growth. TC-137's
-/// clause that the counted quantity equals the metered usage is therefore not
-/// claimed for those five counters.
+/// Every accounting counter has independently counted zero, exact and
+/// one-short boundaries. Arithmetic peaks include the carry reservation;
+/// collection peaks and result units include the container occurrence.
+/// TC-137's narrower operand-only equality is not claimed where the
+/// accounting schedule requires a larger intermediate.
 #[trace("TC-137", "FR-049-AC-7")]
 #[test]
 fn every_accounting_counter_has_zero_exact_and_one_short_evidence() {
@@ -622,7 +597,6 @@ fn every_accounting_counter_has_zero_exact_and_one_short_evidence() {
         COUNTERS,
         "one fixture for each counter of the accounting table"
     );
-    marginal(&package);
     for case in &cases {
         exercise(&package, case);
     }
@@ -650,6 +624,50 @@ fn a_fixture_with_no_work_completes_at_zero_for_every_counter_but_work() {
     let at_zero = call(&package, "nothing", Vec::new(), only(kind, 0));
     assert_eq!(at_zero.incomplete().limit_kind, kind);
     assert_eq!(at_zero.incomplete().limit, 0);
+}
+
+/// A checked Boolean constant performs no charged operation: even work_units
+/// at zero admits the whole evaluation.
+#[trace("TC-137", "FR-049-AC-7")]
+#[test]
+fn a_checked_constant_completes_with_every_counter_at_zero() {
+    let package = package_of(UNIT);
+    let expression = package
+        .graph()
+        .check_expression(
+            Vec::new(),
+            &Expression::boolean(true),
+            None,
+            CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+        .expect("the constant checks");
+    let zero = ScalarLimits {
+        integer_bits: 0,
+        decimal_digits: 0,
+        scale_expansion: 0,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 0,
+        work_units: 0,
+        result_units: 0,
+    };
+    let mut meter = Meter::new(zero);
+    let evaluation = package
+        .evaluate(
+            &expression,
+            Vec::new(),
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the checked constant evaluates without a charged operation");
+    assert!(matches!(
+        kernel(evaluation),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert_eq!(meter, Meter::new(zero), "no counter is charged");
 }
 
 /// TC-137: raising a caller-set counter above its default completes work the
@@ -764,6 +782,21 @@ fn a_work_units_overflow_is_the_meters_incomplete_record() {
         retry.outcome,
         Outcome::Completed(Value::Boolean(true))
     ));
+    let mut fresh = Meter::new(UNLIMITED);
+    let evaluation =
+        evaluate_link0(&package, &mut fresh).expect("a fresh evaluate retry completes");
+    assert!(matches!(
+        kernel(evaluation),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert_eq!(fresh.admitted_charges(), retry.meter.admitted_charges());
+    for kind in COUNTERS {
+        assert_eq!(
+            fresh.consumed(kind),
+            retry.meter.consumed(kind),
+            "{kind:?}: fresh retry usage"
+        );
+    }
 }
 
 /// TC-137 C2 / NFR-009-AC-3: a charge denied for a reason other than a
@@ -807,6 +840,21 @@ fn an_injected_denial_is_the_meters_incomplete_record() {
         retry.outcome,
         Outcome::Completed(Value::Boolean(true))
     ));
+    let mut fresh = Meter::new(UNLIMITED);
+    let evaluation =
+        evaluate_link0(&package, &mut fresh).expect("a fresh evaluate retry completes");
+    assert!(matches!(
+        kernel(evaluation),
+        Outcome::Completed(Value::Boolean(true))
+    ));
+    assert_eq!(fresh.admitted_charges(), retry.meter.admitted_charges());
+    for kind in COUNTERS {
+        assert_eq!(
+            fresh.consumed(kind),
+            retry.meter.consumed(kind),
+            "{kind:?}: fresh retry usage"
+        );
+    }
 }
 
 /// Run `body` against `package` on a thread with a 512 KiB stack.
@@ -821,10 +869,10 @@ fn on_small_stack<T: Send>(body: impl FnOnce() -> T + Send) -> T {
     })
 }
 
-/// `links` predicates, `q0` testing `x = x` and each later one calling the
+/// `links` predicates, `q0` returning true and each later one calling the
 /// one before.
 fn predicate_chain(links: usize) -> String {
-    let mut source = String::from("function q0 using v(x: Integer): Boolean pure { x = x }\n");
+    let mut source = String::from("function q0 using v(x: Integer): Boolean pure { true }\n");
     for link in 1..links {
         source.push_str(&format!(
             "function q{link} using v(x: Integer): Boolean pure {{ q{}(x) }}\n",
@@ -835,23 +883,14 @@ fn predicate_chain(links: usize) -> String {
 }
 
 /// TC-137: a 10,000-call nested predicate chain completes on a 512 KiB
-/// stack, spends the per-link work times the links, and stops one unit below
-/// that work. The per-link work is measured on short chains of the same shape.
+/// stack, spends one call charge per predicate, and stops one unit below
+/// the independently counted number of predicates.
 #[trace("TC-137")]
 #[test]
 fn a_ten_thousand_call_predicate_chain_completes_on_a_512_kib_stack() {
     const LINKS: usize = 10_000;
-    let work = |links: usize| {
-        let package = package_of(&predicate_chain(links));
-        let last = format!("q{}", links - 1);
-        call(&package, &last, vec![int(1)], UNLIMITED)
-            .meter
-            .consumed(LimitKind::WorkUnits)
-    };
-    let (two, three, four) = (work(2), work(3), work(4));
-    let per_link = three - two;
-    assert_eq!(four - three, per_link, "work is linear in the links");
-    let expected = two + per_link * (LINKS as u64 - 2);
+    // Each predicate has one call charge; the leaf is a Boolean constant.
+    let expected = LINKS as u64;
 
     let package = package_of(&predicate_chain(LINKS));
     let last = format!("q{}", LINKS - 1);

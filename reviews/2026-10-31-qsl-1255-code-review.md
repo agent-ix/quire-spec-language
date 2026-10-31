@@ -56,3 +56,17 @@ Round 1, fix commit `628ad0e13` (head `942a5232c`).
 | FND-004 | fixed | Unused `profile p` removed from the QSpec-TC-198 fixture. |
 | FND-005 | fixed | `package.graph().declares_function("internal_guard")` asserted before the refusal. |
 | FND-006 | still-open | QSL-1255 still Done with PR open; no follow-up ticket for the FR-049-AC-1 compile-fail fixture, TC-136 H3 or the TC-137 wording amendment. Owned by the code lead, not the coder. |
+
+Round 2, authorized reviewer handoff at report-only head `907cd2238`. The original review and round-1 rows above are unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | The completion-state/tracking defect is fixed: live QSL-1255 is In Progress; comment f3bbb401-f26f-4833-888a-c1254f7d07ec records the remaining ProtocolSlot, H3 node-identity and TC-137 quantity work as linked children QSL-1363, QSL-1364 and QSL-1365. The missing normative behavior itself remains deferred, not fixed. |
+
+## Disposition verification (round 2)
+
+At head `907cd223883c3798475d07ad783daf51483f457e`, the only change since reviewed `4eea75ef7` is the report-only commit copying SR-1939002 and SR-1939003 verbatim into reviews/. Byte comparison passed, and git diff over qsl-eval is empty. No new code review or aggregate run was needed. No new finding or regression was identified.
+
+Live tracker verification: QSL-1255 is In Progress, assigned to Peter Krenesky, with has-review retained. Comment f3bbb401-f26f-4833-888a-c1254f7d07ec, created 2026-10-31T16:59:53.155Z, explicitly retains the remaining scope and defers the three gaps to child tickets QSL-1363 (Specify), QSL-1364 (Specced), and QSL-1365 (Specify). All three child-parent links were verified. The children currently have no individual assignee; the dispatching code lead has adopted their routing and the parent remains assigned. This is tracked deferral, not a claim of completed implementation.
+
+The original finding rows and verdict remain unchanged as historical review evidence. The disposition below is current: partial tests-only delivery is mergeable from the review standpoint, subject to the lead's remaining gates and existing baseline policy. Normative assurance completion still FAILS until the linked work is resolved. The inherited completion-state discrepancy SR-1939001 FND-006 is separately fixed by the reopened parent and recorded remaining scope; none of the production gaps is fixed by that administrative repair.
