@@ -180,7 +180,7 @@ pub struct ValueParitySite {
     /// The preimage: the function node and one argument per declared
     /// parameter, in declared order.
     pub preimage: ValueParityPreimage,
-    /// The SHA-256 of the preimage's canonical bytes.
+    /// The claim's obligation identity.
     pub obligation_identity: ObligationIdentity,
 }
 

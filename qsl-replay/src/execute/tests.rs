@@ -3161,7 +3161,7 @@ mod operator_arm {
 
     /// FR-357-AC-16: a request whose obligation identity is not the
     /// recomputed one refuses `ScalarIdentity` (`content-mismatch`) with the
-    /// cause `Obligation` naming both digests, after any member of the
+    /// cause `Obligation` naming both identities, after any member of the
     /// preimage changes.
     #[trace("TC-904", "FR-357-AC-16")]
     #[test]
