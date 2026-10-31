@@ -310,6 +310,7 @@ temporal Due using t over (c: Int[0,9]) clock "orders" on origin {
         ),
         "checked-temporal-aggregate.native",
         source.as_bytes(),
+        qsl_cst::Limits::default(),
     )
     .expect("S1 parses aggregate temporal source");
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds aggregate temporal source");
