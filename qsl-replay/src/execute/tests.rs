@@ -2093,15 +2093,12 @@ fn minted_identity(source: &str, function: &str) -> crate::ObligationIdentity {
     )
 }
 
-/// The driver's observation of `generated`, under a fixed content identity.
+/// The driver's observation of `generated`.
 fn value_claim(generated: ScalarOutcome) -> crate::ValueClaim {
-    crate::ValueClaim {
-        generated,
-        content_identity: DigestRecord::mint(DigestDomain::SourceBytesV1, [9; 32]),
-    }
+    crate::ValueClaim { generated }
 }
 
-/// `replay_value_parity` over `generated` and the fixed content identity.
+/// `replay_value_parity` over `generated`.
 fn replay_generated(
     wire: ReplayRequestWire,
     generated: ScalarOutcome,

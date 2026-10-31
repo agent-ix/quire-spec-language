@@ -4,7 +4,6 @@
 //!
 //! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
 //! and package source map.
-use crate::ByteDigest;
 use alloc::sync::Arc;
 use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
 use provenance::{RawSourceRef, SourceRegion};
@@ -12,7 +11,7 @@ use provenance::{RawSourceRef, SourceRegion};
 pub mod provenance;
 
 /// FR-001: the four labels a caller names a source by, separate from the
-/// path and from any digest. QSL defaults none of them and derives none
+/// path. QSL defaults none of them and derives none
 /// from the path, the bytes or another label. Ordering is lexical over the
 /// four labels in declaration order.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
@@ -24,8 +23,7 @@ pub struct SourceIdentity {
     pub identity: String,
     /// The revision system the revision value belongs to, such as `git`.
     pub revision_namespace: String,
-    /// The revision value within that namespace, distinct from the byte
-    /// digest.
+    /// The revision value within that namespace.
     pub revision: String,
 }
 
@@ -178,7 +176,6 @@ struct Document {
     text: Box<str>,
     line_starts: Vec<usize>,
     indentation_ends: Vec<usize>,
-    digest: ByteDigest,
     // End byte and cumulative excess bytes over Unicode scalar count.
     wide_ends: Vec<(usize, usize)>,
 }
@@ -364,7 +361,6 @@ impl Source {
                 &format!("source byte budget exhausted (limit {byte_limit})"),
             ));
         }
-        let digest = ByteDigest::of(bytes);
         // Every label is non-blank here, so the reference is minted unless
         // provenance itself refuses the values.
         let reference = match identity.reference() {
@@ -413,17 +409,11 @@ impl Source {
                 "NUL is forbidden in source bytes",
             ));
         }
-        Ok(Self::admit(identity, reference, path, text, digest))
+        Ok(Self::admit(identity, reference, path, text))
     }
 
-    /// SHA-256 of the exact admitted bytes, without normalization.
-    pub fn digest(&self) -> ByteDigest {
-        self.0.digest
-    }
-
-    /// FR-001: the `RawSourceRef` admission minted, the caller's four labels
-    /// exactly as supplied and the `quire.source.bytes/v1` digest of the
-    /// admitted bytes. Every later stage names this source by it.
+    /// FR-001: the `RawSourceRef` admission minted from the caller's four
+    /// labels exactly as supplied.
     pub fn reference(&self) -> &RawSourceRef {
         &self.0.reference
     }
@@ -458,13 +448,7 @@ impl Source {
         self.0.indentation_ends[line]
     }
 
-    fn admit(
-        identity: SourceIdentity,
-        reference: RawSourceRef,
-        path: String,
-        text: &str,
-        digest: ByteDigest,
-    ) -> Self {
+    fn admit(identity: SourceIdentity, reference: RawSourceRef, path: String, text: &str) -> Self {
         let mut line_starts = vec![0];
         let mut wide_ends = Vec::new();
         let mut excess = 0;
@@ -494,7 +478,6 @@ impl Source {
             text: text.into(),
             line_starts,
             indentation_ends,
-            digest,
             wide_ends,
         }))
     }

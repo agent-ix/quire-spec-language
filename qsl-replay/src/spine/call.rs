@@ -913,7 +913,7 @@ pub(crate) fn kernel_undefined_reason(reason: Undefined) -> &'static str {
 }
 
 /// Resolve an FR-096 record's [`Locus`] over `sources`: a region locus
-/// renders as the digest and span of the one supplied source whose
+/// renders as the path and span of the one supplied source whose
 /// reference equals the region's (FR-100). Every other locus shape, and a
 /// region matching no supplied source, is an internal failure ("a locus
 /// naming no supplied source is an internal failure", FR-100).

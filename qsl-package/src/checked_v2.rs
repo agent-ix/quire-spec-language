@@ -20,7 +20,6 @@ use quire_contract_model::{
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
-use qsl_foundation::digest::InvalidDigestRecord;
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -304,9 +303,6 @@ pub enum SourceMapDefect {
     /// An admitted source-map node id could not become a structural key.
     #[error("source-map node id is not a structural key")]
     NodeId,
-    /// A region's source digest did not read as a digest record.
-    #[error(transparent)]
-    Digest(#[from] InvalidDigestRecord),
     /// A region, its source reference or the map itself refused.
     #[error(transparent)]
     Provenance(#[from] InvalidProvenance),

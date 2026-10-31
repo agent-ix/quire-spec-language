@@ -443,7 +443,7 @@ impl CheckedUnit {
 }
 
 /// A checked package emitted as `quire.checked-package/v2` bytes, with the
-/// digest-addressed sources another party needs to import or replay it.
+/// identified sources another party needs to import or replay it.
 #[derive(Clone, Debug)]
 pub struct EmittedUnit {
     package: pkg::EmittedPackage,
@@ -458,7 +458,7 @@ impl EmittedUnit {
     }
 
     /// The source provision: the unit's source and every resolved library's,
-    /// each by its own digest ([`Source::reference`]).
+    /// each by its caller-named reference ([`Source::reference`]).
     pub fn sources(&self) -> &[Source] {
         &self.sources
     }

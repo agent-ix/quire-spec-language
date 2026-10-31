@@ -364,10 +364,6 @@ pub struct OperatorIdentity {
 pub struct ValueClaim {
     /// The generated outcome at the request's bindings.
     pub generated: ScalarOutcome,
-    /// The generated-content identity the driver authenticated against the
-    /// artifact it ran. QSL binds it into the claim and carries it unchanged;
-    /// it never recomputes, authenticates or refuses it.
-    pub content_identity: DigestRecord,
 }
 
 /// The identity of a function-level value-parity claim (FR-484): every
@@ -399,15 +395,12 @@ pub struct ValueIdentity {
     pub supplied: SuppliedLimits,
     /// The generated outcome the claim says QSL's exact one equals.
     pub generated: ScalarOutcome,
-    /// The generated-content identity, as the driver supplied it.
-    pub content_identity: DigestRecord,
 }
 
 impl ValueIdentity {
     /// Bytes this identity adds to an encoded record beyond its fixed size.
     fn measured_bytes(&self) -> usize {
-        2 * 32
-            + self.package_name.len()
+        32 + self.package_name.len()
             + self
                 .function
                 .iter()
@@ -435,7 +428,6 @@ impl ValueIdentity {
             limits: wire.effective_accounting_limits(),
             supplied: wire.supplied_limits.unwrap_or_default(),
             generated: claim.generated.clone(),
-            content_identity: claim.content_identity,
         }
     }
 }

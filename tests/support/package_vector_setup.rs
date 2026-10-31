@@ -20,7 +20,7 @@ use super::native_rule_model;
 /// One positive package vector: its native source, the expected canonical
 /// and package bytes, each composed at test time
 /// by the independent recipe in `vectors` from the offered `model`, so no
-/// digest of the model or the source is frozen in a file.
+/// precomputed identity bytes are frozen in a file.
 pub(crate) struct Vector {
     pub name: &'static str,
     pub source: String,

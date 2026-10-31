@@ -690,8 +690,8 @@ fn complete(
     Ok(emitted.package().bytes().to_vec())
 }
 
-/// The request's `libraries`, each with its source read under its source
-/// digest (FR-027, ADR-015 D-1). An empty identity refuses as
+/// The request's `libraries`, each with its source read under its caller-named
+/// identity (FR-027, ADR-015 D-1). An empty identity refuses as
 /// `invalid-request` before any library file is read.
 fn library_sources<'r>(
     request: &'r wire::CompileRequest,

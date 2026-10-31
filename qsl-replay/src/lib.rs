@@ -4,7 +4,7 @@
 //! O-27, C-13). It depends on layers 1 to 5, F and K, as §6.1 allows.
 //!
 //! Its public API is the compile entry [`compile_package`] and the replay executor entry [`replay`] (ADR-013 TK-01,
-//! C-13; FR-098), which recompiles a request's digest-addressed source
+//! C-13; FR-098), which recompiles a request's caller-identified source
 //! through the spine ([`spine::parse`], [`spine::select`], [`spine::check`]
 //! and [`spine::package`], S1 to E4) and calls the selected
 //! function through S6a (`CheckedPackageEvaluation::call`), and the four

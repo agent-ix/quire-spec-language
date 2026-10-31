@@ -289,6 +289,8 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
         assert_eq!(**actual, expected, "{change:?}");
         assert_eq!(error.code(), expected.code());
         assert!(error.extraction().is_none());
-        assert_eq!(error.original().digest(), original.digest());
+        assert_eq!(error.original().identity(), original.identity());
+        assert_eq!(error.original().path(), original.path());
+        assert_eq!(error.original().text(), original.text());
     }
 }

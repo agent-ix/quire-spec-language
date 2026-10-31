@@ -134,7 +134,6 @@ fn tc_1252_a_request_from_the_retained_inputs_replays_and_carries_them() {
         assert_eq!(held.limits, wire.accounting_limits);
         assert_eq!(held.supplied, SuppliedLimits::default());
         assert!(held.generated.same_as(&integer(generated)));
-        assert_eq!(held.content_identity, claim.content_identity);
         assert_eq!(held, &crate::ValueIdentity::sent(&wire, &claim));
     }
 }
@@ -259,50 +258,24 @@ fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     );
 }
 
-/// FR-484-AC-8: the generated-content identity is carried unchanged on every
-/// outcome, binds into the claim, and is never refused; the occurrence key
-/// binds too.
+/// FR-484-AC-8: changing only the occurrence key changes the claim identity.
 #[trace("TC-1252", "FR-484-AC-8")]
 #[test]
-fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
+fn tc_1252_the_occurrence_key_binds_into_the_claim() {
     let source = unit();
-    let content = |byte: u8| DigestRecord::mint(DigestDomain::SourceBytesV1, [byte; 32]);
-    let mut wrong = retained_request(&source, "inc", 3);
-    wrong.obligation_identity = crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
-    let cases = [
-        (retained_request(&source, "inc", 3), integer(4), "agrees"),
-        (retained_request(&source, "inc", 3), integer(5), "diverged"),
-        (
-            retained_request(&source, "inc", 12),
-            integer(13),
-            "refused input",
-        ),
-        (wrong, integer(4), "refused"),
-    ];
-    for (wire, generated, kind) in cases {
-        let replay = |byte| {
-            replay_value_parity(
-                wire.clone(),
-                crate::ValueClaim {
-                    generated: generated.clone(),
-                    content_identity: content(byte),
-                },
-                ReplayLimits::default(),
-            )
-        };
-        let (a, b) = (replay(1), replay(2));
-        assert_eq!(value_kind(a.result()), kind);
-        assert_eq!(value_kind(b.result()), kind);
-        assert_eq!(a.claim().content_identity, content(1));
-        assert_eq!(b.claim().content_identity, content(2));
-        assert_ne!(a.claim(), b.claim(), "{kind}");
-    }
     let base = retained_request(&source, "inc", 3);
+    let base_key = base
+        .replay_target
+        .occurrence_key
+        .clone()
+        .expect("the declaration occurrence is retained");
     let mut moved = base.clone();
-    moved.replay_target =
-        crate::RequestTargetWire::function(name(&["inc"]), site(&source, "add").site.declaration);
+    let moved_key = site(&source, "add").site.declaration;
+    moved.replay_target = crate::RequestTargetWire::function(name(&["inc"]), moved_key.clone());
     let one = replay_generated(base, integer(4), ReplayLimits::default());
     let other = replay_generated(moved, integer(4), ReplayLimits::default());
+    assert_eq!(one.claim().occurrence_key, Some(base_key));
+    assert_eq!(other.claim().occurrence_key, Some(moved_key));
     assert_ne!(one.claim(), other.claim());
 }
 

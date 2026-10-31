@@ -110,7 +110,7 @@ impl SourceMap {
                 "invalid original source region",
             ));
         }
-        if original.identity() == body.identity() && original.digest() != body.digest() {
+        if original.identity() == body.identity() && original.text() != body.text() {
             return Err(fail(
                 SourceMapErrorCause::InvalidMap,
                 "original and extracted body reuse one set of source labels for different bytes",
@@ -254,7 +254,7 @@ impl SourceMap {
         };
         if source.identity() != self.body.identity()
             || source.path() != self.body.path()
-            || source.digest() != self.body.digest()
+            || source.text() != self.body.text()
         {
             return Err(fail(
                 "span belongs to a different source label, path or bytes",

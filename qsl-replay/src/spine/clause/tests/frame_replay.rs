@@ -442,7 +442,7 @@ fn found_field_write(result: &FrameReplayResult) -> (&str, &str) {
 
 /// TC-515 step 1 (FR-116-AC-1): forbidden-parent-change claiming (`child`,
 /// `parent`) reproduces with an evaluated witness, and the result holds the
-/// source digest, the payload's anchor, frame and occurrence
+/// source reference, the payload's anchor, frame and occurrence
 /// identities -- which are the emitted package's own `operation_anchor` and
 /// `frame` nodes -- the three document identities and digests, and both
 /// changes.

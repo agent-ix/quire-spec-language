@@ -464,7 +464,6 @@ fn an_old_reference_shape_refuses_unknown_member() {
     for (site, member) in [
         ("/lock/edition/definition", "digest"),
         ("/diagnostics/catalog", "revision"),
-        ("/lock/sources/0", "digest_domain"),
         ("/source_map/0/regions/0/source", "revision"),
     ] {
         let mut mutated = envelope.clone();
