@@ -401,6 +401,11 @@ fn charge_named(meter: &mut Meter, point: ChargePoint) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(point))?)
 }
 
+/// A model dereference or navigation reads one semantic value occurrence.
+fn charge_model_read(meter: &mut Meter, point: ChargePoint) -> Result<(), Stop> {
+    Ok(meter.charge(Charge::new(point).size(LimitKind::ValueOccurrences, 1))?)
+}
+
 /// The `discovered`th `graph.expand` of one `reaches` walk (`value-accounting.md`:
 /// `value_occurrences=k`, the distinct nodes discovered including this one;
 /// one work unit).
@@ -2114,9 +2119,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // FND-008 round 2, `derefed`, `check/ir.rs`'s own doc).
                 if self.is_protocol_clause() {
                     if *derefed {
-                        charge_named(self.meter, ChargePoint::ModelDeref)?;
+                        charge_model_read(self.meter, ChargePoint::ModelDeref)?;
                     }
-                    charge_named(self.meter, ChargePoint::ModelNavigate)?;
+                    charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
                 }
                 let read_reference = reference.clone();
                 let reference = if self.reads.is_some_and(|reads| {
@@ -3001,7 +3006,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Value::Reference(receiver) = self.pop()? else {
             return Err(invariant("navigate-reference-value-expected"));
         };
-        charge_named(self.meter, ChargePoint::ModelNavigate)?;
+        charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
         let objects = self.objects_for(node)?;
         let refuse =
             |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));

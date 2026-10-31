@@ -52,8 +52,15 @@ pub(crate) fn refused(
     admission(code, cause, locus)
 }
 
-pub(crate) fn shape_matches(value_type: &ValueType, value: &quire_exact::Value) -> bool {
+pub(crate) fn shape_matches(
+    value_type: &ValueType,
+    value: &quire_exact::Value,
+    types: &quire_semantic_value::declaration::TypeEnvironment,
+) -> bool {
     use quire_exact::{Value, ValueType};
+    if let (ValueType::Composite(expected), Value::Composite(actual)) = (value_type, value) {
+        return types.composite_conforms(actual.declaration().clone(), expected.clone());
+    }
     matches!(
         (value_type, value),
         (ValueType::Boolean, Value::Boolean(_))
@@ -277,6 +284,9 @@ fn run_body<'a>(
         .as_ref()
         .is_some_and(|(finish, _)| *finish == node)
     {
+        if member != "constraint" {
+            return None;
+        }
         return Some((
             &protocol
                 .slots
@@ -570,7 +580,17 @@ pub(crate) fn select<'a>(
                         compensation.trigger.value_type.clone(),
                     )];
                     frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
                         capture_entries(protocol, &compensation.registration_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        protocol_input(protocol)
                             .into_iter()
                             .map(|source| (source.name, source.value_type)),
                     );
@@ -699,10 +719,17 @@ pub(crate) fn select<'a>(
             .iter()
             .find(|expression| expression.location == *location);
         for source in &mut frame {
-            source.node = expression
+            let binder = expression
                 .and_then(|expression| expression.binders.get(source.level))
-                .filter(|binder| binder.name == source.name)
-                .map(|binder| binder.node.clone());
+                .filter(|binder| binder.name == source.name);
+            source.node = binder.map(|binder| binder.node.clone());
+            if let Some(binder) = binder {
+                source.level = keys
+                    .binders
+                    .iter()
+                    .find(|keyed| keyed.node == binder.node)
+                    .map_or(binder.level, |keyed| keyed.level);
+            }
         }
     }
     Ok(Selected { body, frame })
