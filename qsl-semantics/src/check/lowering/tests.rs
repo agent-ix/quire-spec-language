@@ -3,7 +3,7 @@
 //! checked structurally: which nodes exist, what each preimage carries and
 //! which node each reference names.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_forms::{
@@ -108,10 +108,66 @@ fn type_nodes(
     (lowering.finish(&location).graph, keys)
 }
 
+/// One node key as its own package, path and ordinal, each nested key
+/// named by its index in a [`key_shapes`] list.
+#[derive(Debug, PartialEq, Eq)]
+struct KeyShape {
+    package: String,
+    path: Vec<ShapeSegment>,
+    ordinal: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ShapeSegment {
+    Text(String),
+    Node(usize),
+}
+
+/// `keys` as shapes: `keys` in order, then each nested key outside them in
+/// the order first named. Two lists are equal exactly when their key lists
+/// are, and comparing them costs their length, never their keys' depth, so
+/// two independently built 100,000-deep chains compare in linear time.
+fn key_shapes(keys: Vec<NodeKey>) -> Vec<KeyShape> {
+    let mut index: std::collections::HashMap<NodeKey, usize> = keys
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(at, key)| (key, at))
+        .collect();
+    let mut pending = keys;
+    let mut shapes = Vec::with_capacity(pending.len());
+    let mut at = 0;
+    while let Some(key) = pending.get(at).cloned() {
+        at += 1;
+        let path = key
+            .path()
+            .into_iter()
+            .map(|segment| match segment {
+                quire_exact::PathSegment::Text(text) => ShapeSegment::Text(text),
+                quire_exact::PathSegment::Node(child) => {
+                    let next = index.len();
+                    let named = *index.entry(child.clone()).or_insert(next);
+                    if named == next {
+                        pending.push(child);
+                    }
+                    ShapeSegment::Node(named)
+                }
+            })
+            .collect();
+        shapes.push(KeyShape {
+            package: key.package().to_owned(),
+            path,
+            ordinal: key.ordinal(),
+        });
+    }
+    shapes
+}
+
 /// Every node key of the package holding `function p(x: T): Boolean {
 /// true }` for `T` 100,000 `Option`s around `Boolean`, checked and dropped
-/// on a thread with a `stack`-byte stack, under limits raised to fit it.
-fn deep_option_keys(stack: usize) -> BTreeSet<NodeKey> {
+/// on a thread with a `stack`-byte stack, under limits raised to fit it,
+/// ascending, as [`key_shapes`].
+fn deep_option_keys(stack: usize) -> Vec<KeyShape> {
     std::thread::Builder::new()
         .stack_size(stack)
         .spawn(|| {
@@ -143,11 +199,13 @@ fn deep_option_keys(stack: usize) -> BTreeSet<NodeKey> {
                 .filter(|node| node.semantic_form() == "option")
                 .count();
             assert_eq!(options, 100_000);
-            checked
-                .semantic_graph()
-                .nodes()
-                .map(SemanticNode::key)
-                .collect()
+            key_shapes(
+                checked
+                    .semantic_graph()
+                    .nodes()
+                    .map(SemanticNode::key)
+                    .collect(),
+            )
         })
         .expect("the check thread spawns")
         .join()

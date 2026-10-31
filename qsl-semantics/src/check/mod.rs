@@ -111,6 +111,7 @@ pub mod imports;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) mod imports;
 mod ir;
+mod key_order;
 mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
@@ -2067,7 +2068,9 @@ impl PackageDeclarations {
         // FR-092-AC-12: a declared composite's checked type node takes its
         // FR-092 key, which `check` mints below, and carries the caller's
         // handle as the declaration's kernel key.
-        let mut type_nodes = BTreeMap::new();
+        // Collected unordered and ranked once below ([`key_order`]), so no
+        // insertion compares node keys.
+        let mut type_nodes = Vec::new();
         for enum_binding in scope.enums() {
             let node = enum_binding.declaration.key();
             // Every case name here was already validated as
@@ -2106,10 +2109,10 @@ impl PackageDeclarations {
                  unordered declaration whose members are not sorted by case, before \
                  this declaration ever reaches `check`",
             );
-            type_nodes.insert(
+            type_nodes.push((
                 node.clone(),
                 identity::CheckedTypeNode::Sum { node, variants },
-            );
+            ));
         }
         // `node_count` reads the same `CheckingLimits.nodes()` the `Typer`
         // below honors: it is the ceiling claim classification walks under,
@@ -4823,14 +4826,14 @@ impl PackageDeclarations {
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
-                    type_nodes.insert(
+                    type_nodes.push((
                         node.clone(),
                         identity::CheckedTypeNode::Composite {
                             node,
                             declaration: composite.key(),
                             form: composite.shape().into(),
                         },
-                    );
+                    ));
                 }
                 Err(refusal) => refusals.push(refusal),
             }
@@ -5024,9 +5027,9 @@ impl PackageDeclarations {
                     }]
                 };
                 let claim = occurrences
-                    .iter_role(family::OccurrenceRole::Claim)
-                    .find(|(node, _, at)| *node == lowered.key && **at == location)
-                    .map(|(_, origin, _)| origin)
+                    .first_origin(&lowered.key, family::OccurrenceRole::Claim, |at| {
+                        *at == location
+                    })
                     .ok_or_else(unkeyable)?;
                 let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
                 let ranged: Vec<_> = claims
@@ -5225,9 +5228,7 @@ impl PackageDeclarations {
         for (index, model, key) in &lowered_terminals {
             let location = lowering::terminal_location(*index, lowering::TerminalSite::Claim);
             let claim = occurrences
-                .iter_role(family::OccurrenceRole::Claim)
-                .find(|(node, _, at)| *node == *key && **at == location)
-                .map(|(_, origin, _)| origin)
+                .first_origin(key, family::OccurrenceRole::Claim, |at| *at == location)
                 .ok_or_else(|| {
                     vec![CheckRefusal {
                         location: location.clone(),
@@ -5249,9 +5250,9 @@ impl PackageDeclarations {
                     hyper_clause::lowering::Site::Claim,
                 );
                 let claim = occurrences
-                    .iter_role(family::OccurrenceRole::Claim)
-                    .find(|(node, _, at)| *node == lowered.key && **at == location)
-                    .map(|(_, origin, _)| origin)
+                    .first_origin(&lowered.key, family::OccurrenceRole::Claim, |at| {
+                        *at == location
+                    })
                     .ok_or_else(|| {
                         vec![CheckRefusal {
                             location: location.clone(),
@@ -5282,9 +5283,9 @@ impl PackageDeclarations {
                 }]
             };
             let claim = occurrences
-                .iter_role(family::OccurrenceRole::Claim)
-                .find(|(node, _, at)| *node == lowered.key && **at == location)
-                .map(|(_, origin, _)| origin)
+                .first_origin(&lowered.key, family::OccurrenceRole::Claim, |at| {
+                    *at == location
+                })
                 .ok_or_else(unkeyable)?;
             let (from, target) = checked.node_predicates();
             let objects: std::collections::BTreeSet<_> = from
@@ -5331,9 +5332,9 @@ impl PackageDeclarations {
                     }]
                 };
                 let claim = occurrences
-                    .iter_role(family::OccurrenceRole::Claim)
-                    .find(|(node, _, at)| *node == lowered.key && **at == location)
-                    .map(|(_, origin, _)| origin)
+                    .first_origin(&lowered.key, family::OccurrenceRole::Claim, |at| {
+                        *at == location
+                    })
                     .ok_or_else(unkeyable)?;
                 let objects: std::collections::BTreeSet<_> = conditions
                     .all()
@@ -5441,9 +5442,9 @@ impl PackageDeclarations {
                 }]
             };
             let claim = occurrences
-                .iter_role(family::OccurrenceRole::Claim)
-                .find(|(node, _, at)| *node == lowered.key && **at == location)
-                .map(|(_, origin, _)| origin)
+                .first_origin(&lowered.key, family::OccurrenceRole::Claim, |at| {
+                    *at == location
+                })
                 .ok_or_else(unkeyable)?;
             let checked_claim = checked_hybrid_claim_list.get(index).ok_or_else(unkeyable)?;
             let bounded = checked_claim.horizon.is_some();
@@ -5769,7 +5770,11 @@ impl PackageDeclarations {
             parameter_spans,
             requirements,
             model_correspondence,
-            type_nodes,
+            // A later entry for a key replaces an earlier one, as an insert
+            // would: the ranking is stable and collecting keeps the last.
+            type_nodes: key_order::sorted_by_key(type_nodes, |(node, _)| node)
+                .into_iter()
+                .collect(),
             semantic_graph,
             effective_limits: limits,
             form_spans,
