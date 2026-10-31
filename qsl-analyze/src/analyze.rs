@@ -32,6 +32,7 @@
 
 mod items;
 
+use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
@@ -63,6 +64,7 @@ pub use items::{
     ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 
+use crate::statistical::StatisticalRequest;
 use crate::zone_check::ZoneCheckRecord;
 use crate::{contract_check, model_check, statistical, value_check, zone_check};
 
@@ -239,7 +241,7 @@ pub struct AnalyzeRequest<'a> {
     /// The shared subject binding.
     pub binding: SubjectBinding<'a>,
     /// The negotiated items, in request order.
-    pub items: Vec<AnalyzeItem<'a>>,
+    pub items: Vec<crate::provider::RoutedItem<'a>>,
 }
 
 /// The outcome of analyzing a request, preserving the typed result for each
@@ -650,8 +652,8 @@ pub fn analyze(
         packages: request.binding.packages,
         normalization: limits.normalization,
         snapshots: request.binding.snapshots,
-        initial: request.binding.initial,
-        universes: request.binding.universes,
+        initial: request.binding.initial.clone(),
+        universes: request.binding.universes.clone(),
         observation: limits.observation,
         // Admission does not expand successors. The engine item carries its
         // own caller-selected expansion budget when it later runs.
@@ -663,8 +665,57 @@ pub fn analyze(
     ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
 
-    let records = terminal_records(analyze_items(engines, request.items, cancel));
+    let items = request
+        .items
+        .iter()
+        .map(|routed| statistical_work(package, &request.binding, routed, limits))
+        .collect();
+    let records = terminal_records(analyze_items(engines, items, cancel));
     Ok(Staged::new(AnalyzeOutcome { records }))
+}
+
+fn statistical_work<'a>(
+    package: &'a CheckedPackage,
+    binding: &SubjectBinding<'a>,
+    routed: &'a crate::provider::RoutedItem<'a>,
+    limits: &AnalyzeLimits,
+) -> AnalyzeItem<'a> {
+    let item = &routed.item;
+    statistical_item(
+        item.request_index,
+        StatisticalRequest {
+            subject: ModelSubject {
+                simulation: ModelSimulationRequest {
+                    package,
+                    packages: binding.packages,
+                    normalization: limits.normalization,
+                    snapshots: binding.snapshots,
+                    initial: binding.initial.clone(),
+                    universes: binding.universes.clone(),
+                    observation: limits.observation,
+                    // Admission does not expand successors. The engine item
+                    // carries its caller-selected expansion budget when it
+                    // later runs.
+                    expansion: ExpansionLimits {
+                        max_candidates: u64::MAX,
+                    },
+                    meter: limits.accounting,
+                },
+                proof_bounds: Vec::new(),
+            },
+            claim: item.claim,
+            method: item.method,
+            seed: item.seed,
+            sampler: item.sampler.clone(),
+            limits: item.limits,
+            max_witnesses: item.max_witnesses,
+            symmetry: item.symmetry.clone(),
+        },
+    )
+    .disposed(
+        Disposition::Supported(Candidate::new(routed.backend.clone())),
+        None,
+    )
 }
 
 pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {

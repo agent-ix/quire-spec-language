@@ -2,12 +2,8 @@
 //! FR-280's in-process provider entry for QSL-owned engines.
 
 use crate::analyze::{
-    analyze, analyze_items, statistical_item, terminal_records, AnalyzeItem, AnalyzeLimits,
-    AnalyzeRefusal, AnalyzeRequest, Engines, SubjectBinding,
+    analyze, AnalyzeLimits, AnalyzeRefusal, AnalyzeRequest, Engines, SubjectBinding,
 };
-use crate::statistical::StatisticalRequest;
-use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalLimits;
@@ -61,21 +57,16 @@ pub fn run(
     limits: &AnalyzeLimits,
     cancel: &Cancel,
 ) -> Vec<TerminalRecord> {
-    let pending_items = build_analyze_items(package, binding, items, limits);
     let request = AnalyzeRequest {
         binding: binding.clone(),
-        items: pending_items,
+        items: items.to_vec(),
     };
 
     match analyze(package, request, engines, limits, cancel) {
         Ok(staged) => staged.into_value().records,
-        Err(qsl_foundation::diagnostic::StageFailure::Refused(AnalyzeRefusal::Binding(_))) => {
-            terminal_records(analyze_items(
-                engines,
-                build_analyze_items(package, binding, items, limits),
-                cancel,
-            ))
-        }
+        Err(qsl_foundation::diagnostic::StageFailure::Refused(AnalyzeRefusal::Binding(
+            failure,
+        ))) => admission_records(items, failure),
         Err(_) => items
             .iter()
             .map(|item| {
@@ -89,46 +80,30 @@ pub fn run(
     }
 }
 
-fn build_analyze_items<'a>(
-    package: &'a CheckedPackage,
-    binding: &SubjectBinding<'a>,
-    items: &'a [RoutedItem<'a>],
-    limits: &AnalyzeLimits,
-) -> Vec<AnalyzeItem<'a>> {
+fn admission_records(
+    items: &[RoutedItem<'_>],
+    failure: qsl_semantics::model::observation::AdmissionFailure,
+) -> Vec<TerminalRecord> {
+    use qsl_semantics::model::observation::AdmissionFailure;
+
     items
         .iter()
-        .map(|routed| {
-            let request = StatisticalRequest {
-                subject: ModelSubject {
-                    simulation: ModelSimulationRequest {
-                        package,
-                        packages: binding.packages,
-                        normalization: limits.normalization,
-                        snapshots: binding.snapshots,
-                        initial: binding.initial.clone(),
-                        universes: binding.universes.clone(),
-                        observation: limits.observation,
-                        expansion: ExpansionLimits {
-                            max_candidates: u64::MAX,
-                        },
-                        meter: limits.accounting,
-                    },
-                    proof_bounds: Vec::new(),
-                },
-                claim: routed.item.claim,
-                method: routed.item.method,
-                seed: routed.item.seed,
-                sampler: routed.item.sampler.clone(),
-                limits: routed.item.limits,
-                max_witnesses: routed.item.max_witnesses,
-                symmetry: routed.item.symmetry.clone(),
-            };
-            statistical_item(routed.item.request_index, request).disposed(
-                qsl_route::routing::Disposition::Supported(qsl_route::Candidate::new(
-                    routed.backend.clone(),
-                )),
-                None,
-            )
+        .map(|item| match &failure {
+            AdmissionFailure::Refused(record) => TerminalRecord::disposition_declined(
+                item.item.request_index,
+                qsl_replay::ProofRefusalCause::InvalidInput,
+                qsl_replay::DeclineCode::Qsl(record.code),
+                quire_semantic_value::catalog::CatalogCode::new(record.code.as_str(), record.cause),
+            ),
+            AdmissionFailure::Incomplete(record) => TerminalRecord::disposition_declined(
+                item.item.request_index,
+                qsl_replay::ProofRefusalCause::IncompleteInput,
+                qsl_replay::DeclineCode::Qsl(record.code),
+                quire_semantic_value::catalog::CatalogCode::new(record.code.as_str(), record.cause),
+            ),
+            AdmissionFailure::Fault(fault) => {
+                TerminalRecord::disposition_failed(item.item.request_index, fault.catalog_code())
+            }
         })
         .collect()
 }
