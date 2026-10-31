@@ -15,6 +15,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-128
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-127
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-281
+    type: depends_on
 ---
 # FR-411: Emit a checked model terminal declaration as a v2 terminal node
 
@@ -27,7 +33,8 @@ checked model `terminal` declaration (FR-124) as one
 and QSL's I2 reader SHALL read that node back. QSpec FR-476 owns the body,
 the declaration path, the identity rules and the reader's refusals; this
 requirement states what QSL's emitter writes from its checked
-`TerminalDeclaration` and what its I2 reader returns.
+`TerminalDeclaration`, what its I2 reader returns, and how QSL settlement
+joins a deadlock-freedom verdict to the declaration it was decided under.
 
 ## Use case
 
@@ -35,8 +42,10 @@ A verification operator writes `terminal Done using v on Counter when {
 self.value = 3 };` for a counter that stops at 3 and runs its deadlock-freedom
 item. The package carries the declaration, so the model checker, the deadlock
 classifier and replay of a deadlock counterexample all read the same intended
-terminal states from the recompiled package, and the item's obligation
-identity changes when the declaration does.
+terminal states from the recompiled package. The item's obligation identity
+is the same with and without the declaration, so QSL settlement, not the
+identity, keeps a verdict decided under one declaration from settling the
+item under another.
 
 ## Inputs
 
@@ -57,6 +66,9 @@ identity changes when the declaration does.
 - No node for `TerminalDeclaration::None`.
 - From the I2 reader: the model's `TerminalDeclaration`, or FR-476's refusal
   with its locus.
+- From QSL settlement: the deadlock-freedom item settled under the recompiled
+  package's declaration, or `stale_dependency`/`content-mismatch` when the
+  verdict was decided under another one.
 
 ## Behavior
 
@@ -88,6 +100,39 @@ identity changes when the declaration does.
 - The I2 reader SHALL refuse a node that breaks an FR-476 rule with FR-476's
   code at FR-476's locus, in FR-476's reader order.
 
+### Deadlock-freedom verdict join
+
+The deadlock-freedom item's obligation identity is the ADR-013 O-09 3-tuple
+(node key, model identity, ordinal); its kind `deadlock-freedom`, its
+arguments and their domains are record fields. A model's `terminal`
+declaration is in neither, so two packages that differ only in the
+declaration give the item equal identities and equal record fields.
+
+- QSL settlement SHALL own the join of a deadlock-freedom verdict over a
+  model subject to the package it settles for: the FR-281 derived-item
+  adapters of EN-1 and EN-6 and the FR-127 settlement map. CG retains only
+  opaque QSL bytes (ADR-013) and SHALL NOT be relied on for this join.
+- Before it settles the item, QSL settlement SHALL compare the verdict's
+  obligation identity 3-tuple with the request item's, and its record fields
+  (kind, arguments and domains) with the request item's, field by field.
+- The request writer SHALL write, on a model subject's derived
+  deadlock-freedom request item, the record field `terminals`: the terminal
+  node key of each model alias of the package, or none for a model with no
+  declaration. The node key carries the mode, the model and the predicate.
+  Every alias counts, since the deadlock classifier reads every declaration
+  of the package.
+- QSL settlement SHALL compare `terminals` with the terminal node keys of the
+  package the run and its certificate check are over, and with those of the
+  package the counterexample replay recompiled.
+- If the 3-tuple or a record field differs, or the run's or the certificate
+  check's declaration differs, then QSL settlement SHALL refuse
+  `stale_dependency`/`content-mismatch` naming the first differing model
+  alias and the two node keys (or `none`), and SHALL settle no verdict for
+  the item.
+- If the replay's recompiled declaration differs, then the replay SHALL
+  refuse `stale_dependency`/`content-mismatch` the same way, so the item
+  settles `inconclusive` with cause `replay_refused`, never `refuted`.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -96,6 +141,7 @@ identity changes when the declaration does.
 | FR-411-AC-2 | AC-1's `when` and `any` terminal nodes have different node ids; renaming `Done` to `Stop` keeps the node id. | Test (TC-1142) |
 | FR-411-AC-3 | **RETIRED (staleness check withdrawn).** There is no `PackageIdMismatch` refusal for a replay over an edited terminal declaration. | Test (TC-1142), retired |
 | FR-411-AC-4 | Fed to QSL's I2 reader, with `dependencies` set to the body's targets, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
+| FR-411-AC-5 | AC-1's `when` and no-declaration packages give the deadlock-freedom item equal obligation identities. An EN-1 run and certificate check over the no-declaration package, for a request item written over the `when` package, refuses `stale_dependency`/`content-mismatch` naming model alias `v`, the `when` terminal node key and `none`, and so does a certificate check alone over it, and a `when` run for an item written over the no-declaration package; the same run over the `when` package settles `proved`, and over the no-declaration package for its own item `refuted`. That refutation, replayed against a package declaring `terminal Done using v on Counter when { self.value = 2 };`, under which it reproduces, settles `inconclusive` with cause `replay_refused`. | Test (TC-1142) |
 
 ## Dependencies
 
@@ -107,6 +153,10 @@ identity changes when the declaration does.
   (lowering the predicate), FR-092 (node keys),
   [FR-128](FR-128-replay-a-model-counterexample.md) (deadlock counterexample
   replay).
+- ADR-013 O-09 (the obligation identity 3-tuple and its record fields),
+  [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md) (the
+  settlement map), [FR-281](FR-281-analyze-claims-with-in-process-engines.md)
+  (the derived-item adapters).
 
 ## References
 

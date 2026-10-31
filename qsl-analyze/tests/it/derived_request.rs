@@ -19,13 +19,14 @@ use qsl_analyze::zone_check::manifest as en6;
 use qsl_analyze::zone_check::{ZoneCheckItem, ZoneCheckLimits, ZoneCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{PopulationUniverse, TimedSystem, DEFAULT_MAX_CLOCKS};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::node_occurrence;
 use qsl_replay::SubjectIdentity;
 use qsl_replay::{
-    CertificateCheckLimits, CertifiedItem, IncompleteCause, ModelCheckLimit, TerminalValue,
-    ZoneCertificateRequest,
+    CertificateCheckLimits, CertifiedItem, IncompleteCause, InconclusiveCause, ModelCheckLimit,
+    ModelTraceSettlement, TerminalValue, ZoneCertificateRequest,
 };
 use qsl_route::deadlock::{
     ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem, NoAnchor,
@@ -37,7 +38,7 @@ use qsl_route::request::items_from_requirements;
 use qsl_route::request::{
     AbstractSubject, DerivedLimits, ExtentClassification, ItemKind, RequestItem,
 };
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, TerminalMismatch};
 use qsl_semantics::family::{ClaimExtent, Requirements};
 use qsl_semantics::library::LibraryName;
 use quire_exact::Cancel;
@@ -625,6 +626,118 @@ fn a_derived_model_item_refuses_a_run_over_another_subject() {
         mismatch
     );
     assert!(derived_model_item(derived, obligation, written_case.model_item()).is_ok());
+}
+
+/// The terminal node key `package` holds for its one model, with that
+/// model's alias; `None` for a model with no declaration.
+fn terminal_key(package: &CheckedPackage) -> (String, Option<quire_exact::NodeKey>) {
+    let [terminal] = package.graph().terminals() else {
+        panic!("one selected model");
+    };
+    (
+        terminal.model().to_owned(),
+        terminal
+            .occurrence()
+            .map(|occurrence| occurrence.node().clone()),
+    )
+}
+
+/// FR-411-AC-5: the deadlock-freedom item over the Counter has one
+/// obligation identity with and without a `terminal` declaration, so
+/// QSL settlement joins its verdict on the declaration itself. A run and
+/// certificate check over the no-declaration package, for an item written
+/// over the `when` package, are refused `stale_dependency`/`content-mismatch`
+/// naming the alias and both node keys, and so is the reverse; over the
+/// `when` package the item settles. A refutation found over the
+/// no-declaration package whose replay recompiles a package with another
+/// `when` declaration, under which it reproduces, settles `inconclusive`
+/// with the replay's `stale_dependency` refusal, never `refuted`.
+#[trace("TC-1142", "FR-411-AC-5")]
+#[test]
+fn a_deadlock_verdict_is_joined_on_the_terminal_declaration() {
+    let when = case(&counter_body(DONE), &[0]);
+    let none = case(&counter_body(""), &[0]);
+    let at_two = case(
+        &counter_body("terminal Done using v on M when { self.value = 2 };\n"),
+        &[0],
+    );
+    let written_when = written(
+        &when.model_item().request.subject,
+        &DerivedLimits::default(),
+    );
+    let written_none = written(
+        &none.model_item().request.subject,
+        &DerivedLimits::default(),
+    );
+    let (when_item, none_item) = (&written_when.items()[1], &written_none.items()[1]);
+    let when_obligation = written_when
+        .obligation(when_item.index())
+        .expect("its obligation");
+    let none_obligation = written_none
+        .obligation(none_item.index())
+        .expect("its obligation");
+    assert_eq!(when_obligation, none_obligation, "one obligation identity");
+
+    let (model, when_key) = terminal_key(when.model_item().request.subject.simulation.package);
+    assert!(when_key.is_some(), "the `when` package declares a terminal");
+    assert_eq!(
+        terminal_key(none.model_item().request.subject.simulation.package),
+        (model.clone(), None)
+    );
+    let refused = |requested: &Option<_>, recompiled: &Option<_>| {
+        Some(DerivedItemMismatch::TerminalDeclaration {
+            index: when_item.index(),
+            mismatch: TerminalMismatch {
+                model: model.clone(),
+                requested: requested.clone(),
+                recompiled: recompiled.clone(),
+            },
+        })
+    };
+    assert_eq!(
+        derived_model_item(when_item, when_obligation, none.model_item()).err(),
+        refused(&when_key, &None)
+    );
+    let mut mixed = when.model_item();
+    mixed.certificate = none.request();
+    assert_eq!(
+        derived_model_item(when_item, when_obligation, mixed).err(),
+        refused(&when_key, &None)
+    );
+    assert_eq!(
+        derived_model_item(none_item, none_obligation, when.model_item()).err(),
+        refused(&None, &when_key)
+    );
+
+    let engines = Engines::qsl().expect("the layer-A manifests register");
+    let run = |item| {
+        let mut records = analyze(&engines, vec![item], &Cancel::new());
+        settled(&records.remove(0)).1
+    };
+    let value =
+        run(derived_model_item(when_item, when_obligation, when.model_item()).expect("the run"));
+    assert!(matches!(value, TerminalValue::Proved { .. }), "{value:?}");
+    let value =
+        run(derived_model_item(none_item, none_obligation, none.model_item()).expect("the run"));
+    assert!(matches!(value, TerminalValue::Refuted), "{value:?}");
+
+    let mut stale = none.model_item();
+    stale.replay = Box::new(|payload| crate::model_settle::replay(&at_two, payload.clone()));
+    let reproduced =
+        crate::model_settle::replay(&at_two, crate::model_settle::counterexample(&none))
+            .expect("replays");
+    assert!(
+        matches!(
+            reproduced.settlement,
+            ModelTraceSettlement::Reproduced { .. }
+        ),
+        "the refutation reproduces under the other declaration: {:?}",
+        reproduced.settlement
+    );
+    assert_eq!(
+        run(derived_model_item(none_item, none_obligation, stale).expect("the run")),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+    );
 }
 
 /// QSpec FR-368-AC-22: a subject that reads the one selection `M` of a
