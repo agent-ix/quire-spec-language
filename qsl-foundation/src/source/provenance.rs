@@ -328,6 +328,7 @@ impl PackageSourceMap {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use alloc::{vec, vec::Vec};
     use ix_trace_rs::trace;
     use quire_exact::PathSegment;
