@@ -10,7 +10,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, derived_model_item, derived_zone_item, AnalyzeItem, AnalyzeRecord,
+    analyze_items, derived_model_item, derived_zone_item, AnalyzeItem, AnalyzeRecord,
     DerivedItemMismatch, Engines, TimedItem,
 };
 use qsl_analyze::model_check::manifest as en1;
@@ -297,7 +297,7 @@ fn zone_run<'w>(
 
 /// The records `analyze` settles for `items`.
 fn analyzed(items: Vec<AnalyzeItem<'_>>) -> Vec<AnalyzeRecord> {
-    analyze(
+    analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
         items,
         &Cancel::new(),
@@ -559,7 +559,7 @@ fn an_untimed_subjects_deadlock_item_settles_on_en1() {
             ids(derived.candidates().expect("its candidates")),
             [en1::BACKEND_ID, en6::BACKEND_ID]
         );
-        let mut records = analyze(
+        let mut records = analyze_items(
             &Engines::qsl().expect("the layer-A manifests register"),
             vec![derived_model_item(derived, obligation, item).expect("the deadlock-freedom run")],
             &Cancel::new(),

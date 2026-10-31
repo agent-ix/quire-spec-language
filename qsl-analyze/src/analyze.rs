@@ -32,19 +32,29 @@
 
 mod items;
 
+use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::simulation::model::{
+    ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+};
 use qsl_eval::simulation::protocol::ProtocolTransition;
+use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::{BackendId, RequestIndex};
+use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample};
 use qsl_replay::{
     DeclineCode, IncompleteCause, ModelCheckRecord, OutcomeItem, ProofRefusalCause, TerminalRecord,
-    TerminalValue, UndefinedEvaluation,
+    TerminalValue, UnavailabilityCause, UndefinedEvaluation,
 };
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
 use qsl_semantics::check::Capability;
-use quire_exact::Cancel;
-use quire_semantic_value::catalog::CatalogCode;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::observation::{
+    AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
+};
+use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
@@ -54,6 +64,7 @@ pub use items::{
     ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 
+use crate::statistical::StatisticalRequest;
 use crate::zone_check::ZoneCheckRecord;
 use crate::{contract_check, model_check, statistical, value_check, zone_check};
 
@@ -169,6 +180,140 @@ impl DuplicateEngine {
 #[derive(Clone, Debug, Default)]
 pub struct Engines {
     engines: Vec<Engine>,
+}
+
+/// FR-120's caller-supplied subject members other than the checked package.
+///
+/// The provider and analyze operations combine this value with the package
+/// and [`AnalyzeLimits`] to admit one `ModelSystem` before running any item.
+#[derive(Clone)]
+pub struct SubjectBinding<'a> {
+    /// FR-056's domain package input.
+    pub packages: &'a qsl_semantics::model::intake::PackageInput,
+    /// The snapshot documents selected by `initial`.
+    pub snapshots: &'a DocumentProvision,
+    /// Initial states selected from `snapshots`, in request order.
+    pub initial: Vec<DocumentRef>,
+    /// The finite key sets for the subject's populations.
+    pub universes: Vec<PopulationUniverse>,
+}
+
+/// The caller's shared accounting, observation, normalization and deadline
+/// limits for one analyze request (FR-277, FR-281).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AnalyzeLimits {
+    /// The scalar evaluation budget.
+    pub accounting: ScalarLimits,
+    /// The snapshot observation budgets.
+    pub observation: ObservationLimits,
+    /// The model normalization budgets.
+    pub normalization: ModelNormalizationLimits,
+    /// The operation deadline in milliseconds, if one was supplied.
+    pub deadline_ms: Option<u64>,
+}
+
+impl Default for AnalyzeLimits {
+    fn default() -> Self {
+        Self {
+            accounting: ScalarLimits {
+                integer_bits: u64::MAX,
+                decimal_digits: u64::MAX,
+                scale_expansion: u64::MAX,
+                text_input_bytes: u64::MAX,
+                text_scalars: u64::MAX,
+                normalized_scalars: u64::MAX,
+                unit_edges: u64::MAX,
+                value_occurrences: u64::MAX,
+                work_units: 1_000_000,
+                result_units: u64::MAX,
+            },
+            observation: ObservationLimits::default(),
+            normalization: ModelNormalizationLimits::default(),
+            deadline_ms: None,
+        }
+    }
+}
+
+/// An admitted-for-execution request: one subject binding and its negotiated
+/// items. Each item is already typed by its layer-A adapter and carries the
+/// disposition established by the caller's negotiation.
+pub struct AnalyzeRequest<'a> {
+    /// The shared subject binding.
+    pub binding: SubjectBinding<'a>,
+    /// The negotiated items, in request order.
+    pub items: Vec<crate::provider::RoutedItem<'a>>,
+}
+
+/// The outcome of analyzing a request, preserving the typed result for each
+/// item in request order.
+#[derive(Debug)]
+pub struct AnalyzeOutcome {
+    /// The per-item outcomes.
+    pub records: Vec<TerminalRecord>,
+}
+
+/// Why analyze could not admit a shared subject binding.
+#[derive(Debug, thiserror::Error)]
+pub enum AnalyzeRefusal {
+    /// FR-120 did not admit the subject binding.
+    #[error("the analyze subject binding did not admit: {0:?}")]
+    Binding(AdmissionFailure),
+}
+
+/// Cancels an analyze request when its wall-clock deadline elapses.
+struct DeadlineGuard {
+    finished: std::sync::mpsc::Sender<()>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl DeadlineGuard {
+    fn start(cancel: &Cancel, deadline_ms: Option<u64>) -> Result<Option<Self>, std::io::Error> {
+        let Some(deadline_ms) = deadline_ms else {
+            return Ok(None);
+        };
+        if deadline_ms == 0 {
+            cancel.cancel(CancelCause::Deadline);
+            return Ok(None);
+        }
+
+        let (finished, wait_for_finish) = std::sync::mpsc::channel();
+        let cancel = cancel.clone();
+        let worker = std::thread::Builder::new()
+            .name("qsl-analyze-deadline".to_owned())
+            .spawn(move || {
+                wait_for_deadline(
+                    &cancel,
+                    wait_for_finish,
+                    std::time::Duration::from_millis(deadline_ms),
+                );
+            })?;
+        Ok(Some(Self {
+            finished,
+            worker: Some(worker),
+        }))
+    }
+}
+
+fn wait_for_deadline(
+    cancel: &Cancel,
+    wait_for_finish: std::sync::mpsc::Receiver<()>,
+    timeout: std::time::Duration,
+) {
+    if matches!(
+        wait_for_finish.recv_timeout(timeout),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    ) {
+        cancel.cancel(CancelCause::Deadline);
+    }
+}
+
+impl Drop for DeadlineGuard {
+    fn drop(&mut self) {
+        let _ = self.finished.send(());
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
 }
 
 impl Engines {
@@ -538,7 +683,7 @@ fn undefined_item(index: RequestIndex, evaluation: &UndefinedEvaluation) -> Outc
 /// other than `supported` runs no engine, and an item whose `Supported`
 /// candidate `engines` does not hold, or holds without advertising the
 /// item's kind and mode, settles `invalid-request`.
-pub fn analyze(
+pub fn analyze_items(
     engines: &Engines,
     items: Vec<AnalyzeItem<'_>>,
     cancel: &Cancel,
@@ -546,6 +691,123 @@ pub fn analyze(
     items
         .into_iter()
         .map(|item| run(engines, item, cancel))
+        .collect()
+}
+
+/// Analyze the negotiated items over one admitted checked-package subject
+/// (FR-281). The binding is admitted before any engine item runs.
+pub fn analyze(
+    package: &CheckedPackage,
+    request: AnalyzeRequest<'_>,
+    engines: &Engines,
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
+    let _deadline = DeadlineGuard::start(cancel, limits.deadline_ms).map_err(|_| {
+        StageFailure::Fault(InternalFault::new("analyze", "deadline-timer-unavailable"))
+    })?;
+
+    let simulation = ModelSimulationRequest {
+        package,
+        packages: request.binding.packages,
+        normalization: limits.normalization,
+        snapshots: request.binding.snapshots,
+        initial: request.binding.initial.clone(),
+        universes: request.binding.universes.clone(),
+        observation: limits.observation,
+        // Admission does not expand successors. The engine item carries its
+        // own caller-selected expansion budget when it later runs.
+        expansion: ExpansionLimits {
+            max_candidates: u64::MAX,
+        },
+        meter: limits.accounting,
+    };
+    ModelSystem::new(simulation)
+        .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
+
+    let items = request
+        .items
+        .iter()
+        .map(|routed| statistical_work(package, &request.binding, routed, limits))
+        .collect();
+    let records = terminal_records(analyze_items(engines, items, cancel));
+    Ok(Staged::new(AnalyzeOutcome { records }))
+}
+
+fn statistical_work<'a>(
+    package: &'a CheckedPackage,
+    binding: &SubjectBinding<'a>,
+    routed: &'a crate::provider::RoutedItem<'a>,
+    limits: &AnalyzeLimits,
+) -> AnalyzeItem<'a> {
+    let item = &routed.item;
+    statistical_item(
+        item.request_index,
+        StatisticalRequest {
+            subject: ModelSubject {
+                simulation: ModelSimulationRequest {
+                    package,
+                    packages: binding.packages,
+                    normalization: limits.normalization,
+                    snapshots: binding.snapshots,
+                    initial: binding.initial.clone(),
+                    universes: binding.universes.clone(),
+                    observation: limits.observation,
+                    // Admission does not expand successors. The engine item
+                    // carries its caller-selected expansion budget when it
+                    // later runs.
+                    expansion: ExpansionLimits {
+                        max_candidates: u64::MAX,
+                    },
+                    meter: limits.accounting,
+                },
+                proof_bounds: Vec::new(),
+            },
+            claim: item.claim,
+            method: item.method,
+            seed: item.seed,
+            sampler: item.sampler.clone(),
+            limits: item.limits,
+            max_witnesses: item.max_witnesses,
+            symmetry: item.symmetry.clone(),
+        },
+    )
+    .disposed(
+        Disposition::Supported(Candidate::new(routed.backend.clone())),
+        None,
+    )
+}
+
+pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {
+    records
+        .into_iter()
+        .map(|record| match record.settlement {
+            Settlement::Terminal(terminal) => *terminal,
+            Settlement::Disposed(disposed) => {
+                let diagnostic = disposed
+                    .diagnostic
+                    .map(|diagnostic| diagnostic.code)
+                    .unwrap_or(CatalogCode::new(
+                        "runtime_invariant",
+                        "established-invariant-broken",
+                    ));
+                match disposed.kind {
+                    DispositionKind::RequiresBound | DispositionKind::Unsupported => {
+                        TerminalRecord::disposition_unsupported(
+                            record.request_index,
+                            UnavailabilityCause::BackendAbsent,
+                            diagnostic,
+                        )
+                    }
+                    DispositionKind::InvalidRequest => TerminalRecord::disposition_declined(
+                        record.request_index,
+                        ProofRefusalCause::InvalidInput,
+                        DeclineCode::Qsl(Code::InvalidRequest),
+                        diagnostic,
+                    ),
+                }
+            }
+        })
         .collect()
 }
 
@@ -753,6 +1015,29 @@ mod tests {
 
     use super::*;
 
+    #[trace("TC-763", "FR-281-AC-12")]
+    #[test]
+    fn deadline_guard_cancels_when_its_wait_times_out() {
+        let cancel = Cancel::new();
+        let (_finished, wait_for_finish) = std::sync::mpsc::channel();
+
+        wait_for_deadline(&cancel, wait_for_finish, std::time::Duration::ZERO);
+
+        assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
+    }
+
+    #[trace("TC-763", "FR-281-AC-12")]
+    #[test]
+    fn deadline_guard_does_not_cancel_when_analysis_finishes_before_timeout() {
+        let cancel = Cancel::new();
+        let (finished, wait_for_finish) = std::sync::mpsc::channel();
+        finished.send(()).expect("the request finished");
+
+        wait_for_deadline(&cancel, wait_for_finish, std::time::Duration::from_secs(1));
+
+        assert_eq!(cancel.cause(), None);
+    }
+
     fn engine(id: &str, kind: Capability) -> Engine {
         Engine::new(
             descriptor_from_manifest(
@@ -848,7 +1133,7 @@ mod tests {
         assert_eq!(refusal.backend, BackendId::new("test-a"));
         assert_eq!(refusal.catalog_code().cause(), "duplicate-backend");
         let ran = std::cell::Cell::new(false);
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![item("test-a", Capability::OperationContract, &ran)],
             &Cancel::new(),
@@ -868,7 +1153,7 @@ mod tests {
             .with(engine("test-a", Capability::ValueValidity))
             .expect("first");
         let ran = std::cell::Cell::new(false);
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![item("test-a", Capability::TemporalSatisfaction, &ran)],
             &Cancel::new(),
@@ -885,7 +1170,7 @@ mod tests {
                 mode: Mode::Bounded,
             }
         );
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![item("test-c", Capability::ValueValidity, &ran)],
             &Cancel::new(),
@@ -912,7 +1197,7 @@ mod tests {
         let ran = std::cell::Cell::new(false);
         let ambiguous =
             Diagnostic::new(CatalogCode::new("invalid_capability", "ambiguous-backend"));
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![
                 item("test-a", Capability::ValueValidity, &ran)
@@ -947,8 +1232,9 @@ mod tests {
         engines
             .with(engine("test-a", Capability::OperationContract))
             .expect("first");
-        let run =
-            |refusal: fn() -> Refusal| analyze(&engines, vec![refusing(refusal)], &Cancel::new());
+        let run = |refusal: fn() -> Refusal| {
+            analyze_items(&engines, vec![refusing(refusal)], &Cancel::new())
+        };
 
         let records = run(|| Refusal::RequiresBound);
         let settled = disposed(&records);
@@ -1002,7 +1288,7 @@ mod tests {
         ));
 
         let wrong = CatalogCode::new("invalid_runtime_input", "wrong-value-kind");
-        let records = analyze(
+        let records = analyze_items(
             &engines,
             vec![refusing(move || Refusal::Failed(wrong))],
             &Cancel::new(),
