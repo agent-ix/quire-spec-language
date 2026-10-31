@@ -434,10 +434,13 @@ impl Checker<'_, '_> {
                                 ProtocolSite::Decision(&path, span),
                             )
                         }),
-                        SlotKind::Finish
-                        | SlotKind::Terminal
-                        | SlotKind::RelatedEnd
-                        | SlotKind::Lifetime => None,
+                        SlotKind::RelatedEnd => decision_span(slot.form).map(|span| {
+                            protocol_location(
+                                &self.protocol.name.name,
+                                ProtocolSite::Related(&path, span),
+                            )
+                        }),
+                        SlotKind::Finish | SlotKind::Terminal | SlotKind::Lifetime => None,
                     }
                 }),
             SlotOwner::Role(role) => self.protocol.roles.get(role).map(|role| {

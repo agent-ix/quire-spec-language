@@ -58,7 +58,9 @@ pub(crate) fn config_over(
     formula: &str,
     versions: (i64, i64),
 ) -> World {
-    let domain = Domain::config_version();
+    // Both units reach versions 0 to 2 only (`CYCLES` wraps at 2; the shipped
+    // unit keeps the version).
+    let domain = Domain::config_version().with_versions_up_to(2);
     let clause = clause(OVER, fairness, formula);
     let text = if shipped {
         let header = "profile v = \"quire.model.complete/v1\";\n";

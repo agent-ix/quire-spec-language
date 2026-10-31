@@ -11,6 +11,7 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::{Code, RequestIndex, SourceIdentity};
+use qsl_package::CheckedPackage;
 use qsl_route::request::{items_from_requirements, ExtentClassification, RequestWriter};
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{CandidateOutcome, Registry};
@@ -77,6 +78,28 @@ fn has_collection_bounds(graph: &CheckedGraph) -> bool {
         .semantic_graph()
         .nodes()
         .any(|node| node.semantic_form() == "collection_bounds")
+}
+
+/// The S4 document, including its structural node ids.
+fn emitted(graph: CheckedGraph) -> serde_json::Value {
+    let emission =
+        qsl_package::emit_checked(&CheckedPackage::link(graph)).expect("the checked unit emits");
+    assert!(emission.omitted().is_empty(), "every fixture node emits");
+    serde_json::from_slice(emission.package().bytes()).expect("a v2 document")
+}
+
+/// The only emitted type node with `form` in these single-parameter units.
+fn emitted_type<'a>(document: &'a serde_json::Value, form: &str) -> &'a serde_json::Value {
+    let nodes: Vec<_> = document["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("the emitted graph")
+        .iter()
+        .filter(|node| node["semantic_form"] == form)
+        .collect();
+    let [node] = nodes.as_slice() else {
+        panic!("one {form} type: {nodes:?}");
+    };
+    node
 }
 
 /// FR-333-AC-1: a collection type with no bound compiles through the spine
@@ -167,6 +190,39 @@ fn a_collection_bound_adds_minimum_and_maximum_to_the_type_node() {
     assert_eq!(form, "collection_bounds");
     assert!(body.contains("min") && body.contains("max"), "{body}");
     assert!(body.contains("18446744073709551615"), "{body}");
+    assert_ne!(
+        parameter_type(&unbounded_graph, "f", 0),
+        parameter_type(&bounded_graph, "f", 0),
+        "bound presence distinguishes the checked type keys"
+    );
+    let unbounded = emitted(unbounded_graph);
+    let bounded = emitted(bounded_graph);
+    let key = |node: &serde_json::Value| {
+        qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+            .expect("an emitted structural node id")
+    };
+    assert_ne!(
+        key(emitted_type(&unbounded, "set")),
+        key(emitted_type(&bounded, "collection_bounds")),
+        "S4 preserves the bound distinction in its emitted type keys"
+    );
+    let bounds: BTreeMap<&str, u64> = emitted_type(&bounded, "collection_bounds")["body"]
+        ["members"]
+        .as_array()
+        .expect("the bound's aggregate members")
+        .iter()
+        .map(|member| {
+            let name = member["name"].as_str().expect("a named bound member");
+            let value = member["value"]["value"]
+                .as_str()
+                .expect("an exact integer literal")
+                .parse()
+                .expect("the bound fits u64");
+            (name, value)
+        })
+        .collect();
+    assert_eq!(bounds, BTreeMap::from([("min", 0), ("max", u64::MAX)]));
+    assert_ne!(unbounded, bounded, "the emitted package values differ");
 }
 
 /// FR-334-AC-3: the same bounded unit compiles to the same node keys.
@@ -179,6 +235,7 @@ fn compiling_a_bounded_unit_twice_gives_the_same_identities() {
         parameter_type(&first, "f", 0),
         parameter_type(&second, "f", 0)
     );
+    assert_eq!(emitted(first), emitted(second));
 }
 
 const UNBOUNDED_CLAIM: &str =
@@ -258,7 +315,7 @@ fn a_bounded_request_is_its_own_item_distinct_per_bound() {
     let package = package(UNBOUNDED_CLAIM);
     let graph = package.graph();
     let records = graph.requirements();
-    let (registry, _) = registry(Capability::ValueValidity);
+    let (registry, kani) = registry(Capability::ValueValidity);
     let items = items_from_requirements(records, &registry, None);
     let [item] = items.as_slice() else {
         panic!("one item: {items:#?}");
@@ -302,6 +359,29 @@ fn a_bounded_request_is_its_own_item_distinct_per_bound() {
     );
     assert_ne!(eight.domains(), written[nine.get()].domains());
     assert_ne!(eight, &written[nine.get()]);
+    // Compare the claim and substituted bounds without the request index:
+    // different indices alone must not establish different obligations.
+    let identity = |index: RequestIndex| {
+        let item = &written[index.get()];
+        (
+            item.occurrence(),
+            item.kind(),
+            item.extent(),
+            item.domains(),
+        )
+    };
+    assert_ne!(identity(unbounded), identity(eight.index()));
+    assert_ne!(identity(unbounded), identity(nine));
+    assert_ne!(identity(eight.index()), identity(nine));
+    let dispositions = [
+        Disposition::RequiresBound,
+        Disposition::Supported(kani.clone()),
+        Disposition::Supported(kani.clone()),
+    ];
+    let targets = route(&dispositions);
+    assert_eq!(targets[unbounded.get()], None);
+    assert_eq!(targets[eight.index().get()], Some(&kani));
+    assert_eq!(targets[nine.get()], Some(&kani));
 }
 
 /// FR-335-AC-4: a claim with a quantity root beside the collection is

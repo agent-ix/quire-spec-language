@@ -118,6 +118,8 @@ pub(super) struct Lowered {
     pub(super) verified: bool,
     /// IR's v2 reading of the package alone, when it admits it.
     pub(super) ir: Result<Box<quire_contract_model::CheckedPackageV2>, String>,
+    /// The activation rows derived before emission from the checked package.
+    pub(super) activation_rows: Vec<quire_contract_model::CheckedProtocolActivationRow>,
     /// The unbounded population domains each `claim` occurrence's
     /// requirement record names, from the checked graph.
     pub(super) claim_domains: Vec<usize>,
@@ -166,7 +168,9 @@ pub(super) fn lower_package(
             qsl_semantics::family::ClaimExtent::Bounded => 0,
         })
         .collect();
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let package = CheckedPackage::link(graph);
+    let activation_rows = package.protocol_activation_relation();
+    let emission = emit_checked(&package).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let mut evidence = read_evidence(&emission);
     evidence
@@ -185,6 +189,7 @@ pub(super) fn lower_package(
         text: unit,
         wire,
         ir,
+        activation_rows,
         verified: matches!(read_with(&emission, &evidence), Read::Verified { .. }),
         claim_domains,
     }

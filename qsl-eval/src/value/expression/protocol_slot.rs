@@ -57,6 +57,17 @@ pub enum ProtocolSlotEvaluation {
     },
 }
 
+pub(crate) fn foreign_to_observation(
+    reference: &quire_exact::ObjectReference,
+    observation: &Observation,
+) -> bool {
+    let references = observation.environment.references();
+    !references.is_empty()
+        && references
+            .iter()
+            .all(|held| held.universe() != reference.universe())
+}
+
 /// Reference values nested in one supplied aggregate, in deterministic
 /// depth-first order. The explicit worklist keeps admission independent of
 /// the value's nesting depth.

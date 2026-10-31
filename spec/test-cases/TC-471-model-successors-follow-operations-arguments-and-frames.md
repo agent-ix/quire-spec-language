@@ -14,7 +14,7 @@ Verify the model-level successor relation: enabled applications, receiver
 and argument identities, frame post-states with creations and deletions,
 closure, postcondition filtering and the state key's `semantic` form.
 
-Scope: FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4.
+Scope: FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4, FR-120-AC-27.
 
 ## Test Procedure
 
@@ -41,6 +41,13 @@ emission. Initial snapshots are in-memory provisions, anchor
    `remove()` (frame `deletes Counter`), no clause: expand the state
    holding `c1` (`next` naming `c2`) and `c2` (`next` absent).
 4. Read the key of `s0` and of `s0` with `c1.label` 1.
+5. Add the relationship `link` on `Counter` (both ends `0..2`, neither
+   `unique`) with `remove()` (frame `deletes Counter`) and `spawn()` (frame
+   `creates Counter`), universe `{c1, c2}`. From `s0` holding `c1`, `c2` and
+   the listed pair (`c1`, `c2`), apply `remove` to `c1`, then `spawn` so `c1`
+   returns with `s0`'s field values; read the keys of `s0` and the result.
+   Then admit two snapshots of `c1` and `c2`, one listing the pair once and
+   one listing it twice, read their keys, and explore from both.
 
 Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
 
@@ -71,3 +78,6 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   and `c1`'s `identity` is `6331`. `control`, `queues`, `roles`,
   `observations` and `bounds` are `{"type":"map","entries":[]}`. The two
   keys differ.
+- Step 5: the state after `remove` and `spawn` has `s0`'s objects and no
+  pair, and its key differs from `s0`'s. The two snapshots are both admitted,
+  their keys differ, and exploration counts 2 states.

@@ -85,14 +85,8 @@ pub(crate) fn and_step(id: &str, conjunct: &str, premise: &str, whole: &str) -> 
 
 const RANGE: &str = "(and (<= 0 s0.c.value) (<= s0.c.value 2))";
 
-/// The steps that refute the `(not true)` of a refuted `(or (not D) (not
-/// R))` whose `D` is `true`: `tautology` over `not_not`'s clause, whose two
-/// literals are complementary.
-const TRUE: &str = "(step u0 (cl (not (not (not true))) true) :rule not_not)\n\
-     (step u1 (cl true) :rule tautology :premises (u0))\n";
-
 /// A refutation of the `Initial` query: its initial predicate fixes
-/// `s0.c.value` at 0, which `(or (not true) (not (= s0.c.value 0)))` denies.
+/// `s0.c.value` at 0, which `(not (= s0.c.value 0))` denies.
 pub(crate) fn initial_proof(query: &str) -> String {
     let asserted = assertions(query);
     let [.., initial, negation] = asserted.as_slice() else {
@@ -103,27 +97,22 @@ pub(crate) fn initial_proof(query: &str) -> String {
         "(assume a0 {initial})\n\
          (assume a1 {negation})\n\
          {t0}\n\
-         (step t1 (cl (not true) (not (= s0.c.value 0))) :rule or :premises (a1))\n\
-         {TRUE}\
-         (step t2 (cl) :rule resolution :premises (t1 u1 t0))\n"
+         (step t1 (cl) :rule resolution :premises (a1 t0))\n"
     )
 }
 
 const UNCHANGED: &str = "(= s1.c.value s0.c.value)";
 
-/// A refutation of a `stutter` row's query `(and ... Q ... (or (not true)
-/// (not Q)))`, `Q` the frame equality of `value`.
+/// A refutation of a `stutter` row's query `(and ... Q ... (not Q))`, `Q`
+/// the frame equality of `value`.
 pub(crate) fn stutter_proof(assertion: &str) -> String {
     let t0 = and_step("t0", UNCHANGED, "a0", assertion);
-    let refuted = format!("(or (not true) (not {UNCHANGED}))");
-    let t1 = and_step("t1", &refuted, "a0", assertion);
+    let t1 = and_step("t1", &format!("(not {UNCHANGED})"), "a0", assertion);
     format!(
         "(assume a0 {assertion})\n\
          {t0}\n\
          {t1}\n\
-         (step t2 (cl (not true) (not {UNCHANGED})) :rule or :premises (t1))\n\
-         {TRUE}\
-         (step t3 (cl) :rule resolution :premises (t2 u1 t0))\n"
+         (step t2 (cl) :rule resolution :premises (t1 t0))\n"
     )
 }
 
@@ -131,61 +120,44 @@ pub(crate) fn stutter_proof(assertion: &str) -> String {
 /// writes `value = tmp + 1` with `tmp = value`, so `inc` holds over the
 /// mapped pair, by linear arithmetic over the range of `s0.c.value`.
 pub(crate) fn commit_proof(assertion: &str, w: char) -> String {
-    let rng = "(and (<= 0 (+ s0.c.value 1)) (<= (+ s0.c.value 1) 2))";
-    let k = "(and (< s0.c.value 2) (= s1.c.value (+ s0.c.value 1)))";
-    let implication = format!("(=> (< s0.c.value 2) {rng})");
-    let m = format!("(and {implication} {k})");
-    let n = format!("(and (< s0.c.value 2) {m})");
-    let tmp = format!("s0.c.tmp{w}");
-    let busy = format!("s0.c.busy{w}");
-    let pre = format!("(and (and {busy} (= {tmp} s0.c.value)) (< s0.c.value 2))");
-    let written = format!("(and (and (< {tmp} 2) (= s1.c.value (+ {tmp} 1))) (not s1.c.busy{w}))");
-    let post =
-        format!("(and (=> (< {tmp} 2) (and (<= 0 (+ {tmp} 1)) (<= (+ {tmp} 1) 2))) {written})");
     let v1 = "s1.c.value";
     let v = "s0.c.value";
+    let tmp = format!("s0.c.tmp{w}");
+    let rng = format!("(and (<= (- 1) {v}) (<= {v} 1))");
+    let implication = format!("(or (not (< {v} 2)) {rng})");
+    let next = format!("(= {v1} (+ {v} 1))");
+    let n = format!("(and (< {v} 2) {implication} {next})");
     [
         format!("(assume a0 {assertion})"),
         format!("(assume r {RANGE})"),
-        and_step("c0", &format!("(or (not true) (not {n}))"), "a0", assertion),
-        format!("(step c1 (cl (not true) (not {n})) :rule or :premises (c0))"),
-        and_step("c2", &pre, "a0", assertion),
-        and_step("c3", &post, "a0", assertion),
-        and_step("c4", &format!("(< {v} 2)"), "c2", &pre),
-        and_step("c5", &format!("(and {busy} (= {tmp} {v}))"), "c2", &pre),
-        and_step("c6", &format!("(= {tmp} {v})"), "c5", &format!("(and {busy} (= {tmp} {v}))")),
-        and_step("c7", &written, "c3", &post),
-        and_step("c8", &format!("(and (< {tmp} 2) (= {v1} (+ {tmp} 1)))"), "c7", &written),
-        and_step("c9", &format!("(= {v1} (+ {tmp} 1))"), "c8", &format!("(and (< {tmp} 2) (= {v1} (+ {tmp} 1)))")),
-        and_step("c10", &format!("(<= 0 {v})"), "r", RANGE),
+        and_step("c0", &format!("(not {n})"), "a0", assertion),
+        and_step("c1", &format!("(< {v} 2)"), "a0", assertion),
+        and_step("c2", &format!("(= {tmp} {v})"), "a0", assertion),
+        and_step("c3", &format!("(= {v1} (+ {tmp} 1))"), "a0", assertion),
+        and_step("c4", &format!("(<= 0 {v})"), "r", RANGE),
         format!(
-            "(step c11 (cl (= {v1} (+ {v} 1)) (not (<= {v1} (+ {v} 1))) (not (<= (+ {v} 1) {v1}))) :rule la_disequality)"
+            "(step c5 (cl {next} (not (<= {v1} (+ {v} 1))) (not (<= (+ {v} 1) {v1}))) :rule la_disequality)"
         ),
         format!(
-            "(step c12 (cl (<= {v1} (+ {v} 1)) (not (= {v1} (+ {tmp} 1))) (not (= {tmp} {v}))) :rule la_generic :args (1 (- 1) (- 1)))"
+            "(step c6 (cl (<= {v1} (+ {v} 1)) (not (= {v1} (+ {tmp} 1))) (not (= {tmp} {v}))) :rule la_generic :args (1 (- 1) (- 1)))"
         ),
         format!(
-            "(step c13 (cl (<= (+ {v} 1) {v1}) (not (= {v1} (+ {tmp} 1))) (not (= {tmp} {v}))) :rule la_generic :args (1 1 1))"
+            "(step c7 (cl (<= (+ {v} 1) {v1}) (not (= {v1} (+ {tmp} 1))) (not (= {tmp} {v}))) :rule la_generic :args (1 1 1))"
         ),
-        format!("(step c14 (cl (= {v1} (+ {v} 1))) :rule resolution :premises (c11 c12 c13 c9 c6))"),
-        format!("(step c15 (cl (<= 0 (+ {v} 1)) (not (<= 0 {v}))) :rule la_generic :args (1 1))"),
-        format!("(step c16 (cl (<= (+ {v} 1) 2) (not (< {v} 2))) :rule la_generic :args (1 1))"),
-        format!("(step c17 (cl (<= 0 (+ {v} 1))) :rule resolution :premises (c15 c10))"),
-        format!("(step c18 (cl (<= (+ {v} 1) 2)) :rule resolution :premises (c16 c4))"),
+        format!("(step c8 (cl {next}) :rule resolution :premises (c5 c6 c7 c3 c2))"),
+        format!("(step c9 (cl (<= (- 1) {v}) (not (<= 0 {v}))) :rule la_generic :args (1 1))"),
+        format!("(step c10 (cl (<= {v} 1) (not (< {v} 2))) :rule la_generic :args (1 1))"),
+        format!("(step c11 (cl (<= (- 1) {v})) :rule resolution :premises (c9 c4))"),
+        format!("(step c12 (cl (<= {v} 1)) :rule resolution :premises (c10 c1))"),
+        format!("(step c13 (cl {rng} (not (<= (- 1) {v})) (not (<= {v} 1))) :rule and_neg)"),
+        format!("(step c14 (cl {rng}) :rule resolution :premises (c13 c11 c12))"),
+        format!("(step c15 (cl {implication} (not {rng})) :rule or_neg :args (1))"),
+        format!("(step c16 (cl {implication}) :rule resolution :premises (c15 c14))"),
         format!(
-            "(step c19 (cl {rng} (not (<= 0 (+ {v} 1))) (not (<= (+ {v} 1) 2))) :rule and_neg)"
+            "(step c17 (cl {n} (not (< {v} 2)) (not {implication}) (not {next})) :rule and_neg)"
         ),
-        format!("(step c20 (cl {rng}) :rule resolution :premises (c19 c17 c18))"),
-        format!("(step c21 (cl {implication} (not {rng})) :rule implies_neg2)"),
-        format!("(step c22 (cl {implication}) :rule resolution :premises (c21 c20))"),
-        format!("(step c23 (cl {k} (not (< {v} 2)) (not (= {v1} (+ {v} 1)))) :rule and_neg)"),
-        format!("(step c24 (cl {k}) :rule resolution :premises (c23 c4 c14))"),
-        format!("(step c25 (cl {m} (not {implication}) (not {k})) :rule and_neg)"),
-        format!("(step c26 (cl {m}) :rule resolution :premises (c25 c22 c24))"),
-        format!("(step c27 (cl {n} (not (< {v} 2)) (not {m})) :rule and_neg)"),
-        format!("(step c28 (cl {n}) :rule resolution :premises (c27 c4 c26))"),
-        TRUE.trim_end().to_owned(),
-        "(step c29 (cl) :rule resolution :premises (c28 c1 u1))".to_owned(),
+        format!("(step c18 (cl {n}) :rule resolution :premises (c17 c1 c16 c8))"),
+        "(step c19 (cl) :rule resolution :premises (c18 c0))".to_owned(),
     ]
     .join("\n")
 }

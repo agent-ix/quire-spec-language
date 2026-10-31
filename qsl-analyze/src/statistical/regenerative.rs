@@ -67,9 +67,33 @@ impl Cycles {
     /// `z`, the upper square-root bound of `S² + 1/n`, the exact `L̄` and
     /// the lower bound of `√n`. `None` while there is no estimate or fewer
     /// than two cycles, which have no sample variance.
+    #[cfg(test)]
     pub(crate) fn interval(
         &self,
         z_upper: &Rational,
+    ) -> Result<Option<RatioInterval>, InternalFault> {
+        self.interval_screened(z_upper, None)
+    }
+
+    /// [`Cycles::interval`], or `None` when the half-width's bound exceeds
+    /// `limit`. The bound is never below the exact half-width, so a cycle
+    /// whose exact half-width squared exceeds `limit²` is ruled out from
+    /// the squares alone, without the two square roots; a regenerative run
+    /// asks after every cycle and almost every answer is no.
+    pub(crate) fn interval_within(
+        &self,
+        z_upper: &Rational,
+        limit: &Rational,
+    ) -> Result<Option<RatioInterval>, InternalFault> {
+        Ok(self
+            .interval_screened(z_upper, Some(limit))?
+            .filter(|interval| interval.half_width <= *limit))
+    }
+
+    fn interval_screened(
+        &self,
+        z_upper: &Rational,
+        limit: Option<&Rational>,
     ) -> Result<Option<RatioInterval>, InternalFault> {
         let Some(estimate) = self.estimate() else {
             return Ok(None);
@@ -83,8 +107,17 @@ impl Cycles {
             .sub(&int(2).mul(&estimate).mul(&self.yl))
             .add(&estimate.mul(&estimate).mul(&self.ll));
         let variance = quotient(&squares, &n.sub(&int(1)))?;
-        let root = sqrt(&variance.add(&quotient(&int(1), &n)?))?.upper;
+        let spread = variance.add(&quotient(&int(1), &n)?);
         let mean_weight = quotient(&self.l, &n)?;
+        if let Some(limit) = limit {
+            // z²·(S² + 1/n) > limit²·L̄²·n  ⇔  the exact half-width > limit.
+            let numerator = z_upper.mul(z_upper).mul(&spread);
+            let denominator = limit.mul(limit).mul(&mean_weight).mul(&mean_weight).mul(&n);
+            if numerator > denominator {
+                return Ok(None);
+            }
+        }
+        let root = sqrt(&spread)?.upper;
         let root_n = sqrt(&n)?.lower;
         let half_width = quotient(&z_upper.mul(&root), &mean_weight.mul(&root_n))?;
         Ok(Some(RatioInterval {

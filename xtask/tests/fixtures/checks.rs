@@ -9,4 +9,5 @@ pub(super) const CHECKS: [(&str, &str); 7] = [
     ("checked_v2::tests::conformance_dependency_selection_vectors", "conformance: 1 dependency-selection entry mutations and 1 order vectors"),
     ("emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", "conformance: 1 emitted application nodes match QSpec's positive fixtures"),
     ("complete_value_lock::conformance_admit_selection_matches_qspec_vectors", "conformance: 1 accepted and 1 refused selection vectors"),
+    ("checked_v2::tests::protocol_corpus::conformance_protocol_vector_positive_packages_are_admitted", "conformance: 2 protocol vector positive packages admitted"),
 ];

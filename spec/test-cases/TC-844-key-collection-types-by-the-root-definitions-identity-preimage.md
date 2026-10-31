@@ -11,15 +11,16 @@ relationships:
 ## Description
 
 Verify that bound presence and value enter collection and population node
-identity and `package_id`, and that identities are deterministic.
+identity and the emitted package value, and that structural identities and
+package values are deterministic.
 
 Scope: FR-334-AC-1 to FR-334-AC-4.
 
 ## Test Procedure
 
 1. Compile two units that differ only in `s: Set<Integer>` against
-   `s: Set<Integer>[0, 18446744073709551615]`; compare node keys, `package_id`s
-   and node members.
+   `s: Set<Integer>[0, 18446744073709551615]`; compare structural node keys,
+   emitted package values and node members.
 2. Lower `Population<Account>`, `Population<Account>[4]` and an unbounded
    `Set<Reference<Account>>`; compare node keys.
 3. Compile one bounded unit twice.
@@ -32,9 +33,10 @@ Tag the tests `#[trace("TC-844", "FR-334-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: different node keys and `package_id`s; no `collection_bounds` on
+- Step 1: different structural node keys and structurally unequal emitted
+  package values; no `collection_bounds` on
   the unbounded node; `collection_bounds{min 0, max 18446744073709551615}` on the
   bounded one.
 - Step 2: three distinct node keys; no refusal.
-- Step 3: equal node keys and `package_id`.
+- Step 3: equal structural node keys and structurally equal emitted package values.
 - Step 4: every node key equals the vector's expected key.

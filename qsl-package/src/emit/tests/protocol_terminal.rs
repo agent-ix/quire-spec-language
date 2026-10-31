@@ -47,7 +47,7 @@ fn terminal(wire: &Value) -> Option<&Value> {
 }
 
 /// The value of the argument `name` of the application node `node`.
-fn argument<'n>(node: &'n Value, name: &str) -> &'n Value {
+pub(super) fn argument<'n>(node: &'n Value, name: &str) -> &'n Value {
     node["body"]["arguments"]
         .as_array()
         .unwrap()

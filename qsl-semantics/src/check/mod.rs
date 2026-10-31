@@ -7227,6 +7227,14 @@ fn register_protocol_sites(
                 protocol_site(name, ProtocolSite::Control(&control.path)),
                 declaration.name.span,
             );
+            for end in declaration.related.iter().flat_map(|related| &related.ends) {
+                if let Some(span) = protocol_slots::decision_span(end) {
+                    site_spans.insert(
+                        protocol_site(name, ProtocolSite::Related(&control.path, span)),
+                        end.spans.clone(),
+                    );
+                }
+            }
         }
     }
     for member in &protocol.members {

@@ -164,6 +164,15 @@ pub(crate) fn release() -> Json {
 }
 
 pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> {
+    counters_document_with(operations, extras, Vec::new())
+}
+
+/// [`counters_document`] with `relationships` on `Counter`.
+fn counters_document_with(
+    operations: Vec<Json>,
+    extras: bool,
+    relationships: Vec<Json>,
+) -> Vec<u8> {
     let counter_identity = ident("Counter");
     let constructs = vec![
         ("object_type", meaning::OBJECT_TYPE),
@@ -206,7 +215,7 @@ pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> 
                 "supertypes": [],
                 "fields": fields,
                 "operations": operations,
-                "relationships": [],
+                "relationships": relationships,
             })),
         ],
         "populations": [{
@@ -255,7 +264,16 @@ fn build_world(
     clauses: &str,
     extras: bool,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let document = counters_document(operations, extras);
+    build_world_with(operations, clauses, extras, Vec::new())
+}
+
+fn build_world_with(
+    operations: Vec<Json>,
+    clauses: &str,
+    extras: bool,
+    relationships: Vec<Json>,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
+    let document = counters_document_with(operations, extras, relationships);
     let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
@@ -326,6 +344,18 @@ impl World {
         anchor: Json,
         objects: &[Obj],
     ) -> DocumentRef {
+        self.snapshot_with(name, observation, anchor, objects, Json::Null)
+    }
+
+    /// [`Self::snapshot`] listing `relationships` (a JSON array) when not null.
+    fn snapshot_with(
+        &mut self,
+        name: &str,
+        observation: &str,
+        anchor: Json,
+        objects: &[Obj],
+        relationships: Json,
+    ) -> DocumentRef {
         let mut document = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
@@ -336,6 +366,9 @@ impl World {
         });
         if !anchor.is_null() {
             document["anchor"] = anchor;
+        }
+        if !relationships.is_null() {
+            document["relationships"] = relationships;
         }
         let bytes = document.to_string().into_bytes();
         self.snapshots.insert(
@@ -1755,4 +1788,143 @@ fn an_ungranted_unbounded_field_is_neither_probed_nor_a_root() {
         .iter()
         .all(|(_, value_type)| !matches!(value_type, quire_exact::ValueType::Integer)));
     assert_eq!(stats(&explore(&system)).0, 3);
+}
+
+// ---------------------------------------------------------------------------
+// QSL-1367: the state key carries the relationship extents
+// ---------------------------------------------------------------------------
+
+fn link_identity() -> String {
+    ident("relationship/Counter-link-Counter")
+}
+
+fn link_relationship() -> Json {
+    let end = |role: Option<&str>| {
+        let mut end = json!({"type": ident("Counter"),
+            "multiplicity": {"lower": 0, "upper": 2, "ordered": false, "unique": false}});
+        if let Some(role) = role {
+            end["role"] = json!(role);
+        }
+        end
+    };
+    json!({
+        "identity": link_identity(),
+        "sourceEnd": end(Some("from")),
+        "targetEnd": end(None),
+        "category": "structural", "composite": false, "direction": "source-to-target",
+        "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
+            "startLine": 1, "startColumn": 1}},
+    })
+}
+
+fn link_between(source: &str, target: &str) -> Json {
+    link_repeated(source, target, 1)
+}
+
+/// The pair listed `times` times.
+fn link_repeated(source: &str, target: &str, times: usize) -> Json {
+    let pair = json!({
+        "source": {"population": ident("counters"), "key": source},
+        "target": {"population": ident("counters"), "key": target},
+    });
+    json!([{
+        "relationship": link_identity(), "complete": true,
+        "instances": vec![pair; times],
+    }])
+}
+
+/// Deleting `c1` drops its listed link and a later `spawn` recreates `c1`
+/// with the same fields, so the recreated state has the initial state's
+/// objects and none of its extent. The two are different states, so they
+/// have different keys.
+#[trace("TC-471", "FR-120-AC-27")]
+#[test]
+fn states_that_differ_only_in_extents_have_different_keys() {
+    let remove = operation("remove", &[], None, frame(&[], false, true));
+    let spawn = operation("spawn", &[], None, frame(&[], true, false));
+    let mut world = build_world_with(vec![remove, spawn], "", false, vec![link_relationship()])
+        .expect("the unit checks");
+    let linked = world.snapshot_with(
+        "linked",
+        "current",
+        json!({"kind": "initialization", "name": "start"}),
+        &[Obj("c1", 0, 0, None), Obj("c2", 0, 0, None)],
+        link_between("c1", "c2"),
+    );
+    let system = self::system(&world, vec![linked], &["c1", "c2"], UNLIMITED);
+    let initial = system.initial();
+    let origin = &initial[0];
+    assert_eq!(origin.state().extents.len(), 1);
+    assert_eq!(origin.state().extents[0].instances.len(), 1);
+
+    // Step 1: delete c1 (extent loses its pair). Step 2: spawn c1 again.
+    let after_remove = system.successors(origin).expect("expands");
+    let deleted = after_remove
+        .successors
+        .iter()
+        .find(|(_, state)| state.state().populations[&counters()].len() == 1)
+        .map(|(_, state)| state.clone())
+        .expect("a state with one object");
+    let recreated = system
+        .successors(&deleted)
+        .expect("expands")
+        .successors
+        .into_iter()
+        .map(|(_, state)| state)
+        .find(|state| {
+            let objects = &state.state().populations[&counters()];
+            objects.len() == 2
+                && ["value", "label"]
+                    .iter()
+                    .all(|name| int_field(state.state(), "c1", name) == "0")
+                && !objects["c1"].fields.contains_key(&field("next"))
+                && !objects["c2"].fields.contains_key(&field("next"))
+        })
+        .expect("c1 is recreated with the initial fields");
+    assert_eq!(
+        format!("{:?}", recreated.state().populations),
+        format!("{:?}", origin.state().populations),
+        "the same objects"
+    );
+    assert_ne!(
+        format!("{:?}", recreated.state().extents),
+        format!("{:?}", origin.state().extents),
+        "different extents"
+    );
+    let (_, origin_key) = system.state_key(origin).expect("encodes");
+    let (_, recreated_key) = system.state_key(&recreated).expect("encodes");
+    assert!(origin_key != recreated_key, "two states, two keys");
+}
+
+/// Admission keeps a pair listed twice when neither end is unique, so the
+/// states that list it once and twice are different states: two keys, and
+/// exploration counts both.
+#[trace("TC-471", "FR-120-AC-27")]
+#[test]
+fn a_repeated_extent_pair_is_a_different_state() {
+    let mut world =
+        build_world_with(vec![], "", false, vec![link_relationship()]).expect("the unit checks");
+    let objects = [Obj("c1", 0, 0, None), Obj("c2", 0, 0, None)];
+    let anchor = || json!({"kind": "initialization", "name": "start"});
+    let once = world.snapshot_with(
+        "once",
+        "current",
+        anchor(),
+        &objects,
+        link_repeated("c1", "c2", 1),
+    );
+    let twice = world.snapshot_with(
+        "twice",
+        "current",
+        anchor(),
+        &objects,
+        link_repeated("c1", "c2", 2),
+    );
+    let system = self::system(&world, vec![once, twice], &["c1", "c2"], UNLIMITED);
+    let initial = system.initial();
+    assert_eq!(initial.len(), 2, "both snapshots are admitted");
+    let (_, first) = system.state_key(&initial[0]).expect("encodes");
+    let (_, second) = system.state_key(&initial[1]).expect("encodes");
+    assert!(first != second, "one pair and a repeated pair are two keys");
+    assert_eq!(stats(&explore(&system)).0, 2);
 }

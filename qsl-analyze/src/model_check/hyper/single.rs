@@ -54,7 +54,7 @@ use qsl_eval::hyper::{
     HyperTransition, ParameterBinding, Property,
 };
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::{check_model_bounds, ModelSimState, ModelSystem};
+use qsl_eval::simulation::model::{check_model_bounds, ModelSimState, ModelSystem, WalkMemo};
 use qsl_eval::simulation::{Limit, Outcome, SampleProvenance, StopReason, TransitionSystem};
 use qsl_eval::temporal::{evaluate_tuple, ComponentTrace, TemporalOutcome};
 use qsl_foundation::IdentityLimits;
@@ -159,6 +159,7 @@ pub fn check_single_existential(
         budgets,
         seed,
         cancel,
+        walks: WalkMemo::new(),
     };
     run.decide(&bindings)
 }
@@ -244,6 +245,8 @@ struct Run<'r, 'a> {
     budgets: Budgets,
     seed: u64,
     cancel: &'r Cancel,
+    /// The expansions phase 0's walks share: each state is expanded once.
+    walks: WalkMemo,
 }
 
 impl<'a> Run<'_, 'a> {
@@ -409,6 +412,7 @@ impl<'a> Run<'_, 'a> {
             self.seed,
             trace,
             step_ceiling(limits, horizon),
+            Some(&self.walks),
             |state| {
                 if let Some(halt) = cancelled(self.cancel) {
                     stop = Some(Ok(halt));
@@ -485,7 +489,7 @@ impl<'a> Run<'_, 'a> {
         };
         let mut enabled: Vec<Vec<ModelTransition>> = Vec::with_capacity(loop_steps.len());
         for state in candidate.states.get(entry..).into_iter().flatten() {
-            let expansion = match self.system.successors(state) {
+            let expansion = match self.walks.successors(&self.system, state) {
                 Ok(expansion) => expansion,
                 Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
             };

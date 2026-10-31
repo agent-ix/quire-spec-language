@@ -758,11 +758,20 @@ impl AdmittedModel {
     }
 
     /// The export whose artifact id is `artifact`: the record keyed
-    /// `ix://<package>/<artifact>`, as a model name `M::<artifact>` names it.
+    /// `ix://<package>/<artifact>`, or a relationship's canonical slot
+    /// `ix://<package>/relationship/<artifact>`, named by `M::<artifact>`.
+    #[ix_trace_rs::string_edge]
     pub(crate) fn export(&self, artifact: &str) -> Option<&DomainPackageRecord> {
         self.records.iter().find_map(|(key, record)| {
-            (crate::model::intake::type_identity_segment(&key.package, &key.node) == Some(artifact))
-                .then_some(record)
+            let name = crate::model::intake::type_identity_segment(&key.package, &key.node)
+                .or_else(|| match record {
+                    DomainPackageRecord::Relationship(_) => key
+                        .node
+                        .strip_prefix(&format!("ix://{}/relationship/", key.package))
+                        .filter(|name| !name.is_empty() && !name.contains('/')),
+                    _ => None,
+                });
+            (name == Some(artifact)).then_some(record)
         })
     }
 
