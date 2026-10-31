@@ -109,7 +109,7 @@ fn probe_cst() {
         match parse::parse(&text) {
             Ok(parsed) if parsed.is_admissible() => {
                 println!(
-                    "cst.nodes {label} source_bytes={} nodes={} (one identity digest per parse)",
+                    "cst.nodes {label} source_bytes={} nodes={}",
                     text.len(),
                     parsed.cst().nodes().len(),
                 );
