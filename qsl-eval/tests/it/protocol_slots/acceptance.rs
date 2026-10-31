@@ -542,7 +542,7 @@ fn measured_boundaries(
             counter,
         );
         assert!(
-            short.consumed(counter) <= used - 1,
+            short.consumed(counter) < used,
             "the denied charge is not consumed"
         );
     }
@@ -1106,6 +1106,39 @@ fn crossed_template_sources_and_admission_precedence_name_the_exact_binder() {
             &values,
             CatalogCode::new("invalid_runtime_input", "unknown-member"),
             invalid(unknown),
+        );
+    }
+    for names in [["activated", "order"], ["order", "activated"]] {
+        let values = supply(
+            &package,
+            "Refunds",
+            names
+                .into_iter()
+                .map(|name| {
+                    (
+                        name,
+                        if name == "activated" {
+                            Value::Boolean(false)
+                        } else {
+                            int(5)
+                        },
+                    )
+                })
+                .collect(),
+            None,
+        );
+        assert_refused(
+            &package,
+            &slot(
+                &package,
+                "Refunds",
+                "Refund",
+                "registration_captures",
+                Some(0),
+            ),
+            &values,
+            CatalogCode::new("invalid_runtime_input", "unknown-member"),
+            invalid("order"),
         );
     }
     let crossed_trigger = supply(
