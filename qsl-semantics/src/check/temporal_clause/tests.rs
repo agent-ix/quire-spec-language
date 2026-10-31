@@ -74,7 +74,7 @@ type Outcome = Result<CheckedTemporalClause, StageFailure<CheckRefusal>>;
 fn check(package: &PackageDeclarations) -> Outcome {
     let units = crate::check::time_units::TimeUnits::new(
         &package.units,
-        package.nominal_spans.keys().cloned(),
+        &package.nominal_spans,
         &package.models,
         &package.dimension_equivalences,
         &package.source,

@@ -106,12 +106,13 @@ impl std::fmt::Debug for TimeUnits {
 
 impl TimeUnits {
     /// The time units of `graph`, whose dimension and unit node keys are
-    /// `keys` (the assembler's `nominal_spans` keys). The one place a
+    /// those of `spans` (the assembler's `nominal_spans`, each node's own
+    /// declaration span). The one place a
     /// declared dimension's spelling is read for FR-230's `Time` base.
     #[ix_trace_rs::string_edge]
     pub fn new(
         graph: &UnitGraph,
-        keys: impl IntoIterator<Item = NodeKey>,
+        spans: &BTreeMap<NodeKey, qsl_foundation::Span>,
         models: &[AdmittedModel],
         equivalences: &[DimensionEquivalence],
         source: &qsl_foundation::source::provenance::RawSourceRef,
@@ -127,7 +128,8 @@ impl TimeUnits {
         let mut time_dimensions = BTreeMap::new();
         let mut units = BTreeMap::new();
         let mut nominal_nodes = BTreeMap::new();
-        for key in keys {
+        for (key, span) in spans {
+            let key = key.clone();
             let Some(node) = table.nominal_node(&key) else {
                 continue;
             };
@@ -169,6 +171,7 @@ impl TimeUnits {
                         )),
                     }),
                     dependencies,
+                    declaration_span: Some(*span),
                 },
             );
             let [name] = node.declaration.qualified_declaration.as_slice() else {
@@ -219,6 +222,7 @@ impl TimeUnits {
                         }),
                         dependencies: Vec::new(),
                         nominal: Some(NominalPayload::Dimension(DimensionPayload::new(Vec::new()))),
+                        declaration_span: None,
                     },
                 );
             }
@@ -486,6 +490,7 @@ fn package_unit_nominal_nodes(
                 offset,
             ))),
             dependencies: std::iter::once(dimension).chain(target).collect(),
+            declaration_span: None,
         });
         Some(nodes)
     }

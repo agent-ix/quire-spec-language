@@ -192,3 +192,48 @@ fn declared_nominal_nodes_carry_the_source_owner() {
         );
     }
 }
+
+/// QSpec FR-322 "Nominal nodes": each equivalence node's one `anchor`
+/// occurrence has the ordinal of its declaration among the equivalence
+/// declarations of its source in source order, with that declaration's own
+/// region.
+#[trace("FR-322-AC-51")]
+#[test]
+fn equivalence_anchor_ordinal_is_the_declaration_index() {
+    let first = "dimension A ~ B by 1 ua = 1000 ub;";
+    let second = "dimension B ~ C by 1 ub = 1000 uc;";
+    let text = source(&format!(
+        "dimension C;\nunit uc : C = rational(1, 1);\n{first}\n{second}"
+    ));
+    let checked = check(&text);
+    let graph = checked.semantic_graph();
+    let mut anchors: Vec<(u64, String)> = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "dimension_equivalence")
+        .map(|node| {
+            let key = node.key();
+            let occurrences: Vec<_> = checked
+                .occurrences()
+                .filter(|(identity, _, _)| *identity == key)
+                .collect();
+            let [(identity, origin, _)] = occurrences.as_slice() else {
+                panic!("one anchor occurrence: {occurrences:?}");
+            };
+            assert_eq!(origin.role().as_str(), "anchor");
+            let region = checked
+                .occurrence_region(identity.clone(), origin)
+                .expect("the anchor is located");
+            let (start, end) = (
+                usize::try_from(region.start()).expect("a start"),
+                usize::try_from(region.end()).expect("an end"),
+            );
+            (origin.ordinal(), text[start..end].to_owned())
+        })
+        .collect();
+    anchors.sort();
+    assert_eq!(
+        anchors,
+        vec![(0, first.to_owned()), (1, second.to_owned())],
+        "ordinal = declaration index"
+    );
+}
