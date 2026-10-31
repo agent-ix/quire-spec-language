@@ -716,7 +716,7 @@ fn limits_and_cancellation_stop_a_liveness_run_naming_what_stopped_it() {
         stopped(with(None, defaults, ZERO, &live)),
         reached(
             ModelCheckLimit::EvaluationMeter {
-                counter: quire_exact::LimitKind::WorkUnits
+                counter: quire_exact::LimitKind::ValueOccurrences
             },
             0
         )
