@@ -37,7 +37,7 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::protocol::ProtocolTransition;
-use qsl_foundation::diagnostic::{Code, InternalFault, StageFailure, Staged};
+use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
@@ -54,7 +54,7 @@ use qsl_semantics::model::observation::{
     AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
 };
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
-use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
@@ -263,7 +263,7 @@ pub enum AnalyzeRefusal {
 /// Cancels an analyze request when its wall-clock deadline elapses.
 struct DeadlineGuard {
     finished: std::sync::mpsc::Sender<()>,
-    worker: std::thread::JoinHandle<()>,
+    worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl DeadlineGuard {
@@ -288,14 +288,19 @@ impl DeadlineGuard {
                     cancel.cancel(CancelCause::Deadline);
                 }
             })?;
-        Ok(Some(Self { finished, worker }))
+        Ok(Some(Self {
+            finished,
+            worker: Some(worker),
+        }))
     }
 }
 
 impl Drop for DeadlineGuard {
     fn drop(&mut self) {
         let _ = self.finished.send(());
-        let _ = self.worker.join();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
