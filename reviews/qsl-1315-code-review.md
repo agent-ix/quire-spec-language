@@ -58,3 +58,23 @@ Gaps in `Vec<Option<S>>` never reach emission or readers:
 Item 3: FR-322 does not say whether a source nominal's `declaration` occurrence covers the name or the whole declaration form. The only explicit region rules are the equivalence anchor ("the declaration's region") and a model declaration node ("the region of the declaring construct"). The name span is therefore admissible. It is also what the lowering path records for the same node (assemble.rs:3745-3765, `name.span`), and the emitter skips a timed nominal already written from the graph. So both producers give one region. **Ruling: the name span conforms.**
 
 Rust-review: clippy `-D warnings` over qsl-semantics and qsl-package `--all-targets` with test-support is clean, and `cargo fmt --check` is clean. The `as u64` span casts follow the file's existing convention, and the PR adds no unsafe code or panics.
+
+## Dispositions
+
+Round 1 was checked against head e980400b, rebased on main e26e62ea. The fix was compared by content: `eb1611e9d` reproduces the reviewed c93bba59 diff line for line, and `e980400b5` is the fix commit.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `owner_is_locked` admits a nominal node owned by a model the graph's `model_root`s select (emit.rs:1229-1250). `a_package_dimension_a_function_names_is_written_model_owned` emits Dur, dsec and `f` with `omitted == []`, and the I2 read admits them. |
+| FND-002 | fixed | `NodeOwner::nominal_key` keys a model-owned dimension or unit `[scalar_type, form, node]`, as `DimensionPreimage::key` and `UnitPreimage::key` now do. The path is asserted in both tests/it and the wire test, and it now equals the timed path's `scalar_type_key`. |
+| FND-003 | fixed | `Spans<S>(Vec<(u64, S)>)` holds one entry per occurrence, so a placed ordinal costs one slot. |
+| FND-004 | fixed | `record_at` returns `Result<Origin, OrdinalTaken>` for an ordinal at or below the last one held, and lowering maps it to `KeyFault::OccurrenceOrdinalTaken`. |
+| FND-005 | fixed | A non-source key with no `ModelOwner` now refuses `KeyFault::UnheldNominal`. |
+| FND-006 | fixed | `TimeNominalOrigin::{Source{owner, qualified_declaration, name_span}, Model}` replaces the two independent options, and the doc names the declared-name span. |
+
+Round 1 gates on e980400b:
+- qsl-semantics lib: 719 passed. The skipped tests are the two 100,000-level depth tests, which are slow before the PR too.
+- qsl-semantics `--test it` with test-support: 1293 passed, with the #1950 red test skipped.
+- qsl-package lib: 448 passed under QSpec edccac4e. Two tests failed, `deep_bodies::every_nested_form...` and `deep_bodies::the_longest_and_chain_s1...`; both fail identically on main e26e62ea.
+- Under QSpec c5deb110, 22 checked_v2 conformance tests fail on fixture node-id parsing (`Shape`, `MalformedWire`). The cause is QSpec #546's index segments, not this PR: all 22 pass under QSpec edccac4e, which predates #546.
+- clippy `-D warnings` and `fmt --check` are clean.

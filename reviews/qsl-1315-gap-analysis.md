@@ -55,3 +55,20 @@ Binding check: `a_package_dimension_node_is_model_owned_with_no_declaration` →
 ## Coverage
 
 Plan completion: not assessed. The criteria-to-test check was done by hand over the PR diff and FR-322's AC table. The `quire matrix` run was not used. Semantic review: done over the diff, comparing FR-322's text with the tests and the code.
+
+## Dispositions
+
+Round 1 was checked against head e980400b, with QSpec PR #552 (afbe938b) for FR-322-AC-287.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `equivalence_anchor_ordinal_is_the_declaration_index` is now tagged `FR-322-AC-287`, which QSpec #552 adds. The tag resolves only once #552 merges. |
+| FND-002 | fixed | `a_source_time_nominal_is_located_at_its_own_declaration` is now tagged `FR-322-AC-1`. |
+| FND-003 | fixed | QSpec #552 adds FR-322-AC-287 and TC-233 EA-01 for the anchor ordinal (see SR-552001 for its wording defect). |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Deleting `a_compound_unit_is_omitted_only_for_its_omitted_unit` removes the only test of FR-062-AC-9's first half and of TC-160 step 8. That half: one function names an omitted node and is omitted with `NamesOmittedNode` along its path, the other is written, and the I2 read exports only the second. The tests the coder points to exist: the foreign enum's `UnlockedOwner` at emit/tests.rs:1068, and `NamesOmittedNode` closure at union_nodes.rs:93-160, traced FR-320-AC-2. But neither asserts AC-9's two-function split or the I2 export, and FR-062-AC-9's remaining tag is on the second-half test only. TC-160 still describes the definition-owned `metre` scenario (spec/test-cases/TC-160-checked-family-contract-shape.md:71-73, 137-142). The claim that no source-text producer reaches a definition-owned unit is true: the assembler builds the table from source declarations and imported model bases only. The public `PackageDeclarations.types` path still can reach one, and now refuses `UnheldNominal` at check. The fix is to rebuild the two-function case on an omission that still exists (the unlocked foreign enum, or the undecodable union) and update TC-160 step 8. | qsl-package/src/emit/tests.rs:1887-1903; spec/test-cases/TC-160-checked-family-contract-shape.md:137-142 |
+| FND-005 | medium | The anchor test cannot tell source order from node-id order. `A ~ B` is declared before `B ~ C`, and the equivalence node ids sort the same way, so a producer that numbered anchors by node-id order would pass. AC-287's "whatever their node-id order" and its third-equivalence-in-between case are both unexercised. Declare `B ~ C` first, then `A ~ B`, and add a declaration between two others. | qsl-semantics/src/check/lowering/tests/dimension_equivalence.rs:200-239 |

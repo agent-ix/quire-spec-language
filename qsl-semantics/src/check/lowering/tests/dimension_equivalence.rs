@@ -193,17 +193,22 @@ fn declared_nominal_nodes_carry_the_source_owner() {
     }
 }
 
-/// QSpec FR-322 "Nominal nodes": each equivalence node's one `anchor`
-/// occurrence has the ordinal of its declaration among the equivalence
-/// declarations of its source in source order, with that declaration's own
-/// region.
+/// QSpec FR-322 "Nominal nodes" and AC-287: each equivalence node's one
+/// `anchor` occurrence has the ordinal of its declaration among the
+/// equivalence declarations of its source in source order, with that
+/// declaration's own region. The source order here is the reverse of the
+/// node-id order (`A ~ B` sorts before `B ~ C`), with a third declaration
+/// between the two.
 #[trace("FR-322-AC-287")]
 #[test]
 fn equivalence_anchor_ordinal_is_the_declaration_index() {
-    let first = "dimension A ~ B by 1 ua = 1000 ub;";
-    let second = "dimension B ~ C by 1 ub = 1000 uc;";
+    let first = "dimension B ~ C by 1 ub = 1000 uc;";
+    let middle = "dimension C ~ D by 1 uc = 1000 ud;";
+    let last = "dimension A ~ B by 1 ua = 1000 ub;";
     let text = source(&format!(
-        "dimension C;\nunit uc : C = rational(1, 1);\n{first}\n{second}"
+        "dimension C;\nunit uc : C = rational(1, 1);\n\
+         dimension D;\nunit ud : D = rational(1, 1);\n\
+         {first}\n{middle}\n{last}"
     ));
     let checked = check(&text);
     let graph = checked.semantic_graph();
@@ -233,7 +238,11 @@ fn equivalence_anchor_ordinal_is_the_declaration_index() {
     anchors.sort();
     assert_eq!(
         anchors,
-        vec![(0, first.to_owned()), (1, second.to_owned())],
+        vec![
+            (0, first.to_owned()),
+            (1, middle.to_owned()),
+            (2, last.to_owned())
+        ],
         "ordinal = declaration index"
     );
 }

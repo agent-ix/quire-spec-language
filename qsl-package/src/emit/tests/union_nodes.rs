@@ -219,3 +219,72 @@ fn a_construction_is_emitted_with_its_application_preimage_key() {
     // QSL's whole I2 read admits those keys.
     verified_exports(&emission);
 }
+
+/// FR-062-AC-9 (TC-160 step 8, first half): the emitter is all-or-nothing
+/// over the nodes a node names. With IR unable to decode the union, `area`
+/// (whose parameter names it) and each node on its path to the omitted node
+/// are omitted with `NamesOmittedNode`; `t`, which names no omitted node, is
+/// written, and QSL's I2 read of the bytes is Verified and exports `t` and
+/// not `area`.
+#[trace("TC-160", "FR-062-AC-9")]
+#[test]
+fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
+    let functions = "function area using v(s: Shape): Integer pure \
+         { case s { Empty: 0; Circle(r): r; Rect(w, h): w * h; } }\n\
+         function t using v(): Boolean pure { true }\n";
+    let (text, package) = package_from_text(&format!("{SHAPE}{functions}"));
+    let regions = |_: &Location| {
+        Some(SourceRegion::new(package.graph().source().clone(), 0, text.len() as u64).unwrap())
+    };
+    let cannot_decode_union = |tag: CheckedNodeTag, form: &str| {
+        !(tag == CheckedNodeTag::CompositeType && form == "union")
+            && CheckedNodeKind::decode(tag, form).is_some()
+    };
+    let emission = emit_package_decoding(&package, regions, &cannot_decode_union)
+        .expect("the remaining nodes emit");
+    let exports = verified_exports(&emission);
+    assert_eq!(
+        exports.keys().collect::<Vec<_>>(),
+        ["t"],
+        "the I2 read exports t and not area"
+    );
+
+    let graph = package.graph().semantic_graph();
+    let functions: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "pure_function")
+        .collect();
+    let [_, _] = functions[..] else {
+        panic!("two function nodes")
+    };
+    let cause_of = |id: &CheckedNodeId| {
+        emission
+            .omitted
+            .iter()
+            .find(|omission| omission.node == *id)
+            .map(|omission| &omission.cause)
+    };
+    for function in functions {
+        let id = node_id(function.key());
+        if function.key().to_string() == exports["t"] {
+            assert_eq!(cause_of(&id), None, "t is written");
+        } else {
+            assert!(
+                matches!(cause_of(&id), Some(OmissionCause::NamesOmittedNode(_))),
+                "area is omitted: {:?}",
+                emission.omitted
+            );
+        }
+    }
+    // Each node on the path from `area` to the union is omitted for naming
+    // an omitted node: the parameter typed at the union and the `case`.
+    for form in ["parameter", "case"] {
+        let omitted = graph
+            .nodes()
+            .filter(|node| node.semantic_form() == form)
+            .map(|node| node_id(node.key()))
+            .filter(|id| matches!(cause_of(id), Some(OmissionCause::NamesOmittedNode(_))))
+            .count();
+        assert!(omitted >= 1, "a {form} node is omitted");
+    }
+}

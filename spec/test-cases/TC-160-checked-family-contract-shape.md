@@ -67,10 +67,9 @@ FR-057-AC-10's value-function row.
    `not` applied N - 1 times to `true`). Check it with the `CheckingLimits`
    node limit configured to N - 1. Check the identical fixture again with
    the limit configured to N, one greater and nothing else changed.
-8. Check a package holding `q(a: Length): Boolean { a * a == a * a }`,
-   whose `metre^2` compound unit node names the `metre` unit node, owned by
-   a definition the layer table does not list, and `t`, which names no
-   omitted node. Emit it with `emit_checked` and read the bytes back through
+8. Check a package holding `area(s: Shape): Integer`, whose parameter names
+   the union `Shape` that the IR in use cannot decode, and `t`, which names
+   no omitted node. Emit it with `emit_checked` and read the bytes back through
    QSL's I2 read. Emit the same package again through `emit_package` with a
    region conversion that places no occurrence.
 9. Check every family's evaluation hook for display-string reads. A
@@ -134,11 +133,10 @@ FR-057-AC-10's value-function row.
   the limit at N on the identical fixture, `check` checks it. Varying only
   the limit by one flips the result, showing the limit value, not the
   fixture's depth, is the proximate cause.
-- Step 8: the `metre` unit node and its `Length` dimension node are omitted
-  with `UnlockedOwner`, and the compound unit node with `NamesOmittedNode`;
-  `q`'s declaration node and every node on its path to the compound unit
-  are omitted with `NamesOmittedNode`; `t` and its body are written; the I2
-  read is Verified and exports `t` and not `q`. The second emission returns
+- Step 8: the `Shape` union node is omitted with `UnsupportedForm`;
+  `area`'s declaration node and every node on its path to the union are
+  omitted with `NamesOmittedNode`; `t` and its body are written; the I2
+  read is Verified and exports `t` and not `area`. The second emission returns
   `EmitRefusal::UnlocatedOccurrence` and no bytes.
 - Step 9: (a) the scan finds no such path or call, and flags each forbidden
   form in a synthetic violating source; (b) the outcome, loss count and
