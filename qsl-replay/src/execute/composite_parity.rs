@@ -110,7 +110,7 @@ fn distinct_parameters(site: &Site) -> Vec<(NodeKey, &quire_exact::ValueType)> {
 /// ADR-013 O-09's one parity preimage is built (operator application at the
 /// node, one argument per operand: a parameter's domain is its harness bounds,
 /// a literal's has no free position) and recomputed through [`parity_obligation`];
-/// a digest that differs from the request's, or a preimage the encoder
+/// an identity that differs from the request's, or a preimage the encoder
 /// refuses, refuses `ScalarIdentity` and never yields an identity.
 pub(super) fn identity_tie(
     request: &ReplayRequest,

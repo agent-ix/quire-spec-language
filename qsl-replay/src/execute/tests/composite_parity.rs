@@ -246,7 +246,7 @@ impl Unit {
     }
 
     /// The request of `function` whose `obligation_identity` is FR-358
-    /// step 6's digest over `claim`, with the proving run's `domains`.
+    /// step 6's identity of `claim`, with the proving run's `domains`.
     fn wire(
         &self,
         function: &str,
@@ -1283,11 +1283,11 @@ fn prepared(
     (request, compiled, site)
 }
 
-/// FR-358 step 6 (FR-358-AC-3): a tampered obligation digest refuses with the
+/// FR-358 step 6 (FR-358-AC-3): a tampered obligation identity refuses with the
 /// typed mismatch on both entries, carrying the identity the request held.
 #[trace("TC-907", "FR-358-AC-3")]
 #[test]
-fn tc_907_a_tampered_obligation_digest_refuses() {
+fn tc_907_a_tampered_obligation_identity_refuses() {
     let unit = unit();
     let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
     let mut wire = unit.wire("f", &claim, vec![]);
@@ -1353,7 +1353,7 @@ fn tc_907_a_preimage_the_encoder_refuses_never_yields_an_identity() {
 }
 
 /// FR-358 step 6: a parameter operand that is not the node's child at its
-/// position refuses `OperandChild` before any digest is computed.
+/// position refuses `OperandChild` before any identity is computed.
 #[trace("TC-907", "FR-358-AC-3")]
 #[test]
 fn tc_907_an_operand_that_is_not_the_nodes_child_refuses() {
