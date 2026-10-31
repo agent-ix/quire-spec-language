@@ -164,3 +164,18 @@ Each unit below records its complete acceptance text or the specific changed sta
 
 Independent reviewer checks: cargo fmt --all -- --check passed; scoped locked clippy with -D warnings passed; protocol_slots filter passed 16 tests (including two fixture-support tests); explicit model-read unit filter passed one test. Each touched spec validated at its explicit path through make check-spec-validation. Logs: /tmp/codex1-qsl-852-review-{fmt,clippy,protocol,model,fr390,tc1070,tc1073}.log. Full aggregate gate remains the code lead's responsibility; no aggregate or whole-repository qualification claim is made. Installed modules emit duplicate-archetype and inline-data-schema advisory diagnostics, with exit zero.
 
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition pass 1: fb234c80dc5df4f71683815e8f0efed6aa9fd934 removes the added COUNTERS array and uses the locked kernel's LimitKind::ALL at all five sites. Independent T/C expected nonzero sets and retain-point assertions remain. |
+
+## Disposition pass 1
+
+Current code-review verdict: PASS for the reviewed partial acceptance slice at fb234c80dc5df4f71683815e8f0efed6aa9fd934. The original finding and review-pass FAIL verdict above remain immutable history; the latest disposition resolves the only merge-blocking finding. The fix diff contains only the catalog substitution and verbatim custody copies of all five review artifacts. No new defect or regression was found in that diff.
+
+Verified the removal and all five replacements directly in the fix commit, the locked public LimitKind::ALL's identical ordered members, and unchanged independent expected T/C subsets. Reviewed coder round-1 logs: formatting passed with empty diagnostics; scoped locked Clippy with -D warnings finished successfully; protocol_slots passed all 16 tests. Logs: /tmp/codex1-qsl-852-round1-{fmt,clippy,protocol}.log. No aggregate gate or matrix was run for this disposition pass.
+
+The slice is mergeable from this review's perspective after the lead's required aggregate checks and commitment of this updated artifact. The scoped gap verdict remains CONDITIONAL: AC-11 read-back evaluation parity and complete AC-6/12 qualification remain open with QSL-852, including dependencies IR-1193/IR-1194 and STD-611. QSL-852 remains In Progress; this disposition grants no whole-ticket completion.
+
+
