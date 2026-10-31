@@ -45,7 +45,7 @@ pub struct StepSimulationItem<'a> {
     pub request: &'a RefinementCertificateRequest<'a>,
     /// The backend that decided the records.
     pub backend: BackendId,
-    /// The `Initial` record's result, then each step row's in `steps` order.
+    /// The `Initial` record's result, then each step row's in declaration order.
     pub records: Vec<StepRecordResult>,
     /// The backend's certificate for the refinement, when it returned one.
     pub certificate: Option<RefinementSmtCertificate>,

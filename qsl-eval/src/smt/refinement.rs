@@ -4,7 +4,7 @@
 //! `check_refinement_smt_proof` checks.
 //!
 //! [`encode_refinement_query`] encodes the `Initial` query or the `Step`
-//! query of one row of the refinement node's `steps` array over the concrete
+//! query of one step row, by its declaration position, over the concrete
 //! subject's state copies `s0` (and `s1`). `map(s)` is read as terms: each
 //! abstract object is the key-preserving image of a concrete object, and
 //! each of its fields is its mapping row read over the concrete copy with
@@ -72,8 +72,8 @@ pub enum RefinementQueryKind {
     /// The initial query: every concrete initial state maps to an abstract
     /// initial state.
     Initial,
-    /// The step query of the row at this zero-based position of the
-    /// refinement node's `steps` array.
+    /// The step query of the step row at this zero-based declaration
+    /// position.
     Step {
         /// The row's position.
         row: u64,
@@ -97,17 +97,16 @@ fn out_of_fragment(clause: &str, form: &'static str) -> SmtEncodingRefusal {
     .into()
 }
 
-/// The refinement `request` names, and the source row of each entry of its
-/// `steps` array.
+/// The refinement `request` names.
 fn refinement_of<'p>(
     request: &RefinementCertificateRequest<'p>,
-) -> Result<(&'p CheckedRefinement, Vec<usize>), SmtEncodingRefusal> {
+) -> Result<&'p CheckedRefinement, SmtEncodingRefusal> {
     use qsl_semantics::check::RefinementV2EncodingError;
     let mut failure = None;
     for refinement in request.package.graph().refinements() {
         match refinement.v2_emission() {
             Ok(emission) if emission.identity == request.refinement => {
-                return Ok((refinement, emission.step_sources));
+                return Ok(refinement);
             }
             Ok(_) => {}
             Err(error) => failure = failure.or(Some(error)),
@@ -125,20 +124,6 @@ fn refinement_of<'p>(
     })
 }
 
-/// The source row of each entry of the `steps` array of the refinement
-/// `request` names: entry `k` is the position, among the rows as written, of
-/// the row at position `k` of the V2 `steps` array (QSpec FR-375).
-///
-/// # Errors
-///
-/// A fault [`SmtEncodingRefusal`] naming why the request's refinement has no
-/// emitted rows, or that the request names no refinement of its package.
-pub fn refinement_step_sources(
-    request: &RefinementCertificateRequest<'_>,
-) -> Result<Vec<usize>, SmtEncodingRefusal> {
-    refinement_of(request).map(|(_, sources)| sources)
-}
-
 /// Encode the refinement query `kind` of `request` as an SMT-LIB 2 script
 /// in the canonical printing (FR-315 "Refinement queries").
 ///
@@ -153,14 +138,13 @@ pub fn encode_refinement_query(
     request: &RefinementCertificateRequest<'_>,
     kind: RefinementQueryKind,
 ) -> Result<Vec<u8>, SmtEncodingRefusal> {
-    let (refinement, step_sources) = refinement_of(request)?;
+    let refinement = refinement_of(request)?;
     let row = match kind {
         RefinementQueryKind::Initial => None,
         RefinementQueryKind::Step { row } => {
             let source = usize::try_from(row)
                 .ok()
-                .and_then(|row| step_sources.get(row))
-                .and_then(|source| refinement.steps().get(*source))
+                .and_then(|row| refinement.steps().get(row))
                 .ok_or_else(|| fault("the step row is a row of the refinement"))?;
             Some((row, source))
         }

@@ -261,8 +261,8 @@ pub use monitor_plan::{
 // replay-owned wrappers (FR-100-AC-8), so CG names neither `spine` nor
 // `qsl_eval` (ADR-011 FB-05, T-12).
 pub use refinement_query::{
-    encode_refinement_query, refinement_step_sources, RefinementKeyRefusal, RefinementQueryKind,
-    RefinementQueryRequest, RefinementQuerySubject, RefinementUniverse,
+    encode_refinement_query, RefinementKeyRefusal, RefinementQueryKind, RefinementQueryRequest,
+    RefinementQuerySubject, RefinementUniverse,
 };
 
 pub use refinement::{
