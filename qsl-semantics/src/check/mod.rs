@@ -2258,6 +2258,23 @@ impl PackageDeclarations {
                     // channel: no `.expect(...)` unwrap of a slot `check`
                     // might not have filled.
                     let checked = staged.into_value();
+                    if let Some(refusal) = layer::typed_equalities(
+                        &checked.body.body,
+                        self.function_selections.get(&index),
+                        scope.types(),
+                        function.spans().map(|spans| &spans.body),
+                    )
+                    .or_else(|| {
+                        layer::typed_equalities(
+                            checked.body.measure.as_ref()?,
+                            self.function_selections.get(&index),
+                            scope.types(),
+                            function.spans().and_then(|spans| spans.measure.as_ref()),
+                        )
+                    }) {
+                        refusals.push(refusal);
+                        continue;
+                    }
                     // ADR-012 §13.5: read this declaration's claims before
                     // `checked` is unpacked below.
                     claims.extend(
@@ -2333,6 +2350,15 @@ impl PackageDeclarations {
             match state_clause::ProtocolClauseFamily::check(clause, &mut contract_cx) {
                 Ok(staged) => {
                     let checked = staged.into_value();
+                    if let Some(refusal) = layer::typed_equalities(
+                        &checked.body,
+                        Some(&clause.selection),
+                        scope.types(),
+                        Some(&clause.spans.body),
+                    ) {
+                        refusals.push(refusal);
+                        continue;
+                    }
                     nodes_used = checked.nodes_used;
                     if let (qsl_forms::StateClauseKind::Precondition, Some(operation)) =
                         (clause.kind, &clause.operation)

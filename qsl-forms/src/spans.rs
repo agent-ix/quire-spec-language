@@ -10,7 +10,7 @@
 //! The arena is flat, so building, walking and dropping it never recurse,
 //! however deep the tree.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use qsl_foundation::Span;
@@ -27,6 +27,7 @@ pub struct SpanId(usize);
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpanNode {
     span: Span,
+    operator: Option<Span>,
     children: Vec<SpanId>,
 }
 
@@ -95,6 +96,7 @@ impl ExpressionSpans {
         Ok(Self {
             nodes: vec![SpanNode {
                 span: root,
+                operator: None,
                 children: Vec::new(),
             }],
         })
@@ -137,6 +139,7 @@ impl ExpressionSpans {
             .push(id);
         self.nodes.push(SpanNode {
             span,
+            operator: None,
             children: Vec::new(),
         });
         Ok(id)
@@ -150,6 +153,7 @@ impl ExpressionSpans {
         let mut tree = Self::new(root.span).ok()?;
         let mut pending = vec![(node, tree.root())];
         while let Some((source, target)) = pending.pop() {
+            tree.nodes[target.0].operator = self.nodes[source.0].operator;
             for &child in &self.nodes.get(source.0)?.children {
                 let span = self.span(child)?;
                 let added = tree.push_child(target, span).ok()?;
@@ -205,10 +209,25 @@ impl ExpressionSpans {
         removed: &BTreeSet<ExprId>,
     ) -> Option<Self> {
         let spans = self.of_nodes(expression)?;
+        let mut operators = BTreeMap::new();
+        let mut pending = vec![(expression.root_id(), self.root())];
+        while let Some((source, located)) = pending.pop() {
+            operators.insert(source, self.operator_span(located));
+            for (index, child) in expression
+                .get(source)?
+                .node()
+                .children()
+                .into_iter()
+                .enumerate()
+            {
+                pending.push((child, self.child(located, index)?));
+            }
+        }
         let span_of = |id: ExprId| spans.get(id.index()).copied();
         let mut tree = Self::new(span_of(root)?).ok()?;
         let mut pending = vec![(root, tree.root())];
         while let Some((source, target)) = pending.pop() {
+            tree.nodes[target.0].operator = operators.get(&source).copied().flatten();
             if leaves.contains(&source) {
                 continue;
             }
@@ -248,6 +267,7 @@ impl ExpressionSpans {
             let top = tree.push_child(tree.root(), child.span(child.root()).unwrap_or(span))?;
             let mut pending = vec![(child.root(), top)];
             while let Some((source, target)) = pending.pop() {
+                tree.nodes[target.0].operator = child.nodes[source.0].operator;
                 for &grandchild in &child.nodes[source.0].children {
                     let added = tree.push_child(target, child.nodes[grandchild.0].span)?;
                     pending.push((grandchild, added));
@@ -260,6 +280,17 @@ impl ExpressionSpans {
     /// The span of `node`, when it is a node of this tree.
     pub fn span(&self, node: SpanId) -> Option<Span> {
         self.nodes.get(node.0).map(|node| node.span)
+    }
+
+    /// The operator token of a binary expression read from source, if any.
+    pub fn operator_span(&self, node: SpanId) -> Option<Span> {
+        self.nodes.get(node.0)?.operator
+    }
+
+    pub(crate) fn set_operator_span(&mut self, node: SpanId, operator: Span) {
+        if let Some(node) = self.nodes.get_mut(node.0) {
+            node.operator = Some(operator);
+        }
     }
 
     /// The `index`th child of `node`, numbered as [`ExprNode::children`]

@@ -722,6 +722,7 @@ struct Pending {
     /// The CST production this node maps from, for a refusal naming it.
     production: Production,
     span: Span,
+    operator_span: Option<Span>,
     parent: Option<usize>,
     children: Vec<usize>,
 }
@@ -1178,6 +1179,7 @@ impl<'c> Mapping<'c> {
             shape,
             production,
             span,
+            operator_span: None,
             parent,
             children: Vec::new(),
         });
@@ -1554,12 +1556,13 @@ impl<'c> Mapping<'c> {
         let start = node.span().start;
         let mut parent = task.parent;
         let mut links = Vec::with_capacity(chain.len());
-        for (operator, right) in chain.iter().zip(&operands[1..]).rev() {
+        for ((operator, right), token) in chain.iter().zip(&operands[1..]).zip(&operators).rev() {
             let span = Span {
                 start,
                 end: right.span().end,
             };
             let index = self.node(Shape::Binary(*operator), node.production(), span, parent);
+            self.arena[index].operator_span = Some(token.span());
             links.push(index);
             parent = Some(index);
         }
@@ -2283,6 +2286,11 @@ impl<'c> Mapping<'c> {
                     .push_child(parent, pending.span)
                     .map_err(|_| shape_at(pending))?,
             );
+        }
+        for (pending, id) in self.arena.iter().zip(ids) {
+            if let Some(operator) = pending.operator_span {
+                spans.set_operator_span(id, operator);
+            }
         }
         let mut built: Vec<Option<ExprId>> = vec![None; self.arena.len()];
         let mut builder = ExpressionBuilder::new();
