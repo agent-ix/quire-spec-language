@@ -66,6 +66,7 @@ const CHECKS: &[Check] = &[
     Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::conformance_dependency_selection_vectors", summaries: &[&["conformance: ", " dependency-selection entry mutations and ", " order vectors"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-package", target: Target::Lib, selection: "emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures", summaries: &[&["conformance: ", " emitted application nodes match QSpec's positive fixtures"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_admit_selection_matches_qspec_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-package", target: Target::Lib, selection: "checked_v2::tests::protocol_corpus::conformance_protocol_vector_positive_packages_are_admitted", summaries: &[&["conformance: ", " protocol vector positive packages admitted"]], summary_mode: SummaryMode::Exact },
 ];
 
 fn resolve(input: Option<&OsStr>, workspace: &Path) -> Result<PathBuf> {
