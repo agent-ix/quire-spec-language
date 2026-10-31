@@ -1306,11 +1306,11 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         again.node(again_keys[0].clone())
     );
     let d1 = preimage(under_u.node(u_keys[0].clone()).unwrap());
-    assert!(d1.get("owner").is_some() && !d1["declaration"].is_null());
+    assert!(!d1["owner"].is_null() && !d1["declaration"].is_null());
     let d2 = preimage(under_w.node(w_keys[0].clone()).unwrap());
     assert_eq!(d2["owner"]["identity"], "w");
     let t4 = preimage(under_u.node(u_keys[1].clone()).unwrap());
-    assert!(t4.get("owner").is_none() && t4["declaration"].is_null());
+    assert!(t4["owner"].is_null() && t4["declaration"].is_null());
 
     let g1 = function(
         "g1",
@@ -1421,7 +1421,7 @@ fn functions_are_structural_and_applications_carry_no_owner() {
         "`a and b`, `both(a, true)` and the let each build an application node"
     );
     for application in &applications {
-        assert!(application.get("owner").is_none());
+        assert!(application["owner"].is_null());
     }
 }
 
