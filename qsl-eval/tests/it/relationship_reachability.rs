@@ -525,7 +525,7 @@ fn assert_decides(
 }
 
 /// TC-1048 row 1: a two-link chain reaches its far end.
-#[trace("TC-1048", "FR-365-AC-7", "FR-365-AC-9")]
+#[trace("TC-1048", "FR-365-AC-7", "FR-365-AC-9", "FR-047-AC-4")]
 #[test]
 fn row_1_a_chain_reaches_its_far_end_after_five_work_units() {
     let orders = Orders::base();
@@ -569,7 +569,7 @@ fn row_2_a_chain_does_not_reach_its_start() {
 
 /// TC-1048 row 3: an isolated object does not reach itself, and equal-valued
 /// objects are not the same target.
-#[trace("TC-1048", "FR-365-AC-7")]
+#[trace("TC-1048", "FR-365-AC-7", "FR-047-AC-4")]
 #[test]
 fn row_3_an_isolated_object_reaches_neither_itself_nor_an_equal_valued_one() {
     let orders = Orders::base();
@@ -599,7 +599,7 @@ fn row_3_an_isolated_object_reaches_neither_itself_nor_an_equal_valued_one() {
 }
 
 /// TC-1048 row 4: a self-loop returns to its start.
-#[trace("TC-1048", "FR-365-AC-7")]
+#[trace("TC-1048", "FR-365-AC-7", "FR-047-AC-4")]
 #[test]
 fn row_4_a_self_loop_reaches_itself() {
     let orders = Orders::base();
@@ -620,7 +620,7 @@ fn row_4_a_self_loop_reaches_itself() {
 }
 
 /// TC-1048 row 5: a cycle returns to its start.
-#[trace("TC-1048", "FR-365-AC-7")]
+#[trace("TC-1048", "FR-365-AC-7", "FR-047-AC-4")]
 #[test]
 fn row_5_a_cycle_reaches_its_start() {
     let orders = Orders::base();
@@ -709,7 +709,7 @@ fn row_8_a_subtype_start_reaches_through_the_base_typed_relationship() {
 
 /// TC-1048 row 9: a repeated link charges one edge per occurrence and
 /// discovers its target once.
-#[trace("TC-1048", "FR-365-AC-8", "FR-365-AC-9")]
+#[trace("TC-1048", "FR-365-AC-8", "FR-365-AC-9", "FR-047-AC-5")]
 #[test]
 fn row_9_a_repeated_link_charges_each_occurrence_and_is_discovered_once() {
     let orders = Orders::new(Shape {
@@ -817,7 +817,7 @@ fn row_1(
 }
 
 /// TC-1048 row 11: work-unit budgets 5, 4 and 3 over row 1.
-#[trace("TC-1048", "FR-365-AC-9")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_11_work_units_complete_at_five_and_stop_at_the_next_charge_below() {
     let orders = Orders::base();
@@ -853,7 +853,7 @@ fn row_11_work_units_complete_at_five_and_stop_at_the_next_charge_below() {
 }
 
 /// TC-1048 row 12: value-occurrence budgets 2 and 1 over row 1.
-#[trace("TC-1048", "FR-365-AC-9")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_12_value_occurrences_complete_at_two_and_stop_at_the_second_expand_below() {
     let orders = Orders::base();
@@ -879,7 +879,7 @@ fn row_12_value_occurrences_complete_at_two_and_stop_at_the_second_expand_below(
 }
 
 /// TC-1048 row 13: result-unit budgets 1 and 0 over row 1.
-#[trace("TC-1048", "FR-365-AC-9")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_13_result_units_complete_at_one_and_stop_at_retain_at_zero() {
     let orders = Orders::base();
@@ -906,7 +906,7 @@ fn row_13_result_units_complete_at_one_and_stop_at_retain_at_zero() {
 
 /// TC-1048 row 14: a zero work-unit limit is real and stops at the start's
 /// expand.
-#[trace("TC-1048", "FR-365-AC-9")]
+#[trace("TC-1048", "FR-365-AC-9", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-2")]
 #[test]
 fn row_14_a_zero_work_limit_stops_before_the_start_is_discovered() {
     let orders = Orders::base();

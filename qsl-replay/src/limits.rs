@@ -589,6 +589,34 @@ mod tests {
         }
     }
 
+    /// FR-255-AC-8: each accounting setting sets its counter alone, no
+    /// operand gives the defaults, and `u64::MAX` is a bound. NFR-009-AC-1:
+    /// a counter is lowered or raised independently of the others, and zero
+    /// stays effective.
+    #[trace("TC-921", "FR-255-AC-8", "NFR-009-AC-1")]
+    #[test]
+    fn each_accounting_setting_sets_its_counter_alone() {
+        let defaults = CallerLimits::from_operands([]).unwrap().accounting;
+        assert_eq!(defaults, AccountingLimits::default());
+        for (setting, _) in defaults.bounds() {
+            for bound in [0, 123_456_789] {
+                let operand = format!("{}={bound}", setting.name());
+                let set = CallerLimits::from_operands([operand.as_str()])
+                    .unwrap()
+                    .accounting;
+                for ((other, expected), (_, actual)) in
+                    defaults.bounds().into_iter().zip(set.bounds())
+                {
+                    let expected = if other == setting { bound } else { expected };
+                    assert_eq!(actual, expected, "{operand}: {other:?}");
+                }
+            }
+        }
+        let max =
+            CallerLimits::from_operands(["accounting.work_units=18446744073709551615"]).unwrap();
+        assert_eq!(max.accounting.0.work_units, u64::MAX);
+    }
+
     /// FR-255-AC-9: the grammar, duplicate and overflow rules of the stage
     /// settings hold for the accounting names.
     #[trace("TC-921", "FR-255-AC-9")]
