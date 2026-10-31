@@ -5483,3 +5483,38 @@ fn a_clock_parameter_reset_writes_the_place_its_instance_binds() {
         assert!(next.clocks().values()[v].numerator().is_zero());
     }
 }
+
+/// QSpec FR-331 "Model member domain keys": a clock-count field is one of
+/// the declaring type's own fields, so the one name-ordered sequence of own
+/// fields interleaves it with the data fields. `Call` declares the data
+/// fields `inflight`, `late`, `phase` and `t` and the clock `x`; the
+/// pure-clock collection `m` sorts between `late` and `phase`, so the root a
+/// frame granting `m` gives it is `[0, 2]`, not past the data fields.
+#[trace("TC-685")]
+#[test]
+fn a_clock_count_field_is_keyed_by_its_place_among_the_own_fields() {
+    let clock = "ix://quire/native/Clock".to_owned();
+    let multiplicity = json!({"lower": 0, "ordered": true, "unique": false});
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let world = world_holding(
+        cells_document(vec![], vec![("m", clock, Some(multiplicity))], &["m"], &[]),
+        "",
+        &only(&["work"], ""),
+        json!({"t": timer}),
+    );
+    let held = system(&world);
+    let roots: Vec<(Vec<u32>, String)> = held
+        .rooted_domains()
+        .into_iter()
+        .filter(|(_, path, _)| path.first() == Some(&0))
+        .map(|(_, path, value_type)| (path, format!("{value_type:?}")))
+        .collect();
+    // Own fields in UTF-8 name order: inflight, late, m, phase, t, x.
+    // `m`'s unbounded count is the one `Integer` root.
+    let counts: Vec<&Vec<u32>> = roots
+        .iter()
+        .filter(|(_, value_type)| value_type == "Integer")
+        .map(|(path, _)| path)
+        .collect();
+    assert_eq!(counts, vec![&vec![0, 2]], "{roots:?}");
+}

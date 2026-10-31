@@ -1195,6 +1195,7 @@ impl<'a> ModelSystem<'a> {
         // Each field's declaring type and ordinal among that type's own
         // fields, found through the effective attribute set of every type
         // (which lists a field in the same order as `self.fields`).
+        let graph = self.package.graph();
         let mut field_homes: BTreeMap<&DeclarationKey, (EffectiveId, u32)> = BTreeMap::new();
         for declaration in self.types.object_types() {
             let Some(type_key) = self.model.type_key(declaration.key()) else {
@@ -1218,18 +1219,8 @@ impl<'a> ModelSystem<'a> {
                     continue;
                 };
                 let owner = attribute.owner();
-                let Some(declaring) = self.types.object_type(owner.clone()) else {
-                    continue;
-                };
-                let mut own: Vec<&str> = declaring
-                    .attributes()
-                    .iter()
-                    .map(quire_semantic_value::declaration::FieldDeclaration::name)
-                    .collect();
-                own.sort_unstable();
-                let Some(ordinal) = own
-                    .binary_search(&attribute.field().name())
-                    .ok()
+                let Some(ordinal) = graph
+                    .own_field_ordinal(&owner, attribute.field().name())
                     .and_then(|ordinal| u32::try_from(ordinal).ok())
                 else {
                     continue;
@@ -1239,8 +1230,8 @@ impl<'a> ModelSystem<'a> {
         }
         // An eval-side clock member stands for a clock field its owner
         // declares in a `time` declaration, outside the owner's data
-        // attributes: it is keyed under that owner, after the data fields,
-        // in name order.
+        // attributes: it is keyed under that owner by its place in the
+        // owner's one name-ordered sequence of own fields.
         let mut clock_fields: BTreeMap<EffectiveId, BTreeMap<String, &DeclarationKey>> =
             BTreeMap::new();
         for timed in self.package.graph().timed_models() {
@@ -1259,12 +1250,11 @@ impl<'a> ModelSystem<'a> {
             }
         }
         for (owner, named) in &clock_fields {
-            let Some(declaring) = self.types.object_type(owner.clone()) else {
-                continue;
-            };
-            let data = declaring.attributes().len();
-            for (index, key) in named.values().enumerate() {
-                if let Ok(ordinal) = u32::try_from(data + index) {
+            for (name, key) in named {
+                if let Some(ordinal) = graph
+                    .own_field_ordinal(owner, name)
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                {
                     field_homes.insert(key, (owner.clone(), ordinal));
                 }
             }
