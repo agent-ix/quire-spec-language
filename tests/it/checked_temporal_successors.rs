@@ -121,6 +121,37 @@ fn checked_package_formula_uses_the_shared_bounded_evaluator() {
     assert_eq!(assessed.basis, Some(Basis::ClosedScope));
 }
 
+/// FR-043: the checked formula adapter preserves every unary and binary
+/// bounded operator and pointwise connective when it enters the shared core.
+#[trace("TC-122", "FR-043-AC-6")]
+#[test]
+fn checked_formula_normalization_preserves_all_operator_families() {
+    for (body, expected) in [
+        ("eventually[0,1] true", Truth::True),
+        ("always[0,1] true", Truth::True),
+        ("once[0,1] true", Truth::True),
+        ("historically[0,1] true", Truth::True),
+        ("true until[0,1] true", Truth::True),
+        ("true release[0,1] true", Truth::True),
+        ("true since[0,1] true", Truth::True),
+        ("true triggered[0,1] true", Truth::True),
+        ("not (false or true)", Truth::False),
+        ("true and (false implies true)", Truth::True),
+    ] {
+        let checked = checked(body, temporal::EVENT_POSITION);
+        let report = temporal::evaluate_checked(
+            checked.package(),
+            0,
+            &origin_trace(),
+            temporal::Limits::default(),
+        );
+        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+            panic!("formula assessed: {body}");
+        };
+        assert_eq!(assessment.truth, Some(expected), "{body}");
+    }
+}
+
 /// FR-045: TC-125 retains the selected checked clause and classifies from its
 /// reachable operator graph and surrounding closure.
 #[trace("TC-125", "FR-045-AC-1")]
