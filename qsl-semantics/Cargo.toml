@@ -53,10 +53,6 @@ agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data",
 tempfile = "3.27.0"
 
 [dev-dependencies]
-# Tests only: they take independent digests to check the identity encoders
-# against. Shipped code hashes through `quire-canonical` or
-# `qsl_foundation::ByteDigest`; TC-390 asserts sha2 stays here.
-sha2 = "0.10.9"
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
 num-bigint = "0.4.8"
 num-traits = "0.2.19"

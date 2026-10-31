@@ -615,7 +615,7 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
 /// package document compiles its program through the spine. Stdout is
 /// exactly the bytes `qsl_replay::spine`'s operations emit over the same source and
 /// package input, and the lock and identity preimage select the domain
-/// package by the `sha256-jcs` digest the program's `model` declaration
+/// package by the identity the program's `model` declaration
 /// names.
 #[test]
 #[trace("TC-442", "FR-027-AC-9")]

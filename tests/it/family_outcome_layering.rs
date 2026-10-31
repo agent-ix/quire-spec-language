@@ -400,8 +400,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             fcd_is_named_by_model_intake_only(&package.normal);
             // ADR-013 §2, ADR-013:113: shipped code encodes and
             // hashes identities through `quire-canonical` and
-            // `qsl_foundation::ByteDigest`; `sha2` is a test-only
-            // dependency, so no shipped module can hash on its own.
+            // `qsl_foundation::ByteDigest`; `sha2` is no dependency of
+            // this crate, so no shipped module can hash on its own.
             assert!(
                 package
                     .normal
@@ -426,7 +426,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // `quire-exact` and `thiserror` are optional, enabled by `std`
             // (NFR-015). `serde_json` is optional too, enabled by `std`: the
             // hybrid reader reads a typed application operation through its
-            // public `Serialize` form. `sha2` is used by tests only.
+            // public `Serialize` form.
             // `ix-trace-rs`
             // (ADR-012 section 9) owns the `#[string_edge]` marker and is
             // exempt from the layer order below (FR-064): it is a
