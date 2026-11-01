@@ -31,8 +31,17 @@ Reviewed the frozen QSL-1440 Rust diff at `d501217ba732e6a3af274f7cc3f8572888cb0
 - No applicable AssuranceProfile found. No CI workflow changed. Aggregate `make ci` was not run, per the dispatching brief.
 
 
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The comment equates no observed occurrence with an unsatisfiable path, but an earlier undefined expression can mask the occurrence even when its path condition admits assignments. | qsl-analyze/src/value_check/mod.rs:13-15 |
+
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The module-level description now states the eager-path proof condition and preserves uncertain reachability as unknown. |
+| FND-002 | still-open | The changed wording still calls every all-unreached case vacuous; it does not distinguish a false guard from an earlier undefined expression that prevents evaluation from reaching the site. |
+| FND-002 | fixed | The wording now distinguishes vacuous paths from earlier undefined expressions that mask the site. |
