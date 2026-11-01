@@ -15,7 +15,7 @@ FR-315 encodes, both for an inductive proof, and rejects a query mismatch,
 an invalid proof step, a proof that does not refute and a
 certificate of the wrong shape.
 
-Scope: FR-314-AC-1 to FR-314-AC-4, FR-314-AC-9 and FR-314-AC-10 to FR-314-AC-17.
+Scope: FR-314-AC-1 to FR-314-AC-4, FR-314-AC-9, FR-314-AC-10 to FR-314-AC-21.
 
 ## Test Procedure
 
@@ -47,6 +47,30 @@ Scope: FR-314-AC-1 to FR-314-AC-4, FR-314-AC-9 and FR-314-AC-10 to FR-314-AC-17.
    (FR-314-AC-14), with row 3's query absent (FR-314-AC-15), and with row 3's
    proof absent (FR-314-AC-16); settle each. Assemble with the `Base` record's
    proof present and of no bytes and check it (FR-314-AC-17).
+8. Check the row-1 proof's command `t28` with no premises and conclusion
+   `(= (* 1 (- (+ 1 x) y)) (* 1 (- x (+ (- 1) y))))` under `poly_simp`, then
+   check a separate `poly_simp` command with no premises and conclusion
+   `(= (* x y) (* y x))` to exercise a nonlinear Int polynomial, then
+   command `t29` with the single premise `t28` and conclusion
+   `(= (= (+ 1 x) y) (= x (+ (- 1) y)))` under `poly_simp_rel`. Repeat with
+   the false equality `(= (* 2 x) (+ (* 2 x) 1))`, a non-equality
+   `poly_simp` conclusion, `t29`'s right atom changed to `(= x (+ 1 y))`, and
+   `poly_simp_rel` with premise
+   `(= (* 2 (- x y)) (* (- 2) (- u v)))` and conclusion
+   `(= (< x y) (< u v))`, then with the same premise and conclusion
+   `(= (< x y) (> u v))`. Repeat with a Real, division and modulo expression.
+   Finally check the accepted polynomial certificate with
+   `max_certificate_edges` set
+   first one charge below the required total and then to the full required
+   total.
+9. Check `hole`, `lia_generic` and `rare_rewrite` with an unknown name and
+   confirm each is `Unverifiable`. Check each of the five FR-314-AC-21 named
+   rewrites with a valid instance and a false instance; additionally check
+   `arith-leq-norm` with a non-literal bound and an arithmetic rewrite over
+   Real, and `bool-double-not-elim` with an Int-sorted argument. Check `evaluate` with exact
+   integer-literal `+`, `-` and `*` expressions, a false equality and an
+   unsupported non-literal expression. Check `aci_simp` with an accepted
+   associative/commutative/idempotent/identity example and a false example.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -83,3 +107,18 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   settles `proved`, `Uncertified`; the empty base proof assembles unchanged
   and is rejected `NotRefutation` at `Query { Base }`, `inconclusive`,
   `CertificateRejected`.
+- Step 8: exact linear and nonlinear polynomial equalities and positive-scale
+  relation steps are accepted. Equality-relation differences are canonicalized
+  up to sign before scale classification, so valid swapped equality operands
+  are accepted. The false equality, wrong conclusion shape, changed relation,
+  wrong operator and same-operator negative order scaling are `ProofStepInvalid`.
+  A negative-scale order relation with its reversed operator is `Unverifiable`.
+  Real, division and modulo expressions return `Unverifiable` at their commands.
+  The one-charge-short certificate returns
+  `Stopped(LimitReached{limit: MaxCertificateEdges})`, never `Verified`, and
+  settles `incomplete`; the full-budget certificate returns `Verified`.
+  `hole`, `lia_generic` and unknown `rare_rewrite` each return `Unverifiable`
+  at the command and settle `proved`, `Uncertified`. The five named rewrites,
+  integer-literal `evaluate`, and Boolean `aci_simp` are accepted only for the
+  local semantics in AC-21; false instances are `ProofStepInvalid` and
+  unsupported instances are `Unverifiable`.

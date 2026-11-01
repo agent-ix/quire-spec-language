@@ -313,7 +313,23 @@ fn check(
         ));
     }
     for (part, query, proof) in &proofs {
-        if let Some(index) = proof.invalid_step(query) {
+        let mut stop = None;
+        let invalid = proof.invalid_step(query, &mut |count| match budget.edges(count) {
+            Ok(()) => true,
+            Err(halt) => {
+                stop = Some(halt);
+                false
+            }
+        });
+        let invalid = match invalid {
+            Ok(invalid) => invalid,
+            Err(()) => {
+                return Err(
+                    stop.unwrap_or_else(|| fault("a stopped polynomial check names its stop"))
+                )
+            }
+        };
+        if let Some(index) = invalid {
             return Err(reject(
                 CertificateRule::ProofStepInvalid,
                 CertificateLocus::ProofStep { part: *part, index },
@@ -337,7 +353,23 @@ fn check(
         let Some((_, query, proof)) = checked.next() else {
             return Err(fault("every encodable part has a proof"));
         };
-        if let ProofOutcome::Unverifiable { step } = proof.outcome(query) {
+        let mut stop = None;
+        let outcome = proof.outcome(query, &mut |count| match budget.edges(count) {
+            Ok(()) => true,
+            Err(halt) => {
+                stop = Some(halt);
+                false
+            }
+        });
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(()) => {
+                return Err(
+                    stop.unwrap_or_else(|| fault("a stopped polynomial check names its stop"))
+                )
+            }
+        };
+        if let ProofOutcome::Unverifiable { step } = outcome {
             return Ok(SmtProofCheck::Unverifiable {
                 part: part.part,
                 step,

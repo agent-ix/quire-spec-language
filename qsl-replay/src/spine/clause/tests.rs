@@ -4225,6 +4225,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
     let version_number_member = qsl_semantics::value::Member::Field {
         declaration: config_version_node.clone(),
         name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
+        explicit_deref: Some(false),
     };
     let field_read = graph
         .semantic_graph()
@@ -4371,6 +4372,7 @@ fn s4_version_unchanged_condition_holds_a_pre_application_over_the_versionnumber
         Some(&qsl_semantics::value::Member::Field {
             declaration: config_version_node,
             name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
+            explicit_deref: Some(false),
         }),
         "pre's own operand is deref(self).versionNumber"
     );
@@ -4397,17 +4399,15 @@ fn s4_no_cycle_condition_holds_a_reaches_field_application_naming_parent() {
         Some(&qsl_semantics::value::Member::Field {
             declaration: config_version_node,
             name: quire_exact::Identifier::new("parent").expect("valid identifier"),
+            explicit_deref: None,
         }),
         "reaches(self, self, parent)'s member names ConfigVersion's own parent field"
     );
 }
 
-/// TC-462 (FR-105-AC-2): `ParentOrder`'s `self.parent` field read carries
-/// the same `Member` shape as `NoCycle`'s `reaches_field` member -- both
-/// name ConfigVersion's `parent` field by the same (declaration, name)
-/// pair, compared directly with `assert_eq` on the `Member` values
-/// themselves (not field-by-field), proving they are identical rather than
-/// merely equal-looking.
+/// TC-462 (FR-105-AC-2): `ParentOrder`'s bare `self.parent` model-object
+/// read and `NoCycle`'s `reaches_field` member name the same declared field,
+/// while preserving their different read forms (`Some(false)` and `None`).
 #[trace("TC-462", "FR-105-AC-2")]
 #[test]
 fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
@@ -4428,18 +4428,27 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
     .expect("NoCycle holds a reaches application");
     let no_cycle_member = operation.member().expect("reaches_field carries a member");
 
-    assert_eq!(
+    assert_ne!(
         parent_order_member, no_cycle_member,
-        "ParentOrder's self.parent field read and NoCycle's reaches_field member name the \
-         same (declaration, name) pair"
+        "a bare model-object read remains distinct from a record/reaches field member"
     );
     assert_eq!(
         parent_order_member,
         &qsl_semantics::value::Member::Field {
             declaration: config_version_node_key(graph),
             name: quire_exact::Identifier::new("parent").expect("valid identifier"),
+            explicit_deref: Some(false),
         },
-        "and that pair is ConfigVersion's own parent field"
+        "ParentOrder's source uses the bare model-object field read"
+    );
+    assert_eq!(
+        no_cycle_member,
+        &qsl_semantics::value::Member::Field {
+            declaration: config_version_node_key(graph),
+            name: quire_exact::Identifier::new("parent").expect("valid identifier"),
+            explicit_deref: None,
+        },
+        "reaches_field names the record field without a model-object read form"
     );
 }
 
