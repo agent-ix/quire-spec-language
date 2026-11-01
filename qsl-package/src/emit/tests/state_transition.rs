@@ -779,6 +779,8 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
 
     let clauses = unit_13("");
     assert_eq!(compile(&clauses).transitions().len(), 1, "control");
+    let mut anchor_ids = Vec::new();
+    let mut selected_identities = Vec::new();
     for (clause, point) in [
         (
             "P1",
@@ -825,12 +827,49 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{clause}: the package checks: {refusals:?}"));
         let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+        let rows = emission.selected_operation_member_rows();
+        assert_eq!(
+            rows.len(),
+            1,
+            "only the model-owned operation anchor has a row"
+        );
+        let row = rows[0].clone();
+        assert_eq!(row.selected_document.as_ref(), "ix://test/orders");
+        assert_eq!(
+            row.declaring_form,
+            quire_contract_model::ModelForm::ObjectType
+        );
+        assert_eq!(
+            row.original_model_identity.as_ref(),
+            base::id("Switch").as_str()
+        );
+        assert_eq!(
+            row.original_operation_identity.as_ref(),
+            base::id("Switch/set").as_str()
+        );
+        let Read::Verified { admitted, .. } = read_back(&emission) else {
+            panic!("the emitted package is admitted");
+        };
+        let selected = emission
+            .selected_operation_members(&admitted, 32)
+            .expect("the producer row joins the admitted operation anchor");
+        assert_eq!(selected.read(&admitted, &row.anchor), Ok(&row));
+        anchor_ids.push(row.anchor.clone());
+        selected_identities.push(row.selected_operation_identity.clone());
         assert_eq!(
             super::owners::node_where(&wire(&emission), "state", "transition").len(),
             0,
             "a point on {clause}"
         );
     }
+    assert_ne!(
+        anchor_ids[0], anchor_ids[1],
+        "the two points have distinct full anchors"
+    );
+    assert_eq!(
+        selected_identities[0], selected_identities[1],
+        "both anchors retain the same structured selected operation identity"
+    );
 }
 /// The node ids of the conditions of the authored (not derived)
 /// preconditions of `compiled`. The wire lists nodes by structural node key,

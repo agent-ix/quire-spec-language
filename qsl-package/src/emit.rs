@@ -308,6 +308,10 @@ pub struct Emission {
     pub(crate) capability_report: Vec<CheckedCapability>,
     /// The exact source correspondence emitted with these package bytes.
     pub(crate) source_map: PackageSourceMap,
+    /// QSL's selected model-operation witnesses, keyed by the admitted anchor
+    /// identities written in these bytes.
+    pub(crate) selected_operation_member_rows:
+        Vec<quire_contract_model::SelectedOperationMemberRow>,
 }
 
 impl Emission {
@@ -326,6 +330,30 @@ impl Emission {
     /// reads the bytes itself adds the domain package documents.
     pub fn evidence(&self) -> &CheckedPackageEvidence {
         &self.evidence
+    }
+
+    /// QSL-stage rows for model-owned operation anchors in this package.
+    pub fn selected_operation_member_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedOperationMemberRow] {
+        &self.selected_operation_member_rows
+    }
+
+    /// Validates the operation-member rows against this emission's admitted IR
+    /// package, returning a typed refusal for any absent or mismatched row.
+    pub fn selected_operation_members<'a>(
+        &'a self,
+        package: &'a quire_contract_model::CheckedPackageV2,
+        work_limit: u64,
+    ) -> Result<
+        quire_contract_model::SelectedOperationMembers<'a>,
+        quire_contract_model::SelectedOperationMemberError,
+    > {
+        quire_contract_model::SelectedOperationMembers::from_stage_rows(
+            package,
+            self.selected_operation_member_rows.clone(),
+            work_limit,
+        )
     }
 
     /// The FR-322 feature-level capability report, in the emitted order.
@@ -2356,6 +2384,7 @@ pub fn emit_timed_models(
         evidence: own_evidence(&lock),
         capability_report,
         source_map: inspection_source_map,
+        selected_operation_member_rows: Vec::new(),
     })
 }
 
@@ -2687,6 +2716,22 @@ fn emit_package_inner(
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
+    let emitted_keys: HashSet<&NodeKey> = kept.iter().map(|candidate| candidate.key).collect();
+    let selected_operation_member_rows = graph
+        .semantic_graph()
+        .selected_operation_members()
+        .filter(|(anchor, _)| emitted_keys.contains(anchor))
+        .map(
+            |(anchor, member)| quire_contract_model::SelectedOperationMemberRow {
+                anchor: node_id(ids, anchor),
+                selected_document: member.selected_document.clone(),
+                declaring_form: member.declaring_form,
+                original_model_identity: member.original_model_identity.clone(),
+                original_operation_identity: member.original_operation_identity.clone(),
+                selected_operation_identity: member.selected_operation_identity.clone(),
+            },
+        )
+        .collect();
     let (mut source_map, mut sources) = source_map(&order, &regions)?;
     sources.insert(source_artifact(graph.source()));
     let wire_nodes = order
@@ -3187,6 +3232,7 @@ fn emit_package_inner(
         evidence,
         capability_report: capability_report.to_vec(),
         source_map: inspection_source_map,
+        selected_operation_member_rows,
     })
 }
 

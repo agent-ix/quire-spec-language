@@ -98,7 +98,7 @@ pub(crate) use model::{
 };
 pub use model::{
     collection_kind, model_root_key, AdmittedModel, CollectionShape, ForeignView, ModelClause,
-    PlaceRow, PlaceStep,
+    PlaceRow, PlaceStep, SelectedOperationMember,
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
@@ -325,6 +325,8 @@ const FUNCTION_PARAMETERS: &str = "parameters";
 #[derive(Clone, Default)]
 pub struct SemanticGraph {
     nodes: HashMap<NodeKey, SemanticNode>,
+    /// Selected model operation identities keyed by their lowered anchor.
+    selected_operation_members: BTreeMap<NodeKey, model::SelectedOperationMember>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -352,6 +354,21 @@ impl fmt::Debug for SemanticGraph {
 }
 
 impl SemanticGraph {
+    /// The selected model operation rows associated with lowered anchors.
+    pub fn selected_operation_members(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &SelectedOperationMember)> {
+        self.selected_operation_members.iter()
+    }
+
+    pub(crate) fn select_operation_member(
+        &mut self,
+        anchor: NodeKey,
+        member: SelectedOperationMember,
+    ) {
+        self.selected_operation_members.insert(anchor, member);
+    }
+
     /// The node keyed `key`.
     pub fn node(&self, key: NodeKey) -> Option<&SemanticNode> {
         self.nodes.get(&key)

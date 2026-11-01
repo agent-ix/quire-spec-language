@@ -35,6 +35,7 @@ use crate::value::nominal_payload::{
 };
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
+use quire_contract_model::{ModelForm, SelectedOperationIdentity};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
@@ -264,6 +265,21 @@ pub struct AdmittedModel {
     references: Vec<(EffectiveId, String, EffectiveId)>,
 }
 
+/// The selected model facts needed to join one lowered operation anchor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedOperationMember {
+    /// The selected domain document identity.
+    pub selected_document: Box<str>,
+    /// The closed form of the declaring model declaration.
+    pub declaring_form: ModelForm,
+    /// The original IR identity of the declaring model node.
+    pub original_model_identity: Box<str>,
+    /// The original IR identity of the operation member.
+    pub original_operation_identity: Box<str>,
+    /// The structured identity selected by QSL's model stage.
+    pub selected_operation_identity: SelectedOperationIdentity,
+}
+
 /// One population of an admitted package as FR-391 names it
 /// ([`AdmittedModel::named_populations`]).
 pub(crate) struct NamedPopulationRecord<'m> {
@@ -354,6 +370,34 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
+    pub(crate) fn selected_operation_member(
+        &self,
+        operation: &crate::check::state_clause::ClauseOperation,
+    ) -> Option<SelectedOperationMember> {
+        let operation_key = self.operation_key(operation)?;
+        let DomainPackageRecord::OperationMember(_) = self.records.get(operation_key)? else {
+            return None;
+        };
+        let declaring_key = self.types.get(&operation.declaring)?;
+        let declaring_form = match self.records.get(declaring_key)? {
+            DomainPackageRecord::ObjectType(_) => ModelForm::ObjectType,
+            DomainPackageRecord::StateMachine(_) => ModelForm::StateMachine,
+            DomainPackageRecord::Process(_) => ModelForm::Process,
+            DomainPackageRecord::SystemsInterface(_) => ModelForm::SystemsInterface,
+            _ => return None,
+        };
+        Some(SelectedOperationMember {
+            selected_document: self.selection.identity.as_str().into(),
+            declaring_form,
+            original_model_identity: declaring_key.node.as_str().into(),
+            original_operation_identity: operation_key.node.as_str().into(),
+            selected_operation_identity: SelectedOperationIdentity::new(
+                operation.declaring.clone(),
+                operation.declaration.name(),
+            ),
+        })
+    }
+
     pub(crate) fn model_index(&self) -> &crate::model::index::ModelIndex {
         &self.index
     }
