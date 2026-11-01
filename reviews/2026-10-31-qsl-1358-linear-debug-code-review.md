@@ -95,7 +95,26 @@ The no_std formatter deliberately uses full NodeKey Debug without a shared table
 | FND-002 | fixed | I2 source-map keys share authoritative WireGraph operands; internal retained-emission inspection also seeds StructuralKeys from original emitter allocations. Full equality remains the collision fallback. Source-backed growth/sharing and full acceptance pass. Arbitrary independently constructed NodeKeys retain deep-equality cost, but production read no longer has the defect described. |
 | FND-003 | still-open | Confirmed by package-no-default-features.log: focused cargo check --locked -j1 -p qsl-package --no-default-features exits 101 with six E0433 errors at the new std::fmt references. |
 | FND-004 | still-open | The unconditional tests assume a representation the explicit no_std scoped branch does not produce; Coder probe foundation-source-no-default-features.log confirms 14 passed / 3 failed, exit 101: unique-leaf count 6 versus 1, PackageSourceMap versus WithNodes golden, and depth 500 to 1000 growth 2894057 to 11533308 bytes. |
+| FND-003 | fixed | Round 2: both outer CheckedPackage and nested Body Debug implementations use core::fmt. Frozen 75bc2f1c package --no-default-features check passes, exit 0 (fix2-package-no-default.log). |
+| FND-004 | fixed | Round 2: three unchanged std table-specific assertions remain active under cfg(std); three no_std counterparts assert full nested-key/region output, transparent two-map scoping, and complete repeated operands at 500/1000/2000 depths. Both focused feature configurations pass 17/17, zero ignored. |
 
 ## Current verdict after disposition pass 1
 
 **FAIL / changes requested; not mergeable.** Both original findings are fixed and the unchanged 100k acceptance case passes. New no_std production/test regressions require correction and focused feature checks. A fmt qualifier/test-configuration-only fix does not justify repeating the 100k case.
+
+
+## Disposition pass 2 scope and evidence
+
+Reviewed frozen head `75bc2f1c109c3acfb71e79da353fec4513016b74`, with clean worktree, against round 1 head `866f26cdb74c6ae1bdbd09cb882456ceb50fe771`. Parent `87788cfc2` is unchanged. All original finding text and prior outcomes remain unchanged. The delta contains only core::fmt qualification, explicit feature documentation, feature-specific provenance tests, and custody of the round 1 review artifacts. No additional source regression was found.
+
+Examined NFR-015-AC-4 (qsl-package no_std host check) against the core::fmt outer/nested implementations; NFR-015-AC-3 (foundation tests with/without std) against all six feature-specific table/fallback tests and shared insertion-order test; FR-264-AC-1 as context for retained unchanged std behavior and prior full acceptance evidence. No new spec changes; code-review/Rust lane and scoped gap disposition recheck apply. Broad semantic review and repository-wide matrix were not repeated; no repository-wide assurance claim is made. Plan completion: not assessed.
+
+Direct log inspection under `/home/peter/dev/.agents/tmp/pr1947-checks`: `fix2-package-no-default.log` check passes (exit 0, elapsed 1:00.66); `fix2-foundation-no-default.log` 17/17 passes with zero ignored (8.45 s tests); `fix2-foundation-std.log` 17/17 passes with zero ignored (0.03 s tests); `fix2-package-debug.log` all three real Debug regressions pass (0.91 s tests). `fix2-fmt.log` and `fix2-diff.log` exit 0.
+
+The no_std exact golden includes packages, full nested keys, ordinals, roles and every source region. The two-map check asserts equality with direct tuple formatting and all six leaf appearances. Depth checks use the same 500/1000/2000 depths as std and assert every entry, repeated operand, leaf, role and region, including the triangular repeated operand count. Truncating the output, dropping a region, or replacing nested keys with opaque references can fail these assertions. The std table-growth/exact-output/shared-table assertions are unchanged and all still run under std; the no_std lane was not suppressed. No ignores, caps, smaller inputs, TLS abstraction or production formatter change was added. No_std full-key fallback remains complete and deliberately repeats nested keys; this pass makes no no_std linear-growth claim.
+
+Changing std::fmt to core::fmt names the same formatting trait/types in the std build and leaves the formatting body unchanged. The prior unchanged full 100k acceptance pass at 866f26cdb (142.96 s on its existing 512 KiB thread) remains applicable; no duplicate full acceptance run was launched. No new Cargo or aggregate gate was started by this reviewer.
+
+## Current verdict after disposition pass 2
+
+**PASS for the reviewed candidate.** FND-003 and FND-004 are fixed. All four findings now have a latest fixed outcome; no new findings. Review is clear for merge after the lead completes the required final integration gate and parent-first landing/base transition. This review does not claim that pending gate has passed.
