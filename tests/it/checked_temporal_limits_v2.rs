@@ -512,10 +512,7 @@ fn checked_v2_retained_capture_scan_refusal_retries_without_duplicate_receipt() 
             admitted,
             0,
             &input,
-            temporal::Limits {
-                visits: 32,
-                ..temporal::Limits::default()
-            },
+            temporal::Limits::default(),
             &mut ledger,
         );
         let temporal::Obligation::Assessed(assessment) = &retried.result().unwrap()[0] else {
@@ -547,13 +544,24 @@ fn checked_v2_formula_refusal_retries_without_duplicate_receipt() {
 
         input.triggers[0].receipt = "receipt:formula-retry".into();
         input.triggers[0].captures = vec![temporal::CaptureInput::WrongType];
+        let mut probe_ledger = ledger.clone();
+        let sufficient = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits::default(),
+            &mut probe_ledger,
+        );
+        let required_visits = sufficient.usage().visits;
+        assert!(sufficient.result().is_ok());
         let stopped = temporal::evaluate_checked_with_progress_v2(
             checked.package(),
             admitted,
             0,
             &input,
             temporal::Limits {
-                visits: 2,
+                visits: required_visits - 1,
                 ..temporal::Limits::default()
             },
             &mut ledger,
@@ -562,17 +570,15 @@ fn checked_v2_formula_refusal_retries_without_duplicate_receipt() {
             panic!("formula work refuses after the retained receipt is restored");
         };
         assert_eq!(exhaustion.dimension, temporal::LimitDimension::Visits);
-        assert_eq!(stopped.usage().visits, 2);
+        assert!(exhaustion.subject.node.is_some());
+        assert_eq!(stopped.usage().visits, required_visits - 1);
 
         let retried = temporal::evaluate_checked_with_progress_v2(
             checked.package(),
             admitted,
             0,
             &input,
-            temporal::Limits {
-                visits: 16,
-                ..temporal::Limits::default()
-            },
+            temporal::Limits::default(),
             &mut ledger,
         );
         let temporal::Obligation::Assessed(assessment) = &retried.result().unwrap()[0] else {

@@ -155,10 +155,11 @@ pub(super) fn resolve(
                     work.subject.capture = None;
                     continue;
                 }
-                let mut restored = retained_instances
+                let saved = retained_instances
                     .get(&trigger.identity)
-                    .expect("the retained instance validated before scanning")
-                    .clone();
+                    .expect("the retained instance validated before scanning");
+                work.charge(Charge::Visits, instance_clone_work(saved))?;
+                let mut restored = saved.clone();
                 restored.receipts.push(trigger.receipt.clone());
                 instances.push(Ok(restored));
                 continue;
@@ -200,6 +201,7 @@ pub(super) fn resolve(
                     payload: trigger.payload.clone(),
                 };
                 if let Some(retained) = retained.as_deref_mut() {
+                    work.charge(Charge::Visits, instance_clone_work(&instance))?;
                     retained.insert(trigger.identity.clone(), instance.clone());
                 }
                 instances.push(Ok(instance));
@@ -218,6 +220,36 @@ pub(super) fn resolve(
         return Ok(Outcome::Disposition(disposition(trace)));
     }
     Ok(Outcome::Instances(instances))
+}
+
+/// Approximate the bytes and collection slots copied by cloning a retained
+/// instance. This cost is charged before cloning so receipt and capture history
+/// cannot grow outside the evaluator's configured work budget.
+fn instance_clone_work(instance: &Instance) -> usize {
+    let mut work = std::mem::size_of::<Instance>()
+        .saturating_add(instance.identity.len())
+        .saturating_add(instance.payload.len())
+        .saturating_add(
+            instance
+                .receipts
+                .len()
+                .saturating_mul(std::mem::size_of::<String>()),
+        )
+        .saturating_add(
+            instance
+                .captures
+                .len()
+                .saturating_mul(std::mem::size_of::<Capture>()),
+        );
+    for receipt in &instance.receipts {
+        work = work.saturating_add(receipt.len());
+    }
+    for capture in &instance.captures {
+        work = work
+            .saturating_add(capture.anchor.len())
+            .saturating_add(capture.value.len());
+    }
+    work
 }
 
 /// The disposition of a scope that created no instance.

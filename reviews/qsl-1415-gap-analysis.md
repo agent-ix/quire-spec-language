@@ -54,6 +54,9 @@ A focused manual traceability pass checked NFR-008-AC-1..5 against PR #2007's ch
 | FND-002 | still-open | The scan exhaustion tests do not exercise a retained instance or retry the same input after a visit refusal; add that successor case to establish AC-5 for the mutable ledger path. |
 | FND-002 | fixed | - |
 | FND-003 | still-open | The AC-5 retry test forces exhaustion during the eviction scan, not after the scan at the formula root. It therefore cannot detect receipt mutation on the later failure path. |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
 
 ## Disposition evidence
 
@@ -94,3 +97,8 @@ The new regression asserts a visit limit of 2 with eight eviction records, so it
 
 - FND-001 and FND-002 remain fixed through the prior checked-v2 identity and retention-demand regressions.
 - FND-003 remains open because the AC-5 retained-ledger test sets `visits: 2` with eight eviction entries and therefore never exercises formula-root exhaustion after the scan completes.
+
+### Disposition pass 5 evidence
+
+- FND-001 and FND-002 remain fixed: checked-v2 result identity covers retained restoration state and the scan-refusal retry regression tests the mutable ledger path.
+- FND-003 is fixed: `checked_v2_formula_refusal_retries_without_duplicate_receipt` uses visits=2, enough to complete the one-entry eviction scan after trigger admission, then exhausts at formula evaluation. It retries the same ledger with visits=16 and asserts the receipt occurs exactly once and capture value `17` survives.
