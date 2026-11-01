@@ -293,6 +293,9 @@ pub fn replay_state_clause(
         // FR-107's `UnknownClause`: the clause was resolved by name above,
         // so a clause the evaluation cannot name is a broken invariant.
         ClauseDisposition::MissingName { .. } => return fault("state-clause-resolved-by-name"),
+        ClauseDisposition::ProofValueNotFound { .. } => {
+            return fault("state-clause-proof-value-selection-is-not-a-clause-run")
+        }
         // `check_clause` reports only admission or evaluation: the compile
         // and selection stages are behind it, and a clause run takes no
         // argument and checks no frame.

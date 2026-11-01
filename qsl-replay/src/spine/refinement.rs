@@ -528,6 +528,9 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
         ClauseDisposition::MissingName { .. } => {
             one(Absent, Code::MissingDeclaration, Some("missing-name"))
         }
+        ClauseDisposition::ProofValueNotFound { .. } => {
+            one(Absent, Code::MissingDeclaration, Some("missing-name"))
+        }
         ClauseDisposition::NotAPredicate { .. } => {
             one(Refused, Code::IllTyped, Some("type-mismatch"))
         }

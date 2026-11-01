@@ -777,16 +777,6 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
             "contains(filter(item in ints(sequence[0, 1]): item >= 0), 0)",
             qsl_semantics::check::Visit::Filter,
         ),
-        (
-            "Count",
-            "count<CountBound>(item in ints(sequence[0, 1]): item >= 0) >= 0",
-            qsl_semantics::check::Visit::Count,
-        ),
-        (
-            "Sum",
-            "sum<Total>(item in ints(sequence[0, 1]): item) >= 0",
-            qsl_semantics::check::Visit::Sum,
-        ),
     ];
 
     for (name, expression, expected_visit) in cases {
@@ -795,20 +785,12 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
             "invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }",
             &format!(
                 "function ints using v(xs: Sequence<Int[0, 1]>[0, 3]): Sequence<Int[0, 1]>[0, 3] pure {{ xs }}\n\
-                 type CountBound = Int[0, 3];\n\
-                 type Total = Int[0, 3];\n\
                  invariant {name} using v on M::Node at current {{ {expression} }}"
             ),
         );
-        let label = DocumentRef {
-            authority: "test".to_owned(),
-            identity: "unused-snapshot".to_owned(),
-            revision_namespace: "fixture".to_owned(),
-            revision: "1".to_owned(),
-        };
-        let mut selection = no_cycle_selection(label, "a");
-        selection.name = name.to_owned();
-        let mut request = request(ClauseRunSelection::Clause(selection));
+        let mut request = request(ClauseRunSelection::ProofValue {
+            name: name.to_owned(),
+        });
         request.source = ClauseRunSource::Program {
             identity: source(),
             path: "checked-query-unsupported.native".to_owned(),
@@ -851,8 +833,9 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
             match expected_visit {
                 qsl_semantics::check::Visit::Map => "map",
                 qsl_semantics::check::Visit::Filter => "filter",
-                qsl_semantics::check::Visit::Count => "count",
-                qsl_semantics::check::Visit::Sum => "sum",
+                qsl_semantics::check::Visit::Count | qsl_semantics::check::Visit::Sum => {
+                    unreachable!()
+                }
                 qsl_semantics::check::Visit::Forall => unreachable!(),
                 qsl_semantics::check::Visit::Exists => unreachable!(),
                 qsl_semantics::check::Visit::Only => unreachable!(),

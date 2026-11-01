@@ -2040,6 +2040,12 @@ impl Disposition {
                         .fields(BTreeMap::from([("name", name.clone())])),
                 );
             }
+            ClauseDisposition::ProofValueNotFound { name } => {
+                result.refusal = Some(
+                    RefusalWire::new(Code::MissingDeclaration.as_str(), Some("missing-name"))
+                        .fields(BTreeMap::from([("name", name.clone())])),
+                );
+            }
             ClauseDisposition::NotAPredicate { name } => {
                 result.refusal = Some(
                     RefusalWire::new(Code::IllTyped.as_str(), Some("type-mismatch"))

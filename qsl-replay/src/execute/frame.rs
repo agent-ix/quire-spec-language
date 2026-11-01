@@ -278,6 +278,7 @@ pub fn replay_frame(
         ClauseDisposition::Compile(_)
         | ClauseDisposition::UnknownLanguage { .. }
         | ClauseDisposition::MissingName { .. }
+        | ClauseDisposition::ProofValueNotFound { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::Temporal(_)
         | ClauseDisposition::TemporalRefusal(_)

@@ -97,7 +97,7 @@ pub use request::{
     read_clause_run_request, AnchorWire, ClauseArgumentWire, ClauseRequestParts,
     ClauseRequestReadError, ClauseRunSelectionWire, ClauseSelectionParts, ClauseSelectionPartsKind,
     ClauseSelectionWire, FrameSelectionWire, FunctionSelectionWire, ObjectReferenceWire,
-    ObservationLimitsWire, SuppliedObservation,
+    ObservationLimitsWire, ProofValueSelectionWire, SuppliedObservation,
 };
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
 pub(crate) use clause::{check_clause_admitted, check_frame, ClauseCheck, CompiledRun, FrameCheck};

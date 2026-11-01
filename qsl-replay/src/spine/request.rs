@@ -233,6 +233,18 @@ pub struct ClauseRunSelectionWire {
     /// A temporal clause over an observed trace.
     #[serde(default, deserialize_with = "from_object_opt")]
     pub temporal: Option<TemporalSelectionWire>,
+    /// A selected clause whose checked map/filter collection is transferred
+    /// as a proof value.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub proof_value: Option<ProofValueSelectionWire>,
+}
+
+/// The clause whose checked ordered-query value is selected for proof transfer.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProofValueSelectionWire {
+    /// The state clause to inspect in the checked graph.
+    pub clause: String,
 }
 
 fn from_object_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
@@ -248,10 +260,11 @@ impl ClauseRunSelectionWire {
             + usize::from(self.frame.is_some())
             + usize::from(self.function.is_some());
         let count = count + usize::from(self.temporal.is_some());
+        let count = count + usize::from(self.proof_value.is_some());
         if count != 1 {
             return Err(invalid(
                 "selection",
-                "select exactly one clause, frame, function or temporal clause",
+                "select exactly one clause, frame, function, temporal clause or proof value",
             ));
         }
         if let Some(clause) = &self.clause {
@@ -301,6 +314,11 @@ impl ClauseRunSelectionWire {
                     temporal.over.reference.population.clone(),
                     temporal.over.reference.key.clone(),
                 ),
+            });
+        }
+        if let Some(proof_value) = &self.proof_value {
+            return Ok(ClauseSelectionPartsKind::ProofValue {
+                name: proof_value.clause.clone(),
             });
         }
         let function = self.function.as_ref().expect("exactly one variant");
@@ -375,6 +393,11 @@ pub struct ClauseSelectionParts {
 pub enum ClauseSelectionPartsKind {
     /// A state clause over one observation.
     Clause(ClauseSelectionParts),
+    /// A checked map/filter query value selected for proof transfer.
+    ProofValue {
+        /// State clause whose checked graph supplies the query.
+        name: String,
+    },
     /// A frame over an invocation document.
     Frame {
         /// Qualified operation name.
@@ -621,6 +644,9 @@ fn selection(
     observations: &BTreeMap<String, SuppliedObservation>,
 ) -> Result<ClauseRunSelection, ClauseRequestReadError> {
     match selected {
+        ClauseSelectionPartsKind::ProofValue { name } => {
+            Ok(ClauseRunSelection::ProofValue { name })
+        }
         ClauseSelectionPartsKind::Clause(clause) => {
             let document = named(observations, &clause.observation)?;
             let input = match (document.format.as_str(), document.role.as_deref()) {

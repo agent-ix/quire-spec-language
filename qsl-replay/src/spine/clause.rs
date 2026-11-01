@@ -72,6 +72,12 @@ pub struct ClauseArgument {
 pub enum ClauseRunSelection {
     /// A state clause, admitted per FR-106.
     Clause(ClauseSelection),
+    /// FR-046: request proof transfer for the first checked collection-valued
+    /// `map` or `filter` query in a state clause.
+    ProofValue {
+        /// The state clause containing the selected checked query.
+        name: String,
+    },
     /// A function, called as a claim (FR-109's own `Function` selection).
     Function {
         /// The function's name (FR-100's `function` rule; one segment,
@@ -278,6 +284,12 @@ pub enum ClauseDisposition {
         /// The selected name.
         name: String,
     },
+    /// Stage `select`: the clause has no checked collection-valued `map` or
+    /// `filter` query to transfer as a proof value.
+    ProofValueNotFound {
+        /// The selected state clause.
+        name: String,
+    },
     /// Stage `select`, `ill_typed`/`type-mismatch`: a `Function` selection
     /// names a function whose declared result is not `Boolean`.
     NotAPredicate {
@@ -325,7 +337,9 @@ impl ClauseDisposition {
     pub fn stage(&self) -> ClauseRunStage {
         match self {
             Self::Compile(_) | Self::UnknownLanguage { .. } => ClauseRunStage::Compile,
-            Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
+            Self::MissingName { .. }
+            | Self::ProofValueNotFound { .. }
+            | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
             Self::Evaluate(_)
             | Self::Temporal(_)
@@ -352,6 +366,7 @@ impl ClauseDisposition {
             Self::ArgumentRefusal(refusal) => refusal.category(),
             Self::UnknownLanguage { .. }
             | Self::MissingName { .. }
+            | Self::ProofValueNotFound { .. }
             | Self::NotAPredicate { .. } => Category::Refusal,
             Self::Admit(AdmissionFailure::Refused(record)) => {
                 qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
@@ -919,6 +934,12 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                     name: selection.name.clone(),
                 }));
             };
+            Ok(check_clause(&run, clause, selection))
+        }
+        ClauseRunSelection::ProofValue { ref name } => {
+            let Some(clause) = package.graph().state_clause(name) else {
+                return Ok(run.report(ClauseDisposition::MissingName { name: name.clone() }));
+            };
             if let Some(query) = unsupported_query_selection(clause.body()) {
                 return Ok(
                     run.report(ClauseDisposition::UnsupportedProofRepresentation {
@@ -927,7 +948,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                     }),
                 );
             }
-            Ok(check_clause(&run, clause, selection))
+            Ok(run.report(ClauseDisposition::ProofValueNotFound { name: name.clone() }))
         }
         ClauseRunSelection::Function {
             ref name,
@@ -954,14 +975,16 @@ fn unsupported_query_selection(root: CheckedNode<'_>) -> Option<UnsupportedQuery
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
         if let NodeKind::Query {
-            visit: visit @ (Visit::Map | Visit::Filter | Visit::Count | Visit::Sum),
+            visit: visit @ (Visit::Map | Visit::Filter),
             ..
         } = node.kind()
         {
-            return Some(UnsupportedQuerySelection {
-                visit: *visit,
-                result_type: node.value_type().clone(),
-            });
+            if matches!(node.value_type(), ValueType::Collection(_)) {
+                return Some(UnsupportedQuerySelection {
+                    visit: *visit,
+                    result_type: node.value_type().clone(),
+                });
+            }
         }
         pending.extend(node.children().into_iter().rev());
     }

@@ -406,6 +406,7 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
         }
         ClauseDisposition::UnknownLanguage { .. }
         | ClauseDisposition::NotAPredicate { .. }
+        | ClauseDisposition::ProofValueNotFound { .. }
         | ClauseDisposition::FrameViolation(_)
         | ClauseDisposition::Temporal(_)
         | ClauseDisposition::TemporalRefusal(_) => unreachable_disposition(),
