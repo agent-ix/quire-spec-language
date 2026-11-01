@@ -128,7 +128,7 @@ pub(super) fn resolve(
 
         if let Some(existing) = retained
             .as_deref_mut()
-            .and_then(|retained| retained.get(&trigger.identity))
+            .and_then(|retained| retained.get_mut(&trigger.identity))
         {
             if existing.payload != trigger.payload {
                 return Err(Refusal::Contradiction {
@@ -137,6 +137,7 @@ pub(super) fn resolve(
                 }
                 .into());
             }
+            existing.receipts.push(trigger.receipt.clone());
             let evicted_capture = trace.evicted.iter().find_map(|evicted| match evicted {
                 super::trace::Eviction::Capture { instance, capture }
                     if instance == &trigger.identity =>
@@ -158,9 +159,7 @@ pub(super) fn resolve(
                 work.subject.capture = None;
                 continue;
             }
-            let mut instance = existing.clone();
-            instance.receipts.push(trigger.receipt.clone());
-            instances.push(Ok(instance));
+            instances.push(Ok(existing.clone()));
             continue;
         }
 
