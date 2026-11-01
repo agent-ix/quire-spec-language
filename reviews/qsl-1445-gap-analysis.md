@@ -42,3 +42,10 @@ The enum test uses a local `Color` declaration and checks that `source_declarati
 ## Method note
 
 `quoin gap-analysis` was unavailable (no such command in installed Quoin 0.29.1). Full-root Quire/Quoin matrix commands stalled without output. This artifact records a manual requirement-to-code-and-test check; it is not a Quoin-generated matrix analysis.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Point Plan equality now enters the emitted-row assertion loop and checker-held ValueTypes are compared. |
+| FND-002 | fixed | Exact-key helper test uses distinct keys and selected model enum rows retain their exact structural keys and IDs. |

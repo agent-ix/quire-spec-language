@@ -28,3 +28,11 @@ Reviewed PR #2041's typed equality witnesses, producer-data accessor, and enum m
 - `EqualityFactWitnessRow::value_type()` and `EqualityProducerEmissionRow::producer_data()` are read-only. `equality_fact_witness_rows` joins checker-held types by exact operand position, role, and structural key and refuses missing or duplicate matches. Enum declaration and member IDs are looked up by their retained structural keys, with missing identities refusing emission.
 - Focused gates passed: `cargo fmt --all -- --check`; `git diff origin/main...HEAD --check`; `CARGO_TARGET_DIR=/private/tmp/qsl-review-target cargo test --locked -p qsl-package --lib converted_equality` (23 passed); `CARGO_TARGET_DIR=/private/tmp/qsl-review-target cargo clippy --locked -p qsl-package --lib --tests -- -D warnings`; `cargo deny check bans`.
 - No workflow files changed. Full-root Quire/Quoin matrix attempts stalled without output; the installed Quoin has no `gap-analysis` command. The manual acceptance mapping is recorded separately in `qsl-1445-gap-analysis.md`.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Added a declaration-bearing Point Plan fixture; the test now checks emitted ValueType against each checker-held operand fact. |
+| FND-002 | fixed | Added exact key-to-ID helper coverage with distinct keys and asserted retained model enum facts in the selected/imported fixture. |
+| FND-003 | fixed | Replaced the ticket trace tag with a QSpec requirement tag and moved QSL-1445 to Provenance. |
