@@ -2,11 +2,11 @@
 //! FR-485: in-process checked-closure acquisition and application through the replay facade.
 
 use quire_checked::node::NodeKind;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use qsl_eval::value::PackageClosure;
-use qsl_package::CheckedPackage;
+use qsl_package::{CheckedPackage, EmittedPackage};
 use qsl_semantics::check::{CheckedExpression, CheckedNode};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -143,6 +143,21 @@ pub enum NominalDeclarationRefusal {
     Inconsistent,
 }
 
+/// Why no imported-owner package bytes were returned (FR-485-AC-17).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ClosureOwnerRefusal {
+    /// The selection was issued by a different checked acquisition.
+    #[error("selection belongs to another checked acquisition")]
+    WrongAcquisition,
+    /// No library of this closure has that name.
+    #[error("no imported owner of this closure has that name")]
+    Unknown,
+    /// The owner is the acquired unit itself; its bytes are the acquisition's
+    /// `package()`.
+    #[error("the owner is the acquired unit, not an imported library")]
+    OwnUnit,
+}
+
 type Adapter = PackageClosure<Arc<CheckedPackage>, Arc<CheckedExpression>>;
 
 /// An emitted package, its admitted tables, and its retained checked closure.
@@ -161,6 +176,12 @@ impl CheckedClosureCompilation {
     /// The same admitted tables that `compile_admitted` returns.
     pub fn context(&self) -> &AdmittedContext {
         &self.context
+    }
+
+    /// The exact v2 bytes the imported owner `owner` was admitted from, as
+    /// retained by this one acquisition (no recompile, recheck or copy).
+    pub fn owner_package_bytes(&self, owner: &LibraryName) -> Result<&[u8], ClosureOwnerRefusal> {
+        self.handle.owner_package_bytes(owner)
     }
 
     /// The retained checked closure, valid independently of these public values.
@@ -187,9 +208,36 @@ pub struct CheckedClosureHandle {
     package: Arc<CheckedPackage>,
     package_name: LibraryName,
     acquisition: Arc<()>,
+    library_packages: Arc<BTreeMap<LibraryName, EmittedPackage>>,
 }
 
 impl CheckedClosureHandle {
+    /// The exact v2 bytes the imported owner `owner` was admitted from.
+    /// Refuses `Unknown` for a name no library of this closure has, and
+    /// `OwnUnit` for the acquired unit. Identity is the exact library name; the
+    /// bytes carry no authority by themselves.
+    pub fn owner_package_bytes(&self, owner: &LibraryName) -> Result<&[u8], ClosureOwnerRefusal> {
+        if *owner == self.package_name {
+            return Err(ClosureOwnerRefusal::OwnUnit);
+        }
+        self.library_packages
+            .get(owner)
+            .map(EmittedPackage::bytes)
+            .ok_or(ClosureOwnerRefusal::Unknown)
+    }
+
+    /// The v2 bytes of the imported owner of `selection`; `WrongAcquisition`
+    /// when another acquisition issued it, before any lookup.
+    pub fn selection_owner_package_bytes(
+        &self,
+        selection: &CallableSelection,
+    ) -> Result<&[u8], ClosureOwnerRefusal> {
+        if !Arc::ptr_eq(&self.acquisition, &selection.acquisition) {
+            return Err(ClosureOwnerRefusal::WrongAcquisition);
+        }
+        self.owner_package_bytes(&selection.owner)
+    }
+
     /// The retained checked package, for the replay facade's own entries.
     pub(crate) fn checked_package(&self) -> &CheckedPackage {
         &self.package
@@ -753,6 +801,7 @@ pub fn acquire_checked_closure<'a>(
             package: Arc::clone(compiled.checked.shared_package()),
             package_name,
             acquisition: Arc::new(()),
+            library_packages: Arc::clone(compiled.checked.shared_library_packages()),
         },
     })
 }
@@ -2390,6 +2439,100 @@ mod tests {
         );
         assert_eq!(*pair_key, pair.key().clone());
         assert_eq!(holder.members().len(), 3);
+    }
+
+    fn owner_bytes_fixture() -> (DependencyInput, String) {
+        let dependency = SuppliedLibrary {
+            identity: "test/owner".to_owned(),
+            source: identity("owner-lib"),
+            path: "owner-lib.native".to_owned(),
+            bytes: format!(
+                "{HEADER}function lib_fn using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+            )
+            .into_bytes(),
+        };
+        let source = format!(
+            "{HEADER}import \"test/owner\" as o;\nfunction own_fn using v(x: Int[0, 9]): Integer pure {{ x }}\n"
+        );
+        (
+            DependencyInput::new([dependency]).expect("dependency"),
+            source,
+        )
+    }
+
+    #[trace("TC-1263", "FR-485-AC-16")]
+    #[test]
+    fn imported_owner_bytes_are_the_retained_admitted_bytes() {
+        let (dependencies, source) = owner_bytes_fixture();
+        let acquired = acquire(&source, &dependencies);
+        let owner = LibraryName::new("test/owner".to_owned()).expect("name");
+        let handle = acquired.handle();
+        let bytes = acquired
+            .owner_package_bytes(&owner)
+            .expect("imported owner");
+        let (_, dependency) = handle
+            .package
+            .dependencies()
+            .iter()
+            .next()
+            .expect("dependency package");
+        let independent = qsl_package::emit_checked(dependency).expect("independent emission");
+        assert_eq!(bytes, independent.package().bytes());
+        assert!(!bytes.is_empty());
+        let clone = handle.clone();
+        assert!(std::ptr::eq(
+            bytes,
+            clone.owner_package_bytes(&owner).expect("clone")
+        ));
+        let selection = handle
+            .lookup_callable(&owner, &wire(dependency, "lib_fn"))
+            .expect("imported callable");
+        assert!(std::ptr::eq(
+            bytes,
+            handle
+                .selection_owner_package_bytes(&selection)
+                .expect("selection")
+        ));
+        let expected = bytes.to_vec();
+        let (package, context, kept) = acquired.into_parts();
+        drop((package, context));
+        assert_eq!(kept.owner_package_bytes(&owner), Ok(expected.as_slice()));
+    }
+
+    #[trace("TC-1263", "FR-485-AC-17")]
+    #[test]
+    fn imported_owner_bytes_refuse_unknown_unit_and_foreign_acquisition() {
+        let (dependencies, source) = owner_bytes_fixture();
+        let acquired = acquire(&source, &dependencies);
+        let other = acquire(&source, &dependencies);
+        let handle = acquired.handle();
+        let absent = LibraryName::new("test/absent".to_owned()).expect("name");
+        assert_eq!(
+            handle.owner_package_bytes(&absent),
+            Err(ClosureOwnerRefusal::Unknown)
+        );
+        assert_eq!(
+            handle.owner_package_bytes(handle.package_name()),
+            Err(ClosureOwnerRefusal::OwnUnit)
+        );
+        let own = handle
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "own_fn"))
+            .expect("own callable");
+        assert_eq!(
+            handle.selection_owner_package_bytes(&own),
+            Err(ClosureOwnerRefusal::OwnUnit)
+        );
+        let foreign = other
+            .handle()
+            .lookup_callable(
+                other.handle().package_name(),
+                &wire(&other.handle().package, "own_fn"),
+            )
+            .expect("other acquisition callable");
+        assert_eq!(
+            handle.selection_owner_package_bytes(&foreign),
+            Err(ClosureOwnerRefusal::WrongAcquisition)
+        );
     }
 
     #[trace("TC-1263", "FR-485-AC-13", "FR-485-AC-14")]
