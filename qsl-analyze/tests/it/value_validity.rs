@@ -786,7 +786,7 @@ fn a_case_clause_enumerates_union_members_and_replays_the_payload() {
         panic!("the counterexample must preserve the active union member")
     };
     assert_eq!(union.member().identifier(), "Circle");
-    assert!(matches!(union.components(), [Value::Integer(n)] if n.to_string() == "0"));
+    assert!(matches!(union.payload(), [Value::Integer(n)] if n.to_string() == "0"));
 }
 
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-7")]
