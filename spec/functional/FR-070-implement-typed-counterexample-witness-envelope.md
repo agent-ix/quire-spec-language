@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-069
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-087
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-323
     type: depends_on
 ---
@@ -73,7 +75,7 @@ admits union arguments (QSL-503).
   stored transcript on every call, so the envelope cannot disagree with its
   own backend evidence.
 - `decode` SHALL read each transcript entry as its binding's declared
-  `WitnessValueType`: `Boolean` as `0` or `1`, `I64` as a decimal `i64`,
+  `WitnessValueType`: `Boolean` as `0` or `1`, `I128` as a decimal `i128`,
   and `Canonical` as a witness value text (below). It SHALL return one
   `WitnessValue` per binding, in binding order, or one `DecodeRefusal`
   with no partial result.
@@ -110,12 +112,29 @@ admits union arguments (QSL-503).
 - Envelope construction SHALL refuse when the envelope's encoded size
   exceeds the configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
+- When a caller requests a name for one transcript entry from a structural
+  node identity, the `qsl_replay` root SHALL expose
+  `witness_entry_name(&NodeKey)`.
+- The `qsl_replay` root SHALL derive a successful entry name from the
+  structural node identity's compact JSON spelling produced by the shared
+  node-wire codec.
+- The `qsl_replay` root SHALL percent-escape `%`, `=`, `;`, `|`, `<`, `>`,
+  and each control byte in that spelling as `%HH` with uppercase hexadecimal
+  digits.
+- The `qsl_replay` root SHALL preserve every other byte of the compact
+  spelling.
+- The `qsl_replay` root SHALL return an entry name containing no transcript
+  separator or block-end delimiter.
+- When a returned entry name is percent-decoded and read as a node-wire
+  identity, it SHALL yield the same `NodeKey` that was named.
+- The replay API SHALL NOT grant replay, admission or provenance authority
+  from an entry name alone.
 
 ## Witness value text
 
 A parameter whose declared type is `Boolean` or an integer type keeps its
-scalar entry: `0`/`1`, or a decimal `i64` that decodes to
-`WitnessValue::Integer(i64)`, as before. An integer leaf inside a witness
+scalar entry: `0`/`1`, or a decimal `i128` that decodes to
+`WitnessValue::Integer(i128)`, as before. An integer leaf inside a witness
 value text decodes to `WitnessValue::ExactInteger(Integer)` instead, so the
 form of each integer follows from where it appears. Every other parameter's entry is a witness value text: a leaf
 of any value family (enum, text, String, UUID, Timestamp, rational, decimal,
@@ -132,7 +151,10 @@ then writes the value text below. QSL owns this form and its decode
 (QSL-640).
 
 **Transcript entry.** The entry is `<parameter node id>=<escaped value
-text>`, joined by node id like every other entry. The value text is the RFC
+text>`, joined by node id like every other entry. A parameter node id is the
+percent-escaped compact JSON spelling produced from its structural `NodeKey`
+by the shared node-wire codec, as specified above; it is not a fixed-width
+hex digest. The value text is the RFC
 8785 (JCS) encoding of the value in QSpec FR-181's typed canonical form,
 limited to the shapes below. The table lists each object's members in
 reading order. The value text writes them in JCS order, the ascending UTF-16
@@ -221,8 +243,9 @@ by numeric value, so `1.0` and `1.00` (coefficients `10` and `100`, scales
 `ordered-set` holding two elements that relation equates.
 
 **Entry order.** Every transcript's entries SHALL be in strictly ascending
-order of parameter node id, comparing the 64-hex spellings bytewise (the
-order CG FR-025 already gives its arguments). Together with the one value
+order of parameter `NodeKey` identity as compared by the key's structural
+ordering (the order CG FR-025 already gives its arguments), not by comparing
+the escaped display names. Together with the one value
 text per value, this means two equal witnesses always have identical
 transcripts (ADR-014 TR-1). `decode` SHALL refuse
 `DecodeRefusal::EntryOrder`, naming the first entry out of order, for a
@@ -256,17 +279,18 @@ length of its escaped value text.
 | FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract, and the extension point itself is typed (a trait or generic parameter), never a `String`-keyed untyped map. | Test (TC-184) |
 | FR-070-AC-6 | **RETIRED (no digest domains).** This envelope defines no `contract_version` member of its own; version ownership is delegated to the FR-331 envelope. | Test (TC-181), retired |
 | FR-070-AC-7 | An envelope whose encoded size exceeds the configured reader bound refuses at construction, with no truncated or partially-populated envelope returned. | Test (TC-181) |
-| FR-070-AC-8 | A transcript with one `Canonical` entry and one `I64` entry decodes to two `WitnessValue`s in binding order. The `Canonical` entry is a record whose fields hold a nested record with a present field, an absent optional field and a `null` slot; a present option and a `none` option; a three-element sequence; a set and a bag in ascending JCS order (the bag with a duplicate); an ordered set; a union with a one-component member; and a union with a nullary member. Each slot state, option state, element order, member identifier and declaration node id decodes exactly as written. The `I64` entry decodes as it did before this change. | Test (TC-905) |
+| FR-070-AC-8 | A transcript with one `Canonical` entry and one `I128` entry decodes to two `WitnessValue`s in binding order. The `Canonical` entry is a record whose fields hold a nested record with a present field, an absent optional field and a `null` slot; a present option and a `none` option; a three-element sequence; a set and a bag in ascending JCS order (the bag with a duplicate); an ordered set; a union with a one-component member; and a union with a nullary member. Each slot state, option state, element order, member identifier and declaration node id decodes exactly as written. The `I128` entry decodes as it did before this change. | Test (TC-905) |
 | FR-070-AC-9 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: trailing bytes; added whitespace; record members out of JCS order; an unknown `type` tag; a record field entry with no `value` member; an integer `"007"`, and an integer as a JSON number; a rational `2`/`4`, and one with denominator `-1`; a `float64` with 15 hex digits, and one with uppercase hex; a reference `identity` of odd length; `{"type":"null"}` as a sequence element; a set with two equal elements; set elements out of order; an ordered set with two equal elements; a raw `%` not starting an escape; a lowercase escape `%3b`; and a record field name written `\u0061` where JCS writes `a`. | Test (TC-905) |
 | FR-070-AC-10 | On a thread with a 512 KiB stack, a transcript entry holding a 100,000-long recursive list (`record List { head: Int[0, 9]; tail?: List; }`) decodes, with the envelope's reader bound raised to fit it through `replay.input_bytes`. The decoded value clones, compares equal to itself, renders its redacted `Debug` and drops with no stack overflow. With the bound one byte below the envelope's size, construction refuses `BoundExceeded` naming `replay.input_bytes`. | Test (TC-736) |
 | FR-070-AC-11 | One `Canonical` entry per leaf family decodes exactly as written: an integer `-170141183460469231731687303715884105728` (outside `i64`); an enum member; the text `a;b=c<<<d>>>e%f` (its entry holds `a%3Bb=c%3C%3C%3Cd%3E%3E%3Ee%25f`, and its escaped bytes count toward `replay.input_bytes`), which parses as one block whose entry splits only at its own delimiters; the rational `-3`/`4`; the decimal with coefficient `1050` and scale `2`; a `float32` NaN with payload `7fc00001` and a `float64` negative zero `8000000000000000`; a quantity `{"type":"decimal","coefficient":"15","scale":"1","unit":"<unit>"}`; and a reference. A sequence of text values holding `;` and `>` decodes in order. | Test (TC-905) |
-| FR-070-AC-12 | A transcript with entries for node ids `0a…` and `0b…` in that order decodes. The same entries with `0b…` first refuse `DecodeRefusal::EntryOrder` naming the `0a…` entry, with no partial result. | Test (TC-905) |
+| FR-070-AC-12 | Let `A` be the `NodeKey` whose compact JSON spelling is `{"ordinal":0,"package":"fixture","path":["a"]}` and `B` the `NodeKey` whose compact JSON spelling is `{"ordinal":0,"package":"fixture","path":["b"]}`. A transcript with the generated entry names for `A` then `B`, carrying values `0` and `1`, decodes. The same entries with `B` first refuse `DecodeRefusal::EntryOrder` naming `A`'s generated entry name, with no partial result. | Test (TC-905) |
 | FR-070-AC-13 | Encoding a witness value does work proportional to its output at any depth. The counted work is the number of bytes the encoder's JCS writer produces plus the number of bytes compared while ordering set and bag elements; the output is the value's JCS bytes before transcript escaping. Each value's bytes are produced once and set and bag elements are ordered by comparing finished bytes in place, so for nested sets (each level a set of the next level and a text), nested options and nested sequences (each level a sequence of the next level and an integer), doubling the depth from 5,000 to 10,000 at most triples the counted work (a subtree copied into every ancestor quadruples it); at depth 5,000 the counted work is at least the output's bytes, and at depth 10,000 it is at most three times the output's bytes. The value text's length is counted from the encoder's finished bytes: for a text value of 1,000,000 `;` characters, `value_text_len` returns 3,000,026, the length of the text `to_value_text` returns, and the encoder holds that value as one finished value whose buffers together hold at least its 1,000,026 JCS bytes, each buffer's capacity smaller than 3,000,026 bytes. | Test (TC-905) |
 | FR-070-AC-14 | One `Canonical` entry per String and Text shape decodes exactly as written: the String `a;b>>>c` (its entry holds `{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}`), the empty String, the String of the scalar U+00E9, the String of the scalars U+0065 U+0301 (two unequal values), the String `say "hi"\x;` with a quote, a backslash and a semicolon (its entry holds `{"kind":"string","text":"say \"hi\"\\x%3B"}`), and the String `100%<` (its entry holds `{"kind":"string","text":"100%25%3C"}`). The Text `a;b>>>c` (its entry holds `{"type":"text","value":"a%3Bb%3E%3E%3Ec"}`) and the empty Text decode as Text values. A `string` value and a `text` value of the same scalars decode to two unequal `WitnessValue`s. A two-entry transcript `P` then `Q`, each holding the String `a;b>>>c`, parses as one assertion block and decodes both entries, so a `;` or `>` left unescaped inside either value would split or end the block. The escaped bytes of each count toward `replay.input_bytes`. | Test (TC-905) |
 | FR-070-AC-15 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` (a missing member); `{"extra":"y","kind":"string","text":"x"}` (an extra member); `{"kind":"string","text":5}` and `{"kind":"string","text":null}` (a payload that is not a JSON string); `{"kind":"String","text":"x"}` and `{"kind":"blob","text":"x"}` (a `kind` outside the three); `{"text":"x","kind":"string"}` (members out of JCS order); a String whose JSON text writes U+00E9 as the escape `\u00e9` where JCS writes the literal scalar; a String whose JSON text holds the lone surrogate escape `\ud800`; and a raw `%` that does not begin one of the four escapes inside a String. | Test (TC-905) |
 | FR-070-AC-16 | A `Canonical` entry holding the reference `{"identity":"61","object_type":"<64 hex>","type":"reference","universe":"<64 hex>"}` decodes to one `WitnessValue::Reference` carrying the universe, the object type and the identity bytes `61`; the same entry with the empty `identity` `""` decodes too (FR-098 refuses it at conversion, not decode). | Test (TC-1042) |
 | FR-070-AC-17 | Each of these reference entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: a `universe` of 63 hex digits; an `object_type` written with an uppercase hex digit; an `identity` of odd length; an entry written `{"type":"reference","universe":...,"object_type":...,"identity":...}` (members in the table's reading order, not JCS order); a missing `identity`; an extra member; and a `universe` that is a JSON number. | Test (TC-1042) |
 | FR-070-AC-18 | A function packet carrying `function`, a frame packet carrying `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and a state-clause packet carrying `state_clause` (`VersionUnchanged`) each reconstruct, and the envelope returns that one target unchanged through a construct → serialize → read round trip. The same packets with the target removed refuse `WitnessRefusal::MissingMember("replay_target")`; a packet carrying `function` and `frame_operation` refuses `WitnessRefusal::ConflictingTarget` naming those two, and one carrying `function` and `state_clause` naming those two; the two refusals are distinct variants and neither builds an envelope, though every other member is present. The envelope type has no `selected_function` member. | Test (TC-183) |
+| FR-070-AC-19 | For a structural node identity whose compact JSON spelling contains `%`, `=`, `;`, `|`, `<`, `>` and a DEL byte, `qsl_replay::witness_entry_name` returns that compact spelling with each listed byte percent-escaped using uppercase two-digit hex (`%25`, `%3D`, `%3B`, `%7C`, `%3C`, `%3E`, `%7F`), while retaining all other bytes, including non-ASCII UTF-8. The name contains no transcript separator or block-end delimiter and round-trips through the witness entry parser to the original `NodeKey`; two distinct identities, including one whose source text resembles another identity's escape, produce distinct names. Transcript entries remain ordered by structural `NodeKey` comparison even where their escaped display names would sort differently as text. | Test (TC-1281) |
 
 ## Dependencies
 
