@@ -213,6 +213,7 @@ impl StatisticalLimits {
             StatisticalLimit::MaxSamples => self.max_samples,
             StatisticalLimit::MaxDraws => self.max_draws,
             StatisticalLimit::MaxCycleSteps => self.max_cycle_steps,
+            StatisticalLimit::MaxSampleSteps => 16_777_216,
         }
     }
 }
@@ -226,6 +227,8 @@ pub enum StatisticalLimit {
     MaxDraws,
     /// [`StatisticalLimits::max_cycle_steps`].
     MaxCycleSteps,
+    /// The per-trace timed sample budget published by FR-254.
+    MaxSampleSteps,
 }
 
 impl StatisticalLimit {
@@ -237,6 +240,7 @@ impl StatisticalLimit {
             Self::MaxSamples => "max_samples",
             Self::MaxDraws => "max_draws",
             Self::MaxCycleSteps => "max_cycle_steps",
+            Self::MaxSampleSteps => "max_sample_steps",
         }
     }
 
@@ -247,6 +251,7 @@ impl StatisticalLimit {
             Self::MaxSamples => "statistical.max_samples",
             Self::MaxDraws => "statistical.max_draws",
             Self::MaxCycleSteps => "statistical.max_cycle_steps",
+            Self::MaxSampleSteps => "statistical.max_sample_steps",
         }
     }
 }
