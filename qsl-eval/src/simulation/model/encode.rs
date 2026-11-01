@@ -1108,6 +1108,16 @@ mod tests {
         format!(r#"{{"node":"[{seed}]","package":"fixture"}}"#)
     }
 
+    #[test]
+    fn a_type_node_name_is_the_declaration_key_identity_text() {
+        assert_eq!(
+            declaration_name(&crate::test_ids::node_key([0x11]))
+                .canonical_text(Limits::new(1024))
+                .expect("a declaration name encodes"),
+            declaration_json(0x11)
+        );
+    }
+
     /// An effective identity owned through `depth` declarations.
     fn owned_chain(depth: usize) -> EffectiveId {
         let mut id = None;
@@ -1402,6 +1412,17 @@ mod tests {
     fn a_value_without_a_form_refuses_to_encode() {
         let text = Enc::Unencodable("a union value").canonical_text(Limits::new(1024));
         assert!(matches!(text, Err(Error::Serialize(_))));
+    }
+
+    /// FR-120-AC-18 (TC-1195): a Population handle has no typed canonical form.
+    #[trace("TC-1195", "FR-120-AC-18")]
+    #[test]
+    fn a_population_value_keeps_its_typed_refusal() {
+        let value = Value::Population(quire_exact::PopulationId::fixture(1));
+        assert!(matches!(
+            untyped_value_enc(&value).canonical_text(Limits::new(1024)),
+            Err(Error::Serialize(_))
+        ));
     }
 
     /// QSpec FR-181: a field declared `Option<T>` is an option value, none
