@@ -16,8 +16,8 @@ use super::unbounded::{
 use super::{decide_bounded_event, FhError, FhResult, ProbProduct, ProbStateId, ProductKind};
 
 /// One maximal fair end component and the scheduled identities that keep it
-/// closed. Intermediate draw-resolution and terminal-stutter actions are not
-/// included.
+/// closed. The action list is empty for a terminal-stutter-only component,
+/// because terminal stutter belongs to no fairness constraint.
 #[derive(Clone, Debug)]
 pub struct FairEndComponent {
     /// Product states in canonical discovery order.
@@ -236,14 +236,6 @@ fn fair_components(
                     }
                 }
             }
-        }
-        // A stutter-only terminal BSCC is outside the scheduler action space:
-        // it is not emitted as a `FairEndComponent` (FR-200's outputs list
-        // scheduled identities). It still contributes no enabled or taken
-        // fairness action, and is excluded from non-target reachability by
-        // the caller's restricted graph.
-        if fair_actions.is_empty() {
-            continue;
         }
         components.push(FairEndComponent {
             states: candidate.into_iter().map(ProbStateId).collect(),

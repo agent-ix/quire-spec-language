@@ -937,6 +937,87 @@ pub(crate) fn zero_reward_exit(extra: &str) -> Model {
     }
 }
 
+/// A zero-reward self-loop and a unit-reward target action used to check fair
+/// expected-reward minimization.
+pub(crate) fn fair_min_reward(extra: &str) -> Model {
+    Model {
+        package: "test/fair-min-reward",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![("done", BOOLEAN.to_owned())],
+        operations: vec![
+            Operation {
+                name: "free",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+            Operation {
+                name: "costly",
+                parameters: vec![],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Live_free using v on M::Proc::free {{ not self.done }}\n\
+             post Free using v on M::Proc::free {{ self.done = pre(self.done) }}\n\
+             pre Live_costly using v on M::Proc::costly {{ not self.done }}\n\
+             post Costly using v on M::Proc::costly {{ self.done = true }}\n\
+             reward cost on Proc::costly = 1;\n\
+             terminal Done using v on M when {{ self.done }};\n{extra}"
+        ),
+        initial: json!({"done": {"boolean": false}}),
+    }
+}
+
+/// A probabilistic split into two disjoint fair bottom components.
+pub(crate) fn fair_two_bottoms(extra: &str) -> Model {
+    Model {
+        package: "test/fair-two-bottoms",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![
+            ("selected", BOOLEAN.to_owned()),
+            ("right", BOOLEAN.to_owned()),
+        ],
+        operations: vec![
+            Operation {
+                name: "split",
+                parameters: vec![("right", BOOLEAN.to_owned())],
+                modifies: vec!["selected", "right"],
+                deletes: false,
+            },
+            Operation {
+                name: "left_tick",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+            Operation {
+                name: "right_tick",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre At_start using v on M::Proc::split {{ not self.selected }}\n\
+             post Split using v on M::Proc::split {{ self.selected = true and self.right = right }}\n\
+             pre At_left using v on M::Proc::left_tick {{ self.selected and not self.right }}\n\
+             post Left_tick using v on M::Proc::left_tick {{ self.selected = pre(self.selected) and self.right = pre(self.right) }}\n\
+             pre At_right using v on M::Proc::right_tick {{ self.selected and self.right }}\n\
+             post Right_tick using v on M::Proc::right_tick {{ self.selected = pre(self.selected) and self.right = pre(self.right) }}\n\
+             random Proc::split(right) ~ {{ true: 1, false: 1 }};\n{extra}"
+        ),
+        initial: json!({"selected": {"boolean": false}, "right": {"boolean": false}}),
+    }
+}
+
 /// A non-fair wait MEC that strong fairness forces to route into a fair
 /// recurrent component.
 pub(crate) fn fair_longrun_escape(extra: &str) -> Model {
