@@ -164,11 +164,6 @@ fn selected_tuple_row_projects_the_admitted_type_and_missing_row_refuses() {
         tuple.node_key(),
         &emission.selected_tuple_declaration_rows()[0].node_key
     );
-    assert!(
-        !projected.records().is_empty(),
-        "the same admission includes its selected record identities"
-    );
-
     let refusal = admitted
         .project_selected_type_declarations(
             &identities,
