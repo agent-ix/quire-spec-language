@@ -305,7 +305,7 @@ fn canonical_record_field_debug_keeps_complete_keys_as_the_body_grows() {
     use qsl_semantics::check::depth_forms::{name_expr, types};
     let mut sizes = Vec::new();
     for depth in [100, 200, 400] {
-        let field = || Expression::field(name_expr("n"), "v".into());
+        let field = || Expression::field(name_expr("n"), "v");
         let mut expression = field();
         for _ in 0..depth {
             expression = Expression::binary(BinaryOperator::And, field(), expression);
