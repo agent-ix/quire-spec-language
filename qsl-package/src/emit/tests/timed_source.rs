@@ -52,13 +52,14 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     document["types"][1]["operations"] = json!([]);
     let document = serde_json::to_vec(&document).expect("the fixture remains JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
-    let unit = config_version_unit::unit_text().replace(
-        "profile v = \"quire.model.complete/v1\";\n",
-        "profile v = \"quire.model.complete/v1\";\n\
-         profile t = \"quire.temporal.complete/v1\";\n",
-    );
     let unit = format!(
-        "{unit}dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n"
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n\
+         model Config = {:?};\n\
+         dimension Time;\nunit ms : Time = rational(1, 1);\n\
+         time Config dense unit ms;\n",
+        config_version_unit::PACKAGE_IDENTITY,
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
