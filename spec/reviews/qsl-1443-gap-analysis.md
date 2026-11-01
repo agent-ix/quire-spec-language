@@ -53,3 +53,26 @@ Ticket: QSL-1443. Plan completion: not assessed. The manual check confirms the r
 Reviewed PR #2045 head `0f2c41443a75fb63eef365c89dfe7b58737dca1c`. The root integration helper now constructs `CheckedPackageSidecarsRef { checked_term_data: None, temporal_bindings: None }` at `tests/it/emit_checked_v2.rs:427`; all 11 tests in the `emit_checked_v2` integration module pass. No new finding was identified. The prior unknown-profile mutation finding remains fixed at `5114fb983`; its focused fixture test passes, as do C14 and both CL-57..62 vector tests.
 
 Prior FND-002 remains deferred to linked QSL-1384: all six temporal producer/read-back failures stay enabled, not waived. The equality-identity failure remains the clean-main baseline established in round 1. The full package suite and aggregate gate were not rerun in this follow-up; the lead will run the aggregate gate after disk cleanup.
+
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | At 5114fb983, the fixture mutation removes the temporal binding for the mutated declaration and omits the optional member when empty. Its focused test passes and reaches UnknownProfile. |
+| FND-002 | deferred | Linked QSL-1384 owns the six still-failing producer/read-back cases. They remain enabled; the seventh suite failure reproduces on clean main as an equality-identity baseline. |
+| FND-003 | still-open | Keep the binding row after changing its declaration to the mutated NodeRef; the current retain removes that row and the test masks missing-binding coverage behind UnknownProfile precedence. |
+| FND-003 | rejected | False positive: FR-322 limits rows to clock-configured selected profiles; IR #788 `configured_profile` returns `None` for this unknown profile, so the row must be absent. |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The unknown-profile fixture changes the temporal clause identity and briefly updates its binding declaration to match, then `retain`s that same changed declaration out of `temporal_bindings`. The test therefore has a second defect (missing required binding) and only observes `UnknownProfile` because that profile check precedes binding coverage. Keep the updated binding row so the mutation isolates the unknown profile. | qsl-package/src/checked_v2/tests.rs:2981-2987 |
+
+Disposition round 3 at `2c253e21a9dfa72e13de3a52a136852312402320`: the focused fixture test passes, and the profile/node identity and binding declaration are updated. However the row is then deleted. The package reaches the expected profile refusal before checking the missing binding, so the earlier UnknownProfile symptom is gone while the test still carries an unrelated malformed-wire condition. This remains open pending removal of the `retain` that deletes the changed row.
+
+
+## Disposition round 4: FND-003
+
+FND-003 is rejected as a false positive. QSpec main `6fee29e352dfacfe403fe86ba1d0eb0e3b18c56a`, FR-322 §Temporal clock bindings (lines 3018-3024) and FR-322-AC-294, require rows only for temporal declarations whose selected profile requires clock configuration; the member is absent when none selects a clock-configured profile. IR #788 `configured_profile` returns `None` when the profile identity does not map to one of the three clock-configured profiles. The missing-row coverage check filters on `configured_profile(...).is_some()`, so it does not require a row for this unknown profile. Removing the changed clause's row is contract-correct and isolates the intended `UnknownProfile` refusal. The focused fixture test passes at PR commit `2c253e21a9dfa72e13de3a52a136852312402320`.
