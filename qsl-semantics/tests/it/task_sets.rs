@@ -140,6 +140,7 @@ fn ctl_checks_and_its_claims_carry_the_schedulability_kind() {
         (Some(1), Some(2), Some(3))
     );
     assert_eq!(c.wcet, Wcet::Single(int(5)));
+    assert_eq!(c.bcet, int(0));
     assert_eq!(c.deadline, int(12));
     assert_eq!(c.jitter, int(0));
     let [fp, edf] = sets.claims() else {
@@ -161,6 +162,24 @@ fn ctl_checks_and_its_claims_carry_the_schedulability_kind() {
             qsl_semantics::family::ClaimExtent::Bounded
         ));
     }
+}
+
+#[trace("TC-704", "FR-419-AC-6")]
+#[test]
+fn fixed_work_requires_bcet_to_equal_the_applicable_budget() {
+    let graph = checked(
+        "taskset Ctl {\n\
+         task lo periodic 4 ms deadline 4 ms bcet 1 ms wcet 1 ms lo;\n\
+         task hi periodic 4 ms deadline 4 ms bcet 2 ms wcet 2 ms hi wcet_hi 2 ms;\n\
+         task variable periodic 4 ms deadline 4 ms bcet 1 ms wcet 2 ms lo;\n\
+         }\n",
+    );
+    let [lo, hi, variable] = &graph.task_sets().task_sets()[0].tasks[..] else {
+        panic!("three checked task rows");
+    };
+    assert_eq!(lo.fixed_work(), Some(&int(1)));
+    assert_eq!(hi.fixed_work(), Some(&int(2)));
+    assert_eq!(variable.fixed_work(), None);
 }
 
 /// FR-246-AC-2: each defect refuses with its catalog code, naming the task
@@ -185,6 +204,18 @@ fn each_defect_refuses_with_its_code_naming_its_task() {
         (
             set("task c periodic 4 ms deadline 4 ms wcet 0 ms priority 1 lo;"),
             vec![invalid(&["c"], "0 ms")],
+        ),
+        (
+            set("task c periodic 4 ms deadline 4 ms bcet -1 ms wcet 1 ms priority 1 lo;"),
+            vec![invalid(&["c"], "-1 ms")],
+        ),
+        (
+            set("task c periodic 4 ms deadline 4 ms bcet 2 ms wcet 1 ms priority 1 lo;"),
+            vec![invalid(&["c"], "2 ms")],
+        ),
+        (
+            set("task c periodic 4 ms deadline 4 ms bcet 4 ms wcet 2 ms hi wcet_hi 3 ms;"),
+            vec![invalid(&["c"], "4 ms")],
         ),
         (
             set("task c periodic 4 ms deadline 4 ms wcet 1 ms priority 1 jitter -1 ms lo;"),

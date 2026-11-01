@@ -134,6 +134,8 @@ pub struct Task {
     pub arrival: Arrival,
     /// Its relative deadline.
     pub deadline: Rational,
+    /// Its best-case execution time, or zero when omitted (QSpec FR-419).
+    pub bcet: Rational,
     /// Its budgets.
     pub wcet: Wcet,
     /// Its priority, when it declares one; a smaller value is a higher one.
@@ -144,6 +146,29 @@ pub struct Task {
     pub jitter: Rational,
     /// Its blocking term, `0` when it declares none.
     pub blocking: Rational,
+}
+
+impl Task {
+    /// The exact job demand selected by this task's bounds, when the
+    /// FR-419 fixed-work premises hold. A `wcet` upper bound alone never
+    /// selects an exact demand.
+    pub fn fixed_work(&self) -> Option<&Rational> {
+        match (&self.wcet, self.criticality) {
+            (Wcet::Single(wcet), Criticality::Lo)
+                if self.bcet == *wcet && *wcet > Rational::from_integer(Integer::zero()) =>
+            {
+                Some(wcet)
+            }
+            (Wcet::Dual { lo, hi }, Criticality::Hi)
+                if self.bcet == *lo
+                    && lo == hi
+                    && *lo > Rational::from_integer(Integer::zero()) =>
+            {
+                Some(lo)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// A task set's unit: the time unit of its first time quantity.
@@ -322,6 +347,7 @@ impl Finding {
 struct Values {
     interval: Option<Rational>,
     deadline: Option<Rational>,
+    bcet: Option<Rational>,
     wcet: Option<Rational>,
     jitter: Option<Rational>,
     blocking: Option<Rational>,
@@ -399,6 +425,7 @@ fn members(task: &TaskForm) -> Vec<&SignedQuantityForm> {
     [
         Some(&task.interval),
         Some(&task.deadline),
+        task.bcet.as_ref(),
         Some(&task.wcet),
         task.jitter.as_ref(),
         task.blocking.as_ref(),
@@ -467,6 +494,7 @@ fn analyse<'f>(
         };
         let interval = value(Some(&task.interval));
         let deadline = value(Some(&task.deadline));
+        let bcet = value(task.bcet.as_ref());
         let wcet = value(Some(&task.wcet));
         let jitter = value(task.jitter.as_ref());
         let blocking = value(task.blocking.as_ref());
@@ -490,6 +518,7 @@ fn analyse<'f>(
         for (member, quantity, positive) in [
             (TaskTimeMember::Period, &interval, true),
             (TaskTimeMember::Deadline, &deadline, true),
+            (TaskTimeMember::Bcet, &bcet, false),
             (TaskTimeMember::Wcet, &wcet, true),
             (TaskTimeMember::WcetHi, &wcet_hi, true),
             (TaskTimeMember::Jitter, &jitter, false),
@@ -499,6 +528,7 @@ fn analyse<'f>(
             let span = match member {
                 TaskTimeMember::Period => task.interval.span,
                 TaskTimeMember::Deadline => task.deadline.span,
+                TaskTimeMember::Bcet => task.bcet.as_ref().map_or(task.span, |q| q.span),
                 TaskTimeMember::Wcet => task.wcet.span,
                 TaskTimeMember::WcetHi => task.wcet_hi.as_ref().map_or(task.span, |q| q.span),
                 TaskTimeMember::Jitter => task.jitter.as_ref().map_or(task.span, |q| q.span),
@@ -527,11 +557,26 @@ fn analyse<'f>(
             ),
             _ => {}
         }
+        if let Some(bcet) = &bcet {
+            let upper = match task.criticality {
+                CriticalityForm::Lo => wcet.as_ref(),
+                CriticalityForm::Hi => wcet_hi.as_ref().or(wcet.as_ref()),
+            };
+            if upper.is_some_and(|upper| bcet > upper) {
+                findings.push(invalid(
+                    set,
+                    &[name],
+                    TaskSetDefect::BcetExceedsBudget,
+                    task.bcet.as_ref().map_or(task.span, |q| q.span),
+                ));
+            }
+        }
         tasks.push(TaskInfo {
             form: task,
             values: Values {
                 interval,
                 deadline,
+                bcet,
                 wcet,
                 jitter,
                 blocking,
@@ -557,6 +602,7 @@ fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
             let wcet = values.wcet.clone()?;
             // A member that is written but did not convert is not defaulted.
             if (task.form.wcet_hi.is_some() && values.wcet_hi.is_none())
+                || (task.form.bcet.is_some() && values.bcet.is_none())
                 || (task.form.jitter.is_some() && values.jitter.is_none())
                 || (task.form.blocking.is_some() && values.blocking.is_none())
             {
@@ -581,6 +627,7 @@ fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
                     },
                 },
                 deadline: values.deadline.clone()?,
+                bcet: values.bcet.clone().unwrap_or_else(zero),
                 wcet,
                 priority: values.priority,
                 criticality,

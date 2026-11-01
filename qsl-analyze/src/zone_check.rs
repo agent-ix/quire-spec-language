@@ -23,6 +23,7 @@ mod refine;
 mod scale;
 mod search;
 mod settle;
+mod task_product;
 mod time_lock;
 
 pub use certificate::certificate_item;
@@ -41,4 +42,8 @@ pub use search::{
 };
 pub use settle::{
     settle_timed_refinement, settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED,
+};
+pub use task_product::{
+    fixed_work_task_product, FixedWorkArrival, FixedWorkGateMiss, FixedWorkTask,
+    FixedWorkTaskProduct,
 };

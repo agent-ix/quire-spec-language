@@ -134,7 +134,10 @@ pub use certificate::zone_certificate::{
     check_zone_certificate, AcceptanceSet, CertEdge, CertNode, CertificateCheckLimits,
     CertificateItem, CertifiedItem, CheckerFault, ComponentReason, Components, DivergenceWitness,
     DivergentTarget, FairnessMember, ItemIdentity, ProductMark, RefinementIdentity, RefinementPart,
-    SilentMove, ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateRequest,
+    SilentMove, TaskAction, TaskArrivalKind, TaskClockCeiling, TaskClosureMethod,
+    TaskDiagonalConstraint, TaskDiagonalOperator, TaskProductAbstraction, TaskProductCertificate,
+    TaskQueueBound, TaskSubtraction, TaskTimeProgress, TaskTimeProgressMethod,
+    TaskTransitionIdentity, ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateRequest,
     ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};

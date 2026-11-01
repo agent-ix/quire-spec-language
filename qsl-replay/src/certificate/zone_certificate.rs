@@ -154,6 +154,242 @@ pub struct ZoneCertificate<O> {
     /// FR-244's refinement part, for the safety half of a timed
     /// refinement (QSpec FR-430); `None` otherwise.
     pub refinement: Option<RefinementPart>,
+    /// FR-418's complete fixed-work task-product contract and finite-product
+    /// gate; absent for ordinary timed subjects.
+    pub task_product: Option<TaskProductCertificate>,
+}
+
+/// QSpec FR-418's recomputable fixed-work task-product certificate data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskProductCertificate {
+    /// The bounded-subtraction/diagonal abstraction version.
+    pub abstraction: TaskProductAbstraction,
+    /// Recompiled per-task queue bounds and exact work premises.
+    pub queue_bounds: Vec<TaskQueueBound>,
+    /// Every auxiliary-clock ceiling, in the common integer scale.
+    pub clock_ceilings: Vec<TaskClockCeiling>,
+    /// Every diagonal predicate preserved by refined regions.
+    pub diagonal_constraints: Vec<TaskDiagonalConstraint>,
+    /// Every typed bounded-subtraction transition.
+    pub subtractions: Vec<TaskSubtraction>,
+    /// The finite-product gate declaration; closure is recomputed by reader.
+    pub time_progress: TaskTimeProgress,
+}
+
+/// One task row in the certificate's finite queue bound.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskQueueBound {
+    /// Checked task-set name.
+    pub taskset: String,
+    /// Checked task name.
+    pub task: String,
+    /// Enforced arrival kind (`periodic` or `sporadic`).
+    pub arrival: TaskArrivalKind,
+    /// Minimum nominal inter-arrival time.
+    pub interarrival: Rational,
+    /// Nominal relative deadline.
+    pub relative_deadline: Rational,
+    /// Maximum release jitter.
+    pub max_jitter: Rational,
+    /// The exact selected demand's lower and upper bounds.
+    pub work_lower: Rational,
+    /// The exact selected demand's upper bound.
+    pub work_upper: Rational,
+    /// The maximum live slots for this task type.
+    pub max_jobs: u64,
+}
+
+/// One auxiliary clock and its recomputed finite maximum.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskClockCeiling {
+    /// The stable task-clock identity.
+    pub clock: String,
+    /// The maximum scaled integer clock value.
+    pub maximum: Integer,
+}
+
+/// One product-internal diagonal clock predicate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskDiagonalConstraint {
+    /// The left clock identity.
+    pub left: String,
+    /// The strict or non-strict comparison.
+    pub operator: TaskDiagonalOperator,
+    /// The right clock identity.
+    pub right: String,
+    /// The exact scaled integer constant.
+    pub constant: Integer,
+}
+
+/// One bounded clock subtraction in the compiled scheduler transition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskSubtraction {
+    /// The typed scheduler transition identity.
+    pub transition: TaskTransitionIdentity,
+    /// The service clock being updated.
+    pub clock: String,
+    /// The exact positive scaled subtraction constant.
+    pub constant: Integer,
+}
+
+/// The finite refined-product closure gate. Its declaration is not trusted
+/// as evidence that the product is actually closed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskTimeProgress {
+    /// The prescribed closure procedure name.
+    pub method: TaskTimeProgressMethod,
+    /// The bounded live-job count to recompile and check.
+    pub live_job_cap: u64,
+    /// The required reader recomputation label.
+    pub closure: TaskClosureMethod,
+}
+
+/// The prescribed bounded-subtraction/diagonal abstraction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskProductAbstraction {
+    /// QSpec FR-415's exact finite-region abstraction.
+    BoundedSubtractionDiagonalV1,
+}
+
+/// One enforced task-arrival rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskArrivalKind {
+    /// Exactly one nominal activation per period.
+    Periodic,
+    /// At least the declared minimum nominal inter-arrival interval.
+    Sporadic,
+}
+
+/// One supported task-product diagonal comparison.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskDiagonalOperator {
+    /// Strictly less than.
+    Less,
+    /// Less than or equal.
+    LessEqual,
+    /// Strictly greater than.
+    Greater,
+    /// Greater than or equal.
+    GreaterEqual,
+}
+
+/// The finite-product reader procedure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskTimeProgressMethod {
+    /// Exhaustively close the finite refined product.
+    ClosedFiniteProductV1,
+}
+
+/// The required independent-reader closure operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskClosureMethod {
+    /// Recompute every reachable successor.
+    RecomputeAllReachableSuccessorsV1,
+}
+
+/// QSpec FR-419's identity for one derived scheduler action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskTransitionIdentity {
+    /// The action name, such as `activate`, `dispatch` or `complete`.
+    pub action: TaskAction,
+    /// The task-set name.
+    pub taskset: String,
+    /// The task name.
+    pub task: String,
+    /// The zero-based occurrence for this source transition.
+    pub job: u64,
+    /// The task's bounded storage slot.
+    pub slot: u64,
+    /// The slot generation, preventing identity reuse.
+    pub generation: u64,
+    /// The source transition whose occurrence identifies this job.
+    pub release: ModelTransition,
+    /// The source transition enabling this scheduler action, if any.
+    pub source_transition: Option<ModelTransition>,
+    /// The exact demand selected for this job.
+    pub demand: Rational,
+    /// The job's selected release jitter.
+    pub jitter: Rational,
+    /// The job's absolute deadline.
+    pub deadline: Rational,
+    /// The selected scheduling priority.
+    pub priority: u64,
+    /// The HI budget increase, present only for a budget-change action.
+    pub budget_delta: Option<Rational>,
+}
+
+impl TaskProductCertificate {
+    /// Whether the typed value satisfies the FR-418-AC-11 structural
+    /// invariants before the checker recompiles the source/task product.
+    pub fn has_valid_shape(&self) -> bool {
+        if self.queue_bounds.is_empty() || self.clock_ceilings.is_empty() {
+            return false;
+        }
+        if self.time_progress.live_job_cap == 0 {
+            return false;
+        }
+        let mut cap = 0_u64;
+        for row in &self.queue_bounds {
+            if row.taskset.is_empty()
+                || row.task.is_empty()
+                || row.interarrival <= Rational::from_integer(Integer::zero())
+                || row.relative_deadline <= Rational::from_integer(Integer::zero())
+                || row.max_jitter < Rational::from_integer(Integer::zero())
+                || row.work_lower <= Rational::from_integer(Integer::zero())
+                || row.work_lower != row.work_upper
+                || row.max_jobs == 0
+            {
+                return false;
+            }
+            let Some(next) = cap.checked_add(row.max_jobs) else {
+                return false;
+            };
+            cap = next;
+        }
+        if cap != self.time_progress.live_job_cap {
+            return false;
+        }
+        let mut clock_names = BTreeSet::new();
+        for ceiling in &self.clock_ceilings {
+            if ceiling.clock.is_empty()
+                || ceiling.maximum <= Integer::zero()
+                || !clock_names.insert(ceiling.clock.as_str())
+            {
+                return false;
+            }
+        }
+        if self.diagonal_constraints.iter().any(|constraint| {
+            !clock_names.contains(constraint.left.as_str())
+                || !clock_names.contains(constraint.right.as_str())
+        }) {
+            return false;
+        }
+        self.subtractions.iter().all(|subtraction| {
+            clock_names.contains(subtraction.clock.as_str())
+                && subtraction.constant > Integer::zero()
+        })
+    }
+}
+
+/// A task-derived scheduler transition kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskAction {
+    /// A source activation creates the task job identity.
+    Activate,
+    /// The pending job becomes ready after its selected jitter.
+    Release,
+    /// The scheduler selects a ready job.
+    Dispatch,
+    /// The scheduler suspends a running job.
+    Preempt,
+    /// The scheduler resumes a suspended job.
+    Resume,
+    /// The selected demand has received its required service.
+    Complete,
+    /// A source mode change increases a HI service allowance.
+    BudgetChange,
+    /// A live job reaches its nominal deadline before completion.
+    DeadlineMiss,
 }
 
 /// FR-244's refinement part: the reachability part is read over the
@@ -771,6 +1007,11 @@ pub fn check_zone_certificate<O: Clone + Eq>(
     };
     if certificate.obligation != *item {
         return Err(mismatch());
+    }
+    // The model-subject path has no task-product request. It must not treat
+    // task_product metadata as proof over a source-only subject.
+    if certificate.task_product.is_some() {
+        return Ok(malformed_verdict(CertificateMember::TaskProduct));
     }
     // The recompiled item's identity (FR-245): a clause's `claim`
     // occurrence in the package, or the derived item's kind.

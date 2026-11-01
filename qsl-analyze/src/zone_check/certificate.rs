@@ -78,6 +78,7 @@ impl Proof {
             divergence: self.divergence,
             admitted: self.admitted,
             refinement: None,
+            task_product: None,
         }
     }
 }

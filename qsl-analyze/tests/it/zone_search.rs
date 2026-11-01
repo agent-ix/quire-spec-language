@@ -17,9 +17,12 @@ use qsl_eval::temporal::{
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
-    check_zone_certificate, CertEdge, CertificateCheckLimits, CertifiedItem, CounterexampleKind,
-    DivergentTarget, TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate,
-    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
+    check_zone_certificate, CertEdge, CertificateCheckLimits, CertificateLocus, CertificateMember,
+    CertificateRejection, CertificateRule, CertifiedItem, CounterexampleKind, DivergentTarget,
+    TaskArrivalKind, TaskClockCeiling, TaskClosureMethod, TaskProductAbstraction,
+    TaskProductCertificate, TaskQueueBound, TaskTimeProgress, TaskTimeProgressMethod,
+    TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate, ZoneCertificateRefusal,
+    ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::reductions::Reductions;
@@ -989,6 +992,47 @@ fn assert_edges_cover(world: &World, certificate: &Certificate) {
     assert_eq!(
         check(world, certificate, CertificateCheckLimits::default()),
         Ok(ZoneCertificateVerdict::Accepted)
+    );
+}
+
+#[trace("TC-371", "FR-418-AC-11")]
+#[test]
+fn model_certificate_reader_does_not_accept_task_product_metadata() {
+    let world = rpc(4);
+    let mut certificate = proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
+    certificate.task_product = Some(TaskProductCertificate {
+        abstraction: TaskProductAbstraction::BoundedSubtractionDiagonalV1,
+        queue_bounds: vec![TaskQueueBound {
+            taskset: "Ctl".to_owned(),
+            task: "a".to_owned(),
+            arrival: TaskArrivalKind::Periodic,
+            interarrival: Rational::from_integer(Integer::from(4_i64)),
+            relative_deadline: Rational::from_integer(Integer::from(4_i64)),
+            max_jitter: Rational::from_integer(Integer::from(0_i64)),
+            work_lower: Rational::from_integer(Integer::from(1_i64)),
+            work_upper: Rational::from_integer(Integer::from(1_i64)),
+            max_jobs: 2,
+        }],
+        clock_ceilings: vec![TaskClockCeiling {
+            clock: "task:Ctl.a:arrival".to_owned(),
+            maximum: Integer::from(4_i64),
+        }],
+        diagonal_constraints: Vec::new(),
+        subtractions: Vec::new(),
+        time_progress: TaskTimeProgress {
+            method: TaskTimeProgressMethod::ClosedFiniteProductV1,
+            live_job_cap: 2,
+            closure: TaskClosureMethod::RecomputeAllReachableSuccessorsV1,
+        },
+    });
+    assert!(certificate.task_product.as_ref().unwrap().has_valid_shape());
+
+    assert_eq!(
+        check(&world, &certificate, CertificateCheckLimits::default()),
+        Ok(ZoneCertificateVerdict::Rejected(CertificateRejection {
+            rule: CertificateRule::Malformed,
+            at: CertificateLocus::CertificateMember(CertificateMember::TaskProduct),
+        }))
     );
 }
 
