@@ -1218,12 +1218,8 @@ fn value_typer_admits(declarations: &str, parameters: &str, body: &str) -> bool 
     package.check(CheckingLimits::default()).is_ok()
 }
 
-/// The forms a hyper body shares with the value profile are typed as the
-/// value typer types them: for each body, the relation body is admitted
-/// exactly when the same body of a Boolean function is. Where the value
-/// typer needs a proof the hyper typer does not ask for (a `Rational` result
-/// range compared with a literal), the two differ; unifying the typers is
-/// remaining work.
+/// A relation body admits the same shared value forms as a Boolean function
+/// body checked by the value typer.
 #[trace("TC-597")]
 #[test]
 fn a_shared_value_form_is_admitted_as_the_value_typer_admits_it() {
@@ -1261,27 +1257,36 @@ fn a_shared_value_form_is_admitted_as_the_value_typer_admits_it() {
 fn relation_and_hyper_atom_bodies_share_value_typer_refusals() {
     let half = "function half using v(n: Integer): Rational[0, 1; 1, 2] pure { rational(1, 2) }\n";
     let out_of_range = "half(x.i) < rational(3, 4)";
-    let faults = body_outcome(&format!("{half}{}", relation_over(out_of_range)))
-        .expect_err("the result literal is outside half's declared range");
+    let declaration = format!("{half}{}", relation_over(out_of_range));
+    let (text, fault) = hyper_cause(&["V"], &declaration);
     assert!(
         matches!(
-            faults.as_slice(),
-            [HyperCause::BodyUnproved {
+            fault,
+            HyperCause::BodyUnproved {
                 obligation: qsl_semantics::check::Obligation::RationalRange,
                 ..
-            }]
+            }
         ),
-        "{faults:?}"
+        "{fault:?}"
     );
+    assert_eq!(
+        (fault.code(), fault.tag()),
+        (Code::UndefinedExpression, "unproved-range")
+    );
+    assert_eq!(fault.span(), Some(first(&text, "rational(3, 4)")));
 
     let ambiguous = "rational(1, 2) < rational(3, 4)";
     for declaration in [relation_over(ambiguous), atom_over(ambiguous)] {
-        let faults =
-            body_outcome(&declaration).expect_err("an unhinted rational literal is ambiguous");
+        let (text, fault) = hyper_cause(&["V"], &declaration);
         assert!(
-            matches!(faults.as_slice(), [HyperCause::BodyAmbiguousLiteral { .. }]),
-            "{faults:?}"
+            matches!(fault, HyperCause::BodyAmbiguousLiteral { .. }),
+            "{fault:?}"
         );
+        assert_eq!(
+            (fault.code(), fault.tag()),
+            (Code::IllTyped, "ambiguous-literal")
+        );
+        assert_eq!(fault.span(), Some(first(&text, "rational(1, 2)")));
     }
 
     for (declaration, shadowed) in [
