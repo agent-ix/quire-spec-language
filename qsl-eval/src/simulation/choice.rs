@@ -297,6 +297,22 @@ pub(crate) fn weighted_choice_counted(
     }
 }
 
+/// One exact uniform value on the `2^-q` grid, from one sampler choice
+/// digest (FR-254, SS-2). The range divides `2^256` for every supported
+/// exponent, so reduction modulo the range is unbiased.
+pub(crate) fn uniform_grid_value(at: ChoicePoint, q: u32) -> Option<Rational> {
+    if q > 256 {
+        return None;
+    }
+    if q == 0 {
+        return Some(Rational::from_integer(Integer::zero()));
+    }
+    let range = Integer::one().shifted_left(u64::from(q));
+    let value = big_endian(plain_digest(&DrawPreimage::at(at, 0)));
+    let (_, remainder) = value.div_mod_floor(NonZeroInteger::try_from(&range).ok()?);
+    Some(Rational::from_integer(remainder).divided_by_power_of_two(u64::from(q)))
+}
+
 /// The index of `weights` the generator selects at `at` (FR-188): the
 /// weights scaled to integers by the least common multiple of their
 /// denominators, each index selected with probability exactly its scaled

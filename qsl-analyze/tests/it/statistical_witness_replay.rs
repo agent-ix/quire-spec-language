@@ -46,6 +46,7 @@ fn decide(
             limits: StatisticalLimits::default(),
             max_witnesses,
             symmetry: Vec::new(),
+            timed_sampling: qsl_replay::statistical::TimedSampling::default(),
         },
         &Cancel::new(),
     )
@@ -80,6 +81,7 @@ pub(crate) fn replay(
     replay_sampled_witness(
         &WitnessReplay {
             system: &system,
+            timed: None,
             workload,
             provenance,
             cancel: &cancel,
@@ -447,6 +449,7 @@ fn a_cancelled_replay_is_refused_as_cancelled() {
     let refusal = replay_sampled_witness(
         &WitnessReplay {
             system: &system,
+            timed: None,
             workload,
             provenance: &verdict.provenance,
             cancel: &cancel,
@@ -547,6 +550,7 @@ fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
                     limits: StatisticalLimits::default(),
                     max_witnesses: 3,
                     symmetry: Vec::new(),
+                    timed_sampling: qsl_replay::statistical::TimedSampling::default(),
                 },
             }],
             &Cancel::new(),
@@ -594,6 +598,7 @@ fn routed<'a>(
             limits,
             max_witnesses: 1,
             symmetry: Vec::new(),
+            timed_sampling: qsl_replay::statistical::TimedSampling::default(),
         },
     }
 }

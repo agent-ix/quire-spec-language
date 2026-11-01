@@ -454,6 +454,286 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
     );
 }
 
+/// FR-253-AC-1 (TC-708): after `send`, the concrete guard windows preserve
+/// their exact rational endpoints, and the checked delay declaration stays
+/// attached to its operation.
+#[trace("TC-708", "FR-253-AC-1")]
+#[test]
+fn stochastic_rpc_exposes_checked_delay_windows() {
+    let declarations = "delay M::Call::send ~ exponential(rational(1, 1000));\n\
+        delay M::Call::reply ~ discrete { 1 ms: 90, 3 ms: 10 };\n\
+        delay M::Call::timeout ~ uniform;\n\
+        delay M::Call::reset ~ exponential(rational(1, 1000));\n\
+        workload Even on M { weight Call::send = 1; weight Call::reply = 1;\n\
+          weight Call::timeout = 1; weight Call::reset = 1; weight Call::tick = 1;\n\
+          weight Call::work = 1; weight Call::spawn = 1; }";
+    let world = world(&rpc_unit(3, declarations));
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let mut behaviour = TimedBehaviour::new(initial);
+    let send = transition(&timed, &behaviour, "send");
+    behaviour
+        .advance(&timed, &exact(0, 1), &send)
+        .expect("send at time zero");
+
+    let windows = timed
+        .scheduled_windows(behaviour.last().state())
+        .expect("exact windows");
+    let reply = windows
+        .iter()
+        .find(|window| window.transition.operation().contains("Call/reply"))
+        .expect("reply window");
+    assert!(matches!(
+        reply.distribution,
+        Some(qsl_semantics::check::DelayDistribution::Discrete(_))
+    ));
+    assert_eq!(reply.intervals.len(), 1);
+    assert_eq!(reply.intervals[0].lower(), (&exact(1, 1), true));
+    assert_eq!(reply.intervals[0].upper(), Some((&exact(3, 1), true)));
+
+    let timeout = windows
+        .iter()
+        .find(|window| window.transition.operation().contains("Call/timeout"))
+        .expect("timeout window");
+    assert!(matches!(
+        timeout.distribution,
+        Some(qsl_semantics::check::DelayDistribution::Uniform)
+    ));
+    assert_eq!(timeout.intervals.len(), 1);
+    assert_eq!(timeout.intervals[0].lower(), (&exact(3, 1), true));
+    assert_eq!(timeout.intervals[0].upper(), Some((&exact(3, 1), true)));
+
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload("Even")
+        .expect("Even workload");
+    let mut seen = BTreeMap::new();
+    for seed in 0..512 {
+        let race = qsl_eval::simulation::model::sample_timed_race(
+            &timed,
+            behaviour.last().state(),
+            workload,
+            qsl_eval::simulation::ChoicePoint {
+                seed,
+                trace: 0,
+                step: 0,
+                choice: 0,
+            },
+            8,
+        )
+        .expect("the stochastic race draws");
+        let path: Vec<_> = race
+            .steps
+            .iter()
+            .map(|step| {
+                let transition = step.transition.operation();
+                let operation = if transition.contains("Call/reply") {
+                    "reply"
+                } else if transition.contains("Call/timeout") {
+                    "timeout"
+                } else {
+                    panic!("unexpected tied operation {transition}")
+                };
+                (operation, step.delay.clone())
+            })
+            .collect();
+        seen.insert(path, race.probability);
+    }
+    assert_eq!(seen.get(&vec![("reply", exact(1, 1))]), Some(&exact(9, 10)));
+    assert_eq!(seen.get(&vec![("reply", exact(3, 1))]), Some(&exact(1, 20)));
+    assert_eq!(
+        seen.get(&vec![("timeout", exact(3, 1)), ("reply", exact(0, 1))]),
+        Some(&exact(1, 20))
+    );
+
+    // FR-254-AC-2 (TC-709): the repeated timed sampler carries exact delays
+    // on every sampled transition and stops before crossing its horizon.
+    let timed_sample = qsl_eval::simulation::model::sample_timed(
+        &timed,
+        behaviour.last().state(),
+        workload,
+        qsl_eval::simulation::ChoicePoint {
+            seed: 7,
+            trace: 0,
+            step: 0,
+            choice: 0,
+        },
+        8,
+        &exact(3, 1),
+        100,
+    )
+    .expect("timed sample within horizon");
+    assert!(timed_sample.steps.iter().all(|step| step.delay.is_some()));
+    assert!(!timed_sample.steps.is_empty());
+    assert!(timed_sample.stamp <= exact(3, 1));
+    let sample_at = qsl_eval::simulation::ChoicePoint {
+        seed: 7,
+        trace: 0,
+        step: 0,
+        choice: 0,
+    };
+    assert_eq!(
+        qsl_eval::simulation::model::replay_timed_sample(
+            &timed,
+            behaviour.last().state(),
+            workload,
+            sample_at,
+            8,
+            &exact(3, 1),
+            100,
+            &timed_sample,
+        )
+        .expect("replay timed sample"),
+        qsl_eval::simulation::model::TimedSampleReplay::Reproduced
+    );
+    let mut altered = timed_sample.clone();
+    altered.steps[0].delay = Some(exact(0, 1));
+    assert!(matches!(
+        qsl_eval::simulation::model::replay_timed_sample(
+            &timed,
+            behaviour.last().state(),
+            workload,
+            sample_at,
+            8,
+            &exact(3, 1),
+            100,
+            &altered,
+        ),
+        Ok(qsl_eval::simulation::model::TimedSampleReplay::Disagrees(_))
+    ));
+
+    let mut replied = TimedBehaviour::new(timed.initial().remove(0));
+    let send = transition(&timed, &replied, "send");
+    replied.advance(&timed, &exact(0, 1), &send).expect("send");
+    let reply = transition(&timed, &replied, "reply");
+    replied
+        .advance(&timed, &exact(1, 1), &reply)
+        .expect("reply");
+    let reset = timed
+        .scheduled_windows(replied.last().state())
+        .expect("reset window")
+        .into_iter()
+        .find(|window| window.transition.operation().contains("Call/reset"))
+        .expect("reset is enabled");
+    let exponential = qsl_semantics::check::DelayDistribution::Exponential {
+        rate: exact(1, 1000),
+    };
+    let first = qsl_eval::simulation::draw_timed_delay(
+        &exponential,
+        &reset.intervals,
+        qsl_eval::simulation::ChoicePoint {
+            seed: 5,
+            trace: 7,
+            step: 2,
+            choice: 0,
+        },
+        8,
+    )
+    .expect("a conditioned exponential draw");
+    let replayed = qsl_eval::simulation::draw_timed_delay(
+        &exponential,
+        &reset.intervals,
+        qsl_eval::simulation::ChoicePoint {
+            seed: 5,
+            trace: 7,
+            step: 2,
+            choice: 0,
+        },
+        8,
+    )
+    .expect("the same draw recomputes");
+    assert_eq!(first, replayed);
+}
+
+/// FR-254-AC-3 (TC-709): the per-sample transition budget stops a trace that
+/// needs a second operation before its timed horizon.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn timed_sample_stops_at_its_transition_budget() {
+    let declarations = "delay M::Call::send ~ discrete { 0 ms: 1 };\n\
+        delay M::Call::reply ~ discrete { 1 ms: 1 };\n\
+        delay M::Call::timeout ~ discrete { 1 ms: 1 };\n\
+        delay M::Call::reset ~ discrete { 0 ms: 1 };\n\
+        workload Even on M { weight Call::send = 1; weight Call::reply = 1;\n\
+          weight Call::timeout = 1; weight Call::reset = 1; weight Call::tick = 1;\n\
+          weight Call::work = 1; weight Call::spawn = 1; }";
+    let world = world(&rpc_unit(3, declarations));
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload("Even")
+        .expect("Even workload");
+    assert!(matches!(
+        qsl_eval::simulation::model::sample_timed(
+            &timed,
+            &initial,
+            workload,
+            qsl_eval::simulation::ChoicePoint {
+                seed: 7,
+                trace: 0,
+                step: 0,
+                choice: 0,
+            },
+            8,
+            &exact(100, 1),
+            1,
+        ),
+        Err(qsl_eval::simulation::model::TimedSampleStop::MaxSampleSteps)
+    ));
+}
+
+/// FR-254 Behavior (TC-709): a free-delay identity that races makes timed
+/// statistical sampling unsupported at the first timed state where it is
+/// scheduled.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn timed_sampling_refuses_a_free_delay_race() {
+    let declarations = "delay M::Call::send ~ exponential(rational(1, 1000));\n\
+        delay M::Call::reply ~ discrete { 1 ms: 90, 3 ms: 10 };\n\
+        delay M::Call::reset ~ exponential(rational(1, 1000));\n\
+        workload Even on M { weight Call::send = 1; weight Call::reply = 1;\n\
+          weight Call::timeout = 1; weight Call::reset = 1; weight Call::tick = 1;\n\
+          weight Call::work = 1; weight Call::spawn = 1; }";
+    let world = world(&rpc_unit(3, declarations));
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let initial = timed.initial().remove(0);
+    let mut behaviour = TimedBehaviour::new(initial);
+    let send = transition(&timed, &behaviour, "send");
+    behaviour
+        .advance(&timed, &exact(0, 1), &send)
+        .expect("send at time zero");
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload("Even")
+        .expect("Even workload");
+    assert!(matches!(
+        qsl_eval::simulation::model::sample_timed_race(
+            &timed,
+            behaviour.last().state(),
+            workload,
+            qsl_eval::simulation::ChoicePoint {
+                seed: 7,
+                trace: 0,
+                step: 0,
+                choice: 0,
+            },
+            8,
+        ),
+        Err(qsl_eval::simulation::model::TimedRaceStop::NotStochastic { identity, .. })
+            if identity.operation().contains("Call/timeout")
+    ));
+}
+
 /// FR-236-AC-1's state key half (TC-691): over `Rpc` with `T = 3 ms`, the steps of
 /// `NoLateReply`'s counterexample, `send` after 0, `timeout` after 3 and
 /// `reply` after 0, reach post-states whose FR-236 state key changes when only

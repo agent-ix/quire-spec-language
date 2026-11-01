@@ -12,7 +12,7 @@
 
 use quire_exact::{Integer, NonZeroInteger, Rational};
 
-use qsl_semantics::check::ClockOp;
+use qsl_semantics::check::{ClockOp, DelayDistribution};
 
 use super::{zero, GuardedStep, PlaceConstraint, TimedState, TimedStop, TimedSystem};
 use crate::simulation::model::TerminalClass;
@@ -23,6 +23,19 @@ use crate::simulation::model::TerminalClass;
 pub struct DelayInterval {
     lower: (Rational, bool),
     upper: Option<(Rational, bool)>,
+}
+
+/// One enabled transition and the finite union of delays at which its clock
+/// guard and the state's invariant admit it (FR-253, SD-2).
+#[derive(Clone, Debug)]
+pub struct ScheduledWindow {
+    /// The concrete transition, including its selected arguments.
+    pub transition: GuardedStep,
+    /// The delay law declared for this operation; `None` means its delay is
+    /// free and must be chosen by a scheduler.
+    pub distribution: Option<DelayDistribution>,
+    /// The operation's window, in ascending interval order.
+    pub intervals: Vec<DelayInterval>,
 }
 
 impl DelayInterval {
@@ -67,7 +80,7 @@ impl DelayInterval {
 
     /// The intersection with `other`.
     #[must_use]
-    fn meet(&self, other: &Self) -> Self {
+    pub fn meet(&self, other: &Self) -> Self {
         let lower = match self.lower.0.cmp(&other.lower.0) {
             std::cmp::Ordering::Greater => self.lower.clone(),
             std::cmp::Ordering::Less => other.lower.clone(),
@@ -179,6 +192,45 @@ pub enum TimedTerminalClass {
 }
 
 impl TimedSystem<'_, '_> {
+    /// Every enabled concrete transition with its exact delay window at
+    /// `state` (FR-253, SD-2). Each guard part remains a separate interval,
+    /// so a disjunctive guard is not widened to its convex hull.
+    pub fn scheduled_windows(&self, state: &TimedState) -> Result<Vec<ScheduledWindow>, TimedStop> {
+        let admissible = self.admissible_delays(state)?;
+        let mut windows = Vec::new();
+        for transition in self.guarded_steps(&state.discrete)? {
+            let intervals: Vec<_> = self
+                .enabled_delays(state, &transition)?
+                .into_iter()
+                .map(|window| window.meet(&admissible))
+                .filter(|window| !window.is_empty())
+                .collect();
+            if intervals.is_empty() {
+                continue;
+            }
+            let distribution = self
+                .system
+                .package
+                .graph()
+                .probabilistic_model()
+                .delays()
+                .iter()
+                .find(|delay| {
+                    let operation = delay.operation();
+                    self.system
+                        .operation_text(operation.declaring(), operation.name())
+                        == Some(transition.operation())
+                })
+                .map(|delay| delay.distribution().clone());
+            windows.push(ScheduledWindow {
+                transition,
+                distribution,
+                intervals,
+            });
+        }
+        Ok(windows)
+    }
+
     /// The delays admissible at `state` (FR-231 "Delay"): `[0, 0]` under a
     /// tick source or at an urgent state, and otherwise every delay at
     /// which each applicable time invariant still holds.

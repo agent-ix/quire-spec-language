@@ -52,7 +52,10 @@ pub use claim::{
     reduce_quantile, require_statistical, Bound, ClaimRefusal, Comparison, MeasureEvent,
     QuantileComparison, StatisticalClaim,
 };
-pub use model::{check_statistical, witness_reader, ModelWitnessReader, StatisticalRequest};
+pub use model::{
+    check_statistical, witness_reader, witness_reader_with_timed_sampling, ModelWitnessReader,
+    StatisticalRequest,
+};
 
 use bounds::{int, normal_quantile_upper, quotient, QuantileFailure};
 use claim::Comparison as Cmp;
@@ -90,6 +93,8 @@ pub struct SampledRequest<'a> {
     /// The most sampled witnesses kept beside an undefined one (FR-193);
     /// [`DEFAULT_MAX_WITNESSES`] by default.
     pub max_witnesses: u32,
+    /// The timed sampler settings (FR-254); used only by timed claims.
+    pub timed_sampling: qsl_replay::statistical::TimedSampling,
 }
 
 /// FR-189's published default for `max_witnesses`: 8.
@@ -230,6 +235,23 @@ pub enum SampleHalt {
     },
     /// A claim predicate's read was refused with no value undefined.
     PredicateRefused(ClauseOutcome),
+    /// FR-254: a free-delay identity raced in a timed sample.
+    NotStochastic {
+        /// The state of the first unsupported race.
+        state: qsl_eval::simulation::StateKey,
+        /// The scheduled identity with no law.
+        identity: quire_semantic_value::model_transition::ModelTransition,
+    },
+    /// FR-254: a local time-lock was reached before the horizon.
+    TimeLockedSample {
+        /// The state that locally time-locked.
+        state: qsl_eval::simulation::StateKey,
+    },
+    /// FR-254's per-sample step budget was reached.
+    MaxSampleSteps {
+        /// The request's `max_sample_steps` value.
+        value: u64,
+    },
 }
 
 /// The behaviours EN-4 decides from: FR-188's sampler and the layer-5
@@ -473,6 +495,16 @@ fn halted(halt: SampleHalt) -> Result<TestEnd, StatisticalRefusal> {
         SampleHalt::PredicateRefused(outcome) => {
             return Err(StatisticalRefusal::PredicateRefused(outcome))
         }
+        SampleHalt::NotStochastic { state, identity } => {
+            TestEnd::Unsupported(StatisticalUnsupported::NotStochastic { state, identity })
+        }
+        SampleHalt::TimeLockedSample { state } => {
+            TestEnd::Unsupported(StatisticalUnsupported::TimeLockedSample { state })
+        }
+        SampleHalt::MaxSampleSteps { value } => TestEnd::Stopped(StatisticalStop::Limit {
+            limit: StatisticalLimit::MaxSampleSteps { value },
+            value,
+        }),
         SampleHalt::GeneratorMismatch { supplied } => {
             return Err(StatisticalRefusal::GeneratorMismatch { supplied })
         }
@@ -724,6 +756,11 @@ impl Plan<'_> {
     fn basis(&self, samples: u64, draws: u64) -> StatisticalBasis {
         StatisticalBasis {
             method: self.request.method,
+            delay_grid_bits: self
+                .request
+                .claim
+                .timed
+                .then_some(self.request.timed_sampling.q),
             confidence: self.request.claim.confidence().clone(),
             samples,
             draws,
@@ -738,6 +775,17 @@ impl Plan<'_> {
         StatisticalProvenance {
             seed: self.request.seed,
             sampler: self.request.sampler.clone(),
+            timed_horizon: self.request.claim.timed_horizon().cloned(),
+            delay_grid_bits: self
+                .request
+                .claim
+                .timed
+                .then_some(self.request.timed_sampling.q),
+            max_sample_steps: self
+                .request
+                .claim
+                .timed
+                .then_some(self.request.timed_sampling.max_sample_steps),
             tests,
         }
     }

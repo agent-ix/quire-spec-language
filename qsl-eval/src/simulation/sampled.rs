@@ -34,16 +34,21 @@ use crate::simulation::model::{
 use crate::simulation::sample::is_pinned_sampler;
 
 mod replay;
+mod timed;
 
 pub use replay::{
     replay_sampled, SampledDisagreement, SampledRecord, SampledReplay, SampledReplayRefusal,
 };
+pub use timed::{draw_timed_delay, TimedDelayRefusal};
 
 /// One step of a sampled behaviour (FR-188).
 #[derive(Clone, Debug)]
 pub struct SampledStep {
     /// The transition taken: an operation's, or the terminal stutter step.
     pub transition: TransitionId,
+    /// The exact delay before this transition for a dense-time sample;
+    /// `None` for the untimed sampler and terminal stutter steps (FR-254).
+    pub delay: Option<Rational>,
     /// The post-state's canonical key.
     pub post_state: StateKey,
     /// The selected item index of each choice that drew, in choice-index
@@ -62,6 +67,7 @@ pub struct SampledStep {
 impl PartialEq for SampledStep {
     fn eq(&self, other: &Self) -> bool {
         self.transition == other.transition
+            && self.delay == other.delay
             && self.post_state == other.post_state
             && self.choices == other.choices
             && same_values(&self.random, &other.random)
@@ -377,6 +383,7 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
                 from.clone(),
                 SampledStep {
                     transition: TransitionId::Stutter,
+                    delay: None,
                     post_state: from.key.clone(),
                     choices: Vec::new(),
                     random: Vec::new(),
@@ -399,6 +406,7 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
         let position = self.position(taken.post)?;
         let sampled = SampledStep {
             transition: taken.transition,
+            delay: None,
             post_state: position.key.clone(),
             choices: draws.choices,
             random: taken.random,

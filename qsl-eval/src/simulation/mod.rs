@@ -49,9 +49,9 @@ pub use reduction::{
 };
 pub use sample::{sample_request, sample_request_until, SampleRequest};
 pub use sampled::{
-    replay_sampled, sample_probabilistic, ProbabilisticSampler, SampleStop, SampledBehaviour,
-    SampledDisagreement, SampledPosition, SampledRecord, SampledReplay, SampledReplayRefusal,
-    SampledStep, StepAt,
+    draw_timed_delay, replay_sampled, sample_probabilistic, ProbabilisticSampler, SampleStop,
+    SampledBehaviour, SampledDisagreement, SampledPosition, SampledRecord, SampledReplay,
+    SampledReplayRefusal, SampledStep, StepAt, TimedDelayRefusal,
 };
 pub use subject::{Bounded, ConstraintError, Cut, SubjectSystem, SubjectTransition};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

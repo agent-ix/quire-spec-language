@@ -21,20 +21,24 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use qsl_eval::automaton::{translate_body, AutomatonError, Monitor, PropertyAutomaton, StateId};
-use qsl_eval::model_subject::{ModelInstance, ModelSubject};
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
-use qsl_eval::simulation::{
-    NotSimulated, Permutation, ProbabilisticSampler, SampleStop, SampledPosition, SampledStep,
-    StepAt, SymmetryGroup, TotalAboveDrawRange, TransitionSystem,
+use qsl_eval::automaton::{
+    bounded_formula_verdict, translate_body, AutomatonError, Monitor, PropertyAutomaton, StateId,
 };
-use qsl_eval::temporal::UndefinedCause;
+use qsl_eval::model_subject::{ModelInstance, ModelSubject};
+use qsl_eval::simulation::model::{
+    ModelSimState, ModelSystem, PredicateReading, TimedRaceStop, TimedSampleStop, TimedSystem,
+};
+use qsl_eval::simulation::{
+    ExpansionStop, NotSimulated, Permutation, ProbabilisticSampler, SampleStop, SampledPosition,
+    SampledStep, StepAt, SymmetryGroup, TotalAboveDrawRange, TransitionSystem,
+};
+use qsl_eval::temporal::{AtomReading, TemporalOutcome, UndefinedCause};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::{
     ClaimForm, Confidence, MeasureValue, StatisticalLimits, StatisticalMethod, StatisticalOutcome,
-    StatisticalRefusal, TestProvenance, WitnessReadStop, WitnessReader, WitnessReading,
-    WitnessValue,
+    StatisticalRefusal, TestProvenance, TimedSampling, WitnessReadStop, WitnessReader,
+    WitnessReading, WitnessValue,
 };
 use qsl_replay::{
     ClaimPredicate, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
@@ -43,6 +47,7 @@ use qsl_replay::{
 use qsl_semantics::check::{
     Bound as CheckedBound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim,
     CheckedTemporalFormula, Event, FractionMeasure, ProbForm, ProbScheduler, TemporalProfile,
+    Workload,
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
@@ -84,6 +89,8 @@ pub struct StatisticalRequest<'a> {
     /// (S3 refuses a reference literal), so the invariance condition always
     /// holds today. SYM-4's closure is not checked: only given pairs merge.
     pub symmetry: Vec<SymmetryDeclaration>,
+    /// The timed sampler settings (FR-254); ignored for untimed subjects.
+    pub timed_sampling: TimedSampling,
 }
 
 fn fault(invariant: &'static str) -> StatisticalRefusal {
@@ -120,6 +127,7 @@ pub fn check_statistical(
         limits,
         max_witnesses,
         symmetry,
+        timed_sampling,
     } = request;
     require_statistical(claim)?;
     let (statistical, reading) = reduce(claim)?;
@@ -135,7 +143,15 @@ pub fn check_statistical(
     } else {
         Some(admit(&system, &symmetry).map_err(StatisticalRefusal::Symmetry)?)
     };
-    let (shared, mut tests) = open(&system, package, claim, reading, &sampler, cancel)?;
+    let (shared, mut tests) = open(
+        &system,
+        package,
+        claim,
+        reading,
+        &sampler,
+        timed_sampling,
+        cancel,
+    )?;
     if let Some(group) = group {
         tests = orbit_representatives(&system, &group, &shared.initial, tests)?;
     }
@@ -151,6 +167,7 @@ pub fn check_statistical(
             sampler: &sampler,
             limits,
             max_witnesses,
+            timed_sampling,
         },
         &mut model,
         cancel,
@@ -165,6 +182,7 @@ fn open<'s, 'a, 'c>(
     claim: &'c CheckedProbabilisticClaim,
     reading: Reading<'c>,
     sampler: &DefinitionRef,
+    timed_sampling: TimedSampling,
     cancel: &'s Cancel,
 ) -> Result<(Shared<'s, 'a, 'c>, Vec<TestSubject>), StatisticalRefusal> {
     let ProbScheduler::Workload(name) = &claim.scheduler else {
@@ -175,6 +193,16 @@ fn open<'s, 'a, 'c>(
         .probabilistic_model()
         .workload(name)
         .ok_or_else(|| fault("claim-workload-is-declared"))?;
+    let timed_system = if TemporalProfile::from_identity(claim.profile.identity())
+        == Some(TemporalProfile::Timed)
+    {
+        Some(
+            TimedSystem::new(system, &claim.subject.alias)
+                .map_err(|_| fault("timed-claim-subject-is-admitted"))?,
+        )
+    } else {
+        None
+    };
     let bindings = bindings(system, claim)?;
     let initial = system.initial();
     let mut tests = Vec::with_capacity(initial.len().saturating_mul(bindings.len()));
@@ -198,6 +226,9 @@ fn open<'s, 'a, 'c>(
         generator,
         system,
         reading,
+        workload,
+        timed_system,
+        timed_sampling,
         initial,
         bindings,
         truths: BTreeMap::new(),
@@ -346,6 +377,7 @@ enum Reading<'c> {
         formula: &'c CheckedTemporalFormula,
         profile: TemporalProfile,
         horizon: u64,
+        timed_horizon: Option<Rational>,
         /// The monitor and the predicates of its atoms, built at the first
         /// sample, so that a state limit stops the run (FR-126).
         compiled: Option<Compiled<'c>>,
@@ -419,13 +451,14 @@ fn compile<'c>(
     })
 }
 
-/// An `accumulate` or `steps` measure over `[0, within]`.
+/// An `accumulate`, `steps`, or dense-time `elapsed` measure.
 struct Measure<'c> {
     /// The reward summed; `None` for `steps`, 1 per step.
     reward: Option<&'c Identifier>,
     from: &'c CheckedPredicate,
     until: &'c CheckedPredicate,
     within: u64,
+    timed_within: Option<Rational>,
 }
 
 /// How a measured sample becomes the sample the statistics count.
@@ -464,6 +497,19 @@ fn measure_of(measure: &BoundedMeasure) -> Option<Measure<'_>> {
             from,
             until,
             within: *within,
+            timed_within: None,
+        }),
+        BoundedMeasure::Elapsed {
+            from,
+            until,
+            within,
+            ..
+        } => Some(Measure {
+            reward: None,
+            from,
+            until,
+            within: 0,
+            timed_within: Some(within.clone()),
         }),
         BoundedMeasure::Steps {
             from,
@@ -474,8 +520,9 @@ fn measure_of(measure: &BoundedMeasure) -> Option<Measure<'_>> {
             from,
             until,
             within: *within,
+            timed_within: None,
         }),
-        BoundedMeasure::Elapsed { .. } | BoundedMeasure::Fraction(_) => None,
+        BoundedMeasure::Fraction(_) => None,
     }
 }
 
@@ -496,13 +543,18 @@ fn reduce(
     let (form, bound, reading) = match &claim.form {
         ProbForm::Probability { bound, event } => {
             let reading = match event {
-                Event::Formula { formula, horizon } => {
+                Event::Formula {
+                    formula,
+                    horizon,
+                    timed_horizon,
+                } => {
                     let profile = TemporalProfile::from_identity(claim.profile.identity())
                         .ok_or_else(|| fault("claim-profile-is-temporal"))?;
                     Reading::Formula {
                         formula,
                         profile,
                         horizon: *horizon,
+                        timed_horizon: timed_horizon.clone(),
                         compiled: None,
                     }
                 }
@@ -571,8 +623,17 @@ fn reduce(
             return Err(StatisticalRefusal::ExactOnlyForm)
         }
     };
-    let claim = StatisticalClaim::new(form, bound, confidence)
+    let is_timed =
+        TemporalProfile::from_identity(claim.profile.identity()) == Some(TemporalProfile::Timed);
+    let timed_horizon = match &reading {
+        Reading::Formula { timed_horizon, .. } => timed_horizon.clone(),
+        Reading::Measure { measure, .. } => measure.timed_within.clone(),
+        Reading::Fraction { .. } | Reading::LongRun { .. } => None,
+    };
+    let mut claim = StatisticalClaim::new(form, bound, confidence)
         .map_err(|_| fault("a-checked-claim-has-an-indifference-region"))?;
+    claim.timed = is_timed;
+    claim.set_timed_horizon(timed_horizon);
     Ok((claim, reading))
 }
 
@@ -581,6 +642,9 @@ struct Shared<'s, 'a, 'c> {
     generator: ProbabilisticSampler<'s, 'a>,
     system: &'s ModelSystem<'a>,
     reading: Reading<'c>,
+    workload: &'s Workload,
+    timed_system: Option<TimedSystem<'s, 'a>>,
+    timed_sampling: TimedSampling,
     initial: Vec<ModelSimState>,
     bindings: Vec<Binding>,
     /// The readings of the claim's predicates by binding and state key. It
@@ -779,6 +843,19 @@ impl<'c> Shared<'_, '_, 'c> {
     /// Draw and read one sample of `test` at `trace` (FR-189 "Per sample").
     fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Drawn, SampleHalt> {
         let (binding, start) = self.start(test)?;
+        if let Reading::Formula {
+            formula,
+            timed_horizon: Some(horizon),
+            ..
+        } = &self.reading
+        {
+            return self.timed_formula(test, binding, seed, trace, formula, horizon);
+        }
+        if let Reading::Measure { measure, .. } = &self.reading {
+            if let Some(horizon) = &measure.timed_within {
+                return self.timed_elapsed(test, binding, seed, trace, horizon);
+            }
+        }
         let mut cursor = match self.cursor(start, seed, trace) {
             Ok(cursor) => cursor,
             Err(Ended::Halt(halt)) => return Err(halt),
@@ -802,6 +879,295 @@ impl<'c> Shared<'_, '_, 'c> {
         })
     }
 
+    fn timed_formula(
+        &self,
+        test: &TestSubject,
+        binding: usize,
+        seed: u64,
+        trace: u64,
+        formula: &CheckedTemporalFormula,
+        horizon: &Rational,
+    ) -> Result<Drawn, SampleHalt> {
+        let timed = self.timed_system.as_ref().ok_or_else(broken)?;
+        let initial = timed
+            .initial()
+            .into_iter()
+            .nth(usize::try_from(test.initial).unwrap_or(usize::MAX))
+            .ok_or_else(broken)?;
+        let sample = qsl_eval::simulation::model::sample_timed(
+            timed,
+            &initial,
+            self.workload,
+            qsl_eval::simulation::ChoicePoint {
+                seed,
+                trace,
+                step: 0,
+                choice: 0,
+            },
+            self.timed_sampling.q,
+            horizon,
+            self.timed_sampling.max_sample_steps,
+        )
+        .map_err(|stop| match stop {
+            TimedSampleStop::Race(TimedRaceStop::NotStochastic { state, identity }) => {
+                SampleHalt::NotStochastic { state, identity }
+            }
+            TimedSampleStop::TimeLockedSample { state } => SampleHalt::TimeLockedSample { state },
+            TimedSampleStop::MaxSampleSteps => SampleHalt::MaxSampleSteps {
+                value: self.timed_sampling.max_sample_steps,
+            },
+            _ => broken(),
+        })?;
+        // A sample ends at its last transition at or before the horizon. For
+        // the bounded event reader, extend the constant final state to the
+        // inclusive horizon and add a past-horizon marker so open windows
+        // settle there. These evaluator positions are not sampled witness
+        // steps.
+        let mut formula_states = sample.states.clone();
+        let mut formula_stamps = sample.stamps.clone();
+        let state_at_horizon = if sample.stamp < *horizon {
+            let wait = horizon.sub(&sample.stamp);
+            let state = timed
+                .delay(&sample.state, &wait)
+                .map_err(|_| broken())?
+                .ok_or_else(broken)?;
+            formula_states.push(state.clone());
+            formula_stamps.push(horizon.clone());
+            state
+        } else {
+            sample.state.clone()
+        };
+        formula_states.push(state_at_horizon);
+        formula_stamps.push(horizon.add(&Rational::from_integer(Integer::one())));
+        let mut failure = None;
+        let mut first_undefined = None;
+        let mut atoms = |atom: qsl_semantics::check::FormulaNodeId, position: usize| {
+            let Some(state) = formula_states.get(position) else {
+                failure = Some(broken());
+                return AtomReading::Undefined(UndefinedCause::Kernel(
+                    quire_exact::Undefined::DivisionByZero,
+                ));
+            };
+            let Some(predicate) = formula.condition(atom.index()) else {
+                failure = Some(broken());
+                return AtomReading::Undefined(UndefinedCause::Kernel(
+                    quire_exact::Undefined::DivisionByZero,
+                ));
+            };
+            let over = self
+                .bindings
+                .get(binding)
+                .and_then(|(_, over)| over.as_ref());
+            let readings = match self
+                .system
+                .state_predicates(state.discrete(), &[(predicate, over)])
+            {
+                Ok(readings) => readings,
+                Err(stop) => {
+                    failure = Some(SampleHalt::Expansion(stop));
+                    return AtomReading::Undefined(UndefinedCause::Kernel(
+                        quire_exact::Undefined::DivisionByZero,
+                    ));
+                }
+            };
+            match readings.first() {
+                Some(PredicateReading::True) => AtomReading::True,
+                Some(PredicateReading::False) => AtomReading::False,
+                Some(PredicateReading::Undefined { cause, .. }) => {
+                    first_undefined.get_or_insert((position, atom));
+                    AtomReading::Undefined(cause.clone())
+                }
+                Some(PredicateReading::Refused(outcome)) => {
+                    failure = Some(SampleHalt::PredicateRefused(outcome.clone()));
+                    AtomReading::Undefined(UndefinedCause::Kernel(
+                        quire_exact::Undefined::DivisionByZero,
+                    ))
+                }
+                None => {
+                    failure = Some(broken());
+                    AtomReading::Undefined(UndefinedCause::Kernel(
+                        quire_exact::Undefined::DivisionByZero,
+                    ))
+                }
+            }
+        };
+        let outcome = bounded_formula_verdict(formula.formula(), &formula_stamps, &mut atoms)
+            .map_err(|_| broken())?;
+        if let Some(failure) = failure {
+            return Err(failure);
+        }
+        let value = match outcome {
+            TemporalOutcome::Holds => Sample::Event(true),
+            TemporalOutcome::Violated { .. } => Sample::Event(false),
+            TemporalOutcome::Undefined(undefined) => {
+                let (position, atom) = first_undefined.ok_or_else(broken)?;
+                let state = formula_states.get(position).ok_or_else(broken)?;
+                let stamp = formula_stamps.get(position).ok_or_else(broken)?;
+                Sample::Undefined(UndefinedEvaluation {
+                    site: UndefinedSite {
+                        position: undefined.at.index(),
+                        state_key: self
+                            .system
+                            .state_key(state.discrete())
+                            .map_err(|_| broken())?
+                            .1,
+                        locus: UndefinedLocus::Atom(atom),
+                        transition: None,
+                        time: Some(Box::new(qsl_replay::TimedPoint {
+                            stamp: stamp.clone(),
+                            clocks: state.clocks().values().to_vec(),
+                        })),
+                    },
+                    cause: undefined.cause,
+                })
+            }
+            TemporalOutcome::Pending
+            | TemporalOutcome::InsufficientData(_)
+            | TemporalOutcome::MissingFairnessPremise { .. }
+            | TemporalOutcome::Incomplete(_)
+            | TemporalOutcome::WindowLimitReached(_) => return Err(broken()),
+        };
+        Ok(Drawn {
+            sample: value,
+            steps: sample.steps,
+        })
+    }
+
+    /// Read a dense-time elapsed window from the exact timestamps of one
+    /// sampled trace (FR-254-AC-3).
+    fn timed_elapsed(
+        &self,
+        test: &TestSubject,
+        binding: usize,
+        seed: u64,
+        trace: u64,
+        horizon: &Rational,
+    ) -> Result<Drawn, SampleHalt> {
+        let Reading::Measure { measure, judge } = &self.reading else {
+            return Err(broken());
+        };
+        let timed = self.timed_system.as_ref().ok_or_else(broken)?;
+        let initial = timed
+            .initial()
+            .into_iter()
+            .nth(usize::try_from(test.initial).unwrap_or(usize::MAX))
+            .ok_or_else(broken)?;
+        let sample = qsl_eval::simulation::model::sample_timed(
+            timed,
+            &initial,
+            self.workload,
+            qsl_eval::simulation::ChoicePoint {
+                seed,
+                trace,
+                step: 0,
+                choice: 0,
+            },
+            self.timed_sampling.q,
+            horizon,
+            self.timed_sampling.max_sample_steps,
+        )
+        .map_err(|stop| match stop {
+            TimedSampleStop::Race(TimedRaceStop::NotStochastic { state, identity }) => {
+                SampleHalt::NotStochastic { state, identity }
+            }
+            TimedSampleStop::TimeLockedSample { state } => SampleHalt::TimeLockedSample { state },
+            TimedSampleStop::MaxSampleSteps => SampleHalt::MaxSampleSteps {
+                value: self.timed_sampling.max_sample_steps,
+            },
+            _ => broken(),
+        })?;
+        let over = self
+            .bindings
+            .get(binding)
+            .and_then(|(_, over)| over.as_ref());
+        let reads = [measure.from, measure.until];
+        let mut active_since = None;
+        let mut elapsed = None;
+        for (position, state) in sample.states.iter().enumerate() {
+            let readings = self
+                .system
+                .state_predicates(state.discrete(), &[(reads[0], over), (reads[1], over)])
+                .map_err(SampleHalt::Expansion)?;
+            let stamp = sample.stamps.get(position).ok_or_else(broken)?;
+            let [from_reading, until_reading] = readings.as_slice() else {
+                return Err(broken());
+            };
+            let mut truths = [false; 2];
+            for (index, reading) in [from_reading, until_reading].into_iter().enumerate() {
+                match reading {
+                    PredicateReading::True => truths[index] = true,
+                    PredicateReading::False => {}
+                    PredicateReading::Undefined { cause, .. } => {
+                        return Ok(Drawn {
+                            sample: Sample::Undefined(UndefinedEvaluation {
+                                site: UndefinedSite {
+                                    position: u64::try_from(position).unwrap_or(u64::MAX),
+                                    state_key: self
+                                        .system
+                                        .state_key(state.discrete())
+                                        .map_err(|_| broken())?
+                                        .1,
+                                    locus: UndefinedLocus::ClaimPredicate(if index == 0 {
+                                        ClaimPredicate::From
+                                    } else {
+                                        ClaimPredicate::Until
+                                    }),
+                                    transition: None,
+                                    time: Some(Box::new(qsl_replay::TimedPoint {
+                                        stamp: stamp.clone(),
+                                        clocks: state.clocks().values().to_vec(),
+                                    })),
+                                },
+                                cause: cause.clone(),
+                            }),
+                            steps: sample.steps,
+                        });
+                    }
+                    PredicateReading::Refused(outcome) => {
+                        return Err(SampleHalt::PredicateRefused(outcome.clone()))
+                    }
+                }
+            }
+            if truths[0] && active_since.is_none() {
+                active_since = Some(stamp.clone());
+            }
+            if truths[1] {
+                if let Some(start) = &active_since {
+                    elapsed = Some(MeasureValue::Value(stamp.sub(start)));
+                    break;
+                }
+            }
+        }
+        let value = match (elapsed, active_since.is_some(), judge) {
+            (Some(value), _, _) => value,
+            (None, true, _) => MeasureValue::Censored,
+            (None, false, MeasureJudge::Quantile(_)) => {
+                return Ok(Drawn {
+                    sample: Sample::NotActivated,
+                    steps: sample.steps,
+                })
+            }
+            (None, false, MeasureJudge::Compare { claim, .. }) => {
+                let violating = matches!(claim, Comparison::AtMost | Comparison::Below);
+                return Ok(Drawn {
+                    sample: Sample::Event(violating),
+                    steps: sample.steps,
+                });
+            }
+        };
+        let reading = match judge {
+            MeasureJudge::Compare { threshold, .. } => Sample::Event(compares(threshold, &value)),
+            MeasureJudge::Quantile(event) => Sample::Measured {
+                holds: event.holds(&value),
+                value,
+            },
+        };
+        Ok(Drawn {
+            sample: reading,
+            steps: sample.steps,
+        })
+    }
+
     /// A bounded event: the monitor reads one letter per position until it
     /// decides. At a terminal model state (ADR-018 SM-4), and after the
     /// `h + 1`-th letter, the profile's false extension closes it (FR-126),
@@ -812,6 +1178,7 @@ impl<'c> Shared<'_, '_, 'c> {
             profile,
             horizon,
             compiled,
+            ..
         } = &mut self.reading
         else {
             return Err(broken().into());
@@ -1141,10 +1508,39 @@ pub fn witness_reader<'s, 'a, 'c>(
     sampler: &DefinitionRef,
     cancel: &'s Cancel,
 ) -> Result<ModelWitnessReader<'s, 'a, 'c>, StatisticalRefusal> {
+    witness_reader_with_timed_sampling(
+        system,
+        package,
+        claim,
+        sampler,
+        TimedSampling::default(),
+        cancel,
+    )
+}
+
+/// The reader of `claim` over `system` using the recorded timed sampling
+/// settings. Use this when replaying a timed witness whose grid or step
+/// budget differs from the published defaults (FR-254).
+pub fn witness_reader_with_timed_sampling<'s, 'a, 'c>(
+    system: &'s ModelSystem<'a>,
+    package: &'s CheckedPackage,
+    claim: &'c CheckedProbabilisticClaim,
+    sampler: &DefinitionRef,
+    timed_sampling: TimedSampling,
+    cancel: &'s Cancel,
+) -> Result<ModelWitnessReader<'s, 'a, 'c>, StatisticalRefusal> {
     require_statistical(claim)?;
     let (statistical, reading) = reduce(claim)?;
     let bound = statistical.bound().clone();
-    let (shared, _) = open(system, package, claim, reading, sampler, cancel)?;
+    let (shared, _) = open(
+        system,
+        package,
+        claim,
+        reading,
+        sampler,
+        timed_sampling,
+        cancel,
+    )?;
     Ok(ModelWitnessReader {
         shared: Rc::new(RefCell::new(shared)),
         bound,
@@ -1168,6 +1564,14 @@ impl From<SampleHalt> for WitnessReadStop {
             }
             SampleHalt::PredicateRefused(outcome) => {
                 return Self::PredicateRefused(Box::new(outcome));
+            }
+            SampleHalt::NotStochastic { .. }
+            | SampleHalt::TimeLockedSample { .. }
+            | SampleHalt::MaxSampleSteps { .. } => {
+                return Self::Sample(Box::new(SampleStop::Expansion(ExpansionStop {
+                    cause: CatalogCode::new("runtime_invariant", "established-invariant-broken"),
+                    limit: None,
+                })));
             }
         };
         Self::Sample(Box::new(stop))
@@ -1216,6 +1620,32 @@ impl WitnessReader for ModelWitnessReader<'_, '_, '_> {
             });
         }
         let Drawn { sample, steps } = self.shared.borrow_mut().sample(&subject, seed, trace)?;
+        let value = match sample {
+            Sample::Undefined(evaluation) => Some(WitnessValue::Undefined(evaluation)),
+            other => violating(&self.bound, &other),
+        };
+        Ok(WitnessReading { value, steps })
+    }
+
+    fn read_timed(
+        &mut self,
+        test: &TestProvenance,
+        seed: u64,
+        trace: u64,
+        record: &qsl_eval::simulation::model::TimedSample,
+    ) -> Result<WitnessReading, WitnessReadStop> {
+        let subject = TestSubject {
+            initial: test.initial,
+            binding: test.binding.clone(),
+        };
+        let Drawn { sample, steps } = self
+            .shared
+            .borrow_mut()
+            .sample(&subject, seed, trace)
+            .map_err(WitnessReadStop::from)?;
+        if steps != record.steps {
+            return Err(WitnessReadStop::TimedUnsupported);
+        }
         let value = match sample {
             Sample::Undefined(evaluation) => Some(WitnessValue::Undefined(evaluation)),
             other => violating(&self.bound, &other),

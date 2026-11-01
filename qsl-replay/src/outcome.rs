@@ -354,6 +354,51 @@ pub struct ItemCause {
     /// The current tagged identity of `stale-dependency`.
     #[serde(skip_serializing_if = "Option::is_none")]
     recompiled: Option<StaleIdentityWire>,
+    /// The timed state named by FR-331's sampling refusal causes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<TimedStateWire>,
+    /// The typed transition identity named by `not-stochastic`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity: Option<TimedTransitionWire>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TimedStateWire {
+    key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TimedTransitionWire {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    operation: serde_json::Value,
+    receiver: Option<serde_json::Value>,
+    arguments: Vec<serde_json::Value>,
+}
+
+impl From<&qsl_eval::simulation::StateKey> for TimedStateWire {
+    fn from(key: &qsl_eval::simulation::StateKey) -> Self {
+        use base64::Engine;
+        Self {
+            key: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes()),
+        }
+    }
+}
+
+impl From<&quire_semantic_value::model_transition::ModelTransition> for TimedTransitionWire {
+    fn from(identity: &quire_semantic_value::model_transition::ModelTransition) -> Self {
+        let value = |text: &str| serde_json::from_str(text).expect("canonical typed value");
+        Self {
+            kind: "transition",
+            operation: value(identity.operation()),
+            receiver: identity.receiver().map(value),
+            arguments: identity
+                .arguments()
+                .iter()
+                .map(|text| value(text))
+                .collect(),
+        }
+    }
 }
 
 /// A stale identity on the terminal wire. The explicit discriminator keeps
@@ -480,6 +525,8 @@ impl ItemCause {
             predicate: None,
             requested: None,
             recompiled: None,
+            state: None,
+            identity: None,
         }
     }
 
@@ -767,6 +814,13 @@ impl OutcomeItem {
                     | UnavailabilityCause::NotMarkov
                     | UnavailabilityCause::ConfidenceBeyondPrecision
                     | UnavailabilityCause::PunctualInterval { .. } => {}
+                    UnavailabilityCause::NotStochastic { state, identity } => {
+                        item.state = Some(state.into());
+                        item.identity = Some(identity.into());
+                    }
+                    UnavailabilityCause::TimeLockedSample { state } => {
+                        item.state = Some(state.into());
+                    }
                 }
                 Some(item)
             }
@@ -1533,6 +1587,32 @@ mod tests {
 
     use super::*;
     use crate::identity::QualifiedName;
+
+    #[test]
+    fn timed_statistical_refusal_carries_typed_state_and_transition() {
+        let state = qsl_eval::simulation::StateKey::from_canonical_bytes(b"[0,[]]".to_vec());
+        let transition = quire_semantic_value::model_transition::ModelTransition::new(
+            r#"{"name":"timeout"}"#.to_owned(),
+            None,
+            vec![r#"{"type":"integer","value":"1"}"#.to_owned()],
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .expect("canonical transition values");
+        let mut item = ItemCause::kind("not-stochastic");
+        item.state = Some((&state).into());
+        item.identity = Some((&transition).into());
+
+        let value = serde_json::to_value(item).expect("wire cause serializes");
+        assert_eq!(value["kind"], "not-stochastic");
+        assert_eq!(value["state"]["key"], "WzAsW11d");
+        assert_eq!(value["identity"]["type"], "transition");
+        assert_eq!(
+            value["identity"]["operation"],
+            serde_json::json!({"name":"timeout"})
+        );
+        assert_eq!(value["identity"]["receiver"], serde_json::Value::Null);
+        assert_eq!(value["identity"]["arguments"][0]["value"], "1");
+    }
 
     /// QSL-381: a node id nested 200 deep, past serde_json's 128-level
     /// recursion limit, writes and reads back without a depth cap.

@@ -27,8 +27,8 @@ pub use settle::{
     SubjectLimits, UnsettledRefusal,
 };
 pub use witness::{
-    replay_sampled_witness, SampledParity, SampledWitnessRefusal, SampledWitnessReplay,
-    WitnessReadStop, WitnessReader, WitnessReading, WitnessReplay,
+    replay_sampled_witness, replay_timed_sampled_witness, SampledParity, SampledWitnessRefusal,
+    SampledWitnessReplay, WitnessReadStop, WitnessReader, WitnessReading, WitnessReplay,
 };
 
 /// How a request decides a claim from its samples (FR-189, FR-190;
@@ -333,6 +333,9 @@ pub struct TestResult {
 pub struct StatisticalBasis {
     /// The request's method.
     pub method: StatisticalMethod,
+    /// The base-2 grid exponent for timed delay sampling; `None` for an
+    /// untimed run (FR-254).
+    pub delay_grid_bits: Option<u32>,
     /// The claim's `α`, `β` and `ι`.
     pub confidence: Confidence,
     /// Samples counted, or cycles closed, over every test.
@@ -347,6 +350,24 @@ pub struct StatisticalBasis {
     pub beta_per_test: Rational,
     /// The method's coverage.
     pub coverage: Coverage,
+}
+
+/// Caller-set settings for timed sampling (FR-254 Inputs).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimedSampling {
+    /// The exponent `q` of the `2^-q` uniform delay grid.
+    pub q: u32,
+    /// Maximum transitions allowed in one sample before its horizon.
+    pub max_sample_steps: u64,
+}
+
+impl Default for TimedSampling {
+    fn default() -> Self {
+        Self {
+            q: 64,
+            max_sample_steps: 16_777_216,
+        }
+    }
 }
 
 /// The trace indices one test used (FR-191; ADR-024 RP-1): `count` indices
@@ -381,6 +402,12 @@ pub struct StatisticalProvenance {
     pub seed: u64,
     /// The sampler's identity.
     pub sampler: DefinitionRef,
+    /// The timed claim horizon, if one was sampled.
+    pub timed_horizon: Option<Rational>,
+    /// The base-2 timed delay grid exponent.
+    pub delay_grid_bits: Option<u32>,
+    /// Per-trace timed sample step budget.
+    pub max_sample_steps: Option<u64>,
     /// Each test run, in order.
     pub tests: Vec<TestProvenance>,
 }
@@ -528,6 +555,18 @@ pub enum StatisticalUnsupported {
     TotalAboveDrawRange {
         /// The scaled total.
         total: Integer,
+    },
+    /// A free-delay identity raced at this state (FR-254).
+    NotStochastic {
+        /// State at the first free-delay race.
+        state: qsl_eval::simulation::StateKey,
+        /// Scheduled identity with no law.
+        identity: quire_semantic_value::model_transition::ModelTransition,
+    },
+    /// A local time-lock was reached before the timed sample horizon.
+    TimeLockedSample {
+        /// The time-locked state.
+        state: qsl_eval::simulation::StateKey,
     },
 }
 

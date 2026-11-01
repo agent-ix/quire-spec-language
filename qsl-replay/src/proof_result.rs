@@ -514,7 +514,7 @@ impl ProofRefusalCause {
 /// FR-331's `unsupported` cause: the solver or backend is absent after
 /// negotiation (ADR-013 O-16), or the premise a clause needs is not there
 /// (FR-132).
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UnavailabilityCause {
     /// No solver satisfying the request's capability negotiation is present.
     SolverAbsent,
@@ -581,6 +581,18 @@ pub enum UnavailabilityCause {
     TotalAboveDrawRange {
         /// The scaled total.
         total: Integer,
+    },
+    /// A free delay raced in a timed statistical sample (FR-254).
+    NotStochastic {
+        /// The canonical timed-state key.
+        state: qsl_eval::simulation::StateKey,
+        /// The typed transition identity whose delay is free.
+        identity: quire_semantic_value::model_transition::ModelTransition,
+    },
+    /// A timed statistical sample reached a local time-lock (FR-254).
+    TimeLockedSample {
+        /// The canonical timed-state key.
+        state: qsl_eval::simulation::StateKey,
     },
     /// FR-192: `min(α', β')` has no normal-quantile bound for the
     /// regenerative method (QSpec FR-408 Admission). Wire cause
@@ -696,6 +708,8 @@ impl UnavailabilityCause {
             | Self::StatisticalRequest(_) => "unsupported-requested-capability",
             Self::NotMarkov => "not-markov",
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
+            Self::NotStochastic { .. } => "not-stochastic",
+            Self::TimeLockedSample { .. } => "time-locked-sample",
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::RecoveryView { .. } => "recovery-view",
@@ -714,6 +728,8 @@ impl UnavailabilityCause {
             | Self::BackendAbsent
             | Self::NotMarkov
             | Self::TotalAboveDrawRange { .. }
+            | Self::NotStochastic { .. }
+            | Self::TimeLockedSample { .. }
             | Self::ConfidenceBeyondPrecision
             | Self::WeakAccessShape { .. }
             | Self::RecoveryView { .. }

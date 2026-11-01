@@ -51,6 +51,10 @@ pub struct StatisticalClaim {
     form: ClaimForm,
     bound: Bound,
     confidence: Confidence,
+    /// Whether the checked claim selects the timed profile (FR-254).
+    pub(crate) timed: bool,
+    /// The checked finite horizon for a timed sample, in the model unit.
+    timed_horizon: Option<quire_exact::Rational>,
 }
 
 /// Why a form, a bound and confidence parameters are not a claim EN-4
@@ -91,6 +95,8 @@ impl StatisticalClaim {
             form,
             bound,
             confidence,
+            timed: false,
+            timed_horizon: None,
         })
     }
 
@@ -107,6 +113,16 @@ impl StatisticalClaim {
     /// The claim's `α`, `β` and `ι`.
     pub fn confidence(&self) -> &Confidence {
         &self.confidence
+    }
+
+    /// The timed sample horizon, in the model's declared unit.
+    pub fn timed_horizon(&self) -> Option<&quire_exact::Rational> {
+        self.timed_horizon.as_ref()
+    }
+
+    /// Set the checked horizon retained for timed sample replay.
+    pub(crate) fn set_timed_horizon(&mut self, timed_horizon: Option<quire_exact::Rational>) {
+        self.timed_horizon = timed_horizon;
     }
 }
 

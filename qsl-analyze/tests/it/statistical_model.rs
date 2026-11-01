@@ -5,21 +5,26 @@
 //! evaluator.
 
 use ix_trace_rs::trace;
-use qsl_analyze::statistical::{check_statistical, StatisticalRequest, DEFAULT_MAX_WITNESSES};
-use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_analyze::statistical::{
+    check_statistical, witness_reader, witness_reader_with_timed_sampling, StatisticalRequest,
+    DEFAULT_MAX_WITNESSES,
+};
+use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::TransitionId;
+use qsl_eval::simulation::model::{ExpansionLimits, TimedSystem};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::statistical::{
-    Decision, MeasureValue, StatisticalLimit, StatisticalLimits, StatisticalMethod,
-    StatisticalOutcome, StatisticalRefusal, StatisticalStop, StatisticalUnsupported,
-    StatisticalVerdict, UndecidedCause, WitnessValue,
+    replay_sampled_witness, Decision, MeasureValue, StatisticalLimit, StatisticalLimits,
+    StatisticalMethod, StatisticalOutcome, StatisticalRefusal, StatisticalStop,
+    StatisticalUnsupported, StatisticalVerdict, UndecidedCause, WitnessReplay, WitnessValue,
 };
+use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
 use qsl_route::reductions::SymmetryDeclaration;
+use qsl_semantics::check::ProbScheduler;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
 use quire_semantic_value::catalog::UndefinedReason;
@@ -52,8 +57,100 @@ fn run(
             limits,
             max_witnesses,
             symmetry: Vec::new(),
+            timed_sampling: qsl_replay::statistical::TimedSampling::default(),
         },
         &Cancel::new(),
+    )
+}
+
+fn run_timed_method(
+    world: &crate::timed_world::World,
+    claim_name: &str,
+    method: StatisticalMethod,
+    seed: u64,
+    timed_sampling: qsl_replay::statistical::TimedSampling,
+    max_witnesses: u32,
+) -> Result<StatisticalOutcome, StatisticalRefusal> {
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim(claim_name)
+        .expect("the timed claim checks");
+    check_statistical(
+        StatisticalRequest {
+            subject: ModelSubject {
+                simulation: world.request(),
+                proof_bounds: Vec::new(),
+            },
+            claim,
+            method,
+            seed,
+            sampler: sampler(),
+            limits: StatisticalLimits::default(),
+            max_witnesses,
+            symmetry: Vec::new(),
+            timed_sampling,
+        },
+        &Cancel::new(),
+    )
+}
+
+fn timed_late_document() -> Vec<u8> {
+    let mut document: serde_json::Value = serde_json::from_slice(&crate::timed_world::document(
+        &["x"],
+        &[("finish", &["phase", "late"])],
+    ))
+    .expect("the timed fixture document is JSON");
+    let operation = &mut document["types"][1]["operations"][0];
+    let parameter = crate::timed_world::ident("Call/finish/isLate");
+    operation["params"] = json!([{
+        "identity": parameter,
+        "name": "isLate",
+        "typeRef": "ix://quire/native/Boolean",
+        "presence": "required",
+        "nullable": false,
+        "defaultKind": "none",
+        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        "origin": {"source": {"sourceIdentity": crate::timed_world::ident("spec"),
+            "path": "spec.qspec", "startLine": 1, "startColumn": 1}},
+    }]);
+    serde_json::to_vec(&document).expect("the parameterized document serializes")
+}
+
+fn timed_late_world(
+    delay_declaration: &str,
+    probability_bound: &str,
+    horizon_ms: u32,
+) -> crate::timed_world::World {
+    let body = format!(
+        "{}\
+         pre Waiting using v on M::Call::finish {{ self.phase = 0 }}\n\
+         post Finished using v on M::Call::finish {{ self.phase = 1 and self.late = isLate }}\n\
+         random M::Call::finish(isLate) ~ {{ false: 19, true: 1 }};\n\
+         {delay_declaration}\n\
+         workload Even on M {{ weight Call::finish = 1; }}\n\
+         probabilistic RareLate using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.005\n\
+             {{ {probability_bound} [ eventually[0 ms, {horizon_ms} ms] holds(c.late) ] }}\n",
+        crate::timed_world::DENSE,
+    );
+    crate::timed_world::world(
+        &timed_late_document(),
+        "profile ev = \"quire.temporal.timed/v1\";\n",
+        &body,
+    )
+}
+
+fn timed_world_with(
+    operations: &[(&str, &[&str])],
+    declarations: &str,
+) -> crate::timed_world::World {
+    let body = format!("{}\n{declarations}", crate::timed_world::DENSE);
+    crate::timed_world::world(
+        &crate::timed_world::document(&["x"], operations),
+        "profile ev = \"quire.temporal.timed/v1\";\n",
+        &body,
     )
 }
 
@@ -142,6 +239,345 @@ fn p95_over_service_is_decided_from_the_models_own_behaviours() {
         assert!(sequential.tests[0].samples < 23_026, "{claim}");
         assert_eq!(sequential.interval, None);
     }
+}
+
+/// FR-254-AC-3 (TC-709): an elapsed claim reads the exact difference between
+/// the first waiting state and the state reached after the sampled operation.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn elapsed_measure_reads_the_sampled_timestamp_difference() {
+    let body = format!(
+        "{}\
+         pre Waiting using v on M::Call::send {{ self.phase = 0 }}\n\
+         post Sent using v on M::Call::send {{ self.phase = 1 }}\n\
+         delay M::Call::send ~ discrete {{ 1 ms: 1 }};\n\
+         workload Even on M {{ weight Call::send = 1; }}\n\
+         probabilistic Latency using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.1, beta 0.1, indifference 0.1\n\
+             {{ quantile 0.5 of (elapsed from holds(c.phase = 0)\n\
+             until holds(c.phase = 1) within 3 ms) <= 0 ms }}\n",
+        crate::timed_world::DENSE
+    );
+    let world = crate::timed_world::world(
+        &crate::timed_world::document(&["x"], &[("send", &["phase"])]),
+        "profile ev = \"quire.temporal.timed/v1\";\n",
+        &body,
+    );
+    let system = world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("Latency")
+        .expect("the latency claim checks");
+    let outcome = check_statistical(
+        StatisticalRequest {
+            subject: ModelSubject {
+                simulation: world.request(),
+                proof_bounds: Vec::new(),
+            },
+            claim,
+            method: StatisticalMethod::Okamoto,
+            seed: 7,
+            sampler: sampler(),
+            limits: StatisticalLimits::default(),
+            max_witnesses: 1,
+            symmetry: Vec::new(),
+            timed_sampling: qsl_replay::statistical::TimedSampling::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the timed measure samples");
+    let StatisticalOutcome::Completed(verdict) = outcome else {
+        panic!("the deterministic elapsed sample decides: {outcome:?}");
+    };
+    assert_eq!(verdict.decision, Decision::Rejected);
+    assert_eq!(verdict.basis.delay_grid_bits, Some(64));
+    assert_eq!(verdict.witnesses.len(), 1);
+    let witness = &verdict.witnesses[0];
+    assert_eq!(
+        witness.value,
+        WitnessValue::Measure(MeasureValue::Value(ratio(1, 1)))
+    );
+    assert_eq!(witness.steps.len(), 1);
+    assert_eq!(witness.steps[0].delay.as_ref(), Some(&ratio(1, 1)));
+    let workload_name = match &claim.scheduler {
+        ProbScheduler::Workload(name) => name,
+        ProbScheduler::Every => panic!("the claim names its workload"),
+    };
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload(workload_name)
+        .expect("the workload checks");
+    let cancel = Cancel::new();
+    let mut reader = witness_reader(&system, &world.package, claim, &sampler(), &cancel)
+        .expect("the timed claim is readable");
+    let replay = WitnessReplay {
+        system: &system,
+        timed: Some(&timed),
+        workload,
+        provenance: &verdict.provenance,
+        cancel: &cancel,
+    };
+    assert_eq!(
+        replay_sampled_witness(&replay, witness, &mut reader),
+        Ok(qsl_replay::statistical::SampledWitnessReplay::Reproduced)
+    );
+    let mut altered = witness.clone();
+    altered.steps[0].delay = Some(ratio(2, 1));
+    assert!(matches!(
+        replay_sampled_witness(&replay, &altered, &mut reader),
+        Ok(qsl_replay::statistical::SampledWitnessReplay::Inconclusive(
+            _
+        ))
+    ));
+}
+
+/// FR-254-AC-1/2 (TC-709): the exact 1/20 late probability is rejected by
+/// the 1% bound, while uniform delay is accepted; runs replay with the
+/// recorded grid and detect an altered delay.
+#[trace("TC-709", "FR-254-AC-1", "FR-254-AC-2")]
+#[test]
+fn timed_event_sampling_is_reproducible_and_replays_exact_grid_delays() {
+    let discrete = timed_late_world(
+        "delay M::Call::finish ~ discrete { 1 ms: 1 };",
+        "probability <= 0.01",
+        1,
+    );
+    let run_a = completed(run_timed_method(
+        &discrete,
+        "RareLate",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        1,
+    ));
+    let run_b = completed(run_timed_method(
+        &discrete,
+        "RareLate",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        1,
+    ));
+    assert_eq!(run_a.decision, Decision::Rejected);
+    assert_eq!(run_a.basis.delay_grid_bits, Some(64));
+    assert_eq!(run_a.decision, run_b.decision);
+    assert_eq!(run_a.tests, run_b.tests);
+
+    let uniform = timed_late_world(
+        "delay M::Call::finish ~ uniform[1 ms, 3 ms];",
+        "probability <= 0.01",
+        1,
+    );
+    let accepted = completed(run_timed_method(
+        &uniform,
+        "RareLate",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        1,
+    ));
+    assert_eq!(accepted.decision, Decision::Accepted);
+    assert_eq!(accepted.basis.delay_grid_bits, Some(64));
+
+    let quantized_world = timed_late_world(
+        "delay M::Call::finish ~ uniform[1 ms, 3 ms];",
+        "probability >= 0.5",
+        3,
+    );
+    let quantized = completed(run_timed_method(
+        &quantized_world,
+        "RareLate",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling {
+            q: 8,
+            max_sample_steps: 100,
+        },
+        1,
+    ));
+    assert_eq!(quantized.basis.delay_grid_bits, Some(8));
+    let witness = quantized.witnesses.first().expect("a sampled witness");
+    assert!(witness.steps.iter().all(|step| {
+        step.delay
+            .as_ref()
+            .is_some_and(|delay| delay.mul(&ratio(256, 1)).denominator() == &Integer::one())
+    }));
+
+    let system = quantized_world.system();
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let claim = quantized_world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("RareLate")
+        .expect("the timed claim checks");
+    let workload_name = match &claim.scheduler {
+        ProbScheduler::Workload(name) => name,
+        ProbScheduler::Every => panic!("the claim names its workload"),
+    };
+    let workload = quantized_world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload(workload_name)
+        .expect("the workload checks");
+    let cancel = Cancel::new();
+    let mut reader = witness_reader_with_timed_sampling(
+        &system,
+        &quantized_world.package,
+        claim,
+        &sampler(),
+        qsl_replay::statistical::TimedSampling {
+            q: 8,
+            max_sample_steps: 100,
+        },
+        &cancel,
+    )
+    .expect("the timed claim is readable");
+    let replay = WitnessReplay {
+        system: &system,
+        timed: Some(&timed),
+        workload,
+        provenance: &quantized.provenance,
+        cancel: &cancel,
+    };
+    assert_eq!(
+        replay_sampled_witness(&replay, witness, &mut reader),
+        Ok(qsl_replay::statistical::SampledWitnessReplay::Reproduced)
+    );
+    let mut altered = witness.clone();
+    altered.steps[0].delay = Some(ratio(999, 1));
+    assert!(matches!(
+        replay_sampled_witness(&replay, &altered, &mut reader),
+        Ok(qsl_replay::statistical::SampledWitnessReplay::Inconclusive(
+            _
+        ))
+    ));
+}
+
+/// FR-254-AC-3 (TC-709): an enabled transition without a delay law refuses
+/// the first race that includes it, preserving the state and operation.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn timed_sampling_refuses_the_first_free_delay_race() {
+    let world = timed_world_with(
+        &[
+            ("send", &["phase"]),
+            ("reply", &["phase"]),
+            ("timeout", &["phase", "late"]),
+        ],
+        "pre Waiting using v on M::Call::send { self.phase = 0 }\n\
+         post Sent using v on M::Call::send { self.phase = 1 }\n\
+         pre Reply using v on M::Call::reply { self.phase = 1 }\n\
+         post Replied using v on M::Call::reply { self.phase = 2 }\n\
+         pre Timeout using v on M::Call::timeout { self.phase = 1 }\n\
+         post TimedOut using v on M::Call::timeout { self.phase = 3 and self.late }\n\
+         delay M::Call::send ~ discrete { 0 ms: 1 };\n\
+         delay M::Call::reply ~ discrete { 1 ms: 1 };\n\
+         workload Even on M { weight Call::send = 1; weight Call::reply = 1; \
+             weight Call::timeout = 1; }\n\
+         probabilistic RareLate using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.005\n\
+             { probability <= 0.01 [ eventually[0 ms, 3 ms] holds(c.late) ] }\n",
+    );
+    let outcome = run_timed_method(
+        &world,
+        "RareLate",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        1,
+    )
+    .expect("a free delay is an unsupported sampling outcome");
+    let StatisticalOutcome::Unsupported {
+        cause: StatisticalUnsupported::NotStochastic { state: _, identity },
+        ..
+    } = outcome
+    else {
+        panic!("the first free-delay race is unsupported: {outcome:?}");
+    };
+    assert!(format!("{identity:?}").contains("timeout"));
+}
+
+/// FR-254-AC-3 (TC-709): the caller's per-sample step budget reaches the
+/// statistical limit settlement with its configured value.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn timed_sampling_settles_the_configured_step_limit() {
+    let world = timed_world_with(
+        &[("send", &["phase"]), ("reply", &["phase"])],
+        "pre Waiting using v on M::Call::send { self.phase = 0 }\n\
+         post Sent using v on M::Call::send { self.phase = 1 }\n\
+         pre Reply using v on M::Call::reply { self.phase = 1 }\n\
+         post Replied using v on M::Call::reply { self.phase = 2 }\n\
+         delay M::Call::send ~ discrete { 0 ms: 1 };\n\
+         delay M::Call::reply ~ discrete { 1 ms: 1 };\n\
+         workload Even on M { weight Call::send = 1; weight Call::reply = 1; }\n\
+         probabilistic Replied using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.1\n\
+             { probability >= 0.5 [ eventually[0 ms, 3 ms] holds(c.phase = 2) ] }\n",
+    );
+    let outcome = run_timed_method(
+        &world,
+        "Replied",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling {
+            q: 64,
+            max_sample_steps: 1,
+        },
+        1,
+    )
+    .expect("a bounded sample stops the request");
+    assert!(matches!(
+        outcome,
+        StatisticalOutcome::Stopped {
+            stop: StatisticalStop::Limit {
+                limit: StatisticalLimit::MaxSampleSteps { value: 1 },
+                value: 1,
+            },
+            ..
+        }
+    ));
+}
+
+/// FR-254-AC-4 (TC-709): reaching a local time-lock before the horizon makes
+/// the run unsupported, with no witness retained.
+#[trace("TC-709", "FR-254-AC-4")]
+#[test]
+fn timed_sampling_settles_a_local_time_lock_without_a_witness() {
+    let world = timed_world_with(
+        &[("go", &["phase"])],
+        "pre Waiting using v on M::Call::go { self.phase = 0 }\n\
+         post Locked using v on M::Call::go { self.phase = 1 }\n\
+         time invariant Lock when { self.phase = 1 } { self.x <= 1 ms }\n\
+         delay M::Call::go ~ discrete { rational(1, 2) ms: 1 };\n\
+         workload Even on M { weight Call::go = 1; }\n\
+         probabilistic Goes using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.1\n\
+             { probability >= 0.5 [ eventually[0 ms, 3 ms] holds(c.phase = 1) ] }\n",
+    );
+    let outcome = run_timed_method(
+        &world,
+        "Goes",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        1,
+    )
+    .expect("a local time-lock is an unsupported sampling outcome");
+    assert!(matches!(
+        outcome,
+        StatisticalOutcome::Unsupported {
+            cause: StatisticalUnsupported::TimeLockedSample { .. },
+            ..
+        }
+    ));
 }
 
 /// Checks FR-193-AC-1 (TC-628 step 1): the `2 ms` claim with seed 7 and
@@ -600,6 +1036,7 @@ fn two_symmetric_servers_run_one_test() {
             limits: StatisticalLimits::default(),
             max_witnesses: DEFAULT_MAX_WITNESSES,
             symmetry,
+            timed_sampling: qsl_replay::statistical::TimedSampling::default(),
         }
     }
     let verdict = completed(check_statistical(
@@ -659,6 +1096,7 @@ fn two_symmetric_servers_run_one_test_under_any_operation_weights() {
                 limits: StatisticalLimits::default(),
                 max_witnesses: DEFAULT_MAX_WITNESSES,
                 symmetry: interchangeable(),
+                timed_sampling: qsl_replay::statistical::TimedSampling::default(),
             },
             &Cancel::new(),
         ));
@@ -695,6 +1133,7 @@ fn mirrored_initial_states_merge_into_two_orbits() {
                 limits: StatisticalLimits::default(),
                 max_witnesses: DEFAULT_MAX_WITNESSES,
                 symmetry,
+                timed_sampling: qsl_replay::statistical::TimedSampling::default(),
             },
             &Cancel::new(),
         ))
@@ -731,6 +1170,7 @@ fn another_sampler_is_refused() {
             limits: StatisticalLimits::default(),
             max_witnesses: DEFAULT_MAX_WITNESSES,
             symmetry: Vec::new(),
+            timed_sampling: qsl_replay::statistical::TimedSampling::default(),
         },
         &Cancel::new(),
     );

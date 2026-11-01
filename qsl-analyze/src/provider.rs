@@ -32,6 +32,8 @@ pub struct ClaimItem<'a> {
     pub max_witnesses: u32,
     /// The declared symmetries selected for the request.
     pub symmetry: Vec<qsl_route::reductions::SymmetryDeclaration>,
+    /// The timed sampler settings (FR-254).
+    pub timed_sampling: qsl_replay::statistical::TimedSampling,
 }
 
 /// One item routed by the caller to a QSL engine.
