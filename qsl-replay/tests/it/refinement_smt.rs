@@ -299,6 +299,61 @@ fn a_refinement_check_stops_at_its_byte_budget() {
     });
 }
 
+/// FR-314-AC-19 (TC-893): polynomial normalization charges the same edge
+/// budget as reading the certificate, and exhaustion stops the check.
+#[trace("TC-893", "FR-314-AC-19")]
+#[test]
+fn polynomial_normalization_stops_at_the_certificate_edge_budget() {
+    let world = World::new(&cas_refines_counter());
+    with_request(&world, |request| {
+        let mut certificate = certificate(request, 7);
+        let base_proof = std::str::from_utf8(&certificate.base.proof).expect("proof is UTF-8");
+        certificate.base.proof = format!(
+            "(step qsl1373_poly_budget (cl (= (* (+ s0.c.value s0.c.tmpA) (+ s0.c.tmpA 1)) (+ (* s0.c.value s0.c.tmpA) s0.c.value (* s0.c.tmpA s0.c.tmpA) s0.c.tmpA))) :rule poly_simp)\n{base_proof}"
+        )
+        .into_bytes();
+
+        let mut full_budget = CertificateCheckLimits::default().max_certificate_edges;
+        let verified = |max_certificate_edges| {
+            let limits = CertificateCheckLimits {
+                max_certificate_edges,
+                ..CertificateCheckLimits::default()
+            };
+            check_refinement_smt_proof(request, &certificate, &limits, &Cancel::new())
+        };
+        assert_eq!(verified(full_budget), Ok(SmtProofCheck::Verified));
+
+        let mut too_small = 0;
+        while full_budget - too_small > 1 {
+            let candidate = too_small + (full_budget - too_small) / 2;
+            match verified(candidate) {
+                Ok(SmtProofCheck::Verified) => full_budget = candidate,
+                Ok(SmtProofCheck::Stopped(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::CertificateMaxEdges,
+                    value,
+                })) if value == candidate => too_small = candidate,
+                result => panic!("unexpected check at edge budget {candidate}: {result:?}"),
+            }
+        }
+
+        assert_eq!(verified(full_budget), Ok(SmtProofCheck::Verified));
+        let one_short = full_budget - 1;
+        let stopped = IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::CertificateMaxEdges,
+            value: one_short,
+        };
+        assert_eq!(verified(one_short), Ok(SmtProofCheck::Stopped(stopped)));
+        let checked = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(stopped))), 7);
+        let holds = vec![StepRecordVerdict::Holds; 8];
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
+        assert_eq!(
+            values(&settled),
+            vec![TerminalValue::Incomplete(stopped); 8]
+        );
+        assert_eq!(settled.safety.value, TerminalValue::Incomplete(stopped));
+    });
+}
+
 const AA_INV: &str = "invariant AaInv using inf on Impl::Counter at current { self.tmpA <= 2 }\n";
 const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
      self.busyA or self.tmpA <= self.value }\n";
