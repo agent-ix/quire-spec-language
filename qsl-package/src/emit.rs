@@ -3224,7 +3224,7 @@ fn write_index_segments(
 ) -> Result<(), EmitRefusal> {
     use quire_contract_model::CheckedNodePathSegment as Segment;
     let is_operand = |segment: &Segment| matches!(segment, Segment::Node(_));
-    let mut keys = ids.key_reader();
+    let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
     let invariant = |_| EmitRefusal::SourceMapInvariant;
     let graph_keys = nodes
         .iter()

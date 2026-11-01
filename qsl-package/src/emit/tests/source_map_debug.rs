@@ -90,6 +90,7 @@ fn a_read_source_map_formats_in_linear_time_though_the_wire_ids_share_nothing() 
                 assert_eq!(read, shared, "the read keys are the keys the ids name");
                 let (shared_time, shared_bytes) = debug_time(&map_of(shared));
                 let (read_time, read_bytes) = debug_time(&map_of(read));
+                eprintln!("depth {depth}: shared {shared_time:?}, graph-read {read_time:?}, output {read_bytes} bytes");
                 assert_eq!(
                     read_bytes, shared_bytes,
                     "depth {depth}: same complete output"
