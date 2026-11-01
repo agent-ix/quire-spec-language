@@ -88,6 +88,8 @@ qsl-package = { path = "qsl-package" }
 # its spine compile (`qsl_replay::spine`), the one S1-to-S4 chain `replay`
 # and `command` share. This crate re-exports none of its items.
 qsl-replay = { path = "qsl-replay" }
+# The root package directly uses the admitted model projection API.
+quire-contract-model = { workspace = true }
 # ADR-011 §7.3 X-4: layer I3, extracted out of this crate. This
 # crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
 qsl-source = { path = "qsl-source", optional = true }
