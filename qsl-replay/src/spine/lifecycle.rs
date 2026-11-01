@@ -405,6 +405,9 @@ pub struct CheckedUnit {
     libraries: Vec<Source>,
     /// The library identity of each entry of `libraries`, in the same order.
     library_names: Vec<LibraryName>,
+    /// The v2 bytes each resolved library was admitted from, emitted once
+    /// during S4 for its import view and retained here by library identity.
+    library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
 }
 
 impl CheckedUnit {
@@ -431,6 +434,13 @@ impl CheckedUnit {
     /// and carries no source here.
     pub fn libraries(&self) -> &[Source] {
         &self.libraries
+    }
+
+    /// The retained v2 bytes of every resolved library, shared not copied.
+    pub(crate) fn shared_library_packages(
+        &self,
+    ) -> &Arc<BTreeMap<LibraryName, pkg::EmittedPackage>> {
+        &self.library_packages
     }
 
     /// The source `check` resolved for the library `identity`, if it
@@ -584,16 +594,21 @@ pub fn check_with_execution_points(
             execution_points.clone(),
         )?;
         *work = resolution.work;
+        let mut library_packages = BTreeMap::new();
         let (library_names, libraries) = resolution
             .compiled
             .into_iter()
-            .map(|(name, library)| (name, library.source.clone()))
+            .map(|(name, library)| {
+                library_packages.insert(name.clone(), library.emitted.clone());
+                (name, library.source.clone())
+            })
             .unzip();
         Ok(CheckedUnit {
             package: Arc::new(package),
             source: parsed.source().clone(),
             libraries,
             library_names,
+            library_packages: Arc::new(library_packages),
         })
     })
 }
@@ -888,6 +903,8 @@ mod tests;
 struct ResolvedLibrary {
     package: Arc<pkg::CheckedPackage>,
     view: ImportView,
+    /// The v2 bytes S4 emitted for this library's import view.
+    emitted: pkg::EmittedPackage,
     /// This library's own source, exactly as its own `qsl_cst::parse` read
     /// it (FND-016).
     source: Source,
@@ -1217,6 +1234,7 @@ impl<'a> Resolution<'a> {
             let library = Arc::new(ResolvedLibrary {
                 package: Arc::new(package),
                 view,
+                emitted: emission.package().clone(),
                 source: done.source,
             });
             self.compiled
