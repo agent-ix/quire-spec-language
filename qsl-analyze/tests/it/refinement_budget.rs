@@ -3,6 +3,8 @@
 //! more than the per-evaluation meter stops the run with the limit and its
 //! value; it is neither a fault nor a parity disagreement.
 
+use std::sync::OnceLock;
+
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_refinement, RefinementCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
@@ -48,19 +50,34 @@ fn run(world: &RingWorld, work: u64) -> SafetyOutcome {
 }
 
 /// The least per-evaluation budget under which the light ring model, whose
-/// concrete contracts, rows and arguments are `HeavyEnq`'s, holds: `B`.
+/// concrete contracts, rows and arguments are `HeavyEnq`'s, holds: `B`. The
+/// integration tests share this value so the search runs only once.
 fn budget() -> u64 {
-    let light = RingWorld::new();
-    let (mut low, mut high) = (1, 1 << 20);
-    while low < high {
-        let middle = low + (high - low) / 2;
-        if matches!(run(&light, middle), SafetyOutcome::Holds { .. }) {
-            high = middle;
-        } else {
-            low = middle + 1;
+    static BUDGET: OnceLock<u64> = OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        let light = RingWorld::new();
+        let maximum = 1 << 20;
+        let (mut low, mut high) = (1, 1);
+        loop {
+            if matches!(run(&light, high), SafetyOutcome::Holds { .. }) {
+                break;
+            }
+            if high == maximum {
+                return high;
+            }
+            low = high + 1;
+            high = (high * 2).min(maximum);
         }
-    }
-    low
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if matches!(run(&light, middle), SafetyOutcome::Holds { .. }) {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        low
+    })
 }
 
 /// The certificate request of `world` under the work-unit budget `work`.
