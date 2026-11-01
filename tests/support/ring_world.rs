@@ -84,6 +84,8 @@ pub struct Variant {
     /// The abstract `Queue` has a required `head: Option<Digit>` field
     /// (FR-140-AC-11).
     pub explicit_option_head: bool,
+    /// Initial payload for the explicit option field; `None` admits `none`.
+    pub explicit_option_head_initial: Option<i64>,
     /// `rings` admits the subtype `SubRing` of `Ring` (FR-140-AC-9).
     pub sub_ring: bool,
     /// The abstract `Queue` also has `x: Int[0, 1]` and `y: Int[0, 1]`
@@ -435,7 +437,10 @@ impl RingWorld {
             queue_fields["head"] = json!({"absent": {}});
         }
         if variant.explicit_option_head {
-            queue_fields["head"] = json!({"absent": {}});
+            queue_fields["head"] = variant
+                .explicit_option_head_initial
+                .map(|value| json!({"present": {"integer": value.to_string()}}))
+                .unwrap_or_else(|| json!({"absent": {}}));
         }
         if variant.next {
             queue_fields["next"] =

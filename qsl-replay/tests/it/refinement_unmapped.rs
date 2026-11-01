@@ -326,6 +326,29 @@ fn explicit_option_abstract_field_rows_preserve_none_and_some_values() {
     assert_eq!(*head, quire_exact::Integer::from(1_i64));
 }
 
+/// FR-140-AC-11 (TC-1086 step 8): package admission retains an explicit
+/// `Some` value on a required option field under its declared field identity.
+#[trace("TC-1086", "FR-140-AC-11")]
+#[test]
+fn required_option_fields_admit_present_snapshot_values() {
+    let variant = Variant {
+        explicit_option_head: true,
+        explicit_option_head_initial: Some(1),
+        ..Variant::default()
+    };
+    let world = RingWorld::with(variant, &ring_is_queue(ITEMS_ROW));
+    let abstracted = world.abstract_system(UNLIMITED);
+    let initial = abstracted.initial_states()[0].state();
+    let queue = &initial.populations[&key(QUEUE, "queues")]["r"];
+    let Some(Value::Option(head)) = queue.fields.get(&key(QUEUE, "Queue/head")) else {
+        panic!("the required option field is admitted under its field identity");
+    };
+    let Some(Value::Integer(payload)) = head.payload() else {
+        panic!("the required option field retains its present payload");
+    };
+    assert_eq!(*payload, quire_exact::Integer::from(1_i64));
+}
+
 /// FR-140-AC-13 (TC-1086 step 4): the failure reported is the first in
 /// reading order, which does not depend on the order the rows were written:
 /// the undefined `items` row of object `a`, not `b`; and with `items`
