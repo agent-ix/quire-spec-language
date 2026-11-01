@@ -513,4 +513,68 @@ mod import_view_debug_tests {
         );
         assert!(text.contains("\"f\"") && text.contains("\"g\""), "{text}");
     }
+
+    /// Keys retained by timed and protocol records join the package's node
+    /// table even when several different field shapes name the same node.
+    /// Provenance: QSL-1358, QSL-381; component completeness regression.
+    #[test]
+    fn retained_timed_and_protocol_keys_share_one_complete_debug_table() {
+        use crate::check::{CheckedJoinPolicy, CheckedProtocolNodeKeys, ConstraintTargetNodes};
+        use qsl_foundation::source::node_table::scoped;
+        use std::fmt;
+        struct Records(
+            ConstraintTargetNodes,
+            CheckedJoinPolicy,
+            CheckedProtocolNodeKeys,
+        );
+        impl fmt::Debug for Records {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                scoped(f, &(&self.0, &self.1, &self.2))
+            }
+        }
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let mut key =
+                    NodeKey::new("retained", vec![PathSegment::Text("leaf".into())], 0).unwrap();
+                for ordinal in 0..1_000 {
+                    key = NodeKey::new(
+                        "retained",
+                        vec![PathSegment::Text("operand".into()), PathSegment::Node(key)],
+                        ordinal,
+                    )
+                    .unwrap();
+                }
+                let records = Records(
+                    ConstraintTargetNodes::Parameter {
+                        operation: key.clone(),
+                        parameter: "clock".into(),
+                    },
+                    CheckedJoinPolicy::Predicate {
+                        function: key.clone(),
+                    },
+                    CheckedProtocolNodeKeys {
+                        clause: Some(key.clone()),
+                        compensations: vec![key.clone()],
+                        terminal: Some(key),
+                        ..Default::default()
+                    },
+                );
+                let text = format!("{records:?}");
+                assert_eq!(
+                    text.matches("retained:[").count(),
+                    1_001,
+                    "every distinct node is written once"
+                );
+                assert_eq!(text.matches("\"leaf\"").count(), 1);
+                assert!(text.contains("operation: #0"), "{text}");
+                assert!(text.contains("function: #0"), "{text}");
+                assert!(text.contains("clause: Some(#0)"), "{text}");
+                assert!(text.contains("compensations: [#0]"), "{text}");
+                assert!(text.contains("terminal: Some(#0)"), "{text}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
