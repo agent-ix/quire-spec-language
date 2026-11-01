@@ -5886,12 +5886,38 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             let operation = &application.operation;
             walk.text(operation.identity());
             match operation.member() {
-                Some(Member::Fairness {
-                    declaration, name, ..
-                }) => {
-                    walk.push(PathSegment::Node(declaration.clone()));
-                    walk.text(name.as_str());
-                }
+                Some(Member::Fairness { target, .. }) => match target {
+                    crate::value::member::FairnessTarget::Operation { declaration, name }
+                    | crate::value::member::FairnessTarget::HybridTransition {
+                        declaration,
+                        name,
+                    } => {
+                        // The declaring node and member name retain the
+                        // historical semantic key. The wire target kind
+                        // distinguishes the checked union arm, while the
+                        // typed node identity already distinguishes these
+                        // declarations for interning.
+                        walk.push(PathSegment::Node(declaration.clone()));
+                        walk.text(name.as_str());
+                    }
+                    crate::value::member::FairnessTarget::ProtocolRoot { node } => {
+                        walk.text("protocol_root");
+                        walk.push(PathSegment::Node(node.clone()));
+                    }
+                    crate::value::member::FairnessTarget::AttemptNode { node } => {
+                        walk.text("attempt_node");
+                        walk.push(PathSegment::Node(node.clone()));
+                    }
+                    crate::value::member::FairnessTarget::ParallelBranch { parallel, branch } => {
+                        walk.text("parallel_branch");
+                        walk.push(PathSegment::Node(parallel.clone()));
+                        walk.text(branch.as_str());
+                    }
+                    crate::value::member::FairnessTarget::CompensationTemplate { node } => {
+                        walk.text("compensation_template");
+                        walk.push(PathSegment::Node(node.clone()));
+                    }
+                },
                 Some(Member::Field {
                     explicit_deref: Some(explicit_deref),
                     ..

@@ -37,10 +37,10 @@ use crate::check::node_key::{
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::temporal_clause::condition::TypedConditions;
 use crate::check::temporal_clause::{
-    BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
-    FormulaNodeId, UnaryTemporal,
+    BinaryTemporal, CheckedFairnessMember, CheckedFormula, CheckedInterval, CheckedTemporalClause,
+    FormulaNode, FormulaNodeId, UnaryTemporal,
 };
-use crate::value::member::{Member, TimedMember};
+use crate::value::member::{FairnessTarget, Member, TimedMember};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "lowering.temporal";
@@ -236,16 +236,85 @@ impl Lowering<'_> {
             &scope,
         )?;
 
-        if clause.fairness().len() != clause.fairness_sources().len() {
+        if clause.fairness().len() != clause.fairness_sources().len()
+            || clause.fairness_order().len()
+                != clause.fairness().len() + clause.protocol_fairness().count()
+        {
             return Err(stage_fault(&claim, "fairness-member-has-a-source"));
         }
         let mut fairness = Vec::with_capacity(clause.fairness().len());
-        for (constraint, source) in clause.fairness().iter().zip(clause.fairness_sources()) {
-            let location = at(TemporalSite::Fairness(*source));
-            let operation = constraint.operation();
-            let declaration = self.object_node(operation.declaring_type(), &location)?;
-            let name = Identifier::new(operation.name().to_owned())
-                .map_err(|_| stage_fault(&location, "fairness-operation-named"))?;
+        let protocol_fairness: Vec<_> = clause.protocol_fairness().collect();
+        for member in clause.fairness_order() {
+            let (kind, granularity, target, source) = match *member {
+                CheckedFairnessMember::Operation(index) => {
+                    let constraint = clause
+                        .fairness()
+                        .get(index)
+                        .ok_or_else(|| stage_fault(&claim, "operation-fairness-index-valid"))?;
+                    let source = *clause
+                        .fairness_sources()
+                        .get(index)
+                        .ok_or_else(|| stage_fault(&claim, "operation-fairness-source-valid"))?;
+                    let location = at(TemporalSite::Fairness(source));
+                    let operation = constraint.operation();
+                    let declaration = self.object_node(operation.declaring_type(), &location)?;
+                    let name = Identifier::new(operation.name().to_owned())
+                        .map_err(|_| stage_fault(&location, "fairness-operation-named"))?;
+                    (
+                        constraint.kind(),
+                        constraint.granularity(),
+                        FairnessTarget::Operation { declaration, name },
+                        source,
+                    )
+                }
+                CheckedFairnessMember::Protocol { member, source } => {
+                    let (constraint, _span) = protocol_fairness
+                        .get(member)
+                        .ok_or_else(|| stage_fault(&claim, "protocol-fairness-index-valid"))?;
+                    let location = at(TemporalSite::Fairness(source));
+                    let members =
+                        self.protocol_members
+                            .get(&constraint.protocol)
+                            .ok_or_else(|| {
+                                stage_fault(&location, "protocol-fairness-target-lowered")
+                            })?;
+                    let target = match &constraint.target {
+                crate::check::temporal_clause::CheckedProtocolTarget::Root => {
+                    FairnessTarget::ProtocolRoot {
+                        node: members.clause.clone(),
+                    }
+                }
+                crate::check::temporal_clause::CheckedProtocolTarget::AttemptNode { node } => {
+                    FairnessTarget::AttemptNode {
+                        node: members.nodes.get(node).cloned().ok_or_else(|| {
+                            stage_fault(&location, "attempt-fairness-node-emitted")
+                        })?,
+                    }
+                }
+                crate::check::temporal_clause::CheckedProtocolTarget::Branch {
+                    parallel,
+                    branch,
+                } => {
+                    FairnessTarget::ParallelBranch {
+                        parallel: members.nodes.get(parallel).cloned().ok_or_else(|| {
+                            stage_fault(&location, "branch-fairness-node-emitted")
+                        })?,
+                        branch: Identifier::new(branch.clone())
+                            .map_err(|_| stage_fault(&location, "branch-fairness-label-valid"))?,
+                    }
+                }
+                crate::check::temporal_clause::CheckedProtocolTarget::CompensationTemplate {
+                    index,
+                } => FairnessTarget::CompensationTemplate {
+                    node: members.compensations.get(*index).cloned().ok_or_else(|| {
+                        stage_fault(&location, "compensation-fairness-node-emitted")
+                    })?,
+                },
+                    };
+                    (constraint.kind, constraint.granularity, target, source)
+                }
+            };
+            let location = at(TemporalSite::Fairness(source));
             let key = self.insert(
                 &location,
                 NodeTag::Temporal,
@@ -256,11 +325,9 @@ impl Lowering<'_> {
                     Operator::TemporalFairness,
                     Operation {
                         member: Some(Member::Fairness {
-                            kind: constraint.kind(),
-                            granularity: constraint.granularity(),
-                            target_kind: crate::value::FairnessTargetKind::Operation,
-                            declaration,
-                            name,
+                            kind,
+                            granularity,
+                            target,
                         }),
                         ..Operation::plain("quire.op.temporal.fair")
                     },

@@ -1208,15 +1208,45 @@ fn map_member(
         Member::Fairness {
             kind,
             granularity,
-            target_kind,
-            declaration,
-            name,
+            target,
         } => Member::Fairness {
             kind,
             granularity,
-            target_kind,
-            declaration: map_key(map, pending_member, declaration),
-            name,
+            target: match target {
+                crate::value::member::FairnessTarget::Operation { declaration, name } => {
+                    crate::value::member::FairnessTarget::Operation {
+                        declaration: map_key(map, pending_member, declaration),
+                        name,
+                    }
+                }
+                crate::value::member::FairnessTarget::ProtocolRoot { node } => {
+                    crate::value::member::FairnessTarget::ProtocolRoot {
+                        node: map_key(map, pending_member, node),
+                    }
+                }
+                crate::value::member::FairnessTarget::AttemptNode { node } => {
+                    crate::value::member::FairnessTarget::AttemptNode {
+                        node: map_key(map, pending_member, node),
+                    }
+                }
+                crate::value::member::FairnessTarget::ParallelBranch { parallel, branch } => {
+                    crate::value::member::FairnessTarget::ParallelBranch {
+                        parallel: map_key(map, pending_member, parallel),
+                        branch,
+                    }
+                }
+                crate::value::member::FairnessTarget::CompensationTemplate { node } => {
+                    crate::value::member::FairnessTarget::CompensationTemplate {
+                        node: map_key(map, pending_member, node),
+                    }
+                }
+                crate::value::member::FairnessTarget::HybridTransition { declaration, name } => {
+                    crate::value::member::FairnessTarget::HybridTransition {
+                        declaration: map_key(map, pending_member, declaration),
+                        name,
+                    }
+                }
+            },
         },
     }
 }

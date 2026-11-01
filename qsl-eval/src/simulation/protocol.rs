@@ -1117,12 +1117,22 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         &self,
         authored: &[quire_semantic_value::fairness::FairnessConstraint],
     ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
+        self.fairness_set_with_targets(authored, &[])
+    }
+
+    /// The FR-212 fairness set including checked protocol-node targets.
+    pub fn fairness_set_with_targets(
+        &self,
+        authored: &[quire_semantic_value::fairness::FairnessConstraint],
+        authored_targets: &[qsl_semantics::check::CheckedProtocolFairness],
+    ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
         let memory = self
             .memory
             .fairness(&fairness::memory_branches(self.protocol, &self.governing));
         fairness::fairness_set(
             self.protocol,
             authored,
+            authored_targets,
             |constraint| {
                 let operation = constraint.operation();
                 self.model

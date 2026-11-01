@@ -1,97 +1,47 @@
 ---
-id: SR-12247
-title: "Code review (Rust lane) of QSL-560 E15c protocol scheduler fairness filter and lasso replay (PR #1134)"
+id: SR-12249
+title: "QSL-560 PR #1986 code and Rust review"
 type: SpecReview
-analysis: base
-scope: "agent-ix/quire-spec-language@39307eec1; git diff origin/main...HEAD: qsl-eval/src/simulation/{protocol.rs,protocol/fairness.rs,protocol/identity.rs,protocol/memory.rs,subject.rs,mod.rs,model/encode.rs}, qsl-analyze/src/model_check/{liveness.rs,check.rs,concretise.rs}, qsl-analyze/tests/it/{scheduler_fairness.rs,model_settle.rs,main.rs}, qsl-replay/src/{model_check/replay.rs,model_check/counterexample.rs,model_check/outcome.rs,model_check/settle.rs,spine.rs}, qsl-semantics/src/check/{temporal_clause.rs,refusal.rs,mod.rs,hyper_clause.rs,temporal_clause/tests.rs}"
+analysis: code-review
+scope: "agent-ix/quire-spec-language@d370a0e670f7bc978980a82dab11df3dba23ab8f; PR #1986 diff origin/main...HEAD"
 review_set: subset
-relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-212
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-217
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/ADR-027
-    type: reviews
 ---
-# SR-12247: Code review (Rust lane) of QSL-560 E15c protocol scheduler fairness filter and lasso replay (PR #1134)
 
 ## Summary
 
-Ticket: QSL-560. PR quire-spec-language#1134, branch qsl-560-impl, head 39307eec1. The review covers `git diff origin/main...HEAD` only: 23 files, one feature commit and one merge of main. The rust-review lane is folded into this file.
-
-No gates and no full builds were run, per the brief. One focused run, `cargo test -p qsl-analyze --test it scheduler_fairness`, went through the build lock. Its result is in the Verdict. `target/` was deleted afterwards.
+Ticket: QSL-560. Code review with the Rust lane against current `origin/main` (`bdbc95f3ac6e33edd3f8ac17bae2defa79cc9d92`). Reviewed the 20 changed Rust files, repository conventions, touched fairness/liveness/replay call paths, and FR-212/FR-217 obligations. No applicable AssuranceProfile was found. The PR emits the STD-616 typed protocol-fairness target union, but the currently pinned IR reader rejects that shape. This is an integration blocker pending IR-1221 and a QSL pin bump.
 
 ## Verdict
 
-**Mergeable. No major findings.** Two mediums and five lows are recorded below.
-
-Soundness first:
-
-- **No false `proved`, no false counterexample from the filter.** `ProtocolFairness::class_of` gives each transition at most one class per member. An operation member covers the `attempt` steps whose FR-120 application names the operation: `whole` is one class, and `each` is one class per application, as QSpec FR-430 states. A thread member covers the steps that carry a thread path. The root covers paths with no step. A branch covers paths whose last step is that `parallel` and label, so nested-parallel threads are excluded (PA-1). Channel and memory steps carry no thread and are in no class. `protocol_constraints` always makes the `whole` class, even when it is empty. An empty constraint is never enabled, so it cannot exclude a run. It makes one `each` constraint per class seen. This matches `fair_walk::fairness_constraints` for model subjects. `FairModel::build` numbers every edge label and every enabled identity, so the kernel's enabled test and taken test (FA-3/FA-4, per pair) read the same classes the replay reads. `Strength::from(kind)` carries weak and strong through unchanged. Scheduler members are always weak and `whole`.
-- **Adversarial.** `scheduler_constraints` returns no members under `CheckedScheduling::Adversarial`. The AC-2 test confirms that the starving lasso is then admitted. With the default set, the same lasso is unfair (`r` and `s` are enabled throughout and take no step).
-- **Model-subject behaviour is unchanged.** Each changed model path was traced:
-  - `ModelSystem::canonical` is `Some(canonicalise)`.
-  - `atom_state` borrows the state.
-  - `undefined_finding` over a model finding is `undefined_contract` (`undefined_protocol_expression` is protocol-only).
-  - `Lift::start` with a trivial group takes the `None` permuter branch, as `reduced == false` did.
-  - The POR, quotient and symmetry paths move behind `LiveSubject` with their bodies unchanged.
-  - Identities are numbered over `ModelTransition`'s unchanged `Ord`.
-  - `found_at` now fires on any `Finding::Contract`, but the contract findings are already filtered to undefined or refused ones, so the result is the same.
-  - The only observable model-side change is FND-006, a refusal-precedence change.
-- **Replay.** Protocol replay recomputes the fairness set from the recompiled clause and protocol through the same `fairness_set`. It refuses a mismatch with `stale_dependency`/`content-mismatch`, closes the loop with the now-generic `close_loop`, and checks loop fairness through the same `protocol_constraints` and `check_loop` kernel the engine uses. `UnfairProtocolLasso` settles `inconclusive`/`ReplayParity`, mirroring the model `UnfairLasso`. The old `ProtocolLasso` refusal is deleted, not shimmed.
-- **Canonical order.** The set is keyed by `quire_canonical::to_vec` bytes in a `BTreeMap<Vec<u8>, _>`, which is ascending JCS bytes. An authored member and a scheduler member differ by origin, so both are kept ("beside"). Encodings match FR-430: `thread-target` with `node`/`branch` both null for the root.
-- **`Ord` for `ProtocolTransition`** compares `(kind, thread, node, members)`, which are exactly the fields `PartialEq` compares. `removed` and `send_record` are excluded from both, so `Ord` is consistent with `Eq`. The doc correctly says this is not FR-101's canonical order. That is harmless: the order is used only for dedup and for numbering, never for search order or counterexample choice.
-- **Panic surface.** No new `unwrap`, `expect`, `panic!`, indexing or `unsafe` in production code. `u64::try_from(..).unwrap_or(u64::MAX)` is total.
-- **No compatibility layer.** `TemporalCounterexample<T: SubjectTransition>` replaces the field type outright, and nothing keeps the old `FairnessConstraint` shape for protocols.
-- **Arch-lint FR-100-AC-8.** No `qsl_replay::spine` public item or `qsl_replay` re-export names a new `qsl_eval` path. The spine change is a private `check_message` arm. `ModelTraceRefusal` already carried `qsl_eval` types (`ProtocolRefusal`) and is outside the spine rule.
-- **Focused run.** `scheduler_fairness`: 5 passed, 0 failed at 39307eec1.
-
-## Examined Scope
-
-- `qsl-eval/src/simulation/protocol/fairness.rs` (whole file): targets, origin, `class_of`, encoding, `scheduler_constraints`, `fairness_set`, `protocol_constraints`, unit tests.
-- `qsl-eval/src/simulation/protocol/identity.rs`: `Ord`/`PartialEq` for `ProtocolTransition`, `Members` derive.
-- `qsl-eval/src/simulation/subject.rs`: `SubjectTransition`.
-- `qsl-analyze/src/model_check/liveness.rs`: `check_protocol`, `decide_bindings`, `LiveSubject` and both impls, the `LassoSystem` generalisation, `FairModel::build`, `lasso`, `quotient_phase`.
-- `qsl-analyze/src/model_check/check.rs`: `check_protocol` dispatch, `check_protocol_liveness`, `ProtocolRun::decide` fairness, `Run.fairness`.
-- `qsl-analyze/src/model_check/concretise.rs`: `Permuter`, generic `Lift`.
-- `qsl-replay/src/model_check/replay.rs`: `ProtocolFairnessSet`, `UnfairProtocolLasso`, `unfair_member`, generic `close_loop` and `loop_states_of`, the moved model fairness check.
-- `qsl-replay/src/model_check/settle.rs`: `UnfairProtocolLasso` → ReplayParity.
-- `qsl-semantics/src/check/temporal_clause.rs`: `resolve_protocol_target`, `checked_fairness`, `is_emitted`, `not_emitted`.
+FAIL for merge at the current dependency pin. FND-001 is a reproduced wire-compatibility failure. FND-002 is a source-order defect against FR-123. The IR reader patch and pin bump are required before merge; rerun the touched crate tests after that update.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | A protocol deadlock counterexample now carries the scheduler constraints in `fairness`. `ProtocolRun::decide` builds `system.fairness_set(self.item.fairness())` for every item, and `Item::Deadlock` yields `&[]` authored plus the root and branch scheduler members. That contradicts the retained `TemporalCounterexample::fairness` contract ("empty for the deadlock-freedom item") and the `Run.fairness` doc in check.rs. FR-430 adds scheduler constraints to infinite-trace clauses, not to the derived deadlock item. Protocol replay checks the set only when `self.clause.is_some()`, so a deadlock payload's fairness set is never verified either way. Fix: use an empty set for `Item::Deadlock`, or state and test the other rule. | qsl-analyze/src/model_check/check.rs:643-650, qsl-replay/src/model_check/counterexample.rs:149-151, qsl-replay/src/model_check/replay.rs:639-650 |
-| FND-002 | medium | The `WeakLiveness` refusal has no test. This is the soundness guard that keeps a TP-4 clause over `tso`/`ra` out of an engine that reads no memory fairness (FR-228), where an unflushed store buffer would give a false counterexample. A regression in `SubjectMemory::of`, or a reordering of `check_protocol_liveness`, would pass every test in this PR. | qsl-analyze/src/model_check/check.rs:606-609 |
-| FND-003 | low | Replay maps `ProtocolFairnessError::UnknownOperation` to an internal fault (`a-recompiled-fairness-names-an-applied-operation`). The check path maps the same error to the user-facing `LivenessRefusal::UnknownOperation`. A crafted payload against a package whose clause names an operation the protocol's model does not apply faults instead of refusing. | qsl-replay/src/model_check/replay.rs:639-643 |
-| FND-004 | low | The `ProtocolFairnessError` → `ModelCheckRefusal` mapping closure is duplicated verbatim in `check.rs::ProtocolRun::decide` and `liveness.rs::check_protocol`. A `From<ProtocolFairnessError> for ModelCheckRefusal` would keep the two in step. | qsl-analyze/src/model_check/check.rs:645-651, qsl-analyze/src/model_check/liveness.rs:284-292 |
-| FND-005 | low | S3 resolves `CheckedProtocolTarget::AttemptNode`, but `qsl_eval`'s `ProtocolTarget` has no attempt-node variant and no class for it (FR-430 "every step of that node", `each` one per (thread path, application)). It cannot be reached today because S4 refuses the clause, but the eval side of FR-212 "Classes" for attempt nodes is unbuilt, and the PR body does not list it. | qsl-eval/src/simulation/protocol/fairness.rs:34-52, qsl-semantics/src/check/temporal_clause.rs:399-417 |
-| FND-006 | low | Model replay's fairness-set check moved out of `resolve_item` into the `replay_model_trace` closure, after `resolve_item`'s `AuthoredUndefined` and `GuardedActivation` refusals. A model payload with a stale fairness set and an `UndefinedEvaluation` kind now refuses `unsupported_construct` instead of `stale_dependency`/`content-mismatch`. The change is small, but it is a model-subject behaviour change. | qsl-replay/src/model_check/replay.rs:524-535, qsl-replay/src/model_check/replay.rs:800-810 |
-| FND-007 | low | Four `#[allow(clippy::type_complexity, reason = ...)]` sit on `LiveSubject::retain`, `retained`, `LassoSystem::successors` and `loop_states_of`. A `type Exploration<S> = GraphExploration<LState<S::State>, PT<Tr<S>>, Finding<Tr<S>>>` alias, beside the existing `Retained<S>`, would remove three of them. | qsl-analyze/src/model_check/liveness.rs:272-298, qsl-replay/src/model_check/replay.rs:1294-1297 |
+| FND-001 | high | Current pinned IR reader rejects the emitted typed protocol-fairness target union, so checked packages containing protocol fairness fail admission. | qsl-package/src/emit.rs:1067-1082 |
+| FND-002 | medium | Lowering concatenates operation fairness before protocol fairness, losing source order when the two forms are interleaved. | qsl-semantics/src/check/lowering/temporal.rs:243-335 |
 
-## Coverage
+## Examined obligations
 
-Focused run `cargo test -p qsl-analyze --test it scheduler_fairness` through `locked-build.sh`: 5 passed, 0 failed. Unit tests in `fairness.rs` (2) were read, not run. `target/` deleted after.
-
-## New findings (disposition pass 1)
-
-| ID | Severity | Summary | Refs |
-| --- | --- | --- | --- |
-| FND-008 | low | FND-001's fix (`Item::Deadlock => Vec::new()`) has no test. No test asserts that a protocol deadlock counterexample carries an empty fairness set, so the regression FND-001 found could come back unseen. One assertion in an existing protocol deadlock test would cover it. | qsl-analyze/src/model_check/check.rs:657-660 |
-
-## Dispositions
-
-| FND | outcome | sha/reason |
+| Unit | Role | Excerpt |
 | --- | --- | --- |
-| FND-001 | fixed | e7bcfdc6e: `ProtocolRun::decide` gives `Item::Deadlock` an empty set and builds `fairness_set` only for a clause. Correct on reading. It has no test (FND-008). |
-| FND-002 | fixed | e7bcfdc6e: `liveness_over_a_weak_parallel_refuses` resolves `Both` under `tso` and asserts `ModelCheckRefusal::WeakLiveness`. |
-| FND-003 | fixed | e7bcfdc6e: replay maps `UnknownOperation` to `ModelTraceRefusal::UnknownFairnessOperation` (`invalid_runtime_input`/`invalid-value`). Only `Encoding` remains a fault. |
-| FND-004 | fixed | e7bcfdc6e: `impl From<ProtocolFairnessError> for ModelCheckRefusal`. Both call sites use `?`. |
-| FND-005 | still-open | e7bcfdc6e adds a note that an attempt node "needs the node's path on the transition, which `ProtocolTransition` does not carry". That is not true. `ProtocolTransition::attempt` sets `node: Some(node)`, and `node()` exposes it; the AC-3 test reads `Main/Both/left/A` from an attempt step. The class (attempt steps whose node equals the path, `each` keyed by thread and application) is buildable now. Either build it or correct the note to the real reason (S4 has no member to emit it). Low, unreachable while S4 refuses, and non-blocking. |
-| FND-006 | fixed | e7bcfdc6e: `resolve_item` takes a `check_fairness` callback and runs it before the `AuthoredUndefined`/`GuardedActivation` refusals, which restores the model refusal precedence. Protocol replay passes a no-op and compares in `settle`. |
-| FND-007 | fixed | e7bcfdc6e: the `Exploration<S>` and `LoopStates<T>` aliases. All four `type_complexity` allows are removed. |
+| FR-212-AC-1 | examined | `eventually holds(k.flag = 1)` under infinite-trace settles `proved`; its fairness set holds three `scheduler` constraints, over `s`, `r` and the root. |
+| FR-212-AC-2 | examined | `Chatter` with `scheduling adversarial` ... settles `refuted` with a lasso ...; its fairness set is empty. |
+| FR-212-AC-3 | examined | `fair weak whole Chatter::Both::s` names the branch and `fair weak each Chatter::Done` the attempt node ... |
+| FR-212-AC-4 | examined | The TP-1 claim ... settles `proved` with and without `scheduling adversarial`, over the same reachable states. |
+| FR-217-AC-4 | examined | The same lasso with the scheduler constraints added to its fairness set ... refuses ... as unfair. |
+| qsl-package/src/emit.rs:1067-1082 | examined | Fairness members serialize as a typed `target` union, including `operation`, `protocol_root`, `attempt_node`, `parallel_branch`, and `compensation_template`. |
+| qsl-analyze/src/model_check/liveness.rs:308-312 | examined | Liveness builds the full set with `fairness_set_with_targets`. |
+| qsl-replay/src/model_check/replay.rs:900-915 | examined | Replay rebuilds the same typed protocol fairness set and faults if a checked target is no longer resolved. |
+| qsl-semantics/src/check/lowering/temporal.rs:243-335 | examined | Separate loops lower operation and protocol fairness members into one ordered key vector. |
 
-Disposition pass 1 at e7bcfdc6e: focused run `scheduler_fairness` through `locked-build.sh`: 7 passed, 0 failed. `target/` deleted after.
+## Coverage and limits
 
-Disposition pass 2: FND-005 fixed (note on `ProtocolTarget` and `CheckedProtocolTarget::AttemptNode` now gives the real reason: S4 has no member to emit an attempt-node target); FND-008 fixed (`a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted` asserts the deadlock counterexample `fairness` is empty). Focused run `scheduler_fairness` plus the deadlock test: 8 passed, 0 failed.
+Ran `cargo fmt --all -- --check` (pass), `cargo clippy --workspace --all-targets --all-features -- -D warnings` (pass), and `cargo deny check` (exit 4: existing license/source policy failures; no lockfile or policy changes in this PR). With `QSPEC_DIR=/Users/peter/dev/qspec-std619`, `cargo test --locked -p qsl-package` completed 457 passed / 10 failed / 2 ignored; all 10 failures were reader/admission failures at the typed fairness dependency, including the hybrid target branch and FR-370 refusal-vector tests. `QSPEC_DIR=/Users/peter/dev/qspec-std619 cargo test --locked -p qsl-analyze` completed 1,078 passed / 54 failed; fairness package admissions were rejected by the same pinned reader. The focused PR author tests were reported as passing, but they do not override the admission failures reproduced on the locked reader. `make build-no-std` could not find `core` for `thumbv7em` in this environment despite the target being installed. No CI workflow files changed.
+
+### Finding details
+
+**FND-001.** At `qsl-package/src/emit.rs:1075-1081`, the producer now places the fairness target in a discriminated `target` object. The locked `quire-contract-model` reader (IR revision `154227dcbcda09f3abf635375777893132fc7686`) rejects packages carrying this emitted protocol target at `/semantic_graph/nodes/{n}/dependencies` as `InvalidSemanticGraph`. Reproduced in the QSL package and analyzer test suites. The patch must wait for IR-1221's strict-reader support and a QSL dependency pin bump, then the affected admission/liveness/replay tests must pass.
+
+**FND-002.** The loop over `clause.fairness()` at lines 243-271 appends operation constraints first; the second loop at lines 273-335 appends protocol constraints afterward. FR-123 requires the checked fairness set to retain source order of first occurrence. A clause interleaving the two fairness forms therefore gets a different fairness-node order and identity than its source. Retain a unified ordered sequence through parsing/lowering and cover an interleaved clause.

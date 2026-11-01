@@ -27,17 +27,6 @@ use quire_exact::NodeKey;
 use quire_exact::Rational;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
-/// The declaration kind a resolved fairness member names on the checked
-/// package wire.
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum FairnessTargetKind {
-    /// A model-owned operation.
-    Operation,
-    /// A hybrid model or mode transition.
-    HybridTransition,
-}
-
 /// The accepted `ClauseBinding.execution_point` (QSpec FR-322-AC-131) as the
 /// IR's closed four-variant [`ExecutionPoint`], which the IR owns: this
 /// wrapper adds only the `Hash` the IR type lacks, over the variant and its
@@ -170,20 +159,56 @@ pub enum Member {
     /// {lower, lower_end, upper, upper_end}}`. Boxed: two exact rationals
     /// would make every member as large.
     TimedInterval(Box<TimedMember>),
-    /// One member of a clause's resolved fairness set (QSpec FR-370):
-    /// `{kind: "fairness", fairness_kind, granularity, target}`,
-    /// always in its resolved form, so an unmarked constraint and its
-    /// written `weak whole` form are one member (ADR-018 FA-6).
+    /// One member of a clause's resolved fairness set (QSpec FR-370). The
+    /// target is a closed union and each protocol target retains its emitted
+    /// node identity rather than a display path.
     Fairness {
         /// `weak` or `strong`.
         kind: FairnessKind,
         /// `whole` or `each`.
         granularity: FairnessGranularity,
-        /// Whether the target names a model operation or hybrid transition.
-        target_kind: FairnessTargetKind,
-        /// The target's declaring model or mode node.
+        /// The selected target.
+        target: FairnessTarget,
+    },
+}
+
+/// The closed FR-370 target union for checked temporal fairness members.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum FairnessTarget {
+    /// A model operation.
+    Operation {
+        /// The declaring model type.
         declaration: NodeKey,
-        /// The operation's own identifier.
+        /// The operation's name.
+        name: Identifier,
+    },
+    /// A protocol's root thread.
+    ProtocolRoot {
+        /// The emitted protocol clause node.
+        node: NodeKey,
+    },
+    /// A protocol attempt node.
+    AttemptNode {
+        /// The emitted attempt control node.
+        node: NodeKey,
+    },
+    /// One branch of a parallel node.
+    ParallelBranch {
+        /// The emitted parallel control node.
+        parallel: NodeKey,
+        /// The branch label.
+        branch: Identifier,
+    },
+    /// A compensation template.
+    CompensationTemplate {
+        /// The emitted compensation template node.
+        node: NodeKey,
+    },
+    /// A hybrid mode transition.
+    HybridTransition {
+        /// The declaring hybrid mode.
+        declaration: NodeKey,
+        /// The transition's name.
         name: Identifier,
     },
 }
@@ -254,16 +279,12 @@ impl std::fmt::Debug for Member {
             Self::Fairness {
                 kind,
                 granularity,
-                target_kind,
-                declaration,
-                name,
+                target,
             } => f
                 .debug_struct("Fairness")
                 .field("kind", &kind)
                 .field("granularity", &granularity)
-                .field("target_kind", &target_kind)
-                .field("declaration", &NodeKeyDebug(declaration))
-                .field("name", &name)
+                .field("target", &target)
                 .finish(),
         }
     }
@@ -308,8 +329,8 @@ impl Member {
             | Self::Element { declaration }
             | Self::RelationshipEnd { declaration, .. }
             | Self::Operation { declaration, .. }
-            | Self::TypeArgument { declaration }
-            | Self::Fairness { declaration, .. } => Some(declaration.clone()),
+            | Self::TypeArgument { declaration } => Some(declaration.clone()),
+            Self::Fairness { target, .. } => target.node().cloned(),
             Self::ProfileOperator { .. }
             | Self::StateClause { .. }
             | Self::TemporalInterval { .. }
@@ -342,6 +363,21 @@ impl Member {
             | Self::TemporalInterval { .. }
             | Self::TimedInterval(_)
             | Self::Fairness { .. } => None,
+        }
+    }
+}
+
+impl FairnessTarget {
+    /// A target's primary exact node identity.
+    pub fn node(&self) -> Option<&NodeKey> {
+        match self {
+            Self::Operation { declaration, .. } | Self::HybridTransition { declaration, .. } => {
+                Some(declaration)
+            }
+            Self::ProtocolRoot { node }
+            | Self::AttemptNode { node }
+            | Self::CompensationTemplate { node } => Some(node),
+            Self::ParallelBranch { parallel, .. } => Some(parallel),
         }
     }
 }

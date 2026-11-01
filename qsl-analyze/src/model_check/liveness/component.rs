@@ -19,7 +19,6 @@
 use super::*;
 
 use qsl_eval::fairness::{is_live, Outcome as Found};
-use qsl_eval::simulation::ConstraintError;
 use qsl_replay::{
     ClosureCertificate, Component, ComponentCertificate, ComponentWitness, ProductStateRef,
     Translation,
@@ -51,19 +50,12 @@ impl<S: LiveSubject> Run<'_, S> {
                 .ok()
                 .and_then(|key| universe.identities.get(&key).copied())
         };
-        let constraints = self
-            .system
-            .clause_constraints(self.clause.fairness(), &universe.transitions, &numbered)
-            .map_err(|error| match error {
-                ConstraintError::UnknownOperation { name } => {
-                    LivenessRefusal::UnknownOperation { name }.into()
-                }
-                ConstraintError::Protocol(error) => error.into(),
-                ConstraintError::Unnumbered => fault("every-seen-transition-is-numbered"),
-            })?;
         let identity = |transition: &Tr<S>| {
             numbered(transition).ok_or_else(|| fault("every-seen-transition-is-numbered"))
         };
+        let constraints =
+            self.system
+                .constraints(self.recorded_fairness(), &universe.transitions, &identity)?;
         let mut components = Vec::new();
         for (run, refs) in explored.iter().zip(&refs) {
             let graph = FairModel::graph(run, &identity)?;

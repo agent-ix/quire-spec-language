@@ -4127,7 +4127,7 @@ impl PackageDeclarations {
             .collect();
         let temporal_edges: Vec<(Vec<usize>, Vec<usize>)> = checked_temporal
             .iter()
-            .map(|(_, _, conditions)| {
+            .map(|(_, checked, conditions)| {
                 let mut functions = Vec::new();
                 let mut protocols = Vec::new();
                 for condition in conditions.all() {
@@ -4135,11 +4135,42 @@ impl PackageDeclarations {
                     functions.extend(root.callees());
                     protocols.extend(root.protocol_references());
                 }
+                for (fairness, _) in checked.protocol_fairness() {
+                    if let Some(index) = protocol_list
+                        .iter()
+                        .position(|protocol| protocol.form.name.name == fairness.protocol)
+                    {
+                        protocols.push(index);
+                    }
+                }
                 functions.sort_unstable();
                 functions.dedup();
                 protocols.sort_unstable();
                 protocols.dedup();
                 (functions, protocols)
+            })
+            .collect();
+        let deferred_protocol_fairness: BTreeSet<usize> = checked_temporal
+            .iter()
+            .enumerate()
+            .filter_map(|(dense, (_, checked, _))| {
+                checked
+                    .protocol_fairness()
+                    .any(|(fairness, _)| {
+                        protocol_list
+                            .iter()
+                            .find(|protocol| protocol.form.name.name == fairness.protocol)
+                            .is_some_and(|protocol| {
+                                protocol
+                                    .checked
+                                    .controls
+                                    .controls
+                                    .iter()
+                                    .any(|control| control.step() == ControlStep::Attempt)
+                                    || !protocol.checked.obligations.compensations.is_empty()
+                            })
+                    })
+                    .then_some(dense)
             })
             .collect();
         let order = lowering::dependency_order(&function_edges, &protocol_edges, &temporal_edges);
@@ -4230,7 +4261,9 @@ impl PackageDeclarations {
                     lower_protocol(&mut lowering, &mut refusals, *index, false);
                 }
                 lowering::LoweringStep::Temporal(index) => {
-                    lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
+                    if !deferred_protocol_fairness.contains(index) {
+                        lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
+                    }
                 }
                 lowering::LoweringStep::Cycle {
                     protocols,
@@ -4244,7 +4277,14 @@ impl PackageDeclarations {
                         lower_functions(&mut lowering, &mut refusals, group);
                     }
                     for index in temporals {
-                        lower_temporal(&mut lowering, &mut refusals, *index, &mut lowered_temporal);
+                        if !deferred_protocol_fairness.contains(index) {
+                            lower_temporal(
+                                &mut lowering,
+                                &mut refusals,
+                                *index,
+                                &mut lowered_temporal,
+                            );
+                        }
                     }
                 }
             }
@@ -4915,6 +4955,9 @@ impl PackageDeclarations {
                 }
                 Err(refusal) => refusals.push(refusal),
             }
+        }
+        for index in deferred_protocol_fairness {
+            lower_temporal(&mut lowering, &mut refusals, index, &mut lowered_temporal);
         }
         // FR-375: a protocol subject's abstract side names the emitted
         // protocol clause node. Resolve it after dependency-ordered protocol

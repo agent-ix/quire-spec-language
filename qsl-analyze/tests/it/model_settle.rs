@@ -169,13 +169,28 @@ pub(crate) fn request<'a>(
     >,
     unit: &[u8],
 ) -> ReplayRequestWire {
+    request_named(PACKAGE_NAME, document, snapshots, unit)
+}
+
+/// FR-098's request with an explicit checked package identity.
+pub(crate) fn request_named<'a>(
+    package_name: &str,
+    document: &[u8],
+    snapshots: impl Iterator<
+        Item = (
+            &'a qsl_semantics::model::observation::DocumentRef,
+            &'a Vec<u8>,
+        ),
+    >,
+    unit: &[u8],
+) -> ReplayRequestWire {
     let byte_provision = vec![(AUTHORITY.to_owned(), IDENTITY.to_owned(), unit.to_vec())];
     let mut documents = vec![document.to_vec()];
     for (_, bytes) in snapshots {
         documents.push(bytes.clone());
     }
     ReplayRequestWire {
-        package_name: PACKAGE_NAME.to_owned(),
+        package_name: package_name.to_owned(),
         profile_selections: Vec::new(),
         sources: vec![source_wire()],
         dependencies: Vec::new(),

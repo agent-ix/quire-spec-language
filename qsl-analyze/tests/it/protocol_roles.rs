@@ -1361,24 +1361,24 @@ fn an_on_each_repeat_self_loop_is_fair_at_the_instance_bound() {
 }
 
 /// FR-212 (TC-657): an authored `each` fairness member over a node a
-/// replicated role owns resolves to its attempt node and refuses
-/// `ProtocolFairnessNotEmitted` at S4, as over a node of a static role; it
-/// neither panics nor drops the member.
+/// replicated role owns resolves to its attempt node and emits the typed
+/// target through S4.
 #[test]
-fn an_each_fairness_member_over_a_role_owned_node_refuses_as_over_any_node() {
+fn an_each_fairness_member_over_a_role_owned_node_emits_as_over_any_node() {
     let run = "sequence Main { attempt Work by r on M::Cell::inc contracts [IncPre, IncPost] \
                as (worked: Boolean) { true }; }";
     let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
                  on origin { fair weak each R::Work; eventually holds(k.v = 1) }\n";
     let body = unit(ORIGIN, &role(1, "workflow"), "", run) + claim;
-    let refusal = crate::scheduler_fairness::check_refusal(&body);
-    assert!(
-        matches!(
-            crate::scheduler_fairness::temporal(&refusal),
-            qsl_semantics::check::TemporalCause::ProtocolFairnessNotEmitted { .. }
-        ),
-        "{refusal:?}"
-    );
+    let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let clause = checked.graph().temporal_clauses()[0].clause();
+    assert!(matches!(
+        clause
+            .protocol_fairness()
+            .next()
+            .map(|(constraint, _)| &constraint.target),
+        Some(qsl_semantics::check::CheckedProtocolTarget::AttemptNode { .. })
+    ));
 }
 
 /// The state the `kind` step of protocol instance `instance` naming `object`

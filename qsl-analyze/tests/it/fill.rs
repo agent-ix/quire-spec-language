@@ -286,6 +286,11 @@ pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-
 
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
+    package_with_name("package", profiles, body)
+}
+
+/// [`package_with`] with a distinct package identity.
+pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) -> CheckedPackage {
     let document = document();
     let text = unit_text_with(profiles, body);
     let packages = package_input([document.as_slice()]).unwrap();
@@ -314,7 +319,7 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
     .expect("the operation clauses parse");
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
-        "package".to_owned(),
+        package_name.to_owned(),
         built,
         models,
         Vec::new(),
