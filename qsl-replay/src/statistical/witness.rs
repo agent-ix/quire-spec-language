@@ -32,6 +32,7 @@ use crate::model_check::counterexample::{CounterexampleKind, ModelStep, Temporal
 /// steps from its seed, trace index, delay grid and checked sample horizon.
 /// The timed sample is the witness payload, so delay changes are compared
 /// alongside transitions and successor states.
+#[allow(clippy::too_many_arguments)] // each value is an explicit witness replay input
 pub fn replay_timed_sampled_witness(
     system: &TimedSystem<'_, '_>,
     initial: &TimedState,
