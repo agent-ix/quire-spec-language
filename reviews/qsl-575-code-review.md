@@ -59,3 +59,15 @@ No cargo-deny or full all-feature reviewer gate was run during this initial pass
 ### FND-003 — Validate edge source before filtering `until` products
 
 `product_with_blocked` evaluates `blocked[edge.from.index()]` before `Graph::new` performs its state-reference validation. Repro: obtain `ProbStateId(1)` from a valid two-state product, put it as the source of an edge in a one-state public `ProbProduct`, and call `decide_until` with one-element predicates. The blocked vector has length one; the public API panics at index 1 rather than returning `UnboundedError::InvalidState`. Validate input edges before filtering.
+
+## Dispositions
+
+Reviewed round 1 at `162496324391ae0bcb7416863db35ee66e6a8f20`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The expected-reward evaluator now represents policy-specific nontermination as `ExtRational::PlusInfinity`, compares extended values, and includes the exact 3-state regression `minimum_expected_reward_rejects_an_action_into_an_infinite_child` (FR-198-AC-2). |
+| FND-002 | fixed | MEC search now accepts a single bottom recurrent class with transient steering states, computes the recurrent stationary distribution and bias with the recurrent reference, and tests proper sub-MEC, multiple-bottom routing, and stochastic transient routing for min/max (FR-199-AC-2). |
+| FND-003 | fixed | `product_with_blocked` checks source and target IDs against product bounds before indexing; `until_reports_invalid_source_state_instead_of_panicking` asserts `InvalidState`. |
+
+Verification on this head: `cargo fmt --check` passed; targeted unbounded tests passed 18/18; `cargo clippy -p qsl-analyze --all-targets --all-features -- -D warnings` passed; no-default `cargo check` and `cargo build` passed. `cargo deny check` could not acquire the read-only advisory database lock under `/Users/peter/.cargo/advisory-dbs`; no dependency result is claimed. A separate full `cargo test -p qsl-analyze` run was interrupted at the request of the lead while an unrelated `rc11_oracle::lt16_collected_sc_predecessors_still_constrain_the_sc_load` test had run over 60 seconds; the coder reported the full library suite passed 123/123 on this head.

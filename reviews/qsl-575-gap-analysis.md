@@ -49,3 +49,14 @@ The changed tests use the expected `#[trace("TC-633", "FR-198-AC-n")]` and `#[tr
 ## Reverse Gap and Stub Check
 
 The new public solver outputs and behavior correspond to FR-198 and FR-199. The changed module contains no `todo!`, `unimplemented!`, or unfinished TODO markers. The manual trace check found the two acceptance evidence gaps above; it did not compute repository-wide untagged criteria because matrix verification was unavailable.
+
+## Dispositions
+
+Reviewed round 1 at `162496324391ae0bcb7416863db35ee66e6a8f20`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-574 owns FR-201/202's public probability checker and witness replay; that work is gated by spec PR #1987. QSL-577 owns the digital timed product and the remaining FR-198 timed observation semantics. These are explicitly unimplemented dependencies; PR #2014 does not claim full FR-198 completion and adds no permanent unsupported/refusal result. |
+| FND-002 | deferred | QSL-574 owns FR-201/202 evidence-construction and replay budget behavior, gated by spec PR #1987; QSL-577 owns the timed continuation/product work. The remaining AC-4 budget behavior stays open under those dependencies and is not claimed complete by PR #2014. |
+
+The matrix limitation was re-recorded against the verified checkout: `quoin matrix --repo /Users/peter/dev/qsl-575-unbounded --json` ran about 90 seconds without output and exited 130 when interrupted; `quire matrix --scope /Users/peter/dev/qsl-575-unbounded --format json` emitted startup warnings, then ran about 60 seconds without matrix output and exited 130 when interrupted. Both runs targeted `git rev-parse HEAD=16ad281`; neither was a missing-root or unresolved-HEAD failure. No matrix status is claimed.
