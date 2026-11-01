@@ -538,13 +538,14 @@ mod family_contract_tests {
             )
             .with_bounds(bounds.map(str::to_owned).to_vec())
         };
+        let profile = decimal(["1", "10000", "2", "2", mode]);
         FunctionDeclaration::new(
             name,
             vec![
-                ("p".to_owned(), decimal(["0", "100", "0", "0", "exact"])),
-                ("q".to_owned(), decimal(["1", "9", "0", "0", "exact"])),
+                ("p".to_owned(), profile.clone()),
+                ("q".to_owned(), profile.clone()),
             ],
-            decimal(["0", "10000", "2", "2", mode]),
+            profile,
             None,
             Expression::binary(
                 qsl_forms::BinaryOperator::Divide,

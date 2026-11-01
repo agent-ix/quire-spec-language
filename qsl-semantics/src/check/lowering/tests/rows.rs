@@ -247,7 +247,7 @@ fn rows() -> Vec<Row> {
             function(
                 "dadd",
                 &[("p", d()), ("q", d())],
-                decimal_form(["0", "20000", "2", "2", "nearest-even"]),
+                decimal_form(["0", "100", "2", "2", "nearest-even"]),
                 None,
                 binary(BinaryOperator::Add, name_expr("p"), name_expr("q")),
             ),

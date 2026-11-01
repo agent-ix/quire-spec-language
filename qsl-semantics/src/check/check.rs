@@ -3065,9 +3065,13 @@ impl<'a> Typer<'a> {
                     ValueType::Rational(domain),
                 )
             }
-            (ValueType::Decimal(_), ValueType::Decimal(_), _) => {
+            (ValueType::Decimal(left_decimal), ValueType::Decimal(right_decimal), _) => {
+                if left_decimal != right_decimal {
+                    return Err(mismatch(location));
+                }
                 let target = match hint {
-                    Some(ValueType::Decimal(target)) => target.clone(),
+                    Some(ValueType::Decimal(target)) if target == left_decimal => target.clone(),
+                    Some(ValueType::Decimal(_)) => return Err(mismatch(location)),
                     Some(_) => return Err(mismatch(location)),
                     None => {
                         return Err(CheckRefusal::ill_typed(
