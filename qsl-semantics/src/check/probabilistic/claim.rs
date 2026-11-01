@@ -1171,6 +1171,7 @@ impl Pass<'_, '_> {
 
     /// A temporal event: bounded, with only interval operators (ADR-018
     /// TP-2), its horizon and the predicate of each `holds` atom.
+    #[allow(clippy::too_many_arguments)] // these are the checker inputs and output accumulators
     fn formula(
         &mut self,
         claim: &ClaimCx<'_>,
