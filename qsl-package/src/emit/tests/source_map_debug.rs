@@ -180,6 +180,7 @@ fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
                     count.0
                 })
                 .collect();
+            eprintln!("indexed I2 Debug bytes at depths 100/200/400: {sizes:?}");
             for pair in sizes.windows(2) {
                 assert!(
                     pair[1] < pair[0] * 5 / 2,
