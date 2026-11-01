@@ -454,7 +454,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                     self.model
                                         .apply_attempt(
                                             &format!("{node:?}"),
-                                            &observed,
+                                            observed,
                                             &operation,
                                             &select,
                                             selected_transitions,
@@ -468,7 +468,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                     self.model
                                         .enabled_attempt(
                                             &format!("{node:?}"),
-                                            &observed,
+                                            observed,
                                             &operation,
                                             &select,
                                             selected_transitions,
@@ -512,7 +512,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         }
                                     }
                                     if !matches!(
-                                        self.evaluate(constraint, frame, &observed)?,
+                                        self.evaluate(constraint, frame, observed)?,
                                         Verdict::True
                                     ) {
                                         continue;

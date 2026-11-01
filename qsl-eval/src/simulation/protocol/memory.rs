@@ -231,6 +231,9 @@ impl<C> Chosen<C> {
 
 /// Where an attempt's delta went (SE-1 c).
 #[derive(Clone, Debug)]
+// Keep successor model states inline: boxing this variant would allocate once
+// per memory application across the explored state graph.
+#[allow(clippy::large_enum_variant)]
 pub enum Written<C> {
     /// The model state and component after the step.
     Applied(ModelSimState, C),
