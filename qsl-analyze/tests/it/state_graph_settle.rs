@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_and_settle_state_graph, StateGraphItem, StateGraphRequest};
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::simulation::StateKey;
 use qsl_eval::temporal::UndefinedCause;
@@ -201,6 +202,186 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
     assert!(settled.records[0]
         .iter()
         .all(|record| record.method == EXPLICIT_STATE));
+}
+
+/// FR-169-AC-17 (TC-594 step 7): the state-graph engine's reduced outcomes
+/// flow through settlement. Symmetry's `always possible` result carries no
+/// witness and needs no replay; POR's `possible` result carries concrete
+/// paths, each of which is replayed before the reduced proof settles.
+#[trace("TC-594", "FR-169-AC-17")]
+#[test]
+fn engine_reduced_outcomes_settle_and_replay_their_evidence() {
+    let symmetric = crate::graph_world::symmetric_config_world_over(
+        "",
+        "always possible AlwaysReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n",
+        &["a", "b", "c"],
+        &[vec![0, 0, 0]],
+    );
+    let mut symmetric_request = symmetric.request(
+        &["a", "b", "c"],
+        vec![symmetric.item("AlwaysReachesTwo")],
+        no_samples(),
+    );
+    symmetric_request
+        .reductions
+        .symmetry
+        .push(qsl_route::reductions::SymmetryDeclaration {
+            population: quire_checked::key::DeclarationKey {
+                package: "test/config".to_owned(),
+                node: "ix://test/config/config_history".to_owned(),
+            },
+            classes: vec![vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]],
+        });
+
+    let symmetric_result = check_and_settle_state_graph(symmetric_request, &Cancel::new(), |_| {
+        panic!("a reduced symmetry proof has no evidence to replay")
+    })
+    .expect("symmetry engine and settlement complete");
+    let symmetric_instance = &symmetric_result.run.items[0][0];
+    let StateGraphOutcome::HoldsReduced {
+        reductions,
+        witnesses: None,
+    } = &symmetric_instance.outcome
+    else {
+        panic!("the engine emits the expected reduced symmetry result")
+    };
+    let [AppliedReduction::Symmetry {
+        groups,
+        orbit,
+        stabiliser,
+    }] = reductions.as_slice()
+    else {
+        panic!("symmetry is the applied reduction: {reductions:?}")
+    };
+    assert_eq!(groups[0].keys, ["a", "b", "c"]);
+    assert_eq!(
+        orbit.iter().map(String::as_str).collect::<Vec<_>>(),
+        ["a", "b", "c"]
+    );
+    assert_eq!(
+        stabiliser
+            .iter()
+            .map(|class| class.keys.iter().map(String::as_str).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        [vec!["a"], vec!["b", "c"]]
+    );
+    assert_eq!(
+        symmetric_result.records[0][0].value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Reduced {
+                reductions: reductions.clone(),
+            },
+            certification: Certification::Uncertified,
+        }
+    );
+    assert_eq!(
+        symmetric_result.records[0][0].basis,
+        SettlementBasis::ClosedScope
+    );
+
+    let exhaustive_request = symmetric.request(
+        &["a", "b", "c"],
+        vec![symmetric.item("AlwaysReachesTwo")],
+        no_samples(),
+    );
+    let exhaustive = check_and_settle_state_graph(exhaustive_request, &Cancel::new(), |_| {
+        panic!("an exhaustive Holds proof carries no replay evidence")
+    })
+    .expect("unreduced engine and certificate settlement complete");
+    assert!(matches!(
+        exhaustive.run.items[0][0].outcome,
+        StateGraphOutcome::Holds { .. }
+    ));
+    assert_eq!(
+        exhaustive.records[0][0].value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Exhaustive,
+            certification: Certification::Certified,
+        }
+    );
+
+    let por = crate::graph_world::por_reachestwo_world();
+    let binding = ModelInstance {
+        population: quire_checked::key::DeclarationKey {
+            package: "test/por".to_owned(),
+            node: "ix://test/por/counters".to_owned(),
+        },
+        key: "a".to_owned(),
+    };
+    let mut por_request = por.request(
+        &["a", "b", "c"],
+        vec![StateGraphItem::for_binding(
+            por.claim("ReachesTwo"),
+            binding.clone(),
+        )],
+        no_samples(),
+    );
+    por_request.reductions.partial_order = true;
+    let mut replayed_paths = Vec::new();
+    let por_result = check_and_settle_state_graph(por_request, &Cancel::new(), |instance| {
+        let StateGraphOutcome::HoldsReduced {
+            witnesses: Some(paths),
+            ..
+        } = &instance.outcome
+        else {
+            panic!("the engine emits a reduced POR witness")
+        };
+        for witness in paths {
+            let replay = por.replay_witness(
+                por.claim("ReachesTwo"),
+                Some(binding.clone()),
+                witness.path.clone(),
+                witness.source.clone(),
+                &["a", "b", "c"],
+            );
+            assert_eq!(
+                replay.settlement,
+                GraphReplaySettlement::Reproduced,
+                "every concrete POR path replays against the unreduced subject"
+            );
+            assert_eq!(
+                replay.evaluated_predicates,
+                [(qsl_semantics::check::PredicateRole::Target, true)]
+            );
+            replayed_paths.push(witness.path.clone());
+        }
+        Ok(GraphReplayResult {
+            settlement: GraphReplaySettlement::Reproduced,
+            evaluated_predicates: vec![(qsl_semantics::check::PredicateRole::Target, true)],
+            closure_nodes: None,
+            first_target: None,
+        })
+    })
+    .expect("POR engine, replay, and settlement complete");
+    let por_instance = &por_result.run.items[0][0];
+    let StateGraphOutcome::HoldsReduced {
+        reductions,
+        witnesses: Some(paths),
+    } = &por_instance.outcome
+    else {
+        panic!("the engine emits the expected POR result with witnesses")
+    };
+    assert_eq!(paths.len(), 1);
+    assert_eq!(
+        replayed_paths,
+        paths.iter().map(|w| w.path.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        reductions,
+        &[AppliedReduction::PartialOrder {
+            proviso: qsl_replay::Proviso::BreadthFirstRevisit,
+        }]
+    );
+    assert_eq!(
+        por_result.records[0][0].value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Reduced {
+                reductions: reductions.clone(),
+            },
+            certification: Certification::Uncertified,
+        }
+    );
+    assert_eq!(por_result.records[0][0].basis, SettlementBasis::ClosedScope);
 }
 
 /// FR-167-AC-4 and FR-169-AC-9: the public check-and-settle pipeline returns

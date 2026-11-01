@@ -196,7 +196,22 @@ pub fn settle_state_graph(
         StateGraphOutcome::Holds { certificate } => check.row(certificate, || {
             Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
         }),
-        StateGraphOutcome::HoldsReduced { reductions, .. } => Row::proof(
+        StateGraphOutcome::HoldsReduced {
+            reductions,
+            witnesses: Some(_),
+        } => replayed(replay(instance), || {
+            Row::proof(
+                ProofBasis::Reduced {
+                    reductions: reductions.clone(),
+                },
+                Certification::Uncertified,
+                SettlementBasis::ClosedScope,
+            )
+        }),
+        StateGraphOutcome::HoldsReduced {
+            reductions,
+            witnesses: None,
+        } => Row::proof(
             ProofBasis::Reduced {
                 reductions: reductions.clone(),
             },
