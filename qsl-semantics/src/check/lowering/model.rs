@@ -1994,10 +1994,8 @@ impl<'a> Lowering<'a> {
         Ok((owner, model))
     }
 
-    /// The model record value type or event type whose model node key is
-    /// `handle`, the declaration key a model record carries in the type
-    /// environment (FR-359 item 9); `None` when `handle` is a source
-    /// composite.
+    /// The selected model record, tuple value type or event type whose model
+    /// node key is `handle`; `None` when `handle` is a source composite.
     pub(super) fn model_record_declaration(
         &mut self,
         handle: NodeKey,
@@ -2010,7 +2008,9 @@ impl<'a> Lowering<'a> {
                 };
                 if !matches!(
                     record,
-                    DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                    DomainPackageRecord::RecordValueType(_)
+                        | DomainPackageRecord::TupleValueType(_)
+                        | DomainPackageRecord::EventType(_)
                 ) {
                     continue;
                 }

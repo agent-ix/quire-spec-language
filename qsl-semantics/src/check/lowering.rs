@@ -2520,8 +2520,8 @@ impl<'a> Lowering<'a> {
         if let Some(key) = self.composites.get(&declaration) {
             return Ok(OpenComposite::Built(key.clone()));
         }
-        // FR-359 item 3: a model record value type or event type is a
-        // model-owned node, never a `composite_type`.
+        // Selected model record, tuple value type and event declarations use
+        // their model-owned node identity, never a source `composite_type`.
         if let Some(model_record) = self.model_record_declaration(declaration.clone(), location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the

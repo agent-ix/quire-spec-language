@@ -8,7 +8,11 @@ use qsl_semantics::model::intake::meaning;
 #[path = "../../../../qsl-semantics/tests/support/tc235_k2.rs"]
 mod fixture;
 
-fn tuple_document() -> Vec<u8> {
+fn tuple_document(include_tuple: bool) -> Vec<u8> {
+    if !include_tuple {
+        return serde_json::to_vec(&fixture::k2())
+            .expect("the package without the tuple serializes");
+    }
     let tuple = fixture::declaration(
         "Pair",
         "tuple",
@@ -45,13 +49,13 @@ fn tuple_document() -> Vec<u8> {
 }
 
 fn emit_with_tuple_source(tuple_is_referenced: bool) -> Emission {
-    let document = tuple_document();
+    let document = tuple_document(tuple_is_referenced);
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
         .expect("the tuple package is admitted");
     let function = if tuple_is_referenced {
-        "function keep using v(pair: M::Pair): M::Pair pure { pair }"
+        "function keep using v(x: M::Pair): M::Pair pure { x }"
     } else {
-        "function keep using v(value: Boolean): Boolean pure { value }"
+        "function keep using v(): Boolean pure { true }"
     };
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -67,7 +71,7 @@ fn emit_with_tuple_source(tuple_is_referenced: bool) -> Emission {
 }
 
 /// A selected tuple row names the full structural id of the emitted model
-/// tuple; an unreferenced tuple has no row or node.
+/// tuple; a package without that tuple has no row or node.
 #[test]
 fn selected_tuple_rows_match_emitted_model_nodes_and_skip_absent_nodes() {
     let emission = emit_with_tuple_source(true);
