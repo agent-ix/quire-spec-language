@@ -37,12 +37,6 @@ pub(crate) enum Enc {
     Effective(EffectiveId),
     /// An immutable encoding shared by clones of the same model state.
     Shared(std::sync::Arc<Enc>),
-    /// A tagged object, keeping its fixed `type` member out of the members
-    /// vector so each tagged node avoids growing that vector.
-    Tagged {
-        tag: &'static str,
-        members: Vec<(&'static str, Enc)>,
-    },
     /// Members in any order: the writer sorts them (RFC 8785 section 3.2.3).
     Object(Vec<(&'static str, Enc)>),
     /// A value FR-181's typed canonical form does not yet cover here; it has
@@ -70,16 +64,6 @@ impl Encode for Enc {
             }
             Self::Effective(id) => write_effective(writer, id),
             Self::Shared(value) => value.encode_into(writer),
-            Self::Tagged { tag, members } => {
-                writer.begin_object()?;
-                for (name, value) in members {
-                    writer.name(name)?;
-                    value.encode_into(writer)?;
-                }
-                writer.name("type")?;
-                writer.string(tag)?;
-                writer.end_object()
-            }
             Self::Object(members) => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -101,8 +85,9 @@ impl Enc {
     }
 
     /// `{"type": tag, ...members}`.
-    pub(crate) fn tagged(tag: &'static str, members: Vec<(&'static str, Enc)>) -> Self {
-        Self::Tagged { tag, members }
+    pub(crate) fn tagged(tag: &str, mut members: Vec<(&'static str, Enc)>) -> Self {
+        members.push(("type", Self::text(tag)));
+        Self::Object(members)
     }
 
     /// This value's canonical RFC 8785 text.
