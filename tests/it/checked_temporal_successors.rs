@@ -604,6 +604,49 @@ fn checked_watermark_deadline_and_silent_clock_semantics() {
     assert_eq!(event_silence.basis, Some(Basis::Unsettled));
 }
 
+/// FR-043-AC-9: a past query at an authoritative origin uses the selected
+/// boundary rule; the same visible suffix without origin authority is missing
+/// history, not false padding.
+#[trace("TC-122", "FR-043-AC-9")]
+#[test]
+fn checked_past_operator_requires_authoritative_history() {
+    let checked = checked("once[1,1] holds(view.code > 0)", temporal::EVENT_POSITION);
+    let leaf = checked.package().graph().temporal_clauses()[0]
+        .clause()
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .and_then(|index| u32::try_from(index).ok())
+        .unwrap();
+    let mut input = origin_trace();
+    input.positions[0].valuations.insert(leaf, true);
+
+    input.authoritative_origin = true;
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    let temporal::Obligation::Assessed(origin) = &report.result().unwrap()[0] else {
+        panic!("authoritative-origin past operator assessed");
+    };
+    assert_eq!(origin.truth, Some(Truth::False));
+
+    input.authoritative_origin = false;
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    let temporal::Obligation::Assessed(cutoff) = &report.result().unwrap()[0] else {
+        panic!("history-cutoff past operator remains represented");
+    };
+    assert_eq!(cutoff.truth, None);
+    assert_eq!(cutoff.basis, Some(Basis::Unavailable));
+    assert_eq!(
+        cutoff
+            .incomplete
+            .as_ref()
+            .map(|incomplete| incomplete.dimension),
+        Some(temporal::Dimension::History)
+    );
+}
+
 /// FR-045: the checked classifier accumulates finite-window and mixed-direction
 /// limitations and retains the exact profile selection.
 #[trace("TC-125", "FR-045-AC-2", "FR-045-AC-3")]
