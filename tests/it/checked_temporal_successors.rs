@@ -381,6 +381,91 @@ fn checked_atom_has_exact_decision_support_and_false_extension() {
     assert_eq!(assessed.support, vec![0]);
 }
 
+/// FR-043-AC-7/8: open scopes settle only from decisive support, incomplete
+/// input cannot invoke false extension, and a finite empty window settles only
+/// once its inclusive deadline is complete.
+#[trace("TC-122", "FR-043-AC-7", "FR-043-AC-8")]
+#[test]
+fn checked_open_incomplete_and_empty_window_outcomes_stay_distinct() {
+    let eventual = checked(
+        "eventually[0,1] holds(view.code > 0)",
+        temporal::EVENT_POSITION,
+    );
+    let leaf = eventual.package().graph().temporal_clauses()[0]
+        .clause()
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .and_then(|index| u32::try_from(index).ok())
+        .unwrap();
+    let mut input = origin_trace();
+    input.decision_scope = Closure::Open;
+    input.positions[0].valuations.insert(leaf, true);
+    let witness =
+        temporal::evaluate_checked(eventual.package(), 0, &input, temporal::Limits::default());
+    let temporal::Obligation::Assessed(witness) = &witness.result().unwrap()[0] else {
+        panic!("decisive witness assessed");
+    };
+    assert_eq!(witness.truth, Some(Truth::True));
+    assert_eq!(witness.basis, Some(Basis::DecisiveWitness));
+    assert_eq!(witness.support, [0]);
+
+    let universal = checked("always[0,1] holds(view.code > 0)", temporal::EVENT_POSITION);
+    let leaf = universal.package().graph().temporal_clauses()[0]
+        .clause()
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .and_then(|index| u32::try_from(index).ok())
+        .unwrap();
+    let mut input = origin_trace();
+    input.decision_scope = Closure::Open;
+    input.positions[0].valuations.insert(leaf, false);
+    let counterexample =
+        temporal::evaluate_checked(universal.package(), 0, &input, temporal::Limits::default());
+    let temporal::Obligation::Assessed(counterexample) = &counterexample.result().unwrap()[0]
+    else {
+        panic!("decisive counterexample assessed");
+    };
+    assert_eq!(counterexample.truth, Some(Truth::False));
+    assert_eq!(counterexample.basis, Some(Basis::DecisiveCounterexample));
+    assert_eq!(counterexample.support, [0]);
+
+    let mut incomplete = origin_trace();
+    incomplete.positions.clear();
+    incomplete.completeness = Completeness::Incomplete;
+    let report = temporal::evaluate_checked(
+        universal.package(),
+        0,
+        &incomplete,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(incomplete) = &report.result().unwrap()[0] else {
+        panic!("incomplete input remains assessed");
+    };
+    assert_eq!(incomplete.truth, Some(Truth::Pending));
+    assert_eq!(incomplete.basis, Some(Basis::Unsettled));
+
+    for (body, expected) in [
+        ("always[1,1] true", Truth::True),
+        ("eventually[1,1] true", Truth::False),
+    ] {
+        let finite = checked(body, temporal::TIMESTAMPED_WINDOW);
+        let mut trace = origin_trace();
+        trace.clock.profile_identity = temporal::TIMESTAMPED_WINDOW.into();
+        trace.positions.clear();
+        trace.watermark = 1;
+        let report =
+            temporal::evaluate_checked(finite.package(), 0, &trace, temporal::Limits::default());
+        let temporal::Obligation::Assessed(empty_window) = &report.result().unwrap()[0] else {
+            panic!("complete finite empty window assessed");
+        };
+        assert_eq!(empty_window.truth, Some(expected), "{body}");
+    }
+}
+
 /// FR-045: the checked classifier accumulates finite-window and mixed-direction
 /// limitations and retains the exact profile selection.
 #[trace("TC-125", "FR-045-AC-2", "FR-045-AC-3")]
