@@ -511,6 +511,30 @@ fn selected_exact_rows(
             _ => {}
         }
     }
+    for unit in &package.units {
+        let exact = crate::model::key::model_node_key(
+            &unit.key.package,
+            "scalar_type",
+            "unit",
+            &unit.key.node,
+        )
+        .map_err(|_| ())?;
+        declarations.push(SelectedExactDeclarationRow::new(
+            CheckedNodeId {
+                package: unit.key.package.as_str().into(),
+                path: vec![
+                    CheckedNodePathSegment::Name("scalar_type".into()),
+                    CheckedNodePathSegment::Name("unit".into()),
+                    CheckedNodePathSegment::Name(unit.key.node.as_str().into()),
+                ],
+                ordinal: 0,
+            },
+            selected_document,
+            SelectedExactDeclarationForm::DeclaredUnit,
+            unit.key.node.as_str(),
+            SelectedExactIdentity::DeclaredUnit(quire_exact::UnitId::declared(exact)),
+        ));
+    }
 
     for record in &package.records {
         let DomainPackageRecord::RecordValueType(record) = record else {
@@ -564,153 +588,6 @@ fn checked_model_node(package: &str, form: &str, node: &str) -> CheckedNodeId {
             CheckedNodePathSegment::Name(node.into()),
         ],
         ordinal: 0,
-    }
-}
-
-#[cfg(test)]
-mod selected_exact_identity_tests {
-    use super::*;
-    use crate::model::domain_package::{
-        FieldMemberRecord, Multiplicity, ObjectTypeRecord, OriginalDeclaration,
-        RecordValueTypeRecord, ValueTypeRef,
-    };
-    use crate::model::normalize::{normalize_on, NormalizeOutcome};
-    use quire_exact::Presence;
-    use serde_json::json;
-
-    fn key(node: &str) -> DeclarationKey {
-        DeclarationKey {
-            package: "acme/orders".into(),
-            node: node.into(),
-        }
-    }
-
-    #[test]
-    fn intake_mints_record_field_and_reference_supply_rows_from_the_admitted_model() {
-        let record = key("ix://acme/orders/Receipt");
-        let parent = key("ix://acme/orders/Identified");
-        let field = key("ix://acme/orders/Receipt/number");
-        let inherited_field = key("ix://acme/orders/Identified/id");
-        let object = key("ix://acme/orders/Order");
-        let mut package = DomainPackage::new(
-            crate::model::domain_package::DomainPackageRef {
-                identity: "acme/orders".into(),
-            },
-            vec![
-                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
-                    key: parent.clone(),
-                    identity_fields: Vec::new(),
-                    supertypes: Vec::new(),
-                }),
-                DomainPackageRecord::FieldMember(FieldMemberRecord {
-                    key: inherited_field.clone(),
-                    owner: parent.clone(),
-                    value_type: ValueTypeRef::Native(
-                        crate::model::domain_package::NativeValueType::Integer,
-                    ),
-                    multiplicity: Multiplicity {
-                        lower: 1,
-                        upper: Some(1),
-                        ordered: false,
-                        unique: true,
-                    },
-                    presence: Presence::Required,
-                    subsets: Vec::new(),
-                    redefines: None,
-                    position: 0,
-                }),
-                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
-                    key: record.clone(),
-                    identity_fields: Vec::new(),
-                    supertypes: vec![parent.clone()],
-                }),
-                DomainPackageRecord::FieldMember(FieldMemberRecord {
-                    key: field.clone(),
-                    owner: record.clone(),
-                    value_type: ValueTypeRef::Native(
-                        crate::model::domain_package::NativeValueType::Integer,
-                    ),
-                    multiplicity: Multiplicity {
-                        lower: 1,
-                        upper: Some(1),
-                        ordered: false,
-                        unique: true,
-                    },
-                    presence: Presence::Required,
-                    subsets: Vec::new(),
-                    redefines: None,
-                    position: 0,
-                }),
-                DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                    key: object.clone(),
-                    interface_features: None,
-                    abstract_type: false,
-                    supertypes: Vec::new(),
-                }),
-            ],
-        );
-        package.originals.insert(
-            inherited_field.clone(),
-            OriginalDeclaration {
-                meaning: None,
-                origin: json!({}),
-                member_name: Some("id".into()),
-            },
-        );
-        package.originals.insert(
-            field.clone(),
-            OriginalDeclaration {
-                meaning: None,
-                origin: json!({}),
-                member_name: Some("number".into()),
-            },
-        );
-        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-        let view = match normalize_on(&package, &mut meter) {
-            NormalizeOutcome::Completed(view) => view,
-            other => panic!("the fixture model normalizes: {other:?}"),
-        };
-
-        let (declarations, fields) = selected_exact_rows(&package, &view)
-            .expect("the admitted model produces typed identity rows");
-        let record_node = checked_model_node(&record.package, "record_value_type", &record.node);
-        let record_key = crate::model::key::model_node_key(
-            &record.package,
-            "model",
-            "record_value_type",
-            &record.node,
-        )
-        .expect("the record declaration key is valid");
-        assert!(declarations.iter().any(|row| {
-            row.structural_node == record_node
-                && row.selected_document.as_ref() == "acme/orders"
-                && row.original_identity.as_ref() == record.node
-                && row.form == SelectedExactDeclarationForm::RecordValueType
-                && row.exact_identity == SelectedExactIdentity::Record(record_key.clone())
-        }));
-        assert!(declarations.iter().any(|row| {
-            row.original_identity.as_ref() == object.node
-                && row.form == SelectedExactDeclarationForm::ObjectType
-                && row.exact_identity
-                    == SelectedExactIdentity::Object(view.type_identities()[&object].clone())
-        }));
-        assert!(fields.iter().any(|row| {
-            row.record_node == record_node
-                && row.selected_document.as_ref() == "acme/orders"
-                && row.record_original_identity.as_ref() == record.node
-                && row.field_original_identity.as_ref() == field.node
-                && row.member_id
-                    == MemberId::new(MemberOwner::Node(record_key.clone()), "number")
-                        .expect("a declared field name produces a member identity")
-        }));
-        assert!(fields.iter().any(|row| {
-            row.record_node == record_node
-                && row.record_original_identity.as_ref() == record.node
-                && row.field_original_identity.as_ref() == inherited_field.node
-                && row.member_id
-                    == MemberId::new(MemberOwner::Node(record_key.clone()), "id")
-                        .expect("an inherited field name produces a member identity")
-        }));
     }
 }
 
@@ -792,4 +669,174 @@ pub fn admit_unit_with_cancel(
         exact_declarations,
         exact_fields,
     })
+}
+
+#[cfg(test)]
+mod selected_exact_identity_tests {
+    use super::*;
+    use crate::model::domain_package::{
+        FieldMemberRecord, Multiplicity, ObjectTypeRecord, OriginalDeclaration,
+        RecordValueTypeRecord, ValueTypeRef,
+    };
+    use crate::model::normalize::{normalize_on, NormalizeOutcome};
+    use quire_exact::Presence;
+    use serde_json::json;
+
+    fn key(node: &str) -> DeclarationKey {
+        DeclarationKey {
+            package: "acme/orders".into(),
+            node: node.into(),
+        }
+    }
+
+    #[test]
+    fn intake_mints_record_field_and_reference_supply_rows_from_the_admitted_model() {
+        let record = key("ix://acme/orders/Receipt");
+        let parent = key("ix://acme/orders/Identified");
+        let field = key("ix://acme/orders/Receipt/number");
+        let inherited_field = key("ix://acme/orders/Identified/id");
+        let unit = key("ix://acme/orders/unit/second");
+        let object = key("ix://acme/orders/Order");
+        let mut package = DomainPackage::new(
+            crate::model::domain_package::DomainPackageRef {
+                identity: "acme/orders".into(),
+            },
+            vec![
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: parent.clone(),
+                    identity_fields: Vec::new(),
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::FieldMember(FieldMemberRecord {
+                    key: inherited_field.clone(),
+                    owner: parent.clone(),
+                    value_type: ValueTypeRef::Native(
+                        crate::model::domain_package::NativeValueType::Integer,
+                    ),
+                    multiplicity: Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    presence: Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                    position: 0,
+                }),
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: record.clone(),
+                    identity_fields: Vec::new(),
+                    supertypes: vec![parent.clone()],
+                }),
+                DomainPackageRecord::FieldMember(FieldMemberRecord {
+                    key: field.clone(),
+                    owner: record.clone(),
+                    value_type: ValueTypeRef::Native(
+                        crate::model::domain_package::NativeValueType::Integer,
+                    ),
+                    multiplicity: Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    presence: Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                    position: 0,
+                }),
+                DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                    key: object.clone(),
+                    interface_features: None,
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+            ],
+        );
+        package
+            .units
+            .push(crate::model::domain_package::PackageUnitRecord {
+                key: unit.clone(),
+                name: "second".into(),
+                dimension: key("ix://acme/orders/dimension/Time"),
+                target: None,
+                scale: "1".into(),
+                offset: "0".into(),
+            });
+        package.originals.insert(
+            inherited_field.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: json!({}),
+                member_name: Some("id".into()),
+            },
+        );
+        package.originals.insert(
+            field.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: json!({}),
+                member_name: Some("number".into()),
+            },
+        );
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        let view = match normalize_on(&package, &mut meter) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("the fixture model normalizes: {other:?}"),
+        };
+
+        let (declarations, fields) = selected_exact_rows(&package, &view)
+            .expect("the admitted model produces typed identity rows");
+        let record_node = checked_model_node(&record.package, "record_value_type", &record.node);
+        let record_key = crate::model::key::model_node_key(
+            &record.package,
+            "model",
+            "record_value_type",
+            &record.node,
+        )
+        .expect("the record declaration key is valid");
+        assert!(declarations.iter().any(|row| {
+            row.structural_node == record_node
+                && row.selected_document.as_ref() == "acme/orders"
+                && row.original_identity.as_ref() == record.node
+                && row.form == SelectedExactDeclarationForm::RecordValueType
+                && row.exact_identity == SelectedExactIdentity::Record(record_key.clone())
+        }));
+        assert!(declarations.iter().any(|row| {
+            row.original_identity.as_ref() == object.node
+                && row.form == SelectedExactDeclarationForm::ObjectType
+                && row.exact_identity
+                    == SelectedExactIdentity::Object(view.type_identities()[&object].clone())
+        }));
+        let unit_key =
+            crate::model::key::model_node_key(&unit.package, "scalar_type", "unit", &unit.node)
+                .expect("the declared unit key is valid");
+        assert!(declarations.iter().any(|row| {
+            row.structural_node.package.as_ref() == unit.package
+                && row.original_identity.as_ref() == unit.node
+                && row.form == SelectedExactDeclarationForm::DeclaredUnit
+                && row.exact_identity
+                    == SelectedExactIdentity::DeclaredUnit(quire_exact::UnitId::declared(
+                        unit_key.clone(),
+                    ))
+        }));
+        assert!(fields.iter().any(|row| {
+            row.record_node == record_node
+                && row.selected_document.as_ref() == "acme/orders"
+                && row.record_original_identity.as_ref() == record.node
+                && row.field_original_identity.as_ref() == field.node
+                && row.member_id
+                    == MemberId::new(MemberOwner::Node(record_key.clone()), "number")
+                        .expect("a declared field name produces a member identity")
+        }));
+        assert!(fields.iter().any(|row| {
+            row.record_node == record_node
+                && row.record_original_identity.as_ref() == record.node
+                && row.field_original_identity.as_ref() == inherited_field.node
+                && row.member_id
+                    == MemberId::new(MemberOwner::Node(record_key.clone()), "id")
+                        .expect("an inherited field name produces a member identity")
+        }));
+    }
 }

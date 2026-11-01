@@ -162,7 +162,7 @@ fn a_clause_names_the_object_type_its_over_input_references() {
 /// QSL-1377: model-intake identity rows are carried into the admitted IR
 /// projection, and an identity-bearing reference refuses when the rows are
 /// absent.
-#[trace("FR-352-AC-11", "TC-142")]
+#[trace("FR-390-AC-17")]
 #[test]
 fn selected_model_identity_rows_back_reference_projection_and_missing_rows_refuse() {
     let lowered = emitted(&flow("M::Order"));
