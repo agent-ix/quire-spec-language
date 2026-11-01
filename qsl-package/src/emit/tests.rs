@@ -67,6 +67,7 @@ mod reachability;
 mod receiver_frames;
 mod refinement_adverse;
 mod refinement_rows;
+mod selected_model_rows;
 mod source_map_debug;
 mod state_graph_claim;
 mod state_transition;

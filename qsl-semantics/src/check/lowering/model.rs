@@ -425,10 +425,12 @@ impl AdmittedModel {
         };
         let declaring_key = self.types.get(&operation.declaring)?;
         let declaring_form = match self.records.get(declaring_key)? {
+            DomainPackageRecord::ObjectType(object) if object.interface_features.is_some() => {
+                ModelForm::SystemsInterface
+            }
             DomainPackageRecord::ObjectType(_) => ModelForm::ObjectType,
             DomainPackageRecord::StateMachine(_) => ModelForm::StateMachine,
             DomainPackageRecord::Process(_) => ModelForm::Process,
-            DomainPackageRecord::SystemsInterface(_) => ModelForm::SystemsInterface,
             _ => return None,
         };
         Some(SelectedOperationMember {

@@ -128,9 +128,9 @@ fn a_variant_type_is_one_model_owned_node_with_one_enum_value_per_case() {
     assert_eq!(odd, ODD_CASES);
 }
 
-/// FR-354: selected model enum rows retain the selected document and the
+/// FR-360-AC-8: selected model enum rows retain the selected document and the
 /// original declaration/member identities, then join to the admitted nodes.
-#[trace("FR-354", "TC-418")]
+#[trace("FR-360-AC-8", "TC-1009")]
 #[test]
 fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_foreign_rows() {
     use quire_contract_model::{

@@ -826,6 +826,7 @@ impl fmt::Debug for CheckedGraph {
                     embedding,
                     model_selections,
                     selected_exact_identity_rows,
+                    selected_tuple_declaration_rows,
                     protocol_population_types,
                     model_roots,
                     header_layers,
@@ -897,6 +898,10 @@ impl fmt::Debug for CheckedGraph {
                     .field(
                         "selected_exact_identity_rows",
                         &selected_exact_identity_rows,
+                    )
+                    .field(
+                        "selected_tuple_declaration_rows",
+                        &selected_tuple_declaration_rows,
                     )
                     .field(
                         "protocol_population_types",

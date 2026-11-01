@@ -63,6 +63,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
     };
+    let raw_source = graph.source().clone();
     let model_node = checked_source.model_node.clone();
     let unit_node = checked_source.unit_node.clone();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
@@ -71,6 +72,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         panic!("one emitted source-owned unit identity row");
     };
     assert_eq!(unit_row.qualified_declaration, ["ms"]);
+    assert_eq!(unit_row.source_authority.as_ref(), raw_source.authority());
+    assert_eq!(unit_row.source_identity.as_ref(), raw_source.identity());
     assert_eq!(
         unit_row.unit_id,
         quire_exact::UnitId::declared(unit_node.clone())

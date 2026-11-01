@@ -848,9 +848,9 @@ mod selected_exact_identity_tests {
         }));
     }
 
-    /// TC-418: the tuple row carries the admitted selected document, the
-    /// original tuple identity and the Exact key for its structural node.
-    #[trace("TC-418")]
+    /// FR-396-AC-2 / TC-1090: intake retains a selected tuple's original
+    /// identity and the Exact key corresponding to its checked declaration.
+    #[trace("FR-396-AC-2", "TC-1090")]
     #[test]
     fn intake_mints_a_tuple_row_from_the_selected_model_record() {
         let tuple = key("ix://acme/orders/Pair");

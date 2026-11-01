@@ -329,9 +329,9 @@ pub struct SemanticGraph {
     /// Selected model operation identities keyed by their lowered anchor.
     selected_operation_members: BTreeMap<NodeKey, model::SelectedOperationMember>,
     /// Selected model enum declarations keyed by their lowered declaration.
-    selected_model_enum_declarations: BTreeMap<NodeKey, model::SelectedModelEnumDeclaration>,
+    selected_model_enum_declarations: BTreeMap<NodeKey, SelectedModelEnumDeclaration>,
     /// Selected model enum members keyed by their lowered member node.
-    selected_model_enum_members: BTreeMap<NodeKey, model::SelectedModelEnumMember>,
+    selected_model_enum_members: BTreeMap<NodeKey, SelectedModelEnumMember>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -377,21 +377,21 @@ impl SemanticGraph {
     /// The selected model enum declarations associated with lowered nodes.
     pub fn selected_model_enum_declarations(
         &self,
-    ) -> impl Iterator<Item = (&NodeKey, &model::SelectedModelEnumDeclaration)> {
+    ) -> impl Iterator<Item = (&NodeKey, &SelectedModelEnumDeclaration)> {
         self.selected_model_enum_declarations.iter()
     }
 
     /// The selected model enum members associated with lowered nodes.
     pub fn selected_model_enum_members(
         &self,
-    ) -> impl Iterator<Item = (&NodeKey, &model::SelectedModelEnumMember)> {
+    ) -> impl Iterator<Item = (&NodeKey, &SelectedModelEnumMember)> {
         self.selected_model_enum_members.iter()
     }
 
     pub(crate) fn select_model_enum_declaration(
         &mut self,
         declaration: NodeKey,
-        selected: model::SelectedModelEnumDeclaration,
+        selected: SelectedModelEnumDeclaration,
     ) {
         self.selected_model_enum_declarations
             .insert(declaration, selected);
@@ -400,7 +400,7 @@ impl SemanticGraph {
     pub(crate) fn select_model_enum_member(
         &mut self,
         member: NodeKey,
-        selected: model::SelectedModelEnumMember,
+        selected: SelectedModelEnumMember,
     ) {
         self.selected_model_enum_members.insert(member, selected);
     }
