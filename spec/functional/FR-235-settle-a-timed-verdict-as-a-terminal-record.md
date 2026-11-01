@@ -23,6 +23,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-245
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-239
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-249
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
 ---
 # FR-235: Settle a timed verdict as an FR-331 terminal record
 
@@ -84,8 +90,7 @@ refuted, with its trap evidence.
 | V-10 | `Violated` with `kind: TimeLock` whose replay reproduces | `refuted` | `closed-scope` | `Refuted` | violation |
 | V-6 | `Holds(certificate)` and the checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected)` | inconclusive |
 | V-6 | `Undecided(NoAdmittedBehaviour)` or `Undecided(LassoNotConcretized)`; a replay that settles `inconclusive` or refuses | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
-| V-7 | `Stopped(cause, limit)`; a certificate check a budget stopped | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, or `Incomplete(Cancelled{source})` for a cancelled run | incomplete |
-| V-7 | A bounded task-automaton search stopped before its proof or counterexample is checked | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` with QSpec FR-331 `task_search` frontier evidence | incomplete |
+| V-7 | `Stopped(cause, limit)`; for task automata this is a bounded search stopped before its proof or counterexample is checked | `failed`, execution `resource-incomplete` for generic stops; `incomplete`, execution `resource-incomplete` for task-search stops | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, or `Incomplete(Cancelled{source})`; a bounded task search additionally carries QSpec FR-331 `task_search` evidence | incomplete |
 | V-8 | `PunctualInterval` disposition; no candidate | `unsupported` | `unavailable` | `Unsupported(PunctualInterval)` | unsupported |
 
 - A `Holds(certificate)` outcome SHALL settle `proved` only after
@@ -93,14 +98,11 @@ refuted, with its trap evidence.
   travel with the outcome from S6c over ADR-018's E11, as a counterexample
   does.
 - A `Violated` outcome SHALL settle `refuted` only through its replay.
-- A task-automaton `Stopped` outcome SHALL settle `incomplete` and carry the
-  replayable QSpec FR-331 `task_search` record in the same item record. The
-  reader SHALL verify that it is bound to the item's checked task-product
-  identity, that the effective limits match the run, that every listed node
-  and edge replays from the initial product state, and that the frontier
-  accounts for every reachable unexpanded node at the first reached limit.
-  This evidence explains the bounded stop; it is not a proof that no miss
-  exists and SHALL NOT settle `proved`.
+- For a task-automaton `Stopped` outcome, the terminal-record writer SHALL
+  use QSpec FR-331's `incomplete` mapping and include its `task_search`
+  evidence. Generic stops continue to use FR-127's generic mapping. The
+  QSpec reader owns frontier validation; the evidence justifies the
+  incomplete status and SHALL NOT settle `proved`.
 - `TerminalValue::category` SHALL map `ZoneCertified`, `ClosedForm`,
   `BoundedSolver` and `InductiveSolver` to success, and `InsufficientHorizon`
   to inconclusive.

@@ -69,7 +69,7 @@ fn refused(declarations: &str) -> Vec<(Code, &'static str, String)> {
         .collect()
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn a_release_is_recorded_on_its_operation_and_a_second_task_is_allowed() {
     let graph = checked(
@@ -90,7 +90,7 @@ fn a_release_is_recorded_on_its_operation_and_a_second_task_is_allowed() {
     assert_eq!(released, ["a", "b"]);
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn an_operation_that_releases_nothing_records_no_release() {
     let graph = checked("release Ctl.a on ConfigVersion::attemptUpdate;");
@@ -111,7 +111,7 @@ fn an_operation_that_releases_nothing_records_no_release() {
     assert!(bare.task_sets().releases().is_empty());
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn a_second_release_of_one_task_on_one_operation_refuses_at_the_second() {
     let reported = refused(
@@ -133,7 +133,7 @@ fn a_second_release_of_one_task_on_one_operation_refuses_at_the_second() {
     );
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn an_unresolved_task_set_task_or_operation_refuses_at_the_name() {
     for (declaration, at) in [
@@ -152,7 +152,7 @@ fn an_unresolved_task_set_task_or_operation_refuses_at_the_name() {
     }
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn a_task_of_another_task_set_is_not_a_task_of_the_named_one() {
     let other = "taskset Other {\n
@@ -168,7 +168,7 @@ fn a_task_of_another_task_set_is_not_a_task_of_the_named_one() {
     ));
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn every_unresolved_name_of_a_release_is_reported() {
     let reported = refused("release Nope.a on ConfigVersion::nope;");
@@ -185,7 +185,7 @@ fn every_unresolved_name_of_a_release_is_reported() {
     );
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-230-AC-7")]
 #[test]
 fn a_release_is_refused_unless_the_timed_facet_is_selected() {
     let text = format!("{SET}release Ctl.a on ConfigVersion::attemptUpdate;\n");
@@ -209,7 +209,7 @@ fn a_release_is_refused_unless_the_timed_facet_is_selected() {
     assert!(found, "{refusals:?}");
 }
 
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn releases_check_over_a_time_dense_model() {
     let graph = checked(
@@ -222,7 +222,7 @@ fn releases_check_over_a_time_dense_model() {
 
 /// `Both` inherits `dup` from two unrelated types, so `Both::dup` names no one
 /// operation: `ambiguous_declaration`/`ambiguous-name` at the operation name.
-#[trace("TC-704", "FR-249-AC-3")]
+#[trace("TC-704", "FR-249-AC-6")]
 #[test]
 fn an_operation_inherited_from_two_unrelated_types_is_ambiguous() {
     let declarations = "release Ctl.a on Config::Both::dup;";

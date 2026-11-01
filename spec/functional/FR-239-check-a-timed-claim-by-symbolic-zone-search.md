@@ -27,6 +27,18 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-238
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-249
+    type: references
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-364
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-415
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-418
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-419
+    type: depends_on
 ---
 # FR-239: Check a timed claim by symbolic zone search (EN-6)
 
@@ -105,38 +117,24 @@ edges, automaton states and stored zone bytes.
   successor.
 - Transition identities and their discrete successors SHALL come from
   FR-120's successor relation, in FR-101 canonical transition order.
-- **Task-product successors.** For `TaskAutomaton(subject)`, EN-6 SHALL use
-  the source-plus-scheduler product defined by FR-249 and QSpec FR-419. A
-  symbolic state SHALL include the complete source control, finite scheduler
-  state, each live job's identity/occurrence/generation, selected demand,
-  completed service, remaining demand, absolute deadline and mode, together
-  with the clock zone. Delays advance every clock at rate 1 and service only
-  the scheduled job. Derived release, dispatch, preempt, resume, completion,
-  budget-change and deadline-miss edges SHALL preserve their producer-owned
-  provenance and exact job identity. The successor relation SHALL apply
-  QSpec FR-415's bounded subtraction and diagonal constraints using the
-  task product's checked clock ceilings; EN-6 SHALL NOT model preemption with
-  non-unit clock rates.
-- **Exact and bounded task search.** For the exact finite task-automata class
-  class identified by FR-249 and QSpec FR-418, EN-6 SHALL explore the complete
-  refined region product and return `Holds` only with an independently
-  accepted coverage certificate. For variable/interval demand with
-  completion feedback and preemption, or an active mixed-criticality budget
-  delta, the engine SHALL preserve all permitted demand and mode successors
-  and perform sound bounded exploration. It SHALL not return `Holds` from a
-  bounded prefix. A miss is a candidate until FR-237 replays its exact
-  demand/service/deadline prefix and checks a time-divergent continuation by
-  a positive-delay loop or QSpec FR-364 `queue_growth` induction. A reached
-  queue bound or overflow edge alone SHALL never refute.
-- If a task search stops before it can produce a complete proof or checked
-  refutation, the outcome SHALL be `Stopped(LimitReached, limit)` and SHALL
-  carry the QSpec FR-331 `task_search` record. That record SHALL include the
-  checked product identity, effective limits, all explored state keys and
-  edges, and the complete unexplored frontier at the first stop. The reader
-  SHALL independently replay it and reject missing/extra edges, unreachable
-  nodes, a reachable unexpanded node below the limit, an inconsistent stop
-  reason, or changed bounds/accounting. It justifies `incomplete` only; it
-  is not a closed-scope certificate.
+- **Task-automaton integration.** For `TaskAutomaton(subject)`, EN-6 SHALL
+  obtain the product and successor relation from FR-249. QSpec FR-419 and
+  FR-415 define the product and transition semantics. QSL SHALL preserve the
+  checked product identity when constructing the search graph and shall not
+  reinterpret task/job identity, demand, release, mode-change or
+  bounded-subtraction rules.
+- **Exact and bounded task search.** For the exact task-product class
+  admitted by QSpec FR-418, EN-6 SHALL submit the complete refined product to
+  the independent certificate checker and return `Holds` only if it accepts.
+  Products outside that gate, including variable demand and mixed-criticality
+  changes, remain admitted for sound bounded search. A concrete miss is a
+  candidate until FR-237 replays it and QSpec FR-364 accepts its required
+  time-divergent continuation. Queue overflow alone SHALL never refute.
+- If a task search reaches an effective resource limit before a complete
+  proof or replayed refutation, EN-6 SHALL return `Stopped` with QSpec FR-331
+  `task_search` evidence. The QSpec FR-331 reader owns evidence validation;
+  this requirement does not define a frontier record or allow bounded
+  evidence to settle `Holds`.
 
 ### Abstraction
 
@@ -146,13 +144,11 @@ edges, automaton states and stored zone bytes.
 - The engine SHALL store zones unextrapolated and SHALL treat a new symbolic
   state as covered when a stored state with equal `s` and `q` has a zone
   whose aLU abstraction includes the new zone.
-- This aLU rule remains the ordinary model-subject abstraction. A
-  task-product search uses the bounded-subtraction/diagonal refined-region
-  abstraction and acceptance gate of FR-249 and QSpec FR-418; it SHALL NOT
-  infer completeness for diagonal task constraints from the diagonal-free
-  aLU argument. Its checker SHALL independently recompute task-product
-  successors, clock ceilings, diagonal/subtraction images and region
-  coverage.
+- This aLU rule remains the ordinary model-subject abstraction. For task
+  products, EN-6 SHALL use the refined-region method and gate specified by
+  QSpec FR-415 and FR-418; it SHALL NOT infer completeness for those products
+  from the ordinary diagonal-free aLU argument. The QSpec certificate reader
+  owns the independent coverage check.
 
 ### Search
 
@@ -214,7 +210,7 @@ edges, automaton states and stored zone bytes.
 | FR-239-AC-3 | A model whose clock `x` is compared only with 5 and grows without bound in a loop reaches a finite number of stored symbolic states, and the same model with the constant `10^12` reaches the same number. | Test (TC-694) |
 | FR-239-AC-4 | `Settles` over `Rpc` with `max_symbolic_states` 2 returns `Stopped(LimitReached, MaxSymbolicStates)` naming the value 2; with a cancelled `Cancel` handle, `Stopped(Cancelled, …)`; a subject with an unbounded population root refuses `RequiresBound` with no state explored. Two runs of each request give equal outcomes and byte-equal certificates and counterexamples. | Test (TC-694) |
 | FR-239-AC-5 | Over a `Ticker` model (`time dense`; object `t` with `n: Int[0, 2]` and clock `x`; operation `step` with precondition `self.n < 2`, guard `x >= 1`, reset `x` and postcondition `self.n = pre(self.n) + 1`; time invariant `when self.n < 2 { x <= 1 }`; initial `n = 0`) and `always holds(6 mod (2 - t.n) >= 0)` under `model-time`, the state with `n = 2` is quiescent and diverges by its idle tail, and the search returns `Violated` with the timed prefix `step` after delay 1, `step` after delay 1, and `kind: UndefinedEvaluation{where, cause: division-by-zero}`, `where` naming position 2, time stamp 2, the state with `n = 2`, `x = 0` and the locus of `6 mod (2 - t.n)`. With the unconditional invariant `x <= 1`, the `n = 2` state is a local time-lock: the search returns `Undecided(NoAdmittedBehaviour)` for the claim, since no behaviour diverges, and the time-lock-freedom item is refuted. | Test (TC-710) |
-| FR-239-AC-6 | An exact fixed-work task product with a checked finite closure returns `Holds` only when its complete task-product certificate is accepted; removing an enabled task edge makes the check fail. For an interval-demand/preemptive product whose effective symbolic-state limit is 2, the run returns `Stopped(LimitReached, MaxSymbolicStates)` with task-search frontier evidence; deleting a reachable frontier edge, altering an effective bound, or labeling the bounded frontier as a proof is rejected. A concrete missed job with positive remaining demand and no checked positive-delay continuation does not settle `Violated`. | Test (TC-704) |
+| FR-239-AC-6 | EN-6 passes an exact fixed-work task product to the QSpec FR-418 reader and returns `Holds` only on its accepted complete certificate. For a product outside that exact gate, a limit stop returns `Stopped` with the QSpec FR-331 task-search record; FR-235 settles it incomplete. A candidate miss without the QSpec FR-364 checked continuation does not settle `Violated`. | Test (TC-704) |
 
 ## Dependencies
 

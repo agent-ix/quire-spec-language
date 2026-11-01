@@ -21,6 +21,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-236
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-249
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-364
+    type: depends_on
 ---
 # FR-237: Replay a timed model or task-automaton counterexample
 
@@ -35,15 +41,13 @@ lasso's closure and fairness, and evaluates the formula over the timed
 lasso. A time-lock counterexample replays by its own arm. Replay needs no
 zone engine.
 
-For a task automaton, `qsl_replay::replay_task_automaton_trace` SHALL replay
-the source and producer-owned derived scheduler transitions against the
-recompiled task product (FR-249, QSpec FR-364). It SHALL check every selected
-job demand and its identity, nominal/actual release, jitter, service before
-and after every delay, scheduler order, preemption/resumption, completion
-feedback, budget update, deadline and bounded-subtraction/diagonal update.
-An incomplete bounded search is replayed separately by checking its QSpec
-FR-331 `task_search` frontier; frontier replay never implies absence of an
-unseen miss.
+For a task automaton, the existing `ModelTrace` replay entry SHALL rebuild
+FR-249's task-derived timed subject and pass the existing QSpec FR-364 model
+trace to the QSpec FR-364 replay contract. It SHALL return FR-072's existing
+ModelTrace-arm result. QSL SHALL NOT add a `TaskAutomatonTrace` result arm or
+a parallel trace wire. QSpec FR-364 owns task-step and continuation replay;
+FR-331 owns incomplete `task_search` evidence. A frontier replay never
+implies absence of an unseen miss.
 
 ## Use case
 
@@ -57,12 +61,12 @@ refutation.
 - FR-128's request and a `WitnessEnvelope<TemporalCounterexample>` over a
   timed subject (FR-236).
 - For a non-local time-lock: the request's exploration limits.
-- For a task-derived witness: the checked task-set inputs and task product
-  (FR-249), plus its QSpec FR-364 derived-step identities.
+- For a task-derived model trace: FR-249's checked task product and QSpec
+  FR-364's derived-step identities.
 
 ## Outputs
 
-- An FR-072 replay result on the `ModelTrace` or `TaskAutomatonTrace` arm, or a typed
+- An FR-072 replay result on the existing `ModelTrace` arm, or a typed
   `ReplayRefusal` with no partial result, as FR-128 states.
 
 ## Behavior
@@ -81,23 +85,11 @@ refutation.
   - apply the resets and check the target's time invariants, refusing
     `invalid_runtime_input`/`invalid-value` when one fails.
 - Every comparison and sum SHALL be exact.
-- **Task-derived steps.** For a task-automaton witness, replay SHALL start
-  the scheduler and all job service at the product's initial state, then
-  check every source step and every derived release, dispatch, preempt,
-  resume, complete, budget-change or deadline-miss transition against the
-  recomputed product. While replay applies each delay, it SHALL advance all clocks and only
-  the scheduled job's service. It SHALL recompute bounded subtraction and
-  diagonal guards from the checked per-clock ceilings and refuse any altered
-  demand, job occurrence/generation, source provenance, scheduler order,
-  service value, deadline or post-state key. A concrete miss is reproducible
-  only if the named job has positive remaining demand at its original
-  absolute deadline. Queue overflow by itself is not a miss witness.
-- **Task divergence.** A task miss refutes the invariant only if replay also
-  checks a time-divergent continuation from the missed product state. The
-  replay checker SHALL validate either the finite positive-delay loop or the QSpec FR-364
-  `queue_growth` induction, including its source/derived transition
-  provenance and task/job identity mapping. A time-lock-only miss prefix or
-  an unverified overflow settles `inconclusive`, not `refuted`.
+- **Task-derived replay.** For a task automaton, the executor SHALL rebuild
+  the product through FR-249 and invoke the QSpec FR-364 replay contract on
+  the existing model-trace payload. The replay settles reproduced only when
+  that contract accepts the task-derived steps and the required continuation.
+  QSL SHALL not define another derived-step identity or divergence witness.
 - **Lasso.** Replay SHALL check the loop's closure (FR-236) and that its
   total delay is positive, refusing `invalid_runtime_input`/`invalid-value`
   otherwise. It SHALL check fairness over time (FR-232) and refuse an
@@ -150,7 +142,7 @@ refutation.
 | FR-237-AC-4 | The `Stall` model's non-local time-lock counterexample (stem empty, `final_delay` `1/2`) reproduces by fresh exploration finding no quiescent state and no cycle with positive delay; the same payload against a variant with `ping` resetting `x` settles `inconclusive`, `ReplayParity`; with an exploration limit of one state it settles V-7. The `Stall` payload with `final_delay` 1, whose last state `x = 1` admits no positive delay while `ping` is enabled, takes the non-local arm and reproduces. Replaying one envelope twice gives equal results. | Test (TC-692) |
 | FR-237-AC-5 | FR-239-AC-5's counterexample replays to `reproduced-with-evaluated-witness`; with its last step removed it settles `inconclusive`, `ReplayParity`. | Test (TC-710) |
 | FR-237-AC-6 | Over a `Lock` model (one object with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with no guard; `time invariant when phase = B { x <= 1 ms }`; `ping`, enabled in `B`, changes no data field), the counterexample `go` after delay 0 to `always holds(c.phase = A)` settles `inconclusive`, `ReplayParity`, because the replayed state `(B, x = 0)` has no time-divergent continuation; over the variant in which `ping` resets `x`, the same counterexample settles `reproduced-with-evaluated-witness`; with an exploration limit of one state it settles V-7. | Test (TC-692) |
-| FR-237-AC-7 | A task-derived trace with one job preempted after service 1, another job running for delay 2, then the first resuming and completing after delay 3 replays only when its service remains 1 during the preemption and its derived transition identities, job occurrence/generation and deadline match the recompiled product. A service value changed to 3, a mismatched budget delta, a queue-overflow-only miss, a nonpositive divergence loop, or a `queue_growth` identity map that is not injective refuses replay. | Test (TC-704) |
+| FR-237-AC-7 | The existing `ModelTrace` replay entry rebuilds an FR-249 task product and passes its model-trace payload to the QSpec FR-364 reader; an accepted task-derived miss yields the existing FR-072 ModelTrace result, while a rejected payload does not reproduce. No `TaskAutomatonTrace` result arm or parallel QSL trace wire is emitted. | Test (TC-704) |
 
 ## Dependencies
 

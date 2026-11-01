@@ -9,13 +9,21 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-230
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-237
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-238
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-239
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-246
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-364
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-415
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-418
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-419
     type: depends_on
 ---
 # FR-249: Lower a task automaton to a timed subject
@@ -27,22 +35,22 @@ transitions to tasks of a checked task set is a task automaton. S3 SHALL
 compile it with the selected scheduler to an ordinary unit-rate timed product
 and EN-6 SHALL check `always holds(not deadline_missed)` on that product.
 The product SHALL preserve the source state and exact job identities while
-representing scheduler state, release and deadline clocks, selected execution
-demand, and completed service. Preemption pauses service without introducing
-stopwatch rates: all product clocks advance at rate 1, and bounded clock
-subtraction plus diagonal constraints/resets represent service accumulated
-across run segments (ADR-026 RT-8; QSpec FR-419, FR-415, FR-418).
+representing the scheduler state and task-derived timed data. Its task
+semantics, job identity, demand, release and mode-change rules, bounded
+subtraction contract, and certificate/replay carriers are owned by QSpec
+FR-419, FR-415, FR-418, FR-331 and FR-364. QSL owns lowering those checked
+inputs into EN-6's timed subject, searching it, rebuilding it for replay, and
+settling its outcome. EN-6 SHALL use ordinary unit-rate clocks and the
+QSpec-defined bounded-subtraction/diagonal construction; it SHALL NOT add
+stopwatch rates (ADR-026 RT-8).
 
-The engine SHALL decide the exact class covered by the task-automata result:
-fixed computation times, and the supported variable-demand/no-completion-
-feedback cases for which the checked worst-case reduction applies, using a
-finite checked region/product certificate. For variable or interval demand
-with completion feedback and preemption, and for products with
-mixed-criticality budget changes, it SHALL run sound bounded exploration.
-It SHALL return a concrete
-refutation only for a replayed deadline miss with a checked time-divergent
-continuation. If bounded exploration cannot establish either a complete
-proof or such a refutation, it SHALL return `incomplete` with replayable
+The engine SHALL decide the exact fixed-work class admitted by the current
+FR-418 reader, using its independently checked finite region/product
+certificate. Products outside that exact gate SHALL remain admitted for
+sound bounded exploration. The engine SHALL return a concrete refutation
+only when FR-237 accepts the deadline-miss prefix and QSpec FR-364's checked
+time-divergent continuation. If bounded exploration cannot establish either
+a complete proof or such a refutation, it SHALL return `incomplete` with replayable
 `task_search` evidence. These cases are admitted; undecidability means that a
 run may remain unknown, not that the input is unsupported.
 
@@ -82,52 +90,32 @@ replay.
   `conflicting_declaration`/`duplicate-declaration` at the second
   declaration. It SHALL record each checked release in
   `CheckedGraph::task_sets()` for lowering.
-- The task product SHALL synchronize each admitted source release with its
-  task-set activation contract. It SHALL retain the source control state,
-  source transition identity, nominal activation, actual release after
-  selected jitter, absolute deadline, task identity, job occurrence and
-  generation, selected actual demand, completed service, remaining demand,
-  scheduler mode and priority. Preemption, resumption, completion and budget
-  change are producer-owned derived transitions with stable identities and
-  replay provenance; they SHALL NOT be represented as source operations.
-- During a product delay of `d`, every clock advances by `d`; the scheduled
-  job's completed service advances by `d`, and every waiting or preempted
-  job's completed service is unchanged. A preemption SHALL preserve the
-  interrupted job's identity, selected demand, service, priority and
-  absolute deadline. Completion feedback SHALL synchronize with the derived
-  completion transition. The lowering SHALL implement this paused-service
-  meaning using the bounded-subtraction/diagonal clock construction of
-  FR-238 and QSpec FR-415, with the finite ceilings and subtraction guards
-  supplied by the checked task product. It SHALL NOT add non-unit clock
-  rates, infer service from a reset that loses prior segments, or equate WCET
-  with actual demand.
-- The **exact task-automata class** consists of (a) products whose actual
-  demand is a singleton for each job, or (b) variable-demand products with
-  no completion feedback for which the task-automata worst-case reduction
-  applies, together with admitted arrivals, finite scheduler control and a
-  refined region/product closure accepted by the independent certificate
-  checker (FR-239; QSpec FR-418). EN-6 SHALL decide this class: an accepted
-  closed certificate with no deadline miss settles `Holds`; a refutation requires a
-  concrete deadline-miss prefix and a replay-checked time-divergent
-  continuation. A finite positive-delay loop or QSpec FR-364 `queue_growth`
-  continuation may establish that continuation. Queue-cap overflow alone is
-  an internal search event, never a deadline miss and never a refutation.
-- Products outside the exact fixed-work class, including variable/interval
-  actual demand with completion feedback and preemption and active-job
-  mixed-criticality budget deltas, SHALL remain admitted. EN-6 SHALL explore
-  these products soundly within its limits, retaining the selected demand,
-  service, source and derived transition identities, scheduler order and
-  budget changes in every state and edge. A discovered miss can settle
-  `Violated` only after FR-237 reproduces that exact job's positive remaining
-  demand at its original deadline and verifies a positive-time divergent
-  continuation. A run SHALL settle `Holds` only when its independently
-  checked certificate covers every allowed demand choice and mode-change
-  successor. If exploration reaches a limit, cannot close a sound finite
-  abstraction, or lacks a checked continuation, it SHALL settle
-  `incomplete`/`limit-reached` with a QSpec FR-331 `task_search` record that
-  replays the selected effective bounds, explored prefix and remaining
-  frontier. It SHALL NOT turn an unclosed search into `Holds`, a miss-only
-  refutation, or `Unsupported(StopwatchRequired)`.
+- When S3 lowers checked release declarations and a task set into the EN-6
+  task-derived subject, S3 SHALL consume the QSpec FR-419 product contract and
+  preserve source state, QSpec task/job identities, and derived-step
+  references in the subject and counterexample. QSL SHALL NOT define competing
+  task identity, arrival, demand, service, budget-change, subtraction,
+  certificate, or replay contracts.
+- EN-6 SHALL implement the QSpec FR-415 bounded-subtraction/diagonal
+  transition semantics using unit-rate clocks, then apply QSpec FR-418's
+  finite-product certificate gate. The QSL-specific obligations are to build
+  the subject accepted by that reader, pass it through the existing EN-6
+  search and provide the same subject to FR-237 for replay. QSL SHALL NOT add
+  stopwatch rates or infer support from the ordinary aLU model-subject path.
+- The exact fixed-work class is the class admitted by the current QSpec
+  FR-418 reader. An accepted complete certificate with no deadline miss
+  settles `Holds`; a concrete miss settles `Violated` only after FR-237
+  accepts QSpec FR-364's deadline-miss prefix and time-divergent continuation.
+  Queue-cap overflow alone SHALL NOT settle a miss.
+- Inputs outside the current FR-418 exact gate, including variable/interval
+  demand and mixed-criticality budget changes, SHALL remain admitted and use
+  sound bounded exploration. The run SHALL settle `Holds` only when the
+  checked certificate covers the complete admitted task-product state space;
+  it SHALL settle `Violated` only after replay verifies the concrete miss and
+  continuation. Otherwise the provider SHALL return `Stopped` with QSpec
+  FR-331 `task_search` evidence, which FR-235 settles as incomplete. QSL SHALL
+  use FR-331's and FR-364's readers and wire contracts rather than defining
+  task-frontier or derived-continuation schemas of its own.
 - The checker SHALL continue to admit a `release` declaration on a model
   without a `time dense` source. When S3 is asked to lower that model, the
   task automaton lowering SHALL return the existing typed timed-model
@@ -143,9 +131,9 @@ replay.
 |----|----------|--------------|
 | FR-249-AC-1 | The `sample`/`command` model over `Ctl`'s first two tasks under fixed priority returns `Holds` when its exact fixed-work product has an accepted finite certificate. With `a`'s exact work raised to 4 and the command deadline missed on a time-divergent behaviour, it returns `Violated` with a task-derived counterexample that FR-237 replays. | Test |
 | FR-249-AC-2 | With interval actual demand, a `when done(a)` source guard and preemptive fixed-priority scheduling, the model is admitted and bounded exploration retains the chosen demand across preemption and completion feedback. A limit reached before a complete certificate or replayable miss returns `incomplete` with task-search frontier evidence; it never returns `Unsupported(StopwatchRequired)` or `Holds` from a bounded prefix. | Test |
-| FR-249-AC-3 | A preempted job's service does not increase during an elapsed delay, while the running job's service and all clocks increase by that delay; resumption preserves the original job identity, demand, priority and deadline. The resulting trace replays exactly. | Test |
-| FR-249-AC-4 | A HI job's actual demand remains the value selected at activation across a LO-to-HI source transition; the budget allowance increases by exactly `C(HI)-C(LO)` while the same job's identity, service, priority and absolute deadline remain unchanged. A bounded result without exhaustive checked coverage settles incomplete. | Test |
-| FR-249-AC-5 | The overload model with periodic `T=1`, exact work `W=2` and `D=1` may use a checked finite-loop or `queue_growth` continuation after a concrete missed-job prefix to refute; an overflow signal without that prefix and continuation does not refute. A task-search stop with an unexplored frontier replays as incomplete. | Test |
+| FR-249-AC-3 | The lowered EN-6 subject preserves QSpec FR-419's task-product state and FR-364's derived-step identity across a preemption/resumption sequence; FR-237 replays the resulting existing `ModelTrace` arm against the rebuilt product. | Test |
+| FR-249-AC-4 | The lowered subject and replay preserve the QSpec FR-419/FR-364 mode-change transition identity and captured job data. If the current FR-418 reader does not accept the mixed-criticality product as exact, a bounded run cannot settle `Holds` and settles incomplete with FR-331 `task_search` evidence when its limit is reached. | Test |
+| FR-249-AC-5 | For the periodic-source overload task, whose model repeats the release transition every `T=1` (`W=2`, `D=1`), under each admitted `fixed_priority` and `edf` policy, a refutation requires a concrete missed-job prefix followed by QSpec FR-364's replay-checked `queue_growth` continuation with positive elapsed time. Queue-cap overflow or a finite queue loop without the queue-growth identity induction does not refute. A task-search stop with an unexplored frontier replays as incomplete under FR-331. | Test |
 | FR-249-AC-6 | Two task releases bound to one operation are recorded in source order; a duplicate release of one task on that operation refuses `conflicting_declaration`/`duplicate-declaration`; unresolved task set, task or operation names refuse `missing_declaration`/`missing-name`; an ambiguous inherited operation refuses `ambiguous_declaration`/`ambiguous-name`; a `release` on a model without `time dense` is admitted by checking and refused only when lowering is requested. | Test |
 
 ## Dependencies
@@ -159,10 +147,13 @@ replay.
 
 ## References
 
-- QSpec FR-419 owns task automaton inputs, demand and activation semantics;
-  FR-415 owns bounded subtraction and diagonal constraints; FR-418 owns the
-  independently checked finite-product gate; FR-331 owns replayable bounded
-  task-search evidence; FR-364 owns derived transition replay.
+- **Scope boundary.** QSpec FR-419 owns task-set, task-automaton, demand,
+  activation and mode-change semantics; FR-415 owns the bounded-subtraction
+  and diagonal proof contract; FR-418 owns certificate schema and exact-class
+  admission; FR-331 owns incomplete task-search evidence; FR-364 owns the
+  derived-step and continuation witness schema/replay rules. This QSL
+  requirement defines only QSL lowering, EN-6 integration and outcome
+  settlement, and does not amend those QSpec semantics or wire contracts.
 - E. Fersman, P. Krčál, P. Pettersson and W. Yi, “Task automata:
   Schedulability, decidability and undecidability” (Information and
   Computation 205(8), 2007), Theorems 2 and 5. Fixed computation times admit
