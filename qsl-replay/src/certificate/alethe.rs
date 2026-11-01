@@ -1548,14 +1548,15 @@ fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<Vec<Rc<Term>>> {
 /// source orientation that `Term::app` intentionally canonicalizes away.
 fn ordered_poly_relations(sexpr: &Sexpr, names: &mut Names) -> Option<PolyRelations> {
     fn relation(sexpr: &Sexpr, names: &mut Names) -> Option<(Rc<str>, (Rc<Term>, Rc<Term>))> {
-        let Sexpr::List(parts) = sexpr else {
+        let term = names.term(sexpr)?;
+        let Term::App(operator, arguments) = term.as_ref() else {
             return None;
         };
-        let [Sexpr::Atom(operator), left, right] = parts.as_slice() else {
+        let [left, right] = arguments.as_slice() else {
             return None;
         };
         matches!(&**operator, "=" | "<" | "<=" | ">" | ">=").then_some(())?;
-        Some((operator.clone(), (names.term(left)?, names.term(right)?)))
+        Some((operator.clone(), (left.clone(), right.clone())))
     }
     let Sexpr::List(parts) = sexpr else {
         return None;
@@ -3510,6 +3511,53 @@ mod tests {
             panic!("QSL-1306 swapped equality steps read");
         };
         assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
+        let qsl_1306_alias_query = read_query(
+            b"(set-logic QF_LIA)\n\
+              (declare-const s0.c.value Int)\n\
+              (declare-const s1.c.value Int)\n\
+              (assert (! (+ 1 s0.c.value) :named @p_43))\n\
+              (assert (! (= s1.c.value @p_43) :named @p_72))\n\
+              (check-sat)\n",
+        )
+        .expect("QSL-1306 query aliases read");
+        let qsl_1306_alias_steps =
+            "(step t23 (cl (= (* 1 (- s1.c.value @p_43)) (* (- 1) (- @p_43 s1.c.value)))) :rule poly_simp)\
+             (step t24 (cl (= @p_72 (! (= @p_43 s1.c.value) :named @p_44))) :rule poly_simp_rel :premises (t23))";
+        let Reading::Read(proof) = read_proof(
+            qsl_1306_alias_steps.as_bytes(),
+            &qsl_1306_alias_query,
+            &mut |_| true,
+        ) else {
+            panic!("QSL-1306 named-alias t23/t24 steps read");
+        };
+        assert_eq!(
+            proof.invalid_step(&qsl_1306_alias_query, &mut |_| true),
+            Ok(None)
+        );
+
+        let ordered_alias_query = read_query(
+            b"(set-logic QF_LIA)\n\
+              (declare-const x Int)\n\
+              (declare-const y Int)\n\
+              (assert (! (< x y) :named @less_xy))\n\
+              (assert (! (< y x) :named @less_yx))\n\
+              (check-sat)\n",
+        )
+        .expect("ordered relation aliases read");
+        let reversed_order_aliases = "(step p0 (cl (= (- x y) (- x y))) :rule poly_simp)\
+             (step p1 (cl (= @less_xy @less_yx)) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) = read_proof(
+            reversed_order_aliases.as_bytes(),
+            &ordered_alias_query,
+            &mut |_| true,
+        ) else {
+            panic!("aliased order-relation step reads");
+        };
+        assert_eq!(
+            proof.invalid_step(&ordered_alias_query, &mut |_| true),
+            Ok(Some(1))
+        );
 
         let nonlinear = "(step t0 (cl (= (* x y) (* y x))) :rule poly_simp)";
         let Reading::Read(proof) = read_proof(nonlinear.as_bytes(), &q, &mut |_| true) else {
