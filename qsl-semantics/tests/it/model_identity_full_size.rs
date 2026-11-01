@@ -150,7 +150,7 @@ fn macos_peak_bytes(child_succeeded: bool, stderr: &str) -> Result<Option<u64>, 
         .lines()
         .find_map(|line| line.trim().strip_suffix("maximum resident set size"))
     else {
-        if stderr.contains("sysctl kern.clockrate") && stderr.contains("Operation not permitted") {
+        if macos_sysctl_denial(stderr) {
             return Ok(None);
         }
         return Err("/usr/bin/time -l did not report the peak resident set");
@@ -160,6 +160,25 @@ fn macos_peak_bytes(child_succeeded: bool, stderr: &str) -> Result<Option<u64>, 
         .parse()
         .map_err(|_| "/usr/bin/time -l reported a non-numeric peak resident set")?;
     Ok(Some(peak))
+}
+
+/// A non-zero `/usr/bin/time` result is acceptable only when it is the
+/// specific denied sysctl and the isolated child test reports success.
+#[cfg(any(target_os = "macos", test))]
+fn macos_child_succeeded(wrapper_succeeded: bool, stdout: &str, stderr: &str) -> bool {
+    let child_test_passed = stdout.lines().any(|line| {
+        line.trim_start()
+            .starts_with("test result: ok. 1 passed; 0 failed;")
+    });
+    child_test_passed && (wrapper_succeeded || macos_sysctl_denial(stderr))
+}
+
+/// Whether `/usr/bin/time -l` reported only the expected metric denial.
+#[cfg(any(target_os = "macos", test))]
+fn macos_sysctl_denial(stderr: &str) -> bool {
+    stderr
+        .lines()
+        .any(|line| line.trim() == "time: sysctl kern.clockrate: Operation not permitted")
 }
 
 /// The number the child printed after `name=`. The harness may put its own
@@ -192,11 +211,12 @@ fn ten_thousand_edge_chain() {
     }
     let output = run_child();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    assert!(
-        output.status.success(),
-        "the child failed: {}\n{stdout}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    #[cfg(target_os = "macos")]
+    let child_succeeded = macos_child_succeeded(output.status.success(), &stdout, &stderr);
+    #[cfg(not(target_os = "macos"))]
+    let child_succeeded = output.status.success();
+    assert!(child_succeeded, "the child failed: {stderr}\n{stdout}");
     assert_eq!(measured(&stdout, "DECLARATIONS"), 10_001);
     assert_eq!(measured(&stdout, "FACTS"), 20_001);
     assert_eq!(measured(&stdout, "WORK"), 50_003);
@@ -205,7 +225,7 @@ fn ten_thousand_edge_chain() {
     #[cfg(target_os = "linux")]
     let resident = Some(child_peak_bytes(&stdout, &stderr));
     #[cfg(target_os = "macos")]
-    let resident = macos_peak_bytes(output.status.success(), &stderr).unwrap_or_else(|error| {
+    let resident = macos_peak_bytes(child_succeeded, &stderr).unwrap_or_else(|error| {
         panic!("could not read the child peak resident set: {error}; {stderr}")
     });
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -235,12 +255,14 @@ fn ten_thousand_edge_chain() {
 
 #[cfg(test)]
 mod tests {
-    use super::macos_peak_bytes;
+    use ix_trace_rs::trace;
+
+    use super::{macos_child_succeeded, macos_peak_bytes};
 
     /// Trace: TC-1025, FR-081-AC-12, FR-081-AC-13
     #[test]
     fn macos_sysctl_denial_skips_only_a_successful_childs_peak_metric() {
-        let denial = "sysctl kern.clockrate: Operation not permitted";
+        let denial = "time: sysctl kern.clockrate: Operation not permitted";
         assert_eq!(macos_peak_bytes(true, denial), Ok(None));
         assert_eq!(
             macos_peak_bytes(false, denial),
@@ -258,5 +280,36 @@ mod tests {
             macos_peak_bytes(true, "42 maximum resident set size"),
             Ok(Some(42))
         );
+    }
+
+    /// Trace: TC-1025, FR-081-AC-12, FR-081-AC-13
+    #[trace("TC-1025", "FR-081-AC-12", "FR-081-AC-13")]
+    #[test]
+    fn macos_time_denial_is_accepted_only_after_the_child_test_passes() {
+        let passed =
+            "running 1 test\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1301 filtered out; finished in 0.20s\n";
+        let failed =
+            "running 1 test\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1301 filtered out; finished in 0.20s\n";
+        let denial = "time: sysctl kern.clockrate: Operation not permitted";
+
+        assert!(macos_child_succeeded(false, &passed, denial));
+        assert!(!macos_child_succeeded(false, failed, denial));
+        assert!(!macos_child_succeeded(false, "", denial));
+        assert!(!macos_child_succeeded(
+            false,
+            "test result: ok. passed; failed;\n",
+            denial
+        ));
+        assert!(!macos_child_succeeded(
+            false,
+            &passed,
+            "time: another operation not permitted"
+        ));
+        assert!(!macos_child_succeeded(
+            false,
+            &passed,
+            "sysctl kern.clockrate: Operation not permitted"
+        ));
+        assert!(macos_child_succeeded(true, &passed, ""));
     }
 }
