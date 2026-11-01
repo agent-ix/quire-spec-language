@@ -476,6 +476,11 @@ pub enum FixedWorkGateMiss {
     /// The fixed-priority scheduler premises are absent from the checked
     /// task set.
     MissingPriority,
+    /// The fixed-priority scheduler has duplicate priorities.
+    PriorityClash,
+    /// The caller supplied task data that does not satisfy FR-419 task-set
+    /// premises. Checked graphs normally refuse these before this point.
+    InvalidTaskSet,
     /// The policy is not a fixed-work policy supported by this exact route.
     UnsupportedPolicy,
     /// A task's candidate slot count or the total cap cannot be represented
@@ -495,7 +500,14 @@ pub fn fixed_work_task_product(
     }
     let mut tasks = Vec::with_capacity(task_set.tasks.len());
     let mut live_job_cap = 0_u64;
+    let mut priorities = std::collections::BTreeSet::new();
     for task in &task_set.tasks {
+        if task.deadline <= Rational::from_integer(Integer::zero())
+            || task.jitter < Rational::from_integer(Integer::zero())
+            || task.blocking < Rational::from_integer(Integer::zero())
+        {
+            return Err(FixedWorkGateMiss::InvalidTaskSet);
+        }
         let work = task
             .fixed_work()
             .cloned()
@@ -506,6 +518,22 @@ pub fn fixed_work_task_product(
                 (FixedWorkArrival::Sporadic, min_interarrival.clone())
             }
         };
+        if interarrival <= Rational::from_integer(Integer::zero()) {
+            return Err(FixedWorkGateMiss::InvalidTaskSet);
+        }
+        match policy {
+            SchedulingPolicy::FixedPriority => {
+                let priority = task.priority.ok_or(FixedWorkGateMiss::MissingPriority)?;
+                if !priorities.insert(priority) {
+                    return Err(FixedWorkGateMiss::PriorityClash);
+                }
+            }
+            SchedulingPolicy::Edf if !task.jitter.is_zero() || !task.blocking.is_zero() => {
+                return Err(FixedWorkGateMiss::InvalidTaskSet);
+            }
+            SchedulingPolicy::Edf => {}
+            SchedulingPolicy::Amc => return Err(FixedWorkGateMiss::UnsupportedPolicy),
+        }
         let ratio = task
             .deadline
             .div(&interarrival)
@@ -535,13 +563,6 @@ pub fn fixed_work_task_product(
             max_jobs,
             priority: task.priority,
         });
-    }
-    if policy == SchedulingPolicy::FixedPriority && tasks.iter().any(|task| task.priority.is_none())
-    {
-        // Checked FR-246 already refuses this policy/task-set combination.
-        // Treat a violation here as outside the exact gate, never invent a
-        // priority ordering.
-        return Err(FixedWorkGateMiss::MissingPriority);
     }
     Ok(FixedWorkTaskProduct {
         task_set: task_set.name.clone(),

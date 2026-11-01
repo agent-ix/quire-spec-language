@@ -84,6 +84,31 @@ fn edf_fixed_work_is_in_the_exact_gate_without_authored_priorities() {
     assert_eq!(product.live_job_cap, 2);
 }
 
+#[trace("TC-704", "FR-419-AC-5")]
+#[test]
+fn exact_gate_refuses_bad_policy_premises_without_inventing_scheduler_order() {
+    let mut first = task("a", 4, 4, 1, Wcet::Single(int(1)));
+    let second = task("b", 4, 4, 1, Wcet::Single(int(1)));
+    assert_eq!(
+        fixed_work_task_product(
+            &set(vec![first.clone(), second.clone()]),
+            SchedulingPolicy::FixedPriority,
+        ),
+        Err(FixedWorkGateMiss::PriorityClash)
+    );
+
+    first.priority = None;
+    first.jitter = int(1);
+    assert_eq!(
+        fixed_work_task_product(&set(vec![first]), SchedulingPolicy::Edf),
+        Err(FixedWorkGateMiss::InvalidTaskSet)
+    );
+    assert_eq!(
+        fixed_work_task_product(&set(vec![second]), SchedulingPolicy::Amc),
+        Err(FixedWorkGateMiss::UnsupportedPolicy)
+    );
+}
+
 #[trace("FR-181-AC-14", "FR-419-AC-6")]
 #[test]
 fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation() {
