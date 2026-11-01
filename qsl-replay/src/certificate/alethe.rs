@@ -943,6 +943,8 @@ enum Rule {
     LaTautology,
     LaMultPos,
     LaMultNeg,
+    PolySimp,
+    PolySimpRel,
     Bind,
     Subproof,
 }
@@ -1004,6 +1006,8 @@ const CHECKED: &[(&str, Rule)] = &[
     ("la_mult_neg", Rule::LaMultNeg),
     ("bind", Rule::Bind),
     ("subproof", Rule::Subproof),
+    ("poly_simp", Rule::PolySimp),
+    ("poly_simp_rel", Rule::PolySimpRel),
 ];
 
 /// The checked rule `name` names, or `None` for an unchecked rule
@@ -1083,10 +1087,22 @@ struct Step {
     /// Each premise's single equality as written.
     premises_oriented: Vec<Oriented>,
     args: Vec<Rc<Term>>,
+    /// The source order of the two relation atoms in a `poly_simp_rel`
+    /// conclusion. The general term representation canonicalizes `=`; this
+    /// narrow view retains orientation for exact scale checks.
+    poly_relations: Option<PolyRelations>,
     /// For a step that closes a subproof: the subproof's assumptions, in
     /// the order of `:discharge`, whether `:discharge` names exactly the
     /// subproof's assumptions, and the clause of its last command.
     closes: Option<Subproof>,
+}
+
+#[derive(Debug)]
+struct PolyRelations {
+    left_operator: Rc<str>,
+    left: (Rc<Term>, Rc<Term>),
+    right_operator: Rc<str>,
+    right: (Rc<Term>, Rc<Term>),
 }
 
 #[derive(Debug)]
@@ -1323,6 +1339,7 @@ pub(crate) fn read_proof(
                     return Reading::Malformed;
                 };
                 let oriented = oriented_literal(clause, &mut names);
+                let poly_relations = ordered_poly_relations(clause, &mut names);
                 let Some(clause) = read_clause(clause, &mut names) else {
                     return Reading::Malformed;
                 };
@@ -1428,6 +1445,7 @@ pub(crate) fn read_proof(
                         premises,
                         premises_oriented,
                         args,
+                        poly_relations,
                         closes,
                     })),
                     premises_visible,
@@ -1520,6 +1538,47 @@ fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<Vec<Rc<Term>>> {
     literals.iter().map(|literal| names.term(literal)).collect()
 }
 
+/// The two relation atoms of a `poly_simp_rel` conclusion, retaining the
+/// source orientation that `Term::app` intentionally canonicalizes away.
+fn ordered_poly_relations(sexpr: &Sexpr, names: &mut Names) -> Option<PolyRelations> {
+    fn relation(sexpr: &Sexpr, names: &mut Names) -> Option<(Rc<str>, (Rc<Term>, Rc<Term>))> {
+        let Sexpr::List(parts) = sexpr else {
+            return None;
+        };
+        let [Sexpr::Atom(operator), left, right] = parts.as_slice() else {
+            return None;
+        };
+        matches!(&**operator, "=" | "<" | "<=" | ">" | ">=").then_some(())?;
+        Some((operator.clone(), (names.term(left)?, names.term(right)?)))
+    }
+    let Sexpr::List(parts) = sexpr else {
+        return None;
+    };
+    let [Sexpr::Atom(cl), literal] = parts.as_slice() else {
+        return None;
+    };
+    if &**cl != "cl" {
+        return None;
+    }
+    let Sexpr::List(equality) = literal else {
+        return None;
+    };
+    let [Sexpr::Atom(operator), left, right] = equality.as_slice() else {
+        return None;
+    };
+    if &**operator != "=" {
+        return None;
+    }
+    let (left_operator, left) = relation(left, names)?;
+    let (right_operator, right) = relation(right, names)?;
+    Some(PolyRelations {
+        left_operator,
+        left,
+        right_operator,
+        right,
+    })
+}
+
 impl Proof {
     /// The number of commands.
     pub(crate) fn len(&self) -> usize {
@@ -1527,8 +1586,12 @@ impl Proof {
     }
 
     /// FR-314's `ProofStepInvalid` rule over every command, in order.
-    pub(crate) fn invalid_step(&self, query: &Query) -> Option<u64> {
-        self.first(query, Check::Fails)
+    pub(crate) fn invalid_step(
+        &self,
+        query: &Query,
+        charge: &mut impl FnMut(u64) -> bool,
+    ) -> Result<Option<u64>, ()> {
+        self.first(query, Check::Fails, charge)
     }
 
     /// FR-314's last-command rule: the index of a last command that does
@@ -1541,19 +1604,29 @@ impl Proof {
 
     /// The outcome of a proof no rule rejects: `Unverifiable` at the first
     /// command this checker does not decide.
-    pub(crate) fn outcome(&self, query: &Query) -> ProofOutcome {
-        match self.first(query, Check::Undecided) {
-            Some(step) => ProofOutcome::Unverifiable { step },
-            None => ProofOutcome::Refutes,
+    pub(crate) fn outcome(
+        &self,
+        query: &Query,
+        charge: &mut impl FnMut(u64) -> bool,
+    ) -> Result<ProofOutcome, ()> {
+        match self.first(query, Check::Undecided, charge)? {
+            Some(step) => Ok(ProofOutcome::Unverifiable { step }),
+            None => Ok(ProofOutcome::Refutes),
         }
     }
 
-    fn first(&self, query: &Query, wanted: Check) -> Option<u64> {
-        self.commands
-            .iter()
-            .zip(0_u64..)
-            .find(|(command, _)| command.judge(query) == wanted)
-            .map(|(_, index)| index)
+    fn first(
+        &self,
+        query: &Query,
+        wanted: Check,
+        charge: &mut impl FnMut(u64) -> bool,
+    ) -> Result<Option<u64>, ()> {
+        for (command, index) in self.commands.iter().zip(0_u64..) {
+            if command.judge(query, charge)? == wanted {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -1570,6 +1643,328 @@ enum Check {
     Undecided,
 }
 
+type Polynomial = std::collections::BTreeMap<Vec<Rc<Term>>, Integer>;
+
+/// Exact integer-polynomial normalisation used only by the two admitted
+/// cvc5 polynomial rules. `None` is an unsupported or non-Int shape.
+fn polynomial(
+    term: &Term,
+    query: &Query,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<Option<Polynomial>, ()> {
+    fn add_into(
+        into: &mut Polynomial,
+        from: Polynomial,
+        factor: &Integer,
+        charge: &mut impl FnMut(u64) -> bool,
+    ) -> Result<(), ()> {
+        if !charge(u64::try_from(from.len()).unwrap_or(u64::MAX).max(1)) {
+            return Err(());
+        }
+        for (monomial, coefficient) in from {
+            let coefficient = coefficient.mul(factor);
+            let value = into
+                .get(&monomial)
+                .cloned()
+                .unwrap_or_else(Integer::zero)
+                .add(&coefficient);
+            if value.is_zero() {
+                into.remove(&monomial);
+            } else {
+                into.insert(monomial, value);
+            }
+        }
+        Ok(())
+    }
+    if !charge(1) {
+        return Err(());
+    }
+    match term {
+        Term::Number { value, real: false } if value.is_integer() => {
+            let mut result = Polynomial::new();
+            result.insert(Vec::new(), value.numerator().clone());
+            Ok(Some(result))
+        }
+        Term::Number { .. } => Ok(None),
+        Term::Symbol(_) if sort_of(term, query, &mut Vec::new()) == Ok(Sort::Int) => {
+            let mut result = Polynomial::new();
+            result.insert(vec![Rc::new(term.clone())], Integer::one());
+            Ok(Some(result))
+        }
+        Term::Symbol(_) | Term::Binder { .. } | Term::Other(_) => Ok(None),
+        Term::App(name, args) if &**name == "+" && !args.is_empty() => {
+            let mut result = Polynomial::new();
+            for arg in args {
+                let Some(part) = polynomial(arg, query, charge)? else {
+                    return Ok(None);
+                };
+                add_into(&mut result, part, &Integer::one(), charge)?;
+            }
+            Ok(Some(result))
+        }
+        Term::App(name, args) if &**name == "-" && !args.is_empty() => {
+            let Some(first) = args.first() else {
+                return Ok(None);
+            };
+            let Some(mut result) = polynomial(first, query, charge)? else {
+                return Ok(None);
+            };
+            if args.len() == 1 {
+                for value in result.values_mut() {
+                    *value = value.neg();
+                }
+            } else {
+                for arg in &args[1..] {
+                    let Some(part) = polynomial(arg, query, charge)? else {
+                        return Ok(None);
+                    };
+                    add_into(&mut result, part, &Integer::from(-1_i64), charge)?;
+                }
+            }
+            Ok(Some(result))
+        }
+        Term::App(name, args) if &**name == "*" && !args.is_empty() => {
+            let mut result = Polynomial::from([(Vec::new(), Integer::one())]);
+            for arg in args {
+                let Some(part) = polynomial(arg, query, charge)? else {
+                    return Ok(None);
+                };
+                let work = result.len().saturating_mul(part.len());
+                if !charge(u64::try_from(work).unwrap_or(u64::MAX).max(1)) {
+                    return Err(());
+                }
+                let mut product = Polynomial::new();
+                for (left, a) in &result {
+                    for (right, b) in &part {
+                        let mut monomial = left.clone();
+                        monomial.extend(right.iter().cloned());
+                        monomial.sort();
+                        let coefficient = a.mul(b);
+                        let total = product
+                            .get(&monomial)
+                            .cloned()
+                            .unwrap_or_else(Integer::zero)
+                            .add(&coefficient);
+                        if total.is_zero() {
+                            product.remove(&monomial);
+                        } else {
+                            product.insert(monomial, total);
+                        }
+                    }
+                }
+                result = product;
+            }
+            Ok(Some(result))
+        }
+        Term::App(_, _) => Ok(None),
+    }
+}
+
+fn polynomial_equality(
+    term: &Term,
+    query: &Query,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<Option<(Polynomial, Polynomial)>, ()> {
+    let Some([left, right]) = term.args_of("=").and_then(two) else {
+        return Ok(None);
+    };
+    let Some(left_poly) = polynomial(left, query, charge)? else {
+        return Ok(None);
+    };
+    let Some(right_poly) = polynomial(right, query, charge)? else {
+        return Ok(None);
+    };
+    Ok(Some((left_poly, right_poly)))
+}
+
+fn polynomial_rule(
+    step: &Step,
+    rule: Rule,
+    query: &Query,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<Check, ()> {
+    let clause = match step.clause.as_slice() {
+        [literal] => literal,
+        _ => return Ok(Check::Undecided),
+    };
+    let (left, right) = if rule == Rule::PolySimp {
+        if !step.premises.is_empty() {
+            return Ok(Check::Fails);
+        }
+        let Some((left, right)) = polynomial_equality(clause, query, charge)? else {
+            return Ok(Check::Undecided);
+        };
+        (left, right)
+    } else {
+        if step.premises.len() != 1 || step.premises[0].len() != 1 {
+            return Ok(Check::Undecided);
+        }
+        let Some((premise_left, premise_right)) =
+            polynomial_equality(&step.premises[0][0], query, charge)?
+        else {
+            return Ok(Check::Undecided);
+        };
+        if !polynomial_equal(&premise_left, &premise_right, charge)? {
+            return Ok(Check::Fails);
+        }
+        let Some((left_op, left, right_op, right)) =
+            relation_polynomial(step.poly_relations.as_ref(), query, charge)?
+        else {
+            return Ok(Check::Undecided);
+        };
+        if relation_scale(&premise_left, &left, charge)?.is_none()
+            || relation_scale(&premise_right, &right, charge)?.is_none()
+        {
+            return Ok(Check::Fails);
+        }
+        if left_op != right_op {
+            let reversed = matches!(
+                (left_op, right_op),
+                ("<", ">") | ("<=", ">=") | (">", "<") | (">=", "<=")
+            );
+            return Ok(
+                if reversed && relation_scale(&left, &right, charge)? == Some(false) {
+                    Check::Undecided
+                } else {
+                    Check::Fails
+                },
+            );
+        }
+        return Ok(match relation_scale(&left, &right, charge)? {
+            Some(true) => Check::Holds,
+            Some(false) if left_op == "=" => Check::Undecided,
+            Some(false) => Check::Fails,
+            None => Check::Fails,
+        });
+    };
+    Ok(if polynomial_equal(&left, &right, charge)? {
+        Check::Holds
+    } else {
+        Check::Fails
+    })
+}
+
+fn relation_polynomial(
+    relations: Option<&PolyRelations>,
+    query: &Query,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<Option<(&'static str, Polynomial, &'static str, Polynomial)>, ()> {
+    let Some(relations) = relations else {
+        return Ok(None);
+    };
+    let left_op = match &*relations.left_operator {
+        "=" => "=",
+        "<" => "<",
+        "<=" => "<=",
+        ">" => ">",
+        ">=" => ">=",
+        _ => return Ok(None),
+    };
+    let right_op = match &*relations.right_operator {
+        "=" => "=",
+        "<" => "<",
+        "<=" => "<=",
+        ">" => ">",
+        ">=" => ">=",
+        _ => return Ok(None),
+    };
+    let (ll, lr) = &relations.left;
+    let (rl, rr) = &relations.right;
+    let Some(mut first) = polynomial(ll, query, charge)? else {
+        return Ok(None);
+    };
+    let Some(second) = polynomial(lr, query, charge)? else {
+        return Ok(None);
+    };
+    add_polynomial(&mut first, second, &Integer::from(-1_i64), charge)?;
+    let Some(mut third) = polynomial(rl, query, charge)? else {
+        return Ok(None);
+    };
+    let Some(fourth) = polynomial(rr, query, charge)? else {
+        return Ok(None);
+    };
+    add_polynomial(&mut third, fourth, &Integer::from(-1_i64), charge)?;
+    Ok(Some((left_op, first, right_op, third)))
+}
+
+/// Whether `right` is a positive exact-rational multiple of `left`. A
+/// negative exact multiple is reported separately so the caller can leave
+/// a semantically valid but unadmitted relation Unverifiable.
+fn relation_scale(
+    left: &Polynomial,
+    right: &Polynomial,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<Option<bool>, ()> {
+    if !charge(
+        u64::try_from(left.len().saturating_add(right.len()))
+            .unwrap_or(u64::MAX)
+            .max(1),
+    ) {
+        return Err(());
+    }
+    if left.is_empty() || right.is_empty() {
+        return Ok((left.is_empty() && right.is_empty()).then_some(true));
+    }
+    let Some((basis, coefficient)) = left.iter().find(|(_, coefficient)| !coefficient.is_zero())
+    else {
+        return Ok(None);
+    };
+    let Some(target) = right.get(basis) else {
+        return Ok(None);
+    };
+    let Some(scale) =
+        Rational::from_integer(target.clone()).div(&Rational::from_integer(coefficient.clone()))
+    else {
+        return Ok(None);
+    };
+    let exact = left.iter().all(|(monomial, value)| {
+        right.get(monomial).is_some_and(|target| {
+            scale.mul(&Rational::from_integer(value.clone()))
+                == Rational::from_integer(target.clone())
+        })
+    }) && right.keys().all(|monomial| left.contains_key(monomial));
+    Ok(exact.then_some(!scale.numerator().is_negative()))
+}
+
+fn polynomial_equal(
+    left: &Polynomial,
+    right: &Polynomial,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<bool, ()> {
+    if !charge(
+        u64::try_from(left.len().saturating_add(right.len()))
+            .unwrap_or(u64::MAX)
+            .max(1),
+    ) {
+        return Err(());
+    }
+    Ok(left == right)
+}
+
+fn add_polynomial(
+    into: &mut Polynomial,
+    from: Polynomial,
+    factor: &Integer,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<(), ()> {
+    if !charge(u64::try_from(from.len()).unwrap_or(u64::MAX).max(1)) {
+        return Err(());
+    }
+    for (monomial, coefficient) in from {
+        let total = into
+            .get(&monomial)
+            .cloned()
+            .unwrap_or_else(Integer::zero)
+            .add(&coefficient.mul(factor));
+        if total.is_zero() {
+            into.remove(&monomial);
+        } else {
+            into.insert(monomial, total);
+        }
+    }
+    Ok(())
+}
+
 impl From<bool> for Check {
     fn from(holds: bool) -> Self {
         if holds {
@@ -1582,14 +1977,14 @@ impl From<bool> for Check {
 
 impl Command {
     /// FR-314's test of one command.
-    fn judge(&self, query: &Query) -> Check {
+    fn judge(&self, query: &Query, charge: &mut impl FnMut(u64) -> bool) -> Result<Check, ()> {
         if !self.premises_visible {
-            return Check::Fails;
+            return Ok(Check::Fails);
         }
-        match &self.kind {
+        Ok(match &self.kind {
             CommandKind::Assume { term, local } => {
                 if !(*local || query.assertions.contains(term)) {
-                    return Check::Fails;
+                    return Ok(Check::Fails);
                 }
                 formulas_sorted([term], query, &self.context)
             }
@@ -1597,14 +1992,14 @@ impl Command {
             // A formula the checker cannot type leaves the step at most
             // `Undecided`, still `Fails` when its rule shows it wrong.
             CommandKind::Step(step) => match formulas_sorted(&step.clause, query, &self.context) {
-                Check::Holds => step.judge(&self.context, query),
-                Check::Undecided => match step.judge(&self.context, query) {
+                Check::Holds => step.judge(&self.context, query, charge)?,
+                Check::Undecided => match step.judge(&self.context, query, charge)? {
                     Check::Fails => Check::Fails,
                     Check::Holds | Check::Undecided => Check::Undecided,
                 },
                 Check::Fails => Check::Fails,
             },
-        }
+        })
     }
 }
 
@@ -1620,11 +2015,19 @@ fn is_clause(clause: &[Rc<Term>], expected: &[Rc<Term>]) -> bool {
 
 impl Step {
     /// FR-314's test of the step in `context`.
-    fn judge(&self, context: &[Entry], query: &Query) -> Check {
+    fn judge(
+        &self,
+        context: &[Entry],
+        query: &Query,
+        charge: &mut impl FnMut(u64) -> bool,
+    ) -> Result<Check, ()> {
         let Some(rule) = checked_rule(&self.rule) else {
-            return Check::Undecided;
+            return Ok(Check::Undecided);
         };
-        match (&self.closes, rule) {
+        if matches!(rule, Rule::PolySimp | Rule::PolySimpRel) {
+            return polynomial_rule(self, rule, query, charge);
+        }
+        Ok(match (&self.closes, rule) {
             (Some(subproof), Rule::Subproof) if subproof.arguments.is_empty() => {
                 self.follows(Rule::Subproof, query).into()
             }
@@ -1642,7 +2045,7 @@ impl Step {
             },
             (None, Rule::Resolution) => resolution(&self.premises, &self.clause, &self.args),
             (None, rule) => self.follows(rule, query).into(),
-        }
+        })
     }
 
     /// `refl`, `trans` and `cong` in a non-empty context, whose substitution
@@ -2056,6 +2459,8 @@ impl Step {
             Rule::LaMultPos | Rule::LaMultNeg => {
                 no_premises && la_mult(clause, rule == Rule::LaMultPos)
             }
+            // Dispatched from `judge`, where polynomial work is budgeted.
+            Rule::PolySimp | Rule::PolySimpRel => false,
         }
     }
 
@@ -2754,6 +3159,84 @@ mod tests {
         .expect("the query reads")
     }
 
+    /// The two admitted cvc5 polynomial rules check the captured row-1
+    /// normalization, while unsupported arithmetic remains undecided.
+    #[trace("TC-893", "FR-314-AC-18", "FR-314-AC-19", "FR-314-AC-20")]
+    #[test]
+    fn polynomial_rules_check_int_normalization_only() {
+        let q = query();
+        let t28 = "(step t28 (cl (= (* 1 (- (+ 1 x) y)) (* 1 (- x (+ (- 1) y))))) :rule poly_simp)";
+        let t29 =
+            "(step t29 (cl (= (= (+ 1 x) y) (= x (+ (- 1) y)))) :rule poly_simp_rel :premises (t28))";
+        let checked = format!("{t28}{t29}");
+        let Reading::Read(proof) = read_proof(checked.as_bytes(), &q, &mut |_| true) else {
+            panic!("captured polynomial proof reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
+        let nonlinear = "(step t0 (cl (= (* x y) (* y x))) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(nonlinear.as_bytes(), &q, &mut |_| true) else {
+            panic!("nonlinear polynomial step reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
+        let negative_equality = "(step p0 (cl (= (+ x (- y)) (+ x (- y)))) :rule poly_simp)\
+             (step p1 (cl (= (= x y) (= (- x) (- y)))) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) = read_proof(negative_equality.as_bytes(), &q, &mut |_| true)
+        else {
+            panic!("negative equality relation reads");
+        };
+        assert_eq!(
+            proof.outcome(&q, &mut |_| true),
+            Ok(ProofOutcome::Unverifiable { step: 1 })
+        );
+
+        let negative_same_order = "(step p0 (cl (= (+ x (- y)) (+ x (- y)))) :rule poly_simp)\
+             (step p1 (cl (= (< x y) (< (- x) (- y)))) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) = read_proof(negative_same_order.as_bytes(), &q, &mut |_| true)
+        else {
+            panic!("same-order negative relation reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(1)));
+
+        let negative_reversed_order = "(step p0 (cl (= (+ x (- y)) (+ x (- y)))) :rule poly_simp)\
+             (step p1 (cl (= (< x y) (> (- x) (- y)))) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) =
+            read_proof(negative_reversed_order.as_bytes(), &q, &mut |_| true)
+        else {
+            panic!("reversed negative relation reads");
+        };
+        assert_eq!(
+            proof.outcome(&q, &mut |_| true),
+            Ok(ProofOutcome::Unverifiable { step: 1 })
+        );
+
+        let false_step = "(step t0 (cl (= (* 2 x) x)) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(false_step.as_bytes(), &q, &mut |_| true) else {
+            panic!("false polynomial step reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(0)));
+
+        let real_query = read_query(
+            b"(set-logic QF_LRA)\n(declare-const r Real)\n(assert (= r r))\n(check-sat)\n",
+        )
+        .expect("real query reads");
+        let real_step = "(step t0 (cl (= (* 1.0 r) r)) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(real_step.as_bytes(), &real_query, &mut |_| true)
+        else {
+            panic!("unsupported real step reads");
+        };
+        assert_eq!(
+            proof.outcome(&real_query, &mut |_| true),
+            Ok(ProofOutcome::Unverifiable { step: 0 })
+        );
+
+        let Reading::Read(proof) = read_proof(t28.as_bytes(), &q, &mut |_| true) else {
+            panic!("captured polynomial step reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| false), Err(()));
+    }
+
     /// What FR-314's proof rules say of `proof`: `Err("malformed")`,
     /// `Err("empty")`, `Err("invalid N")`, `Err("short N")`, or the outcome.
     fn verdict(proof: &str) -> Result<ProofOutcome, String> {
@@ -2765,13 +3248,13 @@ mod tests {
         if proof.len() == 0 {
             return Err("empty".to_owned());
         }
-        if let Some(index) = proof.invalid_step(&query) {
+        if let Some(index) = proof.invalid_step(&query, &mut |_| true).expect("no stop") {
             return Err(format!("invalid {index}"));
         }
         if let Some(index) = proof.not_refutation() {
             return Err(format!("short {index}"));
         }
-        Ok(proof.outcome(&query))
+        Ok(proof.outcome(&query, &mut |_| true).expect("no stop"))
     }
 
     /// FR-314's command numbering and its subproof, malformed and
@@ -3020,7 +3503,7 @@ mod tests {
             let Reading::Read(proof) = read_proof(proof.as_bytes(), &query, &mut |_| true) else {
                 panic!("the proof reads");
             };
-            proof.invalid_step(&query)
+            proof.invalid_step(&query, &mut |_| true).expect("no stop")
         };
         assert_eq!(
             invalid(

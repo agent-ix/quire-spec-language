@@ -299,6 +299,32 @@ fn a_refinement_check_stops_at_its_byte_budget() {
     });
 }
 
+/// FR-314-AC-19 (TC-893): polynomial normalization charges the same edge
+/// budget as reading the certificate, and exhaustion stops the check.
+#[trace("TC-893", "FR-314-AC-19")]
+#[test]
+fn polynomial_normalization_stops_at_the_certificate_edge_budget() {
+    let world = World::new(&cas_refines_counter());
+    with_request(&world, |request| {
+        let mut certificate = certificate(request, 7);
+        certificate.base.proof = b"(step t0 (cl (= (* 2 3) 6)) :rule poly_simp)".to_vec();
+        for step in &mut certificate.steps {
+            step.proof = b"(assume a0 true)".to_vec();
+        }
+        let limits = CertificateCheckLimits {
+            max_certificate_edges: 8,
+            ..CertificateCheckLimits::default()
+        };
+        assert_eq!(
+            check_refinement_smt_proof(request, &certificate, &limits, &Cancel::new()),
+            Ok(SmtProofCheck::Stopped(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::CertificateMaxEdges,
+                value: 8,
+            }))
+        );
+    });
+}
+
 const AA_INV: &str = "invariant AaInv using inf on Impl::Counter at current { self.tmpA <= 2 }\n";
 const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
      self.busyA or self.tmpA <= self.value }\n";

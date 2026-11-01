@@ -44,10 +44,10 @@ impl Term {
             }
             Self::Equal(left, right) => equality(left.normal(), right.normal()),
             Self::Compare(op, left, right) => comparison(op, left.normal(), right.normal()),
-            Self::Add(terms) => sum(terms.into_iter().map(Self::normal)),
-            Self::Subtract(left, right) => difference(left.normal(), right.normal()),
-            Self::Negate(inner) => opposite(inner.normal()),
-            Self::Scale(factor, inner) => product(factor, inner.normal()),
+            Self::Add(terms) => linear_form(sum(terms.into_iter().map(Self::normal))),
+            Self::Subtract(left, right) => linear_form(difference(left.normal(), right.normal())),
+            Self::Negate(inner) => linear_form(opposite(inner.normal())),
+            Self::Scale(factor, inner) => linear_form(product(factor, inner.normal())),
             Self::Modulo(inner, divisor) => remainder(inner.normal(), divisor),
             Self::If(condition, then, otherwise) => {
                 choice(condition.normal(), then.normal(), otherwise.normal())
@@ -246,6 +246,68 @@ fn product(factor: Integer, term: Term) -> Term {
     }
 }
 
+/// Collect an integer-linear expression into coefficients of its atoms.
+/// The first occurrence order is retained; unsupported arithmetic shapes
+/// remain opaque atoms, and no product of two non-constant terms is formed.
+fn linear_form(term: Term) -> Term {
+    fn collect(
+        term: Term,
+        factor: Integer,
+        atoms: &mut Vec<(Term, Integer)>,
+        constant: &mut Integer,
+    ) {
+        if factor.is_zero() {
+            return;
+        }
+        match term {
+            Term::Int(value) => *constant = constant.add(&factor.mul(&value)),
+            Term::Add(terms) => {
+                for term in terms {
+                    collect(term, factor.clone(), atoms, constant);
+                }
+            }
+            Term::Subtract(left, right) => {
+                collect(*left, factor.clone(), atoms, constant);
+                collect(*right, factor.neg(), atoms, constant);
+            }
+            Term::Negate(inner) => collect(*inner, factor.neg(), atoms, constant),
+            Term::Scale(scale, inner) => collect(*inner, factor.mul(&scale), atoms, constant),
+            atom => {
+                if let Some((_, coefficient)) = atoms.iter_mut().find(|(seen, _)| *seen == atom) {
+                    *coefficient = coefficient.add(&factor);
+                } else {
+                    atoms.push((atom, factor));
+                }
+            }
+        }
+    }
+
+    let mut atoms = Vec::new();
+    let mut constant = Integer::zero();
+    collect(term, Integer::one(), &mut atoms, &mut constant);
+    let mut terms = Vec::new();
+    for (atom, coefficient) in atoms {
+        if coefficient.is_zero() {
+            continue;
+        }
+        terms.push(if coefficient == Integer::one() {
+            atom
+        } else if coefficient == Integer::from(-1_i64) {
+            Term::Negate(Box::new(atom))
+        } else {
+            Term::Scale(coefficient, Box::new(atom))
+        });
+    }
+    if !constant.is_zero() {
+        terms.push(Term::Int(constant));
+    }
+    match terms.len() {
+        0 => Term::Int(Integer::zero()),
+        1 => terms.remove(0),
+        _ => Term::Add(terms),
+    }
+}
+
 /// `(ite c t e)` of normal `c`, `t` and `e`.
 fn choice(condition: Term, then: Term, otherwise: Term) -> Term {
     if let Some(value) = condition.constant_value() {
@@ -274,6 +336,43 @@ mod tests {
 
     fn c(name: &str) -> Term {
         Term::constant(name)
+    }
+
+    /// Linear integer expressions collect exact coefficients without
+    /// multiplying non-constant terms.
+    #[trace("TC-900", "FR-315-AC-56", "FR-315-AC-57")]
+    #[test]
+    fn linear_integer_normal_form_collects_terms() {
+        let x = c("x");
+        let y = c("y");
+        let left = Term::Scale(
+            Integer::one(),
+            Box::new(Term::Subtract(
+                Box::new(Term::Add(vec![Term::int(1), x.clone()])),
+                Box::new(y.clone()),
+            )),
+        );
+        let right = Term::Subtract(
+            Box::new(x.clone()),
+            Box::new(Term::Add(vec![Term::int(-1), y.clone()])),
+        );
+        assert_eq!(normal(left.clone()), normal(right));
+        assert_eq!(normal(left), "(+ x (- y) 1)");
+        assert_eq!(
+            normal(Term::Add(vec![
+                x.clone(),
+                x.clone(),
+                Term::Scale(Integer::from(2_i64), Box::new(x.clone()))
+            ])),
+            "(* 4 x)"
+        );
+        assert_eq!(
+            normal(Term::Scale(
+                Integer::from(2_i64),
+                Box::new(Term::Scale(Integer::from(3_i64), Box::new(x)))
+            )),
+            "(* 6 x)"
+        );
     }
 
     /// Double negation, negated constants and implication are rewritten.

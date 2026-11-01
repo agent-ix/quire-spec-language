@@ -268,8 +268,10 @@ and a refinement's records are `Certified` only when the checker returned
   each expected query as FR-315 prints it; FR-315's encoding work is
   charged to this counter and to no other.
 - The checker SHALL charge `max_certificate_edges` one unit per Alethe
-  command it reads and one unit per entry of a command's `:premises` and
-  `:discharge` lists.
+  command it reads, one unit per entry of a command's `:premises` and
+  `:discharge` lists, and, for `poly_simp` and `poly_simp_rel`, one unit per
+  monomial generated and per coefficient combination performed during
+  normalization.
 - Each charge SHALL be made before the work it pays for, in the order the
   checker applies the rules above. When a charge would exceed its limit,
   the checker SHALL stop and return `Stopped(IncompleteCause::LimitReached
@@ -379,7 +381,44 @@ rule's definition in the Alethe specification: `assume`, `refl`, `trans`,
 `la_generic` (with its coefficients, checked by exact rational
 arithmetic), `la_disequality`, `la_totality`, `la_tautology`,
 `la_mult_pos`, `la_mult_neg`, `bind`, `subproof` and the `anchor`
-command. Every other rule is unchecked.
+command. The checker also checks `poly_simp` and `poly_simp_rel` only under
+the following local rules; every other rule is unchecked.
+
+- For `poly_simp`, the checker SHALL accept a command only when its conclusion
+  is an equality of two Int-sorted polynomial terms whose exact normal forms
+  are equal. A polynomial term contains only Int variables and literals,
+  addition, subtraction, unary negation and multiplication. The normal form is
+  a finite map from a sorted monomial (a multiset of variables) to a nonzero
+  arbitrary-precision integer coefficient; equal monomials are combined and
+  zero coefficients are removed. No Real term, Boolean term, division,
+  modulo, conditional, or uninterpreted application is in this rule's
+  fragment.
+- For `poly_simp_rel`, the checker SHALL accept a command only when its
+  conclusion equates two integer relation atoms (equality `=`, or an order
+  relation `<`, `<=`, `>` or `>=`) with the same relation operator and its
+  single polynomial equality premise establishes that their normalized
+  difference polynomials (left side minus right side) differ by a strictly
+  positive exact rational scale. The checker SHALL verify the premise, both
+  normal forms and the scale by exact arithmetic. A false relation step SHALL
+  be rejected `ProofStepInvalid`, including a negative scale with an
+  unchanged `<` relation. A semantically valid negative-scale step is outside
+  the admitted subset: it SHALL return `Unverifiable` when the order operator
+  is reversed accordingly (for example, `<` to `>`) or when an equality
+  operator is preserved. It SHALL not be rejected as an invalid step.
+- Both polynomial checkers SHALL charge `max_certificate_edges` for each
+  monomial generated and each coefficient combination performed during
+  normalization, before doing that work. If such a charge exceeds the limit,
+  the checker SHALL stop with `Stopped(LimitReached{limit:
+  MaxCertificateEdges, ...})`; it SHALL never accept an incomplete
+  normalization. If a term is outside the rule's fragment, the command is
+  `Unverifiable` at that command. A well-formed polynomial command whose
+  normalized conclusion is false, whose conclusion has the wrong shape, or
+  whose required relation/scale premise is false SHALL be rejected
+  `ProofStepInvalid` at that command.
+
+`hole`, `lia_generic` and `rare_rewrite` remain unchecked. In particular,
+`rare_rewrite` is not accepted as a blanket rule, even when its arguments
+name a rewrite.
 
 ## Acceptance Criteria
 
@@ -402,6 +441,9 @@ command. Every other rule is unchecked.
 | FR-314-AC-15 | Over `CasRefinesCounter` (seven step rows), given AC-10's records with the row-3 record's query absent, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
 | FR-314-AC-16 | Over `CasRefinesCounter` (seven step rows), given AC-10's records with the row-3 record's proof absent, the adapter assembles no certificate and the records settle `Uncertified`. | Test (TC-893) |
 | FR-314-AC-17 | Over `CasRefinesCounter` (seven step rows), given AC-10's records with the `Base` record's proof present and of no bytes, the adapter assembles the certificate with that empty proof unchanged, and `check_refinement_smt_proof` rejects it `NotRefutation` at `Query { part: Base }`, settling `inconclusive`, `CertificateRejected`. | Test (TC-893) |
+| FR-314-AC-18 | On the row-1 refinement proof, command `t28` has no premises and concludes `(= (* 1 (- (+ 1 x) y)) (* 1 (- x (+ (- 1) y))))` with rule `poly_simp`; the checker accepts it by exact Int-polynomial normalization. A separate `poly_simp` step with no premises and conclusion `(= (* x y) (* y x))` is also accepted, exercising a nonlinear integer polynomial. Command `t29` has the single premise `t28` and concludes `(= (= (+ 1 x) y) (= x (+ (- 1) y)))` with rule `poly_simp_rel`; the checker accepts the equality relation at positive exact scale 1. The false equality `(= (* 2 x) (+ (* 2 x) 1))`, a non-equality `poly_simp` conclusion, a `t29` conclusion using `(= x (+ 1 y))`, and a `poly_simp_rel` step with premise `(= (* 2 (- x y)) (* (- 2) (- u v)))` and conclusion `(= (< x y) (< u v))` are each rejected `ProofStepInvalid` at that command. A valid negative-scale step that reverses `<` to `>` returns `Unverifiable`. A Real, division or modulo term returns `Unverifiable` at that command. | Test (TC-893) |
+| FR-314-AC-19 | Over AC-18's polynomial certificate, when `max_certificate_edges` is one less than the number of command, premise/discharge and polynomial-normalization charges required, the checker returns `Stopped(LimitReached{limit: MaxCertificateEdges, setting: certificate_check.max_certificate_edges})`, never `Verified`, and the item settles `incomplete`; with the full required budget it returns `Verified`. | Test (TC-893) |
+| FR-314-AC-20 | With otherwise well-formed proof commands, `hole`, `lia_generic` and `rare_rewrite` each return `Unverifiable` at their command, including a `rare_rewrite` whose argument names `bool-double-not-elim`; none returns `Verified`. | Test (TC-893) |
 
 ## Dependencies
 

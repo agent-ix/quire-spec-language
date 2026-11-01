@@ -964,6 +964,26 @@ the term's meaning:
 8. `(mod m n)` of two literals, `n` not 0, is SMT-LIB's Euclidean remainder,
    the `r` with `0 <= r < |n|` and `m - r` a multiple of `n`
    (`(mod (- 7) 3)` is 2, `(mod 7 (- 3))` is 1).
+9. Each Int-sorted linear term formed from Int atoms and integer literals by
+   addition, subtraction, unary negation and multiplication by an integer
+   literal SHALL be normalized as a coefficient map over its Int atoms plus
+   one integer constant. The normalizer SHALL distribute literal scaling
+   over addition and subtraction, collect coefficients of equal atoms using
+   exact integer arithmetic, remove zero coefficients, and order atoms by
+   their canonical SMT-LIB term bytes. It SHALL print a coefficient of 1 as
+   the atom, -1 as its unary negation and any other coefficient as literal
+   scaling; a nonzero integer constant follows all atom terms. A zero
+   coefficient or zero constant is omitted, a single remaining term prints
+   alone, no remaining term prints `0`, and multiple terms print as one `+`
+   with the atom terms in canonical order and the constant last. This rule
+   does not multiply two nonconstant terms. A term with such a product is
+   outside `QF_LIA` and is refused `out-of-fragment` by the existing Refusals
+   rule.
+
+   In particular, `(* 1 (- (+ 1 x) y))` and
+   `(* 1 (- x (+ (- 1) y)))` both print as `(+ x (- y) 1)`. This is the
+   linear encoding normalization for the proof expressions in FR-314-AC-18;
+   it does not define general polynomial expansion.
 
 The shapes stated above are the terms before
 normalisation: with `D` printed `true`, `(or (not D) (not R))` is printed
@@ -1421,6 +1441,7 @@ impl HyperProductIdentity {
 | FR-315-AC-54 | Multi-application row against the negated rule, over the lost-update variant of `CasRefinesCounter2` and its `commitB` `Step` query, solved with the exact `s0` tuples of TC-900 "Fixtures" added as equalities: with `c0` at `(0, 0, f, 0, f)` (`commitB` not enabled) and `c1` at `(1, 0, f, 0, t)` (FR-146-AC-4) the script is satisfiable, because the row assertion is a disjunction over the applications and `c1`'s application is enabled and breaks the rule; with `c0` at `(0, 0, f, 0, t)` (`commitB` enabled, the rule holds) and `c1` at `(0, 0, f, 0, f)` (not enabled), the script is unsatisfiable, because an application that obeys the rule adds no model and no other application's rule is negated. A row with one application prints the row assertion as that application's conjunction alone, and a row with no application prints `(assert false)`. Two applications whose conjunctions print equal are printed once, at the first place. | Test (TC-900) |
 | FR-315-AC-55 | Refusals of the refinement queries, each case refusing as stated: (1) with the refinement's concrete model given a hidden field or a history field, a direct call of `Initial` and of every `Step` refuses `out-of-fragment` naming the field (FR-314 never reaches this case, since FR-146 writes no record); (2) an `any` row refuses `refinement-any-row` naming the row, before a `_` argument of the same row is read; (3) a protocol-subject refinement's delivery, `memory` or `activate` row refuses `out-of-fragment` naming the row; (4) `RingIsQueue`'s `put` and `take` rows (FR-136-AC-1, `binds_result: true`) refuse `out-of-fragment` naming the row; (5) a row with two `_` arguments refuses `refinement-open-argument` naming the first in written order. For cases 2 to 5 FR-314 settles that row's part `Unencodable` and every record of the refinement `Uncertified`. For case 6, a mapping row outside `QF_LIA` refuses `Initial` `out-of-fragment` naming the row, and FR-314 rejects the base part `QueryMismatch` at `Base`, never `Unencodable`. | Test (TC-900) |
 | FR-315-AC-56 | Normal form of the refinement queries, over `CasRefinesCounter` and `CasRefinesCounter2`: no assertion of the `Initial` query or of any `Step { row }` query, the `commitB` row (row 1) included, holds a double negation, a Boolean constant as an operand of `not`, `and`, `or` or `=`, an `and` (`or`) operand of an `and` (`or`), a repeated `and` or `or` operand, an implication, a comparison of two literals or of a term with itself, a sum with a nested sum or two literal summands, an `ite` with a constant condition, equal branches or a constant branch, or a difference of two literals. `CasRefinesCounter`'s `Initial` query asserts `(and (not s0.c.busyA) (not s0.c.busyB) (= s0.c.tmpA 0) (= s0.c.tmpB 0) (= s0.c.value 0))` and then `(not (= s0.c.value 0))`; its `commitA` row assertion is the flat conjunction `(and s0.c.busyA (= s0.c.tmpA s0.c.value) (< s0.c.value 2) (or (not (< s0.c.tmpA 2)) (and (<= (- 1) s0.c.tmpA) (<= s0.c.tmpA 1))) (< s0.c.tmpA 2) (= s1.c.value (+ s0.c.tmpA 1)) (not s1.c.busyA) (= s1.c.busyB s0.c.busyB) (= s1.c.tmpA s0.c.tmpA) (= s1.c.tmpB s0.c.tmpB) (not (and (< s0.c.value 2) (or (not (< s0.c.value 2)) (and (<= (- 1) s0.c.value) (<= s0.c.value 1))) (= s1.c.value (+ s0.c.value 1)))))`. Each rule of Normal form, applied to a term that it rewrites, gives the term it states. | Test (TC-900) |
+| FR-315-AC-57 | The two Int-sorted linear terms from FR-314-AC-18's `t28`, `(* 1 (- (+ 1 x) y))` and `(* 1 (- x (+ (- 1) y)))`, each normalize to `(+ x (- y) 1)` and therefore print byte-for-byte equally. The normal form distributes only literal scaling over Int addition and subtraction, combines exact coefficients of equal Int atoms, and does not multiply two nonconstant terms; a product of two nonconstant terms is refused `out-of-fragment`. | Test (TC-900) |
 
 ## Dependencies
 
