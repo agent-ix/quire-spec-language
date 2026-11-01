@@ -251,6 +251,8 @@ enum Item<'a> {
         bindings: Vec<ModelInstance>,
         letters: &'a dyn ModelLetters,
         fairness: Vec<FairnessConstraint>,
+        /// Authored targets over protocol identities.
+        protocol_fairness: Vec<qsl_semantics::check::CheckedProtocolFairness>,
         /// The `holds` atom each letter atom reads: atom `i` is `atoms[i]`.
         atoms: Vec<FormulaNodeId>,
         /// The atom true where a guarded `on each` clause's `when`
@@ -290,6 +292,16 @@ impl Item<'_> {
     fn fairness(&self) -> &[FairnessConstraint] {
         match self {
             Self::Clause { fairness, .. } => fairness,
+            Self::Deadlock | Self::Race => &[],
+        }
+    }
+
+    /// The item's authored protocol-node targets.
+    fn protocol_fairness(&self) -> &[qsl_semantics::check::CheckedProtocolFairness] {
+        match self {
+            Self::Clause {
+                protocol_fairness, ..
+            } => protocol_fairness,
             Self::Deadlock | Self::Race => &[],
         }
     }
@@ -406,6 +418,9 @@ impl From<ProtocolFairnessError> for ModelCheckRefusal {
         match error {
             ProtocolFairnessError::UnknownOperation { name } => {
                 super::liveness::LivenessRefusal::UnknownOperation { name }.into()
+            }
+            ProtocolFairnessError::UnknownProtocolTarget { .. } => {
+                fault("s3-protocol-fairness-target-remains-resolved")
             }
             ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
         }
@@ -926,7 +941,8 @@ impl ProtocolRun<'_> {
         // to the derived deadlock-freedom item.
         let fairness = match self.item {
             Item::Deadlock | Item::Race => Vec::new(),
-            Item::Clause { .. } => system.fairness_set(self.item.fairness())?,
+            Item::Clause { .. } => system
+                .fairness_set_with_targets(self.item.fairness(), self.item.protocol_fairness())?,
         };
         let mut run = Run {
             system,
@@ -1423,6 +1439,10 @@ fn prepare(
         bindings: Vec::new(),
         letters,
         fairness: clause.fairness().to_vec(),
+        protocol_fairness: clause
+            .protocol_fairness()
+            .map(|(fairness, _)| fairness.clone())
+            .collect(),
         atoms: automaton.atoms().to_vec(),
         when: automaton.when(),
         captured: clause.capture_site(),

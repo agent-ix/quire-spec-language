@@ -46,10 +46,10 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, package, protocol, reachable, sc_system,
-    subject, unit_text, universe, v, Documents,
+    attempt, contracts, document, fill_unit, instance, package_with, package_with_name, protocol,
+    reachable, sc_system, subject, unit_text, universe, v, Documents,
 };
-use crate::model_settle::{envelope_at, request};
+use crate::model_settle::{envelope_at, request_named};
 
 /// `Chatter`'s channel: unordered, of capacity 2, with delivery `unknown`,
 /// so its queued entries are duplicated and lost.
@@ -122,26 +122,44 @@ const AT_MOST_ONE: AtV = AtV(|value| value <= 1);
 
 /// A `Chatter` unit from `c.v = 0`, with its checked package.
 struct Chatter {
+    package_name: String,
     body: String,
     documents: Documents,
     initial: Vec<DocumentRef>,
     checked: CheckedPackage,
     letters: &'static AtV,
+    clause_index: usize,
 }
 
 impl Chatter {
     /// The unit with `members` and the clause `claim`, read by `letters`.
     fn new(members: &str, claim: &str, letters: &'static AtV) -> Self {
         let body = chatter_body(members, claim);
+        Self::with_body("package", body, 0, letters)
+    }
+
+    fn with_prefix(prefix: &str, members: &str, claim: &str, letters: &'static AtV) -> Self {
+        let body = chatter_body(members, &format!("{prefix}{claim}"));
+        Self::with_body("other-package", body, 1, letters)
+    }
+
+    fn with_body(
+        package_name: &str,
+        body: String,
+        clause_index: usize,
+        letters: &'static AtV,
+    ) -> Self {
         let mut documents = Documents::new();
         let initial = vec![documents.start("s0", &[("c", 0)])];
-        let checked = package(&body);
+        let checked = package_with_name(package_name, crate::fill::PROTOCOL_PROFILE, &body);
         Self {
+            package_name: package_name.to_owned(),
             body,
             documents,
             initial,
             checked,
             letters,
+            clause_index,
         }
     }
 
@@ -156,7 +174,7 @@ impl Chatter {
     }
 
     fn clause(&self) -> &CheckedTemporalClause {
-        self.checked.graph().temporal_clauses()[0].clause()
+        self.checked.graph().temporal_clauses()[self.clause_index].clause()
     }
 
     fn item(&self) -> ModelCheckItem<'_> {
@@ -168,8 +186,13 @@ impl Chatter {
 
     /// The clause's fairness set over the subject (FR-212).
     fn fairness(&self) -> Vec<ProtocolFairness> {
+        let targets: Vec<_> = self
+            .clause()
+            .protocol_fairness()
+            .map(|(constraint, _)| constraint.clone())
+            .collect();
         sc_system(&self.subject())
-            .fairness_set(self.clause().fairness())
+            .fairness_set_with_targets(self.clause().fairness(), &targets)
             .expect("the fairness set builds")
     }
 
@@ -196,12 +219,17 @@ impl Chatter {
         payload: TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
         let unit = unit_text(&self.body).into_bytes();
-        let node = &self.checked.graph().temporal_clauses()[0];
+        let node = &self.checked.graph().temporal_clauses()[self.clause_index];
         let clause_node = node.identity().clone();
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject();
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit),
+            request_named(
+                &self.package_name,
+                &document(),
+                self.documents.snapshots.iter(),
+                &unit,
+            ),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -304,11 +332,13 @@ fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
     let ModelCheckOutcome::Holds {
         certificate: ProofCertificate::Component(_),
         stats,
-    } = outcome
+    } = &outcome
     else {
         panic!("{outcome:?}");
     };
     assert!(stats.product_states > 0, "{stats:?}");
+    let record = chatter.settle(&outcome);
+    assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
 }
 
 /// Part of FR-212-AC-2 (TC-657), and FR-217-AC-4 (TC-662): with `scheduling
@@ -316,18 +346,45 @@ fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
 /// the lasso whose stem is `fork(Both)`, `send(Tx)` and whose loop is
 /// `duplicate(ch, Tx)`, `lose(ch, Tx)`, `s` resting at `Done` throughout;
 /// the lasso replays against the adversarial package, so the claim settles
-/// `refuted`. The same lasso with the default package's scheduler
+/// `refuted`. The two compiled clause identities differ, and the exact
+/// `Done` attempt identity stays enabled at every loop state without
+/// appearing in the loop. The same lasso with the default package's scheduler
 /// constraints as its fairness set, replayed against the default package,
 /// refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled
 /// at every loop state and takes no step, and so is `r`, whose constraint
-/// comes first in the set. Not
-/// covered: the two packages' different identities. Replay tells the two
-/// packages' counterexamples apart by their fairness sets alone.
+/// comes first in the set.
 #[trace("TC-657", "TC-662", "FR-217-AC-4")]
 #[test]
 fn scheduling_adversarial_admits_the_lasso_that_starves_a_branch() {
     let adversarial = Chatter::new("scheduling adversarial;", EVENTUALLY, &IS_ONE);
-    let fair = Chatter::new("", EVENTUALLY, &IS_ONE);
+    let fair = Chatter::with_prefix(BOUNDED, "", EVENTUALLY, &IS_ONE);
+    let adversarial_package = adversarial
+        .checked
+        .graph()
+        .protocol_node_keys("Chatter")
+        .and_then(|keys| keys.clause.clone())
+        .expect("emitted protocol clause");
+    let fair_package = fair
+        .checked
+        .graph()
+        .protocol_node_keys("Chatter")
+        .and_then(|keys| keys.clause.clone())
+        .expect("emitted protocol clause");
+    assert_ne!(
+        adversarial_package, fair_package,
+        "distinct package identities"
+    );
+    let adversarial_node = &adversarial.checked.graph().temporal_clauses()[0];
+    let fair_node = &fair.checked.graph().temporal_clauses()[1];
+    assert_ne!(adversarial_node.identity(), fair_node.identity());
+    assert_ne!(
+        OccurrenceKey::new(
+            adversarial_node.identity(),
+            adversarial_node.claim().clone()
+        ),
+        OccurrenceKey::new(fair_node.identity(), fair_node.claim().clone()),
+        "distinct obligation identities from different clause occurrences"
+    );
     assert!(adversarial.fairness().is_empty());
     let outcome = adversarial.check().expect("the protocol subject checks");
     let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
@@ -380,9 +437,14 @@ fn scheduling_adversarial_admits_the_lasso_that_starves_a_branch() {
     for at in &loop_states {
         let enabled = system.successors(at).expect("expands").successors;
         assert!(enabled.iter().any(|(transition, _)| {
-            transition.kind() == StepKind::Attempt && transition.thread() == Some(&s)
+            transition.kind() == StepKind::Attempt
+                && transition.thread() == Some(&s)
+                && transition.node() == Some("Both/s/Sender/Done")
         }));
     }
+    assert!(cycle
+        .iter()
+        .all(|step| step.transition.node() != Some("Both/s/Sender/Done")));
 
     let record = adversarial.settle(&outcome);
     assert_eq!(record.label, ResultLabel::Refuted, "{record:?}");
@@ -524,56 +586,81 @@ fn eventually_with(fairness: &str) -> String {
     )
 }
 
-/// FR-212-AC-3 (TC-657): over `Chatter`, `fair weak whole Chatter::Both::s`
-/// names the branch `s` of `Both` and `fair weak each Chatter::Done` the
-/// attempt node `Done` (QSpec FR-430's spelling of FR-212-AC-3's `s` and
-/// `Done`); S4 has no member to emit a protocol target with, so each
-/// refuses `unsupported_construct`/`not-yet-implemented` at the constraint,
-/// naming the target it resolved to. `fair weak Missing` refuses
+/// FR-212-AC-3 (TC-657): over `Chatter`, branch and attempt targets survive
+/// S3 and S4 with their checked node identities. `fair weak Missing` refuses
 /// `missing_declaration`/`missing-name`, and a second `scheduling` member
-/// `ambiguous_declaration`/`ambiguous-name`. Over ADR-027 §7's `Fill`, the
-/// root's `whole` class holds `fork(Both)`, `join(Both)` and `finish`, and
-/// `left`'s holds `attempt(A)`.
+/// `ambiguous_declaration`/`ambiguous-name`.
 #[trace("TC-657", "FR-212-AC-3")]
 #[test]
 fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
-    for (fairness, expected, granularity) in [
-        (
-            "fair weak whole Chatter::Both::s;",
-            CheckedProtocolTarget::Branch {
-                parallel: "Both".to_owned(),
-                branch: "s".to_owned(),
-            },
-            FairnessGranularity::Whole,
-        ),
-        (
-            "fair weak each Chatter::Done;",
-            CheckedProtocolTarget::AttemptNode {
-                node: "Both/s/Sender/Done".to_owned(),
-            },
-            FairnessGranularity::Each,
-        ),
-    ] {
-        let refusal = check_refusal(&with_constraint("", fairness));
-        let TemporalCause::ProtocolFairnessNotEmitted { constraint, .. } = temporal(&refusal)
-        else {
-            panic!("{fairness}: {refusal:?}");
-        };
-        assert_eq!(
-            (
-                &constraint.protocol,
-                &constraint.target,
-                constraint.granularity
-            ),
-            (&"Chatter".to_owned(), &expected, granularity),
-            "{fairness}"
-        );
-        assert_eq!(constraint.kind, FairnessKind::Weak);
-        assert_eq!(
-            (refusal.cause.code(), refusal.cause.cause()),
-            (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-        );
-    }
+    let branch = Chatter::new(
+        "",
+        &eventually_with("fair weak whole Chatter::Both::s;"),
+        &IS_ONE,
+    );
+    let protocol = branch
+        .checked
+        .graph()
+        .protocol("Chatter")
+        .expect("protocol");
+    let parallel = protocol
+        .controls
+        .controls
+        .iter()
+        .find(|control| control.name == "Both")
+        .expect("Both");
+    let fairness: Vec<_> = branch.clause().protocol_fairness().collect();
+    assert_eq!(fairness.len(), 1);
+    assert_eq!(
+        fairness[0].0.target,
+        CheckedProtocolTarget::Branch {
+            parallel: parallel.node,
+            branch: "s".to_owned(),
+        }
+    );
+    assert!(branch.fairness().iter().any(|member| matches!(
+        member.target(),
+        ProtocolTarget::Branch { parallel: path, branch } if path == "Both" && branch == "s"
+    )));
+    let branch_emission =
+        qsl_package::emit_checked(&branch.checked).expect("typed branch fairness emits");
+    let branch_wire = branch_emission.package().bytes();
+    assert!(String::from_utf8_lossy(branch_wire).contains("parallel_branch"));
+
+    let attempt = Chatter::new(
+        "",
+        &eventually_with("fair weak each Chatter::Done;"),
+        &IS_ONE,
+    );
+    let protocol = attempt
+        .checked
+        .graph()
+        .protocol("Chatter")
+        .expect("protocol");
+    let done = protocol
+        .controls
+        .controls
+        .iter()
+        .find(|control| control.name == "Done")
+        .expect("Done");
+    assert_eq!(
+        attempt
+            .clause()
+            .protocol_fairness()
+            .next()
+            .expect("target")
+            .0
+            .target,
+        CheckedProtocolTarget::AttemptNode { node: done.node }
+    );
+    assert!(attempt.fairness().iter().any(|member| matches!(
+        member.target(),
+        ProtocolTarget::AttemptNode { node } if node == "Both/s/Sender/Done"
+    )));
+    let attempt_emission =
+        qsl_package::emit_checked(&attempt.checked).expect("typed attempt fairness emits");
+    let attempt_wire = attempt_emission.package().bytes();
+    assert!(String::from_utf8_lossy(attempt_wire).contains("attempt_node"));
     let missing = check_refusal(&with_constraint("", "fair weak Missing;"));
     assert!(
         matches!(temporal(&missing), TemporalCause::UnresolvedFairnessOperation { name, .. } if name == "Missing"),
@@ -640,6 +727,72 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
         left_class,
         BTreeSet::from([(StepKind::Attempt, "Main/Both/left/A".to_owned())])
     );
+}
+
+/// FR-212 compensation targets resolve from the authored template, retain
+/// their emitted identity, and build both authored and default scheduler
+/// classes over actual compensation transitions.
+#[trace("TC-657")]
+#[test]
+fn compensation_fairness_is_authored_and_scheduled_end_to_end() {
+    let template =
+        crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true");
+    let run = crate::protocol_compensation::pay_run("");
+    let claim = eventually_with("fair weak each Pay::Refund;");
+    let body = contracts("self.v = 0")
+        + crate::protocol_compensation::REFUND
+        + &protocol("Pay", &template, &run, "d")
+        + &claim;
+    let mut documents = Documents::new();
+    let initial = vec![documents.start("s0", &[("c", 0)])];
+    let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let subject = subject(&checked, &documents, initial, "Pay", "c");
+    let clause = checked.graph().temporal_clauses()[0].clause();
+    let targets: Vec<_> = clause
+        .protocol_fairness()
+        .map(|(constraint, _)| constraint.clone())
+        .collect();
+    assert!(matches!(
+        targets.first().map(|target| &target.target),
+        Some(CheckedProtocolTarget::CompensationTemplate { .. })
+    ));
+    let system = sc_system(&subject);
+    let fairness = system
+        .fairness_set_with_targets(clause.fairness(), &targets)
+        .expect("the compensation target resolves");
+    assert!(fairness.iter().any(|member| matches!(
+        member.target(),
+        ProtocolTarget::CompensationTemplate { template } if template == "Pay::Refund"
+    ) && member.origin() == FairnessOrigin::Authored));
+    assert!(fairness.iter().any(|member| matches!(
+        member.target(),
+        ProtocolTarget::CompensationTemplate { template } if template == "Pay::Refund"
+    ) && member.origin() == FairnessOrigin::Scheduler));
+    let emission = qsl_package::emit_checked(&checked).expect("typed compensation fairness emits");
+    let wire = emission.package().bytes();
+    assert!(String::from_utf8_lossy(wire).contains("compensation_template"));
+    let compensation = fairness
+        .iter()
+        .find(|member| {
+            member.origin() == FairnessOrigin::Authored
+                && matches!(member.target(), ProtocolTarget::CompensationTemplate { .. })
+        })
+        .expect("authored compensation fairness");
+    let scheduler_compensation = fairness
+        .iter()
+        .find(|member| {
+            member.origin() == FairnessOrigin::Scheduler
+                && matches!(member.target(), ProtocolTarget::CompensationTemplate { .. })
+        })
+        .expect("scheduler compensation fairness");
+    let reached = reachable(&system);
+    assert!(reached
+        .iter()
+        .any(|state| state.steps.iter().any(|(step, _)| {
+            matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd)
+                && compensation.class_of(step).is_some()
+                && scheduler_compensation.class_of(step).is_some()
+        })));
 }
 
 /// FR-212 Outputs (TC-657): an authored operation constraint over a protocol

@@ -38,7 +38,7 @@ use crate::check::node_key::{
 use crate::check::profile::TemporalProfile;
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::Signature;
-use crate::value::member::{Member, TimedMember};
+use crate::value::member::{FairnessTarget, Member, TimedMember};
 use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
 
 /// The stage name this module's faults report.
@@ -462,9 +462,7 @@ impl Lowering<'_> {
                     member: Some(Member::Fairness {
                         kind: constraint.kind,
                         granularity: constraint.granularity,
-                        target_kind: crate::value::FairnessTargetKind::HybridTransition,
-                        declaration,
-                        name,
+                        target: FairnessTarget::HybridTransition { declaration, name },
                     }),
                     ..Operation::plain("quire.op.temporal.fair")
                 },

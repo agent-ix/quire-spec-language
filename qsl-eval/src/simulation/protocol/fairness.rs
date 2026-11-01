@@ -41,10 +41,9 @@ use crate::simulation::model::encode::Enc;
 
 /// What a protocol fairness constraint names (ADR-027 PA-1).
 ///
-/// An attempt node is not a target yet: S4 has no member that can emit
-/// an attempt-node target, so its class (every step of that node, `each` one
-/// per thread path and application, QSpec FR-430) is unreachable until S4
-/// emits one.
+/// Attempt nodes and compensation templates retain their checked node
+/// identities through S4 and are matched to the exact static transition
+/// path here.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProtocolTarget {
     /// An operation, by the text its applications' FR-120 identities carry.
@@ -61,6 +60,16 @@ pub enum ProtocolTarget {
         parallel: String,
         /// The branch label.
         branch: String,
+    },
+    /// The steps belonging to one checked attempt node.
+    AttemptNode {
+        /// The node's static declaration path.
+        node: String,
+    },
+    /// The steps belonging to one compensation template.
+    CompensationTemplate {
+        /// The template's checked name.
+        template: String,
     },
     /// An interim shape, pending the FR-228/FR-436 ruling on how a memory
     /// step's thread target is spelled (QSL-994, spec PR #1442): the
@@ -112,6 +121,13 @@ impl ProtocolTarget {
                     ("node", Enc::text(parallel.clone())),
                     ("branch", Enc::text(branch.clone())),
                 ],
+            ),
+            Self::AttemptNode { node } => {
+                Enc::tagged("attempt-node", vec![("node", Enc::text(node.clone()))])
+            }
+            Self::CompensationTemplate { template } => Enc::tagged(
+                "compensation-template",
+                vec![("template", Enc::text(template.clone()))],
             ),
             Self::MemoryStep {
                 model,
@@ -290,6 +306,30 @@ impl ProtocolFairness {
                 })
             }
             ProtocolTarget::Visibility { .. } => None,
+            ProtocolTarget::AttemptNode { node } => (transition.node() == Some(node.as_str()))
+                .then(|| {
+                    if each {
+                        transition
+                            .application()
+                            .cloned()
+                            .map(ProtocolClass::Application)
+                            .unwrap_or(ProtocolClass::Whole)
+                    } else {
+                        ProtocolClass::Whole
+                    }
+                }),
+            ProtocolTarget::CompensationTemplate { template } => {
+                let thread = transition.thread()?;
+                let owns =
+                    thread.steps.last().and_then(|step| step.template()) == Some(template.as_str());
+                owns.then(|| {
+                    if each {
+                        ProtocolClass::Thread(thread.clone())
+                    } else {
+                        ProtocolClass::Whole
+                    }
+                })
+            }
             ProtocolTarget::Root | ProtocolTarget::Branch { .. } => {
                 let thread = transition.thread()?;
                 let holds = match (&self.target, thread.steps.last()) {
@@ -349,13 +389,20 @@ pub enum ProtocolFairnessError {
         /// The operation's resolved name.
         name: String,
     },
+    /// An S3-checked protocol target no longer resolves in its protocol.
+    #[error("the fairness target in protocol `{name}` has no checked identity")]
+    UnknownProtocolTarget {
+        /// The selected protocol's name.
+        name: String,
+    },
     /// A member has no canonical encoding.
     #[error("a fairness set member has no canonical encoding: {0}")]
     Encoding(String),
 }
 
 /// The scheduler constraints of `protocol` (PA-3): one per branch of each
-/// `parallel` and one over the root; none under `scheduling adversarial`.
+/// `parallel`, one per compensation template, and one over the root; none
+/// under `scheduling adversarial`.
 pub(super) fn scheduler_constraints(protocol: &CheckedProtocol) -> Vec<ProtocolFairness> {
     if protocol.slots.scheduling == CheckedScheduling::Adversarial {
         return Vec::new();
@@ -379,6 +426,13 @@ pub(super) fn scheduler_constraints(protocol: &CheckedProtocol) -> Vec<ProtocolF
                 )));
             }
         }
+    }
+    for compensation in &protocol.obligations.compensations {
+        members.push(ProtocolFairness::scheduler(
+            ProtocolTarget::CompensationTemplate {
+                template: format!("{}::{}", protocol.name, compensation.name),
+            },
+        ));
     }
     members
 }
@@ -428,6 +482,7 @@ pub(super) fn memory_branches(
 pub(super) fn fairness_set<'t>(
     protocol: &CheckedProtocol,
     authored: &[FairnessConstraint],
+    authored_targets: &[qsl_semantics::check::CheckedProtocolFairness],
     operation_text: impl Fn(&FairnessConstraint) -> Option<&'t str>,
     memory: Vec<ProtocolFairness>,
 ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
@@ -443,6 +498,53 @@ pub(super) fn fairness_set<'t>(
                 name: name.to_owned(),
             },
             constraint.granularity(),
+            FairnessOrigin::Authored,
+        ));
+    }
+    for constraint in authored_targets {
+        if constraint.protocol != protocol.name {
+            return Err(ProtocolFairnessError::UnknownProtocolTarget {
+                name: constraint.protocol.clone(),
+            });
+        }
+        let target = match &constraint.target {
+            qsl_semantics::check::CheckedProtocolTarget::Root => ProtocolTarget::Root,
+            qsl_semantics::check::CheckedProtocolTarget::AttemptNode { node } => {
+                let control = protocol.controls.control(*node).ok_or_else(|| {
+                    ProtocolFairnessError::UnknownProtocolTarget {
+                        name: constraint.protocol.clone(),
+                    }
+                })?;
+                ProtocolTarget::AttemptNode {
+                    node: control.path.join("/"),
+                }
+            }
+            qsl_semantics::check::CheckedProtocolTarget::Branch { parallel, branch } => {
+                let control = protocol.controls.control(*parallel).ok_or_else(|| {
+                    ProtocolFairnessError::UnknownProtocolTarget {
+                        name: constraint.protocol.clone(),
+                    }
+                })?;
+                ProtocolTarget::branch(control.path.join("/"), branch.clone())
+            }
+            qsl_semantics::check::CheckedProtocolTarget::CompensationTemplate { index } => {
+                let compensation =
+                    protocol
+                        .obligations
+                        .compensations
+                        .get(*index)
+                        .ok_or_else(|| ProtocolFairnessError::UnknownProtocolTarget {
+                            name: constraint.protocol.clone(),
+                        })?;
+                ProtocolTarget::CompensationTemplate {
+                    template: format!("{}::{}", protocol.name, compensation.name),
+                }
+            }
+        };
+        members.push(ProtocolFairness::new(
+            constraint.kind,
+            target,
+            constraint.granularity,
             FairnessOrigin::Authored,
         ));
     }

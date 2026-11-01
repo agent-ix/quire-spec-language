@@ -305,7 +305,11 @@ pub(super) fn check_protocol<M: MemoryModel>(
             Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
             Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
         };
-    let full_fairness = system.fairness_set(clause.fairness())?;
+    let protocol_fairness: Vec<_> = clause
+        .protocol_fairness()
+        .map(|(fairness, _)| fairness.clone())
+        .collect();
+    let full_fairness = system.fairness_set_with_targets(clause.fairness(), &protocol_fairness)?;
     let fairness: Vec<_> = if options.ignore_memory_constraints {
         full_fairness
             .iter()

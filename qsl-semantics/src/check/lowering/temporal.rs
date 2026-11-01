@@ -40,7 +40,7 @@ use crate::check::temporal_clause::{
     BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
     FormulaNodeId, UnaryTemporal,
 };
-use crate::value::member::{Member, TimedMember};
+use crate::value::member::{FairnessTarget, Member, TimedMember};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "lowering.temporal";
@@ -258,9 +258,7 @@ impl Lowering<'_> {
                         member: Some(Member::Fairness {
                             kind: constraint.kind(),
                             granularity: constraint.granularity(),
-                            target_kind: crate::value::FairnessTargetKind::Operation,
-                            declaration,
-                            name,
+                            target: FairnessTarget::Operation { declaration, name },
                         }),
                         ..Operation::plain("quire.op.temporal.fair")
                     },
@@ -270,6 +268,70 @@ impl Lowering<'_> {
             )?;
             self.record(key.clone(), OccurrenceRole::Expression, location);
             fairness.push(key);
+        }
+
+        for (constraint, span) in clause.protocol_fairness() {
+            let location = at(TemporalSite::Fairness(0));
+            let members = self
+                .protocol_members
+                .get(&constraint.protocol)
+                .ok_or_else(|| stage_fault(&location, "protocol-fairness-target-lowered"))?;
+            let target = match &constraint.target {
+                crate::check::temporal_clause::CheckedProtocolTarget::Root => {
+                    FairnessTarget::ProtocolRoot {
+                        node: members.clause.clone(),
+                    }
+                }
+                crate::check::temporal_clause::CheckedProtocolTarget::AttemptNode { node } => {
+                    FairnessTarget::AttemptNode {
+                        node: members.nodes.get(node).cloned().ok_or_else(|| {
+                            stage_fault(&location, "attempt-fairness-node-emitted")
+                        })?,
+                    }
+                }
+                crate::check::temporal_clause::CheckedProtocolTarget::Branch {
+                    parallel,
+                    branch,
+                } => {
+                    FairnessTarget::ParallelBranch {
+                        parallel: members.nodes.get(parallel).cloned().ok_or_else(|| {
+                            stage_fault(&location, "branch-fairness-node-emitted")
+                        })?,
+                        branch: Identifier::new(branch.clone())
+                            .map_err(|_| stage_fault(&location, "branch-fairness-label-valid"))?,
+                    }
+                }
+                crate::check::temporal_clause::CheckedProtocolTarget::CompensationTemplate {
+                    index,
+                } => FairnessTarget::CompensationTemplate {
+                    node: members.compensations.get(*index).cloned().ok_or_else(|| {
+                        stage_fault(&location, "compensation-fairness-node-emitted")
+                    })?,
+                },
+            };
+            let key = self.insert(
+                &location,
+                NodeTag::Temporal,
+                "fairness",
+                Some(boolean.clone()),
+                None,
+                BodyTerm::application(
+                    Operator::TemporalFairness,
+                    Operation {
+                        member: Some(Member::Fairness {
+                            kind: constraint.kind,
+                            granularity: constraint.granularity,
+                            target,
+                        }),
+                        ..Operation::plain("quire.op.temporal.fair")
+                    },
+                    boolean.clone(),
+                    Vec::new(),
+                ),
+            )?;
+            self.record(key.clone(), OccurrenceRole::Expression, location);
+            fairness.push(key);
+            let _ = span;
         }
 
         let law = OperationLaw {

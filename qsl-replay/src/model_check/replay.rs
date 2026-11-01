@@ -899,11 +899,19 @@ impl ProtocolReplay<'_> {
         let payload = self.payload;
         let fairness = match self.clause {
             Some(clause) => {
+                let protocol_fairness: Vec<_> = clause
+                    .protocol_fairness()
+                    .map(|(fairness, _)| fairness.clone())
+                    .collect();
                 system
-                    .fairness_set(clause.fairness())
+                    .fairness_set_with_targets(clause.fairness(), &protocol_fairness)
                     .map_err(|error| match error {
                         ProtocolFairnessError::UnknownOperation { name } => {
                             refused(ModelTraceRefusal::UnknownFairnessOperation { name })
+                        }
+                        ProtocolFairnessError::UnknownProtocolTarget { name } => {
+                            let _ = name;
+                            fault("s3-protocol-fairness-target-remains-resolved")
                         }
                         ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
                     })?
