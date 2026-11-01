@@ -197,10 +197,20 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
     )
 }
 
-/// FR-201's unit identity: `{declared: <NodeId>}` for a declared unit, and
-/// `{terms: [{unit: <root-unit NodeId>, exponent: <canonical decimal>}, ...]}`
-/// for a compound one, its terms in order.
+/// The UnitId text: the RFC 8785 text of its structural identity record.
 fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
+    identity_text(unit_identity_enc(unit), "a unit identity")
+}
+
+fn identity_text(value: Enc, what: &'static str) -> Enc {
+    value
+        .canonical_text(Limits::new(super::identity_limits().input_bytes))
+        .map_or(Enc::Unencodable(what), Enc::text)
+}
+
+/// FR-088's UnitId identity record: `{declared: <NodeId>}` or the ordered
+/// compound terms.
+fn unit_identity_enc(unit: &quire_exact::UnitId) -> Enc {
     if let Some(node) = unit.declared_key() {
         return Enc::Object(vec![("declared", Enc::Node(node.clone()))]);
     }
@@ -219,6 +229,27 @@ fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
                 .collect(),
         ),
     )])
+}
+
+/// A checked type node's producer declaration identity, `{package, node}`.
+/// Type-environment keys are minted with the declaration's opaque producer
+/// node as the final segment of their structural path.
+fn declaration_key_for_node(key: &NodeKey) -> Option<DeclarationKey> {
+    let Json::Object(fields) = node_key_to_json(key).ok()? else {
+        return None;
+    };
+    let package = fields.get("package")?.as_str()?.to_owned();
+    let Json::Array(path) = fields.get("path")? else {
+        return None;
+    };
+    let node = path.last()?.as_str()?.to_owned();
+    Some(DeclarationKey { package, node })
+}
+
+fn declaration_name(key: &NodeKey) -> Enc {
+    declaration_key_for_node(key).map_or(Enc::Unencodable("a declaration identity"), |key| {
+        identity_text(declaration_enc(&key), "a declaration identity")
+    })
 }
 
 /// The first JSON value of `text` and the text after it.
@@ -414,12 +445,12 @@ pub(crate) fn value_enc(value: &Value, typing: Typing<'_>) -> Enc {
 
 /// FR-120's typed canonical form of `value`, where a record value is
 /// `{"type":"record","name":…,"fields":[{name, value}…]}` with `name` the
-/// declaration's checked node id, one entry per declared field in
+/// declaration identity text, one entry per declared field in
 /// declaration order and an absent field `null`; a tuple is
 /// `{"type":"tuple","name":…,"components":[…]}`; a union is
 /// `{"type":"union","name":…,"member":…,"components":[…]}`; and an enum is
-/// `{"type":"enum","name":…,"member":…}` with `name` the variant type's node
-/// id and `member` the declared case, both read from `variants`.
+/// `{"type":"enum","name":…,"member":…}` with `name` the variant type's
+/// declaration identity text and `member` the declared case.
 pub(crate) fn typed_value_enc(
     value: &Value,
     types: &TypeEnvironment,
@@ -430,7 +461,7 @@ pub(crate) fn typed_value_enc(
 
 /// FR-181's `record` or `tuple` form of `composite`, its declaration read
 /// from `types`: `{"type":"record","name":…,"fields":[{name, value}…]}`
-/// with `name` the declaration's checked node id, one entry per declared
+/// with `name` the declaration identity text, one entry per declared
 /// field in declaration order and an absent field `null`, or
 /// `{"type":"tuple","name":…,"components":[…]}` in declaration order; each
 /// slot written by `slot_enc`.
@@ -439,7 +470,7 @@ fn composite_enc(
     types: &TypeEnvironment,
     slot_enc: &dyn Fn(&FieldValue) -> Enc,
 ) -> Enc {
-    let name = Enc::Node(composite.declaration().clone());
+    let name = declaration_name(composite.declaration());
     match types
         .composite(composite.declaration().clone())
         .map(CompositeDeclaration::shape)
@@ -489,6 +520,15 @@ pub(super) fn value_enc_with(
     typing: Typing<'_>,
     placeholder: &Placeholder<'_>,
 ) -> Enc {
+    value_enc_with_decimal_mode(value, typing, placeholder, false)
+}
+
+fn value_enc_with_decimal_mode(
+    value: &Value,
+    typing: Typing<'_>,
+    placeholder: &dyn Fn(&ObjectReference) -> Option<Enc>,
+    normalize_decimal: bool,
+) -> Enc {
     match value {
         Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
         Value::Integer(integer) => {
@@ -532,7 +572,7 @@ pub(super) fn value_enc_with(
             vec![(
                 "value",
                 option.payload().map_or(Enc::Null, |payload| {
-                    value_enc_with(payload, typing, placeholder)
+                    value_enc_with_decimal_mode(payload, typing, placeholder, normalize_decimal)
                 }),
             )],
         ),
@@ -543,10 +583,17 @@ pub(super) fn value_enc_with(
                 CollectionKind::Bag => "bag",
                 CollectionKind::OrderedSet => "ordered-set",
             };
+            let normalize_elements = normalize_decimal
+                || matches!(
+                    collection.collection_type().kind(),
+                    CollectionKind::Set | CollectionKind::Bag
+                );
             let mut elements: Vec<Enc> = collection
                 .elements()
                 .iter()
-                .map(|element| value_enc_with(element, typing, placeholder))
+                .map(|element| {
+                    value_enc_with_decimal_mode(element, typing, placeholder, normalize_elements)
+                })
                 .collect();
             if matches!(
                 collection.collection_type().kind(),
@@ -563,7 +610,23 @@ pub(super) fn value_enc_with(
         Value::Reference(reference) => {
             placeholder(reference).unwrap_or_else(|| reference_enc(reference))
         }
-        Value::Decimal(_) => Enc::Unencodable("a decimal value"),
+        Value::Decimal(decimal) => {
+            let representation = if normalize_decimal {
+                decimal.normalized()
+            } else {
+                decimal.representation()
+            };
+            Enc::tagged(
+                "decimal",
+                vec![
+                    (
+                        "coefficient",
+                        Enc::text(representation.coefficient().to_string()),
+                    ),
+                    ("scale", Enc::text(representation.scale().to_string())),
+                ],
+            )
+        }
         Value::Uuid(value) => Enc::tagged("uuid", vec![("value", Enc::text(value.to_string()))]),
         Value::Timestamp(value) => Enc::tagged(
             "timestamp",
@@ -585,7 +648,7 @@ pub(super) fn value_enc_with(
                     Enc::tagged(
                         "enum",
                         vec![
-                            ("name", Enc::Node(declared.node().clone())),
+                            ("name", declaration_name(&declared.node())),
                             ("member", Enc::text(case.name())),
                         ],
                     )
@@ -594,7 +657,9 @@ pub(super) fn value_enc_with(
         Value::Population(_) => Enc::Unencodable("a population value"),
         Value::Composite(composite) => match typing.types {
             Some(types) => composite_enc(composite, types, &|slot| match slot {
-                FieldValue::Present(inner) => value_enc_with(inner, typing, placeholder),
+                FieldValue::Present(inner) => {
+                    value_enc_with_decimal_mode(inner, typing, placeholder, normalize_decimal)
+                }
                 FieldValue::Absent | FieldValue::Null => Enc::Null,
             }),
             None => Enc::Unencodable("a record or tuple value"),
@@ -602,7 +667,7 @@ pub(super) fn value_enc_with(
         Value::Union(union) => Enc::tagged(
             "union",
             vec![
-                ("name", Enc::Node(union.declaration().clone())),
+                ("name", declaration_name(union.declaration())),
                 ("member", Enc::text(union.member().identifier())),
                 (
                     "components",
@@ -610,7 +675,14 @@ pub(super) fn value_enc_with(
                         union
                             .payload()
                             .iter()
-                            .map(|inner| value_enc_with(inner, typing, placeholder))
+                            .map(|inner| {
+                                value_enc_with_decimal_mode(
+                                    inner,
+                                    typing,
+                                    placeholder,
+                                    normalize_decimal,
+                                )
+                            })
                             .collect(),
                     ),
                 ),
@@ -963,15 +1035,16 @@ mod tests {
         let uuid = Uuid::from_canonical_text("00112233-4455-6677-8899-aabbccddeeff")
             .expect("canonical UUID");
         let timestamp = Timestamp::from_canonical_text("-1").expect("canonical timestamp");
+        let typing = Typing::none();
 
         assert_eq!(
-            untyped_value_enc(&Value::Uuid(uuid))
+            value_enc(&Value::Uuid(uuid), typing)
                 .canonical_text(Limits::new(1024))
                 .expect("a UUID encodes"),
             r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#
         );
         assert_eq!(
-            untyped_value_enc(&Value::Timestamp(timestamp))
+            value_enc(&Value::Timestamp(timestamp), typing)
                 .canonical_text(Limits::new(1024))
                 .expect("a Timestamp encodes"),
             r#"{"nanoseconds":"-1","type":"timestamp"}"#
@@ -998,45 +1071,57 @@ mod tests {
             CollectionType::new(CollectionKind::Set, ValueType::Timestamp, None),
             vec![timestamp("2"), timestamp("10")],
         );
+        let typing = Typing::none();
 
         assert_eq!(
-            untyped_value_enc(&ids)
+            value_enc(&ids, typing)
                 .canonical_text(Limits::new(1024))
                 .expect("the UUID set encodes"),
             r#"{"elements":[{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeefe"},{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}],"type":"set"}"#
         );
         assert_eq!(
-            untyped_value_enc(&times)
+            value_enc(&times, typing)
                 .canonical_text(Limits::new(1024))
                 .expect("the Timestamp set encodes"),
             r#"{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}"#
         );
     }
 
-    /// FR-201: a compound unit writes its terms in order, each a root-unit
-    /// node and its canonical decimal exponent.
+    /// FR-120: a unit identity is written as its UnitId text.
     #[test]
-    fn a_compound_unit_encodes_its_terms() {
+    fn a_unit_encodes_as_its_identity_text() {
         let unit = UnitId::compound(vec![
             (crate::test_ids::node_key([1]), Integer::from(1_i64)),
             (crate::test_ids::node_key([2]), Integer::from(-2_i64)),
         ]);
         let text = Enc::Object(vec![("unit", unit_enc(&unit))])
             .canonical_text(Limits::new(1024))
-            .expect("a compound unit encodes");
+            .expect("a unit encodes");
+        let identity_text = unit_identity_enc(&unit)
+            .canonical_text(Limits::new(1024))
+            .expect("the UnitId identity has canonical text");
         assert_eq!(
             text,
             format!(
-                r#"{{"unit":{{"terms":[{{"exponent":"1","unit":{}}},{{"exponent":"-2","unit":{}}}]}}}}"#,
-                node_json(1),
-                node_json(2)
+                r#"{{"unit":{}}}"#,
+                serde_json::to_string(&identity_text).expect("unit text serializes")
             )
         );
     }
 
-    /// The structural object text of `crate::test_ids::node_key([seed])`.
-    fn node_json(seed: u8) -> String {
-        format!(r#"{{"ordinal":0,"package":"fixture","path":["[{seed}]"]}}"#)
+    fn declaration_json(seed: u8) -> String {
+        serde_json::to_string(&format!(r#"{{"node":"[{seed}]","package":"fixture"}}"#))
+            .expect("DeclarationKey identity text is a JSON string")
+    }
+
+    #[test]
+    fn a_type_node_name_is_the_declaration_key_identity_text() {
+        assert_eq!(
+            declaration_name(&crate::test_ids::node_key([0x11]))
+                .canonical_text(Limits::new(1024))
+                .expect("a declaration name encodes"),
+            declaration_json(0x11)
+        );
     }
 
     /// An effective identity owned through `depth` declarations.
@@ -1150,8 +1235,7 @@ mod tests {
         (types, tag_value, pair_value, none_value)
     }
 
-    /// FR-120-AC-16 (TC-1195): FR-181-AC-19's record, tuple and nullary
-    /// union bytes, each `name` the declaration's checked node id in 64 hex.
+    /// FR-120-AC-16 (TC-1195): declaration names use JCS DeclarationKey text.
     #[trace("TC-1195", "FR-120-AC-16")]
     #[test]
     fn a_record_tuple_and_union_encode_in_their_declared_forms() {
@@ -1161,7 +1245,11 @@ mod tests {
                 .canonical_text(Limits::new(4096))
                 .expect("the value encodes")
         };
-        let (tag_name, pair_name, shape_name) = (node_json(0x11), node_json(0x22), node_json(0x33));
+        let (tag_name, pair_name, shape_name) = (
+            declaration_json(0x11),
+            declaration_json(0x22),
+            declaration_json(0x33),
+        );
         assert_eq!(
             text(&tag(7)),
             format!(
@@ -1193,7 +1281,7 @@ mod tests {
         let record = |sku: &str| {
             format!(
                 r#"{{"fields":[{{"name":"sku","value":{{"type":"integer","value":"{sku}"}}}},{{"name":"note","value":null}}],"name":{},"type":"record"}}"#,
-                node_json(0x11)
+                declaration_json(0x11)
             )
         };
         let tag_type = ValueType::Composite(crate::test_ids::node_key([0x11]));
@@ -1244,17 +1332,84 @@ mod tests {
         let unit = UnitId::declared(crate::test_ids::node_key([0xab]));
         let quantity = Value::Quantity(Quantity::new(
             Rational::new(Integer::from(3_i64), Integer::from(2_i64)).expect("nonzero"),
-            unit,
+            unit.clone(),
         ));
-        let text = untyped_value_enc(&quantity)
+        let text = value_enc(&quantity, Typing::none())
             .canonical_text(Limits::new(1024))
             .expect("a quantity encodes");
         assert_eq!(
             text,
             format!(
-                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":{{"declared":{}}}}}"#,
-                node_json(0xab)
+                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":{}}}"#,
+                serde_json::to_string(
+                    &unit_identity_enc(&unit)
+                        .canonical_text(Limits::new(1024))
+                        .expect("unit identity text")
+                )
+                .expect("unit text serializes")
             )
+        );
+    }
+
+    /// FR-120-AC-16/17 (TC-1195): a retained decimal keeps its representation,
+    /// while set and bag elements use the normalized representation.
+    #[trace("TC-1195", "FR-120-AC-16", "FR-120-AC-17")]
+    #[test]
+    fn decimal_values_keep_or_normalize_representation_by_context() {
+        use quire_exact::{Decimal, Integer};
+
+        let decimal = Value::Decimal(Decimal::new(Integer::from(150_i64), 2));
+        let typing = Typing::none();
+        let retained = value_enc(&decimal, typing)
+            .canonical_text(Limits::new(1024))
+            .expect("a decimal encodes");
+        assert_eq!(
+            retained,
+            r#"{"coefficient":"150","scale":"2","type":"decimal"}"#
+        );
+
+        let decimal_type = ValueType::Decimal(
+            quire_exact::DecimalType::new(
+                Integer::from(0_i64),
+                Integer::from(1000_i64),
+                0,
+                2,
+                quire_exact::RoundingMode::Exact,
+            )
+            .expect("valid decimal type"),
+        );
+        for kind in [CollectionKind::Set, CollectionKind::Bag] {
+            let collection = from_admitted(
+                CollectionType::new(kind, decimal_type.clone(), None),
+                vec![decimal.clone()],
+            );
+            let text = value_enc(&collection, typing)
+                .canonical_text(Limits::new(1024))
+                .expect("a decimal collection encodes");
+            let type_name = match kind {
+                CollectionKind::Set => "set",
+                CollectionKind::Bag => "bag",
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                text,
+                format!(
+                    r#"{{"elements":[{{"coefficient":"15","scale":"1","type":"decimal"}}],"type":"{type_name}"}}"#
+                )
+            );
+        }
+
+        let option_type = ValueType::option(decimal_type.clone());
+        let option = quire_exact::OptionValue::from_admitted(decimal_type, Some(decimal));
+        let nested = from_admitted(
+            CollectionType::new(CollectionKind::Set, option_type, None),
+            vec![option],
+        );
+        assert_eq!(
+            value_enc(&nested, typing)
+                .canonical_text(Limits::new(1024))
+                .expect("a nested decimal set encodes"),
+            r#"{"elements":[{"type":"option","value":{"coefficient":"15","scale":"1","type":"decimal"}}],"type":"set"}"#
         );
     }
 
@@ -1264,6 +1419,19 @@ mod tests {
     fn a_value_without_a_form_refuses_to_encode() {
         let text = Enc::Unencodable("a union value").canonical_text(Limits::new(1024));
         assert!(matches!(text, Err(Error::Serialize(_))));
+    }
+
+    /// FR-120-AC-18 (TC-1195): a Population handle has no typed canonical form.
+    #[trace("TC-1195", "FR-120-AC-18")]
+    #[test]
+    fn a_population_value_keeps_its_typed_refusal() {
+        let value = Value::Population(quire_exact::PopulationId::new(crate::test_ids::node_key([
+            1,
+        ])));
+        assert!(matches!(
+            value_enc(&value, Typing::none()).canonical_text(Limits::new(1024)),
+            Err(Error::Serialize(_))
+        ));
     }
 
     /// QSpec FR-181: a field declared `Option<T>` is an option value, none

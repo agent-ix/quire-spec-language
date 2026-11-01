@@ -908,11 +908,7 @@ mod tests {
         .expect("encodes");
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
-            format!(
-                r#"{{"components":[{{"type":"boolean","value":true}}],"member":"Flag","name":{},"type":"union"}}"#,
-                qsl_foundation::node_wire::node_key_to_json(&crate::test_ids::node_key([5]))
-                    .expect("a node key encodes")
-            )
+            r#"{"components":[{"type":"boolean","value":true}],"member":"Flag","name":"{\"node\":\"[5]\",\"package\":\"fixture\"}","type":"union"}"#
         );
     }
 
@@ -1030,7 +1026,10 @@ mod tests {
                 let Value::Composite(tuple_value) = value else {
                     panic!("the tuple declaration yields tuple values")
                 };
-                let [FieldValue::Present(Value::Boolean(first)), FieldValue::Present(Value::Integer(second))] = tuple_value.slots()
+                let [
+                    FieldValue::Present(Value::Boolean(first)),
+                    FieldValue::Present(Value::Integer(second)),
+                ] = tuple_value.slots()
                 else {
                     panic!("both tuple positions retain their declared order")
                 };
@@ -1048,9 +1047,9 @@ mod tests {
         );
     }
 
-    /// FR-120's record form, written exactly: `type`, the declaration's node
-    /// id as `name`, and one `{name, value}` entry per declared field with an
-    /// absent optional field `null`.
+    /// FR-120's record form, written exactly: `type`, the DeclarationKey's
+    /// RFC 8785 text as `name`, and one `{name, value}` entry per declared
+    /// field with an absent optional field `null`.
     #[test]
     fn a_record_value_is_written_in_fr_120_s_record_form() {
         let (types, inner, _) = nested();
@@ -1069,14 +1068,9 @@ mod tests {
             quire_canonical::Limits::new(u64::MAX),
         )
         .expect("encodes");
-        let name = qsl_foundation::node_wire::node_key_to_json(&inner)
-            .expect("a node key encodes")
-            .to_string();
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
-            format!(
-                r#"{{"fields":[{{"name":"e","value":{{"type":"boolean","value":false}}}},{{"name":"o","value":null}}],"name":{name},"type":"record"}}"#
-            )
+            r#"{"fields":[{"name":"e","value":{"type":"boolean","value":false}},{"name":"o","value":null}],"name":"{\"node\":\"[2]\",\"package\":\"fixture\"}","type":"record"}"#
         );
     }
 }
