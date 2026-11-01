@@ -103,3 +103,7 @@ Frozen-head static review; coder confined focused evidence pending. No reviewer 
 ## Disposition pass 1 evidence
 
 Frozen head 29d8fb4e52da9f9e26e4d9ccb0804e0635369859. Compared the complete fix diff: six trace attributes and verbatim review custody only. No introduced behavior or test-oracle changes, and no new findings. Original Findings table remains unchanged. Static finding is fixed; scoped mergeability is conditional on completion of coder-owned focused tests and the lead-owned final aggregate gate. Workspace all-targets/all-features Clippy passed on d43ffa89a (9m27s); only tags and SR artifacts changed after it. Format and diff checks passed according to coder evidence. Focused corrected-source tests remain running at this disposition; lead must reconcile their results before merge. No duplicate Cargo or aggregate gate run by reviewer. Full100k/Debug acceptance and QSL-1337 remain open as recorded above.
+
+## Disposition pass 2 evidence
+
+At frozen 805840689b4d67af33a4733108e281278af2a87c, FND-001's round 1 fixed outcome remains valid. Focused corrected-source evidence has now completed: all 13 logged phases exit 0, including the 100k key conversion and bounded 1k/4k emitted wire checks. The separate missing-summary integration defect and its fixed outcome are recorded in SR-1957019 FND-002, avoiding duplicate findings. Final scoped mergeability awaits only the lead-owned final aggregate gate. This does not satisfy or close the retained full100k package/Debug acceptance.

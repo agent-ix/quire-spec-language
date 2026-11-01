@@ -2846,7 +2846,8 @@ fn conformance_dependency_selection_vectors() {
     assert_eq!(code, CheckedPackageRefusalCode::MissingImport);
     assert_eq!(pointer, "/lock/dependency_selections/0");
 
-    for mutation in vectors["entry_mutations"].as_array().unwrap() {
+    let entry_mutations = vectors["entry_mutations"].as_array().unwrap();
+    for mutation in entry_mutations {
         let id = mutation["id"].as_str().unwrap();
         let mut entries = selections.clone();
         entries[0] = mutation["entry"].clone();
@@ -2863,7 +2864,8 @@ fn conformance_dependency_selection_vectors() {
         );
     }
 
-    for vector in vectors["order_vectors"].as_array().unwrap() {
+    let order_vectors = vectors["order_vectors"].as_array().unwrap();
+    for vector in order_vectors {
         let id = vector["id"].as_str().unwrap();
         let outcome = read_fixture_wire(fixture, &with(&vector["dependency_selections"])).1;
         let expected = vector["outcome"].as_str().unwrap();
@@ -2901,6 +2903,11 @@ fn conformance_dependency_selection_vectors() {
         assert_eq!(loci, expected_loci, "{id}");
         assert_eq!(Some(&pointer.as_str()), expected_loci.first(), "{id}");
     }
+    println!(
+        "conformance: {} dependency-selection entry mutations and {} order vectors",
+        entry_mutations.len(),
+        order_vectors.len()
+    );
 }
 
 /// `Locus::Artifact` at a JSON pointer into the offered bytes.
