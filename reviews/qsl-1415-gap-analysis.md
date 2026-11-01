@@ -52,6 +52,7 @@ A focused manual traceability pass checked NFR-008-AC-1..5 against PR #2007's ch
 | --- | --- | --- |
 | FND-001 | fixed | - |
 | FND-002 | still-open | The scan exhaustion tests do not exercise a retained instance or retry the same input after a visit refusal; add that successor case to establish AC-5 for the mutable ledger path. |
+| FND-002 | fixed | - |
 
 ## Disposition evidence
 
@@ -71,3 +72,8 @@ No new gap-analysis finding required a disposition row in this round. FND-001's 
 ### FND-002 — retained-ledger retry after scan refusal lacks coverage
 
 The new capture scan test starts with a fresh obligation and checks only the typed visit exhaustion and usage. It does not seed a `Ledger`, trigger the existing-instance scan, or retry after the scan refusal. Consequently, it does not detect the receipt mutation found in code review FND-005.
+
+
+### Disposition pass 3 evidence
+
+`checked_v2_retained_capture_scan_refusal_retries_without_duplicate_receipt` exercises the retained ledger path, confirms visit exhaustion, retries the unchanged input, and asserts the expected receipt list and restored capture.

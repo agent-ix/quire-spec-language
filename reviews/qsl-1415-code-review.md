@@ -71,6 +71,8 @@ Reviewed PR #2007 at head `20ed8801881d3ca9f6477bda7e22bac5cb864281` against bas
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
 | FND-005 | still-open | The retained instance's `receipts` vector is mutated before the new scan calls `work.visit()?`; visit exhaustion therefore leaves ledger state changed before refusal, and a retry can append the same receipt again. |
+| FND-005 | fixed | - |
+| FND-006 | still-open | The retained `Instance` is deep-cloned before payload comparison and before any eviction-scan visit is charged. A refusal can therefore perform an unbounded copy of receipts, captures and payload before stopping. |
 
 ## Disposition evidence
 
@@ -91,3 +93,19 @@ The retained-instance path appends `trigger.receipt` to the ledger's saved insta
 
 - FND-003 fixed: formula, activation, and protocol preflight scans now charge visit/work accounting before inspecting eviction candidates; focused tests cover formula and capture scan exhaustion.
 - FND-004 fixed: checked-v2 computes prospective distinct valuation demand, charges it, and only then inserts the record; unit coverage verifies a refused charge leaves the set empty and duplicate demand charges once.
+
+
+### Disposition pass 3 evidence
+
+The retained-instance branch now clones the saved instance, completes and charges the eviction scan, and only then appends the receipt to the cloned assessment and the ledger. The new AC-5 regression test seeds a ledger, forces a visit refusal during that scan, retries the same delivery with a sufficient ceiling, and asserts the receipt appears once while the original capture value is preserved.
+
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The retained instance is deep-cloned before payload validation and before the bounded eviction scan, so a contradictory input or visit refusal can trigger an uncharged copy of accumulated receipts, captures and payload. | src/temporal/activation.rs:129 |
+
+### FND-006 — retained instance is copied before the refusal boundary
+
+The new `.cloned()` at the retained-instance lookup deep-copies `Instance` before checking the payload and before the loop charges each eviction candidate. `Instance` contains a `Vec<String>` of receipts, captures and an opaque payload; receipts can accumulate across repeated deliveries. A contradictory redelivery or a low visit limit therefore performs the deep copy even though evaluation immediately refuses. The previous implementation borrowed the instance through payload validation and the scan, cloning only after a successful scan. Borrow through comparison and scan, then clone or update after the work charges succeed.

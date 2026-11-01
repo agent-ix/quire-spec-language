@@ -126,57 +126,48 @@ pub(super) fn resolve(
             continue;
         }
 
-        if let Some(existing) = retained
-            .as_deref()
-            .and_then(|retained| retained.get(&trigger.identity))
-            .cloned()
-        {
-            if existing.payload != trigger.payload {
-                return Err(Refusal::Contradiction {
-                    identity: trigger.identity.clone(),
-                    subject: work.subject,
-                }
-                .into());
-            }
-            let mut evicted_capture = None;
-            for evicted in &trace.evicted {
-                work.visit()?;
-                if let super::trace::Eviction::Capture { instance, capture } = evicted {
-                    if instance == &trigger.identity {
-                        evicted_capture = Some(*capture);
-                        break;
-                    }
-                }
-            }
-            if let Some(capture) = evicted_capture {
-                work.subject.capture = Some(capture);
-                if let Some(saved) = retained
-                    .as_deref_mut()
-                    .and_then(|retained| retained.get_mut(&trigger.identity))
-                {
-                    saved.receipts.push(trigger.receipt.clone());
-                }
-                instances.push(Err(Failed {
-                    identity: trigger.identity.clone(),
-                    error: Incomplete {
-                        dimension: Dimension::Capture,
+        if let Some(retained_instances) = retained.as_deref_mut() {
+            if let Some(existing) = retained_instances.get(&trigger.identity) {
+                if existing.payload != trigger.payload {
+                    return Err(Refusal::Contradiction {
+                        identity: trigger.identity.clone(),
                         subject: work.subject,
                     }
-                    .into(),
-                }));
-                work.subject.capture = None;
+                    .into());
+                }
+                let mut evicted_capture = None;
+                for evicted in &trace.evicted {
+                    work.visit()?;
+                    if let super::trace::Eviction::Capture { instance, capture } = evicted {
+                        if instance == &trigger.identity {
+                            evicted_capture = Some(*capture);
+                            break;
+                        }
+                    }
+                }
+                if let Some(capture) = evicted_capture {
+                    work.subject.capture = Some(capture);
+                    if let Some(saved) = retained_instances.get_mut(&trigger.identity) {
+                        saved.receipts.push(trigger.receipt.clone());
+                    }
+                    instances.push(Err(Failed {
+                        identity: trigger.identity.clone(),
+                        error: Incomplete {
+                            dimension: Dimension::Capture,
+                            subject: work.subject,
+                        }
+                        .into(),
+                    }));
+                    work.subject.capture = None;
+                    continue;
+                }
+                let saved = retained_instances
+                    .get_mut(&trigger.identity)
+                    .expect("the retained instance validated before scanning");
+                saved.receipts.push(trigger.receipt.clone());
+                instances.push(Ok(saved.clone()));
                 continue;
             }
-            let mut restored = existing;
-            restored.receipts.push(trigger.receipt.clone());
-            if let Some(saved) = retained
-                .as_deref_mut()
-                .and_then(|retained| retained.get_mut(&trigger.identity))
-            {
-                saved.receipts.push(trigger.receipt.clone());
-            }
-            instances.push(Ok(restored));
-            continue;
         }
 
         if shape.guarded && !shape.origin {
