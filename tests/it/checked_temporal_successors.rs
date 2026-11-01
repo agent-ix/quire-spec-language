@@ -333,6 +333,76 @@ fn checked_mapping_accumulates_finite_window_and_direction_limits() {
     );
 }
 
+/// FR-045-AC-1/2/5: every checked support-table row is selected by profile,
+/// reachable operator direction and surrounding closure, with all past
+/// operator forms retaining the origin-complete-history target.
+#[trace("TC-125", "FR-045-AC-1", "FR-045-AC-2", "FR-045-AC-5")]
+#[test]
+fn checked_mapping_exercises_each_supported_row_and_past_operator() {
+    for profile in [temporal::EVENT_POSITION, temporal::FIXED_SAMPLE] {
+        for body in [
+            "once[0,1] true",
+            "historically[0,1] true",
+            "true since[0,1] true",
+            "true triggered[0,1] true",
+        ] {
+            let checked = checked(body, profile);
+            for closure in [Closure::Open, Closure::Closed] {
+                let classification =
+                    temporal::mapping_support_checked(checked.package(), 0, closure).unwrap();
+                assert_eq!(
+                    classification.support,
+                    temporal::Support::Supported {
+                        target: temporal::Target::OriginCompleteHistory,
+                        total_sample_valuation: false,
+                        premises: temporal::OUTSTANDING_PREMISES,
+                    },
+                    "{profile}: {body}"
+                );
+            }
+        }
+    }
+
+    for (profile, total_sample_valuation) in [
+        (temporal::EVENT_POSITION, false),
+        (temporal::FIXED_SAMPLE, true),
+    ] {
+        for (closure, target) in [
+            (Closure::Closed, temporal::Target::ClosedTrace),
+            (Closure::Open, temporal::Target::OnlinePrefix),
+        ] {
+            for body in ["true", "always[0,1] true"] {
+                let checked = checked(body, profile);
+                let classification =
+                    temporal::mapping_support_checked(checked.package(), 0, closure).unwrap();
+                assert_eq!(
+                    classification.support,
+                    temporal::Support::Supported {
+                        target,
+                        total_sample_valuation: total_sample_valuation
+                            && body.starts_with("always"),
+                        premises: temporal::OUTSTANDING_PREMISES,
+                    },
+                    "{profile}: {body}: {closure:?}"
+                );
+            }
+        }
+    }
+
+    let mixed = checked(
+        "once[0,1] true and eventually[0,1] true",
+        temporal::EVENT_POSITION,
+    );
+    assert_eq!(
+        temporal::mapping_support_checked(mixed.package(), 0, Closure::Closed)
+            .unwrap()
+            .support,
+        temporal::Support::Unsupported {
+            dimensions: vec![temporal::Unmatched::MixedDirection],
+        }
+    );
+}
+
 /// FR-043-AC-10: progress retained for one checked node cannot contradict an
 /// unrelated checked package at the same temporal-clause index.
 #[trace("TC-123", "FR-043-AC-10")]
