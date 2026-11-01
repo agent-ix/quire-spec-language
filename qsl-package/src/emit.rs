@@ -37,7 +37,7 @@ use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BindingValue, BodyTerm, CheckedGraph,
     CheckedRefinement, FrameDeletesScoped, FrameModifies, FrameScope, FrameTerm, GroupMember,
     GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeRef, NodeTag, OperationLaw,
-    Operator, Owner, SemanticNode, TemporalProfile, TupleMember, TupleTerm,
+    Operator, Owner, SemanticNode, TemporalProfile, TimeNominalOrigin, TupleMember, TupleTerm,
 };
 use qsl_semantics::value::nominal_payload::NominalPayload;
 use qsl_semantics::value::{
@@ -652,7 +652,13 @@ fn checked_body(
     node: &SemanticNode,
     tag: CheckedNodeTag,
 ) -> Result<CheckedTerm, EmitRefusal> {
-    if let Some(nominal) = node.nominal_payload() {
+    // A model-owned nominal node's values are read from the selected
+    // document: its body is the empty aggregate (FR-322 "Model-owned
+    // members"). Other nominal nodes are emitted from their payload.
+    if let (Some(nominal), false) = (
+        node.nominal_payload(),
+        matches!(node.owner(), Some(Owner::Model(_))),
+    ) {
         return nominal_term(ids, nominal);
     }
     let BodyTerm::Aggregate(aggregate) = node.body() else {
@@ -1206,24 +1212,30 @@ fn wire_owner(owner: &Owner) -> CheckedNodeOwner {
 /// node without a nominal payload (an enum member, a lowering-built unit or
 /// dimension aside) joins trivially; a nominal node joins only when its
 /// owner is the checked unit's `source`, the one lock entry it can always
-/// join (FR-322).
-fn owner_is_locked(node: &SemanticNode, source: &RawSourceRef) -> bool {
+/// join, or a model the unit selects (`models`, the identities of its
+/// `model_root` nodes) (FR-322).
+fn owner_is_locked(node: &SemanticNode, source: &RawSourceRef, models: &BTreeSet<&str>) -> bool {
     if node.nominal_payload().is_none() {
         return !matches!(node.semantic_form(), "dimension" | "unit");
     }
     // The declaring owner the payload retains is the truth; a payload built
     // without one (the timed path) joins by the node's own owner.
     match node.nominal_payload().and_then(NominalPayload::owner) {
+        Some(NodeOwner::Model(subject)) => models.contains(subject.identity.as_str()),
         Some(owner) => matches!(
             owner,
             NodeOwner::Source(subject)
                 if subject.authority == source.authority() && subject.identity == source.identity()
         ),
-        None => matches!(
-            node.owner(),
-            Some(Owner::Source(subject))
-                if subject.authority() == source.authority() && subject.identity() == source.identity()
-        ),
+        None => match node.owner() {
+            Some(Owner::Model(subject)) => models.contains(subject.identity()),
+            owner => matches!(
+                owner,
+                Some(Owner::Source(subject))
+                    if subject.authority() == source.authority()
+                        && subject.identity() == source.identity()
+            ),
+        },
     }
 }
 
@@ -1237,6 +1249,7 @@ fn omissions(
     source: &RawSourceRef,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
     external: &HashSet<NodeKey>,
+    models: &BTreeSet<&str>,
 ) -> Vec<(usize, OmittedNode)> {
     let mut omitted: Vec<Option<OmissionCause>> = vec![None; candidates.order.len()];
     for (position, candidate) in candidates.values().enumerate() {
@@ -1247,7 +1260,7 @@ fn omissions(
             })
         } else if !candidate.declaration_matches_occurrences() {
             Some(OmissionCause::DeclarationOccurrenceMismatch)
-        } else if !owner_is_locked(candidate.node, source) {
+        } else if !owner_is_locked(candidate.node, source, models) {
             Some(OmissionCause::UnlockedOwner)
         } else {
             // The least absent name: a node names few, and absent ones are
@@ -2649,7 +2662,18 @@ fn emit_package_inner(
     }
     let candidates = candidates_of(ids, graph, abstraction.as_ref())?;
     let model_roots: HashSet<NodeKey> = graph.model_roots().map(|(_, key)| key).collect();
-    let omitted = omissions(ids, &candidates, graph.source(), decodes, &model_roots);
+    let selected_models: BTreeSet<&str> = graph
+        .model_roots()
+        .map(|(selection, _)| selection.identity.as_str())
+        .collect();
+    let omitted = omissions(
+        ids,
+        &candidates,
+        graph.source(),
+        decodes,
+        &model_roots,
+        &selected_models,
+    );
     let dropped: HashSet<usize> = omitted.iter().map(|(position, _)| *position).collect();
     let omitted: Vec<OmittedNode> = omitted.into_iter().map(|(_, omission)| omission).collect();
     stale_protocol_reference(ids, &candidates, &dropped)?;
@@ -2934,32 +2958,22 @@ fn emit_package_inner(
                         .map(|segment| segment.as_str().into())
                         .collect(),
                 });
-                let (owner, source_owned) = match nominal.owner() {
-                    NodeOwner::Source(subject) => (
+                let (owner, source_owned) = match &nominal.origin {
+                    TimeNominalOrigin::Source { owner, .. } => (
                         CheckedNodeOwner::Source {
-                            authority: subject.authority.as_str().into(),
-                            identity: subject.identity.as_str().into(),
+                            authority: owner.authority.as_str().into(),
+                            identity: owner.identity.as_str().into(),
                         },
                         true,
                     ),
-                    NodeOwner::Model(subject) => (
+                    TimeNominalOrigin::Model(subject) => (
                         CheckedNodeOwner::Model {
                             identity: subject.identity.as_str().into(),
                             node: subject.node.as_str().into(),
                         },
                         false,
                     ),
-                    NodeOwner::Definition(_) => {
-                        return Err(EmitRefusal::TimedModelWriterInvariant(
-                            "a timed unit graph node must be owned by a source or model",
-                        ));
-                    }
                 };
-                if source_owned != declaration.is_some() {
-                    return Err(EmitRefusal::TimedModelWriterInvariant(
-                        "a timed nominal declaration must agree with its owner",
-                    ));
-                }
                 let body = if source_owned {
                     match (nominal.form.as_str(), nominal.nominal_payload()) {
                         ("dimension", Some(payload @ NominalPayload::Dimension(_)))
@@ -2999,21 +3013,29 @@ fn emit_package_inner(
                     },
                     ordinal: 0,
                 };
-                {
-                    // FR-322 follow-up: this is the timed source's region,
-                    // not yet the nominal declaration's own region. Replace
-                    // it when TimeNominalNode exposes that exact span.
-                    source_map.push(CheckedSourceMapEntry {
-                        node_id: id.clone(),
-                        role: occurrence.role.clone(),
-                        ordinal: occurrence.ordinal,
-                        regions: vec![CheckedSourceRegion {
-                            source: source_artifact(graph.source()),
-                            start: source_region.start(),
-                            end: source_region.end(),
-                        }],
-                    });
-                }
+                // FR-322: a source nominal's occurrence is located at its
+                // own declaration; a model-owned node has no source form,
+                // so its `generated` occurrence takes the timed source's
+                // region.
+                let region = match nominal.name_span() {
+                    Some(span) => SourceRegion::new(
+                        graph.source().clone(),
+                        span.start as u64,
+                        span.end as u64,
+                    )
+                    .map_err(encoding)?,
+                    None => source_region.clone(),
+                };
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: id.clone(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(graph.source()),
+                        start: region.start(),
+                        end: region.end(),
+                    }],
+                });
                 nodes.push(CheckedSemanticNodeV2 {
                     owner_model: None,
                     node_id: id.clone(),

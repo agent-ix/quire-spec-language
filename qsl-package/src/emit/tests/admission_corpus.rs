@@ -74,10 +74,9 @@ enum Fixture {
     GoldenCases,
     /// The golden conformance test's `fadd` over `Float32[nearest-even]`.
     Float32Add,
-    /// TC-160 step 8's `q(a: Length)` beside `t`, over a `metre` unit the
-    /// fixture unit's own source declares; `a * a`'s `metre^2` compound unit
-    /// names the `metre` unit node, which is typed by the `Length`
-    /// dimension node.
+    /// A `q(a: Length)` function beside `t`, over a `metre` unit the fixture
+    /// unit's own source declares; `a * a`'s `metre^2` compound unit names the
+    /// `metre` unit node, which is typed by the `Length` dimension node.
     QuantityAndT,
     /// [`FORMS_UNIT`].
     FormsUnit,

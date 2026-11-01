@@ -466,8 +466,8 @@ pub use temporal_clause::{
     Activation, BinaryTemporal, CaptureSite, CheckedFormula, CheckedInterval, CheckedOperator,
     CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
     FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
-    TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,
-    TimedPropertyForm, UnaryTemporal,
+    TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeNominalNode,
+    TimeNominalOrigin, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
 };
 pub use timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockGuard, ClockId, ClockOp,
@@ -1380,7 +1380,7 @@ impl PackageDeclarations {
             let admitted = crate::value::layer::HeaderLayer::closure(&selected).contains(&required);
             let units = time_units::TimeUnits::new(
                 &self.units,
-                self.nominal_spans.keys().cloned(),
+                &self.nominal_spans,
                 &self.models,
                 &self.dimension_equivalences,
                 &self.source,
@@ -1663,7 +1663,7 @@ impl PackageDeclarations {
         let timed_drafts = {
             let units = time_units::TimeUnits::new(
                 &self.units,
-                self.nominal_spans.keys().cloned(),
+                &self.nominal_spans,
                 &self.models,
                 &self.dimension_equivalences,
                 &self.source,
@@ -1713,7 +1713,7 @@ impl PackageDeclarations {
             if admitted {
                 let units = time_units::TimeUnits::new(
                     &self.units,
-                    self.nominal_spans.keys().cloned(),
+                    &self.nominal_spans,
                     &self.models,
                     &self.dimension_equivalences,
                     &self.source,
@@ -3562,7 +3562,7 @@ impl PackageDeclarations {
         // the package (`temporal_clause::not_emitted`).
         let time_units = time_units::TimeUnits::new(
             &self.units,
-            self.nominal_spans.keys().cloned(),
+            &self.nominal_spans,
             &models,
             &self.dimension_equivalences,
             &source,

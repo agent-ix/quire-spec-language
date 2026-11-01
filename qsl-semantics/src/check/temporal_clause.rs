@@ -88,7 +88,8 @@ pub(crate) mod condition;
 mod timed;
 
 pub use timed::{
-    ModelTimeBinding, ModelTimeSource, TimeNominalNode, TimeSourceKind, TimedPropertyForm,
+    ModelTimeBinding, ModelTimeSource, TimeNominalNode, TimeNominalOrigin, TimeSourceKind,
+    TimedPropertyForm,
 };
 
 /// The stage name this module's faults report.
@@ -1950,7 +1951,7 @@ pub fn check_clauses(
     );
     let units = super::time_units::TimeUnits::new(
         &package.units,
-        package.nominal_spans.keys().cloned(),
+        &package.nominal_spans,
         &package.models,
         &package.dimension_equivalences,
         &package.source,

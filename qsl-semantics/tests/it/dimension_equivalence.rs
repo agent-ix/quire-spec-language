@@ -555,3 +555,60 @@ fn an_equivalence_derives_one_class_with_the_least_key_as_root() {
     assert_eq!(classes.class(least.clone()), (least.clone(), one));
     assert_eq!(classes.class(greater).0, least);
 }
+
+/// QSpec FR-322 "Nominal nodes": the dimension node an admitted domain
+/// package declares and a unit's graph names carries that package's
+/// `ModelOwner` (`{identity, node}`) and no `declaration`, while the unit's
+/// own dimension keeps its `SourceOwner` and `declaration`.
+#[trace("QSpec-FR-322-AC-51", "QSpec-FR-322-AC-81")]
+#[test]
+fn a_package_dimension_node_is_model_owned_with_no_declaration() {
+    use qsl_semantics::check::Owner;
+    use quire_semantic_value::checking::CheckingLimits;
+
+    let (_, assembled) = assemble_selected_as(
+        ("agent-ix", "example"),
+        &packages(),
+        "dimension Dur = R::Time;\nunit dsec : Dur = rational(1, 1);\n\
+         function f using v(d: Quantity<dsec>): Boolean pure { true }",
+    );
+    let checked = assembled
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let graph = checked.semantic_graph();
+    let dimensions: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "dimension")
+        .collect();
+    let foreign: Vec<_> = dimensions
+        .iter()
+        .filter(|node| node.declaration().is_none())
+        .collect();
+    let [time] = foreign.as_slice() else {
+        panic!("one package dimension node: {dimensions:?}");
+    };
+    assert_eq!(time.declaration(), None);
+    let Some(Owner::Model(owner)) = time.owner() else {
+        panic!("a ModelOwner: {:?}", time.owner());
+    };
+    assert_eq!(owner.identity(), "acme/rpc");
+    assert_eq!(owner.node(), "ix://acme/rpc/dimension/Time");
+    // QSpec-FR-322-AC-81: the path of a model-owned dimension.
+    assert_eq!(
+        time.key().path(),
+        vec![
+            quire_exact::PathSegment::Text("scalar_type".to_owned()),
+            quire_exact::PathSegment::Text("dimension".to_owned()),
+            quire_exact::PathSegment::Text("ix://acme/rpc/dimension/Time".to_owned()),
+        ]
+    );
+    // Every other dimension node is the unit's own: declared, source-owned.
+    assert!(dimensions.len() > 1, "the unit's own dimensions");
+    for own in dimensions
+        .iter()
+        .filter(|node| node.declaration().is_some())
+    {
+        assert!(matches!(own.owner(), Some(Owner::Source(_))));
+    }
+}

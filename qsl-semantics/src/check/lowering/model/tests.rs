@@ -996,11 +996,7 @@ mod quantities {
     use quire_semantic_value::quantity::UnitTable;
 
     fn owner() -> NodeOwner {
-        NodeOwner::Definition(OwnerSubject::new(
-            "agent-ix",
-            "example-model",
-            "example-model",
-        ))
+        NodeOwner::Source(OwnerSubject::new("agent-ix", "example-model", "fixture"))
     }
 
     fn dimension(name: &str) -> DimensionPreimage {

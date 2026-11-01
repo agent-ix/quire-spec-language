@@ -1787,6 +1787,23 @@ impl<'a> Lowering<'a> {
         }
     }
 
+    /// Record one occurrence of an admitted `key` at exactly `ordinal`
+    /// ([`OccurrenceMap::record_at`]); `key` holding one there already is an
+    /// internal fault.
+    fn record_at(
+        &mut self,
+        key: NodeKey,
+        role: OccurrenceRole,
+        ordinal: u64,
+        location: Location,
+    ) -> Result<(), CheckRefusal> {
+        let at = location.clone();
+        self.occurrences
+            .record_at(key.clone(), role, ordinal, location)
+            .map(|_| ())
+            .map_err(|_| fault(&at, KeyFault::OccurrenceOrdinalTaken(key)))
+    }
+
     /// The `Origin` of one `generated` occurrence of `frame`, the operation
     /// `(declaring, name)`'s frame node (FR-104 "Requirements", FR-104-AC-5;
     /// FR-105's `frame` row): the first call for a given operation mints it,

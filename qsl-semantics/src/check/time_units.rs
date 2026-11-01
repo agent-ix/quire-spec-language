@@ -21,10 +21,10 @@ use quire_semantic_value::unit::{NominalUnitForm, UnitGraph};
 
 use crate::check::assemble::{DimensionEquivalence, EquivalenceClasses};
 use crate::check::lowering::AdmittedModel;
-use crate::check::temporal_clause::TimeNominalNode;
+use crate::check::temporal_clause::{TimeNominalNode, TimeNominalOrigin};
 use crate::model::domain_package::PackageUnitRecord;
 use crate::value::nominal_payload::{DimensionPayload, NominalPayload, UnitPayload};
-use crate::value::semantic_node::{ModelSubject, NodeOwner, OwnerSubject};
+use crate::value::semantic_node::{ModelSubject, OwnerSubject};
 
 use super::refusal::TimeUnitCause;
 
@@ -106,28 +106,26 @@ impl std::fmt::Debug for TimeUnits {
 
 impl TimeUnits {
     /// The time units of `graph`, whose dimension and unit node keys are
-    /// `keys` (the assembler's `nominal_spans` keys). The one place a
+    /// those of `spans` (the assembler's `nominal_spans`, each node's own
+    /// declaration span). The one place a
     /// declared dimension's spelling is read for FR-230's `Time` base.
     #[ix_trace_rs::string_edge]
     pub fn new(
         graph: &UnitGraph,
-        keys: impl IntoIterator<Item = NodeKey>,
+        spans: &BTreeMap<NodeKey, qsl_foundation::Span>,
         models: &[AdmittedModel],
         equivalences: &[DimensionEquivalence],
         source: &qsl_foundation::source::provenance::RawSourceRef,
         package_name: &str,
     ) -> Self {
-        let source_owner = NodeOwner::Source(OwnerSubject::new(
-            source.authority(),
-            source.identity(),
-            package_name,
-        ));
+        let source_owner = OwnerSubject::new(source.authority(), source.identity(), package_name);
         let table = UnitTable::declared(graph);
         let mut time = None;
         let mut time_dimensions = BTreeMap::new();
         let mut units = BTreeMap::new();
         let mut nominal_nodes = BTreeMap::new();
-        for key in keys {
+        for (key, span) in spans {
+            let key = key.clone();
             let Some(node) = table.nominal_node(&key) else {
                 continue;
             };
@@ -150,8 +148,11 @@ impl TimeUnits {
                         NominalUnitForm::Unit { .. } => "unit",
                     }
                     .to_owned(),
-                    qualified_declaration: Some(node.declaration.qualified_declaration.clone()),
-                    owner: source_owner.clone(),
+                    origin: TimeNominalOrigin::Source {
+                        owner: source_owner.clone(),
+                        qualified_declaration: node.declaration.qualified_declaration.clone(),
+                        name_span: *span,
+                    },
                     nominal: Some(match &node.form {
                         NominalUnitForm::Dimension { terms } => {
                             NominalPayload::Dimension(DimensionPayload::new(terms.clone()))
@@ -210,8 +211,7 @@ impl TimeUnits {
                     TimeNominalNode {
                         key: time_key,
                         form: "dimension".to_owned(),
-                        qualified_declaration: None,
-                        owner: NodeOwner::Model(ModelSubject {
+                        origin: TimeNominalOrigin::Model(ModelSubject {
                             identity: package.identity.clone(),
                             node: dimension
                                 .map(|dimension| dimension.key.node.clone())
@@ -474,8 +474,7 @@ fn package_unit_nominal_nodes(
         nodes.push(TimeNominalNode {
             key,
             form: "unit".to_owned(),
-            qualified_declaration: None,
-            owner: NodeOwner::Model(ModelSubject {
+            origin: TimeNominalOrigin::Model(ModelSubject {
                 identity: identity.to_owned(),
                 node: unit.key.node.clone(),
             }),
