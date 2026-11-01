@@ -13,22 +13,20 @@
 //! grow with nesting. S2 takes no limit of its own: it builds at most one
 //! node per CST node, so S1's node limit bounds it (FR-257).
 
-use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
-use qsl_foundation::Span;
-use quire_exact::{CollectionKind, Integer};
-use quire_semantic_value::absence::AbsenceMode;
-
 use super::dispatch::{Construct, FormsCause, FormsRefusal};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
-    Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType, CaseForm,
-    DeclarationForm, DeclarationKind, DeclaredName, DimensionEquivalenceForm, DimensionForm,
-    DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm,
-    ExactValueKind, ExprId, ExprNode, Expression, ExpressionBuilder, FieldInitializer,
-    FunctionDeclaration, NameForm, PopulationForm, QuantityForm, RatioNumberForm, RatioNumberKind,
-    RatioTermForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator, TupleForm, TypeForm,
-    TypeFormHead, UnitForm, UsingAlias,
+    AbsenceMode, Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType,
+    CaseForm, DeclarationForm, DeclarationKind, DeclaredName, DimensionEquivalenceForm,
+    DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind,
+    ExactValueForm, ExactValueKind, ExprId, ExprNode, Expression, ExpressionBuilder,
+    FieldInitializer, FunctionDeclaration, NameForm, PopulationForm, QuantityForm, RatioNumberForm,
+    RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator,
+    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
+use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
+use qsl_foundation::Span;
+use quire_exact::{CollectionKind, Integer};
 
 /// One significant child of a CST node: a token or a node.
 #[derive(Clone, Copy)]
