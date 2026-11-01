@@ -43,8 +43,8 @@ pub use mapping::{
     OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
-use progress::CheckedBinding;
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
+use progress::{CheckedAuthenticatedBinding, CheckedBinding};
 pub use result::{
     Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
     Incomplete, Obligation, Premises, Refusal, Report, Subject, Support as DecisionSupport, Truth,
@@ -161,7 +161,14 @@ pub fn evaluate_checked_with_progress(
         .graph()
         .temporal_clauses()
         .get(declaration)
-        .map(|node| CheckedBinding::of(declaration, node.identity(), trace))
+        .map(|node| {
+            CheckedBinding::of(
+                declaration,
+                node.identity(),
+                package.graph().source().clone(),
+                trace,
+            )
+        })
         .ok_or(Refusal::Reference {
             subject: declaration_subject(declaration),
         });
@@ -208,17 +215,37 @@ pub fn evaluate_checked_with_progress_v2(
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
         .and_then(|(binding, _)| {
             authenticated = Some(binding.clone());
+            let checked_binding = checked
+                .graph()
+                .temporal_clauses()
+                .get(declaration)
+                .map(|node| {
+                    CheckedBinding::of(
+                        declaration,
+                        node.identity(),
+                        checked.graph().source().clone(),
+                        trace,
+                    )
+                })
+                .ok_or(Refusal::Reference {
+                    subject: declaration_subject(declaration),
+                })?;
+            let ledger_binding = CheckedAuthenticatedBinding::of(checked_binding, binding);
             ledger
-                .record_authenticated(binding, Progress::of(trace))
+                .record_checked_authenticated(ledger_binding.clone(), Progress::of(trace))
                 .map_err(Error::from)
                 .and_then(|retained| {
+                    let instances = ledger
+                        .checked_authenticated_instances
+                        .entry(ledger_binding)
+                        .or_default();
                     run_checked(
                         checked,
                         declaration,
                         trace,
                         retained.watermark,
                         &mut work,
-                        None,
+                        Some(instances),
                     )
                 })
         });
@@ -252,8 +279,7 @@ pub fn mapping_support_checked_v2(
             ..Subject::default()
         },
     )?;
-    let classification = mapping_support_checked(checked, declaration, surrounding_execution)
-        .map_err(|error| error)?;
+    let classification = mapping_support_checked(checked, declaration, surrounding_execution)?;
     Ok(CheckedClassificationV2 {
         support: classification.support,
         retained: classification.retained,
