@@ -959,9 +959,10 @@ fn lookups_of_what_is_no_hyper_clause_are_unresolved() {
             quire_exact::Origin::new(quire_exact::Role::new(role), ordinal),
         )
     };
-    let slot =
-        qsl_foundation::node_wire::node_key_from_json(&slots(&built.wire)["slot_sc_sa"]["node_id"])
-            .expect("a structural slot key");
+    let slot = qsl_semantics::check::wire_id::WireGraph::of_package_value(&built.wire)
+        .unwrap()
+        .key_of_value(&slots(&built.wire)["slot_sc_sa"]["node_id"])
+        .expect("a structural slot key");
     for key in [
         claim(
             NodeKey::new("pkg", vec![PathSegment::Text("missing".into())], 0).unwrap(),

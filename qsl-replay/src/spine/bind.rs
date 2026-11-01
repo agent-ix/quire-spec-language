@@ -14,6 +14,7 @@
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_occurrence, CheckedPackage};
+use qsl_semantics::check::wire_id::WireGraph;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageEvidence, CheckedPackageV2, CheckedParameterDeclarationError,
@@ -273,8 +274,11 @@ pub fn bind_scalar_operands(
     environment: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<BindOutcome, Box<RunRefusal>> {
+    let graph = WireGraph::new(admitted.graph().nodes.iter().map(|node| &node.node_id))
+        .map_err(|_| fault("admitted-node-ids-rebuild-structural-keys"))?;
     let package = Package {
         admitted,
+        graph: &graph,
         models,
         checked: checked.package(),
     };
@@ -289,6 +293,8 @@ pub fn bind_scalar_operands(
 #[derive(Clone, Copy)]
 struct Package<'a> {
     admitted: &'a CheckedPackageV2,
+    /// `admitted`'s graph, against which its ids' index segments resolve.
+    graph: &'a WireGraph,
     models: &'a AdmittedModels,
     checked: &'a CheckedPackage,
 }
@@ -319,7 +325,7 @@ fn bind(
         types,
         cancel,
     )?;
-    let (application, origin) = locate(checked, call, occurrence)?;
+    let (application, origin) = locate(checked, package.graph, call, occurrence)?;
     let operands = package
         .admitted
         .scalar_application_operands(&application, &origin)
@@ -378,6 +384,7 @@ fn supplied_positions(parameters: &[(String, ValueType)], call: &Call) -> Vec<us
 #[ix_trace_rs::string_edge]
 fn locate(
     checked: &CheckedPackage,
+    wire: &WireGraph,
     call: &Call,
     occurrence: &ScalarOccurrence,
 ) -> Result<(CheckedNodeId, quire_contract_model::CheckedOccurrence), BindRefusal> {
@@ -423,7 +430,8 @@ fn locate(
         })
         .ok_or_else(absent)?;
     let checked_origin = checked_occurrence(origin).ok_or_else(absent)?;
-    Ok((wire_node_id(&node), checked_origin))
+    let application = wire.wire_id(&node).map_err(|_| not_a_node())?;
+    Ok((application, checked_origin))
 }
 
 /// A bound operand before the `i64` check.
@@ -437,6 +445,8 @@ struct Resolved {
 /// Decides each operand's source and value (FR-367 Behavior 4 and 5).
 struct Resolver<'a> {
     ir: &'a CheckedPackageV2,
+    /// `ir`'s graph.
+    graph: &'a WireGraph,
     /// The called function's parameters in declared order.
     parameters: &'a [(String, ValueType)],
     /// Their node ids, in the same order.
@@ -465,6 +475,7 @@ impl<'a> Resolver<'a> {
             .collect();
         Ok(Self {
             ir: package.admitted,
+            graph: package.graph,
             parameters,
             parameter_nodes,
             arguments,
@@ -516,10 +527,10 @@ impl<'a> Resolver<'a> {
             }
             CheckedScalarOperandChild::GraphChild(id) => id,
         };
-        // DEPENDENCY: the migrated `CheckedNodeId { package, path, ordinal }`
-        // reads as a structural key through `NodeKey::try_from`.
-        let node = structural_node_key(id)
-            .ok_or_else(|| Halt::Run(fault("operand-child-id-is-a-wire-node-id")))?;
+        let node = self
+            .graph
+            .key(id)
+            .map_err(|_| Halt::Run(fault("operand-child-id-is-a-wire-node-id")))?;
         let declaration = self
             .ir
             .parameter_declaration(id)
@@ -570,94 +581,3 @@ impl<'a> Resolver<'a> {
 
 #[cfg(test)]
 mod tests;
-
-/// The V2 wire identity of a structural key. Nested path nodes are visited
-/// with an explicit stack so their depth cannot consume the call stack.
-pub(crate) fn wire_node_id(key: &NodeKey) -> CheckedNodeId {
-    use quire_contract_model::CheckedNodePathSegment;
-    use quire_exact::{NodeKeyView, NodePathIter, PathSegmentView};
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: NodePathIter<'a>,
-        path: Vec<CheckedNodePathSegment>,
-    }
-    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
-        Frame {
-            package: view.package(),
-            ordinal: view.ordinal(),
-            segments: view.path(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(key.view());
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(PathSegmentView::Text(text)) => {
-                current.path.push(CheckedNodePathSegment::Name(text.into()));
-            }
-            Some(PathSegmentView::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let id = CheckedNodeId {
-                    package: current.package.into(),
-                    path: std::mem::take(&mut current.path),
-                    ordinal: current.ordinal,
-                };
-                let Some(mut parent) = parents.pop() else {
-                    return id;
-                };
-                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
-                current = parent;
-            }
-        }
-    }
-}
-
-/// The structural key a V2 wire identity names, or `None` when the wire id
-/// is not a valid key. The explicit parent stack handles any depth.
-pub(crate) fn structural_node_key(id: &CheckedNodeId) -> Option<NodeKey> {
-    use quire_contract_model::CheckedNodePathSegment;
-    use quire_exact::PathSegment;
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: std::slice::Iter<'a, CheckedNodePathSegment>,
-        path: Vec<PathSegment>,
-    }
-    fn frame(id: &CheckedNodeId) -> Frame<'_> {
-        Frame {
-            package: &id.package,
-            ordinal: id.ordinal,
-            segments: id.path.iter(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(id);
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(CheckedNodePathSegment::Name(text)) => {
-                current.path.push(PathSegment::Text(text.to_string()));
-            }
-            Some(CheckedNodePathSegment::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let key = NodeKey::new(
-                    current.package,
-                    std::mem::take(&mut current.path),
-                    current.ordinal,
-                )
-                .ok()?;
-                let Some(mut parent) = parents.pop() else {
-                    return Some(key);
-                };
-                parent.path.push(PathSegment::Node(key));
-                current = parent;
-            }
-        }
-    }
-}

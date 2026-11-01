@@ -4057,14 +4057,22 @@ fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_j
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic_graph.nodes is an array");
-    let id = wire_node_id(&key);
-    nodes
-        .iter()
-        .find(|node| node["node_id"] == id)
-        .unwrap_or_else(|| panic!("node {key:?} is in the emitted wire"))["dependencies"]
+    let wire_graph = crate::WireGraph::of_package_value(&wire).expect("the emitted graph");
+    let at = wire_graph
+        .index_of(&key)
+        .unwrap_or_else(|| panic!("node {key:?} is in the emitted wire"));
+    nodes[at as usize]["dependencies"]
         .as_array()
         .expect("dependencies is an array")
-        .clone()
+        .iter()
+        .map(|dependency| {
+            wire_node_id(
+                wire_graph
+                    .key_of_value(dependency)
+                    .expect("a dependency resolves in the emitted graph"),
+            )
+        })
+        .collect()
 }
 
 /// `clause`'s parameter aggregate (its first `quire.op.state.clause`

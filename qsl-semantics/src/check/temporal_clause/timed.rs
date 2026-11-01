@@ -25,6 +25,7 @@
 use qsl_forms::{QuantityForm, TimedIntervalForm, TimedUpper};
 use qsl_foundation::bound::TimedInterval;
 use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, Rational, ValueType};
 
@@ -56,7 +57,7 @@ pub enum TimeSourceKind {
 
 /// The checked time source of one timed model (FR-230's `TimedModel`, as
 /// far as a `model-time` binding reads it).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ModelTimeSource {
     /// The model: the alias of the `model` declaration that selects its
     /// domain package, or the package identity when no alias names it.
@@ -87,8 +88,42 @@ pub struct ModelTimeSource {
     pub nominal_nodes: Vec<TimeNominalNode>,
 }
 
+impl std::fmt::Debug for ModelTimeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            model,
+            span,
+            model_node,
+            tick_operation_key,
+            tick_operation_span,
+            tick_operation_anchor,
+            source,
+            unit,
+            unit_node,
+            time_dimension,
+            nominal_nodes,
+        } = self;
+        f.debug_struct("ModelTimeSource")
+            .field("model", &model)
+            .field("span", &span)
+            .field("model_node", &NodeKeyDebug(model_node))
+            .field("tick_operation_key", &tick_operation_key)
+            .field("tick_operation_span", &tick_operation_span)
+            .field(
+                "tick_operation_anchor",
+                &tick_operation_anchor.as_ref().map(NodeKeyDebug),
+            )
+            .field("source", &source)
+            .field("unit", &unit)
+            .field("unit_node", &NodeKeyDebug(unit_node))
+            .field("time_dimension", &NodeKeyDebug(time_dimension))
+            .field("nominal_nodes", &nominal_nodes)
+            .finish()
+    }
+}
+
 /// A nominal unit-graph node that S4 must include when a timed model names it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TimeNominalNode {
     /// The exact nominal node identity.
     pub key: quire_exact::NodeKey,
@@ -112,6 +147,27 @@ pub struct TimeNominalNode {
     /// The terms, target and exact conversion of a dimension or unit node,
     /// for source-owned and model-selected nodes alike.
     pub nominal: Option<crate::value::nominal_payload::NominalPayload>,
+}
+
+impl std::fmt::Debug for TimeNominalNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            key,
+            form,
+            qualified_declaration,
+            owner,
+            dependencies,
+            nominal,
+        } = self;
+        f.debug_struct("TimeNominalNode")
+            .field("key", &NodeKeyDebug(key))
+            .field("form", &form)
+            .field("qualified_declaration", &qualified_declaration)
+            .field("owner", &owner)
+            .field("dependencies", &NodeList(dependencies.iter()))
+            .field("nominal", &nominal)
+            .finish()
+    }
 }
 
 impl std::hash::Hash for TimeNominalNode {

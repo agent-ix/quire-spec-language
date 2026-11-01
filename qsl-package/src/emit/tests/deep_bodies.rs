@@ -215,7 +215,10 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
             .into_value();
             let clone = read.clone();
             assert!(read == clone, "the read equals its clone");
-            assert!(!format!("{read:?}").is_empty());
+            let mut debug = DebugByteCount::default();
+            write!(&mut debug, "{read:?}")
+                .unwrap_or_else(|error| panic!("debug formatting completes: {error}"));
+            assert!(debug.bytes > 0, "the read's debug output is nonempty");
             drop(clone);
             drop(read);
         })
@@ -327,4 +330,89 @@ fn the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults() {
         .expect("the thread spawns")
         .join()
         .expect("the chain completes on a 512 KiB stack");
+}
+
+/// A unit whose `f(x)` sums `terms` copies of `x`.
+fn sum_source(terms: usize) -> String {
+    let mut source =
+        format!("{HEADER}function f using v(a: Boolean, x: Integer): Integer pure {{ ");
+    for _ in 1..terms {
+        source.push_str("x + ");
+    }
+    source.push_str("x }\n");
+    source
+}
+
+/// The JSON nesting depth of `value`: 0 for a scalar, one more than its
+/// deepest member for an array or object.
+fn json_depth(value: &Value) -> usize {
+    let mut deepest = 0;
+    let mut pending = vec![(value, 1_usize)];
+    while let Some((value, depth)) = pending.pop() {
+        let members: Vec<&Value> = match value {
+            Value::Array(items) => items.iter().collect(),
+            Value::Object(fields) => fields.values().collect(),
+            _ => continue,
+        };
+        deepest = deepest.max(depth);
+        pending.extend(members.into_iter().map(|member| (member, depth + 1)));
+    }
+    deepest
+}
+
+/// The largest written `node_id` in bytes, the largest `node_id` nesting
+/// depth, and the node count of the emitted sum of `terms` terms. The
+/// emitted text parses under serde_json's nesting limit of 128.
+fn emitted_sum_node_ids(terms: usize) -> (usize, usize, usize) {
+    let graph = deep_declarations(&sum_source(terms))
+        .check(
+            CheckingLimits::new(u64::MAX)
+                .with_input_bytes(u64::MAX)
+                .with_work_budget(u64::MAX),
+        )
+        .unwrap_or_else(|refusals| panic!("{terms}: checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph))
+        .unwrap_or_else(|refusal| panic!("{terms}: emits: {refusal:?}"));
+    let written = wire(&emission);
+    let written = nodes(&written);
+    assert!(written.len() >= terms, "{terms}: one node per term");
+    let ids = written.iter().map(|node| &node["node_id"]);
+    let bytes = ids
+        .clone()
+        .map(|id| serde_json::to_vec(id).expect("a node id serializes").len())
+        .max()
+        .expect("a node");
+    let depth = ids.map(json_depth).max().expect("a node");
+    (bytes, depth, written.len())
+}
+
+/// FR-322-AC-281 on emitted output: a sum of 1,000 and of 4,000 terms is
+/// written with each `node_id` in at most 200 bytes and at the same maximum
+/// `node_id` nesting depth, each application naming its operands by index
+/// segment rather than nesting them.
+#[trace("QSpec-TC-233", "QSpec-FR-322-AC-281")]
+#[test]
+fn emitted_node_ids_stay_bounded_and_flat_as_a_sum_deepens() {
+    std::thread::Builder::new()
+        .stack_size(STACK)
+        .spawn(|| {
+            let (short_bytes, short_depth, _) = emitted_sum_node_ids(1_000);
+            let (long_bytes, long_depth, long_nodes) = emitted_sum_node_ids(4_000);
+            assert!(long_nodes >= 4_000);
+            assert!(
+                short_bytes <= 200,
+                "1,000 terms: {short_bytes} bytes per node id"
+            );
+            assert!(
+                long_bytes <= 200,
+                "4,000 terms: {long_bytes} bytes per node id"
+            );
+            assert_eq!(
+                short_depth, long_depth,
+                "node id depth is independent of length"
+            );
+        })
+        .expect("the thread spawns")
+        .join()
+        .expect("the emission completes on a 512 KiB stack");
 }

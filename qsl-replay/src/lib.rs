@@ -135,6 +135,8 @@ pub use certificate::zone_certificate::{
     ZoneCertificateVerdict,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
+/// FR-322 "Operand index segments": a package's graph and its wire ids.
+pub use qsl_semantics::check::wire_id::{WireGraph, WireIdError};
 // FR-491: the state-clause evaluation entry and its typed result, at the root
 // so CG names them without naming `spine` (ADR-011 FB-05, T-12 rule (a)).
 pub use clause_evaluation::{

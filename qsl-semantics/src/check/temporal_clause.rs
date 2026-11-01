@@ -48,6 +48,7 @@
 //! package's signatures are known, and the clause is emitted as FR-337's
 //! v2 temporal clause node.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
@@ -449,7 +450,7 @@ impl TemporalClaim {
 
 /// A temporal clause checked by [`TemporalTraceFamily::check`] (FR-326
 /// "Outputs").
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedTemporalClause {
     name: String,
     span: Span,
@@ -490,6 +491,59 @@ pub struct CheckedTemporalClause {
     /// Whether the clause's subject is a model that is timed (dense or tick)
     /// (FR-243).
     timed: bool,
+}
+
+impl std::fmt::Debug for CheckedTemporalClause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            span,
+            profile,
+            profile_ref,
+            over,
+            clock,
+            clock_binding,
+            operators,
+            horizon,
+            claim,
+            formula,
+            activation,
+            trigger,
+            captures,
+            fairness,
+            fairness_sources,
+            protocol_fairness,
+            has_aggregate,
+            property_form,
+            time_binding,
+            timed_form,
+            timed,
+        } = self;
+        f.debug_struct("CheckedTemporalClause")
+            .field("name", &name)
+            .field("span", &span)
+            .field("profile", &profile)
+            .field("profile_ref", &profile_ref)
+            .field("over", &over)
+            .field("clock", &clock)
+            .field("clock_binding", &NodeKeyDebug(clock_binding))
+            .field("operators", &operators)
+            .field("horizon", &horizon)
+            .field("claim", &claim)
+            .field("formula", &formula)
+            .field("activation", &activation)
+            .field("trigger", &trigger)
+            .field("captures", &captures)
+            .field("fairness", &fairness)
+            .field("fairness_sources", &fairness_sources)
+            .field("protocol_fairness", &protocol_fairness)
+            .field("has_aggregate", &has_aggregate)
+            .field("property_form", &property_form)
+            .field("time_binding", &time_binding)
+            .field("timed_form", &timed_form)
+            .field("timed", &timed)
+            .finish()
+    }
 }
 
 /// What a fairness constraint over a protocol names beside an operation

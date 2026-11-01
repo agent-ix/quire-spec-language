@@ -21,6 +21,7 @@ use quire_contract_model::{
 };
 
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::check::wire_id::WireGraph;
 use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::InternalFault;
 
@@ -75,16 +76,17 @@ fn is_clause(node: &CheckedSemanticNodeV2) -> bool {
 /// application's first argument, which IR's reader admitted as a reference
 /// to a `value`/`parameter` node (QSpec FR-370 reader order). `None` when
 /// that argument names no target.
-fn over_of(node: &CheckedSemanticNodeV2) -> Result<Option<NodeKey>, InternalFault> {
+fn over_of(
+    graph: &WireGraph,
+    node: &CheckedSemanticNodeV2,
+) -> Result<Option<NodeKey>, InternalFault> {
     let CheckedTerm::Application { arguments, .. } = &node.body else {
         return Ok(None);
     };
     let Some(CheckedTerm::Reference { target }) = arguments.first() else {
         return Ok(None);
     };
-    crate::emit::admitted_key(target)
-        .map(Some)
-        .map_err(|_| NODE_ID_FAULT)
+    graph.key(target).map(Some).map_err(|_| NODE_ID_FAULT)
 }
 
 /// The clause root of `node`'s `claim` occurrence `occurrence`.
@@ -109,14 +111,15 @@ pub fn clause_roots(package: &CheckedPackageV2) -> Result<Vec<ClauseRoot>, Inter
     // A hyper clause's body wrapper is a `temporal_clause` node that is no
     // clause root of its own (FR-488 "Outputs").
     let wrappers = super::hyper_root::wrappers(package);
-    for node in package
+    let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
+    for (node, id) in package
         .graph()
         .nodes
         .iter()
-        .filter(|node| is_clause(node) && !wrappers.contains(&node.node_id))
+        .zip(graph.keys())
+        .filter(|(node, _)| is_clause(node) && !wrappers.contains(&node.node_id))
     {
-        let id = crate::emit::admitted_key(&node.node_id).map_err(|_| NODE_ID_FAULT)?;
-        let over = over_of(node)?;
+        let over = over_of(&graph, node)?;
         roots.extend(
             node.occurrences
                 .iter()
@@ -136,12 +139,10 @@ pub fn resolve_clause_root(
     let unresolved = || ClauseRootUnresolved {
         root: triple.clone(),
     };
-    let id = crate::emit::node_id(triple.node());
-    let node = package
-        .graph()
-        .nodes
-        .iter()
-        .find(|node| node.node_id == id)
+    let graph = super::wire_graph(package).map_err(|_| unresolved())?;
+    let node = graph
+        .index_of(triple.node())
+        .and_then(|at| package.graph().nodes.get(usize::try_from(at).ok()?))
         .filter(|node| is_clause(node))
         .ok_or_else(unresolved)?;
     if super::hyper_root::wrappers(package).contains(&node.node_id) {
@@ -162,6 +163,6 @@ pub fn resolve_clause_root(
     Ok(root(
         triple.node().clone(),
         occurrence,
-        over_of(node).map_err(|_| unresolved())?,
+        over_of(&graph, node).map_err(|_| unresolved())?,
     ))
 }

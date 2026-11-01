@@ -438,8 +438,10 @@ fn a_source_enum_and_member_carry_structural_ids_path_and_source_owner() {
         .filter(|node| node["semantic_form"] == "enum_value")
         .collect();
     assert_eq!(members.len(), 2);
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire).unwrap();
     for node in std::iter::once(declaration).chain(members) {
-        qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+        graph
+            .key_of_value(&node["node_id"])
             .expect("a structural node id");
         assert!(node.get("nominal_identity_preimage").is_none());
     }

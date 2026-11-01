@@ -828,7 +828,11 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
                 .zip(read.admitted.node_kinds())
                 .any(|(node, kind)| {
                     *kind == family
-                        && operation.is_none_or(|identity| outcome.applies(&node.node_id, identity))
+                        && operation.is_none_or(|identity| {
+                            read.admitted
+                                .structural_key(&node.node_id)
+                                .is_some_and(|key| outcome.applies(key, identity))
+                        })
                 })
         })
     });
@@ -1257,10 +1261,10 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
         by_id(&catalog["concrete"][2]["node"])["semantic_form"],
         "channel"
     );
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire)
+        .expect("the emitted graph");
     let mut sorted = dependencies.clone();
-    sorted.sort_by_key(|dependency| {
-        qsl_foundation::node_wire::node_key_from_json(dependency).expect("a node id")
-    });
+    sorted.sort_by_key(|dependency| graph.key_of_value(dependency).expect("a node id"));
     assert_eq!(&sorted, dependencies, "dependencies ascend");
 
     // With the clause over the abstract model instead, the concrete side
@@ -2623,6 +2627,7 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     );
 
     let mut absent = wire.clone();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire).unwrap();
     let root = absent["semantic_graph"]["nodes"][position]["body"]["abstract"].clone();
     let foreign = |package: &str| {
         qsl_foundation::node_wire::node_key_to_json(
@@ -2646,9 +2651,7 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")
-        .sort_by_key(|dependency| {
-            qsl_foundation::node_wire::node_key_from_json(dependency).expect("a node id")
-        });
+        .sort_by_key(|dependency| graph.key_of_value(dependency).expect("a node id"));
     let verdict = refinement_verdict(&emitted, &absent, position);
     assert!(
         verdict.starts_with("MissingDeclaration at ")

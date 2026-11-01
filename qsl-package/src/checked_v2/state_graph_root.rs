@@ -21,6 +21,7 @@ use quire_contract_model::{
 };
 
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::check::wire_id::WireGraph;
 use quire_contract_model::CheckedNodeId;
 use quire_exact::{NodeKey, Origin, Role};
 use quire_semantic_value::catalog::InternalFault;
@@ -136,16 +137,13 @@ fn kind_of(node: &CheckedSemanticNodeV2) -> Option<StateGraphKind> {
     }
 }
 
-/// The structural key of the admitted wire node id `id`, through the
-/// shared node codec.
-pub(super) fn node_key(id: &CheckedNodeId) -> Option<NodeKey> {
-    let value = serde_json::to_value(id).ok()?;
-    qsl_foundation::node_wire::node_key_from_json(&value).ok()
-}
-
-fn reference(node: &CheckedSemanticNodeV2, name: &str) -> Result<Option<NodeKey>, InternalFault> {
+fn reference(
+    graph: &WireGraph,
+    node: &CheckedSemanticNodeV2,
+    name: &str,
+) -> Result<Option<NodeKey>, InternalFault> {
     match slot(node, name) {
-        Some(Slot::Reference(id)) => node_key(id).map(Some).ok_or(BODY_FAULT),
+        Some(Slot::Reference(id)) => graph.key(id).map(Some).map_err(|_| BODY_FAULT),
         Some(Slot::Empty) => Ok(None),
         Some(Slot::Other) | None => Err(BODY_FAULT),
     }
@@ -153,6 +151,7 @@ fn reference(node: &CheckedSemanticNodeV2, name: &str) -> Result<Option<NodeKey>
 
 /// The claim declared by `node`'s `claim` occurrence `ordinal`.
 fn root(
+    graph: &WireGraph,
     node: &CheckedSemanticNodeV2,
     id: &NodeKey,
     ordinal: u64,
@@ -166,9 +165,9 @@ fn root(
             ),
         ),
         kind: kind_of(node).ok_or(BODY_FAULT)?,
-        over: reference(node, "over")?,
-        from: reference(node, "from")?,
-        target: reference(node, "target")?.ok_or(BODY_FAULT)?,
+        over: reference(graph, node, "over")?,
+        from: reference(graph, node, "from")?,
+        target: reference(graph, node, "target")?.ok_or(BODY_FAULT)?,
     })
 }
 
@@ -177,19 +176,20 @@ fn root(
 /// occurrence order.
 pub fn state_graph_roots(package: &CheckedPackageV2) -> Result<Vec<StateGraphRoot>, InternalFault> {
     let mut roots = Vec::new();
-    for node in package
+    let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
+    for (node, id) in package
         .graph()
         .nodes
         .iter()
-        .filter(|node| is_state_graph(node))
+        .zip(graph.keys())
+        .filter(|(node, _)| is_state_graph(node))
     {
-        let id = node_key(&node.node_id).ok_or(NODE_ID_FAULT)?;
         for occurrence in node
             .occurrences
             .iter()
             .filter(|occurrence| occurrence.role == CheckedOccurrenceRole::Claim)
         {
-            roots.push(root(node, &id, occurrence.ordinal)?);
+            roots.push(root(&graph, node, id, occurrence.ordinal)?);
         }
     }
     Ok(roots)
@@ -207,11 +207,10 @@ pub fn resolve_state_graph_root(
     let unresolved = || ClauseRootUnresolved {
         root: triple.clone(),
     };
-    let Some(node) = package
-        .graph()
-        .nodes
-        .iter()
-        .find(|node| node_key(&node.node_id).as_ref() == Some(triple.node()))
+    let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
+    let Some(node) = graph
+        .index_of(triple.node())
+        .and_then(|at| package.graph().nodes.get(usize::try_from(at).ok()?))
         .filter(|node| is_state_graph(node))
     else {
         return Ok(Err(unresolved()));
@@ -226,5 +225,5 @@ pub fn resolve_state_graph_root(
     }) else {
         return Ok(Err(unresolved()));
     };
-    root(node, triple.node(), occurrence.ordinal).map(Ok)
+    root(&graph, node, triple.node(), occurrence.ordinal).map(Ok)
 }

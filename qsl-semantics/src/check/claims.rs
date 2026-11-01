@@ -37,9 +37,11 @@
 //! literal contributes none.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::ops::ControlFlow;
 
 use qsl_foundation::bound::DomainKey;
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -235,10 +237,19 @@ impl ValueClaim {
 
 /// A claim's result bound in its record: the checked type and its FR-092
 /// type node.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResultBound {
     value_type: ValueType,
     node: NodeKey,
+}
+
+impl fmt::Debug for ResultBound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResultBound")
+            .field("value_type", &self.value_type)
+            .field("node", &NodeKeyDebug(&self.node))
+            .finish()
+    }
 }
 
 impl ResultBound {
@@ -276,7 +287,7 @@ impl PathGuard {
 /// One requirement record of the checked package (ADR-012 §13.5, ADR-011
 /// E7), keyed in [`super::CheckedGraph::requirements`] by its application's
 /// `expression` occurrence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RequirementRecord {
     requirements: Requirements,
     result_bound: ResultBound,
@@ -289,6 +300,20 @@ pub struct RequirementRecord {
     /// FR-062 "Extent": the parameter and binder nodes the claim's extent
     /// is rooted at, including roots whose type adds no unbounded domain.
     extent_roots: BTreeSet<NodeKey>,
+}
+
+impl fmt::Debug for RequirementRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RequirementRecord")
+            .field("requirements", &self.requirements)
+            .field("result_bound", &self.result_bound)
+            .field("conversion_context", &self.conversion_context)
+            .field("path_condition", &self.path_condition)
+            .field("references", &self.references)
+            .field("owner", &self.owner)
+            .field("extent_roots", &NodeList(self.extent_roots.iter()))
+            .finish()
+    }
 }
 
 impl RequirementRecord {
