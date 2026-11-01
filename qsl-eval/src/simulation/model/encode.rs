@@ -49,6 +49,7 @@ pub(crate) enum Enc {
 }
 
 impl Encode for Enc {
+    #[inline(always)]
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
         match self {
             Self::Null => writer.null(),
