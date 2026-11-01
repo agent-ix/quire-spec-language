@@ -49,7 +49,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let mut document: Value =
         serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
             .expect("the fixture is JSON");
-    document["types"][0]["operations"] = json!([]);
+    document["types"][1]["operations"] = json!([]);
     let document = serde_json::to_vec(&document).expect("the fixture remains JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = config_version_unit::unit_text().replace(
