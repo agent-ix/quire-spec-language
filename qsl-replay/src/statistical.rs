@@ -213,6 +213,7 @@ impl StatisticalLimits {
             StatisticalLimit::MaxSamples => self.max_samples,
             StatisticalLimit::MaxDraws => self.max_draws,
             StatisticalLimit::MaxCycleSteps => self.max_cycle_steps,
+            StatisticalLimit::MaxSampleSteps { value } => value,
         }
     }
 }
@@ -226,6 +227,11 @@ pub enum StatisticalLimit {
     MaxDraws,
     /// [`StatisticalLimits::max_cycle_steps`].
     MaxCycleSteps,
+    /// The per-trace timed sample budget published by FR-254.
+    MaxSampleSteps {
+        /// The caller-set per-trace timed sample budget.
+        value: u64,
+    },
 }
 
 impl StatisticalLimit {
@@ -237,6 +243,7 @@ impl StatisticalLimit {
             Self::MaxSamples => "max_samples",
             Self::MaxDraws => "max_draws",
             Self::MaxCycleSteps => "max_cycle_steps",
+            Self::MaxSampleSteps { .. } => "max_sample_steps",
         }
     }
 
@@ -247,6 +254,7 @@ impl StatisticalLimit {
             Self::MaxSamples => "statistical.max_samples",
             Self::MaxDraws => "statistical.max_draws",
             Self::MaxCycleSteps => "statistical.max_cycle_steps",
+            Self::MaxSampleSteps { .. } => "statistical.max_sample_steps",
         }
     }
 }
@@ -648,6 +656,18 @@ mod tests {
             Confidence::new(hundredth.clone(), hundredth, ratio(3, 2)),
             Err(ConfidenceRefusal::Indifference)
         );
+    }
+
+    #[test]
+    fn timed_sample_limit_reports_the_caller_configured_value() {
+        let configured_steps = 1;
+        let limit = StatisticalLimit::MaxSampleSteps {
+            value: configured_steps,
+        };
+
+        assert_eq!(StatisticalLimits::default().value(limit), configured_steps);
+        assert_eq!(limit.as_str(), "max_sample_steps");
+        assert_eq!(limit.setting(), "statistical.max_sample_steps");
     }
 
     #[test]

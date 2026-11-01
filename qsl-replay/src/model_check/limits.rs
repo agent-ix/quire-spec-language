@@ -413,6 +413,9 @@ mod tests {
                 StatisticalLimit::MaxCycleSteps => {
                     ("max_cycle_steps", "statistical.max_cycle_steps")
                 }
+                StatisticalLimit::MaxSampleSteps { .. } => {
+                    ("max_sample_steps", "statistical.max_sample_steps")
+                }
             },
             ModelCheckLimit::ZoneMaxSymbolicStates => {
                 ("max_symbolic_states", "zone_check.max_symbolic_states")
@@ -463,6 +466,7 @@ mod tests {
             ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples),
             ModelCheckLimit::Statistical(StatisticalLimit::MaxDraws),
             ModelCheckLimit::Statistical(StatisticalLimit::MaxCycleSteps),
+            ModelCheckLimit::Statistical(StatisticalLimit::MaxSampleSteps { value: 1 }),
             ModelCheckLimit::ZoneMaxSymbolicStates,
             ModelCheckLimit::ZoneMaxSymbolicTransitions,
             ModelCheckLimit::ZoneMaxAutomatonStates,
