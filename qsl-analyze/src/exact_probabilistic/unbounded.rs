@@ -8,6 +8,7 @@ use qsl_replay::ExactProbLimits;
 use quire_exact::{Integer, Rational, Value};
 
 type PolicySolution = (Vec<Rational>, Vec<Option<usize>>, u64);
+type RewardPolicySolution = (Vec<ExtRational>, Vec<Option<usize>>, u64);
 type IntervalStep = (Vec<Rational>, Vec<Rational>, Vec<Option<usize>>);
 type MecOptimization = (Rational, Vec<Option<usize>>, Vec<Rational>, u64);
 
@@ -196,7 +197,17 @@ pub fn decide_always(
     Ok(result)
 }
 
-fn product_with_blocked(product: &ProbProduct, blocked: &[bool]) -> ProbProduct {
+fn product_with_blocked(
+    product: &ProbProduct,
+    blocked: &[bool],
+) -> Result<ProbProduct, UnboundedError> {
+    if blocked.len() != product.states.len()
+        || product.edges.iter().any(|edge| {
+            edge.from.index() >= blocked.len() || edge.to.index() >= product.states.len()
+        })
+    {
+        return Err(UnboundedError::InvalidState);
+    }
     let mut product = product.clone();
     product.edges.retain(|edge| !blocked[edge.from.index()]);
     for (index, is_blocked) in blocked.iter().copied().enumerate() {
@@ -207,7 +218,7 @@ fn product_with_blocked(product: &ProbProduct, blocked: &[bool]) -> ProbProduct 
             }
         }
     }
-    product
+    Ok(product)
 }
 
 fn decide_reachability_with_blocked(
@@ -223,7 +234,10 @@ fn decide_reachability_with_blocked(
     if blocked.is_some_and(|blocked| blocked.len() != target.len()) {
         return Err(UnboundedError::InvalidState);
     }
-    let product_with_terminals = blocked.map(|blocked| product_with_blocked(product, blocked));
+    let product_with_terminals = match blocked {
+        Some(blocked) => Some(product_with_blocked(product, blocked)?),
+        None => None,
+    };
     let product = product_with_terminals.as_ref().unwrap_or(product);
     let graph = Graph::new(product)?;
     let zero = zero();
@@ -340,7 +354,10 @@ fn decide_reachability_threshold_with_blocked(
     if blocked.is_some_and(|blocked| blocked.len() != target.len()) {
         return Err(UnboundedError::InvalidState);
     }
-    let product_with_terminals = blocked.map(|blocked| product_with_blocked(product, blocked));
+    let product_with_terminals = match blocked {
+        Some(blocked) => Some(product_with_blocked(product, blocked)?),
+        None => None,
+    };
     let product = product_with_terminals.as_ref().unwrap_or(product);
     let graph = Graph::new(product)?;
     let fixed_zero = match (product.kind, objective) {
@@ -502,10 +519,11 @@ pub fn decide_expected_reward(
             policy_iterations: 0,
         });
     }
-    let (mut values, policy, iterations) = policy_iteration_reward(
+    let (values, policy, iterations) = policy_iteration_reward(
         &graph,
         &fixed,
         target,
+        &infinite,
         reward,
         PolicyLimits {
             objective,
@@ -514,19 +532,8 @@ pub fn decide_expected_reward(
         },
         initial_policy,
     )?;
-    let results = values
-        .drain(..)
-        .enumerate()
-        .map(|(index, value)| {
-            if infinite[index] {
-                ExtRational::PlusInfinity
-            } else {
-                ExtRational::Finite(value)
-            }
-        })
-        .collect();
     Ok(UnboundedResult {
-        values: results,
+        values,
         policy,
         policy_iterations: iterations,
     })
@@ -609,7 +616,15 @@ pub fn decide_long_run_workload(
             .iter()
             .map(|choices| (!choices.is_empty()).then_some(0))
             .collect::<Vec<_>>();
-        let bias = component_bias(&graph, &states, &state_reward, &state_weight, &rho, &policy)?;
+        let bias = component_bias(
+            &graph,
+            &states,
+            &state_reward,
+            &state_weight,
+            &rho,
+            &policy,
+            states[0],
+        )?;
         if rho.max_part_bits() > limits.max_rational_bits
             || bias
                 .iter()
@@ -1091,21 +1106,22 @@ fn policy_iteration_reward(
     graph: &Graph<'_>,
     fixed: &[Option<Rational>],
     target: &[bool],
+    infinite: &[bool],
     reward: &str,
     limits: PolicyLimits,
     mut policy: Vec<Option<usize>>,
-) -> Result<PolicySolution, UnboundedError> {
+) -> Result<RewardPolicySolution, UnboundedError> {
     let count = graph.product.states.len();
     if graph.product.kind == ProductKind::Mdp && limits.max_iterations == 0 {
         return Err(UnboundedError::MaxPolicyIterations);
     }
     let mut iterations = 0;
     loop {
-        let values = evaluate_reward_policy(graph, fixed, target, reward, &policy)?;
-        if values
-            .iter()
-            .any(|value| value.max_part_bits() > limits.max_rational_bits)
-        {
+        let values = evaluate_reward_policy(graph, fixed, target, infinite, reward, &policy)?;
+        if values.iter().any(|value| match value {
+            ExtRational::Finite(value) => value.max_part_bits() > limits.max_rational_bits,
+            ExtRational::PlusInfinity => false,
+        }) {
             return Err(UnboundedError::MaxRationalBits);
         }
         let mut improved = false;
@@ -1117,17 +1133,22 @@ fn policy_iteration_reward(
             let choices = &graph.choices[i];
             let mut best = policy[i].ok_or(UnboundedError::MissingAction)?;
             let mut best_value = reward_choice_value(&choices[best], &values, target, reward)?;
-            if best_value.max_part_bits() > limits.max_rational_bits {
-                return Err(UnboundedError::MaxRationalBits);
-            }
-            for (choice_index, choice) in choices.iter().enumerate() {
-                let value = reward_choice_value(choice, &values, target, reward)?;
+            if let ExtRational::Finite(value) = &best_value {
                 if value.max_part_bits() > limits.max_rational_bits {
                     return Err(UnboundedError::MaxRationalBits);
                 }
+            }
+            for (choice_index, choice) in choices.iter().enumerate() {
+                let value = reward_choice_value(choice, &values, target, reward)?;
+                if let ExtRational::Finite(value) = &value {
+                    if value.max_part_bits() > limits.max_rational_bits {
+                        return Err(UnboundedError::MaxRationalBits);
+                    }
+                }
+                let ordering = compare_ext_rational(&value, &best_value);
                 let better = match limits.objective {
-                    UnboundedObjective::Min => value < best_value,
-                    UnboundedObjective::Max => value > best_value,
+                    UnboundedObjective::Min => ordering.is_lt(),
+                    UnboundedObjective::Max => ordering.is_gt(),
                 };
                 if better {
                     best = choice_index;
@@ -1160,11 +1181,13 @@ fn evaluate_reward_policy(
     graph: &Graph<'_>,
     fixed: &[Option<Rational>],
     target: &[bool],
+    infinite: &[bool],
     reward: &str,
     policy: &[Option<usize>],
-) -> Result<Vec<Rational>, UnboundedError> {
+) -> Result<Vec<ExtRational>, UnboundedError> {
+    let policy_infinite = policy_infinite_states(graph, target, infinite, policy)?;
     let transient = (0..fixed.len())
-        .filter(|index| fixed[*index].is_none())
+        .filter(|index| fixed[*index].is_none() && !policy_infinite[*index])
         .collect::<Vec<_>>();
     let mut positions = vec![None; fixed.len()];
     for (position, state) in transient.iter().copied().enumerate() {
@@ -1180,7 +1203,7 @@ fn evaluate_reward_policy(
         for edge in &choice.edges {
             matrix[row][transient.len()] = matrix[row][transient.len()]
                 .add(&edge.probability.mul(&reward_value(edge, reward)?));
-            if !target[edge.to.index()] {
+            if !target[edge.to.index()] && !policy_infinite[edge.to.index()] {
                 if let Some(column) = positions[edge.to.index()] {
                     matrix[row][column] = matrix[row][column].sub(&edge.probability);
                 }
@@ -1190,32 +1213,129 @@ fn evaluate_reward_policy(
     let solved = solve_linear(matrix)?;
     let mut values = fixed
         .iter()
-        .map(|value| value.clone().unwrap_or_else(zero))
+        .enumerate()
+        .map(|(state, value)| {
+            if policy_infinite[state] {
+                ExtRational::PlusInfinity
+            } else {
+                ExtRational::Finite(value.clone().unwrap_or_else(zero))
+            }
+        })
         .collect::<Vec<_>>();
     for (position, state) in transient.into_iter().enumerate() {
-        values[state] = solved[position].clone();
+        values[state] = ExtRational::Finite(solved[position].clone());
     }
     Ok(values)
 }
 
+fn policy_infinite_states(
+    graph: &Graph<'_>,
+    target: &[bool],
+    globally_infinite: &[bool],
+    policy: &[Option<usize>],
+) -> Result<Vec<bool>, UnboundedError> {
+    let count = graph.product.states.len();
+    let members = (0..count)
+        .filter(|state| !target[*state])
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut adjacency = vec![Vec::new(); count];
+    let mut reverse = vec![Vec::new(); count];
+    for state in members.iter().copied() {
+        let Some(choice_index) = policy[state] else {
+            continue;
+        };
+        let choice = graph.choices[state]
+            .get(choice_index)
+            .ok_or(UnboundedError::MissingAction)?;
+        for edge in &choice.edges {
+            if !target[edge.to.index()] {
+                adjacency[state].push(edge.to.index());
+                reverse[edge.to.index()].push(state);
+            }
+        }
+    }
+
+    let mut infinite = globally_infinite.to_vec();
+    for component in restricted_scc(&members, &adjacency, &reverse) {
+        let component_members = component
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        let is_non_target_bottom = component.iter().all(|state| {
+            let Some(choice_index) = policy[*state] else {
+                return false;
+            };
+            graph.choices[*state][choice_index]
+                .edges
+                .iter()
+                .all(|edge| component_members.contains(&edge.to.index()))
+        });
+        if is_non_target_bottom {
+            for state in component {
+                infinite[state] = true;
+            }
+        }
+    }
+
+    loop {
+        let mut changed = false;
+        for state in members.iter().copied() {
+            if infinite[state] {
+                continue;
+            }
+            let Some(choice_index) = policy[state] else {
+                continue;
+            };
+            if graph.choices[state][choice_index]
+                .edges
+                .iter()
+                .any(|edge| infinite[edge.to.index()])
+            {
+                infinite[state] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    Ok(infinite)
+}
+
 fn reward_choice_value(
     choice: &Choice<'_>,
-    values: &[Rational],
+    values: &[ExtRational],
     target: &[bool],
     reward: &str,
-) -> Result<Rational, UnboundedError> {
-    choice.edges.iter().try_fold(zero(), |sum, edge| {
+) -> Result<ExtRational, UnboundedError> {
+    let mut total = zero();
+    for edge in &choice.edges {
         let continuation = if target[edge.to.index()] {
-            zero()
+            ExtRational::Finite(zero())
         } else {
             values[edge.to.index()].clone()
         };
-        Ok(sum.add(
-            &edge
-                .probability
-                .mul(&reward_value(edge, reward)?.add(&continuation)),
-        ))
-    })
+        match continuation {
+            ExtRational::Finite(continuation) => {
+                total = total.add(
+                    &edge
+                        .probability
+                        .mul(&reward_value(edge, reward)?.add(&continuation)),
+                );
+            }
+            ExtRational::PlusInfinity => return Ok(ExtRational::PlusInfinity),
+        }
+    }
+    Ok(ExtRational::Finite(total))
+}
+
+fn compare_ext_rational(left: &ExtRational, right: &ExtRational) -> std::cmp::Ordering {
+    match (left, right) {
+        (ExtRational::Finite(left), ExtRational::Finite(right)) => left.cmp(right),
+        (ExtRational::Finite(_), ExtRational::PlusInfinity) => std::cmp::Ordering::Less,
+        (ExtRational::PlusInfinity, ExtRational::Finite(_)) => std::cmp::Ordering::Greater,
+        (ExtRational::PlusInfinity, ExtRational::PlusInfinity) => std::cmp::Ordering::Equal,
+    }
 }
 
 fn evaluate_policy(
@@ -1648,6 +1768,7 @@ struct FractionPolicy {
     numerator: Rational,
     denominator: Rational,
     choices: Vec<Option<usize>>,
+    recurrent: Vec<usize>,
     rewards: Vec<Rational>,
     weights: Vec<Rational>,
 }
@@ -1699,8 +1820,10 @@ fn optimize_mec_fraction(
         for (local, state) in component.iter().copied().enumerate() {
             policy[state] = Some(internal[local][indices[local]]);
         }
-        if is_policy_component_strongly_connected(graph, component, &policy)? {
-            let stationary = stationary_distribution_with_policy(graph, component, &policy)?;
+        let bottom_components = policy_bottom_components(graph, component, &policy)?;
+        if bottom_components.len() == 1 {
+            let recurrent = &bottom_components[0];
+            let stationary = stationary_distribution_with_policy(graph, recurrent, &policy)?;
             if stationary
                 .iter()
                 .any(|value| value.max_part_bits() > max_rational_bits)
@@ -1709,9 +1832,9 @@ fn optimize_mec_fraction(
             }
             let mut numerator = zero();
             let mut denominator = zero();
-            let mut rewards = Vec::with_capacity(component.len());
-            let mut weights = Vec::with_capacity(component.len());
-            for (local, state) in component.iter().copied().enumerate() {
+            let mut rewards = vec![zero(); component.len()];
+            let mut weights = vec![zero(); component.len()];
+            for (component_local, state) in component.iter().copied().enumerate() {
                 let action = policy[state].ok_or(UnboundedError::MissingAction)?;
                 let choice = graph.choices[state]
                     .get(action)
@@ -1729,10 +1852,12 @@ fn optimize_mec_fraction(
                 } else {
                     zero()
                 };
-                numerator = numerator.add(&stationary[local].mul(&step_reward));
-                denominator = denominator.add(&stationary[local].mul(&step_weight));
-                rewards.push(step_reward);
-                weights.push(step_weight);
+                if let Some(local) = recurrent.iter().position(|candidate| *candidate == state) {
+                    numerator = numerator.add(&stationary[local].mul(&step_reward));
+                    denominator = denominator.add(&stationary[local].mul(&step_weight));
+                }
+                rewards[component_local] = step_reward;
+                weights[component_local] = step_weight;
             }
             if !denominator.is_zero() {
                 let rho = numerator
@@ -1749,6 +1874,7 @@ fn optimize_mec_fraction(
                     numerator,
                     denominator,
                     choices: policy,
+                    recurrent: recurrent.clone(),
                     rewards,
                     weights,
                 });
@@ -1793,6 +1919,7 @@ fn optimize_mec_fraction(
                 &candidate.weights,
                 &candidate.rho,
                 &candidate.choices,
+                candidate.recurrent[0],
             )?;
             return Ok((
                 candidate.rho.clone(),
@@ -1809,14 +1936,18 @@ fn optimize_mec_fraction(
     }
 }
 
-fn is_policy_component_strongly_connected(
+fn policy_bottom_components(
     graph: &Graph<'_>,
     component: &[usize],
     policy: &[Option<usize>],
-) -> Result<bool, UnboundedError> {
-    let Some(root) = component.first().copied() else {
-        return Ok(false);
-    };
+) -> Result<Vec<Vec<usize>>, UnboundedError> {
+    if component.is_empty() {
+        return Ok(Vec::new());
+    }
+    let members = component
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
     let mut adjacency = vec![Vec::new(); graph.product.states.len()];
     let mut transpose = vec![Vec::new(); graph.product.states.len()];
     for state in component {
@@ -1829,26 +1960,25 @@ fn is_policy_component_strongly_connected(
             transpose[edge.to.index()].push(*state);
         }
     }
-    for reverse in [false, true] {
-        let mut reached = std::collections::BTreeSet::from([root]);
-        let mut pending = vec![root];
-        while let Some(state) = pending.pop() {
-            let neighbors = if reverse {
-                &transpose[state]
-            } else {
-                &adjacency[state]
-            };
-            for next in neighbors {
-                if component.contains(next) && reached.insert(*next) {
-                    pending.push(*next);
-                }
-            }
-        }
-        if reached.len() != component.len() {
-            return Ok(false);
-        }
+    let mut bottom = restricted_scc(&members, &adjacency, &transpose)
+        .into_iter()
+        .filter(|scc| {
+            let scc_members = scc
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            scc.iter().all(|state| {
+                adjacency[*state]
+                    .iter()
+                    .all(|successor| scc_members.contains(successor))
+            })
+        })
+        .collect::<Vec<_>>();
+    for scc in &mut bottom {
+        scc.sort_unstable();
     }
-    Ok(true)
+    bottom.sort_by_key(|scc| scc[0]);
+    Ok(bottom)
 }
 
 fn restricted_scc(
@@ -2052,6 +2182,7 @@ fn component_bias(
     state_weight: &[Rational],
     gain: &Rational,
     policy: &[Option<usize>],
+    reference: usize,
 ) -> Result<Vec<Rational>, UnboundedError> {
     let count = states.len();
     if count <= 1 {
@@ -2061,11 +2192,15 @@ fn component_bias(
     for (index, state) in states.iter().copied().enumerate() {
         local[state] = Some(index);
     }
+    let reference_index = local[reference].ok_or(UnboundedError::InvalidState)?;
     let mut matrix = vec![vec![zero(); count + 1]; count];
-    for (row, coefficients) in matrix.iter_mut().enumerate().take(count - 1) {
-        let bias_index = row + 1;
-        let state = states[bias_index];
-        coefficients[bias_index] = one();
+    let mut row = 0;
+    for (state_index, state) in states.iter().copied().enumerate() {
+        if state == reference {
+            continue;
+        }
+        let coefficients = &mut matrix[row];
+        coefficients[state_index] = one();
         let action = policy[state].ok_or(UnboundedError::MissingAction)?;
         let choice = graph.choices[state]
             .get(action)
@@ -2075,9 +2210,10 @@ fn component_bias(
                 coefficients[column] = coefficients[column].sub(&edge.probability);
             }
         }
-        coefficients[count] = state_reward[bias_index].sub(&gain.mul(&state_weight[bias_index]));
+        coefficients[count] = state_reward[state_index].sub(&gain.mul(&state_weight[state_index]));
+        row += 1;
     }
-    matrix[count - 1][0] = one();
+    matrix[count - 1][reference_index] = one();
     solve_linear(matrix)
 }
 
@@ -2192,6 +2328,22 @@ mod tests {
         assert_eq!(result.values[0], ExtRational::Finite(zero()));
         assert_eq!(result.values[1], ExtRational::Finite(zero()));
         assert_eq!(result.values[2], ExtRational::Finite(one()));
+    }
+
+    #[test]
+    fn until_reports_invalid_source_state_instead_of_panicking() {
+        let mut product = graph(ProductKind::Dtmc, vec![edge(0, 0, one())]);
+        product.edges[0].from = ProbStateId(1);
+        assert_eq!(
+            decide_until(
+                &product,
+                &[true],
+                &[false],
+                UnboundedObjective::Max,
+                &ExactProbLimits::default(),
+            ),
+            Err(UnboundedError::InvalidState)
+        );
     }
 
     /// Trace: FR-198's unbounded temporal forms.
@@ -2540,6 +2692,53 @@ mod tests {
         assert_eq!(maximum.policy[0], Some(1));
     }
 
+    /// Trace: FR-198-AC-2.
+    #[trace("TC-633", "FR-198-AC-2")]
+    #[test]
+    fn minimum_expected_reward_rejects_an_action_into_an_infinite_child() {
+        let mut good = choice_edge(0, 1, one(), 1);
+        good.rewards.push((
+            quire_exact::Identifier::new("cost").expect("identifier"),
+            Value::Integer(Integer::from(10_i64)),
+        ));
+        let mut bad_target = choice_edge(0, 1, ratio(1, 2), 2);
+        bad_target.rewards.push((
+            quire_exact::Identifier::new("cost").expect("identifier"),
+            Value::Integer(Integer::zero()),
+        ));
+        let mut bad_recurrent = choice_edge(0, 2, ratio(1, 2), 2);
+        bad_recurrent.rewards.push((
+            quire_exact::Identifier::new("cost").expect("identifier"),
+            Value::Integer(Integer::zero()),
+        ));
+        let mut recurrent = choice_edge(2, 2, one(), 3);
+        recurrent.rewards.push((
+            quire_exact::Identifier::new("cost").expect("identifier"),
+            Value::Integer(Integer::one()),
+        ));
+        let product = graph(
+            ProductKind::Mdp,
+            vec![
+                good,
+                bad_target,
+                bad_recurrent,
+                edge(1, 1, one()),
+                recurrent,
+            ],
+        );
+        let result = decide_expected_reward(
+            &product,
+            &[false, true, false],
+            "cost",
+            UnboundedObjective::Min,
+            &ExactProbLimits::default(),
+        )
+        .expect("the good action is the finite minimum");
+        assert_eq!(result.values[0], ExtRational::Finite(ratio(10, 1)));
+        assert_eq!(result.values[2], ExtRational::PlusInfinity);
+        assert_eq!(result.policy[0], Some(0));
+    }
+
     /// Trace: FR-199-AC-1.
     #[trace("TC-634", "FR-199-AC-1")]
     #[test]
@@ -2675,5 +2874,100 @@ mod tests {
         let expected = decide_long_run_workload(&workload, &[true, false], None, &limits)
             .expect("the workload chooses the two repairs equally");
         assert_eq!(expected.components[0].rho, ratio(1400, 1401));
+    }
+
+    /// Trace: FR-199-AC-2.
+    #[trace("TC-634", "FR-199-AC-2")]
+    #[test]
+    fn mdp_long_run_uses_a_proper_sub_mec_reachable_from_the_maximal_mec() {
+        let product = graph(
+            ProductKind::Mdp,
+            vec![
+                choice_edge(0, 0, one(), 1),
+                choice_edge(0, 1, one(), 2),
+                choice_edge(1, 0, one(), 3),
+            ],
+        );
+        let result = decide_long_run_mdp(
+            &product,
+            &[true, false],
+            None,
+            UnboundedObjective::Max,
+            &ExactProbLimits::default(),
+        )
+        .expect("the scheduler can reach and remain in the proper end component");
+        assert_eq!(result.components.len(), 1);
+        assert_eq!(
+            result.components[0].states,
+            vec![ProbStateId(0), ProbStateId(1)]
+        );
+        assert_eq!(result.components[0].rho, one());
+        assert_eq!(
+            result.values,
+            vec![ExtRational::Finite(one()), ExtRational::Finite(one())]
+        );
+        assert_eq!(result.policy.as_ref().and_then(|policy| policy[0]), Some(0));
+        assert_eq!(result.policy.as_ref().and_then(|policy| policy[1]), Some(0));
+    }
+
+    /// A policy that stays at each state has two bottom SCCs with different
+    /// values. An alternate policy can route every starting state to either
+    /// optimal recurrent class, so the extremum is uniform over the MEC.
+    #[trace("TC-634", "FR-199-AC-2")]
+    #[test]
+    fn mdp_long_run_routes_the_whole_mec_to_the_optimal_of_multiple_bsccs() {
+        let product = graph(
+            ProductKind::Mdp,
+            vec![
+                choice_edge(0, 0, one(), 1),
+                choice_edge(0, 1, one(), 2),
+                choice_edge(1, 1, one(), 3),
+                choice_edge(1, 0, one(), 4),
+            ],
+        );
+        let minimum = decide_long_run_mdp(
+            &product,
+            &[true, false],
+            None,
+            UnboundedObjective::Min,
+            &ExactProbLimits::default(),
+        )
+        .expect("the scheduler can route both states to B");
+        let maximum = decide_long_run_mdp(
+            &product,
+            &[true, false],
+            None,
+            UnboundedObjective::Max,
+            &ExactProbLimits::default(),
+        )
+        .expect("the scheduler can route both states to A");
+        assert_eq!(minimum.components[0].rho, zero());
+        assert_eq!(minimum.values, vec![ExtRational::Finite(zero()); 2]);
+        assert_eq!(
+            minimum.policy.as_ref().and_then(|policy| policy[0]),
+            Some(1)
+        );
+        assert_eq!(
+            minimum.policy.as_ref().and_then(|policy| policy[1]),
+            Some(0)
+        );
+        assert_eq!(
+            minimum.gain_bias[0].bias,
+            vec![(ProbStateId(0), one()), (ProbStateId(1), zero())]
+        );
+        assert_eq!(maximum.components[0].rho, one());
+        assert_eq!(maximum.values, vec![ExtRational::Finite(one()); 2]);
+        assert_eq!(
+            maximum.policy.as_ref().and_then(|policy| policy[0]),
+            Some(0)
+        );
+        assert_eq!(
+            maximum.policy.as_ref().and_then(|policy| policy[1]),
+            Some(1)
+        );
+        assert_eq!(
+            maximum.gain_bias[0].bias,
+            vec![(ProbStateId(0), zero()), (ProbStateId(1), ratio(-1, 1))]
+        );
     }
 }
