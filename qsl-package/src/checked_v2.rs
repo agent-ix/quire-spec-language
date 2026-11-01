@@ -555,7 +555,7 @@ impl Artifact {
 
 /// An I2 read that admitted canonical v2 bytes and matched the requested
 /// library name to the package's manifest name (FR-087-AC-1, AC-3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct V2Read {
     /// The admitted package's structural exports.
     pub(crate) package: ImportView,
@@ -570,6 +570,33 @@ pub(crate) struct V2Read {
     pub(crate) admitted: Arc<CheckedPackageV2>,
     /// Typed timed-model projections reconstructed from the admitted graph.
     pub(crate) timed_models: Vec<CheckedTimedModel>,
+}
+
+/// Debug writes every node key of the import view and the source map under
+/// one table, so each node is written once.
+impl std::fmt::Debug for V2Read {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct Body<'a>(&'a V2Read);
+        impl std::fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let V2Read {
+                    package,
+                    source_map,
+                    effective_limits,
+                    admitted,
+                    timed_models,
+                } = self.0;
+                f.debug_struct("V2Read")
+                    .field("package", package)
+                    .field("source_map", source_map)
+                    .field("effective_limits", effective_limits)
+                    .field("admitted", admitted)
+                    .field("timed_models", timed_models)
+                    .finish()
+            }
+        }
+        qsl_foundation::source::node_table::scoped(f, &Body(self))
+    }
 }
 
 /// I2's own outcome, ADR-013 T-4's stage result (FR-322-AC-9): a verified

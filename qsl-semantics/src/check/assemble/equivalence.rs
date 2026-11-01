@@ -7,6 +7,7 @@
 //! derives the classes and each member's root ratio to its class root, which
 //! the checker converts time quantities through (FR-230).
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_forms::{DimensionEquivalenceForm, NameForm, RatioNumberForm, RatioNumberKind};
@@ -98,9 +99,24 @@ pub struct DimensionEquivalence {
 /// The equivalence classes of the admitted pairs (QSpec FR-142 "Effect"):
 /// each member's class root (the least dimension key of its class) and the
 /// size of one of its canonical roots in canonical roots of the class root.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct EquivalenceClasses {
     members: BTreeMap<NodeKey, (NodeKey, Rational)>,
+}
+
+impl std::fmt::Debug for EquivalenceClasses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { members } = self;
+        f.debug_struct("EquivalenceClasses")
+            .field(
+                "members",
+                &members
+                    .iter()
+                    .map(|(key, value)| (NodeKeyDebug(key), (NodeKeyDebug(&value.0), &value.1)))
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl EquivalenceClasses {

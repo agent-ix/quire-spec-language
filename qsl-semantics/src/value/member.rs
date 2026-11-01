@@ -20,6 +20,7 @@
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::TemporalInterval;
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_contract_model::ExecutionPoint;
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
@@ -69,7 +70,7 @@ impl std::hash::Hash for AcceptedPoint {
 /// confused, matching the schema's own discriminated-union shape.
 ///
 /// quire:canonical
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Member {
     /// A composite type's named field.
     Field {
@@ -172,6 +173,80 @@ pub enum Member {
         /// The operation's own identifier.
         name: Identifier,
     },
+}
+
+impl std::fmt::Debug for Member {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Field { declaration, name } => f
+                .debug_struct("Field")
+                .field("declaration", &NodeKeyDebug(declaration))
+                .field("name", &name)
+                .finish(),
+            Self::Position {
+                declaration,
+                position,
+            } => f
+                .debug_struct("Position")
+                .field("declaration", &NodeKeyDebug(declaration))
+                .field("position", &position)
+                .finish(),
+            Self::Element { declaration } => f
+                .debug_struct("Element")
+                .field("declaration", &NodeKeyDebug(declaration))
+                .finish(),
+            Self::RelationshipEnd {
+                declaration,
+                name,
+                destination_type,
+                population,
+            } => f
+                .debug_struct("RelationshipEnd")
+                .field("declaration", &NodeKeyDebug(declaration))
+                .field("name", &name)
+                .field("destination_type", &NodeKeyDebug(destination_type))
+                .field("population", &population.as_ref().map(NodeKeyDebug))
+                .finish(),
+            Self::Operation { declaration, name } => f
+                .debug_struct("Operation")
+                .field("declaration", &NodeKeyDebug(declaration))
+                .field("name", &name)
+                .finish(),
+            Self::TypeArgument { declaration } => f
+                .debug_struct("TypeArgument")
+                .field("declaration", &NodeKeyDebug(declaration))
+                .finish(),
+            Self::ProfileOperator { operator } => f
+                .debug_struct("ProfileOperator")
+                .field("operator", &operator)
+                .finish(),
+            Self::StateClause {
+                clause,
+                execution_point,
+            } => f
+                .debug_struct("StateClause")
+                .field("clause", &clause)
+                .field("execution_point", &execution_point)
+                .finish(),
+            Self::TemporalInterval { interval } => f
+                .debug_struct("TemporalInterval")
+                .field("interval", &interval)
+                .finish(),
+            Self::TimedInterval(value0) => f.debug_tuple("TimedInterval").field(&value0).finish(),
+            Self::Fairness {
+                kind,
+                granularity,
+                declaration,
+                name,
+            } => f
+                .debug_struct("Fairness")
+                .field("kind", &kind)
+                .field("granularity", &granularity)
+                .field("declaration", &NodeKeyDebug(declaration))
+                .field("name", &name)
+                .finish(),
+        }
+    }
 }
 
 /// The bounds of a [`Member::TimedInterval`], exact rationals in seconds.

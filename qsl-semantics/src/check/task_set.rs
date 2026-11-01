@@ -23,6 +23,7 @@
 //! its bound to the time dimension's root unit, and the claim is never
 //! observable because the set is refused.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::BTreeMap;
 
 use qsl_forms::{
@@ -146,7 +147,7 @@ pub struct Task {
 }
 
 /// A task set's unit: the time unit of its first time quantity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TaskSetUnit {
     /// The unit as written.
     pub name: String,
@@ -154,6 +155,21 @@ pub struct TaskSetUnit {
     pub node: NodeKey,
     /// The unit's nominal dimension node.
     pub dimension: NodeKey,
+}
+
+impl std::fmt::Debug for TaskSetUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            node,
+            dimension,
+        } = self;
+        f.debug_struct("TaskSetUnit")
+            .field("name", &name)
+            .field("node", &NodeKeyDebug(node))
+            .field("dimension", &NodeKeyDebug(dimension))
+            .finish()
+    }
 }
 
 /// A checked task set for one preemptive uniprocessor (QSL FR-246).

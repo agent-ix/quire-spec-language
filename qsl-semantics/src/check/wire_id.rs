@@ -16,6 +16,7 @@
 //! Every walk uses an explicit stack, so the depth of an operand chain never
 //! consumes the call stack.
 
+use qsl_foundation::source::node_table::NodeList;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -74,6 +75,20 @@ pub struct StructuralIds {
 }
 
 impl StructuralIds {
+    /// Read identities emitted by this task while retaining the original
+    /// operand keys. An inspection view can then share its nested keys with
+    /// the source graph as well as with its other inspection entries.
+    pub fn key_reader(&self) -> StructuralKeys {
+        StructuralKeys {
+            by_operand: self
+                .interned
+                .borrow()
+                .iter()
+                .map(|(key, id)| (Arc::as_ptr(id), (id.clone(), key.clone())))
+                .collect(),
+        }
+    }
+
     /// The structural form of `key`: each operand is a
     /// [`CheckedNodePathSegment::Node`] holding the operand's own id, shared
     /// with every other id built here that names that operand.
@@ -318,7 +333,7 @@ impl std::fmt::Debug for WireGraph {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("WireGraph")
-            .field("keys", &self.keys)
+            .field("keys", &NodeList(self.keys.iter()))
             .finish_non_exhaustive()
     }
 }
@@ -702,5 +717,25 @@ mod tests {
             declared_id(&keys[1]),
             Err(WireIdError::NotDeclared { .. })
         ));
+    }
+
+    /// The inverse memo preserves the emitter's original operand storage,
+    /// so formatting an inspection view beside its source graph never has
+    /// to compare separately allocated copies of their entire chains.
+    /// Provenance: QSL-1358, QSL-381; component sharing regression.
+    #[test]
+    fn emitted_identity_inspection_reuses_original_operand_keys() {
+        let keys = chain(2_000);
+        let ids = StructuralIds::default();
+        let id = ids.id(keys.last().unwrap());
+        let rebuilt = ids.key_reader().key(&id).unwrap();
+        assert_eq!(rebuilt, *keys.last().unwrap());
+        let PathSegment::Node(operand) = rebuilt.path().pop().unwrap() else {
+            panic!("the chain ends in its operand");
+        };
+        assert!(
+            std::ptr::eq(operand.package(), keys[keys.len() - 2].package()),
+            "the inverse memo retains the original operand's shared storage"
+        );
     }
 }

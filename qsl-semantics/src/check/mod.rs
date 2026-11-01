@@ -206,8 +206,10 @@ use quire_exact::Identifier;
 use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_foundation::diagnostic::{Locus, StageFailure};
+use qsl_foundation::source::node_table::{scoped, NodeKeyDebug, NodeList, NodeMap};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Cancel, ValueType};
+use std::fmt;
 
 pub use check::Scope;
 pub use claims::{
@@ -476,7 +478,6 @@ pub use timed_model::{
 };
 
 /// A checked function.
-#[derive(Debug)]
 struct CheckedFunction {
     /// FR-062/FR-065: the function node's FR-092 key, minted once at check
     /// (`lowering`), independent of this function's position in the
@@ -486,10 +487,24 @@ struct CheckedFunction {
     slots: usize,
 }
 
+impl std::fmt::Debug for CheckedFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            identity,
+            body,
+            slots,
+        } = self;
+        f.debug_struct("CheckedFunction")
+            .field("identity", &NodeKeyDebug(identity))
+            .field("body", &body)
+            .field("slots", &slots)
+            .finish()
+    }
+}
+
 /// Every checked function with its signature, index-aligned by construction:
 /// [`Self::new`] is the only way in, and it splits one list of
 /// pairs, so a position names the same function in both halves.
-#[derive(Debug)]
 struct CheckedFunctions {
     /// Each function's signature, indexed by name once.
     signatures: Signatures,
@@ -497,6 +512,27 @@ struct CheckedFunctions {
     /// Each identity's first position, so a by-identity lookup is a map
     /// lookup, not a scan.
     by_identity: BTreeMap<quire_exact::NodeKey, usize>,
+}
+
+impl std::fmt::Debug for CheckedFunctions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            signatures,
+            bodies,
+            by_identity,
+        } = self;
+        f.debug_struct("CheckedFunctions")
+            .field("signatures", &signatures)
+            .field("bodies", &bodies)
+            .field(
+                "by_identity",
+                &by_identity
+                    .iter()
+                    .map(|(key, value)| (NodeKeyDebug(key), value))
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl CheckedFunctions {
@@ -577,7 +613,6 @@ fn function_state<'a>(
 /// ```
 ///
 /// quire:canonical
-#[derive(Debug)]
 pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
@@ -743,11 +778,151 @@ pub struct CheckedGraph {
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
 }
 
+/// Debug writes every node key under one [`scoped`] table, so each node of
+/// the package is written once however many collections hold it, and the
+/// output is linear in the package. The fields are destructured by name, so a
+/// field added to the struct without a line here does not compile.
+impl fmt::Debug for CheckedGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Body<'a>(&'a CheckedGraph);
+        impl fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let CheckedGraph {
+                    source,
+                    package_name,
+                    scope,
+                    functions,
+                    dispatch_tables,
+                    occurrences,
+                    parameter_spans,
+                    requirements,
+                    model_correspondence,
+                    type_nodes,
+                    semantic_graph,
+                    effective_limits,
+                    form_spans,
+                    type_spans,
+                    site_spans,
+                    synthesized_spans,
+                    embedding,
+                    model_selections,
+                    protocol_population_types,
+                    model_roots,
+                    header_layers,
+                    time_sources,
+                    time_units,
+                    state_clauses,
+                    type_invariants,
+                    terminals,
+                    timed_models,
+                    refinements,
+                    abstractions,
+                    model_names,
+                    abstraction,
+                    protocols,
+                    protocol_node_keys,
+                    temporal_clauses,
+                    hyper_nodes,
+                    step_relations,
+                    state_graph_claims,
+                    hybrid_models,
+                    hybrid_claims,
+                    probabilistic,
+                    task_sets,
+                    operation_frames,
+                    model_objects,
+                    model_owners,
+                    model_non_owners,
+                    owner_types,
+                    object_types,
+                    object_nodes,
+                    model_populations,
+                    population_bounds,
+                    population_keys,
+                    declaration_keys,
+                    attempt_spans,
+                } = self.0;
+                f.debug_struct("CheckedGraph")
+                    .field("source", &source)
+                    .field("package_name", &package_name)
+                    .field("scope", &scope)
+                    .field("functions", &functions)
+                    .field("dispatch_tables", &dispatch_tables)
+                    .field("occurrences", &occurrences)
+                    .field(
+                        "parameter_spans",
+                        &parameter_spans
+                            .iter()
+                            .map(|((node, origin), span)| ((NodeKeyDebug(node), origin), span))
+                            .collect::<Vec<_>>(),
+                    )
+                    .field("requirements", &requirements)
+                    .field("model_correspondence", &model_correspondence)
+                    .field("type_nodes", &NodeMap(type_nodes.iter()))
+                    .field("semantic_graph", &semantic_graph)
+                    .field("effective_limits", &effective_limits)
+                    .field("form_spans", &form_spans)
+                    .field("type_spans", &type_spans)
+                    .field("site_spans", &site_spans)
+                    .field("synthesized_spans", &synthesized_spans)
+                    .field("embedding", &embedding)
+                    .field("model_selections", &model_selections)
+                    .field(
+                        "protocol_population_types",
+                        &NodeMap(protocol_population_types.iter()),
+                    )
+                    .field("model_roots", &NodeList(model_roots.iter()))
+                    .field("header_layers", &header_layers)
+                    .field("time_sources", &time_sources)
+                    .field("time_units", &time_units)
+                    .field("state_clauses", &state_clauses)
+                    .field("type_invariants", &type_invariants)
+                    .field("terminals", &terminals)
+                    .field("timed_models", &timed_models)
+                    .field("refinements", &refinements)
+                    .field("abstractions", &abstractions)
+                    .field("model_names", &model_names)
+                    .field("abstraction", &abstraction)
+                    .field("protocols", &protocols)
+                    .field("protocol_node_keys", &protocol_node_keys)
+                    .field("temporal_clauses", &temporal_clauses)
+                    .field("hyper_nodes", &hyper_nodes)
+                    .field("step_relations", &step_relations)
+                    .field("state_graph_claims", &state_graph_claims)
+                    .field("hybrid_models", &hybrid_models)
+                    .field("hybrid_claims", &hybrid_claims)
+                    .field("probabilistic", &probabilistic)
+                    .field("task_sets", &task_sets)
+                    .field("operation_frames", &operation_frames)
+                    .field("model_objects", &model_objects)
+                    .field("model_owners", &model_owners)
+                    .field("model_non_owners", &model_non_owners)
+                    .field("owner_types", &owner_types)
+                    .field("object_types", &object_types)
+                    .field(
+                        "object_nodes",
+                        &object_nodes
+                            .iter()
+                            .map(|(declaration, node)| (declaration, NodeKeyDebug(node)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .field("model_populations", &model_populations)
+                    .field("population_bounds", &population_bounds)
+                    .field("population_keys", &population_keys)
+                    .field("declaration_keys", &declaration_keys)
+                    .field("attempt_spans", &attempt_spans)
+                    .finish()
+            }
+        }
+        scoped(f, &Body(self))
+    }
+}
+
 /// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
 /// `temporal`/`temporal_clause` node, the `claim` occurrence of this
 /// declaration and its `over` parameter's node. Two structurally equal
 /// declarations share one node and differ in their `claim` occurrence.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TemporalClauseNode {
     clause: CheckedTemporalClause,
     identity: quire_exact::NodeKey,
@@ -762,6 +937,29 @@ pub struct TemporalClauseNode {
     /// Each capture's checked initializer and its slot count, in source
     /// order.
     captures: Vec<(CheckedBody, usize)>,
+}
+
+impl std::fmt::Debug for TemporalClauseNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            clause,
+            identity,
+            claim,
+            over,
+            conditions,
+            guard,
+            captures,
+        } = self;
+        f.debug_struct("TemporalClauseNode")
+            .field("clause", &clause)
+            .field("identity", &NodeKeyDebug(identity))
+            .field("claim", &claim)
+            .field("over", &NodeKeyDebug(over))
+            .field("conditions", &conditions)
+            .field("guard", &guard)
+            .field("captures", &captures)
+            .finish()
+    }
 }
 
 impl TemporalClauseNode {
@@ -7363,6 +7561,65 @@ mod tests {
     use quire_exact::{Origin, Role};
 
     use super::*;
+
+    /// Population metadata added by the canonical vocabulary integration
+    /// joins the same table as other retained collections without dropping
+    /// either declaration, any key segment, or either mapped entry.
+    /// Provenance: QSL-1358, QSL-381; retained-field integration regression.
+    #[test]
+    fn protocol_population_types_debug_joins_the_shared_node_table() {
+        use quire_exact::{NodeKey, PathSegment};
+        let mut graph = depth_forms::declarations(depth_forms::Form::Add, 2)
+            .check(CheckingLimits::default())
+            .unwrap();
+        let leaf = NodeKey::new(
+            "population_scope",
+            vec![PathSegment::Text("population_leaf".into())],
+            0,
+        )
+        .unwrap();
+        let mut root = leaf.clone();
+        for ordinal in 0..1_000 {
+            root = NodeKey::new(
+                "population_scope",
+                vec![
+                    PathSegment::Text("population_operand".into()),
+                    PathSegment::Node(root),
+                ],
+                ordinal,
+            )
+            .unwrap();
+        }
+        let first = quire_checked::key::DeclarationKey::fixture("first_population");
+        let second = quire_checked::key::DeclarationKey::fixture("second_population");
+        graph
+            .protocol_population_types
+            .insert(root.clone(), (first.clone(), Vec::new()));
+        graph
+            .protocol_population_types
+            .insert(leaf.clone(), (second.clone(), Vec::new()));
+        graph.model_roots.extend([root, leaf]);
+        let text = format!("{graph:?}");
+        let field = text
+            .split("protocol_population_types: ")
+            .nth(1)
+            .unwrap()
+            .split(", model_roots: ")
+            .next()
+            .unwrap();
+        assert!(
+            field.starts_with("{#"),
+            "population keys use table references: {field}"
+        );
+        assert!(field.contains(&format!("{first:?}")));
+        assert!(field.contains(&format!("{second:?}")));
+        assert!(
+            !field.contains("NodeKey("),
+            "no nested identity is repeated in the map: {field}"
+        );
+        assert_eq!(text.matches("population_scope:[").count(), 1_001);
+        assert_eq!(text.matches("\"population_leaf\"").count(), 1);
+    }
 
     /// QSL-821: `type_admission` and `pending_refusal` keep the reached
     /// ceiling, so the refinement classifier can name it; a failure that is

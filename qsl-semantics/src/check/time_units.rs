@@ -11,6 +11,7 @@
 //! then its composed offset is zero. FR-233 reads an interval bound through
 //! it; the `time` member's own reading waits on FR-230's facet gate.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
@@ -31,7 +32,7 @@ use super::refusal::TimeUnitCause;
 const TIME_DIMENSION: &str = "Time";
 
 /// One declared unit, as FR-230 reads it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 struct DeclaredUnit {
     node: Option<NodeKey>,
     dimension: Option<NodeKey>,
@@ -39,8 +40,25 @@ struct DeclaredUnit {
     offset: Rational,
 }
 
+impl std::fmt::Debug for DeclaredUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            node,
+            dimension,
+            scale,
+            offset,
+        } = self;
+        f.debug_struct("DeclaredUnit")
+            .field("node", &node.as_ref().map(NodeKeyDebug))
+            .field("dimension", &dimension.as_ref().map(NodeKeyDebug))
+            .field("scale", &scale)
+            .field("offset", &offset)
+            .finish()
+    }
+}
+
 /// The time units of one checked package's unit graph.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct TimeUnits {
     /// The base dimension node named `Time`, if the graph declares one.
     time: Option<NodeKey>,
@@ -53,6 +71,37 @@ pub struct TimeUnits {
     /// The dimension equivalence classes (QSpec FR-142 "Effect"), through
     /// which a quantity of one `Time` converts to an equivalent `Time`.
     classes: EquivalenceClasses,
+}
+
+impl std::fmt::Debug for TimeUnits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            time,
+            time_dimensions,
+            units,
+            nominal_nodes,
+            classes,
+        } = self;
+        f.debug_struct("TimeUnits")
+            .field("time", &time.as_ref().map(NodeKeyDebug))
+            .field(
+                "time_dimensions",
+                &time_dimensions
+                    .iter()
+                    .map(|(key, value)| (key, NodeKeyDebug(value)))
+                    .collect::<Vec<_>>(),
+            )
+            .field("units", &units)
+            .field(
+                "nominal_nodes",
+                &nominal_nodes
+                    .iter()
+                    .map(|(key, value)| (NodeKeyDebug(key), value))
+                    .collect::<Vec<_>>(),
+            )
+            .field("classes", &classes)
+            .finish()
+    }
 }
 
 impl TimeUnits {

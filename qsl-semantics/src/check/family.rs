@@ -43,6 +43,7 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_checked::node::NodeKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -1419,9 +1420,25 @@ pub(crate) struct OccurrenceMap<S> {
 /// One node's occurrences: each role's spans in ordinal order.
 type Roles<S> = BTreeMap<OccurrenceRole, Vec<S>>;
 
+/// Each occurrence's node is written through [`NodeKeyDebug`], so under a
+/// [`scoped`] call no node's text repeats.
 impl<S: fmt::Debug> fmt::Debug for OccurrenceMap<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.iter()).finish()
+        f.debug_list()
+            .entries(
+                self.iter()
+                    .map(|(node, origin, span)| (NodeKeyDebugOwned(node), origin, span)),
+            )
+            .finish()
+    }
+}
+
+/// An owned node key written through [`NodeKeyDebug`].
+struct NodeKeyDebugOwned(NodeKey);
+
+impl fmt::Debug for NodeKeyDebugOwned {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        NodeKeyDebug(&self.0).fmt(f)
     }
 }
 

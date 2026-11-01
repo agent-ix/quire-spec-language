@@ -65,6 +65,9 @@
 //! reads it back.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeMap};
 
 use quire_exact::{
     DecimalType, EnumShape, FloatType, Identifier, IntegerInterval, NodeKey, RationalDomain,
@@ -266,10 +269,26 @@ impl CheckedClauseKind {
 ///
 /// One-to-one in both directions (FR-303, ADR-016 §2): a node has at most
 /// one declaration and a declaration at most one node.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct ModelCorrespondence {
     entries: BTreeMap<NodeKey, DeclarationKey>,
     nodes: BTreeMap<DeclarationKey, NodeKey>,
+}
+
+impl fmt::Debug for ModelCorrespondence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelCorrespondence")
+            .field("entries", &NodeMap(self.entries.iter()))
+            .field(
+                "nodes",
+                &self
+                    .nodes
+                    .iter()
+                    .map(|(declaration, node)| (declaration, NodeKeyDebug(node)))
+                    .collect::<BTreeMap<_, _>>(),
+            )
+            .finish()
+    }
 }
 
 /// A second, different correspondence entry for a node or a declaration
@@ -521,7 +540,7 @@ impl From<&CompositeShape> for CompositeForm {
 /// (`composite.key()`) that `ValueType::Composite`, the type of a field of
 /// the declaration's type and a replayed composite value all carry, and
 /// that differs from the node id -- and its [`CompositeForm`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum CheckedTypeNode {
     /// A `scalar_type` node.
     Scalar {
@@ -556,6 +575,38 @@ pub enum CheckedTypeNode {
         /// position-independent regardless, ADR-013 O-14/QC-15).
         variants: SumVariants,
     },
+}
+
+impl fmt::Debug for CheckedTypeNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Scalar { node, shape } => f
+                .debug_struct("Scalar")
+                .field("node", &NodeKeyDebug(node))
+                .field("shape", shape)
+                .finish(),
+            Self::Composite {
+                node,
+                declaration,
+                form,
+            } => f
+                .debug_struct("Composite")
+                .field("node", &NodeKeyDebug(node))
+                .field("declaration", &NodeKeyDebug(declaration))
+                .field("form", form)
+                .finish(),
+            Self::BoundedDomain { node, bound } => f
+                .debug_struct("BoundedDomain")
+                .field("node", &NodeKeyDebug(node))
+                .field("bound", bound)
+                .finish(),
+            Self::Sum { node, variants } => f
+                .debug_struct("Sum")
+                .field("node", &NodeKeyDebug(node))
+                .field("variants", variants)
+                .finish(),
+        }
+    }
 }
 
 impl CheckedTypeNode {

@@ -8,31 +8,60 @@
 //! as its node key. [`super::CheckedRefinement::v2_emission`] orders them
 //! canonically and writes them.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::NodeKey;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use crate::check::node_key::LeafTerm;
 
 /// One `population A::p from C::q` row's two population nodes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct KeyedPopulationRow {
     pub(crate) abstract_population: NodeKey,
     pub(crate) concrete_population: NodeKey,
 }
 
+impl std::fmt::Debug for KeyedPopulationRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            abstract_population,
+            concrete_population,
+        } = self;
+        f.debug_struct("KeyedPopulationRow")
+            .field("abstract_population", &NodeKeyDebug(abstract_population))
+            .field("concrete_population", &NodeKeyDebug(concrete_population))
+            .finish()
+    }
+}
+
 /// One `object A::T from C::U` row: both type nodes and each visible
 /// field's name and lowered expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct KeyedObjectRow {
     pub(crate) abstract_type: NodeKey,
     pub(crate) concrete_type: NodeKey,
     pub(crate) fields: Vec<(String, LeafTerm)>,
 }
 
+impl std::fmt::Debug for KeyedObjectRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            abstract_type,
+            concrete_type,
+            fields,
+        } = self;
+        f.debug_struct("KeyedObjectRow")
+            .field("abstract_type", &NodeKeyDebug(abstract_type))
+            .field("concrete_type", &NodeKeyDebug(concrete_type))
+            .field("fields", &fields)
+            .finish()
+    }
+}
+
 /// One `step` row: its class spelling and node, its target, and the
 /// position of the source row it was written as among the refinement's
 /// authored step rows.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct KeyedStepRow {
     pub(crate) source_class: String,
     pub(crate) source_node: Option<NodeKey>,
@@ -40,8 +69,25 @@ pub(crate) struct KeyedStepRow {
     pub(crate) source: usize,
 }
 
+impl std::fmt::Debug for KeyedStepRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            source_class,
+            source_node,
+            target,
+            source,
+        } = self;
+        f.debug_struct("KeyedStepRow")
+            .field("source_class", &source_class)
+            .field("source_node", &source_node.as_ref().map(NodeKeyDebug))
+            .field("target", &target)
+            .field("source", &source)
+            .finish()
+    }
+}
+
 /// A step row's right side, keyed. An argument `None` is `_`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) enum KeyedStepTarget {
     /// An abstract operation: its `operation_anchor`, the receiver and the
     /// arguments.
@@ -63,13 +109,57 @@ pub(crate) enum KeyedStepTarget {
     Any,
 }
 
+impl std::fmt::Debug for KeyedStepTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Operation {
+                operation,
+                receiver,
+                arguments,
+            } => f
+                .debug_struct("Operation")
+                .field("operation", &NodeKeyDebug(operation))
+                .field("receiver", &receiver)
+                .field("arguments", &arguments)
+                .finish(),
+            Self::ProtocolStep {
+                class,
+                node,
+                arguments,
+            } => f
+                .debug_struct("ProtocolStep")
+                .field("class", &class)
+                .field("node", &node.as_ref().map(NodeKeyDebug))
+                .field("arguments", &arguments)
+                .finish(),
+            Self::Stutter => f.write_str("Stutter"),
+            Self::Any => f.write_str("Any"),
+        }
+    }
+}
+
 /// One `assume` or `ensure` fairness row: the operation's
 /// `operation_anchor`, the kind and the granularity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct KeyedFairnessRow {
     pub(crate) operation: NodeKey,
     pub(crate) kind: FairnessKind,
     pub(crate) granularity: FairnessGranularity,
+}
+
+impl std::fmt::Debug for KeyedFairnessRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            operation,
+            kind,
+            granularity,
+        } = self;
+        f.debug_struct("KeyedFairnessRow")
+            .field("operation", &NodeKeyDebug(operation))
+            .field("kind", &kind)
+            .field("granularity", &granularity)
+            .finish()
+    }
 }
 
 /// Every authored row of one refinement, keyed.
