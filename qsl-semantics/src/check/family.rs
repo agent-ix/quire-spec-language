@@ -2103,7 +2103,6 @@ pub mod fixtures {
             C::EqualityUnitUnresolved,
             C::EqualityEnumVariantUnresolved,
             C::ExpectedIntegerPlacement,
-            C::GeneratedBodyPlaceholderInvoked,
             C::GeneratedArgumentShapeMismatch,
             C::GeneratedOperandKindUnsupported,
             C::GeneratedUnexpectedOutcome,
