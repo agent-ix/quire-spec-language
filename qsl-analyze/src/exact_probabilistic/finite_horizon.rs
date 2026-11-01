@@ -114,12 +114,8 @@ pub fn backward_induction(
         return Err(FhError::InvalidPrecision);
     }
     let order = topological_order(product)?;
-    let exact = exact_pass(product, terminal, objective, &order)?;
-    if exact
-        .values
-        .iter()
-        .all(|value| rational_fits(value, max_rational_bits))
-    {
+    let exact = exact_pass(product, terminal, objective, &order, max_rational_bits)?;
+    if let Some(exact) = exact {
         return Ok(FhResult::Exact {
             values: exact.values,
             policy: exact.policy,
@@ -128,13 +124,16 @@ pub fn backward_induction(
 
     let mut bits = precision_bits;
     loop {
-        let intervals = interval_pass(product, terminal, objective, &order, bits, &exact.policy)?;
+        let intervals = interval_pass(product, terminal, objective, &order, bits)?;
         let mut ambiguous = None;
         for (_, _, initial) in &product.initial {
             let index = initial.index();
             let lower = intervals.lower.get(index).ok_or(FhError::InvalidState)?;
             let upper = intervals.upper.get(index).ok_or(FhError::InvalidState)?;
-            if lower.rational() <= *threshold && *threshold <= upper.rational() {
+            let lower_value = lower.rational();
+            let upper_value = upper.rational();
+            if lower_value <= *threshold && *threshold <= upper_value && lower_value != upper_value
+            {
                 ambiguous = Some((*initial, lower.clone(), upper.clone()));
                 break;
             }
@@ -175,13 +174,17 @@ fn exact_pass(
     terminal: &[Option<Rational>],
     objective: FhObjective,
     order: &[ProbStateId],
-) -> Result<ExactValues, FhError> {
+    max_rational_bits: u64,
+) -> Result<Option<ExactValues>, FhError> {
     let zero = rational_zero();
     let mut values = vec![zero; product.states.len()];
     let mut policy = vec![None; product.states.len()];
     for state in order.iter().rev().copied() {
         let index = state.index();
         if let Some(value) = &terminal[index] {
+            if !rational_fits(value, max_rational_bits) {
+                return Ok(None);
+            }
             values[index] = value.clone();
             continue;
         }
@@ -203,10 +206,13 @@ fn exact_pass(
             }
         }
         let (choice_index, value) = selected.ok_or(FhError::MissingAction)?;
+        if !rational_fits(&value, max_rational_bits) {
+            return Ok(None);
+        }
         values[index] = value;
         policy[index] = Some(choice_index);
     }
-    Ok(ExactValues { values, policy })
+    Ok(Some(ExactValues { values, policy }))
 }
 
 fn interval_pass(
@@ -215,7 +221,6 @@ fn interval_pass(
     objective: FhObjective,
     order: &[ProbStateId],
     bits: u32,
-    exact_policy: &[Option<usize>],
 ) -> Result<IntervalValues, FhError> {
     let zero = Dyadic {
         mantissa: BigInt::zero(),
@@ -223,9 +228,7 @@ fn interval_pass(
     };
     let mut lower = vec![zero.clone(); product.states.len()];
     let mut upper = vec![zero; product.states.len()];
-    if exact_policy.len() != product.states.len() {
-        return Err(FhError::InvalidState);
-    }
+    let mut policy = vec![None; product.states.len()];
     for state in order.iter().rev().copied() {
         let index = state.index();
         if let Some(value) = &terminal[index] {
@@ -237,48 +240,61 @@ fn interval_pass(
         if choices.is_empty() {
             return Err(FhError::MissingAction);
         }
-        let mut selected: Option<(Dyadic, Dyadic)> = None;
-        for (choice_index, edges) in choices.iter().enumerate() {
+        let mut action_values = Vec::with_capacity(choices.len());
+        for edges in &choices {
             let (choice_lower, choice_upper) = weighted_interval(edges, &lower, &upper, bits)?;
-            let _ = choice_index;
-            selected = Some(match selected {
-                None => (choice_lower, choice_upper),
-                Some((current_lower, current_upper)) => match objective {
-                    FhObjective::Min => (
-                        if choice_lower.rational() < current_lower.rational() {
-                            choice_lower
-                        } else {
-                            current_lower
-                        },
-                        if choice_upper.rational() < current_upper.rational() {
-                            choice_upper
-                        } else {
-                            current_upper
-                        },
-                    ),
-                    FhObjective::Max => (
-                        if choice_lower.rational() > current_lower.rational() {
-                            choice_lower
-                        } else {
-                            current_lower
-                        },
-                        if choice_upper.rational() > current_upper.rational() {
-                            choice_upper
-                        } else {
-                            current_upper
-                        },
-                    ),
-                },
-            });
+            action_values.push((choice_lower, choice_upper));
         }
-        let (value_lower, value_upper) = selected.ok_or(FhError::MissingAction)?;
+        let (first_lower, first_upper) = action_values.first().ok_or(FhError::MissingAction)?;
+        let (mut value_lower, mut value_upper) = (first_lower.clone(), first_upper.clone());
+        for (candidate_lower, candidate_upper) in action_values.iter().skip(1) {
+            match objective {
+                FhObjective::Min => {
+                    if candidate_lower.rational() < value_lower.rational() {
+                        value_lower = candidate_lower.clone();
+                    }
+                    if candidate_upper.rational() < value_upper.rational() {
+                        value_upper = candidate_upper.clone();
+                    }
+                }
+                FhObjective::Max => {
+                    if candidate_lower.rational() > value_lower.rational() {
+                        value_lower = candidate_lower.clone();
+                    }
+                    if candidate_upper.rational() > value_upper.rational() {
+                        value_upper = candidate_upper.clone();
+                    }
+                }
+            }
+        }
+        policy[index] =
+            action_values.iter().enumerate().find_map(
+                |(candidate, (candidate_lower, candidate_upper))| {
+                    let proven_optimal = action_values.iter().enumerate().all(
+                        |(other, (other_lower, other_upper))| {
+                            if candidate == other {
+                                return true;
+                            }
+                            match objective {
+                                FhObjective::Min => {
+                                    candidate_upper.rational() <= other_lower.rational()
+                                }
+                                FhObjective::Max => {
+                                    candidate_lower.rational() >= other_upper.rational()
+                                }
+                            }
+                        },
+                    );
+                    proven_optimal.then_some(candidate)
+                },
+            );
         lower[index] = value_lower;
         upper[index] = value_upper;
     }
     Ok(IntervalValues {
         lower,
         upper,
-        policy: exact_policy.to_vec(),
+        policy,
     })
 }
 
