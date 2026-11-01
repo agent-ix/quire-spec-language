@@ -7,11 +7,10 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
-use gag::BufferRedirect;
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::BackendId;
@@ -40,36 +39,6 @@ fn real_corpus() -> tempfile::TempDir {
     let out = tempfile::tempdir().expect("a temporary directory");
     generate(&repository(), out.path()).expect("the corpus generates");
     out
-}
-
-/// Run a library call while redirecting both process streams, and require it
-/// to leave them empty (FR-345-AC-10).
-fn assert_silent<T>(call: impl FnOnce() -> T) -> T {
-    let stdout = BufferRedirect::stdout().expect("stdout redirects");
-    let stderr = BufferRedirect::stderr().expect("stderr redirects");
-    let result = call();
-    std::io::stdout().flush().expect("stdout flushes");
-    std::io::stderr().flush().expect("stderr flushes");
-
-    let mut stdout = stdout.into_inner();
-    let mut stderr = stderr.into_inner();
-    let mut stdout_bytes = Vec::new();
-    let mut stderr_bytes = Vec::new();
-    stdout
-        .read_to_end(&mut stdout_bytes)
-        .expect("captured stdout reads");
-    stderr
-        .read_to_end(&mut stderr_bytes)
-        .expect("captured stderr reads");
-    assert!(
-        stdout_bytes.is_empty(),
-        "compare wrote to stdout: {stdout_bytes:?}"
-    );
-    assert!(
-        stderr_bytes.is_empty(),
-        "compare wrote to stderr: {stderr_bytes:?}"
-    );
-    result
 }
 
 /// A backend named `name` advertising `capabilities` in `bounded` mode.
@@ -174,13 +143,108 @@ const ALL_EDGES: [&str; 6] = ["E1", "E2", "E3", "E4", "E5", "E6"];
 /// (FR-345-AC-6).
 const LAYERS: [HeaderLayer; 6] = HeaderLayer::ALL;
 
-/// FR-345-AC-10: the public comparison core uses the real FR-278 composition
-/// and production registry snapshot. Negotiation changes only the six witness
-/// results; without negotiation its JSON is byte-equal to the CLI's report.
+/// FR-345-AC-10: a subprocess with libtest capture disabled proves both direct
+/// comparison calls leave stdout and stderr empty.
 #[trace("TC-868", "FR-345-AC-10")]
 #[test]
 fn production_comparison_matches_cli_and_negotiates_each_witness() {
     let corpus = real_corpus();
+
+    let probe = run_capture_child("probe", corpus.path());
+    assert!(probe.status.success(), "capture probe failed: {:?}", probe);
+    assert_eq!(
+        stream_region(&probe.stdout, "probe", "stdout"),
+        b"probe stdout"
+    );
+    assert_eq!(
+        stream_region(&probe.stderr, "probe", "stderr"),
+        b"probe stderr"
+    );
+
+    let comparison = run_capture_child("compare", corpus.path());
+    assert!(
+        comparison.status.success(),
+        "comparison subprocess failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&comparison.stdout),
+        String::from_utf8_lossy(&comparison.stderr)
+    );
+    for label in ["no-negotiation", "negotiated"] {
+        assert!(
+            stream_region(&comparison.stdout, label, "stdout").is_empty(),
+            "direct compare wrote to stdout for {label}"
+        );
+        assert!(
+            stream_region(&comparison.stderr, label, "stderr").is_empty(),
+            "direct compare wrote to stderr for {label}"
+        );
+    }
+}
+
+/// A subprocess target used to observe writes that libtest normally captures.
+#[test]
+fn compare_capture_child() {
+    match std::env::var("QSL_518_CAPTURE_MODE").as_deref() {
+        Ok("probe") => mark_streams("probe", || {
+            print!("probe stdout");
+            eprint!("probe stderr");
+        }),
+        Ok("compare") => {
+            let corpus = PathBuf::from(
+                std::env::var_os("QSL_518_CAPTURE_CORPUS")
+                    .expect("the parent supplies the generated corpus path"),
+            );
+            assert_ac10_behavior(&corpus);
+        }
+        Ok(mode) => panic!("unknown capture mode {mode}"),
+        Err(_) => {}
+    }
+}
+
+fn run_capture_child(mode: &str, corpus: &Path) -> Output {
+    Command::new(std::env::current_exe().expect("the test binary path is available"))
+        .args(["--exact", "compare_capture_child", "--nocapture"])
+        .env("QSL_518_CAPTURE_MODE", mode)
+        .env("QSL_518_CAPTURE_CORPUS", corpus)
+        .output()
+        .expect("the capture child starts")
+}
+
+fn stream_region<'a>(output: &'a [u8], label: &str, stream: &str) -> &'a [u8] {
+    let begin = format!("QSL-CAPTURE-BEGIN:{stream}:{label}\n");
+    let end = format!("QSL-CAPTURE-END:{stream}:{label}\n");
+    let start = output
+        .windows(begin.len())
+        .position(|window| window == begin.as_bytes())
+        .unwrap_or_else(|| panic!("missing capture marker {begin:?} in {output:?}"))
+        + begin.len();
+    let finish = output[start..]
+        .windows(end.len())
+        .position(|window| window == end.as_bytes())
+        .unwrap_or_else(|| panic!("missing capture marker {end:?} in {output:?}"))
+        + start;
+    &output[start..finish]
+}
+
+fn mark_streams<T>(label: &str, call: impl FnOnce() -> T) -> T {
+    println!("QSL-CAPTURE-BEGIN:stdout:{label}");
+    eprintln!("QSL-CAPTURE-BEGIN:stderr:{label}");
+    std::io::stdout().flush().expect("stdout marker flushes");
+    std::io::stderr().flush().expect("stderr marker flushes");
+    let result = call();
+    std::io::stdout().flush().expect("stdout call flushes");
+    std::io::stderr().flush().expect("stderr call flushes");
+    println!("QSL-CAPTURE-END:stdout:{label}");
+    eprintln!("QSL-CAPTURE-END:stderr:{label}");
+    std::io::stdout()
+        .flush()
+        .expect("stdout end marker flushes");
+    std::io::stderr()
+        .flush()
+        .expect("stderr end marker flushes");
+    result
+}
+
+fn assert_ac10_behavior(corpus: &Path) {
     let registry = RegistrySnapshot::production().expect("QSL's production registry builds");
     let candidates = |kind| match registry.candidates(kind) {
         qsl_route::CandidateOutcome::Candidates(candidates) => candidates,
@@ -191,7 +255,7 @@ fn production_comparison_matches_cli_and_negotiates_each_witness() {
 
     let cli = Command::new(env!("CARGO_BIN_EXE_xtask"))
         .args(["refinement", "layering"])
-        .arg(corpus.path())
+        .arg(corpus)
         .output()
         .expect("the no-negotiation CLI runs");
     assert_eq!(cli.status.code(), Some(21), "the CLI reports unsupported");
@@ -202,7 +266,9 @@ fn production_comparison_matches_cli_and_negotiates_each_witness() {
     );
     let cli_report = String::from_utf8(cli.stdout).expect("CLI report is UTF-8");
 
-    let no_negotiation = assert_silent(|| compare(corpus.path(), compile_unit, &registry, None));
+    let no_negotiation = mark_streams("no-negotiation", || {
+        compare(corpus, compile_unit, &registry, None)
+    });
     assert_eq!(no_negotiation.verdict, Verdict::Unsupported);
     assert_eq!(no_negotiation.exit, 21);
     assert_eq!(
@@ -246,7 +312,9 @@ fn production_comparison_matches_cli_and_negotiates_each_witness() {
                 requests.push((request.kind, candidate.id().as_str().to_owned()));
                 Disposition::Supported(candidate.clone())
             };
-        assert_silent(|| compare(corpus.path(), compile_unit, &registry, Some(&mut negotiate)))
+        mark_streams("negotiated", || {
+            compare(corpus, compile_unit, &registry, Some(&mut negotiate))
+        })
     };
     assert_eq!(negotiated.verdict, Verdict::Success);
     assert_eq!(negotiated.exit, 0);

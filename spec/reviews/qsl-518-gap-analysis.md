@@ -40,3 +40,9 @@ The full repository matrix could not be assessed in this run: `quire matrix --sc
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The test does not capture stdout/stderr around either direct `compare` call. It checks only the child CLI's stderr and the returned report, so a stream write from either core call could pass, contrary to AC10 and TC-868 step 9. Add an assertion that both direct calls leave both process streams empty. | xtask/tests/refinement_layering.rs:173-217 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | `gag::BufferRedirect` redirects OS file descriptors, but Rust test-harness output capture intercepts `println!` before it reaches those descriptors. A minimal libtest reproduction printed `stream-capture-probe` while the gag buffer remained empty. Thus `assert_silent` can pass while a Rust print macro writes output; a reliable process-stream capture/assertion is still missing. |

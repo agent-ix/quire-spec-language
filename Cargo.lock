@@ -142,7 +142,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.119",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -550,17 +550,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
-name = "filedescriptor"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
-dependencies = [
- "libc",
- "thiserror 1.0.69",
- "winapi",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -650,16 +639,6 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "gag"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a713bee13966e9fbffdf7193af71d54a6b35a0bb34997cd6c9519ebeb5005972"
-dependencies = [
- "filedescriptor",
- "tempfile",
 ]
 
 [[package]]
@@ -1421,7 +1400,7 @@ dependencies = [
  "quire-exact",
  "quire-semantic-value",
  "serde_json",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1474,7 +1453,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1501,7 +1480,7 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1539,7 +1518,7 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1566,7 +1545,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1580,7 +1559,7 @@ dependencies = [
  "quire-exact",
  "quire-semantic-value",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1606,7 +1585,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.119",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1618,7 +1597,7 @@ dependencies = [
  "quire-rs",
  "serde",
  "serde_json",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1631,7 +1610,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.119",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1652,7 +1631,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1675,7 +1654,7 @@ dependencies = [
  "quire-semantic-value",
  "quire-walk",
  "serde",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1699,7 +1678,7 @@ dependencies = [
  "serde_stacker",
  "sha2",
  "stacker",
- "thiserror 2.0.20",
+ "thiserror",
  "unicode-ident",
  "unicode-normalization",
 ]
@@ -1711,7 +1690,7 @@ source = "git+https://github.com/agent-ix/quire-eval?branch=main#e941c90b6a34594
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1726,7 +1705,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "spin",
- "thiserror 2.0.20",
+ "thiserror",
  "triomphe",
  "unicode-normalization",
 ]
@@ -1746,7 +1725,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "thiserror 2.0.20",
+ "thiserror",
  "uuid",
  "yaml_serde",
 ]
@@ -1758,7 +1737,7 @@ source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#e8efd
 dependencies = [
  "quire-canonical",
  "quire-exact",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]
@@ -1789,7 +1768,7 @@ dependencies = [
  "serde_json_canonicalizer",
  "syn 2.0.119",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror",
  "unicode-normalization",
  "xtask",
 ]
@@ -1807,7 +1786,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.20",
+ "thiserror",
  "typify",
 ]
 
@@ -2264,31 +2243,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
 dependencies = [
- "thiserror-impl 2.0.20",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -2463,7 +2422,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.119",
- "thiserror 2.0.20",
+ "thiserror",
  "unicode-ident",
 ]
 
@@ -2711,7 +2670,6 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "arch-lint",
- "gag",
  "ix-trace-rs",
  "jsonschema 0.17.1",
  "logos",
@@ -2728,7 +2686,7 @@ dependencies = [
  "serde_json_canonicalizer",
  "syn 2.0.119",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror",
 ]
 
 [[package]]

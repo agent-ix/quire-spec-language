@@ -43,3 +43,13 @@ No applicable AssuranceProfile for `xtask/tests/refinement_layering.rs` was foun
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No findings (placeholder) | - |
+
+## Recheck at fix head
+
+Rechecked PR #2042 at `6d13fb005a2fe7b18d3a3f40ab605fbe5136cc58`, including the new `gag` dev dependency and `assert_silent` helper. The targeted test, xtask integration-test Clippy, and formatting checks pass. A separate minimal libtest probe demonstrated that `gag::BufferRedirect` does not capture Rust `println!` output under the default test harness capture: the text was emitted by the test harness while the gag buffer was empty. The test helper therefore does not close the existing stream-capture gap.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | `assert_silent` uses `gag::BufferRedirect`, which captures OS file descriptors but misses Rust `println!` output intercepted by libtest. A reproduction emitted `stream-capture-probe` while the gag buffer was empty. The test can therefore pass despite a direct `compare` call writing stdout/stderr under the normal test harness. Capture the calls in a subprocess or use a method that observes the test harness's captured output. | xtask/tests/refinement_layering.rs:45-72 |
