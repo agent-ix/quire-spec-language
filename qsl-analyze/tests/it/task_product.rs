@@ -129,8 +129,8 @@ fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation()
         .activate(&product, "a", source.clone(), int(0), int(0))
         .expect("first activation");
 
-    assert_eq!(scheduler.jobs[0].phase, TaskJobPhase::Ready);
-    let dispatched = scheduler.dispatch().expect("ready job dispatches");
+    assert_eq!(scheduler.jobs()[0].phase, TaskJobPhase::Ready);
+    let dispatched = scheduler.dispatch(&product).expect("ready job dispatches");
     assert_eq!(dispatched.action, qsl_replay::TaskAction::Dispatch);
     let completed = scheduler.complete(None).expect("running job completes");
     assert_eq!(completed.action, qsl_replay::TaskAction::Complete);
@@ -140,6 +140,37 @@ fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation()
         .expect("slot is reused after completion");
     assert_eq!(second.slot, first.slot);
     assert_eq!(second.generation, first.generation + 1);
+}
+
+#[trace("TC-372-RT-29", "FR-419-AC-11")]
+#[test]
+fn edf_uses_absolute_deadline_then_task_name_and_keeps_optional_priority() {
+    let mut a = task("a", 4, 4, 1, Wcet::Single(int(1)));
+    a.priority = Some(9);
+    let mut b = task("b", 4, 4, 1, Wcet::Single(int(1)));
+    b.priority = Some(1);
+    let product = fixed_work_task_product(&set(vec![a, b]), SchedulingPolicy::Edf)
+        .expect("EDF does not require a priority ordering");
+    let operation = |name: &str| {
+        quire_semantic_value::model_transition::ModelTransition::new(
+            format!("\"{name}\""),
+            None,
+            Vec::new(),
+            quire_canonical::Limits::new(1024),
+        )
+        .expect("source transition identity")
+    };
+    let mut scheduler = TaskSchedulerState::default();
+    scheduler
+        .activate(&product, "b", operation("b_release"), int(0), int(0))
+        .expect("activate b first");
+    scheduler
+        .activate(&product, "a", operation("a_release"), int(0), int(0))
+        .expect("activate a second");
+
+    let dispatched = scheduler.dispatch(&product).expect("EDF dispatches");
+    assert_eq!(dispatched.task, "a");
+    assert_eq!(dispatched.priority, Some(9));
 }
 
 #[trace("TC-371", "FR-418-AC-11")]

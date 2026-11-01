@@ -312,8 +312,9 @@ pub struct TaskTransitionIdentity {
     pub jitter: Rational,
     /// The job's absolute deadline.
     pub deadline: Rational,
-    /// The selected scheduling priority.
-    pub priority: u64,
+    /// The checked task's declared priority, when it has one. EDF ignores
+    /// this value for queue order; tasks without a declaration omit it.
+    pub priority: Option<u64>,
     /// The HI budget increase, present only for a budget-change action.
     pub budget_delta: Option<Rational>,
 }

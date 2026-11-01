@@ -8,6 +8,7 @@ use qsl_replay::{TaskAction, TaskTransitionIdentity};
 use qsl_semantics::check::{Arrival, CheckedTaskSets, Release, SchedulingPolicy, TaskSet};
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
+use std::cmp::Ordering;
 
 /// One task type in the finite fixed-work product, in the checked task set's
 /// unit. The row order is the checked task declaration order.
@@ -124,11 +125,18 @@ struct SlotGeneration {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TaskSchedulerState {
     /// Live jobs in canonical task-set/task/slot order.
-    pub jobs: Vec<TaskJob>,
+    jobs: Vec<TaskJob>,
     /// Which job is currently running, by its stable typed identity.
     pub running: Option<TaskTransitionIdentity>,
     activations: Vec<ActivationCounter>,
     generations: Vec<SlotGeneration>,
+}
+
+impl TaskSchedulerState {
+    /// The live jobs in canonical task-set/task/slot order.
+    pub fn jobs(&self) -> &[TaskJob] {
+        &self.jobs
+    }
 }
 
 /// Why a scheduler control operation could not be applied.
@@ -183,7 +191,7 @@ impl TaskSchedulerState {
         jitter: Rational,
         nominal_activation: Rational,
     ) -> Result<TaskTransitionIdentity, TaskSchedulerError> {
-        if product.policy != SchedulingPolicy::FixedPriority {
+        if product.policy == SchedulingPolicy::Amc {
             return Err(TaskSchedulerError::ActionNotEnabled);
         }
         let task = product
@@ -191,7 +199,9 @@ impl TaskSchedulerState {
             .iter()
             .find(|task| task.task == task_name)
             .ok_or(TaskSchedulerError::ActionNotEnabled)?;
-        let priority = task.priority.ok_or(TaskSchedulerError::ActionNotEnabled)?;
+        if product.policy == SchedulingPolicy::FixedPriority && task.priority.is_none() {
+            return Err(TaskSchedulerError::ActionNotEnabled);
+        }
         if jitter < Rational::from_integer(Integer::zero()) || jitter > task.max_jitter {
             return Err(TaskSchedulerError::InvalidJitter);
         }
@@ -239,7 +249,7 @@ impl TaskSchedulerState {
             demand: task.work.clone(),
             jitter: jitter.clone(),
             deadline: nominal_activation.add(&task.relative_deadline),
-            priority,
+            priority: task.priority,
             budget_delta: None,
         };
         if let Some(row) = self.activations.iter_mut().find(|row| {
@@ -302,25 +312,29 @@ impl TaskSchedulerState {
     /// Dispatch the highest-priority ready or suspended job when the
     /// processor is idle. Fixed-priority tie ordering is by task name, job
     /// occurrence, then bounded slot, each in ascending order.
-    pub fn dispatch(&mut self) -> Result<TaskTransitionIdentity, TaskSchedulerError> {
+    pub fn dispatch(
+        &mut self,
+        product: &FixedWorkTaskProduct,
+    ) -> Result<TaskTransitionIdentity, TaskSchedulerError> {
         if self.running.is_some() {
             return Err(TaskSchedulerError::ActionNotEnabled);
         }
-        let selected = self
-            .jobs
-            .iter()
-            .enumerate()
-            .filter(|(_, job)| matches!(job.phase, TaskJobPhase::Ready | TaskJobPhase::Suspended))
-            .min_by_key(|(_, job)| {
-                (
-                    job.identity.priority,
-                    job.identity.task.as_str(),
-                    job.identity.job,
-                    job.identity.slot,
-                )
-            })
-            .map(|(index, _)| index)
-            .ok_or(TaskSchedulerError::ActionNotEnabled)?;
+        let mut selected: Option<usize> = None;
+        for (index, job) in self.jobs.iter().enumerate() {
+            if !matches!(job.phase, TaskJobPhase::Ready | TaskJobPhase::Suspended) {
+                continue;
+            }
+            let Some(held) = selected else {
+                selected = Some(index);
+                continue;
+            };
+            if scheduler_order(product.policy, &job.identity, &self.jobs[held].identity)?
+                == Ordering::Less
+            {
+                selected = Some(index);
+            }
+        }
+        let selected = selected.ok_or(TaskSchedulerError::ActionNotEnabled)?;
         let stored = &mut self.jobs[selected];
         let action = if stored.phase == TaskJobPhase::Suspended {
             TaskAction::Resume
@@ -335,15 +349,25 @@ impl TaskSchedulerState {
 
     /// Preempt the running job when a ready job has strictly higher
     /// fixed-priority rank. Dispatch remains a separate zero-time action.
-    pub fn preempt(&mut self) -> Result<TaskTransitionIdentity, TaskSchedulerError> {
+    pub fn preempt(
+        &mut self,
+        product: &FixedWorkTaskProduct,
+    ) -> Result<TaskTransitionIdentity, TaskSchedulerError> {
         let running = self
             .running
             .as_ref()
             .ok_or(TaskSchedulerError::ActionNotEnabled)?;
-        let running_priority = running.priority;
-        let higher_ready = self.jobs.iter().any(|job| {
-            job.phase == TaskJobPhase::Ready && job.identity.priority < running_priority
-        });
+        let mut higher_ready = false;
+        for job in self
+            .jobs
+            .iter()
+            .filter(|job| job.phase == TaskJobPhase::Ready)
+        {
+            if scheduler_order(product.policy, &job.identity, running)? == Ordering::Less {
+                higher_ready = true;
+                break;
+            }
+        }
         if !higher_ready {
             return Err(TaskSchedulerError::ActionNotEnabled);
         }
@@ -454,6 +478,38 @@ fn same_transition(left: &ModelTransition, right: &ModelTransition) -> bool {
     left.operation() == right.operation()
         && left.receiver() == right.receiver()
         && left.arguments() == right.arguments()
+}
+
+fn scheduler_order(
+    policy: SchedulingPolicy,
+    left: &TaskTransitionIdentity,
+    right: &TaskTransitionIdentity,
+) -> Result<Ordering, TaskSchedulerError> {
+    let order = match policy {
+        SchedulingPolicy::FixedPriority => left
+            .priority
+            .ok_or(TaskSchedulerError::ActionNotEnabled)?
+            .cmp(&right.priority.ok_or(TaskSchedulerError::ActionNotEnabled)?),
+        SchedulingPolicy::Edf => left
+            .deadline
+            .cmp(&right.deadline)
+            .then_with(|| left.task.as_bytes().cmp(right.task.as_bytes()))
+            .then_with(|| transition_order(&left.release, &right.release))
+            .then_with(|| left.job.cmp(&right.job)),
+        SchedulingPolicy::Amc => return Err(TaskSchedulerError::ActionNotEnabled),
+    };
+    Ok(order
+        .then_with(|| left.task.as_bytes().cmp(right.task.as_bytes()))
+        .then_with(|| left.job.cmp(&right.job))
+        .then_with(|| left.slot.cmp(&right.slot)))
+}
+
+fn transition_order(left: &ModelTransition, right: &ModelTransition) -> Ordering {
+    (left.operation(), left.receiver(), left.arguments()).cmp(&(
+        right.operation(),
+        right.receiver(),
+        right.arguments(),
+    ))
 }
 
 fn action_identity(
