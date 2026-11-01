@@ -85,8 +85,12 @@ pub struct EqualityProducerData {
     /// Operands used for the stored equality schedule after explicit
     /// conversions have become their own typed nodes.
     pub(crate) compared_operands: [EqualityOperand; 2],
+    /// Exact source and conversion-target type values retained per operand.
+    pub(crate) operand_type_facts: Vec<EqualityOperandTypeFact>,
     /// The units resolved for this equality's source and comparison types.
     pub(crate) units: UnitTable,
+    /// Exact operand type values paired to the UnitIds selected during typing.
+    pub(crate) unit_type_facts: Vec<EqualityUnitTypeFact>,
     /// The compared enum's own filtered member index, or empty otherwise.
     pub(crate) enum_members: EnumMemberIndex,
 }
@@ -100,10 +104,155 @@ pub struct EqualityProducerIdentity {
     application: NodeKey,
     location: Location,
     unit_ids: Vec<quire_exact::UnitId>,
-    dimension_declarations: BTreeSet<NodeKey>,
-    dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
-    conversion_edge_targets: BTreeSet<NodeKey>,
     text_plan_type_nodes: Vec<(usize, NodeKey)>,
+    enum_member_facts: Vec<EqualityEnumMemberFact>,
+    unit_facts: Vec<EqualityUnitIdentityFact>,
+    operand_type_nodes: Vec<EqualityOperandTypeIdentity>,
+}
+
+/// Exact selected enum identities: source declaration, lowered declaration,
+/// lowered member, case, ordinal, and ordering flag.
+pub type EqualityEnumMemberFact = (NodeKey, NodeKey, NodeKey, Box<str>, usize, bool);
+
+/// The role of a typed quantity operand within equality.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EqualityUnitOperandRole {
+    /// The quantity type before an explicit conversion.
+    Source,
+    /// The quantity type selected as an explicit conversion target.
+    ConversionTarget,
+}
+
+/// A direct checker-held pairing of an operand's UnitId and exact type value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityUnitTypeFact {
+    /// Authored operand position in the equality.
+    pub operand_position: usize,
+    /// The operand's source or conversion-target role.
+    pub role: EqualityUnitOperandRole,
+    /// Exact quantity identity selected by typing.
+    pub unit_id: quire_exact::UnitId,
+    /// Exact checked type value from the typed operand.
+    pub value_type: ValueType,
+}
+
+/// A typed source or conversion-target type fact for one equality operand.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityOperandTypeFact {
+    /// Authored operand position in the equality.
+    pub operand_position: usize,
+    /// The operand's source or conversion-target role.
+    pub role: EqualityUnitOperandRole,
+    /// Exact checked type value from typing.
+    pub value_type: ValueType,
+}
+
+/// A structural node paired to one typed operand role by lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityOperandTypeIdentity {
+    /// Authored operand position in the equality.
+    pub operand_position: usize,
+    /// The operand's source or conversion-target role.
+    pub role: EqualityUnitOperandRole,
+    /// Exact structural key of the type node.
+    pub node: NodeKey,
+}
+
+/// The producer's exact dimension-declaration role for one resolved unit.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum EqualityDimensionRole {
+    /// The dimension declared by a source unit.
+    UnitDimension,
+    /// A dimension declared by a unit on the conversion path.
+    ConversionDimension,
+    /// A normalized base dimension of a compound unit.
+    CompoundBase,
+    /// A base dimension reached from a declared dimension's ordered terms.
+    BaseDimension,
+}
+
+/// One exact dimension declaration retained for a unit identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityDimensionIdentity {
+    /// Unit whose checked quantity identity needs this dimension.
+    pub unit_id: quire_exact::UnitId,
+    /// Exact structural key of the declaration.
+    pub node: NodeKey,
+    /// The fact's role in this unit's identity closure.
+    pub role: EqualityDimensionRole,
+    /// Stable order within the retained unit closure.
+    pub ordinal: usize,
+}
+
+/// One ordered direct term of a nominal dimension used by a unit identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityDimensionTermIdentity {
+    /// Unit whose checked quantity identity needs this term.
+    pub unit_id: quire_exact::UnitId,
+    /// Exact structural key of the dimension declaration containing the term.
+    pub declaration: NodeKey,
+    /// Position in that declaration's ordered term list.
+    pub ordinal: usize,
+    /// Exact structural key of the base dimension.
+    pub base: NodeKey,
+    /// The authored exponent retained by semantic checking.
+    pub exponent: Integer,
+}
+
+/// One ordered target edge on a declared unit's exact conversion path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityConversionEdgeIdentity {
+    /// Unit whose conversion path contains this edge.
+    pub unit_id: quire_exact::UnitId,
+    /// Exact structural key of this edge's source unit.
+    pub source: NodeKey,
+    /// Position on the source unit's ordered conversion path.
+    pub ordinal: usize,
+    /// Exact structural key of the edge's target unit.
+    pub target: NodeKey,
+}
+
+/// Per-unit identity closure retained by the equality checker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityUnitIdentityFact {
+    /// The exact checked UnitId this fact closure belongs to.
+    pub unit_id: quire_exact::UnitId,
+    /// Exact type node paired to this UnitId by the equality checker.
+    pub structural_node: NodeKey,
+    /// Original operand position for this unit/type pairing.
+    pub operand_position: usize,
+    /// Source or conversion-target role for the pairing.
+    pub operand_role: EqualityUnitOperandRole,
+    /// Dimension declarations selected for this unit.
+    pub dimensions: Vec<EqualityDimensionIdentity>,
+    /// Ordered direct terms of selected dimension declarations.
+    pub dimension_terms: Vec<EqualityDimensionTermIdentity>,
+    /// Ordered conversion path edges selected for this unit.
+    pub conversion_edges: Vec<EqualityConversionEdgeIdentity>,
+}
+
+/// Type-related identity facts retained for an equality occurrence.
+pub struct EqualityTypeIdentityFacts {
+    text_plan_type_nodes: Vec<(usize, NodeKey)>,
+    enum_member_facts: Vec<EqualityEnumMemberFact>,
+    unit_facts: Vec<EqualityUnitIdentityFact>,
+    operand_type_nodes: Vec<EqualityOperandTypeIdentity>,
+}
+
+impl EqualityTypeIdentityFacts {
+    pub(crate) fn new(
+        text_plan_type_nodes: Vec<(usize, NodeKey)>,
+        enum_member_facts: Vec<EqualityEnumMemberFact>,
+        unit_facts: Vec<EqualityUnitIdentityFact>,
+        operand_type_nodes: Vec<EqualityOperandTypeIdentity>,
+    ) -> Self {
+        Self {
+            text_plan_type_nodes,
+            enum_member_facts,
+            unit_facts,
+            operand_type_nodes,
+        }
+    }
 }
 
 impl EqualityProducerIdentity {
@@ -111,19 +260,22 @@ impl EqualityProducerIdentity {
         application: NodeKey,
         location: Location,
         unit_ids: Vec<quire_exact::UnitId>,
-        dimension_declarations: BTreeSet<NodeKey>,
-        dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
-        conversion_edge_targets: BTreeSet<NodeKey>,
-        text_plan_type_nodes: Vec<(usize, NodeKey)>,
+        type_identity_facts: EqualityTypeIdentityFacts,
     ) -> Self {
+        let EqualityTypeIdentityFacts {
+            text_plan_type_nodes,
+            enum_member_facts,
+            unit_facts,
+            operand_type_nodes,
+        } = type_identity_facts;
         Self {
             application,
             location,
             unit_ids,
-            dimension_declarations,
-            dimension_terms,
-            conversion_edge_targets,
             text_plan_type_nodes,
+            enum_member_facts,
+            unit_facts,
+            operand_type_nodes,
         }
     }
 
@@ -142,24 +294,24 @@ impl EqualityProducerIdentity {
         &self.unit_ids
     }
 
-    /// Exact dimension declaration keys in the retained unit closure.
-    pub fn dimension_declarations(&self) -> &BTreeSet<NodeKey> {
-        &self.dimension_declarations
-    }
-
-    /// `(dimension declaration, term position, base dimension, exponent)` rows.
-    pub fn dimension_terms(&self) -> &[(NodeKey, usize, NodeKey, Integer)] {
-        &self.dimension_terms
-    }
-
-    /// Exact targets of admitted conversion edges in the retained unit closure.
-    pub fn conversion_edge_targets(&self) -> &BTreeSet<NodeKey> {
-        &self.conversion_edge_targets
-    }
-
     /// Exact Text/Plan comparison type keys by authored operand position.
     pub fn text_plan_type_nodes(&self) -> &[(usize, NodeKey)] {
         &self.text_plan_type_nodes
+    }
+
+    /// Exact filtered enum declaration/member facts used by this equality.
+    pub fn enum_member_facts(&self) -> &[EqualityEnumMemberFact] {
+        &self.enum_member_facts
+    }
+
+    /// Per-UnitId dimension and ordered conversion identity facts.
+    pub fn unit_facts(&self) -> &[EqualityUnitIdentityFact] {
+        &self.unit_facts
+    }
+
+    /// Exact source and conversion-target operand type nodes.
+    pub fn operand_type_nodes(&self) -> &[EqualityOperandTypeIdentity] {
+        &self.operand_type_nodes
     }
 }
 
@@ -187,6 +339,16 @@ impl EqualityProducerData {
     /// Units resolved while checking this equality.
     pub fn units(&self) -> &UnitTable {
         &self.units
+    }
+
+    /// Exact quantity UnitId/type/operand-role joins retained during typing.
+    pub fn unit_type_facts(&self) -> &[EqualityUnitTypeFact] {
+        &self.unit_type_facts
+    }
+
+    /// Exact source and conversion-target type values for each operand.
+    pub fn operand_type_facts(&self) -> &[EqualityOperandTypeFact] {
+        &self.operand_type_facts
     }
 
     /// The filtered enum-member index used by this equality, empty unless its

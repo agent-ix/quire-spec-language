@@ -2885,6 +2885,8 @@ pub enum KeyFault {
     UnnamedRecordKind(quire_checked::key::DeclarationKey),
     /// A compound `UnitId` the check stage's unit scope does not hold.
     UnheldUnit(quire_exact::UnitId),
+    /// An enum shape member has no unique exact source or admitted-model identity.
+    MissingEnumMember(quire_exact::NodeKey),
     /// A declared unit node, or a dimension or target unit node a held unit
     /// names, whose nominal preimage the unit table does not hold.
     UnheldNominal(quire_exact::NodeKey),
@@ -2966,6 +2968,7 @@ impl KeyFault {
             Self::UnknownDeclaration(_) => "declaration-record-present",
             Self::UnnamedRecordKind(_) => "record-kind-named",
             Self::UnheldUnit(_) => "compound-unit-held",
+            Self::MissingEnumMember(_) => "enum-member-identity-retained",
             Self::UnheldNominal(_) => "unit-nominal-preimage-held",
             Self::NominalKeyClash(_) => "unit-nominal-key-unshared",
             Self::OccurrenceOrdinalTaken(_) => "occurrence-ordinal-free",

@@ -2978,12 +2978,56 @@ impl<'a> Typer<'a> {
                 })?;
             }
         }
+        let mut unit_type_facts = Vec::new();
+        let mut operand_type_facts = Vec::new();
+        for (operand_position, operand) in [(0, &left), (1, &right)] {
+            let mut typed_roles = vec![(
+                &operand.source_type,
+                super::ir::EqualityUnitOperandRole::Source,
+            )];
+            if operand.conversion_target.is_some() {
+                typed_roles.push((
+                    &operand.node.value_type,
+                    super::ir::EqualityUnitOperandRole::ConversionTarget,
+                ));
+            }
+            for (value_type, role) in typed_roles {
+                operand_type_facts.push(super::ir::EqualityOperandTypeFact {
+                    operand_position,
+                    role,
+                    value_type: value_type.clone(),
+                });
+                let unit_id = match value_type {
+                    ValueType::Quantity(unit) => Some(unit.clone()),
+                    ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
+                    _ => None,
+                };
+                if let Some(unit_id) = unit_id {
+                    if !units.ids().any(|held| held == unit_id) {
+                        return Err(CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::InternalFault(Box::new(KeyFault::UnheldUnit(
+                                unit_id,
+                            ))),
+                        });
+                    }
+                    unit_type_facts.push(super::ir::EqualityUnitTypeFact {
+                        operand_position,
+                        role,
+                        unit_id,
+                        value_type: value_type.clone(),
+                    });
+                }
+            }
+        }
         let producer = EqualityProducerData {
             operator,
             schedule: checked.schedule(),
             authored_operands: [left.authored.clone(), right.authored.clone()],
             compared_operands: [left.stored.clone(), right.stored.clone()],
+            operand_type_facts,
             units,
+            unit_type_facts,
             enum_members: match (checked.schedule(), &left.node.value_type) {
                 (
                     quire_semantic_value::declaration::EqualitySchedule::Enum,

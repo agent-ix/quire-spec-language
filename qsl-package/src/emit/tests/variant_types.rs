@@ -4,8 +4,8 @@
 //! model-owned `variant_type` node, each case as a `value`/`enum_value` node
 //! of it (any non-empty case name, kept exactly), passes a variant value by
 //! `ref` with no conversion node, and reads back `Verified` through IR's
-//! checked-package/v2 reader. A case that is not the owner's, or an owner that
-//! is not the declaring variant type, is refused by the same reader.
+//! checked-package/v2 reader. The admitted-equality accessor returns the exact
+//! missing enum-member witness until QSL's per-fact rows are consumed.
 
 use super::owners::node_where;
 use super::*;
@@ -100,6 +100,28 @@ impl Emitted {
     }
 }
 
+/// Checks emitted enum producer rows and the exact IR accessor refusal for
+/// each decision, using this fixture's selected domain-package evidence.
+fn assert_enum_equality_reader_outcomes(emitted: &Emitted) {
+    let decisions = emitted.wire["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .expect("the package emits equality decisions");
+    assert!(!decisions.is_empty());
+    assert_eq!(
+        emitted.emission.equality_producer_identity_rows().len(),
+        decisions.len(),
+        "each serialized decision retains its producer application row"
+    );
+    assert!(decisions
+        .iter()
+        .filter(|decision| decision["schedule"] == "enum")
+        .all(|decision| !decision["enum_members"].as_array().unwrap().is_empty()));
+    super::assert_equality_reader_outcomes(
+        &emitted.emission,
+        emitted.read(emitted.emission.package.bytes()),
+    );
+}
+
 /// FR-360-AC-8 item 12: each variant type the unit names is one
 /// `model`/`variant_type` node with a `ModelOwner` of the declaring package
 /// and the type's node, none is a unit-owned `scalar_type`/`enum`, and the
@@ -108,7 +130,10 @@ impl Emitted {
 #[trace("FR-360-AC-8", "TC-1009")]
 #[test]
 fn a_variant_type_is_one_model_owned_node_with_one_enum_value_per_case() {
-    let emitted = emit_unit(UNIT);
+    let emitted = emit_unit(
+        "function pick using v(t: M::Tier): M::Tier pure { t }\n\
+         function oddPick using v(t: M::Odd): M::Odd pure { t }",
+    );
     for name in ["Tier", "Odd"] {
         assert_eq!(
             emitted.variant_node(name)["owner"],
@@ -137,7 +162,10 @@ fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_for
         SelectedModelEnums,
     };
 
-    let emitted = emit_unit(UNIT);
+    let emitted = emit_unit(
+        "function pick using v(t: M::Tier): M::Tier pure { t }\n\
+         function oddPick using v(t: M::Odd): M::Odd pure { t }",
+    );
     let Read::Verified { admitted, .. } = emitted.read(emitted.emission.package.bytes()) else {
         panic!("the emitted model enums are admitted")
     };
@@ -316,40 +344,70 @@ fn a_variant_value_is_passed_by_ref_and_compared_by_the_enumeration_equality() {
     assert_eq!(applied("quire.op.enum.ne"), 1, "notGold");
 }
 
+/// QSL-1390: model enum members keep their exact declaration and member
+/// identities in the equality sidecar, including case names that are not
+/// source identifiers.
+#[ix_trace_rs::trace("QSL-1390")]
+#[test]
+fn model_enum_equality_emits_exact_member_identities() {
+    let emitted = emit_unit(UNIT);
+    let decisions = emitted.wire["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .expect("the checked-term sidecar carries equality decisions");
+    let decision = decisions
+        .iter()
+        .find(|decision| decision["schedule"] == "enum")
+        .expect("oddSame uses the enum schedule");
+    let variant = emitted.variant_node("Odd");
+    let members = decision["enum_members"]
+        .as_array()
+        .expect("the enum decision carries exact members");
+    assert_eq!(members.len(), ODD_CASES.len());
+    for (member, case) in members.iter().zip(ODD_CASES) {
+        assert_eq!(member["enum_type"], variant["node_id"]);
+        assert_eq!(member["case"], case);
+        let member_node = nodes(&emitted.wire)
+            .iter()
+            .find(|node| node["node_id"] == member["member"])
+            .expect("the sidecar member identity names an emitted node");
+        assert_eq!(member_node["semantic_form"], "enum_value");
+        assert_eq!(member_node["semantic_type"], variant["node_id"]);
+        assert_eq!(member_node["body"]["value"], case);
+    }
+}
+
 /// FR-360-AC-8: a unit naming only a variant type with identifier cases emits
-/// and reads back `Verified` (the minimal case of the test below).
+/// its model enum; IR admits the carrier and the accessor reports the exact
+/// enum-member witness it still needs.
 #[trace("FR-360-AC-8", "TC-1009")]
 #[test]
-fn an_identifier_cased_variant_type_emits_and_reads_back_verified() {
+fn an_identifier_cased_variant_type_emits_and_reports_enum_member_witness() {
     let emitted = emit_unit(TIER_UNIT);
     assert_eq!(
         node_where(&emitted.wire, "model", "variant_type").len(),
         1,
         "Tier is the one variant type the unit names"
     );
-    assert!(matches!(
-        emitted.read(emitted.emission.package.bytes()),
-        Read::Verified { .. }
-    ));
+    assert_enum_equality_reader_outcomes(&emitted);
 }
 
 /// FR-360-AC-8, FR-360-AC-4: the package of a unit with a variant-typed
-/// parameter, result, field read, clause and a type whose cases are not
-/// identifiers reads back `Verified`.
+/// parameter, result, field read and clause retains its equality facts; IR
+/// admits the carrier and the accessor reports the exact enum-member witness.
 #[trace("FR-360-AC-8", "FR-360-AC-4", "TC-1009", "TC-1007")]
 #[test]
-fn a_package_naming_variant_types_reads_back_verified() {
+fn a_package_naming_variant_types_reports_enum_member_witness() {
     let emitted = emit_unit(UNIT);
-    match emitted.read(emitted.emission.package.bytes()) {
-        Read::Verified { .. } => {}
-        other => panic!("expected Verified, got {other:?}"),
-    }
+    assert_enum_equality_reader_outcomes(&emitted);
 }
 
 /// The package with `edit` applied to the wire of the first `Odd` case node
 /// named `case`.
 fn tampered_read(case: &str, edit: impl FnOnce(&mut Value, &Value)) -> Read {
-    let emitted = emit_unit(UNIT);
+    let emitted = emit_unit(
+        "function pick using v(t: M::Tier): M::Tier pure { t }\n\
+         function oddPick using v(t: M::Odd): M::Odd pure { t }",
+    );
     let tier = emitted.variant_node("Tier")["node_id"].clone();
     let mut wire = emitted.wire.clone();
     let node = wire["semantic_graph"]["nodes"]

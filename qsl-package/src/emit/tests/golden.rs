@@ -333,7 +333,9 @@ const NOT_LOWERED: [&str; 8] = [
 /// `positive-operation-identities.json` and
 /// `positive-control-operations.json` whose identity a row lowers, the node
 /// QSL emits for a function holding that operation equals the fixture node
-/// on the AC's members, and IR's v2 reader admits the emitted package.
+/// on the AC's members. The admitted-equality accessor materializes supported
+/// Plan rows and names exact missing per-fact witnesses for Text, Enum, and
+/// Quantity schedules.
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
@@ -356,13 +358,23 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
             "{}: nothing is omitted",
             case.identity
         );
-        let read = read_back(&emission);
-        assert!(
-            matches!(read, Read::Verified { .. }),
-            "{}: IR's v2 reader must admit the emitted package, got {read:?}",
-            case.identity
-        );
-        emitted.push(wire(&emission));
+        let emitted_wire = wire(&emission);
+        let has_equality_sidecar = emitted_wire
+            .get("checked_term_data")
+            .and_then(|data| data.get("equality_decisions"))
+            .and_then(Value::as_array)
+            .is_some_and(|rows| !rows.is_empty());
+        if has_equality_sidecar {
+            assert_equality_reader_outcomes(&emission, read_back(&emission));
+        } else {
+            let read = read_back(&emission);
+            assert!(
+                matches!(read, Read::Verified { .. }),
+                "{}: IR's v2 reader must admit a fixture without checked_term_data, got {read:?}",
+                case.identity
+            );
+        }
+        emitted.push(emitted_wire);
     }
 
     let mut compared_nodes = 0_usize;
