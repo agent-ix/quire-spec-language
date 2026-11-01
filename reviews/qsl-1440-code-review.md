@@ -30,3 +30,9 @@ Reviewed the frozen QSL-1440 Rust diff at `d501217ba732e6a3af274f7cc3f8572888cb0
 - Focused Cargo test and Clippy could not run: Cargo attempted to fetch the locked `quire-contract-ir` revision into read-only `/home/peter/.cargo/git/db`; offline retry confirmed the revision is absent from the local cache. The coder reported a passing focused test against the earlier QSpec checkout; that is not a test run by this reviewer.
 - No applicable AssuranceProfile found. No CI workflow changed. Aggregate `make ci` was not run, per the dispatching brief.
 
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The module-level description now states the eager-path proof condition and preserves uncertain reachability as unknown. |
