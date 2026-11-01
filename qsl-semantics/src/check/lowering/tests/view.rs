@@ -225,7 +225,9 @@ fn declared(key: &quire_exact::NodeKey) -> Json {
 
 fn member_kind_json(member: &Member) -> Json {
     match member {
-        Member::Field { declaration, name } => {
+        Member::Field {
+            declaration, name, ..
+        } => {
             json!({"kind": "field", "declaration": declared(declaration), "name": name.as_str()})
         }
         Member::Position {
