@@ -64,6 +64,7 @@ mod composed_types;
 mod config_version;
 mod config_version_spine;
 mod deep_sources;
+mod dispatch_emission;
 mod domain_protocol_emission;
 mod emit_checked_v2;
 mod evaluate_reads_no_display_strings;

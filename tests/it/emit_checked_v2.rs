@@ -427,7 +427,10 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
             source_map: read.source_map(),
             refinement_step_rows: read.refinement_step_rows(),
         },
-        None,
+        quire_contract_model::CheckedPackageSidecarsRef {
+            checked_term_data: None,
+            temporal_bindings: None,
+        },
         read.capability_report(),
         read.diagnostics(),
         quire_canonical::Limits::new(1 << 24),

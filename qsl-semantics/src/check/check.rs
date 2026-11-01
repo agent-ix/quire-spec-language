@@ -789,6 +789,10 @@ pub struct DispatchOperation {
     pub parameters: Vec<ValueType>,
     /// The declared result type.
     pub result: ValueType,
+    /// The declaring model type selected for this operation family.
+    pub selected_operation_owner: EffectiveId,
+    /// The producer-selected operation member name.
+    pub selected_operation: String,
     /// The dispatch table this operation's call sites resolve to.
     pub table: usize,
 }

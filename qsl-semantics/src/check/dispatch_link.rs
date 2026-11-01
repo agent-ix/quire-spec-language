@@ -181,7 +181,9 @@ impl PackageDeclarations {
                 }
             };
             match cause {
-                Ok((declarations, call)) => linked.push((family.alias, declarations, call)),
+                Ok((declarations, call)) => {
+                    linked.push((family.alias, family.root, declarations, call))
+                }
                 Err(cause) => {
                     let receivers = clauses
                         .as_ref()
@@ -198,8 +200,8 @@ impl PackageDeclarations {
         }
         let first_new = self.functions.len();
         let mut refusals = Vec::new();
-        for (alias, declarations, call) in linked {
-            if let Err(cause) = self.merge_linked(&alias, declarations, call) {
+        for (alias, root, declarations, call) in linked {
+            if let Err(cause) = self.merge_linked(&alias, &root, declarations, call) {
                 refusals.push(dispatch_link(*cause));
             }
         }
@@ -351,6 +353,7 @@ impl PackageDeclarations {
     fn merge_linked(
         &mut self,
         alias: &str,
+        root: &DeclarationKey,
         linked: PackageDeclarations,
         call: Option<CallSite>,
     ) -> Result<(), Box<DispatchLinkCause>> {
@@ -413,6 +416,19 @@ impl PackageDeclarations {
             .filter(|operation| operation.table == table_base)
             .map(|operation| operation.receiver_type.clone())
             .collect();
+        let Some((selected_operation_owner, selected_operation)) = self
+            .dispatch_operations
+            .iter()
+            .find(|operation| operation.table == table_base)
+            .map(|operation| {
+                (
+                    operation.selected_operation_owner.clone(),
+                    operation.selected_operation.clone(),
+                )
+            })
+        else {
+            return Err(Box::new(invariant(root.clone())));
+        };
         if let (Some(call), Some(view)) = (&call, self.selected_views.get(alias)) {
             let receivers = self.receiver_types(view, call.owner.clone());
             for receiver_type in receivers {
@@ -422,6 +438,8 @@ impl PackageDeclarations {
                         member: call.member.clone(),
                         parameters: call.parameters.clone(),
                         result: call.result.clone(),
+                        selected_operation_owner: selected_operation_owner.clone(),
+                        selected_operation: selected_operation.clone(),
                         table: table_base,
                     });
                 }

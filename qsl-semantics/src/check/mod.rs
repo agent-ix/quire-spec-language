@@ -416,7 +416,9 @@ pub use identity::{
     CorrespondenceConflict, InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant,
     SumVariants,
 };
-pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
+pub use ir::{
+    CollectionLoss, CollectionProperty, DispatchCandidate, DispatchProducerDecision, DispatchTable,
+};
 pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
@@ -672,6 +674,14 @@ pub struct CheckedGraph {
         ),
         ir::EqualityProducerIdentity,
     >,
+    /// Linked dispatch decisions keyed by the exact application and source occurrence.
+    dispatch_producer_decisions: BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::DispatchProducerDecision,
+    >,
     /// NFR-011: the ceilings this package was checked under.
     effective_limits: CheckingLimits,
     /// FR-096: each function's form spans, by declaration index, so a
@@ -831,6 +841,7 @@ impl fmt::Debug for CheckedGraph {
                     semantic_graph,
                     equality_producer_data,
                     equality_producer_identities,
+                    dispatch_producer_decisions,
                     effective_limits,
                     form_spans,
                     type_spans,
@@ -902,6 +913,7 @@ impl fmt::Debug for CheckedGraph {
                             .collect::<Vec<_>>(),
                     )
                     .field("equality_producer_identities", equality_producer_identities)
+                    .field("dispatch_producer_decisions", dispatch_producer_decisions)
                     .field("effective_limits", &effective_limits)
                     .field("form_spans", &form_spans)
                     .field("type_spans", &type_spans)
@@ -2416,6 +2428,7 @@ impl PackageDeclarations {
                 &scope,
                 &owner,
                 &models,
+                &dispatch_tables,
                 scope.types().units().clone(),
                 protocol_profile.as_ref(),
                 0,
@@ -4071,6 +4084,7 @@ impl PackageDeclarations {
             &scope,
             &owner,
             &models,
+            &dispatch_tables,
             units,
             protocol_profile.as_ref(),
             drafts.len(),
@@ -5286,6 +5300,7 @@ impl PackageDeclarations {
             semantic_graph,
             equality_producer_data,
             equality_producer_identities,
+            dispatch_producer_decisions,
             model_correspondence,
             identities,
             binders,
@@ -5294,6 +5309,7 @@ impl PackageDeclarations {
             lowered.graph,
             lowered.equality_producer_data,
             lowered.equality_producer_identities,
+            lowered.dispatch_producer_decisions,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
@@ -6116,6 +6132,7 @@ impl PackageDeclarations {
             semantic_graph,
             equality_producer_data,
             equality_producer_identities,
+            dispatch_producer_decisions,
             effective_limits: limits,
             form_spans,
             type_spans,
@@ -6675,6 +6692,19 @@ impl CheckedGraph {
         ir::EqualityProducerIdentity,
     > {
         &self.equality_producer_identities
+    }
+
+    /// Producer-linked dispatch decisions keyed by exact application and source occurrence.
+    pub fn dispatch_producer_decisions(
+        &self,
+    ) -> &BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::DispatchProducerDecision,
+    > {
+        &self.dispatch_producer_decisions
     }
 
     /// Checked time sources of this package, in declaration order.
@@ -7440,6 +7470,13 @@ impl CheckedGraph {
     /// constructs a layer-5 type (FR-068-AC-3).
     pub fn function_state(&self, index: usize) -> Option<FunctionState<'_>> {
         self.functions.get(index).map(function_state)
+    }
+
+    /// One checked function's structural identity by its dispatch-table index.
+    pub fn function_identity_at(&self, index: usize) -> Option<quire_exact::NodeKey> {
+        self.functions
+            .get(index)
+            .map(|(_, function)| function.identity.clone())
     }
 
     /// One admitted function's evaluation-visible state, by its minted

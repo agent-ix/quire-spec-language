@@ -50,6 +50,7 @@ use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{CheckedNode, EqualityProducerData, NodeId, Slot};
+use super::ir::{DispatchProducerDecision, DispatchTable};
 use super::node_key::{
     AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm,
     TupleMember, TupleTerm,
@@ -659,6 +660,8 @@ pub(crate) struct Lowered {
     /// the application and its quantity type nodes are being lowered.
     pub(crate) equality_producer_identities:
         BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
+    /// Linked dispatch decisions paired with exact lowered call occurrences.
+    pub(crate) dispatch_producer_decisions: BTreeMap<(NodeKey, Location), DispatchProducerDecision>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -774,6 +777,9 @@ pub(crate) struct Lowering<'a> {
     /// Exact identity witnesses for equality application occurrences.
     equality_producer_identities:
         BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
+    /// Linked producer decisions retained by exact call occurrence.
+    dispatch_producer_decisions: BTreeMap<(NodeKey, Location), DispatchProducerDecision>,
+    dispatch_tables: &'a [DispatchTable],
     /// Attempts and compensation nodes retained for clauses delayed until
     /// their required temporal clause keys are available.
     protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
@@ -1711,6 +1717,7 @@ impl<'a> Lowering<'a> {
         scope: &'a Scope,
         owner: &SourceOwner,
         models: &'a [AdmittedModel],
+        dispatch_tables: &'a [DispatchTable],
         units: UnitTable,
         protocol_profile: Option<&'a DefinitionReference>,
         function_count: usize,
@@ -1725,6 +1732,7 @@ impl<'a> Lowering<'a> {
             scope,
             owner: owner.clone(),
             models,
+            dispatch_tables,
             units,
             correspondence: ModelCorrespondence::default(),
             protocol_profile,
@@ -1759,6 +1767,7 @@ impl<'a> Lowering<'a> {
             protocol_members: BTreeMap::new(),
             equality_producer_data: BTreeMap::new(),
             equality_producer_identities: BTreeMap::new(),
+            dispatch_producer_decisions: BTreeMap::new(),
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
             temporal_keys: BTreeMap::new(),
@@ -1844,6 +1853,7 @@ impl<'a> Lowering<'a> {
             protocol_members: self.protocol_members,
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,
+            dispatch_producer_decisions: self.dispatch_producer_decisions,
         }
     }
 
@@ -4669,6 +4679,10 @@ impl<'a> Lowering<'a> {
             Keyed::Application(operator, operation) => {
                 let equality_producer = node.equality_producer().cloned();
                 let location = node.location();
+                let dispatch_operation = match node.kind() {
+                    NodeKind::Dispatch { operation, .. } => Some(*operation),
+                    _ => None,
+                };
                 let term = self.application(
                     node,
                     operator,
@@ -4688,6 +4702,52 @@ impl<'a> Lowering<'a> {
                         .insert((key.clone(), location.clone()), data);
                     self.equality_producer_identities
                         .insert((key.clone(), location.clone()), identity);
+                }
+                if let Some(operation_index) = dispatch_operation {
+                    let LeafTerm::Reference {
+                        target: NodeRef::Admitted(application),
+                    } = &term
+                    else {
+                        return Err(fault(location, KeyFault::UnresolvedDraft));
+                    };
+                    let selected = self
+                        .scope
+                        .dispatch_operations()
+                        .get(operation_index)
+                        .cloned()
+                        .ok_or_else(|| {
+                            fault(
+                                location,
+                                KeyFault::DispatchOperationOutOfRange {
+                                    index: operation_index,
+                                },
+                            )
+                        })?;
+                    let table = self
+                        .dispatch_tables
+                        .get(selected.table)
+                        .cloned()
+                        .ok_or_else(|| {
+                            fault(
+                                location,
+                                KeyFault::DispatchTableOutOfRange {
+                                    index: selected.table,
+                                },
+                            )
+                        })?;
+                    let declaring_node =
+                        self.object_node(selected.selected_operation_owner.clone(), location)?;
+                    let context_node =
+                        self.object_node(selected.receiver_type.clone(), location)?;
+                    self.dispatch_producer_decisions.insert(
+                        (application.clone(), location.clone()),
+                        DispatchProducerDecision {
+                            operation: selected,
+                            table,
+                            declaring_node,
+                            context_node,
+                        },
+                    );
                 }
                 Ok(term)
             }
