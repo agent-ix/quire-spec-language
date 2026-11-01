@@ -331,7 +331,7 @@ fn check_initial_and_steps_retain_protocol_control_candidates() {
         world.refinement(),
         &systems.concrete,
         &systems.abstract_system,
-        &protocol,
+        protocol,
         0,
         concrete_initial.state(),
     );
@@ -375,7 +375,7 @@ fn check_initial_and_steps_retain_protocol_control_candidates() {
             world.refinement(),
             &systems.concrete,
             &systems.abstract_system,
-            &protocol,
+            protocol,
             position,
             &ConcreteStep {
                 position: step_index,

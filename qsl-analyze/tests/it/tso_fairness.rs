@@ -459,13 +459,12 @@ fn unfair_member<'f>(
     enabled: &[ProtocolTransition],
     taken: &ProtocolTransition,
 ) -> Option<&'f ProtocolFairness> {
-    let numbers: BTreeMap<&ProtocolTransition, Identity> = enabled
-        .iter()
-        .enumerate()
-        .map(|(index, transition)| (transition, Identity::new(index as u64)))
-        .collect();
     let identity = |transition: &ProtocolTransition| -> Result<Identity, ()> {
-        numbers.get(transition).copied().ok_or(())
+        enabled
+            .iter()
+            .position(|candidate| candidate == transition)
+            .map(|index| Identity::new(u64::try_from(index).unwrap_or(u64::MAX)))
+            .ok_or(())
     };
     let (members, constraints): (Vec<usize>, Vec<_>) =
         protocol_constraints(fairness, enabled, identity)
@@ -473,8 +472,10 @@ fn unfair_member<'f>(
             .into_iter()
             .unzip();
     let step = LoopStep::new(
-        enabled.iter().map(|transition| numbers[transition]),
-        EdgeLabel::Transition(numbers[taken]),
+        enabled
+            .iter()
+            .map(|transition| identity(transition).expect("every enabled transition is numbered")),
+        EdgeLabel::Transition(identity(taken).expect("the taken transition is numbered")),
     );
     match check_loop(&[step], &constraints).expect("a loop has a step") {
         LassoFairness::Fair => None,
