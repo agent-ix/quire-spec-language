@@ -3541,6 +3541,10 @@ mod tests {
             proof.invalid_step(&qsl_1306_alias_query, &mut |_| true),
             Ok(None)
         );
+        assert_eq!(
+            proof.outcome(&qsl_1306_alias_query, &mut |_| true),
+            Ok(ProofOutcome::Refutes)
+        );
 
         let qsl_1306_outer_alias_query = read_query(
             b"(set-logic QF_LIA)\n\
@@ -3562,6 +3566,10 @@ mod tests {
         assert_eq!(
             proof.invalid_step(&qsl_1306_outer_alias_query, &mut |_| true),
             Ok(None)
+        );
+        assert_eq!(
+            proof.outcome(&qsl_1306_outer_alias_query, &mut |_| true),
+            Ok(ProofOutcome::Refutes)
         );
 
         let changing_named_alias_query = read_query(
