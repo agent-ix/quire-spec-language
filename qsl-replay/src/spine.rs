@@ -79,6 +79,7 @@ pub use clause::{
     ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState,
     OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
     TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
+    UnsupportedProofCause, UnsupportedQuerySelection,
 };
 mod refinement;
 pub use refinement::{

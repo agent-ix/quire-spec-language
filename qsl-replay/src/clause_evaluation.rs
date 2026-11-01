@@ -393,6 +393,17 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
                 coded(stage, category, code, "")
             }
         }
+        ClauseDisposition::UnsupportedProofRepresentation { cause, .. } => {
+            let reason = match cause {
+                crate::spine::UnsupportedProofCause::ValueRepresentation => "value-representation",
+            };
+            coded(
+                stage,
+                category,
+                Code::UnknownRequiredFeature.as_str(),
+                reason,
+            )
+        }
         ClauseDisposition::UnknownLanguage { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::FrameViolation(_)
