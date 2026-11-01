@@ -2,6 +2,7 @@
 //! Checked protocol temporal evaluation and immutable correction lineage.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use crate::protocol_artifact::{v3, wire::Handle};
 use qsl_package::CheckedPackage;
@@ -218,7 +219,24 @@ impl ProtocolLedger {
             return Err(ProtocolRefusal::TriggerIdentityCount);
         }
         let effective = limits.bounded();
-        if let Some(exhaustion) = preflight_input(&input.trace, effective, declaration) {
+        let clause = checked
+            .graph()
+            .temporal_clauses()
+            .get(declaration)
+            .ok_or(ProtocolRefusal::MissingCheckedDeclaration)?
+            .clause();
+        let guarded = matches!(
+            clause.activation(),
+            qsl_semantics::check::Activation::Each { guarded: true }
+        );
+        if let Some(exhaustion) = preflight_input(
+            &input.trace,
+            &input.trigger_identities,
+            effective,
+            declaration,
+            guarded,
+            clause.captures().len(),
+        ) {
             return self.record_bounded_input(
                 input.selection,
                 input.trace.anchor,
@@ -349,7 +367,14 @@ fn same_trigger_identities(left: &Trace, right: &Trace) -> bool {
             .all(|(left, right)| left.identity == right.identity)
 }
 
-fn preflight_input(trace: &Trace, limits: Limits, declaration: usize) -> Option<super::Exhaustion> {
+fn preflight_input(
+    trace: &Trace,
+    identities: &[SemanticTriggerIdentity],
+    limits: Limits,
+    declaration: usize,
+    guarded: bool,
+    capture_count: usize,
+) -> Option<super::Exhaustion> {
     use super::LimitDimension as Dimension;
 
     let subject = super::Subject {
@@ -377,19 +402,9 @@ fn preflight_input(trace: &Trace, limits: Limits, declaration: usize) -> Option<
                 .fold(0usize, usize::saturating_add),
             limits.valuations,
         ),
-        (Dimension::Instances, trace.triggers.len(), limits.instances),
-        (
-            Dimension::Captures,
-            trace
-                .triggers
-                .iter()
-                .map(|trigger| trigger.captures.len())
-                .fold(0usize, usize::saturating_add),
-            limits.captures,
-        ),
         (Dimension::Retention, trace.evicted.len(), limits.retention),
     ];
-    requested
+    if let Some(exhaustion) = requested
         .into_iter()
         .find_map(|(dimension, requested, limit)| {
             (requested > limit).then_some(super::Exhaustion {
@@ -400,6 +415,77 @@ fn preflight_input(trace: &Trace, limits: Limits, declaration: usize) -> Option<
                 subject,
             })
         })
+    {
+        return Some(exhaustion);
+    }
+
+    // The evaluator visits each delivery and supplied capture even when a
+    // delivery repeats an existing semantic identity. Bound that scan before
+    // constructing any temporary identity state; retained-instance and
+    // capture charges below are then computed once per successful identity.
+    let delivery_work = trace
+        .triggers
+        .iter()
+        .map(|trigger| trigger.captures.len().saturating_add(1))
+        .fold(0usize, usize::saturating_add);
+    if delivery_work > limits.visits {
+        return Some(super::Exhaustion {
+            dimension: Dimension::Visits,
+            used: 0,
+            requested: delivery_work,
+            limit: limits.visits,
+            subject,
+        });
+    }
+
+    let mut instances = BTreeSet::new();
+    let mut captured = BTreeSet::new();
+    let mut retained_captures = 0usize;
+    for (trigger, identity) in trace.triggers.iter().zip(identities) {
+        let active = trace.trigger_evidence == super::Evidence::Admitted
+            && (!guarded || trigger.guard == Some(true));
+        if !active {
+            continue;
+        }
+
+        if instances.insert(identity.as_str()) && instances.len() > limits.instances {
+            return Some(super::Exhaustion {
+                dimension: Dimension::Instances,
+                used: 0,
+                requested: instances.len(),
+                limit: limits.instances,
+                subject,
+            });
+        }
+
+        let captures_established = trigger.captures.len() == capture_count
+            && trigger.anchor == trace.anchor
+            && trigger.captures.iter().enumerate().all(|(index, capture)| {
+                !trace.evicted.iter().any(|evicted| {
+                    matches!(
+                        evicted,
+                        super::Eviction::Capture { instance, capture }
+                            if instance == identity.as_str() && *capture == index
+                    )
+                }) && matches!(
+                    capture,
+                    super::CaptureInput::Value { anchor, .. } if anchor == &trace.anchor
+                )
+            });
+        if captures_established && captured.insert(identity.as_str()) {
+            retained_captures = retained_captures.saturating_add(capture_count);
+            if retained_captures > limits.captures {
+                return Some(super::Exhaustion {
+                    dimension: Dimension::Captures,
+                    used: 0,
+                    requested: retained_captures,
+                    limit: limits.captures,
+                    subject,
+                });
+            }
+        }
+    }
+    None
 }
 
 fn evaluate_siblings(

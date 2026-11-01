@@ -1817,9 +1817,62 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         );
         assert_eq!(duplicate.receipts, ["same-receipt", "replayed-receipt"]);
 
+        let mut duplicate_limited_ledger = temporal::ProtocolLedger::new();
+        let duplicate_with_one_instance_budget = duplicate_limited_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: duplicate_trace.clone(),
+                    trigger_identities: vec![
+                        duplicate_identity.clone(),
+                        duplicate_identity.clone(),
+                    ],
+                    correction: None,
+                },
+                temporal::Limits {
+                    instances: 1,
+                    captures: 1,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("duplicate delivery uses one retained instance and capture budget");
+        assert!(matches!(
+            duplicate_with_one_instance_budget.report().result(),
+            Ok([temporal::Obligation::Assessed(assessment)])
+                if assessment.instance.as_deref() == Some(duplicate_identity.as_str())
+                    && assessment.captures.len() == 1
+                    && assessment.receipts.len() == 2
+        ));
+
         let mut conflicting_delivery = duplicate_trace;
         conflicting_delivery.triggers[1].payload = "contradictory-payload".into();
         let conflict = sibling_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: conflicting_delivery.clone(),
+                    trigger_identities: vec![
+                        duplicate_identity.clone(),
+                        duplicate_identity.clone(),
+                    ],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("contradictory delivery is a typed temporal outcome");
+        assert!(matches!(
+            conflict.report().result(),
+            Err(temporal::Error::Refused(
+                temporal::Refusal::Contradiction { .. }
+            ))
+        ));
+
+        let mut conflicting_limited_ledger = temporal::ProtocolLedger::new();
+        let conflicting_limited = conflicting_limited_ledger
             .evaluate(
                 checked.package(),
                 admitted.admitted(),
@@ -1832,11 +1885,15 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
                     ],
                     correction: None,
                 },
-                temporal::Limits::default(),
+                temporal::Limits {
+                    instances: 1,
+                    captures: 1,
+                    ..temporal::Limits::default()
+                },
             )
-            .expect("contradictory delivery is a typed temporal outcome");
+            .expect("contradiction remains a typed temporal outcome");
         assert!(matches!(
-            conflict.report().result(),
+            conflicting_limited.report().result(),
             Err(temporal::Error::Refused(
                 temporal::Refusal::Contradiction { .. }
             ))
