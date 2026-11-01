@@ -38,3 +38,9 @@ No applicable AssuranceProfile was found in `spec/`; the `spec/assurance` files 
 | --- | --- | --- |
 | FND-001 | fixed | The regression test now asserts `Code::UndefinedExpression`/`unproved-range` and the `rational(3, 4)` span, plus `Code::IllTyped`/`ambiguous-literal` and the ambiguous literal span for relation and atom cases. |
 | FND-002 | fixed | The comment now describes relation/value-typer parity without claiming unification remains unfinished. |
+| FND-003 | fixed | The production import is unconditional, so default-feature compilation resolves `Scope` for the body refusal helpers. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
