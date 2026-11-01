@@ -19,11 +19,11 @@ use quire_contract_model::{
     CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
     CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
-    CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody, ProtocolForm,
-    StateForm, ValueForm,
+    CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2,
+    CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody,
+    ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -3691,7 +3691,10 @@ pub fn emit_timed_models(
                 source_map: &source_map,
                 refinement_step_rows: None,
             },
-            None,
+            CheckedPackageSidecarsRef {
+                checked_term_data: None,
+                temporal_bindings: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
@@ -4675,7 +4678,10 @@ fn emit_package_inner(
                 source_map: &source_map,
                 refinement_step_rows: (!step_rows.is_empty()).then_some(step_rows.as_slice()),
             },
-            checked_equality_term_data.as_ref(),
+            CheckedPackageSidecarsRef {
+                checked_term_data: checked_equality_term_data.as_ref(),
+                temporal_bindings: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
