@@ -20,6 +20,15 @@ ceiling, then the model binder shall stop with an incomplete result naming
 the ceiling's kind, its bound and the denied charge, without performing that
 charge or the work it prices.
 
+The unit model binder SHALL keep lookup and selection work in the model-intake
+projection from a completed normalized model view to selected declaration and
+field rows linear in the admitted declaration and field records. It SHALL
+charge each package declaration or field record, and each declaration row in
+the normalized view, before inspection to the same
+`ModelNormalizationLimitsV1` work meter used for normalization. If a charge is
+denied, the binder SHALL return the existing limit-incomplete result and no
+partial selected-model result.
+
 ## Scope
 
 One normalization of a domain package under one
@@ -27,6 +36,11 @@ One normalization of a domain package under one
 ([FR-081](../functional/FR-081-preserve-model-correspondence-and-declaration-identity.md)),
 and one population binding admission under one `PopulationAdmissionLimitsV1`
 ([FR-084](../functional/FR-084-admit-closed-populations-and-resolve-lookup.md)).
+It also covers the selected-row projection performed during unit model intake
+after normalization completes ([FR-081](../functional/FR-081-preserve-model-correspondence-and-declaration-identity.md)).
+For this projection, linear work is measured against the number of admitted
+declaration and field records; it does not impose a fixed depth or input-size
+cap, or change the separate work specified for inheritance and redefinition.
 The ceilings are inclusive unsigned counts. The values below are the
 defaults a caller gets from `ModelNormalizationLimits::default()` and
 `PopulationAdmissionLimits::default()`. A caller may set each ceiling
@@ -77,6 +91,7 @@ per-charge record, so its memory does not grow with the work it bounds.
 | Population members | At most the selected ceiling (default 100000) per admission | 100000 members by default | negative-abuse-testing |
 | Admission work | At most the selected ceiling (default 16777216 work units) per admission | 16777216 units by default | negative-abuse-testing |
 | Meter memory | Constant in the number of charges | No allocation per charge | inspection-and-test |
+| Unit model-intake scaling | Linear charged work in declaration and field records | For matched inputs with N non-field declaration records and N field records at N = 1000, 4000 and 16000, each 4x increase in N increases total `WorkUnits` by at most 5x | Scaling control |
 
 ## Default derivation
 
@@ -137,6 +152,14 @@ TC-434 covers the defaults and the bound on work:
   `ancestor_steps`.
 - A production meter and a production admission meter allocate nothing per
   charge.
+- Matched flat unit-intake inputs with 1,000, 4,000 and 16,000 non-field
+  declaration records and the same number of field records complete under the
+  selected limits; the recorded total `WorkUnits` increase by no more than 5x
+  at either 4x input-size step. The scaling result is recorded on the change's
+  tracker item.
+- If the work ceiling denies a unit model-intake projection charge, intake
+  returns the existing limit-incomplete result with no partial selected-model
+  result; no fixed depth or input-size cap is introduced.
 
 ## Dependencies
 
