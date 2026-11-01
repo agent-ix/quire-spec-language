@@ -139,16 +139,27 @@ fn child_peak_bytes(_stdout: &str, _stderr: &str) -> u64 {
     panic!("peak resident set is measured only on Linux (VmHWM) and macOS (/usr/bin/time -l)")
 }
 
-/// The child's peak resident set in bytes, from `/usr/bin/time -l`.
-#[cfg(target_os = "macos")]
-fn child_peak_bytes(_stdout: &str, stderr: &str) -> u64 {
-    stderr
+/// Read the child's peak resident set from `/usr/bin/time -l` when available.
+/// The exact sysctl permission failure is the only unavailable-metric case.
+#[cfg(any(target_os = "macos", test))]
+fn macos_peak_bytes(child_succeeded: bool, stderr: &str) -> Result<Option<u64>, &'static str> {
+    if !child_succeeded {
+        return Err("the child process failed");
+    }
+    let Some(value) = stderr
         .lines()
         .find_map(|line| line.trim().strip_suffix("maximum resident set size"))
-        .unwrap_or_else(|| panic!("/usr/bin/time -l reports the peak: {stderr}"))
+    else {
+        if stderr.contains("sysctl kern.clockrate") && stderr.contains("Operation not permitted") {
+            return Ok(None);
+        }
+        return Err("/usr/bin/time -l did not report the peak resident set");
+    };
+    let peak = value
         .trim()
         .parse()
-        .unwrap_or_else(|error| panic!("the peak is a number: {error}"))
+        .map_err(|_| "/usr/bin/time -l reported a non-numeric peak resident set")?;
+    Ok(Some(peak))
 }
 
 /// The number the child printed after `name=`. The harness may put its own
@@ -190,8 +201,21 @@ fn ten_thousand_edge_chain() {
     assert_eq!(measured(&stdout, "FACTS"), 20_001);
     assert_eq!(measured(&stdout, "WORK"), 50_003);
     let wall_ms = measured(&stdout, "WALL_MS");
-    let resident = child_peak_bytes(&stdout, &String::from_utf8_lossy(&output.stderr));
-    println!("N19 wall_ms={wall_ms} peak_resident_bytes={resident}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    #[cfg(target_os = "linux")]
+    let resident = Some(child_peak_bytes(&stdout, &stderr));
+    #[cfg(target_os = "macos")]
+    let resident = macos_peak_bytes(output.status.success(), &stderr).unwrap_or_else(|error| {
+        panic!("could not read the child peak resident set: {error}; {stderr}")
+    });
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let resident = Some(child_peak_bytes(&stdout, &stderr));
+    match resident {
+        Some(bytes) => println!("N19 wall_ms={wall_ms} peak_resident_bytes={bytes}"),
+        None => println!(
+            "N19 wall_ms={wall_ms} peak_resident_bytes=unavailable (sysctl permission denied)"
+        ),
+    }
     #[cfg(target_os = "linux")]
     println!(
         "N19 vmhwm_before_normalization_bytes={}",
@@ -201,8 +225,38 @@ fn ten_thousand_edge_chain() {
         Duration::from_millis(wall_ms) <= MAX_WALL,
         "wall time {wall_ms} ms"
     );
-    assert!(
-        resident <= MAX_RESIDENT_BYTES,
-        "peak resident {resident} bytes"
-    );
+    if let Some(resident) = resident {
+        assert!(
+            resident <= MAX_RESIDENT_BYTES,
+            "peak resident {resident} bytes"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::macos_peak_bytes;
+
+    /// Trace: TC-1025, FR-081-AC-12, FR-081-AC-13
+    #[test]
+    fn macos_sysctl_denial_skips_only_a_successful_childs_peak_metric() {
+        let denial = "sysctl kern.clockrate: Operation not permitted";
+        assert_eq!(macos_peak_bytes(true, denial), Ok(None));
+        assert_eq!(
+            macos_peak_bytes(false, denial),
+            Err("the child process failed")
+        );
+        assert_eq!(
+            macos_peak_bytes(true, "unexpected /usr/bin/time output"),
+            Err("/usr/bin/time -l did not report the peak resident set")
+        );
+        assert_eq!(
+            macos_peak_bytes(true, "not-a-number maximum resident set size"),
+            Err("/usr/bin/time -l reported a non-numeric peak resident set")
+        );
+        assert_eq!(
+            macos_peak_bytes(true, "42 maximum resident set size"),
+            Ok(Some(42))
+        );
+    }
 }
