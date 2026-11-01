@@ -10,8 +10,9 @@ use qsl_analyze::exact_probabilistic::{
     backward_induction, build_product, decide_bounded_event, Accumulator, Amount, ExactProbLimits,
     FhObjective, FhResult, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
     ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind,
-    ProductRefusal, ProductStop, UndefinedRead,
+    ProductRefusal, ProductRequest, ProductStop, UndefinedRead,
 };
+use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{ModelCheckLimit, ModelCheckLimits};
@@ -51,6 +52,58 @@ fn built(world: &World, claim: &str) -> ProbProduct {
         Ok(ProbBuild::Built(product)) => product,
         other => panic!("{claim}: expected a product, got {other:?}"),
     }
+}
+
+/// FR-254-AC-3 (TC-709): an exact request for the strict-guard timed RPC is
+/// refused by the exact timed-profile route rather than admitted as untimed.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn exact_request_over_strict_guard_timed_rpc_is_refused() {
+    let document =
+        crate::timed_world::document(&["x"], &[("send", &["phase"]), ("reply", &["phase"])]);
+    let body = format!(
+        "{}\
+         pre Waiting using v on M::Call::send {{ self.phase = 0 }}\n\
+         post Sent using v on M::Call::send {{ self.phase = 1 }}\n\
+         pre StrictReply using v on M::Call::reply {{ self.phase = 1 and self.x > 3 ms }}\n\
+         post Replied using v on M::Call::reply {{ self.phase = 2 }}\n\
+         delay M::Call::send ~ discrete {{ 0 ms: 1 }};\n\
+         delay M::Call::reply ~ discrete {{ 1 ms: 1 }};\n\
+         workload Even on M {{ weight Call::send = 1; weight Call::reply = 1; }}\n\
+         probabilistic StrictExact using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.005\n\
+             {{ probability <= 0.01 [ eventually[0 ms, 4 ms] holds(c.phase = 2) ] }}\n",
+        crate::timed_world::DENSE,
+    );
+    let world = crate::timed_world::world(
+        &document,
+        "profile ev = \"quire.temporal.timed/v1\";\n",
+        &body,
+    );
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("StrictExact")
+        .expect("the strict timed claim checks");
+    let refusal = build_product(
+        ProductRequest {
+            subject: ModelSubject {
+                simulation: world.request(),
+                proof_bounds: Vec::new(),
+            },
+            claim,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("EN-5 refuses a strict-guard timed exact request");
+    assert!(matches!(
+        refusal,
+        ProductRefusal::Translation(
+            qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }
+        )
+    ));
 }
 
 fn refused(world: &World, claim: &str) -> ProductRefusal {

@@ -24,7 +24,7 @@ use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, Su
 use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
 use qsl_route::reductions::SymmetryDeclaration;
-use qsl_semantics::check::ProbScheduler;
+use qsl_semantics::check::{Event, ProbForm, ProbScheduler};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
 use quire_semantic_value::catalog::UndefinedReason;
@@ -71,6 +71,26 @@ fn run_timed_method(
     timed_sampling: qsl_replay::statistical::TimedSampling,
     max_witnesses: u32,
 ) -> Result<StatisticalOutcome, StatisticalRefusal> {
+    run_timed_method_with_limits(
+        world,
+        claim_name,
+        method,
+        seed,
+        timed_sampling,
+        StatisticalLimits::default(),
+        max_witnesses,
+    )
+}
+
+fn run_timed_method_with_limits(
+    world: &crate::timed_world::World,
+    claim_name: &str,
+    method: StatisticalMethod,
+    seed: u64,
+    timed_sampling: qsl_replay::statistical::TimedSampling,
+    limits: StatisticalLimits,
+    max_witnesses: u32,
+) -> Result<StatisticalOutcome, StatisticalRefusal> {
     let claim = world
         .package
         .graph()
@@ -87,7 +107,7 @@ fn run_timed_method(
             method,
             seed,
             sampler: sampler(),
-            limits: StatisticalLimits::default(),
+            limits,
             max_witnesses,
             symmetry: Vec::new(),
             timed_sampling,
@@ -457,6 +477,102 @@ fn timed_event_sampling_is_reproducible_and_replays_exact_grid_delays() {
         Ok(qsl_replay::statistical::SampledWitnessReplay::Inconclusive(
             _
         ))
+    ));
+}
+
+/// FR-254-AC-3 (TC-709): a Boolean branch uses the longest timed path as its
+/// horizon. A free-delay operation enabled only after that horizon must not
+/// change the bounded event's result.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn branching_timed_formula_stops_at_the_longest_path_horizon() {
+    let world = timed_world_with(
+        &[("go", &["phase"]), ("free", &["phase"])],
+        "pre Start using v on M::Call::go { self.phase = 0 }\n\
+         post Done using v on M::Call::go { self.phase = 2 }\n\
+         pre Free using v on M::Call::free { self.phase = 2 }\n\
+         post FreeAgain using v on M::Call::free { self.phase = 2 }\n\
+         delay M::Call::go ~ discrete { 4 ms: 1 };\n\
+         workload Even on M { weight Call::go = 1; weight Call::free = 1; }\n\
+         probabilistic BranchBound using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.005\n\
+             { probability <= 0.01 [ (eventually[0 ms, 1 ms] holds(c.phase = 2)) or\n\
+                 (eventually[0 ms, 3 ms] holds(c.phase = 2)) ] }\n",
+    );
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("BranchBound")
+        .expect("the bounded timed claim checks");
+    let ProbForm::Probability {
+        event: Event::Formula {
+            timed_horizon: Some(horizon),
+            ..
+        },
+        ..
+    } = &claim.form
+    else {
+        panic!("the claim has a timed formula horizon: {claim:?}");
+    };
+    assert_eq!(horizon, &ratio(3, 1));
+
+    let outcome = run_timed_method(
+        &world,
+        "BranchBound",
+        StatisticalMethod::Sprt,
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        1,
+    );
+    let verdict = match outcome {
+        Ok(StatisticalOutcome::Completed(verdict)) => verdict,
+        Ok(other) => panic!("the bounded event is decided: {other:?}"),
+        Err(refusal) => panic!("post-horizon free delay is not sampled: {refusal:?}"),
+    };
+    assert_eq!(verdict.decision, Decision::Accepted);
+}
+
+/// FR-254-AC-3 (TC-709): a timed regenerative run that never returns to its
+/// initial state stops at the configured `max_cycle_steps` limit.
+#[trace("TC-709", "FR-254-AC-3")]
+#[test]
+fn timed_regeneration_names_the_max_cycle_steps_limit() {
+    let world = timed_world_with(
+        &[("go", &["phase"]), ("tick", &["phase"])],
+        "pre Start using v on M::Call::go { self.phase = 0 }\n\
+         post Entered using v on M::Call::go { self.phase = 1 }\n\
+         pre Running using v on M::Call::tick { self.phase = 1 }\n\
+         post Ticked using v on M::Call::tick { self.phase = 1 }\n\
+         delay M::Call::go ~ discrete { 0 ms: 1 };\n\
+         delay M::Call::tick ~ discrete { 1 ms: 1 };\n\
+         workload Even on M { weight Call::go = 1; weight Call::tick = 1; }\n\
+         probabilistic NoReturn using ev on M over (c: M::Call) under Even on origin\n\
+             with alpha 0.4, beta 0.4, indifference 0.005\n\
+             { long_run_fraction holds(c.phase = 1) >= 0.5 }\n",
+    );
+    let outcome = run_timed_method_with_limits(
+        &world,
+        "NoReturn",
+        StatisticalMethod::Regenerative { min_cycles: 1 },
+        7,
+        qsl_replay::statistical::TimedSampling::default(),
+        StatisticalLimits {
+            max_cycle_steps: 2,
+            ..StatisticalLimits::default()
+        },
+        1,
+    )
+    .expect("the timed regenerative walk reaches its cycle budget");
+    assert!(matches!(
+        outcome,
+        StatisticalOutcome::Stopped {
+            stop: StatisticalStop::Limit {
+                limit: StatisticalLimit::MaxCycleSteps,
+                value: 2,
+            },
+            ..
+        }
     ));
 }
 

@@ -57,8 +57,8 @@ use super::super::profile::{TemporalProfile, CLAUSE_PROFILE_AUTHORITY};
 use super::super::refusal::{CheckCause, CheckRefusal, KeyFault, TemporalCause};
 use super::super::state_graph_claim::StatePredicate;
 use super::super::temporal_clause::{
-    build_formula, checked_constraint, checked_operators, horizon, CheckedFormula, HorizonFault,
-    IntervalReading,
+    build_formula, checked_constraint, checked_operators, horizon, CheckedFormula, CheckedInterval,
+    FormulaNode, HorizonFault, IntervalReading,
 };
 use super::model::{literal, site_location, Pass, Site};
 use super::{exact, exact_refusal, refusal, ProbabilisticCause};
@@ -1315,19 +1315,17 @@ impl Pass<'_, '_> {
                 }
             }
         };
-        let timed_horizon = timed_reader.map(|_| {
-            operators
-                .iter()
-                .fold(
-                    Rational::from_integer(Integer::zero()),
-                    |sum, operator| match &operator.interval {
-                        Some(super::super::temporal_clause::CheckedInterval::Timed(interval)) => {
-                            sum.add(interval.upper())
-                        }
-                        _ => sum,
-                    },
-                )
-        });
+        let timed_horizon = if timed_reader.is_some() {
+            match Self::timed_formula_horizon(&checked) {
+                Some(horizon) => Some(horizon),
+                None => {
+                    refusals.push(broken("timed-formula-horizon-is-in-the-formula"));
+                    return None;
+                }
+            }
+        } else {
+            None
+        };
         Some((
             CheckedTemporalFormula {
                 formula: checked,
@@ -1337,6 +1335,36 @@ impl Pass<'_, '_> {
             horizon,
             timed_horizon,
         ))
+    }
+
+    /// A timed formula's greatest reachable timestamp: the maximum sum of
+    /// interval upper bounds along one root-to-leaf operand path. Boolean
+    /// branches contribute their furthest path, not the sum of sibling paths.
+    fn timed_formula_horizon(formula: &CheckedFormula) -> Option<Rational> {
+        let nodes = formula.nodes();
+        let mut reach = vec![Rational::from_integer(Integer::zero()); nodes.len()];
+        for (index, node) in nodes.iter().enumerate().rev() {
+            let own = match node {
+                FormulaNode::Unary {
+                    interval: Some(CheckedInterval::Timed(interval)),
+                    ..
+                }
+                | FormulaNode::Binary {
+                    interval: Some(CheckedInterval::Timed(interval)),
+                    ..
+                } => interval.upper().clone(),
+                _ => Rational::from_integer(Integer::zero()),
+            };
+            let deepest = node
+                .operands()
+                .map(|operand| reach.get(operand.index()).cloned())
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .max()
+                .unwrap_or_else(|| Rational::from_integer(Integer::zero()));
+            *reach.get_mut(index)? = deepest.add(&own);
+        }
+        reach.get(formula.root().index()).cloned()
     }
 
     /// A bounded measure, and what its threshold is measured in.
