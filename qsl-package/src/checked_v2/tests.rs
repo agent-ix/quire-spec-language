@@ -22,6 +22,7 @@ use qsl_foundation::node_wire::node_key_from_json;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Setting;
 use qsl_semantics::check::imports::ImportedNames;
+use qsl_semantics::check::wire_id::WireGraph;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{ImportView, LibraryName};
 use quire_exact::{NodeKey, Origin, Role};
@@ -894,7 +895,11 @@ fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
         }))
         .unwrap()
     };
-    let reversed = super::package_source_map(&[entry(node_ref("pkg::A"), 9, 3)]).unwrap_err();
+    let reversed = super::package_source_map(
+        &qsl_semantics::check::wire_id::WireGraph::default(),
+        &[entry(node_ref("pkg::A"), 9, 3)],
+    )
+    .unwrap_err();
     assert_eq!(
         reversed,
         super::SourceMapDefect::Provenance(
@@ -904,11 +909,14 @@ fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
             }
         )
     );
-    let node = super::package_source_map(&[entry(
-        json!({"package": "pkg", "path": [], "ordinal": 0}),
-        0,
-        1,
-    )])
+    let node = super::package_source_map(
+        &qsl_semantics::check::wire_id::WireGraph::default(),
+        &[entry(
+            json!({"package": "pkg", "path": [], "ordinal": 0}),
+            0,
+            1,
+        )],
+    )
     .unwrap_err();
     assert_eq!(node, super::SourceMapDefect::NodeId);
     for defect in [reversed, node] {
@@ -1265,9 +1273,12 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
             other => panic!("{}: expected Verified, got {other:?}", path.display()),
         };
         let entries = envelope["source_map"].as_array().unwrap();
+        let graph = WireGraph::of_package_value(&envelope).expect("the fixture graph");
         let mut per_node = BTreeMap::<NodeKey, usize>::new();
         for entry in entries {
-            let node = node_key_from_json(&entry["node_id"]).expect("fixture node identity");
+            let node = graph
+                .key_of_value(&entry["node_id"])
+                .expect("fixture node identity");
             let key = OccurrenceKey::new(
                 node.clone(),
                 Origin::new(
@@ -1324,6 +1335,7 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
         .collect();
     let mut members = BTreeMap::new();
     let mut identities = std::collections::BTreeSet::new();
+    let graph = WireGraph::of_package_value(&envelope).expect("the fixture graph");
     for node in union_values {
         let member = node["body"]["members"][0]["name"]
             .as_str()
@@ -1332,7 +1344,7 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
         assert_eq!(id["package"], envelope["name"]);
         assert_eq!(id["path"][0], "value");
         assert_eq!(id["path"][1], "union_value");
-        assert!(identities.insert(node_key_from_json(id).expect("structural union identity")));
+        assert!(identities.insert(graph.key_of_value(id).expect("structural union identity")));
         members.insert(member, node);
     }
     assert_eq!(members.len(), 2, "fixture has both union vectors");
@@ -1369,12 +1381,10 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
     let mut unsorted = 0_usize;
     for path in &paths {
         let envelope = read_fixture(path);
-        let keys: Vec<NodeKey> = envelope["semantic_graph"]["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|node| node_key_from_json(&node["node_id"]).expect("fixture node identity"))
-            .collect();
+        let keys: Vec<NodeKey> = WireGraph::of_package_value(&envelope)
+            .expect("fixture node identities")
+            .keys()
+            .to_vec();
         if !keys.is_sorted() {
             unsorted += 1;
         }
@@ -1793,6 +1803,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         return;
     };
     let mut envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let graph_before = WireGraph::of_package_value(&envelope).expect("the fixture graph");
     let nodes = envelope["semantic_graph"]["nodes"].as_array_mut().unwrap();
     let mut timed_indices = Vec::new();
     let mut source_index = None;
@@ -1831,26 +1842,8 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         .filter(|index| !keep.contains(index))
         .map(|index| nodes[index]["node_id"].clone())
         .collect::<Vec<_>>();
-    nodes.retain(|node| {
-        node["node_tag"] != "timed_model"
-            || matches!(
-                node["semantic_form"].as_str(),
-                Some("time_source" | "timed_model")
-            )
-    });
-    let retained_ids = nodes
-        .iter()
-        .map(|node| node["node_id"].clone())
-        .collect::<Vec<_>>();
-    envelope["source_map"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|entry| {
-            let id = &entry["node_id"];
-            !removed_ids.contains(id) && retained_ids.contains(id)
-        });
 
-    fn targets(body: &Value) -> Vec<Value> {
+    fn targets(graph: &WireGraph, body: &Value) -> Vec<Value> {
         fn walk(value: &Value, output: &mut Vec<Value>) {
             match value {
                 Value::Object(fields) => {
@@ -1865,15 +1858,29 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
         }
         let mut output = Vec::new();
         walk(body, &mut output);
-        output.sort_by_key(|value| node_key_from_json(value).expect("reference identity"));
+        output.sort_by_key(|value| graph.key_of_value(value).expect("reference identity"));
         output.dedup();
         output
     }
-    for node in envelope["semantic_graph"]["nodes"].as_array_mut().unwrap() {
+    // FR-322: drop every naming of the removed nodes while their indices
+    // still name them (the root's emptied lists, its dependencies and their
+    // source-map entries), then remove them and renumber the rest.
+    for node in nodes.iter_mut() {
         if node["node_tag"] == "timed_model" {
-            node["dependencies"] = json!(targets(&node["body"]));
+            node["dependencies"] = json!(targets(&graph_before, &node["body"]));
         }
     }
+    envelope["source_map"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| !removed_ids.contains(&entry["node_id"]));
+    retain_nodes(&mut envelope, |node| {
+        node["node_tag"] != "timed_model"
+            || matches!(
+                node["semantic_form"].as_str(),
+                Some("time_source" | "timed_model")
+            )
+    });
 
     let (_, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);
     let Read::Verified {
@@ -2160,13 +2167,16 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
     ] {
         let envelope = read_fixture(&directory.join(name));
         let nodes = envelope["semantic_graph"]["nodes"].as_array().unwrap();
-        let ids = nodes
+        let graph = WireGraph::of_package_value(&envelope).expect("fixture node ids");
+        let ids = graph
+            .keys()
             .iter()
-            .map(|node| node_key_from_json(&node["node_id"]).expect("fixture node id"))
+            .cloned()
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(ids.len(), nodes.len(), "{name}: node ids are unique");
         fn visit(
             value: &Value,
+            graph: &WireGraph,
             ids: &std::collections::BTreeSet<NodeKey>,
             name: &str,
             package: &str,
@@ -2177,18 +2187,18 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
                         && object.contains_key("path")
                         && object.contains_key("ordinal")
                     {
-                        let key = node_key_from_json(value).expect("structural reference");
+                        let key = graph.key_of_value(value).expect("structural reference");
                         if object.get("package").and_then(Value::as_str) == Some(package) {
                             assert!(ids.contains(&key), "{name}: dangling NodeRef {key:?}");
                         }
                     }
                     for child in object.values() {
-                        visit(child, ids, name, package);
+                        visit(child, graph, ids, name, package);
                     }
                 }
                 Value::Array(values) => {
                     for child in values {
-                        visit(child, ids, name, package);
+                        visit(child, graph, ids, name, package);
                     }
                 }
                 _ => {}
@@ -2196,6 +2206,7 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
         }
         visit(
             &envelope["semantic_graph"],
+            &graph,
             &ids,
             name,
             envelope["name"].as_str().unwrap(),
@@ -2300,14 +2311,14 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 let old = target.clone();
                 target["path"] = json!(["missing-operation"]);
                 let replacement = target.clone();
-                replace_dependency(&mut source["dependencies"], &old, &replacement);
+                replace_dependency(&mut candidate, 44, &old, &replacement);
             }
             "function-as-tick-operation" => {
                 let target = candidate["semantic_graph"]["nodes"][5]["node_id"].clone();
                 let source = &mut candidate["semantic_graph"]["nodes"][44];
                 let old = source["body"]["members"][3]["value"]["target"].clone();
                 source["body"]["members"][3]["value"]["target"] = target.clone();
-                replace_dependency(&mut source["dependencies"], &old, &target);
+                replace_dependency(&mut candidate, 44, &old, &target);
             }
             "second-place-forged-row" => {
                 // QSpec TM-12 (STD-559): a distinct second place of the same
@@ -2341,10 +2352,13 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 entry["regions"][0]["start"] = json!(9000);
                 entry["regions"][0]["end"] = json!(9001);
                 candidate["source_map"].as_array_mut().unwrap().push(entry);
-                let nodes = candidate["semantic_graph"]["nodes"].as_array_mut().unwrap();
-                let at = nodes.len() - 1;
-                nodes.insert(at, second);
-                let root = &mut nodes[52];
+                let at = candidate["semantic_graph"]["nodes"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    - 1;
+                insert_node(&mut candidate, at, second);
+                let root = &mut candidate["semantic_graph"]["nodes"][52];
                 root["body"]["members"][3]["value"]["members"]
                     .as_array_mut()
                     .unwrap()
@@ -2353,8 +2367,7 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 // forged row, not an order defect, is the first refusal.
                 let dependencies = root["dependencies"].as_array_mut().unwrap();
                 dependencies.push(placeholder);
-                dependencies
-                    .sort_by_key(|value| node_key_from_json(value).expect("dependency identity"));
+                sort_dependencies(&mut candidate, 52);
             }
             "repeated-clock-place-reference" => {
                 // QSpec FR-322-AC-260, TM-30: the first place's reference
@@ -2413,14 +2426,15 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 let source = &mut candidate["semantic_graph"]["nodes"][44];
                 let old = source["body"]["members"][2]["value"]["target"].clone();
                 source["body"]["members"][2]["value"]["target"] = target.clone();
-                replace_dependency(&mut source["dependencies"], &old, &target);
+                replace_dependency(&mut candidate, 44, &old, &target);
             }
             "unresolved-tick-operation" => {
                 candidate["semantic_graph"]["nodes"][46]["body"]["members"][1]["value"]["value"] =
                     json!("missing")
             }
             "tick-source-with-clock-place" => {
-                let place = base["semantic_graph"]["nodes"][45].clone();
+                let mut place = base["semantic_graph"]["nodes"][45].clone();
+                rebase_index_segments(&mut place, &base, &candidate);
                 candidate["semantic_graph"]["nodes"]
                     .as_array_mut()
                     .unwrap()
@@ -2434,10 +2448,7 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                     .as_array_mut()
                     .unwrap()
                     .push(place["node_id"].clone());
-                root["dependencies"]
-                    .as_array_mut()
-                    .unwrap()
-                    .sort_by_key(|value| node_key_from_json(value).expect("dependency identity"));
+                sort_dependencies(&mut candidate, 45);
             }
             "source-unit-length" | "source-unit-derived-non-time" | "source-unit-derived-time" => {
                 let mutation = row["mutation"].as_str().unwrap();
@@ -2491,7 +2502,7 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 let source = &mut candidate["semantic_graph"]["nodes"][44];
                 let old = source["body"]["members"][1]["value"]["target"].clone();
                 source["body"]["members"][1]["value"]["target"] = unit_id.clone();
-                replace_dependency(&mut source["dependencies"], &old, &unit_id);
+                replace_dependency(&mut candidate, 44, &old, &unit_id);
             }
             other => panic!("{}: unknown semantic vector {other}", row["id"]),
         }
@@ -2639,14 +2650,134 @@ pub(crate) fn apply_json_patch(document: &mut Value, patch: &Value) {
     }
 }
 
-fn replace_dependency(dependencies: &mut Value, old: &Value, replacement: &Value) {
-    let entries = dependencies.as_array_mut().expect("node dependencies");
-    let entry = entries
+/// Keep the graph nodes `keep` admits, renumbering every index segment the
+/// envelope holds to its node's new graph index (FR-322 "Operand index
+/// segments"). A retained id that names a removed node is a fixture defect.
+fn retain_nodes(envelope: &mut Value, keep: impl Fn(&Value) -> bool) {
+    let nodes = envelope["semantic_graph"]["nodes"].as_array_mut().unwrap();
+    let mut renumbered = Vec::with_capacity(nodes.len());
+    let mut next = 0_u64;
+    for node in nodes.iter() {
+        renumbered.push(keep(node).then(|| {
+            next += 1;
+            next - 1
+        }));
+    }
+    let mut position = 0;
+    nodes.retain(|_| {
+        position += 1;
+        renumbered[position - 1].is_some()
+    });
+    let mut pending = vec![&mut *envelope];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(object) => {
+                let is_id = object.len() == 3
+                    && object.contains_key("package")
+                    && object.contains_key("ordinal");
+                for (name, member) in object.iter_mut() {
+                    if is_id && name == "path" {
+                        for segment in member.as_array_mut().into_iter().flatten() {
+                            if let Some(index) = segment.get("node").and_then(Value::as_u64) {
+                                let moved = renumbered[usize::try_from(index).unwrap()]
+                                    .expect("a retained id names a retained node");
+                                *segment = json!({"node": moved});
+                            }
+                        }
+                    } else {
+                        pending.push(member);
+                    }
+                }
+            }
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
+}
+
+/// Replace `old` by `replacement` in node `position`'s dependencies, kept in
+/// ascending structural-key order.
+fn replace_dependency(envelope: &mut Value, position: usize, old: &Value, replacement: &Value) {
+    let entry = envelope["semantic_graph"]["nodes"][position]["dependencies"]
+        .as_array_mut()
+        .expect("node dependencies")
         .iter_mut()
         .find(|entry| *entry == old)
         .expect("body reference has a matching dependency");
     *entry = replacement.clone();
-    entries.sort_by_key(|value| node_key_from_json(value).expect("dependency identity"));
+    sort_dependencies(envelope, position);
+}
+
+/// Insert `node` into the envelope's graph at index `at`, moving every operand
+/// index segment (FR-322) that names a node at or past `at` up by one so each
+/// still names the node it named before the insert.
+fn insert_node(envelope: &mut Value, at: usize, mut node: Value) {
+    shift_index_segments(envelope, at);
+    shift_index_segments(&mut node, at);
+    envelope["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .expect("graph nodes")
+        .insert(at, node);
+}
+
+/// Rewrite every operand index segment (FR-322) in `value`, which names a node
+/// of `from`'s graph, to the index of the node with the same key in `to`'s.
+fn rebase_index_segments(value: &mut Value, from: &Value, to: &Value) {
+    let from = WireGraph::of_package_value(from).expect("the source graph");
+    let to = WireGraph::of_package_value(to).expect("the target graph");
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(members) => {
+                if let Some(Value::Array(path)) = members.get_mut("path") {
+                    for segment in path.iter_mut() {
+                        if let Some(index) = segment.get("node").and_then(Value::as_u64) {
+                            let key = &from.keys()[index as usize];
+                            let rebased = to.index_of(key).expect("the operand is in both graphs");
+                            segment["node"] = json!(rebased);
+                        }
+                    }
+                }
+                pending.extend(members.values_mut());
+            }
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
+}
+
+/// Move every operand index segment in `value` that names a node at or past
+/// `at` up by one.
+fn shift_index_segments(value: &mut Value, at: usize) {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(members) => {
+                if let Some(Value::Array(path)) = members.get_mut("path") {
+                    for segment in path.iter_mut() {
+                        if let Some(index) = segment.get("node").and_then(Value::as_u64) {
+                            if index as usize >= at {
+                                segment["node"] = json!(index + 1);
+                            }
+                        }
+                    }
+                }
+                pending.extend(members.values_mut());
+            }
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
+}
+
+/// Sort node `position`'s dependencies by structural key, each id resolved
+/// against the envelope's graph.
+fn sort_dependencies(envelope: &mut Value, position: usize) {
+    let graph = WireGraph::of_package_value(envelope).expect("the graph");
+    envelope["semantic_graph"]["nodes"][position]["dependencies"]
+        .as_array_mut()
+        .expect("node dependencies")
+        .sort_by_key(|value| graph.key_of_value(value).expect("dependency identity"));
 }
 
 /// FR-250's five temporal profiles are the only identities a temporal
@@ -2715,7 +2846,8 @@ fn conformance_dependency_selection_vectors() {
     assert_eq!(code, CheckedPackageRefusalCode::MissingImport);
     assert_eq!(pointer, "/lock/dependency_selections/0");
 
-    for mutation in vectors["entry_mutations"].as_array().unwrap() {
+    let entry_mutations = vectors["entry_mutations"].as_array().unwrap();
+    for mutation in entry_mutations {
         let id = mutation["id"].as_str().unwrap();
         let mut entries = selections.clone();
         entries[0] = mutation["entry"].clone();
@@ -2732,7 +2864,8 @@ fn conformance_dependency_selection_vectors() {
         );
     }
 
-    for vector in vectors["order_vectors"].as_array().unwrap() {
+    let order_vectors = vectors["order_vectors"].as_array().unwrap();
+    for vector in order_vectors {
         let id = vector["id"].as_str().unwrap();
         let outcome = read_fixture_wire(fixture, &with(&vector["dependency_selections"])).1;
         let expected = vector["outcome"].as_str().unwrap();
@@ -2770,6 +2903,11 @@ fn conformance_dependency_selection_vectors() {
         assert_eq!(loci, expected_loci, "{id}");
         assert_eq!(Some(&pointer.as_str()), expected_loci.first(), "{id}");
     }
+    println!(
+        "conformance: {} dependency-selection entry mutations and {} order vectors",
+        entry_mutations.len(),
+        order_vectors.len()
+    );
 }
 
 /// `Locus::Artifact` at a JSON pointer into the offered bytes.
@@ -3056,7 +3194,6 @@ fn frame_node_index(package: &Value) -> usize {
 /// part of the gate, not under a plain `cargo test`/`make ci`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-#[ignore = "QSpec node-identity-vectors.json absent from main; FR-340-AC-1/4/9 vector source pending restoration"]
 fn conformance_fr340_frame_mutations_match_qspec_vectors() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
         println!("skipped: QSPEC_DIR not set");
@@ -3134,6 +3271,59 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         "conformance: {} frame-body mutation vectors matched",
         mutations.len()
     );
+}
+
+/// QSpec FR-322 "Operand index segments" (TC-233 NI-01..NI-12): each
+/// `node-index-vectors.json` case, its RFC 6902 patch applied to the base
+/// package, is refused `malformed_wire` by QSL's whole I2 read. A schema-invalid
+/// operand (a nested `node_id` object, a negative, string or fractional
+/// index, an extra or missing member, an index segment in a
+/// `dependency_reference` node) is refused within the patched member; an
+/// index past the graph, a self-naming node and two nodes naming each other
+/// are refused with no cause at the published `node` member.
+#[trace(
+    "QSpec-TC-233",
+    "QSpec-FR-322-AC-278",
+    "QSpec-FR-322-AC-279",
+    "QSpec-FR-322-AC-280"
+)]
+#[test]
+fn conformance_node_index_vectors_refuse_malformed_wire() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let proposals = directory.parent().expect("the proposal directory");
+    let vectors = read_fixture(&proposals.join("node-index-vectors.json"));
+    let fixture = vectors["base"].as_str().expect("a base fixture");
+    let base = read_fixture(&proposals.join(fixture));
+    let cases = vectors["cases"].as_array().expect("NI cases");
+    assert!(!cases.is_empty(), "node-index-vectors.json holds no case");
+    for case in cases {
+        let id = &case["id"];
+        assert_eq!(case["expected"], "malformed_wire", "{id}: expected outcome");
+        let locus = case["locus"].as_str().expect("a locus");
+        let mut package = base.clone();
+        apply_json_patch(&mut package, &case["patch"]);
+        let (_, outcome) = read_fixture_wire(fixture, &package);
+        match case["schema"].as_str().expect("a schema outcome") {
+            "invalid" => {
+                let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &outcome else {
+                    panic!("{id}: expected malformed_wire, got {outcome:?}");
+                };
+                assert_eq!(
+                    refusal.code,
+                    CheckedPackageRefusalCode::MalformedWire,
+                    "{id}"
+                );
+                let pointer = locus_pointer(refusal).unwrap_or_default();
+                assert!(pointer.starts_with(locus), "{id}: {pointer} within {locus}");
+            }
+            "valid" => assert_timed_refusal(&outcome, "malformed_wire", None, locus, id),
+            other => panic!("{id}: unknown schema outcome {other}"),
+        }
+    }
+    println!("conformance: {} node-index vectors refused", cases.len());
 }
 
 /// A `model`/`object_type` node (FR-340's `creates`/`deletes`-eligible, and

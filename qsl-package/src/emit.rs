@@ -17,9 +17,9 @@ use quire_contract_model::{
     CheckedAbstractionPopulation, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
     CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodePathSegment, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
-    CheckedPackageLockV2, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
+    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
     CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody, ProtocolForm,
@@ -32,6 +32,7 @@ use qsl_foundation::source::provenance::{
     OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
 use qsl_foundation::Code;
+use qsl_semantics::check::wire_id::StructuralIds;
 use qsl_semantics::check::{
     AbstractionNodeRefusal, AbstractionNodes, BindingValue, BodyTerm, CheckedGraph,
     CheckedRefinement, FrameDeletesScoped, FrameModifies, FrameScope, FrameTerm, GroupMember,
@@ -43,9 +44,7 @@ use qsl_semantics::value::{
     native_diagnostics_catalog, DefinitionReference, DefinitionRole, HeaderLayer, Member,
     ModelRole, NodeOwner, TemporalRole,
 };
-use quire_exact::{
-    Cancel, NodeKey, NodeKeyView, NodePathIter, Origin, PathSegment, PathSegmentView, Role,
-};
+use quire_exact::{Cancel, NodeKey, Origin, PathSegment, Role};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -182,6 +181,15 @@ pub enum EmitRefusal {
     /// A lowering-local placeholder reached the wire boundary unresolved.
     #[error("a checked node body contains an unresolved node reference")]
     UnresolvedNodeReference,
+    /// A written node's path names an operand node the graph does not hold,
+    /// so the operand has no index segment (FR-322 "Operand index segments").
+    #[error("node {node:?} names operand {operand:?}, which the graph does not hold")]
+    OperandNotInGraph {
+        /// The written node.
+        node: Box<CheckedNodeId>,
+        /// Its operand.
+        operand: Box<CheckedNodeId>,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -212,7 +220,9 @@ impl EmitRefusal {
             Self::RefinementIdentityEncoding => Code::OutputFailure,
             Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
-            Self::SourceMapInvariant | Self::UnresolvedNodeReference => Code::RuntimeInvariant,
+            Self::SourceMapInvariant
+            | Self::UnresolvedNodeReference
+            | Self::OperandNotInGraph { .. } => Code::RuntimeInvariant,
         }
     }
 
@@ -237,7 +247,8 @@ impl EmitRefusal {
             | Self::RefinementIdentityEncoding
             | Self::UnlocatedRefinementDeclaration
             | Self::SourceMapInvariant
-            | Self::UnresolvedNodeReference => None,
+            | Self::UnresolvedNodeReference
+            | Self::OperandNotInGraph { .. } => None,
         }
     }
 }
@@ -350,99 +361,33 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
     }
 }
 
-/// Convert a checked structural key to the identical V2 wire identity.
-/// Nested path nodes are visited with an explicit stack so their depth
-/// cannot consume the call stack.
-pub(crate) fn node_id(key: impl std::borrow::Borrow<NodeKey>) -> CheckedNodeId {
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: NodePathIter<'a>,
-        path: Vec<CheckedNodePathSegment>,
-    }
-    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
-        Frame {
-            package: view.package(),
-            ordinal: view.ordinal(),
-            segments: view.path(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(key.borrow().view());
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(PathSegmentView::Text(text)) => {
-                current.path.push(CheckedNodePathSegment::Name(text.into()));
-            }
-            Some(PathSegmentView::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let id = CheckedNodeId {
-                    package: current.package.into(),
-                    path: std::mem::take(&mut current.path),
-                    ordinal: current.ordinal,
-                };
-                let Some(mut parent) = parents.pop() else {
-                    return id;
-                };
-                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
-                current = parent;
-            }
-        }
-    }
+/// The structural V2 identity of a checked key (FR-322 "Operand index
+/// segments"): each operand is the operand node's own id, shared where it is
+/// named twice. The package writer holds each operand as its index segment.
+pub(crate) fn node_id(
+    ids: &StructuralIds,
+    key: impl std::borrow::Borrow<NodeKey>,
+) -> CheckedNodeId {
+    ids.id(key.borrow())
 }
 
-fn admitted_id(reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
+fn admitted_id(ids: &StructuralIds, reference: &NodeRef) -> Result<CheckedNodeId, EmitRefusal> {
+    admitted(reference).map(|key| node_id(ids, key))
+}
+
+/// The admitted kernel key `reference` names.
+fn admitted(reference: &NodeRef) -> Result<NodeKey, EmitRefusal> {
     reference
         .admitted()
-        .map(node_id)
+        .cloned()
         .ok_or(EmitRefusal::UnresolvedNodeReference)
 }
 
-/// Recover the structural kernel key of a node that IR has already admitted.
-/// The explicit parent stack handles nested path identities at any depth.
+/// The structural kernel key of an id this emitter built, which holds no
+/// index segment. An id read from a package resolves against that package's
+/// graph instead ([`qsl_semantics::check::wire_id::WireGraph::key`]).
 pub(crate) fn admitted_key(id: &CheckedNodeId) -> Result<NodeKey, EmitRefusal> {
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: std::slice::Iter<'a, CheckedNodePathSegment>,
-        path: Vec<PathSegment>,
-    }
-    fn frame(id: &CheckedNodeId) -> Frame<'_> {
-        Frame {
-            package: &id.package,
-            ordinal: id.ordinal,
-            segments: id.path.iter(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(id);
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(CheckedNodePathSegment::Name(text)) => {
-                current.path.push(PathSegment::Text(text.to_string()));
-            }
-            Some(CheckedNodePathSegment::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let key = NodeKey::new(
-                    current.package,
-                    std::mem::take(&mut current.path),
-                    current.ordinal,
-                )
-                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
-                let Some(mut parent) = parents.pop() else {
-                    return Ok(key);
-                };
-                parent.path.push(PathSegment::Node(key));
-                current = parent;
-            }
-        }
-    }
+    qsl_semantics::check::wire_id::node_key(id).map_err(|_| EmitRefusal::SourceMapInvariant)
 }
 
 /// The Contract IR occurrence `origin` names, as [`emit_checked`] writes it
@@ -459,8 +404,8 @@ pub fn checked_occurrence(origin: &Origin) -> Option<CheckedOccurrence> {
 /// the law definitions of its applications.
 #[derive(Default)]
 struct BodyNames {
-    dependencies: BTreeSet<CheckedNodeId>,
-    annotations: BTreeSet<CheckedNodeId>,
+    dependencies: HashSet<NodeKey>,
+    annotations: HashSet<NodeKey>,
     laws: Vec<OperationLaw>,
 }
 
@@ -474,13 +419,13 @@ impl BodyNames {
                 let operation = &application.operation;
                 names
                     .annotations
-                    .insert(admitted_id(&application.result_type)?);
+                    .insert(admitted(&application.result_type)?);
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
-                    names.dependencies.insert(node_id(declaration));
+                    names.dependencies.insert(declaration.clone());
                 }
                 // FR-380: the population node a reachability links to.
                 if let Some(population) = operation.member().and_then(Member::population) {
-                    names.dependencies.insert(node_id(population));
+                    names.dependencies.insert(population.clone());
                 }
                 let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
                 names
@@ -493,12 +438,10 @@ impl BodyNames {
             // names among the frame's own `dependencies`.
             BodyTerm::Frame(frame) => {
                 for entry in &frame.modifies {
-                    names
-                        .dependencies
-                        .insert(admitted_id(&entry.declaration())?);
+                    names.dependencies.insert(admitted(&entry.declaration())?);
                 }
                 for node in frame.creates.iter().chain(&frame.deletes) {
-                    names.dependencies.insert(admitted_id(node)?);
+                    names.dependencies.insert(admitted(node)?);
                 }
             }
             // QSpec FR-451: `dependencies` are exactly the unique set of every
@@ -506,17 +449,17 @@ impl BodyNames {
             BodyTerm::Abstraction(term) => {
                 names
                     .dependencies
-                    .extend(term.targets().map_err(encoding)?.iter().map(node_id));
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
         for leaf in body.leaves() {
             match leaf {
                 LeafTerm::Literal { ty, .. } => {
-                    names.annotations.insert(admitted_id(ty)?);
+                    names.annotations.insert(admitted(ty)?);
                 }
                 LeafTerm::Reference { target } => {
-                    names.dependencies.insert(admitted_id(target)?);
+                    names.dependencies.insert(admitted(target)?);
                 }
                 // FR-322-AC-37: a `dependency_reference` is never one of the
                 // node's `dependencies`, and names no node of this graph.
@@ -542,14 +485,16 @@ enum RecordedLocation<'g> {
 /// One checked node, read for the wire.
 struct Candidate<'g> {
     node: &'g SemanticNode,
+    key: NodeKey,
     id: CheckedNodeId,
     tag: CheckedNodeTag,
     semantic_type: CheckedNodeId,
     /// FR-093 rules 1 to 3, ascending by structural node identity.
-    dependencies: BTreeSet<CheckedNodeId>,
+    dependencies: Vec<CheckedNodeId>,
     /// Every node the written node names: its dependencies, its semantic
-    /// type and its body's type annotations.
-    names: BTreeSet<CheckedNodeId>,
+    /// type and its body's type annotations. Held by hash: two keys that
+    /// share a deep operand chain cost its depth to order, never to hash.
+    names: HashSet<NodeKey>,
     laws: Vec<OperationLaw>,
     /// The occurrences `check` recorded for the node, each with the
     /// location it was recorded at.
@@ -557,10 +502,16 @@ struct Candidate<'g> {
 }
 
 impl<'g> Candidate<'g> {
-    fn of(node: &'g SemanticNode, occurrences: Recorded<'g>) -> Result<Self, EmitRefusal> {
-        let id = node_id(node.key());
+    fn of(
+        ids: &StructuralIds,
+        node: &'g SemanticNode,
+        occurrences: Recorded<'g>,
+    ) -> Result<Self, EmitRefusal> {
+        let key = node.key();
+        let id = node_id(ids, &key);
         // A self-typed node names itself as its semantic type (FR-322).
-        let semantic_type = node_id(node.semantic_type().unwrap_or(node.key()));
+        let type_key = node.semantic_type().unwrap_or_else(|| key.clone());
+        let semantic_type = node_id(ids, &type_key);
         let BodyNames {
             mut dependencies,
             annotations,
@@ -568,39 +519,45 @@ impl<'g> Candidate<'g> {
         } = BodyNames::of(node.body())?;
         // QSpec FR-464 "owner_model": a protocol clause depends on its exact
         // owner model, besides the nodes its body reaches.
-        dependencies.extend(node.owner_model().map(node_id));
+        dependencies.extend(node.owner_model());
         // Rule 3: a `bounded_domain` node depends on the type it bounds.
         if node.node_tag() == NodeTag::BoundedDomain {
-            dependencies.insert(semantic_type.clone());
+            dependencies.insert(type_key.clone());
         }
         if CheckedNodeKind::decode(ir_tag(node.node_tag()), node.semantic_form())
             == Some(CheckedNodeKind::Value(ValueForm::EnumValue))
         {
-            dependencies.insert(semantic_type.clone());
+            dependencies.insert(type_key.clone());
         }
         if let Some(nominal) = node.nominal_payload() {
             match nominal {
                 // An `enum_value` depends on its enumeration declaration.
                 NominalPayload::Enum(_) => {}
                 NominalPayload::Dimension(dimension) => {
-                    dependencies.extend(dimension.terms().iter().map(|(base, _)| node_id(base)));
+                    dependencies.extend(dimension.terms().iter().map(|(base, _)| base.clone()));
                 }
                 NominalPayload::Unit(unit) => {
-                    dependencies.insert(node_id(unit.dimension()));
-                    dependencies.extend(unit.target().map(node_id));
+                    dependencies.insert(unit.dimension().clone());
+                    dependencies.extend(unit.target().cloned());
                 }
                 NominalPayload::DimensionEquivalence(equivalence) => {
-                    dependencies.extend(equivalence.dimensions().iter().map(node_id));
+                    dependencies.extend(equivalence.dimensions().iter().cloned());
                 }
             }
         }
         let mut names = dependencies.clone();
         names.extend(annotations);
-        names.insert(semantic_type.clone());
-        names.remove(&id);
+        names.insert(type_key);
+        names.remove(&key);
+        // A node has a few dependencies, so sorting them by structural id is
+        // cheap; they are rarely deep chains of each other.
+        let mut dependencies: Vec<CheckedNodeId> =
+            dependencies.iter().map(|key| node_id(ids, key)).collect();
+        dependencies.sort_unstable();
         Ok(Self {
             node,
             tag: ir_tag(node.node_tag()),
+            key,
             id,
             semantic_type,
             dependencies,
@@ -651,7 +608,7 @@ impl<'g> Candidate<'g> {
     }
 
     /// The node as FR-322 writes it.
-    fn wire_node(&self) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
+    fn wire_node(&self, ids: &StructuralIds) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
         let node = self.node;
         Ok(CheckedSemanticNodeV2 {
             node_id: self.id.clone(),
@@ -659,7 +616,7 @@ impl<'g> Candidate<'g> {
             node_tag: self.tag.as_wire().into(),
             semantic_form: node.semantic_form().into(),
             semantic_type: self.semantic_type.clone(),
-            dependencies: self.dependencies.iter().cloned().collect(),
+            dependencies: self.dependencies.clone(),
             occurrences: self
                 .occurrences
                 .iter()
@@ -682,20 +639,24 @@ impl<'g> Candidate<'g> {
                     .collect(),
             }),
             owner: node.owner().map(wire_owner),
-            owner_model: node.owner_model().map(node_id),
-            body: checked_body(node, self.tag)?,
+            owner_model: node.owner_model().map(|key| node_id(ids, key)),
+            body: checked_body(ids, node, self.tag)?,
         })
     }
 }
 
 /// Convert the checked body grammar to IR's typed term vocabulary.  Every
 /// reference is required to have an admitted structural identity here.
-fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm, EmitRefusal> {
+fn checked_body(
+    ids: &StructuralIds,
+    node: &SemanticNode,
+    tag: CheckedNodeTag,
+) -> Result<CheckedTerm, EmitRefusal> {
     if let Some(nominal) = node.nominal_payload() {
-        return nominal_term(nominal);
+        return nominal_term(ids, nominal);
     }
     let BodyTerm::Aggregate(aggregate) = node.body() else {
-        return checked_term(node.body());
+        return checked_term(ids, node.body());
     };
     if CheckedNodeKind::decode(tag, node.semantic_form())
         == Some(CheckedNodeKind::State(StateForm::OperationAnchor))
@@ -720,15 +681,15 @@ fn checked_body(node: &SemanticNode, tag: CheckedNodeTag) -> Result<CheckedTerm,
         return Ok(CheckedTerm::OperationAnchorBody(Box::new(
             CheckedOperationAnchorBody {
                 members: [
-                    member_term(context)?,
-                    member_term(operation)?,
-                    member_term(frame)?,
+                    member_term(ids, context)?,
+                    member_term(ids, operation)?,
+                    member_term(ids, frame)?,
                 ],
                 execution_point: Some(point.point().clone()),
             },
         )));
     }
-    checked_term(node.body())
+    checked_term(ids, node.body())
 }
 
 fn checked_rational(value: &quire_exact::Rational) -> CheckedRational {
@@ -740,7 +701,7 @@ fn checked_rational(value: &quire_exact::Rational) -> CheckedRational {
 
 /// Convert admitted nominal facts without reading an identity back out of a
 /// structural key. Enum ordering and conversion factors are payload facts.
-fn nominal_term(payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
+fn nominal_term(ids: &StructuralIds, payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
     let body = match payload {
         NominalPayload::Enum(enumeration) => NominalBody::try_enum(
             enumeration.is_ordered(),
@@ -755,20 +716,23 @@ fn nominal_term(payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
                 .terms()
                 .iter()
                 .map(|(base, exponent)| DimensionTerm {
-                    dimension_node_id: node_id(base),
+                    dimension_node_id: node_id(ids, base),
                     exponent: exponent.to_string().into(),
                 })
                 .collect(),
         ),
         NominalPayload::Unit(unit) => NominalBody::try_unit(
-            node_id(unit.dimension()),
-            unit.target().map(node_id),
+            node_id(ids, unit.dimension()),
+            unit.target().map(|key| node_id(ids, key)),
             checked_rational(unit.factor()),
             checked_rational(unit.offset()),
         ),
         NominalPayload::DimensionEquivalence(equivalence) => {
             NominalBody::try_dimension_equivalence(
-                equivalence.dimensions().each_ref().map(node_id),
+                equivalence
+                    .dimensions()
+                    .each_ref()
+                    .map(|key| node_id(ids, key)),
                 checked_rational(equivalence.scale()),
             )
         }
@@ -776,43 +740,43 @@ fn nominal_term(payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
     Ok(CheckedTerm::NominalBody(Box::new(body.map_err(encoding)?)))
 }
 
-fn checked_term(term: &BodyTerm) -> Result<CheckedTerm, EmitRefusal> {
+fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, EmitRefusal> {
     match term {
-        BodyTerm::Leaf(leaf) => leaf_term(leaf),
+        BodyTerm::Leaf(leaf) => leaf_term(ids, leaf),
         BodyTerm::Aggregate(aggregate) => Ok(CheckedTerm::Aggregate {
             members: aggregate
                 .members
                 .iter()
-                .map(member_term)
+                .map(|value| member_term(ids, value))
                 .collect::<Result<_, _>>()?,
         }),
         BodyTerm::Application(application) => Ok(CheckedTerm::Application {
             operator: application_operator(application.operator),
-            operation: operation_term(&application.operation)?,
-            result_type: admitted_id(&application.result_type)?,
+            operation: operation_term(ids, &application.operation)?,
+            result_type: admitted_id(ids, &application.result_type)?,
             arguments: application
                 .arguments
                 .iter()
-                .map(member_term)
+                .map(|value| member_term(ids, value))
                 .collect::<Result<_, _>>()?,
         }),
-        BodyTerm::Frame(frame) => frame_term(frame),
-        BodyTerm::Abstraction(abstraction) => abstraction_term(abstraction),
+        BodyTerm::Frame(frame) => frame_term(ids, frame),
+        BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
     }
 }
 
-fn leaf_term(leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
+fn leaf_term(ids: &StructuralIds, leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
     Ok(match leaf {
         LeafTerm::Literal { ty, value } => {
             let (value_kind, value) = literal_value(value);
             CheckedTerm::Literal {
-                type_id: admitted_id(ty)?,
+                type_id: admitted_id(ids, ty)?,
                 value_kind,
                 value,
             }
         }
         LeafTerm::Reference { target } => CheckedTerm::Reference {
-            target: admitted_id(target)?,
+            target: admitted_id(ids, target)?,
         },
         LeafTerm::DependencyReference { node } => {
             let key = node
@@ -820,55 +784,55 @@ fn leaf_term(leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
                 .ok_or(EmitRefusal::UnresolvedNodeReference)?;
             CheckedTerm::DependencyReference {
                 package: key.view().package().into(),
-                node: node_id(key),
+                node: node_id(ids, key),
             }
         }
     })
 }
 
-fn group_term(group: &GroupTerm) -> Result<CheckedTerm, EmitRefusal> {
+fn group_term(ids: &StructuralIds, group: &GroupTerm) -> Result<CheckedTerm, EmitRefusal> {
     Ok(CheckedTerm::Aggregate {
         members: group
             .members
             .iter()
             .map(|member| match member {
-                GroupMember::Leaf(leaf) => leaf_term(leaf),
+                GroupMember::Leaf(leaf) => leaf_term(ids, leaf),
                 GroupMember::Binding(binding) => Ok(CheckedTerm::Binding {
                     name: binding.name.as_str().into(),
-                    value: Box::new(leaf_term(&binding.value)?),
+                    value: Box::new(leaf_term(ids, &binding.value)?),
                 }),
             })
             .collect::<Result<_, _>>()?,
     })
 }
 
-fn tuple_term(tuple: &TupleTerm) -> Result<CheckedTerm, EmitRefusal> {
+fn tuple_term(ids: &StructuralIds, tuple: &TupleTerm) -> Result<CheckedTerm, EmitRefusal> {
     Ok(CheckedTerm::Aggregate {
         members: tuple
             .members
             .iter()
             .map(|member| match member {
-                TupleMember::Leaf(leaf) => leaf_term(leaf),
-                TupleMember::Group(group) => group_term(group),
+                TupleMember::Leaf(leaf) => leaf_term(ids, leaf),
+                TupleMember::Group(group) => group_term(ids, group),
             })
             .collect::<Result<_, _>>()?,
     })
 }
 
-fn member_term(member: &MemberTerm) -> Result<CheckedTerm, EmitRefusal> {
+fn member_term(ids: &StructuralIds, member: &MemberTerm) -> Result<CheckedTerm, EmitRefusal> {
     Ok(match member {
-        MemberTerm::Leaf(leaf) => leaf_term(leaf)?,
-        MemberTerm::Group(group) => group_term(group)?,
+        MemberTerm::Leaf(leaf) => leaf_term(ids, leaf)?,
+        MemberTerm::Group(group) => group_term(ids, group)?,
         MemberTerm::Binding(binding) => {
             let value = match &binding.value {
-                BindingValue::Leaf(leaf) => leaf_term(leaf)?,
-                BindingValue::Group(group) => group_term(group)?,
-                BindingValue::Tuple(tuple) => tuple_term(tuple)?,
+                BindingValue::Leaf(leaf) => leaf_term(ids, leaf)?,
+                BindingValue::Group(group) => group_term(ids, group)?,
+                BindingValue::Tuple(tuple) => tuple_term(ids, tuple)?,
                 BindingValue::Aggregate(aggregate) => CheckedTerm::Aggregate {
                     members: aggregate
                         .members
                         .iter()
-                        .map(member_term)
+                        .map(|value| member_term(ids, value))
                         .collect::<Result<_, _>>()?,
                 },
                 BindingValue::ExecutionPoint(_) => {
@@ -943,6 +907,7 @@ fn application_operator(operator: Operator) -> ApplicationOperator {
 }
 
 fn operation_term(
+    ids: &StructuralIds,
     operation: &qsl_semantics::check::Operation,
 ) -> Result<quire_contract_model::CheckedApplicationOperation, EmitRefusal> {
     use serde_json::json;
@@ -995,7 +960,10 @@ fn operation_term(
             json!({"path":path, "laws":laws(&leaf.laws), "mode":mode(leaf.mode.as_ref())})
         })
         .collect::<Vec<_>>();
-    let member = operation.member().map(member_value).transpose()?;
+    let member = operation
+        .member()
+        .map(|value| member_value(ids, value))
+        .transpose()?;
     quire_contract_model::CheckedApplicationOperation::deserialize(json!({
         "identity": operation.identity(), "laws": laws(operation.laws()),
         "mode": mode(operation.mode()), "member": member, "leaves": leaves,
@@ -1003,18 +971,18 @@ fn operation_term(
     .map_err(encoding)
 }
 
-fn member_value(member: &Member) -> Result<serde_json::Value, EmitRefusal> {
+fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Value, EmitRefusal> {
     use serde_json::json;
     Ok(match member {
         Member::Field { declaration, name } => {
-            json!({"kind":"field","declaration":node_id(declaration),"name":name.as_str()})
+            json!({"kind":"field","declaration":node_id(ids, declaration),"name":name.as_str()})
         }
         Member::Position {
             declaration,
             position,
-        } => json!({"kind":"position","declaration":node_id(declaration),"position":position}),
+        } => json!({"kind":"position","declaration":node_id(ids, declaration),"position":position}),
         Member::Element { declaration } => {
-            json!({"kind":"element","declaration":node_id(declaration)})
+            json!({"kind":"element","declaration":node_id(ids, declaration)})
         }
         Member::RelationshipEnd {
             declaration,
@@ -1022,17 +990,17 @@ fn member_value(member: &Member) -> Result<serde_json::Value, EmitRefusal> {
             destination_type,
             population,
         } => {
-            let mut record = json!({"kind":"relationship_end","declaration":node_id(declaration),"name":name.as_str(),"destination_type":node_id(destination_type)});
+            let mut record = json!({"kind":"relationship_end","declaration":node_id(ids, declaration),"name":name.as_str(),"destination_type":node_id(ids, destination_type)});
             if let Some(population) = population {
-                record["population"] = json!(node_id(population));
+                record["population"] = json!(node_id(ids, population));
             }
             record
         }
         Member::Operation { declaration, name } => {
-            json!({"kind":"operation","declaration":node_id(declaration),"name":name.as_str()})
+            json!({"kind":"operation","declaration":node_id(ids, declaration),"name":name.as_str()})
         }
         Member::TypeArgument { declaration } => {
-            json!({"kind":"type_argument","declaration":node_id(declaration)})
+            json!({"kind":"type_argument","declaration":node_id(ids, declaration)})
         }
         Member::ProfileOperator { operator } => {
             json!({"kind":"profile_operator","operator":operator.as_str()})
@@ -1082,18 +1050,18 @@ fn member_value(member: &Member) -> Result<serde_json::Value, EmitRefusal> {
             "kind":"fairness",
             "fairness_kind":match kind { quire_semantic_value::fairness::FairnessKind::Weak => "weak", quire_semantic_value::fairness::FairnessKind::Strong => "strong" },
             "granularity":match granularity { quire_semantic_value::fairness::FairnessGranularity::Whole => "whole", quire_semantic_value::fairness::FairnessGranularity::Each => "each" },
-            "declaration":node_id(declaration), "name":name.as_str(),
+            "declaration":node_id(ids, declaration), "name":name.as_str(),
         }),
     })
 }
 
-fn frame_term(frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
+fn frame_term(ids: &StructuralIds, frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
     let modifies = frame
         .modifies
         .iter()
         .map(|entry| match entry {
             FrameModifies::Field(field) => Ok(CheckedFrameModification::Field {
-                declaration: admitted_id(&field.declaration())?,
+                declaration: admitted_id(ids, &field.declaration())?,
                 name: field.name().into(),
                 scope: match field.scope() {
                     FrameScope::EveryObject => CheckedFieldScope::EveryObject,
@@ -1101,7 +1069,7 @@ fn frame_term(frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
                 },
             }),
             FrameModifies::Relationship(target) => Ok(CheckedFrameModification::Relationship {
-                declaration: admitted_id(target)?,
+                declaration: admitted_id(ids, target)?,
             }),
         })
         .collect::<Result<Vec<_>, EmitRefusal>>()?;
@@ -1120,18 +1088,19 @@ fn frame_term(frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
         creates: frame
             .creates
             .iter()
-            .map(admitted_id)
+            .map(|reference| admitted_id(ids, reference))
             .collect::<Result<_, _>>()?,
         deletes: frame
             .deletes
             .iter()
-            .map(admitted_id)
+            .map(|reference| admitted_id(ids, reference))
             .collect::<Result<_, _>>()?,
         deletes_scoped,
     })
 }
 
 fn abstraction_term(
+    ids: &StructuralIds,
     abstraction: &qsl_semantics::check::AbstractionTerm,
 ) -> Result<CheckedTerm, EmitRefusal> {
     let objects = abstraction
@@ -1139,7 +1108,7 @@ fn abstraction_term(
         .iter()
         .map(|object| {
             Ok(CheckedAbstractionObject {
-                type_id: admitted_id(object.ty())?,
+                type_id: admitted_id(ids, object.ty())?,
                 type_path: object
                     .rust_type()
                     .iter()
@@ -1160,7 +1129,7 @@ fn abstraction_term(
         .iter()
         .map(|population| {
             Ok(CheckedAbstractionPopulation {
-                population: admitted_id(population.population())?,
+                population: admitted_id(ids, population.population())?,
                 collection: population
                     .collection()
                     .iter()
@@ -1174,7 +1143,7 @@ fn abstraction_term(
         .iter()
         .map(|frame| {
             Ok(CheckedAbstractionFrame {
-                context: admitted_id(frame.context())?,
+                context: admitted_id(ids, frame.context())?,
                 operation: frame.operation().into(),
                 function: frame
                     .function()
@@ -1246,14 +1215,15 @@ fn owner_is_locked(node: &SemanticNode, source: &RawSourceRef) -> bool {
 /// select, a name outside the graph, and then, transitively, a name of an
 /// omitted node.
 fn omissions(
-    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
+    ids: &StructuralIds,
+    candidates: &Candidates<'_>,
     source: &RawSourceRef,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
-    external: &BTreeSet<CheckedNodeId>,
-) -> Vec<OmittedNode> {
-    let mut omitted: BTreeMap<CheckedNodeId, OmissionCause> = BTreeMap::new();
-    for (id, candidate) in candidates {
-        let cause = if !candidate.form_is_supported(decodes) {
+    external: &HashSet<NodeKey>,
+) -> Vec<(usize, OmittedNode)> {
+    let mut omitted: Vec<Option<OmissionCause>> = vec![None; candidates.order.len()];
+    for (position, candidate) in candidates.values().enumerate() {
+        omitted[position] = if !candidate.form_is_supported(decodes) {
             Some(OmissionCause::UnsupportedForm {
                 node_tag: candidate.node.node_tag(),
                 semantic_form: candidate.node.semantic_form(),
@@ -1263,37 +1233,45 @@ fn omissions(
         } else if !owner_is_locked(candidate.node, source) {
             Some(OmissionCause::UnlockedOwner)
         } else {
+            // The least absent name: a node names few, and absent ones are
+            // rarer still, so ordering them is cheap.
             candidate
                 .names
                 .iter()
-                .find(|name| !candidates.contains_key(*name) && !external.contains(*name))
-                .map(|absent| OmissionCause::NamesAbsentNode(absent.clone()))
+                .filter(|name| !candidates.contains(name) && !external.contains(*name))
+                .min()
+                .map(|absent| OmissionCause::NamesAbsentNode(node_id(ids, absent)))
         };
-        if let Some(cause) = cause {
-            omitted.insert(id.clone(), cause);
-        }
     }
-    let mut named_by: BTreeMap<&CheckedNodeId, Vec<&CheckedNodeId>> = BTreeMap::new();
-    for (id, candidate) in candidates {
+    let mut named_by: HashMap<&NodeKey, Vec<usize>> = HashMap::new();
+    for (position, candidate) in candidates.values().enumerate() {
         for name in &candidate.names {
-            named_by.entry(name).or_default().push(id);
+            named_by.entry(name).or_default().push(position);
         }
     }
-    let mut pending: VecDeque<CheckedNodeId> = omitted.keys().cloned().collect();
+    let mut pending: VecDeque<usize> = (0..omitted.len())
+        .filter(|&position| omitted[position].is_some())
+        .collect();
     while let Some(gone) = pending.pop_front() {
-        for &dependent in named_by.get(&gone).into_iter().flatten() {
-            if !omitted.contains_key(dependent) {
-                omitted.insert(
-                    dependent.clone(),
-                    OmissionCause::NamesOmittedNode(gone.clone()),
-                );
-                pending.push_back(dependent.clone());
+        let gone_key = &candidates.order[gone].key;
+        for &dependent in named_by.get(gone_key).into_iter().flatten() {
+            if omitted[dependent].is_none() {
+                omitted[dependent] = Some(OmissionCause::NamesOmittedNode(
+                    candidates.order[gone].id.clone(),
+                ));
+                pending.push_back(dependent);
             }
         }
     }
     omitted
         .into_iter()
-        .map(|(node, cause)| OmittedNode { node, cause })
+        .enumerate()
+        .filter_map(|(position, cause)| {
+            cause.map(|cause| {
+                let node = candidates.order[position].id.clone();
+                (position, OmittedNode { node, cause })
+            })
+        })
         .collect()
 }
 
@@ -1336,8 +1314,9 @@ fn split_laws(order: &[&Candidate<'_>]) -> (Vec<CheckedSelection>, Vec<Definitio
 /// whole emission, never an omission: the reference binds a key, and the key
 /// names nothing.
 fn stale_protocol_reference(
-    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
-    omitted: &[OmittedNode],
+    ids: &StructuralIds,
+    candidates: &Candidates<'_>,
+    dropped: &HashSet<usize>,
 ) -> Result<(), EmitRefusal> {
     for candidate in candidates.values() {
         let node = candidate.node;
@@ -1349,13 +1328,15 @@ fn stale_protocol_reference(
         let BodyTerm::Leaf(LeafTerm::Reference { target }) = node.body() else {
             continue;
         };
-        let target = admitted_id(target)?;
-        let written = candidates.contains_key(&target)
-            && !omitted.iter().any(|omission| omission.node == target);
+        let target = admitted(target)?;
+        let written = candidates
+            .index
+            .get(&target)
+            .is_some_and(|position| !dropped.contains(position));
         if !written {
             return Err(EmitRefusal::StaleProtocolReference {
                 reference: candidate.id.clone(),
-                target,
+                target: node_id(ids, &target),
             });
         }
     }
@@ -1479,8 +1460,8 @@ fn catalog_selections(
 /// location it was recorded at.
 fn recorded_occurrences(
     graph: &CheckedGraph,
-) -> Result<BTreeMap<NodeKey, Recorded<'_>>, EmitRefusal> {
-    let mut by_node: BTreeMap<NodeKey, Recorded<'_>> = BTreeMap::new();
+) -> Result<HashMap<NodeKey, Recorded<'_>>, EmitRefusal> {
+    let mut by_node: HashMap<NodeKey, Recorded<'_>> = HashMap::new();
     for (key, origin, location) in graph.occurrences() {
         let occurrence = CheckedOccurrence {
             role: occurrence_role(&key, &origin)?,
@@ -1537,11 +1518,17 @@ fn source_map(
 
 /// The exact typed source map represented by the just-built v2 entries.
 fn inspection_source_map(
+    ids: &StructuralIds,
     entries: &[CheckedSourceMapEntry],
 ) -> Result<PackageSourceMap, EmitRefusal> {
     let mut mapped = Vec::with_capacity(entries.len());
+    // One memo for every entry: a nested operand is converted once, so the
+    // map is linear in the package, not in the sum of each id's depth.
+    let mut keys = ids.key_reader();
     for entry in entries {
-        let node = admitted_key(&entry.node_id)?;
+        let node = keys
+            .key(&entry.node_id)
+            .map_err(|_| EmitRefusal::SourceMapInvariant)?;
         let key = OccurrenceKey::new(
             node,
             Origin::new(
@@ -1570,6 +1557,7 @@ fn inspection_source_map(
 /// `steps[i]` at that row's own region (FR-322-AC-87, AC-88). Every step
 /// row has a sidecar entry at its region, eligible or not (FR-322-AC-129).
 fn refinement_node(
+    ids: &StructuralIds,
     graph: &CheckedGraph,
     refinement: &CheckedRefinement,
     region: &SourceRegion,
@@ -1593,11 +1581,12 @@ fn refinement_node(
         }
     })?;
     let concrete_node = node_id(
+        ids,
         refinement
             .concrete_subject_node()
             .ok_or(EmitRefusal::RefinementSubjectNotEmitted)?,
     );
-    let id = node_id(emission.identity);
+    let id = node_id(ids, emission.identity);
     let wire_region = |region: &SourceRegion| CheckedSourceRegion {
         source: source_artifact(region.source()),
         start: region.start(),
@@ -1655,7 +1644,11 @@ fn refinement_node(
             node_tag: CheckedNodeTag::Relation.as_wire().into(),
             semantic_form: "refinement".into(),
             semantic_type: concrete_node,
-            dependencies: emission.dependencies.into_iter().map(node_id).collect(),
+            dependencies: emission
+                .dependencies
+                .into_iter()
+                .map(|key| node_id(ids, key))
+                .collect(),
             occurrences: occurrences
                 .into_iter()
                 .map(|(occurrence, _)| occurrence)
@@ -1782,6 +1775,7 @@ fn occur(
 /// each source (FR-322: a node has one or more occurrences), listed once;
 /// the root lists every constraint a part or an invariant names.
 fn write_clauses(
+    ids: &StructuralIds,
     model: &mut CheckedTimedModel,
     clauses: &qsl_semantics::check::TimedClauseNodes,
     places: &[CheckedNodeId],
@@ -1809,14 +1803,14 @@ fn write_clauses(
                 slots,
             } => CheckedConstraintTarget::Place {
                 place: place(*clock)?,
-                owner: node_id(owner),
-                slots: slots.iter().map(node_id).collect(),
+                owner: node_id(ids, owner),
+                slots: slots.iter().map(|key| node_id(ids, key)).collect(),
             },
             ConstraintTargetNodes::Parameter {
                 operation,
                 parameter,
             } => CheckedConstraintTarget::Parameter {
-                operation: node_id(operation),
+                operation: node_id(ids, operation),
                 parameter: parameter.clone(),
             },
         };
@@ -1853,7 +1847,7 @@ fn write_clauses(
                 }
             }
             parts.push(CheckedGuardPart {
-                predicate: node_id(&part.predicate),
+                predicate: node_id(ids, &part.predicate),
                 constraints,
             });
         }
@@ -1861,7 +1855,7 @@ fn write_clauses(
         occur(&mut metadata, span_region(guard.span), regions, true);
         model.guards.push(CheckedClockGuard {
             metadata,
-            operation: node_id(&guard.operation),
+            operation: node_id(ids, &guard.operation),
             parts,
         });
     }
@@ -1873,7 +1867,7 @@ fn write_clauses(
                 bounds.push(id);
             }
         }
-        let predicate = node_id(&invariant.predicate);
+        let predicate = node_id(ids, &invariant.predicate);
         let region = span_region(invariant.span);
         if let Some(held) = model
             .invariants
@@ -1904,16 +1898,16 @@ fn write_clauses(
                 condition,
             } => CheckedResetTarget::Place {
                 place: place(*clock)?,
-                owner: node_id(owner),
-                slots: slots.iter().map(node_id).collect(),
-                binders: binders.iter().map(node_id).collect(),
-                condition: node_id(condition),
+                owner: node_id(ids, owner),
+                slots: slots.iter().map(|key| node_id(ids, key)).collect(),
+                binders: binders.iter().map(|key| node_id(ids, key)).collect(),
+                condition: node_id(ids, condition),
             },
             ResetTargetNodes::Parameter { parameter } => CheckedResetTarget::Parameter {
                 parameter: parameter.clone(),
             },
         };
-        let operation = node_id(&reset.operation);
+        let operation = node_id(ids, &reset.operation);
         let value = quantity_spelling(&reset.value);
         let region = span_region(reset.span);
         if let Some(held) = model.resets.iter_mut().find(|held| {
@@ -1980,6 +1974,7 @@ fn push_scalar_type(
 /// identities. Timed graph edges are acyclic, so each pass resolves another
 /// level of references until every node and source-map entry agrees.
 fn rekey_timed_model_nodes(
+    ids: &StructuralIds,
     nodes: &mut [CheckedSemanticNodeV2],
     source_map: &mut [CheckedSourceMapEntry],
 ) -> Result<(), EmitRefusal> {
@@ -1996,13 +1991,28 @@ fn rekey_timed_model_nodes(
         }) {
             node.dependencies = body_reference_targets(&node.body);
             let old = node.node_id.clone();
-            let new = timed_model_node_id(node)?;
+            let new = timed_model_node_id(ids, node)?;
             if new != old {
                 changes.push((old, new));
             }
         }
         if changes.is_empty() {
             return Ok(());
+        }
+        // FR-322 "Operand index segments": a node whose own path holds a
+        // rekeyed node as an operand is rekeyed with it, so every operand
+        // stays a node of the graph.
+        let mut next = 0;
+        while let Some((old, new)) = changes.get(next).cloned() {
+            next += 1;
+            for node in nodes.iter() {
+                if changes.iter().any(|(changed, _)| *changed == node.node_id) {
+                    continue;
+                }
+                if let Some(rekeyed) = with_operand(&node.node_id, &old, &new) {
+                    changes.push((node.node_id.clone(), rekeyed));
+                }
+            }
         }
         for (old, new) in changes {
             for node in nodes.iter_mut() {
@@ -2020,10 +2030,40 @@ fn rekey_timed_model_nodes(
     ))
 }
 
+/// `id` with each direct operand equal to `old` replaced by `new`, or `None`
+/// when `id` holds no such operand.
+fn with_operand(
+    id: &CheckedNodeId,
+    old: &CheckedNodeId,
+    new: &CheckedNodeId,
+) -> Option<CheckedNodeId> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let mut changed = false;
+    let path = id
+        .path
+        .iter()
+        .map(|segment| match segment {
+            Segment::Node(operand) if **operand == *old => {
+                changed = true;
+                Segment::Node(std::sync::Arc::new(new.clone()))
+            }
+            other => other.clone(),
+        })
+        .collect();
+    changed.then(|| CheckedNodeId {
+        package: id.package.clone(),
+        path,
+        ordinal: id.ordinal,
+    })
+}
+
 /// The QSpec FR-322 producer identity for a timed node. Declared roots keep
 /// their qualified declaration path; derived forms flatten their typed body
 /// operands after the family and form path segments.
-fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, EmitRefusal> {
+fn timed_model_node_id(
+    ids: &StructuralIds,
+    node: &CheckedSemanticNodeV2,
+) -> Result<CheckedNodeId, EmitRefusal> {
     if node.recursion_group.is_some() {
         return Err(EmitRefusal::TimedModelWriterInvariant(
             "timed nodes cannot belong to a recursion group",
@@ -2050,7 +2090,7 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
         )
     }
     .map_err(encoding)?;
-    Ok(node_id(key))
+    Ok(node_id(ids, key))
 }
 
 /// Append the literal values, binding names and reference identities of a
@@ -2099,6 +2139,7 @@ fn timed_body_operands(
 /// producer assertion no reader verifies, and the published regions are
 /// one-byte placeholders).
 fn append_model_roots<'a>(
+    ids: &StructuralIds,
     roots: impl Iterator<
         Item = (
             &'a qsl_semantics::model::domain_package::DomainPackageRef,
@@ -2110,7 +2151,7 @@ fn append_model_roots<'a>(
     source_map: &mut Vec<CheckedSourceMapEntry>,
 ) {
     for (selection, key) in roots {
-        let root = model_root_node(selection, key);
+        let root = model_root_node(ids, selection, key);
         source_map.push(CheckedSourceMapEntry {
             node_id: root.node_id.clone(),
             role: CheckedOccurrenceRole::Generated,
@@ -2129,10 +2170,11 @@ fn append_model_roots<'a>(
 /// derived (`CheckedGraph::model_roots`), the key a refinement over the model
 /// names.
 fn model_root_node(
+    ids: &StructuralIds,
     selection: &qsl_semantics::model::domain_package::DomainPackageRef,
     key: NodeKey,
 ) -> CheckedSemanticNodeV2 {
-    let id = node_id(key);
+    let id = node_id(ids, key);
     CheckedSemanticNodeV2 {
         owner_model: None,
         node_id: id.clone(),
@@ -2206,6 +2248,7 @@ pub fn emit_timed_models(
     base: &CheckedPackageV2,
     models: &[CheckedTimedModel],
 ) -> Result<Emission, EmitRefusal> {
+    let ids = &StructuralIds::default();
     let expected = base
         .graph()
         .nodes
@@ -2252,8 +2295,10 @@ pub fn emit_timed_models(
 
     let lock = base.lock().clone();
     let mut source_map = base.source_map().to_vec();
-    rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
-    let inspection_source_map = inspection_source_map(&source_map)?;
+    read_index_segments(ids, &mut nodes, &mut source_map)?;
+    rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
+    let inspection_source_map = inspection_source_map(ids, &source_map)?;
+    write_index_segments(&mut nodes, &mut source_map, &mut [])?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
@@ -2374,7 +2419,7 @@ pub fn emit_checked_with_fault(
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn checked_node_id_of(key: &NodeKey) -> CheckedNodeId {
-    node_id(key)
+    qsl_semantics::check::wire_id::structural_id(key)
 }
 
 /// Whether IR's v2 vocabulary has the form `semantic_form` under `tag`.
@@ -2382,29 +2427,66 @@ fn ir_decodes(tag: CheckedNodeTag, semantic_form: &str) -> bool {
     CheckedNodeKind::decode(tag, semantic_form).is_some()
 }
 
-/// Every node of `graph` read for the wire, by its id.
+/// Every node of `graph` read for the wire, ascending by key, and each
+/// key's position.
+///
+/// The graph yields its nodes in key order already ranked, so no two keys
+/// are compared here: comparing two keys that share a deep operand chain
+/// costs the chain's depth.
+struct Candidates<'g> {
+    order: Vec<Candidate<'g>>,
+    index: HashMap<NodeKey, usize>,
+}
+
+impl<'g> Candidates<'g> {
+    fn new(order: Vec<Candidate<'g>>) -> Self {
+        let index = (0..)
+            .zip(&order)
+            .map(|(position, candidate)| (candidate.key.clone(), position))
+            .collect();
+        Self { order, index }
+    }
+
+    fn contains(&self, key: &NodeKey) -> bool {
+        self.index.contains_key(key)
+    }
+
+    fn values(&self) -> std::slice::Iter<'_, Candidate<'g>> {
+        self.order.iter()
+    }
+}
+
 fn candidates_of<'g>(
+    ids: &StructuralIds,
     graph: &'g CheckedGraph,
     abstraction: Option<&'g AbstractionNodes>,
-) -> Result<BTreeMap<CheckedNodeId, Candidate<'g>>, EmitRefusal> {
+) -> Result<Candidates<'g>, EmitRefusal> {
     let mut recorded = recorded_occurrences(graph)?;
-    let mut candidates: BTreeMap<CheckedNodeId, Candidate<'g>> = graph
+    let mut candidates: Vec<Candidate<'g>> = graph
         .semantic_graph()
         .nodes()
-        .map(|node| -> Result<_, EmitRefusal> {
+        .map(|node| {
             let occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            let candidate = Candidate::of(node, occurrences)?;
-            Ok((candidate.id.clone(), candidate))
+            Candidate::of(ids, node, occurrences)
         })
         .collect::<Result<_, _>>()?;
+    let graph_keys: HashSet<NodeKey> = candidates.iter().map(|c| c.key.clone()).collect();
     // QSpec FR-451: the relation node has one `declaration` occurrence per
     // declaration it was read from; the nodes it names that the graph does not
     // hold are `generated`, at the first.
     if let Some(nodes) = abstraction {
+        // The few abstraction nodes the graph does not hold go in at their
+        // place in key order.
+        let mut added: HashSet<NodeKey> = HashSet::new();
         let mut add =
             |node: &'g SemanticNode, occurrences: Recorded<'g>| -> Result<_, EmitRefusal> {
-                let candidate = Candidate::of(node, occurrences)?;
-                candidates.entry(candidate.id.clone()).or_insert(candidate);
+                let key = node.key();
+                if graph_keys.contains(&key) || !added.insert(key.clone()) {
+                    return Ok(());
+                }
+                let candidate = Candidate::of(ids, node, occurrences)?;
+                let at = candidates.partition_point(|existing| existing.key < candidate.key);
+                candidates.insert(at, candidate);
                 Ok(())
             };
         let declared = (0_u64..)
@@ -2438,7 +2520,7 @@ fn candidates_of<'g>(
             add(node, generated)?;
         }
     }
-    Ok(candidates)
+    Ok(Candidates::new(candidates))
 }
 
 /// The temporal profile the lock selects for the clock-reading control nodes
@@ -2522,6 +2604,7 @@ fn emit_package_inner(
     cancel: &Cancel,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Result<Emission, EmitRefusal> {
+    let ids = &StructuralIds::default();
     let denied = || {
         cancel
             .poll()
@@ -2547,14 +2630,17 @@ fn emit_package_inner(
             profile: graph.header_layers().last().map(|layer| layer.identity()),
         });
     }
-    let candidates = candidates_of(graph, abstraction.as_ref())?;
-    let model_roots: BTreeSet<_> = graph.model_roots().map(|(_, key)| node_id(key)).collect();
-    let omitted = omissions(&candidates, graph.source(), decodes, &model_roots);
-    stale_protocol_reference(&candidates, &omitted)?;
-    let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
+    let candidates = candidates_of(ids, graph, abstraction.as_ref())?;
+    let model_roots: HashSet<NodeKey> = graph.model_roots().map(|(_, key)| key).collect();
+    let omitted = omissions(ids, &candidates, graph.source(), decodes, &model_roots);
+    let dropped: HashSet<usize> = omitted.iter().map(|(position, _)| *position).collect();
+    let omitted: Vec<OmittedNode> = omitted.into_iter().map(|(_, omission)| omission).collect();
+    stale_protocol_reference(ids, &candidates, &dropped)?;
     let kept: Vec<&Candidate<'_>> = candidates
         .values()
-        .filter(|candidate| !dropped.contains(&candidate.id))
+        .enumerate()
+        .filter(|(position, _)| !dropped.contains(position))
+        .map(|(_, candidate)| candidate)
         .collect();
     if kept.is_empty() && graph.refinements().is_empty() {
         return Err(EmitRefusal::NothingToEmit { omitted });
@@ -2567,7 +2653,7 @@ fn emit_package_inner(
         .map(
             |candidate| match denied().or_else(|| fault(&candidate.id)) {
                 Some(refusal) => Err(refusal),
-                None => candidate.wire_node(),
+                None => candidate.wire_node(ids),
             },
         )
         .collect::<Result<Vec<_>, _>>()?;
@@ -2582,7 +2668,7 @@ fn emit_package_inner(
             .refinement_declaration_region(refinement)
             .filter(|region| region.start() < region.end())
             .ok_or(EmitRefusal::UnlocatedRefinementDeclaration)?;
-        let (node, entries, rows) = refinement_node(graph, refinement, &region)?;
+        let (node, entries, rows) = refinement_node(ids, graph, refinement, &region)?;
         step_rows.extend(rows);
         let insertion = nodes.partition_point(|existing| existing.node_id < node.node_id);
         nodes.insert(insertion, node.clone());
@@ -2597,11 +2683,13 @@ fn emit_package_inner(
         let text_type = match literal_type(&nodes, "text") {
             Some(id) => id,
             None => node_id(
+                ids,
                 qsl_semantics::check::builtin_text_type_key(graph.package_name())
                     .map_err(encoding)?,
             ),
         };
         let rational_type = node_id(
+            ids,
             qsl_semantics::check::builtin_rational_type_key(graph.package_name())
                 .map_err(encoding)?,
         );
@@ -2612,7 +2700,7 @@ fn emit_package_inner(
                     vec![PathSegment::Text(format!("timed-pending-{kind}-{index}"))],
                     0,
                 )
-                .map(node_id)
+                .map(|key| node_id(ids, key))
                 .map_err(encoding)
             };
             let mut model = CheckedTimedModel::from_checked_time_source(
@@ -2658,6 +2746,7 @@ fn emit_package_inner(
             // of each clock path, which S3 wrote so that a `presence_read`
             // names it, read back from its emitted node.
             let integer_type = node_id(
+                ids,
                 qsl_semantics::check::builtin_integer_type_key(graph.package_name())
                     .map_err(encoding)?,
             );
@@ -2667,7 +2756,7 @@ fn emit_package_inner(
                 .filter(|timed| timed.model() == source.model)
                 .flat_map(|timed| timed.place_nodes())
                 .map(|key| {
-                    let id = node_id(key);
+                    let id = node_id(ids, key);
                     let written = nodes.iter().find(|node| node.node_id == id).ok_or(
                         EmitRefusal::TimedModelWriterInvariant("a clock place S3 wrote is emitted"),
                     )?;
@@ -2709,11 +2798,12 @@ fn emit_package_inner(
                     let node = match urgency {
                         qsl_semantics::check::Urgency::When { .. } => CheckedUrgency::When {
                             metadata,
-                            predicate: timed.urgency_predicate_node(at).map(node_id).ok_or(
-                                EmitRefusal::TimedModelWriterInvariant(
+                            predicate: timed
+                                .urgency_predicate_node(at)
+                                .map(|key| node_id(ids, key))
+                                .ok_or(EmitRefusal::TimedModelWriterInvariant(
                                     "an emitted `urgent when` has a lowered predicate",
-                                ),
-                            )?,
+                                ))?,
                         },
                         qsl_semantics::check::Urgency::Operation { operation_name, .. } => {
                             CheckedUrgency::Operation {
@@ -2797,6 +2887,7 @@ fn emit_package_inner(
                     .collect();
                 let unit = model.source.unit.clone();
                 write_clauses(
+                    ids,
                     &mut model,
                     clauses,
                     &places,
@@ -2816,7 +2907,7 @@ fn emit_package_inner(
                 model.literal_types.integer = Some(integer_type);
             }
             for nominal in &source.nominal_nodes {
-                let id = node_id(&nominal.key);
+                let id = node_id(ids, &nominal.key);
                 if nodes.iter().any(|node| node.node_id == id) {
                     continue;
                 }
@@ -2856,7 +2947,7 @@ fn emit_package_inner(
                     match (nominal.form.as_str(), nominal.nominal_payload()) {
                         ("dimension", Some(payload @ NominalPayload::Dimension(_)))
                         | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
-                            nominal_term(payload)?
+                            nominal_term(ids, payload)?
                         }
                         _ => {
                             return Err(EmitRefusal::TimedModelWriterInvariant(
@@ -2870,11 +2961,13 @@ fn emit_package_inner(
                     }
                 };
                 let semantic_type = if nominal.form == "unit" {
-                    nominal.dependencies.first().map(node_id).ok_or(
-                        EmitRefusal::TimedModelWriterInvariant(
+                    nominal
+                        .dependencies
+                        .first()
+                        .map(|key| node_id(ids, key))
+                        .ok_or(EmitRefusal::TimedModelWriterInvariant(
                             "a unit node must name its dimension",
-                        ),
-                    )?
+                        ))?
                 } else {
                     id.clone()
                 };
@@ -2911,7 +3004,11 @@ fn emit_package_inner(
                     node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
                     semantic_form: nominal.form.as_str().into(),
                     semantic_type,
-                    dependencies: nominal.dependencies.iter().map(node_id).collect(),
+                    dependencies: nominal
+                        .dependencies
+                        .iter()
+                        .map(|key| node_id(ids, key))
+                        .collect(),
                     occurrences: vec![occurrence],
                     recursion_group: None,
                     declaration,
@@ -2952,19 +3049,20 @@ fn emit_package_inner(
                 nodes.push(node);
             }
         }
-        rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+        rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
         // QSpec FR-322 "Aggregate order": the lists are written in declared
         // order, which reads the nodes' regions and structure alone, and
         // the nodes whose lists moved are rekeyed.
         if timed_order::order_timed_aggregates(&mut nodes, &source_map)
             .map_err(EmitRefusal::TimedOrder)?
         {
-            rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+            rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
         }
         #[cfg(test)]
         TIMED_GRAPH.with(|held| *held.borrow_mut() = Some((nodes.clone(), source_map.clone())));
     }
     append_model_roots(
+        ids,
         graph.model_roots(),
         graph.source(),
         &mut nodes,
@@ -3014,11 +3112,12 @@ fn emit_package_inner(
         dependency_selections: dependency_selections(package),
         refinement_internals: None,
     };
+    let inspection_source_map = inspection_source_map(ids, &source_map)?;
+    write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
     };
-    let inspection_source_map = inspection_source_map(&source_map)?;
     let capability_report = [CheckedCapability {
         feature: root.into(),
         disposition: CheckedCapabilityDisposition::Available,
@@ -3050,6 +3149,206 @@ fn emit_package_inner(
         capability_report: capability_report.to_vec(),
         source_map: inspection_source_map,
     })
+}
+
+/// The ids `node` holds that this emitter can reach through IR's public
+/// types: its own id, `semantic_type`, `owner_model`, `dependencies`, and
+/// every id of a body term with public members (reference targets, literal
+/// and result types, frame nodes, dependency nodes, and the terms of
+/// aggregates, bindings, extension clauses and operation anchors). A member
+/// declaration or population an operation record names is a dependency
+/// (FR-093 rule 2). An id held anywhere else stays structural, and IR's
+/// encoder then refuses the package, so a gap fails loudly, never silently.
+fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
+    let CheckedSemanticNodeV2 {
+        node_id,
+        semantic_type,
+        owner_model,
+        dependencies,
+        body,
+        ..
+    } = node;
+    let mut ids = vec![node_id, semantic_type];
+    ids.extend(owner_model.iter_mut());
+    ids.extend(dependencies.iter_mut());
+    let mut pending = vec![body];
+    while let Some(term) = pending.pop() {
+        match term {
+            CheckedTerm::Literal { type_id, .. } => ids.push(type_id),
+            CheckedTerm::Reference { target } => ids.push(target),
+            CheckedTerm::Application {
+                result_type,
+                arguments,
+                ..
+            } => {
+                ids.push(result_type);
+                pending.extend(arguments.iter_mut());
+            }
+            CheckedTerm::Aggregate { members } => pending.extend(members.iter_mut()),
+            CheckedTerm::Binding { value, .. } => pending.push(value),
+            CheckedTerm::DependencyReference { node, .. } => ids.push(node),
+            CheckedTerm::Frame {
+                creates, deletes, ..
+            } => ids.extend(creates.iter_mut().chain(deletes.iter_mut())),
+            CheckedTerm::ExtensionForm { clauses, .. } => pending.extend(clauses.iter_mut()),
+            CheckedTerm::OperationAnchorBody(body) => pending.extend(body.members.iter_mut()),
+            _ => {}
+        }
+    }
+    ids
+}
+
+/// Whether `id` holds a segment `holds` matches.
+fn holds_segment(
+    id: &CheckedNodeId,
+    holds: impl Fn(&quire_contract_model::CheckedNodePathSegment) -> bool,
+) -> bool {
+    id.path.iter().any(holds)
+}
+
+/// FR-322 "Operand index segments": rewrite every structural id the package
+/// holds into its wire form, each operand node written as the index segment
+/// `{"node": i}` of that node in `nodes`, whose order is now final.
+///
+/// Linear in the package: each node's key is rebuilt once, sharing the key
+/// of every operand allocation ([`StructuralKeys`]), and each id a node
+/// reaches ([`reachable_ids`]) is rewritten in place. No two ids are
+/// compared: comparing two ids that share a deep operand chain costs the
+/// chain's depth.
+///
+/// [`StructuralKeys`]: qsl_semantics::check::wire_id::StructuralKeys
+fn write_index_segments(
+    nodes: &mut [CheckedSemanticNodeV2],
+    source_map: &mut [CheckedSourceMapEntry],
+    step_rows: &mut [quire_contract_model::CheckedRefinementStepRowRegion],
+) -> Result<(), EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let is_operand = |segment: &Segment| matches!(segment, Segment::Node(_));
+    let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
+    let invariant = |_| EmitRefusal::SourceMapInvariant;
+    let graph_keys = nodes
+        .iter()
+        .map(|node| keys.key(&node.node_id).map_err(invariant))
+        .collect::<Result<Vec<_>, _>>()?;
+    let index: HashMap<&NodeKey, u64> = graph_keys
+        .iter()
+        .enumerate()
+        .map(|(at, key)| (key, at as u64))
+        .collect();
+    let wire_of = |keys: &mut qsl_semantics::check::wire_id::StructuralKeys,
+                   holder: &CheckedNodeId,
+                   id: &CheckedNodeId|
+     -> Result<CheckedNodeId, EmitRefusal> {
+        let path = id
+            .path
+            .iter()
+            .map(|segment| match segment {
+                Segment::Node(operand) => {
+                    let key = keys.key(operand).map_err(invariant)?;
+                    index
+                        .get(&key)
+                        .map(|at| Segment::Index(*at))
+                        .ok_or_else(|| EmitRefusal::OperandNotInGraph {
+                            node: Box::new(holder.clone()),
+                            operand: Box::new((**operand).clone()),
+                        })
+                }
+                other => Ok(other.clone()),
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(CheckedNodeId {
+            package: id.package.clone(),
+            path,
+            ordinal: id.ordinal,
+        })
+    };
+    // The memo holds every operand allocation it keyed, so rewriting ids in
+    // place never reuses an address it has seen.
+    let mut graph_wire: HashMap<&NodeKey, CheckedNodeId> = HashMap::with_capacity(nodes.len());
+    for (node, key) in nodes.iter_mut().zip(&graph_keys) {
+        let holder = node.node_id.clone();
+        let mut seen: HashSet<NodeKey> = HashSet::new();
+        let mut changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
+        for id in reachable_ids(node) {
+            if holds_segment(id, is_operand) {
+                let new = wire_of(&mut keys, &holder, id)?;
+                if seen.insert(keys.key(id).map_err(invariant)?) {
+                    changes.push((id.clone(), new.clone()));
+                }
+                *id = new;
+            }
+        }
+        // IR's own substitution reaches the ids held where this emitter
+        // cannot (an operation's closed record and views, a nominal or
+        // refinement body). Every id it can reach already holds index
+        // segments, so it never matches a structural id deep in a chain.
+        for (old, new) in &changes {
+            node.replace_node_id(old, new);
+        }
+        graph_wire.insert(key, node.node_id.clone());
+    }
+    let mut sidecar = |id: &mut CheckedNodeId| -> Result<(), EmitRefusal> {
+        if holds_segment(id, is_operand) {
+            let key = keys.key(id).map_err(invariant)?;
+            *id = graph_wire
+                .get(&key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+        }
+        Ok(())
+    };
+    for entry in source_map.iter_mut() {
+        sidecar(&mut entry.node_id)?;
+    }
+    for row in step_rows.iter_mut() {
+        sidecar(&mut row.node_id)?;
+    }
+    Ok(())
+}
+
+/// The inverse of [`write_index_segments`] over an admitted package's nodes:
+/// every wire id each node reaches is replaced, in that node, by the
+/// structural id of the node it names, so the emitter's identity work
+/// compares structural keys.
+fn read_index_segments(
+    ids: &StructuralIds,
+    nodes: &mut [CheckedSemanticNodeV2],
+    source_map: &mut [CheckedSourceMapEntry],
+) -> Result<(), EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let is_index = |segment: &Segment| matches!(segment, Segment::Index(_));
+    let graph =
+        qsl_semantics::check::wire_id::WireGraph::new(nodes.iter().map(|node| &node.node_id))
+            .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+    let structural = |id: &CheckedNodeId| {
+        graph
+            .key(id)
+            .map(|key| node_id(ids, &key))
+            .map_err(|_| EmitRefusal::SourceMapInvariant)
+    };
+    for node in nodes.iter_mut() {
+        let mut changes: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
+        for id in reachable_ids(node) {
+            if holds_segment(id, is_index) {
+                let new = structural(id)?;
+                if !changes.iter().any(|(old, _)| old == id) {
+                    changes.push((id.clone(), new.clone()));
+                }
+                *id = new;
+            }
+        }
+        // As in `write_index_segments`: IR substitutes where this reader
+        // cannot reach.
+        for (old, new) in &changes {
+            node.replace_node_id(old, new);
+        }
+    }
+    for entry in source_map.iter_mut() {
+        if holds_segment(&entry.node_id, is_index) {
+            entry.node_id = structural(&entry.node_id)?;
+        }
+    }
+    Ok(())
 }
 
 /// The evidence IR's reader needs to read this emission back: each of the

@@ -16,6 +16,7 @@
 //! [`SelectedModel::type_invariants`]: crate::model::intake::SelectedModel::type_invariants
 
 use qsl_forms::StateClauseKind;
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -29,13 +30,25 @@ use quire_checked::key::DeclarationKey;
 /// The type whose values an invariant ranges over, as a value shows it: a
 /// record or event value shows the declaration node of its most-specific
 /// type, an object its effective identity.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeSlot {
     /// A record value type or an event type, by its composite declaration.
     Composite(NodeKey),
     /// An object type, a state machine or a process, by its effective
     /// identity.
     Object(EffectiveId),
+}
+
+impl std::fmt::Debug for TypeSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Composite(value0) => f
+                .debug_tuple("Composite")
+                .field(&NodeKeyDebug(value0))
+                .finish(),
+            Self::Object(value0) => f.debug_tuple("Object").field(&value0).finish(),
+        }
+    }
 }
 
 /// A [`ParsedTypeInvariant`] with its owner resolved by the assembler.

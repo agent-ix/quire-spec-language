@@ -33,7 +33,10 @@ mod protocol;
 mod rows;
 mod step_label;
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
+
+use crate::check::wire_id::structural_id;
 
 pub use catalog::{
     KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, RefinementCatalogClass,
@@ -597,7 +600,7 @@ impl CheckedRefinement {
             .row_keys
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
-        let local = |key: &NodeKey| RefinementKey::Local(v2_node_id(key));
+        let local = |key: &NodeKey| RefinementKey::Local(structural_id(key));
         let term = leaf_checked_term;
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
             arguments
@@ -617,7 +620,7 @@ impl CheckedRefinement {
             .into_iter()
             .map(|row| RefinementPopulation {
                 r#abstract: local(&row.abstract_population),
-                concrete: v2_node_id(&row.concrete_population),
+                concrete: structural_id(&row.concrete_population),
             })
             .collect();
         let mut keyed_objects: Vec<&KeyedObjectRow> = rows.objects.iter().collect();
@@ -638,7 +641,7 @@ impl CheckedRefinement {
                 fields.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
                 Ok(RefinementObject {
                     abstract_type: local(&row.abstract_type),
-                    concrete_type: v2_node_id(&row.concrete_type),
+                    concrete_type: structural_id(&row.concrete_type),
                     fields,
                 })
             })
@@ -670,7 +673,7 @@ impl CheckedRefinement {
             };
             steps.push(RefinementStep {
                 source_class: row.source_class.as_str().into(),
-                source_node: row.source_node.as_ref().map(v2_node_id),
+                source_node: row.source_node.as_ref().map(structural_id),
                 target,
             });
             step_sources.push(row.source);
@@ -704,7 +707,7 @@ impl CheckedRefinement {
         let assume = fairness(&rows.assume)
             .into_iter()
             .map(|(operation, kind, granularity)| RefinementAssume {
-                operation: v2_node_id(operation),
+                operation: structural_id(operation),
                 kind,
                 granularity,
             })
@@ -978,8 +981,8 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     binder_types,
                 } => RefinementConcreteClass::Declared {
                     class: class.as_str().into(),
-                    node: v2_node_id(node),
-                    binder_types: binder_types.iter().map(v2_node_id).collect(),
+                    node: structural_id(node),
+                    binder_types: binder_types.iter().map(structural_id).collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementConcreteClass::Memory(memory(*class)),
             })
@@ -994,10 +997,10 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     binder_types,
                 } => RefinementAbstractClass::Declared {
                     class: class.as_str().into(),
-                    node: RefinementKey::Local(v2_node_id(node)),
+                    node: RefinementKey::Local(structural_id(node)),
                     binder_types: binder_types
                         .iter()
-                        .map(|key| RefinementKey::Local(v2_node_id(key)))
+                        .map(|key| RefinementKey::Local(structural_id(key)))
                         .collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementAbstractClass::Memory(memory(*class)),
@@ -1046,7 +1049,7 @@ fn leaf_checked_term(
     use serde::de::Error as _;
     use serde_json::{json, Value};
     let admitted = |node: &NodeRef| {
-        node.admitted().map(v2_node_id).ok_or_else(|| {
+        node.admitted().map(structural_id).ok_or_else(|| {
             RefinementV2EncodingError::Body(serde_json::Error::custom(
                 "a refinement row term names a pending node",
             ))
@@ -1095,7 +1098,19 @@ fn leaf_checked_term(
             target: admitted(target)?,
         },
         LeafTerm::DependencyReference { node } => {
-            let node = admitted(node)?;
+            // FR-322 "Dependency references": a declared node, string path.
+            let node = node
+                .admitted()
+                .ok_or_else(|| {
+                    RefinementV2EncodingError::Body(serde_json::Error::custom(
+                        "a refinement row term names a pending node",
+                    ))
+                })
+                .and_then(|key| {
+                    crate::check::wire_id::declared_id(key).map_err(|error| {
+                        RefinementV2EncodingError::Body(serde_json::Error::custom(error))
+                    })
+                })?;
             CheckedTerm::DependencyReference {
                 package: node.package.clone(),
                 node,
@@ -1107,54 +1122,8 @@ fn leaf_checked_term(
     Ok(term)
 }
 
-/// `key` as a V2 graph node id: the same package, path and ordinal. A
-/// nested operand id is converted from an explicit stack, so a deep path
-/// uses no call stack proportional to its depth.
-fn v2_node_id(key: &NodeKey) -> quire_contract_model::CheckedNodeId {
-    use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
-    use quire_exact::{NodeKeyView, NodePathIter, PathSegmentView};
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: NodePathIter<'a>,
-        path: Vec<CheckedNodePathSegment>,
-    }
-    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
-        Frame {
-            package: view.package(),
-            ordinal: view.ordinal(),
-            segments: view.path(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(key.view());
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(PathSegmentView::Text(text)) => {
-                current.path.push(CheckedNodePathSegment::Name(text.into()));
-            }
-            Some(PathSegmentView::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let id = CheckedNodeId {
-                    package: current.package.into(),
-                    path: std::mem::take(&mut current.path),
-                    ordinal: current.ordinal,
-                };
-                let Some(mut parent) = parents.pop() else {
-                    return id;
-                };
-                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
-                current = parent;
-            }
-        }
-    }
-}
-
 /// `population A::p from C::q`, resolved.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PopulationRow {
     /// The abstract population.
     pub abstract_population: DeclarationKey,
@@ -1163,6 +1132,21 @@ pub struct PopulationRow {
     pub order_key: NodeKey,
     /// The concrete population it is the key-preserving image of.
     pub concrete_population: DeclarationKey,
+}
+
+impl std::fmt::Debug for PopulationRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            abstract_population,
+            order_key,
+            concrete_population,
+        } = self;
+        f.debug_struct("PopulationRow")
+            .field("abstract_population", &abstract_population)
+            .field("order_key", &NodeKeyDebug(order_key))
+            .field("concrete_population", &concrete_population)
+            .finish()
+    }
 }
 
 /// `field = e` of an object row, resolved against an object type or a
@@ -1449,7 +1433,6 @@ impl RefinementFairness {
 }
 
 /// A refinement between two models that checked (ADR-020 RM-1 to RM-6).
-#[derive(Debug)]
 pub struct CheckedRefinement {
     pub(crate) name: String,
     pub(crate) profile: ProfileSelection,
@@ -1511,6 +1494,83 @@ pub struct CheckedRefinement {
     /// FR-146: the per-step simulation records S3 wrote, `Initial` first and
     /// then one per row in declaration order.
     pub(crate) simulations: Vec<super::step_simulation::StepSimulationEntry>,
+}
+
+impl std::fmt::Debug for CheckedRefinement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            profile,
+            abstract_model,
+            abstract_model_selection,
+            abstract_side,
+            abstract_internal,
+            concrete_model,
+            concrete_model_selection,
+            populations,
+            objects,
+            steps,
+            step_sources,
+            history,
+            concrete_fairness,
+            abstract_fairness,
+            concrete_object_types,
+            class_catalog,
+            class_catalog_keys,
+            row_keys,
+            concrete_protocol,
+            abstract_protocol,
+            abstract_subject_node,
+            concrete_subject_node,
+            package_name,
+            declaration_span,
+            requirement,
+            simulation,
+            simulations,
+        } = self;
+        f.debug_struct("CheckedRefinement")
+            .field("name", &name)
+            .field("profile", &profile)
+            .field("abstract_model", &abstract_model)
+            .field("abstract_model_selection", &abstract_model_selection)
+            .field("abstract_side", &abstract_side)
+            .field("abstract_internal", &abstract_internal)
+            .field("concrete_model", &concrete_model)
+            .field("concrete_model_selection", &concrete_model_selection)
+            .field("populations", &populations)
+            .field("objects", &objects)
+            .field("steps", &steps)
+            .field("step_sources", &step_sources)
+            .field("history", &history)
+            .field("concrete_fairness", &concrete_fairness)
+            .field("abstract_fairness", &abstract_fairness)
+            .field("concrete_object_types", &concrete_object_types)
+            .field("class_catalog", &class_catalog)
+            .field("class_catalog_keys", &class_catalog_keys)
+            .field("row_keys", &row_keys)
+            .field(
+                "concrete_protocol",
+                &concrete_protocol.as_ref().map(NodeKeyDebug),
+            )
+            .field(
+                "abstract_protocol",
+                &abstract_protocol.as_ref().map(NodeKeyDebug),
+            )
+            .field(
+                "abstract_subject_node",
+                &abstract_subject_node.as_ref().map(NodeKeyDebug),
+            )
+            .field(
+                "concrete_subject_node",
+                &concrete_subject_node.as_ref().map(NodeKeyDebug),
+            )
+            .field("package_name", &package_name)
+            .field("declaration_span", &declaration_span)
+            .field("requirement", &requirement)
+            .field("simulation", &simulation)
+            .field("simulations", &simulations)
+            .finish()
+    }
 }
 
 impl CheckedRefinement {

@@ -133,8 +133,11 @@ fn claim_of<'w>(wire: &'w Value, kind: &str) -> &'w Value {
     node
 }
 
-fn key(node: &Value) -> NodeKey {
-    qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).expect("a structural node key")
+fn key(wire: &Value, node: &Value) -> NodeKey {
+    qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .unwrap()
+        .key_of_value(&node["node_id"])
+        .expect("a structural node key")
 }
 
 fn is_empty_aggregate(term: &Value) -> bool {
@@ -205,24 +208,25 @@ fn the_three_forms_emit_claim_nodes_the_i2_read_admits() {
     };
     let possible_root = root_of(StateGraphKind::Possible);
     assert_eq!(possible_root.from(), None);
-    assert_eq!(possible_root.over(), Some(&key(over)));
-    assert_eq!(possible_root.target(), &key(goal));
+    assert_eq!(possible_root.over(), Some(&key(wire, over)));
+    assert_eq!(possible_root.target(), &key(wire, goal));
     let always_root = root_of(StateGraphKind::AlwaysPossible);
-    assert_eq!(always_root.from(), Some(&key(from)));
+    assert_eq!(always_root.from(), Some(&key(wire, from)));
     let unique_root = root_of(StateGraphKind::UniquePath);
     assert_eq!(
         unique_root.from(),
         Some(
-            &qsl_foundation::node_wire::node_key_from_json(target(binding(
-                &unique["body"],
-                "from"
-            )))
-            .unwrap()
+            &qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+                .unwrap()
+                .key_of_value(target(binding(&unique["body"], "from")))
+                .unwrap()
         )
     );
     assert_eq!(
         unique_root.target(),
-        &qsl_foundation::node_wire::node_key_from_json(target(binding(&unique["body"], "target")))
+        &qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+            .unwrap()
+            .key_of_value(target(binding(&unique["body"], "target")))
             .unwrap()
     );
 }
@@ -323,7 +327,7 @@ fn the_i2_lookup_resolves_the_triple_and_each_lookup_takes_only_its_own_form() {
         .try_into()
         .unwrap_or_else(|roots: Vec<StateGraphRoot>| panic!("one root: {roots:?}"));
     let triple = root.occurrence().clone();
-    assert_eq!(triple.node(), &key(claim));
+    assert_eq!(triple.node(), &key(&compiled.wire, claim));
     assert_eq!(triple.origin().role().as_str(), "claim");
 
     let recompiled = admit(&compile(&text));

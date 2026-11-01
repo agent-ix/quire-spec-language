@@ -5,6 +5,7 @@
 use super::lowering::AuthoredBound;
 use super::navigation::EndSide;
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_checked::key::DeclarationKey;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -30,10 +31,20 @@ pub type Slot = usize;
 /// there. It carries no position: the value read may be a child of that
 /// record, whose own fields are not a positional prefix of the record's, so
 /// the slot is found in the value's own declaration by this identity.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RecordField {
     declaration: NodeKey,
     name: String,
+}
+
+impl std::fmt::Debug for RecordField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { declaration, name } = self;
+        f.debug_struct("RecordField")
+            .field("declaration", &NodeKeyDebug(declaration))
+            .field("name", &name)
+            .finish()
+    }
 }
 
 impl RecordField {

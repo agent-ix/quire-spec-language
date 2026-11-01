@@ -165,6 +165,7 @@ pub use task_set::{
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
+pub mod wire_id;
 pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
     CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, KeyedCatalogClass,
@@ -203,8 +204,10 @@ use quire_exact::Identifier;
 use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_foundation::diagnostic::{Locus, StageFailure};
+use qsl_foundation::source::node_table::{scoped, NodeKeyDebug, NodeList, NodeMap};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Cancel, ValueType};
+use std::fmt;
 
 pub use check::Scope;
 pub use claims::{
@@ -478,7 +481,6 @@ pub use timed_model::{
 };
 
 /// A checked function.
-#[derive(Debug)]
 struct CheckedFunction {
     /// FR-062/FR-065: the function node's FR-092 key, minted once at check
     /// (`lowering`), independent of this function's position in the
@@ -488,10 +490,24 @@ struct CheckedFunction {
     slots: usize,
 }
 
+impl std::fmt::Debug for CheckedFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            identity,
+            body,
+            slots,
+        } = self;
+        f.debug_struct("CheckedFunction")
+            .field("identity", &NodeKeyDebug(identity))
+            .field("body", &body)
+            .field("slots", &slots)
+            .finish()
+    }
+}
+
 /// Every checked function with its signature, index-aligned by construction:
 /// [`Self::new`] is the only way in, and it splits one list of
 /// pairs, so a position names the same function in both halves.
-#[derive(Debug)]
 struct CheckedFunctions {
     /// Each function's signature, indexed by name once.
     signatures: Signatures,
@@ -499,6 +515,27 @@ struct CheckedFunctions {
     /// Each identity's first position, so a by-identity lookup is a map
     /// lookup, not a scan.
     by_identity: BTreeMap<quire_exact::NodeKey, usize>,
+}
+
+impl std::fmt::Debug for CheckedFunctions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            signatures,
+            bodies,
+            by_identity,
+        } = self;
+        f.debug_struct("CheckedFunctions")
+            .field("signatures", &signatures)
+            .field("bodies", &bodies)
+            .field(
+                "by_identity",
+                &by_identity
+                    .iter()
+                    .map(|(key, value)| (NodeKeyDebug(key), value))
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl CheckedFunctions {
@@ -579,7 +616,6 @@ fn function_state<'a>(
 /// ```
 ///
 /// quire:canonical
-#[derive(Debug)]
 pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
@@ -736,11 +772,146 @@ pub struct CheckedGraph {
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
 }
 
+/// Debug writes every node key under one [`scoped`] table, so each node of
+/// the package is written once however many collections hold it, and the
+/// output is linear in the package. The fields are destructured by name, so a
+/// field added to the struct without a line here does not compile.
+impl fmt::Debug for CheckedGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Body<'a>(&'a CheckedGraph);
+        impl fmt::Debug for Body<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let CheckedGraph {
+                    source,
+                    package_name,
+                    scope,
+                    functions,
+                    dispatch_tables,
+                    occurrences,
+                    parameter_spans,
+                    requirements,
+                    model_correspondence,
+                    type_nodes,
+                    semantic_graph,
+                    effective_limits,
+                    form_spans,
+                    type_spans,
+                    site_spans,
+                    synthesized_spans,
+                    embedding,
+                    model_selections,
+                    model_roots,
+                    header_layers,
+                    time_sources,
+                    time_units,
+                    state_clauses,
+                    type_invariants,
+                    terminals,
+                    timed_models,
+                    refinements,
+                    abstractions,
+                    model_names,
+                    abstraction,
+                    protocols,
+                    protocol_node_keys,
+                    temporal_clauses,
+                    hyper_nodes,
+                    step_relations,
+                    state_graph_claims,
+                    hybrid_models,
+                    hybrid_claims,
+                    probabilistic,
+                    task_sets,
+                    operation_frames,
+                    model_objects,
+                    model_owners,
+                    model_non_owners,
+                    owner_types,
+                    object_types,
+                    object_nodes,
+                    model_populations,
+                    population_bounds,
+                    population_keys,
+                    declaration_keys,
+                    attempt_spans,
+                } = self.0;
+                f.debug_struct("CheckedGraph")
+                    .field("source", &source)
+                    .field("package_name", &package_name)
+                    .field("scope", &scope)
+                    .field("functions", &functions)
+                    .field("dispatch_tables", &dispatch_tables)
+                    .field("occurrences", &occurrences)
+                    .field(
+                        "parameter_spans",
+                        &parameter_spans
+                            .iter()
+                            .map(|((node, origin), span)| ((NodeKeyDebug(node), origin), span))
+                            .collect::<Vec<_>>(),
+                    )
+                    .field("requirements", &requirements)
+                    .field("model_correspondence", &model_correspondence)
+                    .field("type_nodes", &NodeMap(type_nodes.iter()))
+                    .field("semantic_graph", &semantic_graph)
+                    .field("effective_limits", &effective_limits)
+                    .field("form_spans", &form_spans)
+                    .field("type_spans", &type_spans)
+                    .field("site_spans", &site_spans)
+                    .field("synthesized_spans", &synthesized_spans)
+                    .field("embedding", &embedding)
+                    .field("model_selections", &model_selections)
+                    .field("model_roots", &NodeList(model_roots.iter()))
+                    .field("header_layers", &header_layers)
+                    .field("time_sources", &time_sources)
+                    .field("time_units", &time_units)
+                    .field("state_clauses", &state_clauses)
+                    .field("type_invariants", &type_invariants)
+                    .field("terminals", &terminals)
+                    .field("timed_models", &timed_models)
+                    .field("refinements", &refinements)
+                    .field("abstractions", &abstractions)
+                    .field("model_names", &model_names)
+                    .field("abstraction", &abstraction)
+                    .field("protocols", &protocols)
+                    .field("protocol_node_keys", &protocol_node_keys)
+                    .field("temporal_clauses", &temporal_clauses)
+                    .field("hyper_nodes", &hyper_nodes)
+                    .field("step_relations", &step_relations)
+                    .field("state_graph_claims", &state_graph_claims)
+                    .field("hybrid_models", &hybrid_models)
+                    .field("hybrid_claims", &hybrid_claims)
+                    .field("probabilistic", &probabilistic)
+                    .field("task_sets", &task_sets)
+                    .field("operation_frames", &operation_frames)
+                    .field("model_objects", &model_objects)
+                    .field("model_owners", &model_owners)
+                    .field("model_non_owners", &model_non_owners)
+                    .field("owner_types", &owner_types)
+                    .field("object_types", &object_types)
+                    .field(
+                        "object_nodes",
+                        &object_nodes
+                            .iter()
+                            .map(|(declaration, node)| (declaration, NodeKeyDebug(node)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .field("model_populations", &model_populations)
+                    .field("population_bounds", &population_bounds)
+                    .field("population_keys", &population_keys)
+                    .field("declaration_keys", &declaration_keys)
+                    .field("attempt_spans", &attempt_spans)
+                    .finish()
+            }
+        }
+        scoped(f, &Body(self))
+    }
+}
+
 /// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
 /// `temporal`/`temporal_clause` node, the `claim` occurrence of this
 /// declaration and its `over` parameter's node. Two structurally equal
 /// declarations share one node and differ in their `claim` occurrence.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TemporalClauseNode {
     clause: CheckedTemporalClause,
     identity: quire_exact::NodeKey,
@@ -755,6 +926,29 @@ pub struct TemporalClauseNode {
     /// Each capture's checked initializer and its slot count, in source
     /// order.
     captures: Vec<(CheckedBody, usize)>,
+}
+
+impl std::fmt::Debug for TemporalClauseNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            clause,
+            identity,
+            claim,
+            over,
+            conditions,
+            guard,
+            captures,
+        } = self;
+        f.debug_struct("TemporalClauseNode")
+            .field("clause", &clause)
+            .field("identity", &NodeKeyDebug(identity))
+            .field("claim", &claim)
+            .field("over", &NodeKeyDebug(over))
+            .field("conditions", &conditions)
+            .field("guard", &guard)
+            .field("captures", &captures)
+            .finish()
+    }
 }
 
 impl TemporalClauseNode {

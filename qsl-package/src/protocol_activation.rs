@@ -7,8 +7,8 @@ use qsl_semantics::check::{
 };
 use quire_contract_model::{CheckedProtocolActivation, CheckedProtocolActivationRow};
 
-use crate::emit::node_id;
 use crate::CheckedPackage;
+use qsl_semantics::check::wire_id::structural_id;
 
 impl CheckedPackage {
     /// Derives the local protocols' control-to-temporal activation map (FR-449).
@@ -69,7 +69,7 @@ impl CheckedPackage {
                 },
                 _ => unreachable!("checked activation kind is origin or each"),
             };
-            let clause = node_id(node.key());
+            let clause = structural_id(&node.key());
             for member in &group("requirements").members {
                 let GroupMember::Leaf(target) = member else {
                     unreachable!("checked requirements are reference leaves");
@@ -94,7 +94,7 @@ fn reference(leaf: &LeafTerm) -> quire_contract_model::CheckedNodeId {
     let LeafTerm::Reference { target } = leaf else {
         unreachable!("checked activation and requirements name local nodes");
     };
-    node_id(
+    structural_id(
         target
             .admitted()
             .expect("checked protocol references are resolved"),

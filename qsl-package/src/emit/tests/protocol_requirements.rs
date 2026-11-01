@@ -16,19 +16,48 @@ mod fixture_w;
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n\
                      profile t = \"quire.temporal.infinite-trace/v1\";\n";
 
-/// Compare the pre-emission projection with the admitted byte-reader view.
-fn activation_rows(lowered: &Lowered) -> &[quire_contract_model::CheckedProtocolActivationRow] {
-    let read_back = lowered
+/// Compare the pre-emission projection with the admitted byte-reader view,
+/// each read-back id resolved through the emitted graph to its structural
+/// form, and return the rows in that form, comparable across documents.
+fn activation_rows(lowered: &Lowered) -> Vec<quire_contract_model::CheckedProtocolActivationRow> {
+    use quire_contract_model::{CheckedProtocolActivation, CheckedProtocolActivationRow};
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&lowered.wire)
+        .expect("the emitted graph");
+    let structural = |id: &CheckedNodeId| {
+        qsl_semantics::check::wire_id::structural_id(&graph.key(id).expect("an emitted node"))
+    };
+    let read_back: Vec<CheckedProtocolActivationRow> = lowered
         .ir
         .as_ref()
         .expect("the admitted checked package")
-        .protocol_activation_relation();
+        .protocol_activation_relation()
+        .iter()
+        .map(|row| CheckedProtocolActivationRow {
+            clause: structural(&row.clause),
+            activation: match &row.activation {
+                CheckedProtocolActivation::Origin => CheckedProtocolActivation::Origin,
+                CheckedProtocolActivation::Each { trigger } => CheckedProtocolActivation::Each {
+                    trigger: structural(trigger),
+                },
+            },
+            required_temporal: structural(&row.required_temporal),
+        })
+        .collect();
     assert_eq!(
         lowered.activation_rows, read_back,
         "in-process/read-back parity: {}",
         lowered.text
     );
-    &lowered.activation_rows
+    read_back
+}
+
+/// The structural id of the node the wire id `id` names in `wire`'s graph.
+fn structural(wire: &Value, id: &Value) -> CheckedNodeId {
+    let key = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .expect("the emitted graph")
+        .key_of_value(id)
+        .expect("an id of the emitted graph");
+    qsl_semantics::check::wire_id::structural_id(&key)
 }
 
 #[trace(
@@ -69,12 +98,12 @@ fn protocol_requirements_reference_deduplicated_temporal_clause_nodes() {
     let rows = activation_rows(&lowered);
     assert_eq!(rows.len(), 1);
     assert_eq!(
-        serde_json::to_value(&rows[0].clause).unwrap(),
-        clause["node_id"]
+        rows[0].clause,
+        structural(&lowered.wire, &clause["node_id"])
     );
     assert_eq!(
-        serde_json::to_value(&rows[0].required_temporal).unwrap(),
-        target["node_id"]
+        rows[0].required_temporal,
+        structural(&lowered.wire, &target["node_id"])
     );
     assert_eq!(
         rows[0].activation,
@@ -122,11 +151,11 @@ fn requirements_members(clause: &mut Value) -> &mut Vec<Value> {
         .unwrap()
 }
 
-fn sort_dependencies(clause: &mut Value) {
+fn sort_dependencies(graph: &qsl_semantics::check::wire_id::WireGraph, clause: &mut Value) {
     clause["dependencies"]
         .as_array_mut()
         .unwrap()
-        .sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
+        .sort_by_key(|value| graph.key_of_value(value).unwrap());
 }
 
 /// FR-383-AC-2, AC-13: each mutated clause is refused by the reader's own
@@ -176,14 +205,16 @@ fn requirement_wire_mutations_refuse() {
         })
         .expect("a non-temporal node")["node_id"]
         .clone();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&valid.wire).unwrap();
     let retarget = |replacement: Value| {
         let original = original_target.clone();
+        let graph = graph.clone();
         move |clause: &mut Value| {
             requirements_members(clause)[0]["target"] = replacement.clone();
             let dependencies = clause["dependencies"].as_array_mut().unwrap();
             dependencies.retain(|dependency| dependency != &original);
             dependencies.push(replacement);
-            sort_dependencies(clause);
+            sort_dependencies(&graph, clause);
         }
     };
     let wrong_form = clause_edit_verdict(&valid, retarget(non_temporal));
@@ -245,11 +276,10 @@ fn requirement_order_does_not_change_the_emitted_set() {
     let requirements = clause_argument(clause, "requirements")["members"]
         .as_array()
         .unwrap();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&first.wire).unwrap();
     let keys: Vec<_> = requirements
         .iter()
-        .map(|reference| {
-            qsl_foundation::node_wire::node_key_from_json(&reference["target"]).unwrap()
-        })
+        .map(|reference| graph.key_of_value(&reference["target"]).unwrap())
         .collect();
     assert_eq!(requirements.len(), 2);
     // The expected order comes from the wire's own temporal nodes, sorted
@@ -259,7 +289,7 @@ fn requirement_order_does_not_change_the_emitted_set() {
         .unwrap()
         .iter()
         .filter(|node| node["semantic_form"] == "temporal_clause")
-        .map(|node| qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap())
+        .map(|node| graph.key_of_value(&node["node_id"]).unwrap())
         .collect();
     temporal_keys.sort_unstable();
     assert_eq!(temporal_keys.len(), 2);
@@ -409,15 +439,15 @@ fn a_required_clause_relation_carries_the_each_trigger() {
     else {
         panic!("an each activation row: {:?}", rows[0]);
     };
-    assert_eq!(serde_json::to_value(row_trigger).unwrap(), *trigger);
+    assert_eq!(*row_trigger, structural(&lowered.wire, trigger));
     assert_eq!(
-        serde_json::to_value(&rows[0].clause).unwrap(),
-        clause["node_id"]
+        rows[0].clause,
+        structural(&lowered.wire, &clause["node_id"])
     );
     let temporal = node_of(&lowered.wire, "temporal", "temporal_clause");
     assert_eq!(
-        serde_json::to_value(&rows[0].required_temporal).unwrap(),
-        temporal["node_id"]
+        rows[0].required_temporal,
+        structural(&lowered.wire, &temporal["node_id"])
     );
 }
 
@@ -527,6 +557,7 @@ fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
     assert_eq!(activation_rows(valid).len(), 1);
     let index = protocol_clause_index(&valid.wire);
     let base = format!("/semantic_graph/nodes/{index}");
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&valid.wire).unwrap();
     for (target_path, missing_path) in [
         ("/body/arguments/7/value/members/0/target", "requirements"),
         ("/body/arguments/1/value/members/1/value/target", "trigger"),
@@ -548,7 +579,7 @@ fn assert_activation_target_refusals(valid: &Lowered, document: &[u8]) {
                 absent["path"] = json!(["absent"]);
                 *clause.pointer_mut(target_path).unwrap() = absent.clone();
                 clause["dependencies"].as_array_mut().unwrap().push(absent);
-                sort_dependencies(clause);
+                sort_dependencies(&graph, clause);
             }
             let mut evidence = CheckedPackageEvidence::new();
             for feature in valid.wire["lock"]["required_features"].as_array().unwrap() {

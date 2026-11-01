@@ -266,6 +266,10 @@ impl HybridProcessRequest {
         let package = admit_package(&package_bytes, context)?;
         let hybrids = read_hybrids(&package, context.limits.nodes)
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
+        let graph = qsl_semantics::check::wire_id::WireGraph::new(
+            package.graph().nodes.iter().map(|node| &node.node_id),
+        )
+        .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let package_wire = DeepValue(
             read_deep_value(&package_bytes)
                 .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?,
@@ -287,8 +291,15 @@ impl HybridProcessRequest {
             {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            let claim_node = qsl_foundation::node_wire::node_key_from_json(&item.claim["node"])
-                .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
+            // FR-322 "Operand index segments": the request is about `package`,
+            // so the claim's node id resolves against that package's graph.
+            // `CheckedNodeId` reads raw JSON text, never a `Value`.
+            let claim_node = serde_json::from_str::<quire_contract_model::CheckedNodeId>(
+                &item.claim["node"].to_string(),
+            )
+            .ok()
+            .and_then(|id| graph.key(&id).ok())
+            .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
             let claim_wire = item
                 .claim
                 .as_object()

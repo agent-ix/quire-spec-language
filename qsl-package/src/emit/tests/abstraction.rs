@@ -222,7 +222,8 @@ fn the_relation_is_written_as_one_node_holding_the_three_bindings() {
         })
     );
     let mut targets = vec![config, configs];
-    targets.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&emitted.wire).unwrap();
+    targets.sort_by_key(|value| graph.key_of_value(value).unwrap());
     assert_eq!(relation["dependencies"], json!(targets));
     assert_eq!(relation["semantic_type"], relation["node_id"]);
     assert_eq!(
