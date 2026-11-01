@@ -53,6 +53,7 @@ A focused manual traceability pass checked NFR-008-AC-1..5 against PR #2007's ch
 | FND-001 | fixed | - |
 | FND-002 | still-open | The scan exhaustion tests do not exercise a retained instance or retry the same input after a visit refusal; add that successor case to establish AC-5 for the mutable ledger path. |
 | FND-002 | fixed | - |
+| FND-003 | still-open | The AC-5 retry test forces exhaustion during the eviction scan, not after the scan at the formula root. It therefore cannot detect receipt mutation on the later failure path. |
 
 ## Disposition evidence
 
@@ -77,3 +78,19 @@ The new capture scan test starts with a fresh obligation and checks only the typ
 ### Disposition pass 3 evidence
 
 `checked_v2_retained_capture_scan_refusal_retries_without_duplicate_receipt` exercises the retained ledger path, confirms visit exhaustion, retries the unchanged input, and asserts the expected receipt list and restored capture.
+
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-003 | medium | The checked-v2 retry suite does not test visit exhaustion after eviction scanning completes but before the formula's first visit, leaving the retained-ledger retry branch uncovered. | tests/it/checked_temporal_limits_v2.rs:470 | correct-requirement-no-evidence |
+
+### FND-003 — post-scan formula refusal is not covered
+
+The new regression asserts a visit limit of 2 with eight eviction records, so it stops inside the scan. It does not exercise a limit that permits the trigger and full scan, then refuses the formula root, and retries the same input.
+
+### Disposition pass 4 evidence
+
+- FND-001 and FND-002 remain fixed through the prior checked-v2 identity and retention-demand regressions.
+- FND-003 remains open because the AC-5 retained-ledger test sets `visits: 2` with eight eviction entries and therefore never exercises formula-root exhaustion after the scan completes.

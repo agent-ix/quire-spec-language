@@ -117,12 +117,6 @@ pub(super) fn resolve(
                 .into());
             }
             existing.receipts.push(trigger.receipt.clone());
-            if let Some(saved) = retained
-                .as_deref_mut()
-                .and_then(|retained| retained.get_mut(&trigger.identity))
-            {
-                saved.receipts.push(trigger.receipt.clone());
-            }
             continue;
         }
 
@@ -161,11 +155,12 @@ pub(super) fn resolve(
                     work.subject.capture = None;
                     continue;
                 }
-                let saved = retained_instances
-                    .get_mut(&trigger.identity)
-                    .expect("the retained instance validated before scanning");
-                saved.receipts.push(trigger.receipt.clone());
-                instances.push(Ok(saved.clone()));
+                let mut restored = retained_instances
+                    .get(&trigger.identity)
+                    .expect("the retained instance validated before scanning")
+                    .clone();
+                restored.receipts.push(trigger.receipt.clone());
+                instances.push(Ok(restored));
                 continue;
             }
         }

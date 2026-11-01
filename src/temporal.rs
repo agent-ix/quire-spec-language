@@ -856,7 +856,7 @@ fn run_view(
     trace: &Trace,
     watermark: i64,
     work: &mut budget::Work,
-    retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
+    mut retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
 ) -> Result<Vec<Obligation>, Error> {
     let subject = declaration_subject(view.declaration);
     let premises = Premises {
@@ -877,7 +877,7 @@ fn run_view(
         trace,
         view.declaration,
         work,
-        retained_instances,
+        retained_instances.as_deref_mut(),
     )? {
         Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
             subject,
@@ -946,6 +946,17 @@ fn run_view(
                         return Err(error);
                     }
                 };
+                if let Some(saved) = retained_instances
+                    .as_deref_mut()
+                    .and_then(|retained| retained.get_mut(&instance.identity))
+                {
+                    let prior_receipts = saved.receipts.len();
+                    if prior_receipts < instance.receipts.len() {
+                        saved
+                            .receipts
+                            .extend(instance.receipts[prior_receipts..].iter().cloned());
+                    }
+                }
                 assessed.push(Obligation::Assessed(Box::new(Assessment {
                     subject,
                     instance: Some(instance.identity),

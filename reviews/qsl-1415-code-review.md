@@ -73,6 +73,8 @@ Reviewed PR #2007 at head `20ed8801881d3ca9f6477bda7e22bac5cb864281` against bas
 | FND-005 | still-open | The retained instance's `receipts` vector is mutated before the new scan calls `work.visit()?`; visit exhaustion therefore leaves ledger state changed before refusal, and a retry can append the same receipt again. |
 | FND-005 | fixed | - |
 | FND-006 | still-open | The retained `Instance` is deep-cloned before payload comparison and before any eviction-scan visit is charged. A refusal can therefore perform an unbounded copy of receipts, captures and payload before stopping. |
+| FND-006 | fixed | - |
+| FND-007 | still-open | A retained receipt is appended and the instance cloned after the eviction scan but before formula evaluation; if the next formula visit exhausts the limit, the ledger is mutated and retry appends the receipt again. |
 
 ## Disposition evidence
 
@@ -109,3 +111,21 @@ The retained-instance branch now clones the saved instance, completes and charge
 ### FND-006 — retained instance is copied before the refusal boundary
 
 The new `.cloned()` at the retained-instance lookup deep-copies `Instance` before checking the payload and before the loop charges each eviction candidate. `Instance` contains a `Vec<String>` of receipts, captures and an opaque payload; receipts can accumulate across repeated deliveries. A contradictory redelivery or a low visit limit therefore performs the deep copy even though evaluation immediately refuses. The previous implementation borrowed the instance through payload validation and the scan, cloning only after a successful scan. Borrow through comparison and scan, then clone or update after the work charges succeed.
+
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | A visit-limit refusal at the formula root can occur after the retained receipt is appended, so the retry still duplicates that receipt when the limit is consumed by activation and eviction scanning. | src/temporal/activation.rs:164 |
+
+### FND-007 — later work refusal still mutates retained receipts
+
+The new fix postpones receipt mutation until the eviction-list scan completes, which resolves FND-005's scan-refusal case. However, `saved.receipts.push(...)` and `saved.clone()` still run before `run_view` evaluates the formula. If the visit limit covers trigger processing and the entire eviction scan but not the formula root visit (`Evaluator::evaluate` calls `work.visit()` on entry), evaluation then refuses after mutating `Ledger.checked_authenticated_instances`. Retrying the same input with sufficient visits appends the same receipt again. Add a checked-v2 retry case where the scan completes but the first formula visit exhausts, and defer the ledger mutation until the evaluation can commit it.
+
+### Disposition pass 4 evidence
+
+- FND-001 through FND-004 remain fixed: caller-supplied ceilings pass through, retention tracks distinct required valuation demand, eviction scans charge `Visits`, and new demand is charged before insertion.
+- FND-005 remains fixed for the reported scan-refusal case: the retained-instance branch completes the charged eviction scan before appending a receipt.
+- FND-006 is fixed: the retained `Instance` is borrowed for payload validation and eviction scanning; the clone occurs only after the scan completes.
+- FND-007 remains open: successful activation mutates the retained receipt before the formula root's first visit, which can still exhaust the shared visit ceiling.
