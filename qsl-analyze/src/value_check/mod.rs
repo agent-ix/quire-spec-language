@@ -230,7 +230,10 @@ pub fn check_value(
         .iter()
         .map(|parameter| parameter.domain())
         .collect();
-    if domains.iter().any(|d| **d == ParameterDomain::Unbounded) {
+    if domains
+        .iter()
+        .any(|d| matches!(d, ParameterDomain::Unbounded))
+    {
         return Err(ValueRefusal::RequiresBound);
     }
     if domains

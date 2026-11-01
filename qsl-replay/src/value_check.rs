@@ -94,7 +94,7 @@ pub enum UnsupportedDomain {
 }
 
 /// The values one parameter ranges over.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum ParameterDomain {
     /// `Boolean`: `false` and `true`.
     Boolean,
@@ -438,7 +438,9 @@ impl<'p> ValueTarget<'p> {
                     (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
                         n >= interval.lower() && n <= interval.upper()
                     }
-                    (value, ParameterDomain::Values(values)) => values.contains(value),
+                    (value, ParameterDomain::Values(values)) => {
+                        values.iter().any(|candidate| same_value(candidate, value))
+                    }
                     _ => false,
                 })
     }
@@ -582,13 +584,34 @@ fn union_values(
             return None;
         }
         values.extend(payloads.into_iter().map(|payload| {
-            Value::Union(quire_exact::UnionValue::from_admitted(
+            Value::Union(std::sync::Arc::new(quire_exact::UnionValue::from_admitted(
                 identity.clone(),
                 payload,
-            ))
+            )))
         }));
     }
     Some(values)
+}
+
+/// Equality for the deliberately small materialized domain used by union
+/// payloads. The kernel `Value` stays non-comparable; this identity check is
+/// used only to validate a candidate against known Boolean, integer and union
+/// values.
+fn same_value(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Boolean(left), Value::Boolean(right)) => left == right,
+        (Value::Integer(left), Value::Integer(right)) => left == right,
+        (Value::Union(left), Value::Union(right)) => {
+            left.member() == right.member()
+                && left.components().len() == right.components().len()
+                && left
+                    .components()
+                    .iter()
+                    .zip(right.components())
+                    .all(|(left, right)| same_value(left, right))
+        }
+        _ => false,
+    }
 }
 
 fn undefined_reason(reason: Undefined) -> &'static str {
