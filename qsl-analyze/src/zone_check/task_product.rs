@@ -825,6 +825,72 @@ pub enum FixedWorkGateMiss {
     SlotCapOverflow,
 }
 
+/// Why an admitted task product uses FR-249's bounded-search route.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskSearchReason {
+    /// Actual demand is not a singleton.
+    VariableDemand,
+    /// The current exact certificate carrier cannot encode this valid task
+    /// product's blocking or concrete selected-jitter identity finitely.
+    BoundedProductData,
+    /// The admitted scheduler policy has no current exact task-product gate.
+    PolicyOutsideExactGate,
+    /// A candidate finite slot cap cannot be represented.
+    SlotCapOverflow,
+}
+
+/// The route selected after applying FR-419 admission and the FR-418 exact
+/// finite-product gate. Bounded is an admitted analysis route, never an
+/// unsupported outcome.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskProductRoute {
+    /// The product may be submitted for exact finite closure.
+    Exact(FixedWorkTaskProduct),
+    /// The product remains admitted and must use replayable bounded search.
+    Bounded(TaskSearchReason),
+}
+
+/// Why the task product fails FR-419's explicit task-set admission rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TaskProductAdmissionError {
+    /// The task's checked data or policy-specific restrictions are invalid.
+    #[error("the checked task set violates FR-419 admission rules")]
+    InvalidTaskSet,
+    /// Fixed-priority claims require a priority on every task.
+    #[error("fixed-priority scheduling requires a priority for each task")]
+    MissingPriority,
+    /// Fixed-priority priorities must be distinct.
+    #[error("fixed-priority task priorities must be distinct")]
+    PriorityClash,
+}
+
+/// Select exact closure or admitted bounded search for a checked task set.
+/// Only FR-419 admission failures are returned as errors; every other exact
+/// gate miss remains an analyzable bounded task product.
+pub fn task_product_route(
+    task_set: &TaskSet,
+    policy: SchedulingPolicy,
+) -> Result<TaskProductRoute, TaskProductAdmissionError> {
+    match fixed_work_task_product(task_set, policy) {
+        Ok(product) => Ok(TaskProductRoute::Exact(product)),
+        Err(FixedWorkGateMiss::VariableDemand) => {
+            Ok(TaskProductRoute::Bounded(TaskSearchReason::VariableDemand))
+        }
+        Err(FixedWorkGateMiss::BoundedSearchRequired) => Ok(TaskProductRoute::Bounded(
+            TaskSearchReason::BoundedProductData,
+        )),
+        Err(FixedWorkGateMiss::UnsupportedPolicy) => Ok(TaskProductRoute::Bounded(
+            TaskSearchReason::PolicyOutsideExactGate,
+        )),
+        Err(FixedWorkGateMiss::SlotCapOverflow) => {
+            Ok(TaskProductRoute::Bounded(TaskSearchReason::SlotCapOverflow))
+        }
+        Err(FixedWorkGateMiss::InvalidTaskSet) => Err(TaskProductAdmissionError::InvalidTaskSet),
+        Err(FixedWorkGateMiss::MissingPriority) => Err(TaskProductAdmissionError::MissingPriority),
+        Err(FixedWorkGateMiss::PriorityClash) => Err(TaskProductAdmissionError::PriorityClash),
+    }
+}
+
 /// Compile the FR-419 exact fixed-work gate. This only computes the task
 /// rows and finite cap; the reader still recompiles and explores the complete
 /// source/task product before accepting a certificate.

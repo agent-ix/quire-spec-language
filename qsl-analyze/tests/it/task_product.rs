@@ -3,8 +3,9 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    fixed_work_task_product, Bound, Dbm, FixedWorkArrival, FixedWorkGateMiss, TaskCompletionError,
-    TaskJobPhase, TaskSchedulerState, TaskServiceClock,
+    fixed_work_task_product, task_product_route, Bound, Dbm, FixedWorkArrival, FixedWorkGateMiss,
+    TaskCompletionError, TaskJobPhase, TaskProductAdmissionError, TaskProductRoute,
+    TaskSchedulerState, TaskSearchReason, TaskServiceClock,
 };
 use qsl_foundation::Span;
 use qsl_replay::{
@@ -125,6 +126,35 @@ fn fixed_priority_jitter_stays_admitted_when_the_exact_edge_is_not_symbolic() {
     assert_eq!(
         fixed_work_task_product(&set(vec![jittered]), SchedulingPolicy::FixedPriority,),
         Err(FixedWorkGateMiss::BoundedSearchRequired)
+    );
+}
+
+#[trace("TC-372", "FR-419-AC-6")]
+#[test]
+fn admitted_exact_gate_misses_route_to_bounded_search() {
+    let mut jittered = task("jittered", 4, 4, 1, Wcet::Single(int(1)));
+    jittered.jitter = int(1);
+    assert_eq!(
+        task_product_route(&set(vec![jittered]), SchedulingPolicy::FixedPriority),
+        Ok(TaskProductRoute::Bounded(
+            TaskSearchReason::BoundedProductData
+        ))
+    );
+
+    let variable = task("variable", 4, 4, 1, Wcet::Single(int(2)));
+    assert_eq!(
+        task_product_route(&set(vec![variable]), SchedulingPolicy::FixedPriority),
+        Ok(TaskProductRoute::Bounded(TaskSearchReason::VariableDemand))
+    );
+
+    let invalid_edf = {
+        let mut task = task("invalid-edf", 4, 4, 1, Wcet::Single(int(1)));
+        task.jitter = int(1);
+        task
+    };
+    assert_eq!(
+        task_product_route(&set(vec![invalid_edf]), SchedulingPolicy::Edf),
+        Err(TaskProductAdmissionError::InvalidTaskSet)
     );
 }
 
