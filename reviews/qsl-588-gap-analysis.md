@@ -34,3 +34,9 @@ Focused gap analysis of the elapsed measure path against QSL FR-254-AC-3 and FR-
 - Criteria counts: not computed; the requested scope is a focused subset, and the repository matrix did not finish.
 - Untraced behaviors / stubs: one in-scope outstanding behavior (`FR-254-AC-3` elapsed sample reader).
 - Semantic review: skipped; not requested.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | Timed elapsed sample reading is continuing QSL-588 implementation work and is outside this prerequisite PR's authorized scope. The box-only Clippy fix does not implement the timestamp-difference reader. |
