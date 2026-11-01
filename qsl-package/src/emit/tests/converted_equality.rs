@@ -16,7 +16,7 @@ const DEC2: &str = "Decimal[-100,100;0,2;nearest-even]";
 const RAT: &str = "Rational[-100, 100; 1, 1]";
 
 /// `declarations` through S1 to S4 and the v2 emitter, with nothing omitted.
-fn emitted(declarations: &str) -> Emission {
+fn checked_graph(declarations: &str) -> qsl_semantics::check::CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:conv-eq", "fixture", "fixture:1"),
@@ -28,13 +28,132 @@ fn emitted(declarations: &str) -> Emission {
     assert_eq!(parsed.diagnostics(), []);
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
+    PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"))
+}
+
+/// `declarations` through S1 to S4 and the v2 emitter, with nothing omitted.
+fn emitted(declarations: &str) -> Emission {
+    let graph = checked_graph(declarations);
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
     emission
+}
+
+/// QSpec-TC-233's EQ-01..05 positive rows: each typed equality retains its
+/// selected schedule, explicit conversion target, resolved units and enum
+/// sub-index before the IR-owned wire writer is connected.
+#[ix_trace_rs::trace("QSpec-TC-233", "QSL-1390")]
+#[test]
+fn qspec_positive_equality_vectors_match_typed_producer_facts() {
+    use quire_semantic_value::declaration::{EqualityOperator, EqualitySchedule};
+
+    let declarations = "dimension Time;\n\
+        unit s : Time = rational(1, 1);\n\
+        unit ms : Time = rational(1, 1000) * s;\n\
+        dimension Length;\n\
+        unit m : Length = rational(1, 1);\n\
+        enum Color { Blue, Green }\n\
+        record Point { x: Integer; }\n\
+        function text using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
+        function enumeration using v(a: Color, b: Color): Boolean pure { a != b }\n\
+        function quantity using v(a: Quantity<ms>, b: Quantity<s>): Boolean pure { convert<Quantity<s>>(a) = b }\n\
+        function plan using v(a: Point, b: Point): Boolean pure { a = b }\n\
+        function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }\n";
+    let graph = checked_graph(declarations);
+    let facts: Vec<_> = graph.equality_producer_data().values().collect();
+    assert_eq!(facts.len(), 5, "each equality application is retained once");
+
+    let text = facts
+        .iter()
+        .find(|fact| fact.schedule() == EqualitySchedule::Text)
+        .expect("EQ-01-text selects the text schedule");
+    assert_eq!(text.operator(), EqualityOperator::Equal);
+    assert_eq!(text.authored_operands()[0].target(), None);
+    assert!(text.units().ids().next().is_none());
+
+    let enumeration = facts
+        .iter()
+        .find(|fact| fact.schedule() == EqualitySchedule::Enum)
+        .expect("EQ-02-enum selects the enum schedule");
+    assert_eq!(enumeration.operator(), EqualityOperator::NotEqual);
+    assert!(format!("{:?}", enumeration.enum_members()).contains("Blue"));
+    assert!(format!("{:?}", enumeration.enum_members()).contains("Green"));
+    assert!(enumeration.units().ids().next().is_none());
+
+    let converted_quantity = facts
+        .iter()
+        .find(|fact| {
+            fact.schedule() == EqualitySchedule::Quantity
+                && fact.authored_operands()[0].target().is_some()
+        })
+        .expect("EQ-03-quantity retains its explicit ms-to-s conversion");
+    assert_eq!(converted_quantity.operator(), EqualityOperator::Equal);
+    assert_eq!(converted_quantity.units().ids().count(), 2);
+    assert!(converted_quantity.compared_operands()[0].target().is_none());
+
+    let plan = facts
+        .iter()
+        .find(|fact| fact.schedule() == EqualitySchedule::Plan)
+        .expect("EQ-04-plan selects the plan schedule");
+    assert_eq!(plan.operator(), EqualityOperator::Equal);
+    assert!(plan.units().ids().next().is_none());
+
+    let compound = facts
+        .iter()
+        .find(|fact| {
+            fact.units().ids().count() == 1
+                && fact.schedule() == EqualitySchedule::Quantity
+                && fact.authored_operands()[0].target().is_none()
+        })
+        .expect("EQ-05-compound-quantity is backed by one compound quantity unit");
+    assert_eq!(compound.operator(), EqualityOperator::Equal);
+    assert!(compound.units().ids().any(|id| {
+        matches!(
+            compound.units().get(id),
+            Some(quire_semantic_value::quantity::QuantityUnit::Compound(_))
+        )
+    }));
+}
+
+/// QSL-1390: every nested equality application is retained independently.
+#[ix_trace_rs::trace("QSL-1390")]
+#[test]
+fn nested_equalities_each_retain_producer_facts() {
+    let graph = checked_graph(
+        "function nested using v(a: Integer, b: Integer, c: Integer): Boolean pure { a = b and b = c }",
+    );
+    assert_eq!(
+        graph.equality_producer_data().len(),
+        2,
+        "both nested equality applications survive lowering"
+    );
+    assert!(graph.equality_producer_data().values().all(|facts| {
+        facts.schedule() == quire_semantic_value::declaration::EqualitySchedule::Plan
+    }));
+}
+
+/// QSL-1390: distinct source occurrences that lower to the same structural
+/// equality key retain their independent authored conversion decisions.
+#[ix_trace_rs::trace("QSL-1390")]
+#[test]
+fn structurally_reused_equality_keys_retain_each_occurrence() {
+    let graph = checked_graph(
+        "dimension Time; unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;\n\
+         function same using v(a: Quantity<ms>, b: Quantity<ms>): Boolean pure { a = b and convert<Quantity<ms>>(a) = b }",
+    );
+    let occurrences = graph.equality_producer_data();
+    assert_eq!(occurrences.len(), 2, "both source occurrences are retained");
+    let mut rows = occurrences.iter().collect::<Vec<_>>();
+    rows.sort_by_key(|(_, data)| data.authored_operands()[0].target().is_some());
+
+    let keys = occurrences.keys().collect::<Vec<_>>();
+    assert_eq!(keys[0].0, keys[1].0, "lowering reused one structural key");
+    assert_ne!(keys[0].1, keys[1].1, "source locations distinguish them");
+    assert_eq!(rows[0].1.authored_operands()[0].target(), None);
+    assert!(rows[1].1.authored_operands()[0].target().is_some());
 }
 
 /// The application nodes of operation `identity` in `wire`.

@@ -56,7 +56,7 @@ mod native_literal;
 mod typing;
 use typing::TypedOperand;
 
-use super::ir::{BodyBuilder, DispatchTable, Node, NodeId, Slot};
+use super::ir::{BodyBuilder, DispatchTable, EqualityProducerData, Node, NodeId, Slot};
 use super::navigation::Relationships;
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
@@ -92,6 +92,7 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
@@ -2000,6 +2001,7 @@ fn node(kind: NodeKind<NodeId>, value_type: ValueType, location: &Location) -> N
         kind,
         value_type,
         location: location.clone(),
+        equality_producer: None,
     }
 }
 
@@ -2146,6 +2148,7 @@ impl Typer<'_> {
                     kind: NodeKind::Coerce(self.push(node), target.clone()),
                     value_type: required.clone(),
                     location,
+                    equality_producer: None,
                 })
             }
             _ => Err(mismatch(&node.location)),
@@ -2925,8 +2928,71 @@ impl<'a> Typer<'a> {
         if (&left.stored, &right.stored) != (&left.checked, &right.checked) {
             checked = check(&left.stored, &right.stored)?;
         }
+        let mut units = UnitTable::default();
+        for value_type in [
+            &left.source_type,
+            left.conversion_target
+                .as_ref()
+                .unwrap_or(&left.node.value_type),
+            &left.node.value_type,
+            &right.source_type,
+            right
+                .conversion_target
+                .as_ref()
+                .unwrap_or(&right.node.value_type),
+            &right.node.value_type,
+        ] {
+            let unit_id = match value_type {
+                ValueType::Quantity(unit) => Some(unit.clone()),
+                ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Float(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Option(_)
+                | ValueType::Composite(_)
+                | ValueType::Collection(_)
+                | ValueType::Map(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => None,
+            };
+            if let Some(unit_id) = unit_id {
+                let unit = self
+                    .units
+                    .get(unit_id.clone())
+                    .ok_or_else(|| CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnheldUnit(unit_id))),
+                    })?;
+                units.insert(unit.clone()).map_err(|refusal| CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::Identity(refusal),
+                })?;
+            }
+        }
+        let producer = EqualityProducerData {
+            operator,
+            schedule: checked.schedule(),
+            authored_operands: [left.authored.clone(), right.authored.clone()],
+            compared_operands: [left.stored.clone(), right.stored.clone()],
+            units,
+            enum_members: match (checked.schedule(), &left.node.value_type) {
+                (
+                    quire_semantic_value::declaration::EqualitySchedule::Enum,
+                    ValueType::Enum(shape),
+                ) => self.scope.enum_members_of(shape),
+                _ => EnumMemberIndex::default(),
+            },
+        };
         let (left, right) = (left.node, right.node);
-        Ok(node(
+        let mut equality = node(
             NodeKind::Equality(
                 operator,
                 Box::new(checked),
@@ -2935,7 +3001,9 @@ impl<'a> Typer<'a> {
             ),
             ValueType::Boolean,
             location,
-        ))
+        );
+        equality.equality_producer = Some(Box::new(producer));
+        Ok(equality)
     }
 
     /// An ordering over its two typed operands.

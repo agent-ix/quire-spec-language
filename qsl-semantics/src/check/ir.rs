@@ -7,7 +7,10 @@ use quire_exact::EffectiveId;
 use quire_exact::{CollectionKind, Integer, IntegerInterval};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperand;
+use quire_semantic_value::declaration::{EqualityOperator, EqualitySchedule};
+use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::location::Location;
+use quire_semantic_value::quantity::UnitTable;
 use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::fmt;
@@ -66,6 +69,59 @@ pub struct Node {
     pub(in crate::check) kind: NodeKind<NodeId>,
     pub(in crate::check) value_type: ValueType,
     pub(in crate::check) location: Location,
+    /// QSL producer facts that the equality checker selected, retained until
+    /// lowering assigns the checked application its structural key.
+    pub(in crate::check) equality_producer: Option<Box<EqualityProducerData>>,
+}
+
+/// QSL's pre-wire equality facts, retained from typing through lowering.
+/// This is deliberately not IR's checked-term-data wire representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityProducerData {
+    pub(crate) operator: EqualityOperator,
+    pub(crate) schedule: EqualitySchedule,
+    /// Operands as authored, including conversion source and target.
+    pub(crate) authored_operands: [EqualityOperand; 2],
+    /// Operands used for the stored equality schedule after explicit
+    /// conversions have become their own typed nodes.
+    pub(crate) compared_operands: [EqualityOperand; 2],
+    /// The units resolved for this equality's source and comparison types.
+    pub(crate) units: UnitTable,
+    /// The compared enum's own filtered member index, or empty otherwise.
+    pub(crate) enum_members: EnumMemberIndex,
+}
+
+impl EqualityProducerData {
+    /// The operator selected during typing.
+    pub fn operator(&self) -> EqualityOperator {
+        self.operator
+    }
+
+    /// The schedule selected during typing.
+    pub fn schedule(&self) -> EqualitySchedule {
+        self.schedule
+    }
+
+    /// The operands as authored, including conversion source and target.
+    pub fn authored_operands(&self) -> &[EqualityOperand; 2] {
+        &self.authored_operands
+    }
+
+    /// The operands used by the stored equality after explicit conversions.
+    pub fn compared_operands(&self) -> &[EqualityOperand; 2] {
+        &self.compared_operands
+    }
+
+    /// Units resolved while checking this equality.
+    pub fn units(&self) -> &UnitTable {
+        &self.units
+    }
+
+    /// The filtered enum-member index used by this equality, empty unless its
+    /// schedule is `Enum`.
+    pub fn enum_members(&self) -> &EnumMemberIndex {
+        &self.enum_members
+    }
 }
 
 impl Node {
@@ -113,12 +169,14 @@ impl CheckedBody {
                 kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
                 value_type,
                 location: Location::root(quire_semantic_value::location::Origin::Expression),
+                equality_producer: None,
             })
             .collect();
         nodes.push(Node {
             kind: kind(&ids),
             value_type: result,
             location: Location::root(quire_semantic_value::location::Origin::Expression),
+            equality_producer: None,
         });
         Self { nodes }
     }
@@ -150,6 +208,7 @@ impl CheckedBody {
                     kind,
                     value_type,
                     location: Location::root(quire_semantic_value::location::Origin::Expression),
+                    equality_producer: None,
                 })
                 .collect(),
         }
@@ -292,6 +351,11 @@ impl<'a> CheckedNode<'a> {
     /// The node's source location.
     pub fn location(self) -> &'a Location {
         &self.node().location
+    }
+
+    /// The QSL producer facts for a checked equality, if typing selected any.
+    pub(crate) fn equality_producer(self) -> Option<&'a EqualityProducerData> {
+        self.node().equality_producer.as_deref()
     }
 
     /// The node `id` names in this node's body.
@@ -792,6 +856,7 @@ mod tests {
             kind,
             value_type: ValueType::Integer,
             location: Location::root(Origin::Expression),
+            equality_producer: None,
         };
         let mut builder = BodyBuilder::default();
         let mut operand = builder.push(node(NodeKind::Local(slot)));

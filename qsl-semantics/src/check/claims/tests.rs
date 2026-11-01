@@ -1060,6 +1060,7 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
         kind,
         value_type,
         location: location.clone(),
+        equality_producer: None,
     };
     let mut body = BodyBuilder::default();
     let record = body.push(node(

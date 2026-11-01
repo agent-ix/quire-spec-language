@@ -348,7 +348,7 @@ pub use family::fixtures::{
     empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
-pub use ir::{CheckedBody, CheckedNode, Node, NodeId, Slot};
+pub use ir::{CheckedBody, CheckedNode, EqualityProducerData, Node, NodeId, Slot};
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
@@ -650,6 +650,16 @@ pub struct CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
+    /// QSL-owned equality producer facts retained by keyed equality
+    /// application occurrences. The wire encoder remains an IR-owned
+    /// follow-up.
+    equality_producer_data: BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::EqualityProducerData,
+    >,
     /// NFR-011: the ceilings this package was checked under.
     effective_limits: CheckingLimits,
     /// FR-096: each function's form spans, by declaration index, so a
@@ -805,6 +815,7 @@ impl fmt::Debug for CheckedGraph {
                     model_correspondence,
                     type_nodes,
                     semantic_graph,
+                    equality_producer_data,
                     effective_limits,
                     form_spans,
                     type_spans,
@@ -867,6 +878,13 @@ impl fmt::Debug for CheckedGraph {
                     .field("model_correspondence", &model_correspondence)
                     .field("type_nodes", &NodeMap(type_nodes.iter()))
                     .field("semantic_graph", &semantic_graph)
+                    .field(
+                        "equality_producer_data",
+                        &equality_producer_data
+                            .iter()
+                            .map(|((node, location), data)| ((NodeKeyDebug(node), location), data))
+                            .collect::<Vec<_>>(),
+                    )
                     .field("effective_limits", &effective_limits)
                     .field("form_spans", &form_spans)
                     .field("type_spans", &type_spans)
@@ -5200,8 +5218,16 @@ impl PackageDeclarations {
         // FR-094: `check` is the model correspondence's only writer; it
         // holds exactly the model declaration nodes lowering keyed, and a
         // conflicting entry refused the lowering above (FR-303).
-        let (semantic_graph, model_correspondence, identities, binders, lowered_protocol_members) = (
+        let (
+            semantic_graph,
+            equality_producer_data,
+            model_correspondence,
+            identities,
+            binders,
+            lowered_protocol_members,
+        ) = (
             lowered.graph,
+            lowered.equality_producer_data,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
@@ -6022,6 +6048,7 @@ impl PackageDeclarations {
                 .into_iter()
                 .collect(),
             semantic_graph,
+            equality_producer_data,
             effective_limits: limits,
             form_spans,
             type_spans,
@@ -6550,6 +6577,21 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
+    /// QSL's typed equality facts, keyed by their lowered application node
+    /// and source occurrence. Distinct occurrences may share a structural
+    /// node key while retaining different authored conversion decisions.
+    pub fn equality_producer_data(
+        &self,
+    ) -> &BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::EqualityProducerData,
+    > {
+        &self.equality_producer_data
+    }
+
     /// Checked time sources of this package, in declaration order.
     pub fn time_sources(&self) -> &[ModelTimeSource] {
         &self.time_sources
