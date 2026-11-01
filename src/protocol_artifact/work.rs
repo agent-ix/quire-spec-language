@@ -6,17 +6,18 @@ use super::wire::Locus;
 /// Counter contract, independent of native parser and model-admission budgets.
 pub const ACCOUNTING_VERSION: &str = "quire.protocol.artifact-work/1";
 
-/// Independently lowered ceilings. Values above the defaults are clamped,
-/// except `intake`, which is used as given.
+/// Independently lowered ceilings. Callers may raise values above the
+/// published defaults up to each documented hard maximum; `intake` is used as
+/// given.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    /// Complete offered bytes, at most 8 MiB.
+    /// Complete offered bytes, at most 64 MiB.
     pub payload_bytes: usize,
-    /// Complete encoded bytes, at most 8 MiB.
+    /// Complete encoded bytes, at most 64 MiB.
     pub output_bytes: usize,
     /// Each native or foreign original source, at most 1 MiB.
     pub source_bytes: usize,
-    /// Total decoded string UTF-8 bytes, including JSON keys, at most 8 MiB.
+    /// Total decoded string UTF-8 bytes, including JSON keys, at most 64 MiB.
     pub content_bytes: usize,
     /// Source entries in either complete inventory, at most 10,000.
     pub sources: usize,
@@ -28,13 +29,13 @@ pub struct Limits {
     pub models: usize,
     /// Complete declaration entries, at most 10,000.
     pub declarations: usize,
-    /// Allocated table/member/index records, at most 100,000.
+    /// Allocated table/member/index records, at most 10,000,000.
     pub entries: usize,
     /// Subsequent reference, graph-edge and type visits, at most 1,000,000.
     pub references: usize,
-    /// Cumulative traversed, copied, hashed or compared bytes, at most 64 MiB.
+    /// Cumulative traversed, copied, hashed or compared bytes, at most 512 MiB.
     pub byte_work: usize,
-    /// Maximum JSON or graph traversal depth, at most 64.
+    /// Maximum JSON or graph traversal depth, at most 1,000,000.
     pub depth: usize,
     /// The limit each admitted domain package document is read under
     /// (`intake.input_bytes`, FR-260). Used as given: no ceiling clamps it.
@@ -202,20 +203,20 @@ impl Limits {
             ($($field:ident),* $(,)?) => { $(self.$field = self.$field.min(hard.$field);)* };
         }
         clamp!(
-            payload_bytes,
-            output_bytes,
             source_bytes,
-            content_bytes,
             sources,
             dependencies,
             definitions,
             models,
             declarations,
-            entries,
-            references,
-            byte_work,
-            depth
+            references
         );
+        self.payload_bytes = self.payload_bytes.min(64 * 1_048_576);
+        self.output_bytes = self.output_bytes.min(64 * 1_048_576);
+        self.content_bytes = self.content_bytes.min(64 * 1_048_576);
+        self.entries = self.entries.min(10_000_000);
+        self.byte_work = self.byte_work.min(512 * 1_048_576);
+        self.depth = self.depth.min(1_000_000);
         self
     }
 }

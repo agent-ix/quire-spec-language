@@ -11,25 +11,27 @@ use super::result::Subject;
 /// Counter contract, independent of the artifact reader and parser budgets.
 pub const ACCOUNTING_VERSION: &str = "quire.native.temporal-work/1";
 
-/// Independently lowered ceilings. Values above the defaults are clamped.
+/// Caller-configured ceilings. The published defaults are starting values;
+/// callers may raise or lower every component.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    /// Admitted trace positions inspected, at most 1,000,000.
+    /// Admitted trace positions inspected; published default is 1,000,000.
     pub positions: usize,
-    /// Atomic valuation lookups, at most 1,000,000.
+    /// Atomic valuation lookups; published default is 1,000,000.
     pub valuations: usize,
-    /// Concurrently active obligation instances, at most 10,000.
+    /// Concurrently active obligation instances; published default is 10,000.
     pub instances: usize,
-    /// Retained capture records across all instances, at most 100,000.
+    /// Retained capture records across all instances; published default is 100,000.
     pub captures: usize,
     /// Retained valuation records an unsettled obligation still requires,
-    /// at most 1,000,000.
+    /// published default is 1,000,000.
     pub retention: usize,
-    /// Temporal graph node visits, at most 1,000,000.
+    /// Temporal graph node visits; published default is 1,000,000.
     pub visits: usize,
-    /// Temporal formula nesting depth, at most 64.
+    /// Legacy recursive-evaluator guard (published default 64). Checked-v2
+    /// evaluation does not charge formula depth; traversal uses a heap stack.
     pub depth: usize,
-    /// Largest admitted interval bound, at most `i64::MAX as usize`.
+    /// Largest admitted interval bound; published default is `i64::MAX as usize`.
     pub horizon: usize,
 }
 
@@ -49,13 +51,8 @@ impl Default for Limits {
 }
 
 impl Limits {
-    /// Effective ceilings, preserving zero and each caller-lowered component.
-    pub fn bounded(mut self) -> Self {
-        let hard = Self::default();
-        macro_rules! clamp {
-            ($($field:ident),* $(,)?) => { $(self.$field = self.$field.min(hard.$field);)* };
-        }
-        clamp!(positions, valuations, instances, captures, retention, visits, depth, horizon);
+    /// Effective ceilings, preserving every caller-supplied component.
+    pub fn bounded(self) -> Self {
         self
     }
 }
@@ -124,6 +121,11 @@ pub(super) struct Work {
     pub limits: Limits,
     pub usage: Usage,
     pub subject: Subject,
+    /// Preserve the v1 evaluator's historical depth guard. The checked-v2
+    /// route follows NFR-008's seven published dimensions and has no depth cap.
+    pub legacy_depth_limit: bool,
+    /// Independently settled siblings retained when a later obligation stops.
+    pub settled_siblings: Vec<super::result::Obligation>,
 }
 
 impl Work {
@@ -132,7 +134,17 @@ impl Work {
             limits: limits.bounded(),
             usage: Usage::default(),
             subject: Subject::default(),
+            legacy_depth_limit: true,
+            settled_siblings: Vec::new(),
         }
+    }
+
+    pub fn checked_v2(limits: Limits) -> Self {
+        let mut work = Self::new(limits);
+        work.legacy_depth_limit = false;
+        // Depth is retained in the legacy public struct for source compatibility,
+        // but it is not one of checked-v2's seven charged dimensions.
+        work
     }
 
     fn fields(&mut self, dimension: Dimension) -> (&mut usize, usize, bool) {

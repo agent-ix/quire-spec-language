@@ -309,7 +309,7 @@ fn an_evicted_required_record_is_named_not_narrowed() {
     });
 }
 
-/// NFR-008-AC-4: effective clamped ceilings participate in result identity.
+/// NFR-008-AC-4: caller-configured ceilings participate in result identity.
 #[trace("TC-124", "NFR-008-AC-4")]
 #[test]
 fn ceilings_participate_in_result_identity() {
@@ -335,7 +335,7 @@ fn ceilings_participate_in_result_identity() {
             "a changed ceiling refuses reuse of the earlier result",
         );
 
-        // A ceiling above the published default clamps; zero is preserved.
+        // A caller-raised ceiling is used as supplied; zero is preserved.
         let raised = Limits {
             visits: usize::MAX,
             ..Limits::default()
@@ -343,8 +343,8 @@ fn ceilings_participate_in_result_identity() {
         let report = temporal::evaluate(package, at, &supplied, raised);
         assert_eq!(
             report.limits().visits,
-            Limits::default().visits,
-            "a ceiling above the default clamps",
+            usize::MAX,
+            "a ceiling above the default remains effective",
         );
         let zeroed = Limits {
             visits: 0,

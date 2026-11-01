@@ -451,17 +451,33 @@ impl Inputs {
         proof_limits: proofs::ProofLimits,
         test: impl FnOnce(&proofs::ProofReport<'_, '_, '_>, &native::Selections<'_>),
     ) {
+        self.with_proofs_and_source_limits(
+            type_limits,
+            proof_limits,
+            quire_spec_language::Limits::default(),
+            test,
+        );
+    }
+
+    pub fn with_proofs_and_source_limits(
+        &self,
+        type_limits: TypeLimits,
+        proof_limits: proofs::ProofLimits,
+        parser_limits: quire_spec_language::Limits,
+        test: impl FnOnce(&proofs::ProofReport<'_, '_, '_>, &native::Selections<'_>),
+    ) {
         let mut inputs = vec![ModelInput::Native(&self.model)];
         inputs.extend(
             self.domain
                 .as_ref()
                 .map(|domain| ModelInput::Domain(&domain.package)),
         );
-        composed_inputs::with_binding_inputs(
+        composed_inputs::with_binding_inputs_and_inventory_limits(
             &self.sources,
             &inputs,
             BindingLimits::default(),
-            |binding| {
+            parser_limits,
+            |_, binding| {
                 assert!(
                     binding.complete(),
                     "binding exhaustion: {:?}",

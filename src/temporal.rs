@@ -84,6 +84,7 @@ pub fn evaluate(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -112,6 +113,7 @@ pub fn evaluate_checked(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -131,7 +133,7 @@ pub fn evaluate_checked_v2(
     trace: &Trace,
     limits: Limits,
 ) -> Report {
-    let mut work = budget::Work::new(limits);
+    let mut work = budget::Work::checked_v2(limits);
     let mut authenticated = None;
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
         .and_then(|(binding, _)| {
@@ -150,6 +152,7 @@ pub fn evaluate_checked_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -199,6 +202,7 @@ pub fn evaluate_checked_with_progress(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -215,7 +219,7 @@ pub fn evaluate_checked_with_progress_v2(
     limits: Limits,
     ledger: &mut Ledger,
 ) -> Report {
-    let mut work = budget::Work::new(limits);
+    let mut work = budget::Work::checked_v2(limits);
     let mut authenticated = None;
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
         .and_then(|(binding, _)| {
@@ -259,6 +263,7 @@ pub fn evaluate_checked_with_progress_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -329,6 +334,7 @@ pub fn evaluate_with_progress(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -438,6 +444,7 @@ pub fn evaluate_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -472,6 +479,7 @@ pub fn evaluate_with_progress_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -843,12 +851,20 @@ struct EvaluationView {
     instance_bound_atoms: BTreeSet<u32>,
 }
 
+enum LedgerUpdate {
+    Insert(activation::Instance),
+    AppendReceipts {
+        identity: String,
+        receipts: Vec<String>,
+    },
+}
+
 fn run_view(
     view: EvaluationView,
     trace: &Trace,
     watermark: i64,
     work: &mut budget::Work,
-    retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
+    mut retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
 ) -> Result<Vec<Obligation>, Error> {
     let subject = declaration_subject(view.declaration);
     let premises = Premises {
@@ -869,7 +885,7 @@ fn run_view(
         trace,
         view.declaration,
         work,
-        retained_instances,
+        retained_instances.as_deref_mut(),
     )? {
         Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
             subject,
@@ -886,15 +902,21 @@ fn run_view(
         }))]),
         Outcome::Instances(instances) => {
             let mut assessed = Vec::with_capacity(instances.len());
-            for (ordinal, instance) in instances.into_iter().enumerate() {
+            let mut ledger_updates = Vec::new();
+            for (ordinal, resolved) in instances.into_iter().enumerate() {
                 let subject = Subject {
                     instance: ordinal,
                     ..subject
                 };
                 work.subject = subject;
-                let instance = match instance {
-                    Ok(instance) => instance,
-                    Err(failed) => {
+                let resolved = match resolved {
+                    activation::Resolved::Failed(failed) => {
+                        if let Some(receipt) = failed.pending_receipt {
+                            ledger_updates.push(LedgerUpdate::AppendReceipts {
+                                identity: failed.identity.clone(),
+                                receipts: vec![receipt],
+                            });
+                        }
                         assessed.push(Obligation::Unactivated {
                             subject,
                             instance: failed.identity,
@@ -902,6 +924,12 @@ fn run_view(
                         });
                         continue;
                     }
+                    resolved => resolved,
+                };
+                let instance_identity = match &resolved {
+                    activation::Resolved::Owned(instance) => instance.identity.as_str(),
+                    activation::Resolved::Retained { identity, .. } => identity,
+                    activation::Resolved::Failed(_) => unreachable!("failed activation handled"),
                 };
                 let mut evaluator = Evaluator {
                     profile: view.profile,
@@ -910,13 +938,13 @@ fn run_view(
                     nodes: &view.operations,
                     declaration: view.declaration,
                     instance: ordinal,
-                    instance_identity: &instance.identity,
+                    instance_identity,
                     instance_bound_atoms: &view.instance_bound_atoms,
                     watermark,
                     support: Vec::new(),
+                    retained_valuations: BTreeSet::new(),
                 };
                 let outcome = evaluator.root(view.root, work);
-                work.charge(LimitDimension::Retention, evaluator.support.len())?;
                 let support = std::mem::take(&mut evaluator.support);
                 drop(evaluator);
                 let (truth, basis, incomplete) = match outcome {
@@ -927,7 +955,35 @@ fn run_view(
                     Err(Error::Incomplete(incomplete)) => {
                         (None, Some(Basis::Unavailable), Some(incomplete))
                     }
-                    Err(error) => return Err(error),
+                    Err(error) => {
+                        work.settled_siblings
+                            .extend(assessed.iter().filter_map(|obligation| match obligation {
+                                Obligation::Assessed(assessment) if assessment.truth.is_some() => {
+                                    Some(obligation.clone())
+                                }
+                                _ => None,
+                            }));
+                        return Err(error);
+                    }
+                };
+                let instance = match resolved {
+                    activation::Resolved::Owned(instance) => {
+                        if retained_instances.is_some() {
+                            ledger_updates.push(LedgerUpdate::Insert(instance.clone()));
+                        }
+                        instance
+                    }
+                    activation::Resolved::Retained { identity, receipts } => {
+                        let saved = retained_instances
+                            .as_deref()
+                            .and_then(|retained| retained.get(&identity))
+                            .expect("the retained instance remains in the ledger");
+                        let mut restored = saved.clone();
+                        restored.receipts.extend(receipts.iter().cloned());
+                        ledger_updates.push(LedgerUpdate::AppendReceipts { identity, receipts });
+                        restored
+                    }
+                    activation::Resolved::Failed(_) => unreachable!("failed activation handled"),
                 };
                 assessed.push(Obligation::Assessed(Box::new(Assessment {
                     subject,
@@ -942,6 +998,20 @@ fn run_view(
                     support,
                     premises: premises.clone(),
                 })));
+            }
+            if let Some(retained) = retained_instances {
+                for update in ledger_updates {
+                    match update {
+                        LedgerUpdate::Insert(instance) => {
+                            retained.insert(instance.identity.clone(), instance);
+                        }
+                        LedgerUpdate::AppendReceipts { identity, receipts } => {
+                            if let Some(saved) = retained.get_mut(&identity) {
+                                saved.receipts.extend(receipts);
+                            }
+                        }
+                    }
+                }
             }
             Ok(assessed)
         }

@@ -34,10 +34,25 @@ pub(super) struct Instance {
 pub(super) struct Failed {
     pub identity: String,
     pub error: Error,
+    /// Receipt to append if the whole checked evaluation commits.
+    pub pending_receipt: Option<String>,
 }
 
-/// One admitted trigger's resolution.
-pub(super) type Resolved = Result<Instance, Failed>;
+/// One admitted trigger's resolution. A retained instance is represented by
+/// identity and newly received receipts so activation does not deep-clone its
+/// history before formula evaluation settles.
+pub(super) enum Resolved {
+    /// Newly established instance, held locally until its formula settles.
+    Owned(Instance),
+    /// Existing instance kept in the ledger; only new delivery receipts are
+    /// held locally while formula evaluation is pending.
+    Retained {
+        identity: String,
+        receipts: Vec<String>,
+    },
+    /// An activation that could not be established for this trigger.
+    Failed(Failed),
+}
 
 /// What activation produced: either instances to assess, or one disposition
 /// that carries no obligation.
@@ -101,11 +116,10 @@ pub(super) fn resolve(
             ..subject
         };
 
-        if let Some(existing) = instances
-            .iter_mut()
-            .filter_map(|instance| instance.as_mut().ok())
-            .find(|instance| instance.identity == trigger.identity)
-        {
+        if let Some(existing) = instances.iter_mut().find_map(|resolved| match resolved {
+            Resolved::Owned(instance) if instance.identity == trigger.identity => Some(instance),
+            _ => None,
+        }) {
             // A repeated delivery of one semantic trigger creates no second
             // instance. Conflicting payloads under one identity are a typed
             // contradiction rather than a silent alias.
@@ -117,19 +131,19 @@ pub(super) fn resolve(
                 .into());
             }
             existing.receipts.push(trigger.receipt.clone());
-            if let Some(saved) = retained
-                .as_deref_mut()
-                .and_then(|retained| retained.get_mut(&trigger.identity))
-            {
-                saved.receipts.push(trigger.receipt.clone());
-            }
             continue;
         }
 
-        if let Some(existing) = retained
-            .as_deref_mut()
-            .and_then(|retained| retained.get_mut(&trigger.identity))
-        {
+        if let Some(receipts) = instances.iter_mut().find_map(|resolved| match resolved {
+            Resolved::Retained { identity, receipts } if identity == &trigger.identity => {
+                Some(receipts)
+            }
+            _ => None,
+        }) {
+            let existing = retained
+                .as_deref()
+                .and_then(|retained| retained.get(&trigger.identity))
+                .expect("a retained resolution has a ledger instance");
             if existing.payload != trigger.payload {
                 return Err(Refusal::Contradiction {
                     identity: trigger.identity.clone(),
@@ -137,30 +151,49 @@ pub(super) fn resolve(
                 }
                 .into());
             }
-            existing.receipts.push(trigger.receipt.clone());
-            let evicted_capture = trace.evicted.iter().find_map(|evicted| match evicted {
-                super::trace::Eviction::Capture { instance, capture }
-                    if instance == &trigger.identity =>
-                {
-                    Some(*capture)
-                }
-                _ => None,
-            });
-            if let Some(capture) = evicted_capture {
-                work.subject.capture = Some(capture);
-                instances.push(Err(Failed {
-                    identity: trigger.identity.clone(),
-                    error: Incomplete {
-                        dimension: Dimension::Capture,
+            receipts.push(trigger.receipt.clone());
+            continue;
+        }
+
+        if let Some(retained_instances) = retained.as_deref_mut() {
+            if let Some(existing) = retained_instances.get(&trigger.identity) {
+                if existing.payload != trigger.payload {
+                    return Err(Refusal::Contradiction {
+                        identity: trigger.identity.clone(),
                         subject: work.subject,
                     }
-                    .into(),
-                }));
-                work.subject.capture = None;
+                    .into());
+                }
+                let mut evicted_capture = None;
+                for evicted in &trace.evicted {
+                    work.visit()?;
+                    if let super::trace::Eviction::Capture { instance, capture } = evicted {
+                        if instance == &trigger.identity {
+                            evicted_capture = Some(*capture);
+                            break;
+                        }
+                    }
+                }
+                if let Some(capture) = evicted_capture {
+                    work.subject.capture = Some(capture);
+                    instances.push(Resolved::Failed(Failed {
+                        identity: trigger.identity.clone(),
+                        error: Incomplete {
+                            dimension: Dimension::Capture,
+                            subject: work.subject,
+                        }
+                        .into(),
+                        pending_receipt: Some(trigger.receipt.clone()),
+                    }));
+                    work.subject.capture = None;
+                    continue;
+                }
+                instances.push(Resolved::Retained {
+                    identity: trigger.identity.clone(),
+                    receipts: vec![trigger.receipt.clone()],
+                });
                 continue;
             }
-            instances.push(Ok(existing.clone()));
-            continue;
         }
 
         if shape.guarded && !shape.origin {
@@ -172,13 +205,14 @@ pub(super) fn resolve(
                     // An unestablished guard is not a false guard. It is
                     // reported against its own trigger, so a healthy sibling
                     // instance neither erases it nor is erased by it.
-                    instances.push(Err(Failed {
+                    instances.push(Resolved::Failed(Failed {
                         identity: trigger.identity.clone(),
                         error: Incomplete {
                             dimension: Dimension::Guard,
                             subject: work.subject,
                         }
                         .into(),
+                        pending_receipt: None,
                     }));
                     continue;
                 }
@@ -197,17 +231,15 @@ pub(super) fn resolve(
                     capture_evaluations: 1,
                     payload: trigger.payload.clone(),
                 };
-                if let Some(retained) = retained.as_deref_mut() {
-                    retained.insert(trigger.identity.clone(), instance.clone());
-                }
-                instances.push(Ok(instance));
+                instances.push(Resolved::Owned(instance));
             }
             // An exhausted ceiling stops the whole evaluation; an unestablished
             // capture stops only its own instance.
             Err(Error::Exhausted(exhaustion)) => return Err(Error::Exhausted(exhaustion)),
-            Err(error) => instances.push(Err(Failed {
+            Err(error) => instances.push(Resolved::Failed(Failed {
                 identity: trigger.identity.clone(),
                 error,
+                pending_receipt: None,
             })),
         }
     }
@@ -261,13 +293,19 @@ fn establish(
         work.visit()?;
         // Name which capture, not only that one failed.
         work.subject.capture = Some(declared);
-        if trace.evicted.iter().any(|evicted| {
-            matches!(
-                evicted,
+        let mut evicted = false;
+        for record in &trace.evicted {
+            work.visit()?;
+            if matches!(
+                record,
                 super::trace::Eviction::Capture { instance, capture }
                     if *instance == trigger.identity && *capture == declared
-            )
-        }) {
+            ) {
+                evicted = true;
+                break;
+            }
+        }
+        if evicted {
             return Err(Incomplete {
                 dimension: Dimension::Capture,
                 subject: work.subject,

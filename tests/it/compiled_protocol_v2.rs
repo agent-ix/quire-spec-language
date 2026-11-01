@@ -241,17 +241,52 @@ fn with_v2_inputs(
         &native::AdmissionV2,
     ),
 ) {
-    inputs.with_proofs(
-        TypeLimits::default(),
+    with_v2_inputs_and_source_limits(inputs, quire_spec_language::Limits::default(), test);
+}
+
+fn with_v2_inputs_and_source_limits(
+    inputs: Inputs,
+    source_limits: quire_spec_language::Limits,
+    test: impl FnOnce(
+        &Inputs,
+        &proofs::ProofReport<'_, '_, '_>,
+        &native::Selections<'_>,
+        &TemporalTables<'_>,
+        &native::AdmissionV2,
+    ),
+) {
+    let mut type_limits = TypeLimits::default();
+    type_limits.expressions = type_limits.expressions.max(source_limits.tokens);
+    let mut artifact_limits = Limits::default();
+    artifact_limits.entries = artifact_limits
+        .entries
+        .max(source_limits.tokens.saturating_mul(20));
+    artifact_limits.depth = artifact_limits.depth.max(source_limits.tokens);
+    artifact_limits.content_bytes = artifact_limits
+        .content_bytes
+        .max(source_limits.source_bytes.saturating_mul(20));
+    artifact_limits.payload_bytes = artifact_limits
+        .payload_bytes
+        .max(source_limits.source_bytes.saturating_mul(20));
+    artifact_limits.output_bytes = artifact_limits
+        .output_bytes
+        .max(source_limits.source_bytes.saturating_mul(20));
+    artifact_limits.byte_work = artifact_limits
+        .byte_work
+        .max(source_limits.source_bytes.saturating_mul(200));
+    inputs.with_proofs_and_source_limits(
+        type_limits,
         proofs::ProofLimits::default(),
+        source_limits,
         |proofs, selected| {
             for entry in proofs.declarations() {
                 let id = entry.declaration();
                 assert_eq!(
                     proofs.types().disposition(id),
                     Some(TypeDisposition::Typed),
-                    "{id:?}: {:?}",
-                    proofs.types().declaration(id).map(|typed| typed.causes())
+                    "{id:?}: {:?}; exhaustion: {:?}",
+                    proofs.types().declaration(id).map(|typed| typed.causes()),
+                    proofs.types().exhaustion()
                 );
             }
             let namespace = proofs.types().binding().namespace();
@@ -351,7 +386,7 @@ fn with_v2_inputs(
                 producer: temporal,
                 expected,
             };
-            let report = native::admit_v2(proofs, selected, &temporal.producer, Limits::default());
+            let report = native::admit_v2(proofs, selected, &temporal.producer, artifact_limits);
             assert!(
                 report.result().is_ok(),
                 "v2 admission: {:?}; locus {:?}",
@@ -538,22 +573,49 @@ fn checked_fr050_unit_with_identity(
     index: usize,
     identity: SourceIdentity,
 ) -> qsl_replay::spine::CheckedUnit {
-    checked_fr050_unit_with_text(identity, inputs.sources[index].text())
+    checked_fr050_unit_with_identity_and_limits(
+        inputs,
+        index,
+        identity,
+        qsl_replay::spine::SpineLimits::default(),
+    )
+}
+
+fn checked_fr050_unit_with_identity_and_limits(
+    inputs: &Inputs,
+    index: usize,
+    identity: SourceIdentity,
+    limits: qsl_replay::spine::SpineLimits,
+) -> qsl_replay::spine::CheckedUnit {
+    checked_fr050_unit_with_text_and_limits(identity, inputs.sources[index].text(), limits)
 }
 
 fn checked_fr050_unit_with_text(
     identity: SourceIdentity,
     text: &str,
 ) -> qsl_replay::spine::CheckedUnit {
+    checked_fr050_unit_with_text_and_limits(
+        identity,
+        text,
+        qsl_replay::spine::SpineLimits::default(),
+    )
+}
+
+fn checked_fr050_unit_with_text_and_limits(
+    identity: SourceIdentity,
+    text: &str,
+    limits: qsl_replay::spine::SpineLimits,
+) -> qsl_replay::spine::CheckedUnit {
     let model = include_bytes!("../fixtures/spine-model.semantic-ir.json");
     let packages = qsl_semantics::model::intake::package_input([model.as_slice()])
         .expect("admit the checked package model fixture");
-    crate::support::front_end::checked(
+    crate::support::front_end::checked_with_limits(
         identity,
         "fr050-checked-successor.native",
         text.as_bytes(),
         &packages,
         &qsl_replay::spine::DependencyInput::default(),
+        limits,
     )
     .expect("checked route admits the emitted native source")
 }
@@ -1169,6 +1231,9 @@ fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
         .position(|declaration| declaration.name == name)
         .expect("authored temporal declaration")
 }
+
+#[path = "checked_temporal_limits_v2.rs"]
+mod checked_temporal_limits_v2;
 
 #[test]
 fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initializers() {
@@ -3352,7 +3417,16 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
                 ..Limits::default()
             };
             let clamped = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, above_hard);
-            assert_eq!(clamped.limits(), Limits::default());
+            let hard_limits = Limits {
+                payload_bytes: 64 * 1_048_576,
+                output_bytes: 64 * 1_048_576,
+                content_bytes: 64 * 1_048_576,
+                entries: 10_000_000,
+                byte_work: 512 * 1_048_576,
+                depth: 1_000_000,
+                ..Limits::default()
+            };
+            assert_eq!(clamped.limits(), hard_limits);
             assert!(clamped.result().is_ok());
             let reader_retry =
                 inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());

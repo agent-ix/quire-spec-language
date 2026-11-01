@@ -347,6 +347,7 @@ impl ProtocolLedger {
                     limits,
                     usage: Usage::default(),
                     authenticated: None,
+                    settled_siblings: Vec::new(),
                 },
                 settled_siblings: Vec::new(),
                 completed_siblings: Vec::new(),
@@ -420,15 +421,6 @@ fn preflight_input(
             }
         }
     }
-    if trace.evicted.len() > limits.retention {
-        return Some(super::Exhaustion {
-            dimension: Dimension::Retention,
-            used: 0,
-            requested: trace.evicted.len(),
-            limit: limits.retention,
-            subject,
-        });
-    }
     // Bound scans over per-instance valuation tables, deliveries, and supplied
     // captures before constructing temporary identity state. Empty instance
     // maps still consume scan work; retained-instance and capture charges below
@@ -450,6 +442,15 @@ fn preflight_input(
                 subject,
             ));
         }
+    }
+
+    preflight_work = preflight_work.saturating_add(trace.evicted.len());
+    if preflight_work > limits.visits {
+        return Some(preflight_exhaustion(
+            Dimension::Visits,
+            limits.visits,
+            subject,
+        ));
     }
 
     let evicted_captures: BTreeSet<(&str, usize)> = trace
@@ -625,6 +626,7 @@ fn evaluate_siblings(
                 limits: effective,
                 usage: accumulated,
                 authenticated,
+                settled_siblings: settled_siblings.clone(),
             },
             settled_siblings,
             completed_siblings,
@@ -636,6 +638,7 @@ fn evaluate_siblings(
                 limits: effective,
                 usage: accumulated,
                 authenticated,
+                settled_siblings: Vec::new(),
             },
             settled_siblings,
             Vec::new(),

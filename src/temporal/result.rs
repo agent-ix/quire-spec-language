@@ -369,6 +369,8 @@ pub struct Report {
     pub(super) usage: Usage,
     // Present only when a strict version-2 entry point authenticated the trace.
     pub(super) authenticated: Option<super::progress::AuthenticatedBinding>,
+    /// Settled sibling obligations preserved when a different obligation stops.
+    pub(super) settled_siblings: Vec<Obligation>,
 }
 
 impl Report {
@@ -380,7 +382,7 @@ impl Report {
             Err(error) => Err(error),
         }
     }
-    /// Effective ceilings after clamping, which participate in result identity.
+    /// Effective caller ceilings, which participate in result identity.
     pub fn limits(&self) -> super::budget::Limits {
         self.limits
     }
@@ -396,5 +398,9 @@ impl Report {
     /// evaluation refused by authentication itself: nothing was authenticated.
     pub fn authenticated(&self) -> Option<&super::progress::AuthenticatedBinding> {
         self.authenticated.as_ref()
+    }
+    /// Independently settled siblings retained beside a whole-evaluation stop.
+    pub fn settled_siblings(&self) -> &[Obligation] {
+        &self.settled_siblings
     }
 }
