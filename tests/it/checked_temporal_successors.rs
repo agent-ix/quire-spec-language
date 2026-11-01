@@ -860,7 +860,8 @@ fn checked_past_operator_requires_authoritative_history() {
         Some(temporal::Dimension::History)
     );
 
-    let nested_unit = checked(
+    let nested_unit = checked_named(
+        "test:checked-temporal-interior-history",
         "eventually[3,3] once[1,2] holds(view.code > 0)",
         temporal::EVENT_POSITION,
     );
