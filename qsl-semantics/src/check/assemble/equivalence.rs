@@ -42,7 +42,7 @@ pub enum EquivalenceFault {
 /// What a dimension-equivalence refusal retains (QSpec FR-142 "Dimension
 /// equivalence"): the declarations, dimensions, units and values its step
 /// names.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum EquivalenceRetained {
     /// An equivalence declaration: its two dimension names as written and
     /// its span.
@@ -66,6 +66,29 @@ pub enum EquivalenceRetained {
     },
     /// A value: a unit's composed offset or a ratio number.
     Value(Rational),
+}
+
+impl std::fmt::Debug for EquivalenceRetained {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Declaration { dimensions, span } => f
+                .debug_struct("Declaration")
+                .field("dimensions", &dimensions)
+                .field("span", &span)
+                .finish(),
+            Self::Dimension { name, key } => f
+                .debug_struct("Dimension")
+                .field("name", &name)
+                .field(
+                    "key",
+                    &key.as_ref()
+                        .map(qsl_foundation::source::node_table::NodeKeyDebug),
+                )
+                .finish(),
+            Self::Unit { name } => f.debug_struct("Unit").field("name", &name).finish(),
+            Self::Value(value0) => f.debug_tuple("Value").field(&value0).finish(),
+        }
+    }
 }
 
 impl std::fmt::Display for EquivalenceRetained {
@@ -98,9 +121,32 @@ pub struct DimensionEquivalence {
 /// The equivalence classes of the admitted pairs (QSpec FR-142 "Effect"):
 /// each member's class root (the least dimension key of its class) and the
 /// size of one of its canonical roots in canonical roots of the class root.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct EquivalenceClasses {
     members: BTreeMap<NodeKey, (NodeKey, Rational)>,
+}
+
+impl std::fmt::Debug for EquivalenceClasses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { members } = self;
+        f.debug_struct("EquivalenceClasses")
+            .field(
+                "members",
+                &members
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            qsl_foundation::source::node_table::NodeKeyDebug(key),
+                            (
+                                qsl_foundation::source::node_table::NodeKeyDebug(&value.0),
+                                &value.1,
+                            ),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl EquivalenceClasses {

@@ -177,10 +177,26 @@ impl AuthoredBinding {
 
 /// The `state`/`frame` and `state`/`operation_anchor` nodes of an operation
 /// a clause or attempt of the unit names (FR-305).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct FrameNodes {
     frame: NodeKey,
     anchor: NodeKey,
+}
+
+impl std::fmt::Debug for FrameNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { frame, anchor } = self;
+        f.debug_struct("FrameNodes")
+            .field(
+                "frame",
+                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
+            )
+            .field(
+                "anchor",
+                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
+            )
+            .finish()
+    }
 }
 
 impl FrameNodes {

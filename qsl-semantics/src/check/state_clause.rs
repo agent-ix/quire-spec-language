@@ -109,12 +109,35 @@ impl OperationSelection {
 /// however many clauses and attempts name the operation; an operation that
 /// none names has none, since the package holds no frame node for it
 /// (FR-105).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedOperationFrame {
     pub(crate) operation: ClauseOperation,
     pub(crate) anchor: NodeKey,
     pub(crate) frame: NodeKey,
     pub(crate) frame_origin: Origin,
+}
+
+impl std::fmt::Debug for CheckedOperationFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            operation,
+            anchor,
+            frame,
+            frame_origin,
+        } = self;
+        f.debug_struct("CheckedOperationFrame")
+            .field("operation", &operation)
+            .field(
+                "anchor",
+                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
+            )
+            .field(
+                "frame",
+                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
+            )
+            .field("frame_origin", &frame_origin)
+            .finish()
+    }
 }
 
 impl CheckedOperationFrame {
@@ -1032,7 +1055,6 @@ fn check_clause_in(
 /// One state clause S3 checked (FR-104 "Outputs"): its kind, context,
 /// operation, checked Boolean body with each model read's observation, its
 /// node identity and its `claim` occurrence.
-#[derive(Debug)]
 pub struct CheckedStateClause {
     pub(crate) name: String,
     pub(crate) kind: StateClauseKind,
@@ -1047,6 +1069,44 @@ pub struct CheckedStateClause {
     pub(crate) spans: DeclarationSpans,
     pub(crate) has_result: bool,
     pub(crate) bounds: Vec<AuthoredBound>,
+}
+
+impl std::fmt::Debug for CheckedStateClause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            kind,
+            context,
+            operation,
+            parameters,
+            body,
+            slots,
+            observations,
+            identity,
+            claim,
+            spans,
+            has_result,
+            bounds,
+        } = self;
+        f.debug_struct("CheckedStateClause")
+            .field("name", &name)
+            .field("kind", &kind)
+            .field("context", &context)
+            .field("operation", &operation)
+            .field("parameters", &parameters)
+            .field("body", &body)
+            .field("slots", &slots)
+            .field("observations", &observations)
+            .field(
+                "identity",
+                &qsl_foundation::source::node_table::NodeKeyDebug(identity),
+            )
+            .field("claim", &claim)
+            .field("spans", &spans)
+            .field("has_result", &has_result)
+            .field("bounds", &bounds)
+            .finish()
+    }
 }
 
 impl CheckedStateClause {

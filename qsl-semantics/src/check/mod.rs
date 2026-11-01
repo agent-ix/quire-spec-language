@@ -481,7 +481,6 @@ pub use timed_model::{
 };
 
 /// A checked function.
-#[derive(Debug)]
 struct CheckedFunction {
     /// FR-062/FR-065: the function node's FR-092 key, minted once at check
     /// (`lowering`), independent of this function's position in the
@@ -491,10 +490,27 @@ struct CheckedFunction {
     slots: usize,
 }
 
+impl std::fmt::Debug for CheckedFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            identity,
+            body,
+            slots,
+        } = self;
+        f.debug_struct("CheckedFunction")
+            .field(
+                "identity",
+                &qsl_foundation::source::node_table::NodeKeyDebug(identity),
+            )
+            .field("body", &body)
+            .field("slots", &slots)
+            .finish()
+    }
+}
+
 /// Every checked function with its signature, index-aligned by construction:
 /// [`Self::new`] is the only way in, and it splits one list of
 /// pairs, so a position names the same function in both halves.
-#[derive(Debug)]
 struct CheckedFunctions {
     /// Each function's signature, indexed by name once.
     signatures: Signatures,
@@ -502,6 +518,29 @@ struct CheckedFunctions {
     /// Each identity's first position, so a by-identity lookup is a map
     /// lookup, not a scan.
     by_identity: BTreeMap<quire_exact::NodeKey, usize>,
+}
+
+impl std::fmt::Debug for CheckedFunctions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            signatures,
+            bodies,
+            by_identity,
+        } = self;
+        f.debug_struct("CheckedFunctions")
+            .field("signatures", &signatures)
+            .field("bodies", &bodies)
+            .field(
+                "by_identity",
+                &by_identity
+                    .iter()
+                    .map(|(key, value)| {
+                        (qsl_foundation::source::node_table::NodeKeyDebug(key), value)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl CheckedFunctions {
@@ -877,7 +916,7 @@ impl fmt::Debug for CheckedGraph {
 /// `temporal`/`temporal_clause` node, the `claim` occurrence of this
 /// declaration and its `over` parameter's node. Two structurally equal
 /// declarations share one node and differ in their `claim` occurrence.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TemporalClauseNode {
     clause: CheckedTemporalClause,
     identity: quire_exact::NodeKey,
@@ -892,6 +931,35 @@ pub struct TemporalClauseNode {
     /// Each capture's checked initializer and its slot count, in source
     /// order.
     captures: Vec<(CheckedBody, usize)>,
+}
+
+impl std::fmt::Debug for TemporalClauseNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            clause,
+            identity,
+            claim,
+            over,
+            conditions,
+            guard,
+            captures,
+        } = self;
+        f.debug_struct("TemporalClauseNode")
+            .field("clause", &clause)
+            .field(
+                "identity",
+                &qsl_foundation::source::node_table::NodeKeyDebug(identity),
+            )
+            .field("claim", &claim)
+            .field(
+                "over",
+                &qsl_foundation::source::node_table::NodeKeyDebug(over),
+            )
+            .field("conditions", &conditions)
+            .field("guard", &guard)
+            .field("captures", &captures)
+            .finish()
+    }
 }
 
 impl TemporalClauseNode {

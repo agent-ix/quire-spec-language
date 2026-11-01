@@ -148,3 +148,46 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
         .join()
         .unwrap();
 }
+
+/// Indexed I2 output, including the retained IR package, stays linear before
+/// the full FR-264 acceptance case is attempted.
+/// Provenance: QSL-1358, QSL-381; component scaling regression.
+#[test]
+fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
+    use qsl_semantics::check::depth_forms::{declarations, Form};
+    use std::fmt::Write;
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            let sizes: Vec<usize> = [100, 200, 400]
+                .into_iter()
+                .map(|levels| {
+                    let graph = declarations(Form::Add, levels)
+                        .check(CheckingLimits::default())
+                        .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
+                    let package = CheckedPackage::link(graph);
+                    let emission = emit_checked(&package).unwrap();
+                    let read = crate::checked_v2::read_checked_package_v2(
+                        emission.package.bytes(),
+                        library(),
+                        V2ReadLimits::default(),
+                        &read_evidence(&emission),
+                    )
+                    .unwrap_or_else(|failure| panic!("admitted: {failure:?}"))
+                    .into_value();
+                    let mut count = ByteCount(0);
+                    write!(&mut count, "{read:?}").unwrap();
+                    count.0
+                })
+                .collect();
+            for pair in sizes.windows(2) {
+                assert!(
+                    pair[1] < pair[0] * 5 / 2,
+                    "indexed I2 Debug sizes: {sizes:?}"
+                );
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

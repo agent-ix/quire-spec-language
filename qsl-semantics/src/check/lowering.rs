@@ -525,7 +525,7 @@ impl<'s> Binders<'s> {
 /// Every member of a node's preimage outside every recursion group: what
 /// [`node_key`] keys. [`node_key`] is a function of these members alone, so
 /// equal content has one key, which [`Lowering::insert_node`] computes once.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub(crate) struct NodeContent {
     pub(crate) node_tag: NodeTag,
     pub(crate) semantic_form: &'static str,
@@ -535,6 +535,34 @@ pub(crate) struct NodeContent {
     /// QSpec FR-464's `owner_model`: set for a `protocol_clause` node alone.
     pub(crate) owner_model: Option<NodeKey>,
     pub(crate) body: BodyTerm,
+}
+
+impl std::fmt::Debug for NodeContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            node_tag,
+            semantic_form,
+            semantic_type,
+            declaration,
+            owner,
+            owner_model,
+            body,
+        } = self;
+        f.debug_struct("NodeContent")
+            .field("node_tag", &node_tag)
+            .field("semantic_form", &semantic_form)
+            .field("semantic_type", &semantic_type)
+            .field("declaration", &declaration)
+            .field("owner", &owner)
+            .field(
+                "owner_model",
+                &owner_model
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field("body", &body)
+            .finish()
+    }
 }
 
 /// A node whose key waits on its recursion group (FR-092 "Recursion

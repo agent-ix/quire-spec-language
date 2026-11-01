@@ -241,3 +241,32 @@ impl fmt::Debug for Row<'_> {
         write!(f, "]:{}", self.0.ordinal())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    /// A hash bucket only narrows candidates; distinct complete identities
+    /// remain distinct even when both candidates occupy the same bucket.
+    #[test]
+    fn a_hash_collision_keeps_distinct_nodes_and_all_their_segments() {
+        let first = NodeKey::new("pkg", vec![PathSegment::Text("first".into())], 7).unwrap();
+        let second = NodeKey::new("pkg", vec![PathSegment::Text("second".into())], 9).unwrap();
+        let mut table = NodeTable::new();
+        let first_ref = table.intern(&first);
+        table
+            .by_hash
+            .entry(structural_hash(&second))
+            .or_default()
+            .push(first_ref.0);
+        let second_ref = table.intern(&second);
+        assert_ne!(first_ref.0, second_ref.0);
+        assert_eq!(table.intern(&first).0, first_ref.0);
+        assert_eq!(table.intern(&second).0, second_ref.0);
+        assert_eq!(
+            alloc::format!("{:?}", table.nodes()),
+            "{#0: pkg:[\"first\",]:7, #1: pkg:[\"second\",]:9}"
+        );
+    }
+}

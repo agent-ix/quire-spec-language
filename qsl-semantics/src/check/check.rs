@@ -189,7 +189,7 @@ fn declared_member_key(
 /// each case: the FR-081 effective identity and the checked node key, so
 /// neither is derived from the other and neither depends on the alias a unit
 /// gives the model.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct VariantTypeDeclaration {
     key: EffectiveId,
     name: String,
@@ -197,6 +197,30 @@ pub struct VariantTypeDeclaration {
     node: NodeKey,
     cases: Vec<VariantCaseDeclaration>,
     members: Vec<EnumValue>,
+}
+
+impl std::fmt::Debug for VariantTypeDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            key,
+            name,
+            declaration,
+            node,
+            cases,
+            members,
+        } = self;
+        f.debug_struct("VariantTypeDeclaration")
+            .field("key", &key)
+            .field("name", &name)
+            .field("declaration", &declaration)
+            .field(
+                "node",
+                &qsl_foundation::source::node_table::NodeKeyDebug(node),
+            )
+            .field("cases", &cases)
+            .field("members", &members)
+            .finish()
+    }
 }
 
 impl VariantTypeDeclaration {
@@ -769,7 +793,7 @@ pub struct DispatchOperation {
 /// ancestor's field under a different name, the name of its own field; a
 /// record with no such field keeps every field under its name. It also holds
 /// which declarations are event types, which FR-208 gives no equality.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct ModelRecords {
     /// By the value's declaration and the declaration the read is typed at,
     /// then the name there: a read looks a borrowed name up and allocates
@@ -777,6 +801,33 @@ pub struct ModelRecords {
     /// holds an empty map.
     renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey), BTreeMap<String, String>>,
     events: BTreeSet<quire_exact::NodeKey>,
+}
+
+impl std::fmt::Debug for ModelRecords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { renamed, events } = self;
+        f.debug_struct("ModelRecords")
+            .field(
+                "renamed",
+                &renamed
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            (
+                                qsl_foundation::source::node_table::NodeKeyDebug(&key.0),
+                                qsl_foundation::source::node_table::NodeKeyDebug(&key.1),
+                            ),
+                            value,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .field(
+                "events",
+                &qsl_foundation::source::node_table::NodeList(events.iter()),
+            )
+            .finish()
+    }
 }
 
 impl ModelRecords {

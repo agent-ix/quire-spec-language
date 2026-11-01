@@ -16,7 +16,7 @@ pub struct ProtocolNodeId(pub usize);
 /// FR-390's checked identity map for one emitted protocol. The S3 checked
 /// bodies remain authoritative; these keys only connect the S4 node
 /// identities to those bodies for selection.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct CheckedProtocolNodeKeys {
     /// The emitted `protocol_clause` node.
     pub clause: Option<quire_exact::NodeKey>,
@@ -40,9 +40,71 @@ pub struct CheckedProtocolNodeKeys {
     pub expressions: Vec<CheckedProtocolExpressionBindings>,
 }
 
+impl std::fmt::Debug for CheckedProtocolNodeKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            clause,
+            nodes,
+            channels,
+            roles,
+            compensations,
+            terminal,
+            binders,
+            expressions,
+        } = self;
+        f.debug_struct("CheckedProtocolNodeKeys")
+            .field(
+                "clause",
+                &clause
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field(
+                "nodes",
+                &nodes
+                    .iter()
+                    .map(|(key, value)| {
+                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .field(
+                "channels",
+                &channels
+                    .iter()
+                    .map(|(key, value)| {
+                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .field(
+                "roles",
+                &roles
+                    .iter()
+                    .map(|(key, value)| {
+                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .field(
+                "compensations",
+                &qsl_foundation::source::node_table::NodeList(compensations.iter()),
+            )
+            .field(
+                "terminal",
+                &terminal
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field("binders", &binders)
+            .field("expressions", &expressions)
+            .finish()
+    }
+}
+
 /// One keyed protocol expression binder, retained for FR-390 supply
 /// admission and local-frame construction.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedProtocolBinderKey {
     /// The authored binder name.
     pub name: String,
@@ -57,6 +119,31 @@ pub struct CheckedProtocolBinderKey {
     pub node: quire_exact::NodeKey,
     /// The checked semantic type node key.
     pub semantic_type: quire_exact::NodeKey,
+}
+
+impl std::fmt::Debug for CheckedProtocolBinderKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            level,
+            introducing,
+            node,
+            semantic_type,
+        } = self;
+        f.debug_struct("CheckedProtocolBinderKey")
+            .field("name", &name)
+            .field("level", &level)
+            .field("introducing", &introducing)
+            .field(
+                "node",
+                &qsl_foundation::source::node_table::NodeKeyDebug(node),
+            )
+            .field(
+                "semantic_type",
+                &qsl_foundation::source::node_table::NodeKeyDebug(semantic_type),
+            )
+            .finish()
+    }
 }
 
 /// Parameter identities captured while lowering one checked protocol body.
@@ -101,7 +188,7 @@ pub struct BoundAttempt {
 /// attempt"). `check::mod`'s own pipeline fills this in once S4 (lowering)
 /// mints the identities; `check` itself returns an empty list here (see
 /// its own `Vec<BoundAttempt>` return value for the S3-level binding).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedAttempt {
     /// The index into the owning `ProtocolDeclarationForm::declarations` of
     /// this attempt's own static declaration.
@@ -122,13 +209,43 @@ pub struct CheckedAttempt {
     pub contracts: Vec<quire_exact::NodeKey>,
 }
 
+impl std::fmt::Debug for CheckedAttempt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            declaration,
+            operation,
+            receiver,
+            anchor,
+            frame,
+            contracts,
+        } = self;
+        f.debug_struct("CheckedAttempt")
+            .field("declaration", &declaration)
+            .field("operation", &operation)
+            .field("receiver", &receiver)
+            .field(
+                "anchor",
+                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
+            )
+            .field(
+                "frame",
+                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
+            )
+            .field(
+                "contracts",
+                &qsl_foundation::source::node_table::NodeList(contracts.iter()),
+            )
+            .finish()
+    }
+}
+
 /// One protocol declaration FR-113 has checked: every scoped anchor's
 /// resolved target, in the same order as the form's own `scoped_anchors`.
 /// `attempts` starts empty: `check` checks FR-114's `contracts` binding
 /// (its own `Vec<BoundAttempt>` return value) but mints no node identity,
 /// since that needs S4 (lowering); `check::mod`'s own pipeline fills
 /// `attempts` in once it does.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CheckedProtocol {
     /// The declared protocol name.
     pub name: String,
@@ -196,6 +313,60 @@ pub struct CheckedProtocol {
     /// `repeat` it decides (ADR-027 RR-2, RR-4; FR-218 "Scopes"), filled in
     /// by `check::mod`'s own pipeline once the channels are checked.
     pub owners: Vec<CheckedOwner>,
+}
+
+impl std::fmt::Debug for CheckedProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            resolved_anchors,
+            attempts,
+            obligations,
+            channels,
+            controls,
+            edges,
+            slots,
+            compensation_operations,
+            awaits,
+            requirements,
+            relationships,
+            memory,
+            roles,
+            parallels,
+            pending_predicate_joins,
+            node,
+            finish,
+            vias,
+            owners,
+        } = self;
+        f.debug_struct("CheckedProtocol")
+            .field("name", &name)
+            .field("resolved_anchors", &resolved_anchors)
+            .field("attempts", &attempts)
+            .field("obligations", &obligations)
+            .field("channels", &channels)
+            .field("controls", &controls)
+            .field("edges", &edges)
+            .field("slots", &slots)
+            .field("compensation_operations", &compensation_operations)
+            .field("awaits", &awaits)
+            .field("requirements", &requirements)
+            .field("relationships", &relationships)
+            .field("memory", &memory)
+            .field("roles", &roles)
+            .field("parallels", &parallels)
+            .field("pending_predicate_joins", &pending_predicate_joins)
+            .field(
+                "node",
+                &node
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field("finish", &finish)
+            .field("vias", &vias)
+            .field("owners", &owners)
+            .finish()
+    }
 }
 
 impl CheckedProtocol {
@@ -269,7 +440,7 @@ pub struct CheckedParallel {
 }
 
 /// A checked join policy (QSpec FR-171).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum CheckedJoinPolicy {
     /// `join all`.
     All,
@@ -283,6 +454,23 @@ pub enum CheckedJoinPolicy {
         /// The checked function node key.
         function: quire_exact::NodeKey,
     },
+}
+
+impl std::fmt::Debug for CheckedJoinPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::All => f.write_str("All"),
+            Self::Any => f.write_str("Any"),
+            Self::Quorum(value0) => f.debug_tuple("Quorum").field(&value0).finish(),
+            Self::Predicate { function } => f
+                .debug_struct("Predicate")
+                .field(
+                    "function",
+                    &qsl_foundation::source::node_table::NodeKeyDebug(function),
+                )
+                .finish(),
+        }
+    }
 }
 
 /// What a join does with the branches it leaves outstanding (QSpec FR-228).
@@ -481,10 +669,26 @@ impl CheckedControlTree {
 /// The operation's shared anchor and frame node a `compensate` template is
 /// bound to (FR-381 "Compensation registration"), the nodes every attempt
 /// and template naming the operation share.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedOperationNodes {
     /// The operation's `operation_anchor` node identity.
     pub anchor: quire_exact::NodeKey,
     /// The operation's `frame` node identity.
     pub frame: quire_exact::NodeKey,
+}
+
+impl std::fmt::Debug for CheckedOperationNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { anchor, frame } = self;
+        f.debug_struct("CheckedOperationNodes")
+            .field(
+                "anchor",
+                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
+            )
+            .field(
+                "frame",
+                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
+            )
+            .finish()
+    }
 }

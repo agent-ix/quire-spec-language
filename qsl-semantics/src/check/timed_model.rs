@@ -904,13 +904,27 @@ impl Urgency {
 /// (QSpec FR-322 "Timed-model nodes": an `urgency` of kind `when` references
 /// its predicate): each alternative's data predicate typed at its own site
 /// so that its nodes are located.
-#[derive(Debug)]
 pub(crate) struct UrgencyPredicate {
     /// Each alternative's site ([`urgency_site`]) with its data predicate's
     /// source spans, which locate the site.
     pub(crate) sites: Vec<(String, qsl_forms::ExpressionSpans)>,
     /// The predicate's expression node, once lowered.
     pub(crate) node: Option<NodeKey>,
+}
+
+impl std::fmt::Debug for UrgencyPredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { sites, node } = self;
+        f.debug_struct("UrgencyPredicate")
+            .field("sites", &sites)
+            .field(
+                "node",
+                &node
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .finish()
+    }
 }
 
 /// The `Origin::TypeDeclaration` name of the data predicate of the
@@ -938,7 +952,7 @@ pub struct TimedClauseNodes {
 }
 
 /// The nodes of one operation's guard.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct GuardNodes {
     /// The operation's no-point `state`/`operation_anchor` node.
     pub operation: NodeKey,
@@ -948,13 +962,47 @@ pub struct GuardNodes {
     pub parts: Vec<PartNodes>,
 }
 
+impl std::fmt::Debug for GuardNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            operation,
+            span,
+            parts,
+        } = self;
+        f.debug_struct("GuardNodes")
+            .field(
+                "operation",
+                &qsl_foundation::source::node_table::NodeKeyDebug(operation),
+            )
+            .field("span", &span)
+            .field("parts", &parts)
+            .finish()
+    }
+}
+
 /// The nodes of one guard part.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PartNodes {
     /// The part's Boolean `expression` node.
     pub predicate: NodeKey,
     /// The part's constraints, in source order.
     pub constraints: Vec<ConstraintNodes>,
+}
+
+impl std::fmt::Debug for PartNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            predicate,
+            constraints,
+        } = self;
+        f.debug_struct("PartNodes")
+            .field(
+                "predicate",
+                &qsl_foundation::source::node_table::NodeKeyDebug(predicate),
+            )
+            .field("constraints", &constraints)
+            .finish()
+    }
 }
 
 /// The nodes of one clock constraint.
@@ -971,7 +1019,7 @@ pub struct ConstraintNodes {
 }
 
 /// What a clock constraint constrains.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ConstraintTargetNodes {
     /// The clock of place `clock` of the owner term's object.
     Place {
@@ -991,8 +1039,42 @@ pub enum ConstraintTargetNodes {
     },
 }
 
+impl std::fmt::Debug for ConstraintTargetNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Place {
+                clock,
+                owner,
+                slots,
+            } => f
+                .debug_struct("Place")
+                .field("clock", &clock)
+                .field(
+                    "owner",
+                    &qsl_foundation::source::node_table::NodeKeyDebug(owner),
+                )
+                .field(
+                    "slots",
+                    &qsl_foundation::source::node_table::NodeList(slots.iter()),
+                )
+                .finish(),
+            Self::Parameter {
+                operation,
+                parameter,
+            } => f
+                .debug_struct("Parameter")
+                .field(
+                    "operation",
+                    &qsl_foundation::source::node_table::NodeKeyDebug(operation),
+                )
+                .field("parameter", &parameter)
+                .finish(),
+        }
+    }
+}
+
 /// The nodes of one reset.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResetNodes {
     /// The operation's no-point `state`/`operation_anchor` node.
     pub operation: NodeKey,
@@ -1004,8 +1086,28 @@ pub struct ResetNodes {
     pub span: Span,
 }
 
+impl std::fmt::Debug for ResetNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            operation,
+            target,
+            value,
+            span,
+        } = self;
+        f.debug_struct("ResetNodes")
+            .field(
+                "operation",
+                &qsl_foundation::source::node_table::NodeKeyDebug(operation),
+            )
+            .field("target", &target)
+            .field("value", &value)
+            .field("span", &span)
+            .finish()
+    }
+}
+
 /// What a reset writes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ResetTargetNodes {
     /// The clock of place `clock` of the owner term's object, at each slot
     /// the binders select where the condition holds.
@@ -1028,8 +1130,45 @@ pub enum ResetTargetNodes {
     },
 }
 
+impl std::fmt::Debug for ResetTargetNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Place {
+                clock,
+                owner,
+                slots,
+                binders,
+                condition,
+            } => f
+                .debug_struct("Place")
+                .field("clock", &clock)
+                .field(
+                    "owner",
+                    &qsl_foundation::source::node_table::NodeKeyDebug(owner),
+                )
+                .field(
+                    "slots",
+                    &qsl_foundation::source::node_table::NodeList(slots.iter()),
+                )
+                .field(
+                    "binders",
+                    &qsl_foundation::source::node_table::NodeList(binders.iter()),
+                )
+                .field(
+                    "condition",
+                    &qsl_foundation::source::node_table::NodeKeyDebug(condition),
+                )
+                .finish(),
+            Self::Parameter { parameter } => f
+                .debug_struct("Parameter")
+                .field("parameter", &parameter)
+                .finish(),
+        }
+    }
+}
+
 /// The nodes of one time invariant.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct InvariantNodes {
     /// The Boolean `expression` node where the bounds hold.
     pub predicate: NodeKey,
@@ -1037,6 +1176,24 @@ pub struct InvariantNodes {
     pub bounds: Vec<ConstraintNodes>,
     /// The declaration's span.
     pub span: Span,
+}
+
+impl std::fmt::Debug for InvariantNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            predicate,
+            bounds,
+            span,
+        } = self;
+        f.debug_struct("InvariantNodes")
+            .field(
+                "predicate",
+                &qsl_foundation::source::node_table::NodeKeyDebug(predicate),
+            )
+            .field("bounds", &bounds)
+            .field("span", &span)
+            .finish()
+    }
 }
 
 /// The `Origin::TypeDeclaration` name of the data predicate of part `part`
@@ -1067,7 +1224,6 @@ pub(crate) fn site_location(site: &str) -> quire_semantic_value::location::Locat
 /// clocks and the guards, resets, time invariants and urgency that read
 /// them. The time source itself is the graph's
 /// [`ModelTimeSource`](super::ModelTimeSource) of the same model.
-#[derive(Debug)]
 pub struct TimedModel {
     model: String,
     clocks: Vec<ClockField>,
@@ -1091,6 +1247,42 @@ pub struct TimedModel {
     clause_nodes: Option<TimedClauseNodes>,
     /// The `clock_place` template node of each clock, once S3 wrote them.
     place_nodes: Vec<NodeKey>,
+}
+
+impl std::fmt::Debug for TimedModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            model,
+            clocks,
+            clock_parameters,
+            dimensions,
+            guards,
+            resets,
+            invariants,
+            urgency,
+            urgency_predicates,
+            sites,
+            clause_nodes,
+            place_nodes,
+        } = self;
+        f.debug_struct("TimedModel")
+            .field("model", &model)
+            .field("clocks", &clocks)
+            .field("clock_parameters", &clock_parameters)
+            .field("dimensions", &dimensions)
+            .field("guards", &guards)
+            .field("resets", &resets)
+            .field("invariants", &invariants)
+            .field("urgency", &urgency)
+            .field("urgency_predicates", &urgency_predicates)
+            .field("sites", &sites)
+            .field("clause_nodes", &clause_nodes)
+            .field(
+                "place_nodes",
+                &qsl_foundation::source::node_table::NodeList(place_nodes.iter()),
+            )
+            .finish()
+    }
 }
 
 impl TimedModel {

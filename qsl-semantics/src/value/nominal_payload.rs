@@ -80,10 +80,31 @@ impl EnumPayload {
 
 /// A dimension: its `(base dimension node, exponent)` terms, empty for a
 /// base dimension.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DimensionPayload {
     terms: Vec<(NodeKey, Integer)>,
     owner: Option<NodeOwner>,
+}
+
+impl std::fmt::Debug for DimensionPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { terms, owner } = self;
+        f.debug_struct("DimensionPayload")
+            .field(
+                "terms",
+                &terms
+                    .iter()
+                    .map(|value| {
+                        (
+                            qsl_foundation::source::node_table::NodeKeyDebug(&value.0),
+                            &value.1,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .field("owner", &owner)
+            .finish()
+    }
 }
 
 impl DimensionPayload {
@@ -117,13 +138,40 @@ impl DimensionPayload {
 
 /// A declared unit: its dimension, its conversion target and the exact
 /// conversion `value_in_target = factor * value + offset`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct UnitPayload {
     dimension: NodeKey,
     target: Option<NodeKey>,
     factor: Rational,
     offset: Rational,
     owner: Option<NodeOwner>,
+}
+
+impl std::fmt::Debug for UnitPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            dimension,
+            target,
+            factor,
+            offset,
+            owner,
+        } = self;
+        f.debug_struct("UnitPayload")
+            .field(
+                "dimension",
+                &qsl_foundation::source::node_table::NodeKeyDebug(dimension),
+            )
+            .field(
+                "target",
+                &target
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field("factor", &factor)
+            .field("offset", &offset)
+            .field("owner", &owner)
+            .finish()
+    }
 }
 
 impl UnitPayload {
@@ -187,10 +235,23 @@ impl UnitPayload {
 
 /// A dimension equivalence: the two related dimension nodes in ascending key
 /// order and the root ratio stated for the first.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DimensionEquivalencePayload {
     dimensions: [NodeKey; 2],
     scale: Rational,
+}
+
+impl std::fmt::Debug for DimensionEquivalencePayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { dimensions, scale } = self;
+        f.debug_struct("DimensionEquivalencePayload")
+            .field(
+                "dimensions",
+                &qsl_foundation::source::node_table::NodeList(dimensions.iter()),
+            )
+            .field("scale", &scale)
+            .finish()
+    }
 }
 
 impl DimensionEquivalencePayload {

@@ -167,7 +167,7 @@ impl RefinementClassCatalog {
 }
 
 /// One catalog class lowered to the package graph's node keys (FR-375).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum KeyedCatalogClass {
     /// A declared class: its node and its binder types, in binder-record
     /// order.
@@ -181,6 +181,30 @@ pub enum KeyedCatalogClass {
     },
     /// A source-default memory class, which has no node.
     Memory(KeyedMemoryClass),
+}
+
+impl std::fmt::Debug for KeyedCatalogClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Declared {
+                class,
+                node,
+                binder_types,
+            } => f
+                .debug_struct("Declared")
+                .field("class", &class)
+                .field(
+                    "node",
+                    &qsl_foundation::source::node_table::NodeKeyDebug(node),
+                )
+                .field(
+                    "binder_types",
+                    &qsl_foundation::source::node_table::NodeList(binder_types.iter()),
+                )
+                .finish(),
+            Self::Memory(value0) => f.debug_tuple("Memory").field(&value0).finish(),
+        }
+    }
 }
 
 /// A source-default memory class of a keyed catalog.

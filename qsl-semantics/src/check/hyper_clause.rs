@@ -644,7 +644,7 @@ pub enum MatchPart {
 }
 
 /// A `relation` over model executions, checked (FR-172 "Outputs").
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CheckedModelRelation {
     name: String,
     span: Span,
@@ -667,6 +667,44 @@ pub struct CheckedModelRelation {
     identity: Option<quire_exact::NodeKey>,
     /// Its `claim` occurrence, once assembled.
     occurrence: Option<OccurrenceKey>,
+}
+
+impl std::fmt::Debug for CheckedModelRelation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            span,
+            executions,
+            execution_aliases,
+            body,
+            body_spans,
+            typed_body,
+            body_parameters,
+            claim,
+            code_domains,
+            identity,
+            occurrence,
+        } = self;
+        f.debug_struct("CheckedModelRelation")
+            .field("name", &name)
+            .field("span", &span)
+            .field("executions", &executions)
+            .field("execution_aliases", &execution_aliases)
+            .field("body", &body)
+            .field("body_spans", &body_spans)
+            .field("typed_body", &typed_body)
+            .field("body_parameters", &body_parameters)
+            .field("claim", &claim)
+            .field("code_domains", &code_domains)
+            .field(
+                "identity",
+                &identity
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field("occurrence", &occurrence)
+            .finish()
+    }
 }
 
 /// The `operation-contract` requirement of a step relation's code claim

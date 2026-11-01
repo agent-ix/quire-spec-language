@@ -1122,7 +1122,7 @@ fn leaf_checked_term(
 }
 
 /// `population A::p from C::q`, resolved.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PopulationRow {
     /// The abstract population.
     pub abstract_population: DeclarationKey,
@@ -1131,6 +1131,24 @@ pub struct PopulationRow {
     pub order_key: NodeKey,
     /// The concrete population it is the key-preserving image of.
     pub concrete_population: DeclarationKey,
+}
+
+impl std::fmt::Debug for PopulationRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            abstract_population,
+            order_key,
+            concrete_population,
+        } = self;
+        f.debug_struct("PopulationRow")
+            .field("abstract_population", &abstract_population)
+            .field(
+                "order_key",
+                &qsl_foundation::source::node_table::NodeKeyDebug(order_key),
+            )
+            .field("concrete_population", &concrete_population)
+            .finish()
+    }
 }
 
 /// `field = e` of an object row, resolved against an object type or a
@@ -1417,7 +1435,6 @@ impl RefinementFairness {
 }
 
 /// A refinement between two models that checked (ADR-020 RM-1 to RM-6).
-#[derive(Debug)]
 pub struct CheckedRefinement {
     pub(crate) name: String,
     pub(crate) profile: ProfileSelection,
@@ -1479,6 +1496,91 @@ pub struct CheckedRefinement {
     /// FR-146: the per-step simulation records S3 wrote, `Initial` first and
     /// then one per row in declaration order.
     pub(crate) simulations: Vec<super::step_simulation::StepSimulationEntry>,
+}
+
+impl std::fmt::Debug for CheckedRefinement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            name,
+            profile,
+            abstract_model,
+            abstract_model_selection,
+            abstract_side,
+            abstract_internal,
+            concrete_model,
+            concrete_model_selection,
+            populations,
+            objects,
+            steps,
+            step_sources,
+            history,
+            concrete_fairness,
+            abstract_fairness,
+            concrete_object_types,
+            class_catalog,
+            class_catalog_keys,
+            row_keys,
+            concrete_protocol,
+            abstract_protocol,
+            abstract_subject_node,
+            concrete_subject_node,
+            package_name,
+            declaration_span,
+            requirement,
+            simulation,
+            simulations,
+        } = self;
+        f.debug_struct("CheckedRefinement")
+            .field("name", &name)
+            .field("profile", &profile)
+            .field("abstract_model", &abstract_model)
+            .field("abstract_model_selection", &abstract_model_selection)
+            .field("abstract_side", &abstract_side)
+            .field("abstract_internal", &abstract_internal)
+            .field("concrete_model", &concrete_model)
+            .field("concrete_model_selection", &concrete_model_selection)
+            .field("populations", &populations)
+            .field("objects", &objects)
+            .field("steps", &steps)
+            .field("step_sources", &step_sources)
+            .field("history", &history)
+            .field("concrete_fairness", &concrete_fairness)
+            .field("abstract_fairness", &abstract_fairness)
+            .field("concrete_object_types", &concrete_object_types)
+            .field("class_catalog", &class_catalog)
+            .field("class_catalog_keys", &class_catalog_keys)
+            .field("row_keys", &row_keys)
+            .field(
+                "concrete_protocol",
+                &concrete_protocol
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field(
+                "abstract_protocol",
+                &abstract_protocol
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field(
+                "abstract_subject_node",
+                &abstract_subject_node
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field(
+                "concrete_subject_node",
+                &concrete_subject_node
+                    .as_ref()
+                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+            )
+            .field("package_name", &package_name)
+            .field("declaration_span", &declaration_span)
+            .field("requirement", &requirement)
+            .field("simulation", &simulation)
+            .field("simulations", &simulations)
+            .finish()
+    }
 }
 
 impl CheckedRefinement {
