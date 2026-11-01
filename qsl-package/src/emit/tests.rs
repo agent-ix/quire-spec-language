@@ -292,9 +292,9 @@ fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
 
 /// Reads each emitted equality through IR's admitted-equality accessor using
 /// the exact producer application, occurrence, and stage rows retained by the
-/// emitter. Plan schedules materialize; Text, Enum, and Quantity schedules
-/// retain their typed missing-witness results until IR-1209 consumes their
-/// per-fact rows.
+/// emitter. Supported scalar and integer-range Plan schedules materialize;
+/// unsupported Plan types and Text, Enum, and Quantity schedules retain their
+/// typed missing-witness results until IR consumes their per-fact rows.
 fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
     let wire = wire(emission);
     let Some(decisions) = wire["checked_term_data"]["equality_decisions"].as_array() else {
