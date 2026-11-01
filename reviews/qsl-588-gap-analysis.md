@@ -1,42 +1,56 @@
 ---
-id: SR-1988006
-title: "Gap analysis — QSL-588 elapsed form prerequisite"
+id: SR-1988014
+title: "Gap analysis — QSL-588 timed statistical sampling PR 1998 rebased on #2006"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; FR-204-AC-4, FR-254-AC-3, QSpec-FR-421-AC-4; qsl-analyze/src/exact_probabilistic.rs, qsl-analyze/src/exact_probabilistic/build.rs, qsl-analyze/src/exact_probabilistic/plan.rs, qsl-analyze/src/statistical/model.rs, qsl-semantics/src/check/probabilistic/claim.rs"
+scope: "agent-ix/quire-spec-language PR #1998 at 691b46ad8e8cf48fb10830d729c79f21c4750bb5 over base a8090549bb371d8b0330d013dab9462b36d78d37; focused FR-253/254 implementation and TC-708/709 trace review"
 review_set: subset
 relationships:
-  - { target: "ix://agent-ix/quire-spec-language/FR-204", type: references }
+  - { target: "ix://agent-ix/quire-spec-language/FR-253", type: references }
   - { target: "ix://agent-ix/quire-spec-language/FR-254", type: references }
 ---
 
 ## Summary
 
-Focused gap analysis of the elapsed measure path against QSL FR-254-AC-3 and FR-204-AC-4, with QSpec FR-421-AC-4 used as cross-repository context. Exact timed-form refusal span plumbing is covered; timed statistical elapsed sampling remains incomplete and belongs to the continuing QSL-588 implementation.
+Focused gap and trace review of FR-253/254, TC-708/709, the tagged tests, and the changed sampler, statistical analyzer and replay code found direct bindings and behavior-oracle coverage for all eight acceptance criteria. The repository-wide computed matrix did not return, so this artifact does not claim repository-wide matrix, reverse-gap, or stub completeness.
 
 ## Verdict
 
-**CONDITIONAL** — this prerequisite closes the exact-refusal span path, while FR-254-AC-3's elapsed sample measurement remains unimplemented outside this PR's authorized scope.
+**CONDITIONAL** — no scoped FR-253/254 gap was identified, but Quoin matrix evidence was unavailable.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Statistical `elapsed` measures still have no reader: `measure_of` returns `None`, and statistical reduction turns that into an internal fault instead of sampling the time-stamp difference required by FR-254-AC-3. | FR-254-AC-3, qsl-analyze/src/statistical/model.rs:478, qsl-analyze/src/statistical/model.rs:520,539 |
+| FND-000 | low | No scoped FR-253/FR-254 findings identified (schema-required empty-list sentinel) | — |
 
 ## Coverage
 
-- FR-204-AC-4 examined: `Plan::of` rejects elapsed measure forms as `PlanFault::TimedFormShape`; `build.rs` maps the fault and preserves the span in `ProductRefusal`. The added `TC-639` test checks the mapping function's span preservation.
-- QSpec FR-421-AC-4 context only: the counterpart requires an unadmitted timed form to settle `unsupported` with `timed-form-shape`; it is in `agent-ix/quire-specification`, not this repository.
-- FR-254-AC-3 examined: its elapsed behavior requires sample timestamp difference; `statistical/model.rs::measure_of` intentionally has no elapsed reader, so reduction follows the internal-failure path. This feature gap is acknowledged as continuing QSL-588 work, not a request to expand this prerequisite PR.
-- Reconciliation: focused manual check of the stated criteria and changed call paths. `quoin matrix --repo /private/tmp/qsl-pr1996-review --json` produced no result during the review wait and was interrupted; the repository-wide matrix was unavailable. Focused source trace found the new `TC-639` tag for `FR-204-AC-4`.
-- Plan completion: not assessed
-- Criteria counts: not computed; the requested scope is a focused subset, and the repository matrix did not finish.
-- Untraced behaviors / stubs: one in-scope outstanding behavior (`FR-254-AC-3` elapsed sample reader).
-- Semantic review: skipped; not requested.
+- FR-253-AC-1: `TC-708` checks exact conditioned delay windows and the three exact race outcome probabilities.
+- FR-253-AC-2: a direct trace-tagged test binds the race/tie-order probability oracle; its BTreeMap key is an immutable ordered vector of operation/delay pairs.
+- FR-253-AC-3: tests cover invalid and duplicate delay declarations, untimed declaration refusal, and unbounded uniform refusal with the state/identity.
+- FR-253-AC-4: the no-law delay remains a scheduler choice with `distribution: None`; timed sampling separately refuses that MDP state as `NotStochastic`.
+- FR-254-AC-1/2: tests cover expected statistical decisions, deterministic seeded verdicts, exact rational grid draws, timed witness replay and rejection after changing a delay.
+- FR-254-AC-3: direct tagged tests assert elapsed timestamp subtraction, timed `max_cycle_steps` settlement, strict-guard timed exact-route refusal, free-delay refusal, and the `max_sample_steps` limit.
+- FR-254-AC-4: the local time-lock test checks the named state and that no witness is retained.
+- Typed fairness integration test remains present and passed. EN-5 protected paths remain unchanged.
+- Matrix limitation: `quoin matrix --repo . --json` emitted no output during an extended run and was interrupted. Manual focused source/tag inspection confirms the eight FR tags, but no computed repository-wide untagged/stale-tag, ignored-test, reverse-gap, or stub report is available. No repository-wide completeness claim is made.
+- Plan completion: not assessed.
 
-## Dispositions
+## Scope
 
-| FND | Outcome | Reason |
+| Unit | Role | Excerpt |
 | --- | --- | --- |
-| FND-001 | deferred | Timed elapsed sample reading is continuing QSL-588 implementation work and is outside this prerequisite PR's authorized scope. The box-only Clippy fix does not implement the timestamp-difference reader. |
+| FR-253-AC-1 | examined | ADR-026 §11's stochastic variant checks: `reply` `Discrete[(1, 90), (3, 10)]`, `timeout` `Uniform`, `send` and `reset` `Exponential{1/1000}` per ms. In the state just after `send`, `reply`'s window is `[1, 3]` and `timeout`'s (with `T = 3 ms`) is `[3, 3]`. |
+| FR-253-AC-2 | examined | In that state the race gives `reply` at 1 with probability `9/10`; at 3 it ties with `timeout`, ordered evenly by the workload `Even`, so `reply` then `timeout` and `timeout` then `reply` each have probability `1/20`, and in the second order `reply` is still enabled at its turn. |
+| FR-253-AC-3 | examined | Refusals at the span: `delay M::o ~ exponential(0)`; `delay M::o ~ discrete { 1 ms: 1, 1 ms: 2 }`; `delay M::o ~ uniform[3 ms, 1 ms]`; `delay M::o ~ uniform` in an untimed model (`invalid_probabilistic_model`/`delay-on-untimed-model`); a second `delay M::o ~ uniform;` of one operation (`invalid_model_binding`/`malformed-declaration`, at the second declaration). A state where an identity with unbounded window and `uniform` races is disposed `Unsupported(NotStochastic)` naming the state and identity. |
+| FR-253-AC-4 | examined | The §11 stochastic variant with no `delay` declaration on `timeout` checks `timeout` with `None`. In the state just after `send` the race is a Markov decision process: after `reply`'s draw the scheduler chooses `timeout`'s delay in `[3, 3]`, and no distribution is assigned to it. |
+| FR-254-AC-1 | examined | `RareLate` (`probability <= 0.01 [eventually[0 ms, 3 ms] holds(c.late)]`) over FR-253-AC-1's model, whose exact event probability is `1/20`, settles `measured`, `Rejected`, with `q` 64 in its basis; with `reply` under `uniform` it settles `measured`, `Accepted`. Two runs with one seed give equal verdicts. |
+| FR-254-AC-2 | examined | Every sampled delay is an exact rational; a sampled witness replays through `replay_sampled_witness` (FR-193) with FR-237's timed steps, and its draws recompute from the seed; the same witness with one delay changed fails draw recomputation. With `q` 8, the basis records 8 and each sampled `uniform` or `exponential` delay equals the rounded-up conditioned inverse distribution function at a multiple of `2^-8`. |
+| FR-254-AC-3 | examined | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `incomplete`, `limit-reached` naming `statistical.max_cycle_steps` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` declaration on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(LimitReached{... |
+| FR-254-AC-4 | examined | A stochastic `Lock` variant (one object `c` with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B`, with `delay Lock::go ~ discrete { 1/2 ms: 1 };`; `time invariant when phase = B { x <= 1 ms }`; no operation enabled in `B`) samples `go` at `1/2`, delays to `(B, x = 1)`, where no positive delay is admissible and no identity is enabled, and settles `unsupported`, `TimeLockedSample` naming that state, with no witness kept. |
+
+## Bindings
+
+- `TC-708` → FR-253-AC-1..4: direct test tags and behavior assertions were found.
+- `TC-709` → FR-254-AC-1..4: direct test tags and behavior assertions were found, including all bundled FR-254-AC-3 outcomes.

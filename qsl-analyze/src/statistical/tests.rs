@@ -118,6 +118,7 @@ fn request<'a>(
         sampler,
         limits: StatisticalLimits::default(),
         max_witnesses: DEFAULT_MAX_WITNESSES,
+        timed_sampling: qsl_replay::statistical::TimedSampling::default(),
     }
 }
 
@@ -1746,6 +1747,7 @@ impl BehaviourSampler for ServiceSteps {
             .into_iter()
             .map(|(duration, failed)| SampledStep {
                 transition: qsl_eval::simulation::model::TransitionId::Stutter,
+                delay: None,
                 post_state: qsl_eval::simulation::StateKey::from_canonical_bytes(
                     b"\"attempt\"".to_vec(),
                 ),

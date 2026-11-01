@@ -53,7 +53,13 @@ use crate::temporal::UndefinedCause;
 use crate::value::Provenance;
 
 mod over_time;
-pub use over_time::{DelayInterval, TimeLock, TimedTerminalClass};
+pub use over_time::{DelayInterval, ScheduledWindow, TimeLock, TimedTerminalClass};
+mod race;
+pub use race::{
+    replay_timed_sample, sample_timed, sample_timed_race, TimedRace, TimedRaceDraw, TimedRaceStep,
+    TimedRaceStop, TimedSample, TimedSampleDisagreement, TimedSampleReplay, TimedSampleStop,
+    TimedSchedulerChoice,
+};
 
 /// One clock of the subject: a clock field of one object of its universe.
 #[derive(Clone, Debug, Eq, PartialEq)]

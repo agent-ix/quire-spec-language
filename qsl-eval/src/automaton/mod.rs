@@ -86,8 +86,8 @@ pub use timed_claim::{
     has_timed_interval, position_automaton, ClockedEdge, PositionAutomaton, TimedClaim,
 };
 pub use timed_window::{
-    bounded_window_verdict, Atoms, Read, Stamp, Undefined, WindowClaim, WindowFault, WindowRefusal,
-    WindowState,
+    bounded_formula_verdict, bounded_window_verdict, Atoms, Read, Stamp, Undefined, WindowClaim,
+    WindowFault, WindowRefusal, WindowState,
 };
 pub use translate::{
     translate, translate_body, translate_counted, translate_itself, translate_negation,

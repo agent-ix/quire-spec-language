@@ -533,7 +533,16 @@ pub fn bounded_window_verdict(
     ) {
         return Err(WindowRefusal::UnsupportedForm);
     }
-    let mut window = WindowClaim::new(clause.formula(), 1, None, u64::MAX)?;
+    bounded_formula_verdict(clause.formula(), stamps, atoms)
+}
+
+/// FR-254's timed statistical event reader over one sampled trace.
+pub fn bounded_formula_verdict(
+    formula: &CheckedFormula,
+    stamps: &[Rational],
+    atoms: &mut dyn FnMut(FormulaNodeId, usize) -> AtomReading,
+) -> Result<TemporalOutcome, WindowRefusal> {
+    let mut window = WindowClaim::new(formula, 1, None, u64::MAX)?;
     let mut q = None;
     let mut undefined = None;
     let mut insufficient = None;

@@ -23,10 +23,8 @@
 //! The four forms FR-186 lists are typed, and the two forms only exact
 //! evidence decides (FR-195): an unbounded `eventually`, `until` or `always`
 //! event under the infinite-trace profile, and an `expected accumulate ...
-//! until` claim. An `expected elapsed` claim, an `elapsed` measure, a timed
-//! window and an `on each` activation are forms the timed checks own; each
-//! refuses `unsupported_construct`/`not-yet-implemented`, so no claim
-//! compiles unchecked.
+//! until` claim. Timed elapsed measures are admitted for timed statistical
+//! sampling; unsupported time windows and activation forms remain refused.
 
 use std::collections::BTreeMap;
 
@@ -59,8 +57,8 @@ use super::super::profile::{TemporalProfile, CLAUSE_PROFILE_AUTHORITY};
 use super::super::refusal::{CheckCause, CheckRefusal, KeyFault, TemporalCause};
 use super::super::state_graph_claim::StatePredicate;
 use super::super::temporal_clause::{
-    build_formula, checked_constraint, checked_operators, horizon, CheckedFormula, HorizonFault,
-    IntervalReading,
+    build_formula, checked_constraint, checked_operators, horizon, CheckedFormula, CheckedInterval,
+    FormulaNode, HorizonFault, IntervalReading,
 };
 use super::model::{literal, site_location, Pass, Site};
 use super::{exact, exact_refusal, refusal, ProbabilisticCause};
@@ -186,6 +184,9 @@ pub enum Event {
         formula: CheckedTemporalFormula,
         /// The greatest sum of interval upper bounds along a path.
         horizon: u64,
+        /// Time horizon in the timed model's declared unit; `None` for a
+        /// step-profile claim (FR-254).
+        timed_horizon: Option<Rational>,
     },
     /// `M <= c` or `M >= c`.
     Compare {
@@ -502,6 +503,8 @@ fn measure_expressions<'f>(measure: &'f MeasureForm, expressions: &mut Vec<&'f E
 enum Measured {
     /// A step count: a natural number.
     Steps,
+    /// A dense-time elapsed value in the subject's declared time unit.
+    Elapsed(UnitId),
     /// A fraction: an exact rational in `(0, 1)`.
     Fraction,
     /// A reward's value: an integer or a quantity in the reward's unit.
@@ -784,12 +787,6 @@ impl Pass<'_, '_> {
                 span,
             })
         })?;
-        if profile == TemporalProfile::Timed {
-            return Err(refusal(ProbabilisticCause::TimedEventProfile {
-                claim,
-                span,
-            }));
-        }
         DefinitionRef::new(CLAUSE_PROFILE_AUTHORITY, profile.identity())
             .map_err(|_| broken("profile-identity-valid"))
     }
@@ -1099,13 +1096,59 @@ impl Pass<'_, '_> {
         match event {
             EventForm::Temporal(formula) => {
                 // A claim whose profile was refused is refused for that alone.
-                let bounded = profile.is_none_or(|profile| {
-                    TemporalProfile::from_identity(profile.identity())
-                        .is_some_and(TemporalProfile::is_bounded)
+                let timed = profile.and_then(|profile| {
+                    (TemporalProfile::from_identity(profile.identity())
+                        == Some(TemporalProfile::Timed))
+                    .then_some(())
                 });
-                let (formula, horizon) =
-                    self.formula(claim, formula, bounded, cx, nodes, refusals)?;
-                Some(Event::Formula { formula, horizon })
+                let bounded = timed.is_some()
+                    || profile.is_none_or(|profile| {
+                        TemporalProfile::from_identity(profile.identity())
+                            .is_some_and(TemporalProfile::is_bounded)
+                    });
+                let reader = if timed.is_some() {
+                    let Some(source) = self
+                        .input
+                        .time_sources
+                        .iter()
+                        .find(|source| source.model == claim.subject.alias)
+                    else {
+                        refusals.push(refusal(ProbabilisticCause::TimedEventProfile {
+                            claim: claim.claim().to_owned(),
+                            span: claim.form.span,
+                        }));
+                        return None;
+                    };
+                    let target = match self.input.time_units.target(&source.unit) {
+                        Ok(Some(target)) => target,
+                        _ => {
+                            refusals.push(broken("timed-claim-source-has-time-unit"));
+                            return None;
+                        }
+                    };
+                    Some(super::super::temporal_clause::timed::TimedReader {
+                        declarations: None,
+                        units: self.input.time_units,
+                        rational_bits: self.input.limits.rational_bits(),
+                        target,
+                    })
+                } else {
+                    None
+                };
+                let (formula, horizon, timed_horizon) = self.formula(
+                    claim,
+                    formula,
+                    bounded,
+                    reader.as_ref(),
+                    cx,
+                    nodes,
+                    refusals,
+                )?;
+                Some(Event::Formula {
+                    formula,
+                    horizon,
+                    timed_horizon,
+                })
             }
             EventForm::Compare {
                 measure,
@@ -1128,27 +1171,74 @@ impl Pass<'_, '_> {
 
     /// A temporal event: bounded, with only interval operators (ADR-018
     /// TP-2), its horizon and the predicate of each `holds` atom.
+    #[allow(clippy::too_many_arguments)] // these are the checker inputs and output accumulators
     fn formula(
         &mut self,
         claim: &ClaimCx<'_>,
         formula: &TemporalFormulaForm,
         bounded: bool,
+        timed_reader: Option<&super::super::temporal_clause::timed::TimedReader<'_>>,
         cx: &mut CheckContext<'_, Scope>,
         nodes: &mut u64,
         refusals: &mut Vec<CheckRefusal>,
-    ) -> Option<(CheckedTemporalFormula, u64)> {
+    ) -> Option<(CheckedTemporalFormula, u64, Option<Rational>)> {
         let mut causes: Vec<TemporalCause> = Vec::new();
-        let operators = match checked_operators(
-            formula,
-            &IntervalReading::Steps { bounded: true },
-            &mut causes,
-        ) {
+        let reading = match timed_reader {
+            Some(reader) => IntervalReading::Timed(reader),
+            None => IntervalReading::Steps { bounded: true },
+        };
+        let operators = match checked_operators(formula, &reading, &mut causes) {
             Ok((operators, _)) => operators,
             Err(_) => {
                 refusals.push(broken("event-operators-checked"));
                 return None;
             }
         };
+        if timed_reader.is_some() && formula.iter().any(|(_, node)| {
+            matches!(
+                node,
+                TemporalNodeForm::Operator(operator)
+                    if matches!(operator.operator, TemporalOperator::Eventually
+                        | TemporalOperator::Always
+                        | TemporalOperator::Until
+                        | TemporalOperator::Since
+                        | TemporalOperator::Release
+                        | TemporalOperator::Triggered
+                        | TemporalOperator::Once
+                        | TemporalOperator::Historically)
+                        && !matches!(operator.interval, Some(qsl_forms::OperatorInterval::Timed(_)))
+            )
+        }) {
+            let span = formula
+                .iter()
+                .find_map(|(_, node)| match node {
+                    TemporalNodeForm::Operator(operator)
+                        if matches!(
+                            operator.operator,
+                            TemporalOperator::Eventually
+                                | TemporalOperator::Always
+                                | TemporalOperator::Until
+                                | TemporalOperator::Since
+                                | TemporalOperator::Release
+                                | TemporalOperator::Triggered
+                                | TemporalOperator::Once
+                                | TemporalOperator::Historically
+                        ) && !matches!(
+                            operator.interval,
+                            Some(qsl_forms::OperatorInterval::Timed(_))
+                        ) =>
+                    {
+                        Some(operator.span)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(claim.form.span);
+            refusals.push(refusal(ProbabilisticCause::UnboundedEvent {
+                claim: claim.claim().to_owned(),
+                span,
+            }));
+            return None;
+        }
         let root = match formula.node(formula.root()) {
             Some(TemporalNodeForm::Operator(operator)) => operator.span,
             Some(
@@ -1198,28 +1288,43 @@ impl Pass<'_, '_> {
                 return None;
             }
         };
-        let horizon = match horizon(formula) {
-            Ok(horizon) => horizon,
-            Err(HorizonFault::Overflow { span, deepest, own }) => {
-                let operator = formula.iter().find_map(|(id, node)| match node {
-                    TemporalNodeForm::Operator(operator) if operator.operator_span == span => {
-                        Some(id.index())
-                    }
-                    _ => None,
-                });
-                refusals.push(match operator {
-                    Some(operator) => super::horizon_refusal(
-                        u128::from(deepest) + u128::from(own),
-                        site_location(claim.index, Site::Operator(operator)),
-                    ),
-                    None => broken("overflowing-operator-is-in-the-event"),
-                });
-                return None;
+        let horizon = if timed_reader.is_some() {
+            0
+        } else {
+            match horizon(formula) {
+                Ok(horizon) => horizon,
+                Err(HorizonFault::Overflow { span, deepest, own }) => {
+                    let operator = formula.iter().find_map(|(id, node)| match node {
+                        TemporalNodeForm::Operator(operator) if operator.operator_span == span => {
+                            Some(id.index())
+                        }
+                        _ => None,
+                    });
+                    refusals.push(match operator {
+                        Some(operator) => super::horizon_refusal(
+                            u128::from(deepest) + u128::from(own),
+                            site_location(claim.index, Site::Operator(operator)),
+                        ),
+                        None => broken("overflowing-operator-is-in-the-event"),
+                    });
+                    return None;
+                }
+                Err(HorizonFault::Broken(invariant)) => {
+                    refusals.push(broken(invariant));
+                    return None;
+                }
             }
-            Err(HorizonFault::Broken(invariant)) => {
-                refusals.push(broken(invariant));
-                return None;
+        };
+        let timed_horizon = if timed_reader.is_some() {
+            match Self::timed_formula_horizon(&checked) {
+                Some(horizon) => Some(horizon),
+                None => {
+                    refusals.push(broken("timed-formula-horizon-is-in-the-formula"));
+                    return None;
+                }
             }
+        } else {
+            None
         };
         Some((
             CheckedTemporalFormula {
@@ -1228,7 +1333,38 @@ impl Pass<'_, '_> {
                 normal_form: encode_event(formula, claim.binder()),
             },
             horizon,
+            timed_horizon,
         ))
+    }
+
+    /// A timed formula's greatest reachable timestamp: the maximum sum of
+    /// interval upper bounds along one root-to-leaf operand path. Boolean
+    /// branches contribute their furthest path, not the sum of sibling paths.
+    fn timed_formula_horizon(formula: &CheckedFormula) -> Option<Rational> {
+        let nodes = formula.nodes();
+        let mut reach = vec![Rational::from_integer(Integer::zero()); nodes.len()];
+        for (index, node) in nodes.iter().enumerate().rev() {
+            let own = match node {
+                FormulaNode::Unary {
+                    interval: Some(CheckedInterval::Timed(interval)),
+                    ..
+                }
+                | FormulaNode::Binary {
+                    interval: Some(CheckedInterval::Timed(interval)),
+                    ..
+                } => interval.upper().clone(),
+                _ => Rational::from_integer(Integer::zero()),
+            };
+            let deepest = node
+                .operands()
+                .map(|operand| reach.get(operand.index()).cloned())
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .max()
+                .unwrap_or_else(|| Rational::from_integer(Integer::zero()));
+            *reach.get_mut(index)? = deepest.add(&own);
+        }
+        reach.get(formula.root().index()).cloned()
     }
 
     /// A bounded measure, and what its threshold is measured in.
@@ -1268,12 +1404,82 @@ impl Pass<'_, '_> {
                     Measured::Steps,
                 ))
             }
-            MeasureForm::Elapsed { span, .. } => {
-                Err(refusal(ProbabilisticCause::NotYetImplemented {
-                    claim: claim.claim().to_owned(),
-                    construct: "an `elapsed` measure",
-                    span: *span,
-                }))
+            MeasureForm::Elapsed { window, span } => {
+                let timed = self
+                    .input
+                    .profiles
+                    .iter()
+                    .find(|selection| selection.alias == claim.form.profile.alias)
+                    .is_some_and(|selection| {
+                        TemporalProfile::from_identity(&selection.identity)
+                            == Some(TemporalProfile::Timed)
+                    });
+                if !timed {
+                    return Err(refusal(ProbabilisticCause::NotYetImplemented {
+                        claim: claim.claim().to_owned(),
+                        construct: "an `elapsed` measure",
+                        span: *span,
+                    }));
+                }
+                let source = self
+                    .input
+                    .time_sources
+                    .iter()
+                    .find(|source| source.model == claim.subject.alias)
+                    .ok_or_else(|| {
+                        temporal_refusal(TemporalCause::ModelTimeOnUntimedModel {
+                            model: claim.subject.alias.clone(),
+                            span: *span,
+                        })
+                    })?;
+                let target = self
+                    .input
+                    .time_units
+                    .target(&source.unit)
+                    .map_err(|cause| {
+                        temporal_refusal(TemporalCause::TimeQuantity {
+                            cause: Box::new(cause),
+                            span: *span,
+                        })
+                    })?
+                    .ok_or_else(|| broken("elapsed-time-source-has-time-unit"))?;
+                let within = match &window.within {
+                    HorizonForm::Quantity(quantity) => {
+                        let magnitude = super::exact_value(
+                            &quantity.magnitude,
+                            self.input.limits.rational_bits(),
+                        )
+                        .map_err(|_| broken("elapsed-horizon-is-within-rational-limit"))?;
+                        self.input
+                            .time_units
+                            .convert(&magnitude, &quantity.unit.name, &target)
+                            .map_err(|cause| {
+                                temporal_refusal(TemporalCause::TimeQuantity {
+                                    cause: Box::new(cause),
+                                    span: quantity.unit.span,
+                                })
+                            })?
+                    }
+                    HorizonForm::Steps(steps) => {
+                        return Err(temporal_refusal(
+                            TemporalCause::TimedProfileWithoutModelTime {
+                                clock: "elapsed requires a time quantity".to_owned(),
+                                span: steps.span,
+                            },
+                        ));
+                    }
+                };
+                let from = self.predicate(claim, &window.from, cx, nodes)?;
+                let until = self.predicate(claim, &window.until, cx, nodes)?;
+                Ok((
+                    BoundedMeasure::Elapsed {
+                        span: *span,
+                        from: Box::new(from),
+                        until: Box::new(until),
+                        within,
+                    },
+                    Measured::Elapsed(UnitId::declared(target.unit())),
+                ))
             }
             MeasureForm::Fraction(fraction) => Ok((
                 BoundedMeasure::Fraction(self.fraction(claim, fraction, cx, nodes)?),
@@ -1456,7 +1662,7 @@ impl Pass<'_, '_> {
                 fraction_type(self.input.limits.rational_bits())
                     .ok_or_else(|| broken("fraction-type-valid"))?,
             ),
-            Measured::Steps | Measured::Reward(_) => None,
+            Measured::Steps | Measured::Elapsed(_) | Measured::Reward(_) => None,
         };
         let body = input
             .typer(nodes, cx)
@@ -1513,6 +1719,9 @@ impl Pass<'_, '_> {
                 | Measured::Expectation(RewardValue::Quantity(unit)),
                 Value::Quantity(quantity),
             ) => self.convert(claim, &quantity, unit, span),
+            (Measured::Elapsed(unit), Value::Quantity(quantity)) => {
+                self.convert(claim, &quantity, unit, span)
+            }
             (Measured::Reward(RewardValue::Integer), Value::Quantity(quantity)) => {
                 Err(self.unit_mismatch(claim, quantity.unit().clone(), None, span))
             }
@@ -1804,7 +2013,9 @@ impl Pass<'_, '_> {
         match form {
             ProbForm::Probability { bound, event } => {
                 let event = match event {
-                    Event::Formula { formula, horizon } => node_bytes(
+                    Event::Formula {
+                        formula, horizon, ..
+                    } => node_bytes(
                         b"formula",
                         &[formula.normal_form.clone(), horizon.to_be_bytes().to_vec()],
                     ),

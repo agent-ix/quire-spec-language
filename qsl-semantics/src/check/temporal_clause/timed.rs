@@ -251,7 +251,9 @@ pub enum TimedPropertyForm {
 
 /// What the timed check reads of the package beyond the clause.
 pub(crate) struct TimedReader<'a> {
-    pub(crate) declarations: &'a TemporalDeclarations<'a>,
+    pub(crate) declarations: Option<&'a TemporalDeclarations<'a>>,
+    pub(crate) units: &'a crate::check::time_units::TimeUnits,
+    pub(crate) rational_bits: u64,
     pub(crate) target: TimeScale,
 }
 
@@ -330,20 +332,20 @@ pub(crate) enum IntervalFailure {
 impl TimedReader<'_> {
     /// One bound converted exactly to the binding's unit.
     fn bound(&self, quantity: &QuantityForm) -> Result<Rational, IntervalFailure> {
-        let ceiling = self.declarations.timed.rational_bits;
+        let ceiling = self.rational_bits;
         let magnitude = exact_value(&quantity.magnitude, ceiling).map_err(|fault| match fault {
             ExactFault::ZeroDenominator => IntervalFailure::Cause(TemporalCause::ZeroDenominator {
                 span: quantity.magnitude.span,
             }),
-            ExactFault::AboveCeiling { bits } => IntervalFailure::Stop(located(
-                LimitExceeded::new(Setting::S3RationalBits, ceiling, u128::from(bits)),
-                self.declarations,
-                quantity.magnitude.span,
-            )),
+            ExactFault::AboveCeiling { bits } => {
+                let limit = LimitExceeded::new(Setting::S3RationalBits, ceiling, u128::from(bits));
+                IntervalFailure::Stop(match self.declarations {
+                    Some(declarations) => located(limit, declarations, quantity.magnitude.span),
+                    None => StageFailure::Limit(limit),
+                })
+            }
         })?;
-        self.declarations
-            .timed
-            .units
+        self.units
             .convert(&magnitude, &quantity.unit.name, &self.target)
             .map_err(|cause| {
                 IntervalFailure::Cause(TemporalCause::TimeQuantity {

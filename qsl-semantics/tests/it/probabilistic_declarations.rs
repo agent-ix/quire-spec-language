@@ -1238,7 +1238,9 @@ fn the_adr_024_claims_check_and_record_their_forms() {
 
     let ProbForm::Probability {
         bound,
-        event: Event::Formula { formula, horizon },
+        event: Event::Formula {
+            formula, horizon, ..
+        },
     } = &no_fault.form
     else {
         panic!(
@@ -1687,7 +1689,9 @@ fn an_unbounded_event_is_refused_and_a_windowed_one_has_its_horizon() {
     }
     let graph = checked(&event(&format!("eventually[0,100] always[0,10] {holds}")));
     let ProbForm::Probability {
-        event: Event::Formula { formula, horizon },
+        event: Event::Formula {
+            formula, horizon, ..
+        },
         ..
     } = &claim_of(&graph).form
     else {

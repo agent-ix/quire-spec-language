@@ -173,6 +173,17 @@ pub fn settle_statistical(
                         total: total.clone(),
                     }
                 }
+                StatisticalUnsupported::NotStochastic { state, identity } => {
+                    UnavailabilityCause::NotStochastic {
+                        state: state.clone(),
+                        identity: identity.clone(),
+                    }
+                }
+                StatisticalUnsupported::TimeLockedSample { state } => {
+                    UnavailabilityCause::TimeLockedSample {
+                        state: state.clone(),
+                    }
+                }
             }))
         }
     }
@@ -286,6 +297,7 @@ mod tests {
     use qsl_foundation::AccountingSetting;
     use quire_exact::{CancelCause, Integer, Rational};
     use quire_semantic_value::catalog::InternalFault;
+    use quire_semantic_value::model_transition::ModelTransition;
 
     use super::*;
     use crate::outcome::{Operation, OutcomeDocument, OutcomeItem};
@@ -302,6 +314,7 @@ mod tests {
         let hundredth = ratio(1, 100);
         StatisticalBasis {
             method: StatisticalMethod::Okamoto,
+            delay_grid_bits: None,
             confidence: Confidence::new(hundredth.clone(), hundredth.clone(), hundredth.clone())
                 .expect("confidence"),
             samples: 23_026,
@@ -336,6 +349,9 @@ mod tests {
             seed: 7,
             sampler: DefinitionRef::new("agent-ix", "quire.simulation.sampler/v1")
                 .expect("sampler"),
+            timed_horizon: None,
+            delay_grid_bits: None,
+            max_sample_steps: None,
             tests: Vec::new(),
         }
     }
@@ -563,6 +579,44 @@ mod tests {
         assert_eq!(cause.as_str(), "total-above-draw-range");
         assert_eq!(cause.code(), None);
         assert_eq!(wire(range)["cause"]["total"], "7");
+    }
+
+    /// FR-254-AC-3/4 (TC-709): race and local time-lock refusals preserve
+    /// their typed timed-state identity through EN-4 settlement.
+    #[trace("TC-709", "FR-254-AC-3", "FR-254-AC-4")]
+    #[test]
+    fn timed_refusals_settle_with_the_named_timed_state() {
+        let state = qsl_eval::simulation::StateKey::from_canonical_bytes(b"[0,[]]".to_vec());
+        let identity = ModelTransition::new(
+            r#"{"name":"timeout"}"#.to_owned(),
+            None,
+            Vec::new(),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .expect("canonical typed operation");
+        let race = settle(&StatisticalOutcome::Unsupported {
+            cause: StatisticalUnsupported::NotStochastic {
+                state: state.clone(),
+                identity,
+            },
+            provenance: provenance(),
+        });
+        assert_eq!(race.category(), Category::Unsupported);
+        let race = wire(race);
+        assert_eq!(race["result"], "unsupported");
+        assert_eq!(race["cause"]["kind"], "not-stochastic");
+        assert_eq!(race["cause"]["state"]["key"], "WzAsW11d");
+        assert_eq!(race["cause"]["identity"]["type"], "transition");
+        assert_eq!(race["cause"]["identity"]["operation"]["name"], "timeout");
+
+        let lock = settle(&StatisticalOutcome::Unsupported {
+            cause: StatisticalUnsupported::TimeLockedSample { state },
+            provenance: provenance(),
+        });
+        let lock = wire(lock);
+        assert_eq!(lock["result"], "unsupported");
+        assert_eq!(lock["cause"]["kind"], "time-locked-sample");
+        assert_eq!(lock["cause"]["state"]["key"], "WzAsW11d");
     }
 
     /// FR-192's refusal rows: `NoTest` settles `inconclusive`,

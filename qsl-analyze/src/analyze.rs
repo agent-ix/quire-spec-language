@@ -770,6 +770,7 @@ fn statistical_work<'a>(
             limits: item.limits,
             max_witnesses: item.max_witnesses,
             symmetry: item.symmetry.clone(),
+            timed_sampling: item.timed_sampling,
         },
     )
     .disposed(

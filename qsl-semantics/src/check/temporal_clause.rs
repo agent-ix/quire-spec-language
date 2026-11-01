@@ -85,7 +85,7 @@ use crate::family::{CheckContext, CheckOutcome, FamilyContract};
 use crate::model::operation::OperationLookup;
 
 pub(crate) mod condition;
-mod timed;
+pub(crate) mod timed;
 
 pub use timed::{
     ModelTimeBinding, ModelTimeSource, TimeNominalNode, TimeNominalOrigin, TimeSourceKind,
@@ -1109,7 +1109,9 @@ fn check_clause(
     };
     let reader = match &time_binding {
         Some(binding) => Some(timed::TimedReader {
-            declarations,
+            declarations: Some(declarations),
+            units: declarations.timed.units,
+            rational_bits: declarations.timed.rational_bits,
             target: declarations
                 .timed
                 .units

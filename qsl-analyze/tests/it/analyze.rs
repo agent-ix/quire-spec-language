@@ -477,6 +477,7 @@ fn service_request<'w>(
         limits: qsl_replay::statistical::StatisticalLimits::default(),
         max_witnesses: 3,
         symmetry: Vec::new(),
+        timed_sampling: qsl_replay::statistical::TimedSampling::default(),
     }
 }
 
@@ -492,6 +493,7 @@ fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provide
             limits: request.limits,
             max_witnesses: request.max_witnesses,
             symmetry: request.symmetry,
+            timed_sampling: request.timed_sampling,
         },
         backend: BackendId::new("en-4"),
     }
