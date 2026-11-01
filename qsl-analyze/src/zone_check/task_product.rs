@@ -2,7 +2,7 @@
 //! QSL FR-249 and QSpec FR-419: compile the exact fixed-work gate and the
 //! finite task-slot bounds shared by EN-6 and the FR-418 reader.
 
-use super::{Dbm, DbmError};
+use super::{Bound, Dbm, DbmError};
 use num_bigint::BigInt;
 use num_integer::Integer as NumInteger;
 use qsl_eval::simulation::model::ModelSystem;
@@ -103,7 +103,7 @@ pub struct TaskJob {
     pub phase: TaskJobPhase,
 }
 
-/// The DBM location and ceiling of one suspended job's service clock.
+/// The DBM location and ceiling of one live job's service clock.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TaskServiceClock {
     /// The job whose accumulated service is represented.
@@ -185,7 +185,7 @@ impl TaskSchedulerState {
         if scale <= &BigInt::from(0) {
             return Err(TaskCompletionError::InexactScale);
         }
-        let running = self.running.as_ref().ok_or(TaskCompletionError::Scheduler(
+        let running = self.running.clone().ok_or(TaskCompletionError::Scheduler(
             TaskSchedulerError::ActionNotEnabled,
         ))?;
         let work = product
@@ -203,6 +203,25 @@ impl TaskSchedulerState {
         let amount = scaled.numerator().as_big().clone();
 
         let mut next_zone = zone.clone();
+        let running_clock = service_clocks
+            .iter()
+            .find(|clock| same_job(&clock.job, &running))
+            .ok_or(TaskCompletionError::Scheduler(
+                TaskSchedulerError::ActionNotEnabled,
+            ))?;
+        next_zone
+            .constrain(0, running_clock.index, Bound::le(-&amount))
+            .and_then(|()| {
+                next_zone.constrain(
+                    running_clock.index,
+                    0,
+                    Bound::le(running_clock.maximum.clone()),
+                )
+            })
+            .map_err(TaskCompletionError::Dbm)?;
+        if next_zone.is_empty() {
+            return Err(TaskCompletionError::EmptySuccessor);
+        }
         let mut subtractions = Vec::new();
         for job in self
             .jobs
@@ -227,6 +246,9 @@ impl TaskSchedulerState {
         let completion = next_scheduler
             .complete(source_transition)
             .map_err(TaskCompletionError::Scheduler)?;
+        next_zone
+            .reset(running_clock.index, &BigInt::from(0))
+            .map_err(TaskCompletionError::Dbm)?;
         for job in self
             .jobs
             .iter()

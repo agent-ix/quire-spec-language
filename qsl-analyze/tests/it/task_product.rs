@@ -304,13 +304,19 @@ fn completion_subtracts_exact_work_from_suspended_service_clocks_atomically() {
         .activate(&product, "b", transition("b_release"), int(0), int(0))
         .expect("activate b");
     scheduler.dispatch(&product).expect("b starts");
-    scheduler
+    let running = scheduler
         .activate(&product, "a", transition("a_release"), int(0), int(0))
         .expect("activate a");
     scheduler.preempt(&product).expect("a preempts b");
     scheduler.dispatch(&product).expect("a starts");
 
-    let clock = TaskServiceClock {
+    let running_clock = TaskServiceClock {
+        job: running,
+        index: 1,
+        name: "task:Ctl.a:slot0:service".to_owned(),
+        maximum: num_bigint::BigInt::from(4),
+    };
+    let suspended_clock = TaskServiceClock {
         job: suspended,
         index: 2,
         name: "task:Ctl.b:slot0:service".to_owned(),
@@ -328,7 +334,7 @@ fn completion_subtracts_exact_work_from_suspended_service_clocks_atomically() {
             &product,
             &mut empty,
             &scale,
-            std::slice::from_ref(&clock),
+            &[running_clock.clone(), suspended_clock.clone()],
             None,
         ),
         Err(TaskCompletionError::EmptySuccessor)
@@ -343,7 +349,13 @@ fn completion_subtracts_exact_work_from_suspended_service_clocks_atomically() {
     zone.constrain(0, 2, Bound::le(num_bigint::BigInt::from(-2)))
         .expect("service clock lower bound");
     let (completion, subtractions) = scheduler
-        .complete_with_subtractions(&product, &mut zone, &scale, &[clock], None)
+        .complete_with_subtractions(
+            &product,
+            &mut zone,
+            &scale,
+            &[running_clock, suspended_clock],
+            None,
+        )
         .expect("the bounded subtraction has an enabled zone");
     assert_eq!(completion.action, qsl_replay::TaskAction::Complete);
     assert_eq!(subtractions.len(), 1);
@@ -352,5 +364,9 @@ fn completion_subtracts_exact_work_from_suspended_service_clocks_atomically() {
     assert_eq!(
         zone.bound(2, 0),
         Ok(&Bound::le(num_bigint::BigInt::from(1)))
+    );
+    assert_eq!(
+        zone.bound(1, 0),
+        Ok(&Bound::le(num_bigint::BigInt::from(0)))
     );
 }
