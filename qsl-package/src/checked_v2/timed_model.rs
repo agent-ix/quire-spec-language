@@ -509,7 +509,7 @@ impl CheckedTimedModel {
 }
 
 fn checked_id(key: impl std::borrow::Borrow<quire_exact::NodeKey>) -> CheckedNodeId {
-    crate::emit::node_id(key)
+    qsl_semantics::check::wire_id::structural_id(key.borrow())
 }
 
 impl TimedNodeMetadata {

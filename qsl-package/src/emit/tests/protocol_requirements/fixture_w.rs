@@ -169,8 +169,8 @@ fn complete_w_activation_map_matches_read_back() {
     assert_eq!(rows.len(), 1);
     let clause = node_of(&lowered.wire, "protocol", "protocol_clause");
     assert_eq!(
-        serde_json::to_value(&rows[0].clause).unwrap(),
-        clause["node_id"]
+        rows[0].clause,
+        structural(&lowered.wire, &clause["node_id"])
     );
     let trigger = clause_argument(clause, "activation")["members"]
         .as_array()
@@ -182,17 +182,13 @@ fn complete_w_activation_map_matches_read_back() {
     assert_eq!(
         rows[0].activation,
         quire_contract_model::CheckedProtocolActivation::Each {
-            trigger: checked_node_id_of(
-                &qsl_foundation::node_wire::node_key_from_json(&trigger).unwrap()
-            ),
+            trigger: structural(&lowered.wire, &trigger),
         }
     );
     let temporal = node_of(&lowered.wire, "temporal", "temporal_clause");
     assert_eq!(
         rows[0].required_temporal,
-        checked_node_id_of(
-            &qsl_foundation::node_wire::node_key_from_json(&temporal["node_id"]).unwrap()
-        )
+        structural(&lowered.wire, &temporal["node_id"])
     );
     let nodes = lowered.wire["semantic_graph"]["nodes"].as_array().unwrap();
     assert_eq!(
@@ -243,11 +239,7 @@ fn complete_w_activation_map_matches_read_back() {
         .unwrap()
         .iter()
         .filter(|node| node["semantic_form"] == "temporal_clause")
-        .map(|node| {
-            checked_node_id_of(
-                &qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap(),
-            )
-        })
+        .map(|node| structural(&two.wire, &node["node_id"]))
         .collect();
     temporal_keys.sort_unstable();
     assert_eq!(
@@ -281,15 +273,11 @@ fn origin_w_rebinds_the_capture_without_a_trigger() {
     let temporal = node_of(&lowered.wire, "temporal", "temporal_clause");
     assert_eq!(
         rows[0].clause,
-        checked_node_id_of(
-            &qsl_foundation::node_wire::node_key_from_json(&clause["node_id"]).unwrap()
-        )
+        structural(&lowered.wire, &clause["node_id"])
     );
     assert_eq!(
         rows[0].required_temporal,
-        checked_node_id_of(
-            &qsl_foundation::node_wire::node_key_from_json(&temporal["node_id"]).unwrap()
-        )
+        structural(&lowered.wire, &temporal["node_id"])
     );
     assert_eq!(
         clause_argument(clause, "activation")["members"]

@@ -120,8 +120,11 @@ fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
         .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-fn key(value: &Value) -> NodeKey {
-    qsl_foundation::node_wire::node_key_from_json(value).expect("a structural node key")
+fn key(wire: &Value, value: &Value) -> NodeKey {
+    qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .unwrap()
+        .key_of_value(value)
+        .expect("a structural node key")
 }
 
 /// FR-411-AC-1: `when` emits one `temporal`/`terminal` node with its four
@@ -221,15 +224,18 @@ fn a_terminal_declaration_emits_its_node_and_the_i2_read_returns_it() {
     let [read] = &terminals[..] else {
         panic!("one terminal: {terminals:?}");
     };
-    assert_eq!(read.node, key(&terminal_node(&when.wire)["node_id"]));
+    assert_eq!(
+        read.node,
+        key(&when.wire, &terminal_node(&when.wire)["node_id"])
+    );
     assert_eq!(
         read.declaration,
         ReadTerminalDeclaration::When {
-            parameter: Some(key(target(&parameters[0]))),
-            condition: key(target(binding(
-                &terminal_node(&when.wire)["body"],
-                "condition"
-            ))),
+            parameter: Some(key(&when.wire, target(&parameters[0]))),
+            condition: key(
+                &when.wire,
+                target(binding(&terminal_node(&when.wire)["body"], "condition"))
+            ),
         }
     );
     assert_eq!(
@@ -262,6 +268,7 @@ fn refusal_after(
     edit: impl FnOnce(&mut Value),
 ) -> quire_contract_model::CheckedPackageRefusal {
     let mut envelope = compiled.wire.clone();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&envelope).unwrap();
     let node = envelope["semantic_graph"]["nodes"]
         .as_array_mut()
         .expect("nodes")
@@ -284,7 +291,7 @@ fn refusal_after(
             }
         })
         .collect();
-    targets.sort_by_key(|value| qsl_foundation::node_wire::node_key_from_json(value).unwrap());
+    targets.sort_by_key(|value| graph.key_of_value(value).unwrap());
     node["dependencies"] = Value::Array(targets);
     match read_envelope(&envelope, &compiled.wire) {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => *refusal,

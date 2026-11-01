@@ -159,13 +159,8 @@ fn an_ir_that_cannot_decode_the_union_omits_it_and_every_node_naming_it() {
 
     // The wire holds none of the omitted nodes and none names one.
     let wire = wire(&emission);
-    let written: BTreeSet<NodeKey> = nodes(&wire)
-        .iter()
-        .map(|node| {
-            qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
-                .expect("an emitted structural key")
-        })
-        .collect();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire).unwrap();
+    let written: BTreeSet<NodeKey> = graph.keys().iter().cloned().collect();
     for omission in &emission.omitted {
         let id = serde_json::to_value(&omission.node).expect("an omitted id encodes");
         let key =
@@ -175,7 +170,8 @@ fn an_ir_that_cannot_decode_the_union_omits_it_and_every_node_naming_it() {
     assert!(!written.is_empty());
     for node in nodes(&wire) {
         for dependency in node["dependencies"].as_array().expect("dependencies") {
-            let target = qsl_foundation::node_wire::node_key_from_json(dependency)
+            let target = graph
+                .key_of_value(dependency)
                 .expect("a structural dependency");
             assert!(written.contains(&target), "{node} names an omitted node");
         }

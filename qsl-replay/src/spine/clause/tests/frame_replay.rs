@@ -117,7 +117,10 @@ fn emitted_node(unit: &Unit, form: &str) -> quire_exact::NodeKey {
     let [node] = nodes[..] else {
         panic!("one {form} node: {nodes:#?}");
     };
-    qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).expect("a node id")
+    crate::WireGraph::of_package_value(&package)
+        .expect("the emitted graph")
+        .key_of_value(&node["node_id"])
+        .expect("a node id")
 }
 
 /// The `frame_operation` replay target for `Config::ConfigVersion::attemptUpdate`.

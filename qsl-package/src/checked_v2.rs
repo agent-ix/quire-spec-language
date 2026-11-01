@@ -24,6 +24,7 @@ use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
 use qsl_foundation::{Setting, SettingLimits};
+use qsl_semantics::check::wire_id::{WireGraph, WireIdError};
 use qsl_semantics::library::{ImportView, LibraryName, LibraryPackage, LibraryRefusal};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
@@ -351,9 +352,12 @@ fn source_region(region: &CheckedSourceRegion) -> Result<SourceRegion, SourceMap
 }
 
 fn occurrence(
+    graph: &WireGraph,
     entry: &CheckedSourceMapEntry,
 ) -> Result<(OccurrenceKey, Vec<SourceRegion>), SourceMapDefect> {
-    let node = crate::emit::admitted_key(&entry.node_id).map_err(|_| SourceMapDefect::NodeId)?;
+    let node = graph
+        .key(&entry.node_id)
+        .map_err(|_| SourceMapDefect::NodeId)?;
     let origin = Origin::new(Role::new(role_spelling(&entry.role)), entry.ordinal);
     let regions = entry
         .regions
@@ -363,14 +367,22 @@ fn occurrence(
     Ok((OccurrenceKey::new(node, origin), regions))
 }
 
+/// The rebuilt structural keys of an admitted package's graph (FR-322
+/// "Operand index segments"): every id the package holds resolves its index
+/// segments against this graph.
+pub(crate) fn wire_graph(package: &CheckedPackageV2) -> Result<WireGraph, WireIdError> {
+    WireGraph::new(package.graph().nodes.iter().map(|node| &node.node_id))
+}
+
 /// ADR-013 O-12, C-14: the package source map of an admitted wire's
 /// `source_map`, keyed by the O-07 occurrence key.
 fn package_source_map(
+    graph: &WireGraph,
     entries: &[CheckedSourceMapEntry],
 ) -> Result<PackageSourceMap, SourceMapDefect> {
     let entries = entries
         .iter()
-        .map(occurrence)
+        .map(|entry| occurrence(graph, entry))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(PackageSourceMap::from_entries(entries)?)
 }
@@ -607,19 +619,19 @@ pub(crate) fn read_checked_package_v2(
                     return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
                 }
             };
+            let graph = match wire_graph(&package) {
+                Ok(graph) => graph,
+                Err(_) => {
+                    return refused(V2ReadRefusal::Fault(InternalFault::new(
+                        "I2",
+                        "admitted-node-ids-rebuild-structural-keys",
+                    )))
+                }
+            };
             let mut exports = Vec::new();
-            for node in &package.graph().nodes {
+            for (node, key) in package.graph().nodes.iter().zip(graph.keys()) {
                 let Some(declaration) = &node.declaration else {
                     continue;
-                };
-                let key = match crate::emit::admitted_key(&node.node_id) {
-                    Ok(key) => key,
-                    Err(_) => {
-                        return refused(V2ReadRefusal::Fault(InternalFault::new(
-                            "I2",
-                            "admitted-declaration-node-id-is-structural",
-                        )))
-                    }
                 };
                 let name = declaration
                     .qualified_name
@@ -627,9 +639,9 @@ pub(crate) fn read_checked_package_v2(
                     .map(AsRef::as_ref)
                     .collect::<Vec<&str>>()
                     .join("::");
-                exports.push((name, key));
+                exports.push((name, key.clone()));
             }
-            let source_map = match package_source_map(package.source_map()) {
+            let source_map = match package_source_map(&graph, package.source_map()) {
                 Ok(source_map) => source_map,
                 Err(defect) => return refused(defect.into()),
             };

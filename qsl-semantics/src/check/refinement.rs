@@ -36,6 +36,8 @@ mod step_label;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::check::wire_id::structural_id;
+
 pub use catalog::{
     KeyedCatalogClass, KeyedClassCatalog, KeyedMemoryClass, RefinementCatalogClass,
     RefinementCatalogNode, RefinementClassCatalog,
@@ -598,7 +600,7 @@ impl CheckedRefinement {
             .row_keys
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
-        let local = |key: &NodeKey| RefinementKey::Local(v2_node_id(key));
+        let local = |key: &NodeKey| RefinementKey::Local(structural_id(key));
         let term = leaf_checked_term;
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
             arguments
@@ -618,7 +620,7 @@ impl CheckedRefinement {
             .into_iter()
             .map(|row| RefinementPopulation {
                 r#abstract: local(&row.abstract_population),
-                concrete: v2_node_id(&row.concrete_population),
+                concrete: structural_id(&row.concrete_population),
             })
             .collect();
         let mut keyed_objects: Vec<&KeyedObjectRow> = rows.objects.iter().collect();
@@ -639,7 +641,7 @@ impl CheckedRefinement {
                 fields.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
                 Ok(RefinementObject {
                     abstract_type: local(&row.abstract_type),
-                    concrete_type: v2_node_id(&row.concrete_type),
+                    concrete_type: structural_id(&row.concrete_type),
                     fields,
                 })
             })
@@ -671,7 +673,7 @@ impl CheckedRefinement {
             };
             steps.push(RefinementStep {
                 source_class: row.source_class.as_str().into(),
-                source_node: row.source_node.as_ref().map(v2_node_id),
+                source_node: row.source_node.as_ref().map(structural_id),
                 target,
             });
             step_sources.push(row.source);
@@ -705,7 +707,7 @@ impl CheckedRefinement {
         let assume = fairness(&rows.assume)
             .into_iter()
             .map(|(operation, kind, granularity)| RefinementAssume {
-                operation: v2_node_id(operation),
+                operation: structural_id(operation),
                 kind,
                 granularity,
             })
@@ -979,8 +981,8 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     binder_types,
                 } => RefinementConcreteClass::Declared {
                     class: class.as_str().into(),
-                    node: v2_node_id(node),
-                    binder_types: binder_types.iter().map(v2_node_id).collect(),
+                    node: structural_id(node),
+                    binder_types: binder_types.iter().map(structural_id).collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementConcreteClass::Memory(memory(*class)),
             })
@@ -995,10 +997,10 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     binder_types,
                 } => RefinementAbstractClass::Declared {
                     class: class.as_str().into(),
-                    node: RefinementKey::Local(v2_node_id(node)),
+                    node: RefinementKey::Local(structural_id(node)),
                     binder_types: binder_types
                         .iter()
-                        .map(|key| RefinementKey::Local(v2_node_id(key)))
+                        .map(|key| RefinementKey::Local(structural_id(key)))
                         .collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementAbstractClass::Memory(memory(*class)),
@@ -1047,7 +1049,7 @@ fn leaf_checked_term(
     use serde::de::Error as _;
     use serde_json::{json, Value};
     let admitted = |node: &NodeRef| {
-        node.admitted().map(v2_node_id).ok_or_else(|| {
+        node.admitted().map(structural_id).ok_or_else(|| {
             RefinementV2EncodingError::Body(serde_json::Error::custom(
                 "a refinement row term names a pending node",
             ))
@@ -1096,7 +1098,19 @@ fn leaf_checked_term(
             target: admitted(target)?,
         },
         LeafTerm::DependencyReference { node } => {
-            let node = admitted(node)?;
+            // FR-322 "Dependency references": a declared node, string path.
+            let node = node
+                .admitted()
+                .ok_or_else(|| {
+                    RefinementV2EncodingError::Body(serde_json::Error::custom(
+                        "a refinement row term names a pending node",
+                    ))
+                })
+                .and_then(|key| {
+                    crate::check::wire_id::declared_id(key).map_err(|error| {
+                        RefinementV2EncodingError::Body(serde_json::Error::custom(error))
+                    })
+                })?;
             CheckedTerm::DependencyReference {
                 package: node.package.clone(),
                 node,
@@ -1106,52 +1120,6 @@ fn leaf_checked_term(
     // The terms are built directly: `CheckedNodeId` reads its raw JSON text,
     // which the derived `CheckedTerm` reader cannot buffer.
     Ok(term)
-}
-
-/// `key` as a V2 graph node id: the same package, path and ordinal. A
-/// nested operand id is converted from an explicit stack, so a deep path
-/// uses no call stack proportional to its depth.
-fn v2_node_id(key: &NodeKey) -> quire_contract_model::CheckedNodeId {
-    use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
-    use quire_exact::{NodeKeyView, NodePathIter, PathSegmentView};
-    struct Frame<'a> {
-        package: &'a str,
-        ordinal: u64,
-        segments: NodePathIter<'a>,
-        path: Vec<CheckedNodePathSegment>,
-    }
-    fn frame(view: NodeKeyView<'_>) -> Frame<'_> {
-        Frame {
-            package: view.package(),
-            ordinal: view.ordinal(),
-            segments: view.path(),
-            path: Vec::new(),
-        }
-    }
-    let mut current = frame(key.view());
-    let mut parents = Vec::new();
-    loop {
-        match current.segments.next() {
-            Some(PathSegmentView::Text(text)) => {
-                current.path.push(CheckedNodePathSegment::Name(text.into()));
-            }
-            Some(PathSegmentView::Node(nested)) => {
-                parents.push(std::mem::replace(&mut current, frame(nested)));
-            }
-            None => {
-                let id = CheckedNodeId {
-                    package: current.package.into(),
-                    path: std::mem::take(&mut current.path),
-                    ordinal: current.ordinal,
-                };
-                let Some(mut parent) = parents.pop() else {
-                    return id;
-                };
-                parent.path.push(CheckedNodePathSegment::Node(Box::new(id)));
-                current = parent;
-            }
-        }
-    }
 }
 
 /// `population A::p from C::q`, resolved.

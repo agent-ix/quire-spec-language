@@ -129,8 +129,10 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     };
     assert_eq!(item.kind(), Capability::ValueValidity);
 
-    let node =
-        qsl_foundation::node_wire::node_key_to_json(item.node()).expect("a node id serializes");
+    let node = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire)
+        .expect("the emitted graph")
+        .wire_value(item.node())
+        .expect("the item's node is written to the package");
     let written = nodes(&wire)
         .iter()
         .find(|candidate| candidate["node_id"] == node)

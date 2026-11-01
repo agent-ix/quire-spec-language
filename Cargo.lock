@@ -1468,6 +1468,7 @@ dependencies = [
 name = "qsl-foundation"
 version = "0.1.0"
 dependencies = [
+ "hashbrown 0.17.1",
  "ix-trace-rs",
  "quire-exact",
  "quire-semantic-value",
@@ -1653,7 +1654,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#8320ebe7d85d61ed86af866ee0836aebc623ef33"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#21fd5e98ad8962d4ef8a82b7a79dabb83c0f5b21"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1766,7 +1767,7 @@ dependencies = [
 [[package]]
 name = "quire-verification-contracts"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#7942fb4b4a0f99ed2a6e6639493eb6c3b821d2ec"
+source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#5070338df68b896d4e26051123133e2cb93f4ec9"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",

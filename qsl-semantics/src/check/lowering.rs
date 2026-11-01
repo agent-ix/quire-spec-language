@@ -5546,6 +5546,21 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 self.push(PathSegment::Node(key.clone()));
             }
         }
+        /// A dependency's declaration is no node of this graph, so it is
+        /// named by its package and declaration path, all strings (QSpec
+        /// FR-322 "Operand index segments": an index segment names a node
+        /// of the same graph).
+        fn dependency(&mut self, node: &NodeRef) {
+            let NodeRef::Admitted(key) = node else {
+                return;
+            };
+            if !self.seen.insert(PathSegment::Node(key.clone())) {
+                return;
+            }
+            self.operands
+                .push(PathSegment::Text(key.package().to_owned()));
+            self.operands.extend(key.path());
+        }
         fn leaf(&mut self, leaf: &LeafTerm) {
             match leaf {
                 LeafTerm::Literal { ty, value } => {
@@ -5553,7 +5568,7 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                     self.text(&literal_operand_text(value));
                 }
                 LeafTerm::Reference { target } => self.node(target),
-                LeafTerm::DependencyReference { node } => self.node(node),
+                LeafTerm::DependencyReference { node } => self.dependency(node),
             }
         }
         fn group(&mut self, group: &GroupTerm) {
