@@ -360,6 +360,7 @@ impl Lowering<'_> {
                     member: Some(Member::Field {
                         declaration: object,
                         name,
+                        explicit_deref: None,
                     }),
                     ..Operation::plain("quire.op.record.project")
                 },

@@ -495,7 +495,7 @@ impl Lowering<'_> {
         if application.operator == Operator::Query
             && matches!(
                 &application.operation.member,
-                Some(Member::Field { declaration, name })
+                Some(Member::Field { declaration, name, .. })
                     if *declaration == object && name.as_str() == field
             )
             && self.is_deref_of(application.arguments.first(), self_parameter.clone())
