@@ -43,3 +43,26 @@ Reviewed the frozen QSL-1390 producer-side equality sidecar implementation and i
 - {id: qsl-semantics/src/check/ir.rs, path: "qsl-semantics/src/check/ir.rs", role: examined, excerpt: "Retains equality operator, schedule, authored and compared operands, resolved units, filtered enum-member index, and exact producer identity witnesses."}
 - {id: qsl-semantics/src/check/lowering.rs, path: "qsl-semantics/src/check/lowering.rs", role: examined, excerpt: "Stores producer data and identities under `(application key, source location)` and constructs exact unit, dimension, text/plan type and enum-member identities."}
 - {id: qsl-semantics/src/check/refusal.rs, path: "qsl-semantics/src/check/refusal.rs", role: examined, excerpt: "Adds a typed MissingEnumMember keying refusal when a compared enum member has no unique exact source or admitted-model identity."}
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit `60c4b386be5c55b8069de3e0a48dc23c96a4322a` adds a regression that reads canonical serialized package bytes, joins each decision by emitted application and occurrence, and asserts `null` for the unconverted occurrence versus the exact emitted ms type for the converted occurrence. The focused test passes. |
+
+FND-001 after_excerpt:
+
+```rust
+if facts.authored_operands()[0].target().is_some() {
+    assert_ne!(decision["left"]["conversion_target"], Value::Null);
+    assert_eq!(
+        decision["left"]["conversion_target"], decision["right"]["source_type"],
+        "the converted occurrence targets the exact emitted ms type"
+    );
+    assert!(converted_type
+        .replace(decision["right"]["source_type"].clone())
+        .is_none());
+} else {
+    assert_eq!(decision["left"]["conversion_target"], Value::Null);
+}
+```
