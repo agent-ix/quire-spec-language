@@ -1661,6 +1661,8 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             )
             .expect("checked protocol temporal evaluation");
         let first_id = first.id();
+        assert_eq!(first.selection(), &selection);
+        assert_eq!(first.anchor(), "event-9");
         let temporal::Obligation::Assessed(first_assessment) =
             &first.report().result().expect("formula result")[0]
         else {
@@ -1907,6 +1909,215 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             }))
         ));
 
+        let mut evidence_ledger = temporal::ProtocolLedger::new();
+        let mut missing_clock_parameters = trace.clone();
+        missing_clock_parameters.clock.parameters.clear();
+        let missing_clock = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_clock_parameters,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing clock parameters are a typed non-truth result");
+        assert!(matches!(
+            missing_clock.report().result(),
+            Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                dimension: temporal::Dimension::ClockParameters,
+                ..
+            }))
+        ));
+
+        let mut missing_capture = trace.clone();
+        missing_capture.triggers[0].captures[0] = temporal::CaptureInput::Missing;
+        let capture = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_capture,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing capture is a typed non-truth result");
+        assert!(matches!(
+            capture.report().result().expect("activation disposition")[0],
+            temporal::Obligation::Unactivated {
+                error: temporal::Error::Incomplete(temporal::Incomplete {
+                    dimension: temporal::Dimension::Capture,
+                    ..
+                }),
+                ..
+            }
+        ));
+
+        let mut missing_anchor = trace.clone();
+        missing_anchor.anchor.clear();
+        let anchor = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_anchor,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing anchor is a typed non-truth result");
+        assert!(matches!(
+            anchor.report().result().expect("activation disposition")[0],
+            temporal::Obligation::Unactivated {
+                error: temporal::Error::Refused(temporal::Refusal::Capture {
+                    dimension: temporal::Dimension::Anchor,
+                    ..
+                }),
+                ..
+            }
+        ));
+
+        let mut missing_progress = trace.clone();
+        missing_progress.positions[0].valuations.clear();
+        let progress = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_progress,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("unavailable progressed valuation is typed");
+        assert!(matches!(
+            &progress.report().result().expect("assessment disposition")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.incomplete.as_ref().is_some_and(|incomplete|
+                        incomplete.dimension == temporal::Dimension::Valuation)
+        ));
+
+        let mut open_closure = trace.clone();
+        open_closure.decision_scope = temporal::Closure::Open;
+        open_closure.positions[0].valuations.clear();
+        let mut closure_ledger = temporal::ProtocolLedger::new();
+        let closure = closure_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: open_closure,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("open closure cannot be defaulted to closed truth");
+        assert!(matches!(
+            &closure.report().result().expect("assessment disposition")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.premises.decision_scope == temporal::Closure::Open
+                    && assessment.incomplete.as_ref().is_some_and(|incomplete|
+                        incomplete.dimension == temporal::Dimension::Valuation)
+        ));
+
+        let mut open_trigger_scope = trace.clone();
+        open_trigger_scope.triggers.clear();
+        open_trigger_scope.trigger_scope = temporal::Closure::Open;
+        let mut trigger_scope_ledger = temporal::ProtocolLedger::new();
+        let trigger_scope = trigger_scope_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: open_trigger_scope,
+                    trigger_identities: Vec::new(),
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("open trigger closure is not defaulted to inactive");
+        assert!(matches!(
+            &trigger_scope.report().result().expect("scope disposition")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Complete,
+                        execution: temporal::Execution::Completed,
+                    }
+        ));
+
+        let mut failed_execution = trace.clone();
+        failed_execution.execution = temporal::Execution::Failed;
+        failed_execution.trigger_evidence = temporal::Evidence::Missing;
+        let mut execution_ledger = temporal::ProtocolLedger::new();
+        let execution = execution_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: failed_execution,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("failed execution is retained as non-truth");
+        assert!(matches!(
+            &execution.report().result().expect("unknown activation")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Incomplete,
+                        execution: temporal::Execution::Failed,
+                    }
+        ));
+
+        let mut incomplete_input = trace.clone();
+        incomplete_input.completeness = temporal::Completeness::Incomplete;
+        incomplete_input.trigger_evidence = temporal::Evidence::Admitted;
+        incomplete_input.trigger_scope = temporal::Closure::Open;
+        incomplete_input.triggers.clear();
+        let mut incomplete_ledger = temporal::ProtocolLedger::new();
+        let incomplete = incomplete_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: incomplete_input,
+                    trigger_identities: Vec::new(),
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("incomplete input is retained as non-truth");
+        assert!(matches!(
+            &incomplete.report().result().expect("unknown activation")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.premises.completeness == temporal::Completeness::Incomplete
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Incomplete,
+                        execution: temporal::Execution::Completed,
+                    }
+        ));
+
         let mut budget_ledger = temporal::ProtocolLedger::new();
         let budgeted = budget_ledger
             .evaluate(
@@ -1938,6 +2149,30 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
                     && assessment.truth == Some(temporal::Truth::True)
         ));
 
+        let oversized = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits {
+                    positions: 0,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("oversized input returns a retained typed limit result");
+        assert!(matches!(
+            oversized.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Positions
+                    && exhaustion.requested == 1
+        ));
+        assert!(oversized.settled_siblings().is_empty());
+
         // A correction changes an admitted leaf valuation and names exactly
         // the prior result. The earlier result remains immutable.
         let mut corrected_trace = trace.clone();
@@ -1946,6 +2181,49 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             anchor: "event-9".into(),
             value: "caller-revised-capture-must-not-win".into(),
         };
+
+        // A different admitted package can reuse every local coordinate, but
+        // cannot consume the first package's result as its predecessor.
+        let other_admitted = native::admit_v3(
+            emitted,
+            &[native::ActivationSelection {
+                control: &activation.control,
+                temporal_declaration: activation.temporal_declaration,
+            }],
+            Limits::default(),
+        )
+        .into_result()
+        .expect("strict admitted package with a distinct activation table");
+        let mut cross_package_ledger = temporal::ProtocolLedger::new();
+        let package_a_result = cross_package_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("first package evaluation");
+        let package_a_id = package_a_result.id();
+        assert!(matches!(
+            cross_package_ledger.evaluate(
+                checked.package(),
+                other_admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: corrected_trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: Some(package_a_id),
+                },
+                temporal::Limits::default(),
+            ),
+            Err(temporal::ProtocolRefusal::CorrectionPredecessor)
+        ));
+
         let corrected = ledger
             .evaluate(
                 checked.package(),

@@ -107,6 +107,8 @@ pub enum ProtocolRefusal {
 pub struct ProtocolEvaluation {
     id: ProtocolEvaluationId,
     predecessor: Option<ProtocolEvaluationId>,
+    selection: ProtocolSelection,
+    anchor: String,
     report: Report,
     settled_siblings: Vec<Obligation>,
     completed_siblings: Vec<Obligation>,
@@ -121,6 +123,17 @@ impl ProtocolEvaluation {
     /// Exact direct predecessor, if this result is a correction.
     pub fn predecessor(&self) -> Option<ProtocolEvaluationId> {
         self.predecessor
+    }
+
+    /// Exact admitted control and temporal declaration selected for this result.
+    pub fn selection(&self) -> &ProtocolSelection {
+        &self.selection
+    }
+
+    /// The input trace's exact evaluation anchor, retained independently of
+    /// trigger captures and assessment premises.
+    pub fn anchor(&self) -> &str {
+        &self.anchor
     }
 
     /// The temporal report produced by QSL from the checked declaration and
@@ -149,10 +162,12 @@ type ObligationKey = (u32, u32, u32);
 #[derive(Clone, Debug, Default)]
 pub struct ProtocolLedger {
     next_id: u64,
+    next_package_id: u64,
     evaluations: BTreeMap<ProtocolEvaluationId, ProtocolEvaluation>,
-    by_obligation: BTreeMap<ObligationKey, Vec<ProtocolEvaluationId>>,
-    inputs: BTreeMap<ProtocolEvaluationId, (Trace, Vec<SemanticTriggerIdentity>)>,
-    temporal_ledgers: BTreeMap<ObligationKey, Ledger>,
+    packages: BTreeMap<u64, v3::wire::Package>,
+    by_obligation: BTreeMap<(u64, ObligationKey), Vec<ProtocolEvaluationId>>,
+    inputs: BTreeMap<ProtocolEvaluationId, Trace>,
+    temporal_ledgers: BTreeMap<(u64, ObligationKey), Ledger>,
 }
 
 impl ProtocolLedger {
@@ -202,15 +217,28 @@ impl ProtocolLedger {
         if input.trigger_identities.len() != input.trace.triggers.len() {
             return Err(ProtocolRefusal::TriggerIdentityCount);
         }
-        let mut trace = input.trace.clone();
-        for (trigger, identity) in trace.triggers.iter_mut().zip(&input.trigger_identities) {
-            trigger.identity.clone_from(&identity.0);
+        let effective = limits.bounded();
+        if let Some(exhaustion) = preflight_input(&input.trace, effective, declaration) {
+            return self.record_bounded_input(
+                input.selection,
+                input.trace.anchor,
+                effective,
+                exhaustion,
+            );
+        }
+        let mut trace = input.trace;
+        for (trigger, identity) in trace.triggers.iter_mut().zip(input.trigger_identities) {
+            trigger.identity = identity.0;
         }
 
+        let package_id = self.package_id(admitted.package())?;
         let key = (
-            input.selection.control.declaration,
-            input.selection.control.index,
-            input.selection.temporal_declaration,
+            package_id,
+            (
+                input.selection.control.declaration,
+                input.selection.control.index,
+                input.selection.temporal_declaration,
+            ),
         );
         let history = self.by_obligation.get(&key);
         let predecessor = match (input.correction, history.and_then(|ids| ids.last())) {
@@ -219,10 +247,10 @@ impl ProtocolLedger {
                     .inputs
                     .get(&requested)
                     .ok_or(ProtocolRefusal::CorrectionPredecessor)?;
-                if prior.0 == trace && prior.1 == input.trigger_identities {
+                if prior == &trace {
                     return Err(ProtocolRefusal::UnchangedCorrection);
                 }
-                if prior.1 != input.trigger_identities {
+                if !same_trigger_identities(prior, &trace) {
                     return Err(ProtocolRefusal::CorrectionIdentity);
                 }
                 Some(requested)
@@ -245,13 +273,16 @@ impl ProtocolLedger {
             limits,
         );
         self.next_id = next_id;
-        self.inputs.insert(id, (trace, input.trigger_identities));
+        let anchor = trace.anchor.clone();
+        self.inputs.insert(id, trace);
         self.by_obligation.entry(key).or_default().push(id);
         self.evaluations.insert(
             id,
             ProtocolEvaluation {
                 id,
                 predecessor,
+                selection: input.selection,
+                anchor,
                 report,
                 settled_siblings,
                 completed_siblings,
@@ -261,6 +292,114 @@ impl ProtocolLedger {
             .get(&id)
             .ok_or(ProtocolRefusal::IdentifierExhausted)
     }
+
+    fn package_id(&mut self, package: &v3::wire::Package) -> Result<u64, ProtocolRefusal> {
+        if let Some((id, _)) = self.packages.iter().find(|(_, known)| *known == package) {
+            return Ok(*id);
+        }
+        let id = self.next_package_id;
+        self.next_package_id = id
+            .checked_add(1)
+            .ok_or(ProtocolRefusal::IdentifierExhausted)?;
+        self.packages.insert(id, package.clone());
+        Ok(id)
+    }
+
+    fn record_bounded_input(
+        &mut self,
+        selection: ProtocolSelection,
+        anchor: String,
+        limits: Limits,
+        exhaustion: super::Exhaustion,
+    ) -> Result<&ProtocolEvaluation, ProtocolRefusal> {
+        let id = ProtocolEvaluationId(self.next_id);
+        self.next_id = self
+            .next_id
+            .checked_add(1)
+            .ok_or(ProtocolRefusal::IdentifierExhausted)?;
+        self.evaluations.insert(
+            id,
+            ProtocolEvaluation {
+                id,
+                predecessor: None,
+                selection,
+                anchor,
+                report: Report {
+                    result: Err(super::Error::Exhausted(exhaustion)),
+                    limits,
+                    usage: Usage::default(),
+                    authenticated: None,
+                },
+                settled_siblings: Vec::new(),
+                completed_siblings: Vec::new(),
+            },
+        );
+        self.evaluations
+            .get(&id)
+            .ok_or(ProtocolRefusal::IdentifierExhausted)
+    }
+}
+
+fn same_trigger_identities(left: &Trace, right: &Trace) -> bool {
+    left.triggers.len() == right.triggers.len()
+        && left
+            .triggers
+            .iter()
+            .zip(&right.triggers)
+            .all(|(left, right)| left.identity == right.identity)
+}
+
+fn preflight_input(trace: &Trace, limits: Limits, declaration: usize) -> Option<super::Exhaustion> {
+    use super::LimitDimension as Dimension;
+
+    let subject = super::Subject {
+        declaration,
+        ..super::Subject::default()
+    };
+    let requested = [
+        (
+            Dimension::Positions,
+            trace.positions.len(),
+            limits.positions,
+        ),
+        (
+            Dimension::Valuations,
+            trace
+                .positions
+                .iter()
+                .map(|position| {
+                    position
+                        .instance_valuations
+                        .values()
+                        .map(BTreeMap::len)
+                        .fold(position.valuations.len(), usize::saturating_add)
+                })
+                .fold(0usize, usize::saturating_add),
+            limits.valuations,
+        ),
+        (Dimension::Instances, trace.triggers.len(), limits.instances),
+        (
+            Dimension::Captures,
+            trace
+                .triggers
+                .iter()
+                .map(|trigger| trigger.captures.len())
+                .fold(0usize, usize::saturating_add),
+            limits.captures,
+        ),
+        (Dimension::Retention, trace.evicted.len(), limits.retention),
+    ];
+    requested
+        .into_iter()
+        .find_map(|(dimension, requested, limit)| {
+            (requested > limit).then_some(super::Exhaustion {
+                dimension,
+                used: 0,
+                requested,
+                limit,
+                subject,
+            })
+        })
 }
 
 fn evaluate_siblings(
