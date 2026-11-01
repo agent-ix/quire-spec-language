@@ -130,17 +130,22 @@ beside it as a separate item.
   phase) settles the item `failed` with that fault and no half value.
 - The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
-- **Certificate.** A safety half that the product proves SHALL settle
-  `proved` only after FR-149's checker accepts its certificate; for a
-  concrete subject that declares `time dense`, the certificate is the zone
+- **Certificate.** A refinement whose abstract subject is a model and whose
+  product proves SHALL settle `proved` only after FR-149's checker accepts
+  its certificate. A protocol refinement whose abstract side is a protocol
+  subject follows FR-148: its step decisions have no core certificate
+  checker, so its completed proof settles `proved` with
+  `certification: Uncertified` (FR-148-AC-2, TC-553). For a concrete subject
+  that declares `time dense` and an abstract model subject, the certificate is the zone
   certificate of FR-244's refinement form and the checker is FR-245's
   (FR-430); a rejection
   SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
   V-7 naming the limit, a cancelled check V-7 naming the cancellation, and a check stopped by an expansion that names no limit V-7 `ResourceExhausted` (ADR-020 CT-3).
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's
   `Certified` label when every half was certified. A `proved` with a
-  liveness half, which has no core certificate checker, SHALL settle
-  `proved` labelled `Uncertified` (ADR-020 CT-4, RU-7).
+  liveness half, or with an abstract protocol subject whose safety decision
+  has no core certificate checker, SHALL settle `proved` labelled
+  `Uncertified` (ADR-020 CT-4, RU-7; FR-148-AC-2).
 
 ## Acceptance Criteria
 

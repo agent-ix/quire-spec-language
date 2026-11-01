@@ -23,7 +23,9 @@ model (ADR-020 §8) with `peek` removed; `CasTwice` with `peek` kept.
 
 1. Run `check_initial` and the steps `beginA`, `commitA`, then a second
    commit, over `CasTwice`.
-2. Check `CasTwice` over universe `counters = {c}`.
+2. Check and settle `CasTwice` over universe `counters = {c}`, without
+   applying the model-subject simulation-certificate checker to its
+   abstract-protocol safety result.
 3. Check the lost-update model against `Twice` and replay its
    counterexample.
 4. Check `CasTwice` against `Once` and replay its counterexample.
