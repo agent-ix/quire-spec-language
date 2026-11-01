@@ -66,7 +66,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let raw_source = graph.source().clone();
     let model_node = checked_source.model_node.clone();
     let unit_node = checked_source.unit_node.clone();
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let checked = CheckedPackage::link(graph);
+    let emission = emit_checked(&checked).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let [unit_row] = emission.selected_source_unit_rows() else {
         panic!("one emitted source-owned unit identity row");
@@ -164,8 +165,43 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the emitted timed model: {failure:?}"));
-    let typed = CheckedTimedModel::from_admitted(&read.into_value().admitted)
-        .expect("I2 reconstructs the typed timed model");
+    let admitted = read.into_value().admitted;
+    let identities = checked
+        .graph()
+        .selected_exact_identities(&admitted)
+        .expect("the model declaration and field rows join admission");
+    let projected = admitted
+        .project_selected_type_declarations(
+            &identities,
+            emission.selected_tuple_declaration_rows(),
+            emission.selected_source_unit_rows(),
+            10_000,
+        )
+        .expect("the source-owned unit row joins the admitted type view");
+    assert_eq!(projected.units().len(), 1);
+    assert_eq!(projected.units()[0].unit_id, unit_row.unit_id);
+    assert_eq!(
+        projected.units()[0].source_authority.as_ref(),
+        raw_source.authority()
+    );
+    assert_eq!(
+        projected.units()[0].source_identity.as_ref(),
+        raw_source.identity()
+    );
+    assert_eq!(
+        admitted
+            .project_selected_type_declarations(
+                &identities,
+                emission.selected_tuple_declaration_rows(),
+                &[],
+                10_000,
+            )
+            .expect_err("a missing source-unit row refuses the whole projection")
+            .code,
+        quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
+    );
+    let typed =
+        CheckedTimedModel::from_admitted(&admitted).expect("I2 reconstructs the typed timed model");
     let [timed] = typed.as_slice() else {
         panic!("one timed model reads back");
     };
