@@ -394,9 +394,9 @@ fn a_capture_of_every_declared_type_is_admitted() {
     }
 }
 
-/// FR-322-AC-34 / QSpec TC-281 RP-09 and RP-10: the source read form remains
+/// QSpec-FR-322-AC-34 / QSpec-TC-281 RP-09 and RP-10: the source read form remains
 /// distinct in both QSL's keyed graph and IR's typed admitted projection.
-#[trace("FR-322-AC-34", "TC-1073", "FR-390-AC-19")]
+#[trace("QSpec-FR-322-AC-34", "TC-1073")]
 #[test]
 fn model_field_read_form_survives_emission_and_typed_readback() {
     let qspec = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR names the QSpec checkout");
