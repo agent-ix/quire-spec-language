@@ -360,6 +360,22 @@ fn checked_progress_is_keyed_by_checked_clause_identity() {
     )
     .result()
     .is_ok());
+    let mut regressed = earlier;
+    regressed.watermark = 4;
+    let refused = temporal::evaluate_checked_with_progress(
+        first.package(),
+        0,
+        &regressed,
+        temporal::Limits::default(),
+        &mut ledger,
+    );
+    assert!(matches!(
+        refused.result(),
+        Err(temporal::Error::Refused(temporal::Refusal::Progress {
+            dimension: temporal::Dimension::Watermark,
+            ..
+        }))
+    ));
     let mut unrelated = origin_trace();
     unrelated.watermark = 1;
     assert!(temporal::evaluate_checked_with_progress(
