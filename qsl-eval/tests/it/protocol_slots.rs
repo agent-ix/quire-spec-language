@@ -3,7 +3,8 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{
-    CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply, SuppliedValue,
+    CheckedPackageEvaluation, ProtocolReferenceOccurrence, ProtocolSlot, ProtocolSlotEvaluation,
+    ProtocolSuppliedValue, ProtocolSupply, SuppliedValue,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{NodeTag, PackageDeclarations};
@@ -15,6 +16,10 @@ use quire_semantic_value::checking::CheckingLimits;
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
 
 mod acceptance;
+
+fn protocol_value(value: SuppliedValue) -> qsl_eval::value::ProtocolSuppliedValue {
+    value.into()
+}
 
 #[path = "../../../qsl-semantics/tests/support/child_composite.rs"]
 #[allow(
@@ -225,7 +230,10 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     let failure = package.evaluate_protocol_slot(
         &slot,
         &ProtocolSupply {
-            binders: vec![(unused.clone(), SuppliedValue::Value(Value::Boolean(true)))],
+            binders: vec![(
+                unused.clone(),
+                protocol_value(SuppliedValue::Value(Value::Boolean(true))),
+            )],
             observation: None,
         },
         &mut meter,
@@ -236,7 +244,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "unknown-member")
                 && record.locus == CallAdmissionLocus::Binder(unused.clone())
     ));
     assert_eq!(
@@ -248,8 +256,14 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         &slot,
         &ProtocolSupply {
             binders: vec![
-                (unused.clone(), SuppliedValue::Value(Value::Boolean(true))),
-                (unused.clone(), SuppliedValue::Value(Value::Boolean(false))),
+                (
+                    unused.clone(),
+                    protocol_value(SuppliedValue::Value(Value::Boolean(true))),
+                ),
+                (
+                    unused.clone(),
+                    protocol_value(SuppliedValue::Value(Value::Boolean(false))),
+                ),
             ],
             observation: None,
         },
@@ -261,7 +275,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "duplicate-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "duplicate-member")
                 && record.locus == CallAdmissionLocus::Binder(unused.clone())
     ));
 
@@ -334,7 +348,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("missing_declaration", "missing-name")
+            if record.record.catalog == CatalogCode::new("missing_declaration", "missing-name")
                 && record.locus == CallAdmissionLocus::Member {
                     name: "condition".to_owned(), index: Some(0)
                 }
@@ -360,7 +374,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
             &ProtocolSupply {
                 binders: vec![(
                     opened.clone(),
-                    SuppliedValue::Unavailable(unavailable_cause),
+                    protocol_value(SuppliedValue::Unavailable(unavailable_cause)),
                 )],
                 observation: None,
             },
@@ -391,14 +405,17 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "missing-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "missing-member")
                 && record.locus == CallAdmissionLocus::Binder(opened.clone())
     ));
 
     let unknown_before_missing = package.evaluate_protocol_slot(
         &activation,
         &ProtocolSupply {
-            binders: vec![(unused.clone(), SuppliedValue::Value(Value::Boolean(true)))],
+            binders: vec![(
+                unused.clone(),
+                protocol_value(SuppliedValue::Value(Value::Boolean(true))),
+            )],
             observation: None,
         },
         &mut activation_meter,
@@ -409,7 +426,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "unknown-member")
                 && record.locus == CallAdmissionLocus::Binder(unused)
     ));
 
@@ -418,7 +435,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         &ProtocolSupply {
             binders: vec![(
                 opened.clone(),
-                SuppliedValue::Value(Value::Integer(1_i64.into())),
+                protocol_value(SuppliedValue::Value(Value::Integer(1_i64.into()))),
             )],
             observation: None,
         },
@@ -430,7 +447,7 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "wrong-value-kind")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "wrong-value-kind")
                 && record.locus == CallAdmissionLocus::Binder(opened.clone())
     ));
 
@@ -438,7 +455,10 @@ fn evaluates_a_protocol_slot_and_refuses_an_unread_binder_before_charging() {
         .evaluate_protocol_slot(
             &activation,
             &ProtocolSupply {
-                binders: vec![(opened, SuppliedValue::Value(Value::Boolean(true)))],
+                binders: vec![(
+                    opened,
+                    protocol_value(SuppliedValue::Value(Value::Boolean(true))),
+                )],
                 observation: None,
             },
             &mut activation_meter,
@@ -482,10 +502,10 @@ fn an_unavailable_protocol_binder_is_not_observed_after_a_false_short_circuit() 
             &ProtocolSupply {
                 binders: vec![(
                     opened,
-                    SuppliedValue::Unavailable(CatalogCode::new(
+                    protocol_value(SuppliedValue::Unavailable(CatalogCode::new(
                         "incomplete_population",
                         "incomplete-scope",
-                    )),
+                    ))),
                 )],
                 observation: None,
             },
@@ -531,7 +551,10 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
                 index: Some(0),
             },
             &ProtocolSupply {
-                binders: vec![(binder("fwd"), SuppliedValue::Value(money(&package, 5)))],
+                binders: vec![(
+                    binder("fwd"),
+                    protocol_value(SuppliedValue::Value(money(&package, 5))),
+                )],
                 observation: None,
             },
             &mut meter,
@@ -558,8 +581,14 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
             },
             &ProtocolSupply {
                 binders: vec![
-                    (binder("trigger"), SuppliedValue::Value(money(&package, 3))),
-                    (binder("saved"), SuppliedValue::Value(saved.clone())),
+                    (
+                        binder("trigger"),
+                        protocol_value(SuppliedValue::Value(money(&package, 3))),
+                    ),
+                    (
+                        binder("saved"),
+                        protocol_value(SuppliedValue::Value(saved.clone())),
+                    ),
                 ],
                 observation: None,
             },
@@ -584,7 +613,10 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
                 index: Some(0),
             },
             &ProtocolSupply {
-                binders: vec![(binder("trigger"), SuppliedValue::Value(money(&package, 3)))],
+                binders: vec![(
+                    binder("trigger"),
+                    protocol_value(SuppliedValue::Value(money(&package, 3))),
+                )],
                 observation: None,
             },
             &mut meter,
@@ -609,12 +641,21 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
             },
             &ProtocolSupply {
                 binders: vec![
-                    (binder("earlier"), SuppliedValue::Value(money(&package, 1))),
-                    (binder("later"), SuppliedValue::Value(money(&package, 2))),
-                    (binder("saved"), SuppliedValue::Value(saved.clone())),
+                    (
+                        binder("earlier"),
+                        protocol_value(SuppliedValue::Value(money(&package, 1))),
+                    ),
+                    (
+                        binder("later"),
+                        protocol_value(SuppliedValue::Value(money(&package, 2))),
+                    ),
+                    (
+                        binder("saved"),
+                        protocol_value(SuppliedValue::Value(saved.clone())),
+                    ),
                     (
                         binder("activated"),
-                        SuppliedValue::Value(Value::Boolean(false)),
+                        protocol_value(SuppliedValue::Value(Value::Boolean(false))),
                     ),
                 ],
                 observation: None,
@@ -643,12 +684,12 @@ fn evaluates_compensation_capture_trigger_retry_and_recovery_from_checked_nodes(
                 binders: vec![
                     (
                         binder("recovered"),
-                        SuppliedValue::Value(money(&package, 5)),
+                        protocol_value(SuppliedValue::Value(money(&package, 5))),
                     ),
-                    (binder("saved"), SuppliedValue::Value(saved)),
+                    (binder("saved"), protocol_value(SuppliedValue::Value(saved))),
                     (
                         binder("activated"),
-                        SuppliedValue::Value(Value::Boolean(false)),
+                        protocol_value(SuppliedValue::Value(Value::Boolean(false))),
                     ),
                 ],
                 observation: None,
@@ -692,7 +733,10 @@ fn protocol_slot_calls_share_meter_usage_and_obey_work_boundaries() {
         index: None,
     };
     let supply = ProtocolSupply {
-        binders: vec![(opened, SuppliedValue::Value(Value::Boolean(true)))],
+        binders: vec![(
+            opened,
+            protocol_value(SuppliedValue::Value(Value::Boolean(true))),
+        )],
         observation: None,
     };
 
@@ -867,7 +911,10 @@ fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge()
 
     // The `condition` slot reads no binder; the supply is for `activation.guard`.
     let wrong_supply = ProtocolSupply {
-        binders: vec![(opened.clone(), SuppliedValue::Value(Value::Boolean(true)))],
+        binders: vec![(
+            opened.clone(),
+            protocol_value(SuppliedValue::Value(Value::Boolean(true))),
+        )],
         observation: None,
     };
     let Err(CallFailure::Admission(payload)) =
@@ -878,7 +925,7 @@ fn h4_a_foreign_slot_or_a_supply_for_another_slot_is_refused_before_any_charge()
     assert!(matches!(
         payload.as_ref(),
         CallAdmissionFailure::Refused(record)
-            if record.code == CatalogCode::new("invalid_runtime_input", "unknown-member")
+            if record.record.catalog == CatalogCode::new("invalid_runtime_input", "unknown-member")
                 && record.locus == CallAdmissionLocus::Binder(opened)
     ));
     assert_eq!(meter, Meter::new(UNLIMITED), "refused before any charge");
@@ -931,19 +978,51 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
             .expect("the protocol binds view")
             .node
             .clone();
-        let (objects, present, _) =
-            crate::state_model_family::objects(package.graph(), &crate::state_model_family::view());
-        let observation = qsl_semantics::model::observation::Observation {
-            identity: qsl_semantics::model::observation::DocumentRef {
-                authority: "test".to_owned(),
-                identity: "now".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "1".to_owned(),
-            },
-            environment: objects.with_references(vec![present.clone()]),
-            populations: std::collections::BTreeMap::new(),
-            out_of_range: Vec::new(),
+        let model_view = crate::state_model_family::view();
+        let (_, present, _) = crate::state_model_family::objects(package.graph(), &model_view);
+        let selected = qsl_semantics::model::observation::DocumentRef {
+            authority: "test".to_owned(),
+            identity: "now".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
         };
+        let snapshot = serde_json::json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {
+                "authority": selected.authority.clone(),
+                "identity": selected.identity.clone(),
+                "revision_namespace": selected.revision_namespace.clone(),
+                "revision": selected.revision.clone(),
+            },
+            "observation": "current",
+            "model": {"identity": "test/orders", "version": "1.0.0", "digest": "set at admission"},
+            "populations": [{
+                "population": "ix://test/orders/pop",
+                "complete": true,
+                "objects": [{
+                    "key": "present",
+                    "type": "ix://test/orders/A",
+                    "fields": {
+                        "flag": {"boolean": true},
+                        "next": {"reference": {"population": "ix://test/orders/pop", "key": "present"}},
+                    },
+                }],
+            }],
+        });
+        let model_bytes = crate::state_model_family::model_document();
+        let packages = qsl_semantics::model::intake::package_input([model_bytes.as_slice()])
+            .expect("the source model remains an FR-106 package input");
+        let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
+            .into_iter()
+            .collect();
+        let observation = package.evaluation_view().admit_protocol_observation(
+            &package.graph().model_selections()[0],
+            &packages,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            &snapshots,
+            &selected,
+            qsl_semantics::model::observation::ObservationLimits::default(),
+        );
         let slot = ProtocolSlot {
             node: keys.clause.clone().expect("protocol clause key"),
             member: "captures".to_owned(),
@@ -954,7 +1033,27 @@ fn an_undefined_capture_is_precondition_false_and_a_true_precondition_completes(
             .evaluate_protocol_slot(
                 &slot,
                 &ProtocolSupply {
-                    binders: vec![(view, SuppliedValue::Value(Value::Reference(present)))],
+                    binders: vec![(
+                        view,
+                        qsl_eval::value::ProtocolSuppliedValue {
+                            value: SuppliedValue::Value(Value::Reference(present)),
+                            references: vec![qsl_eval::value::ProtocolReferenceOccurrence {
+                                path: Vec::new(),
+                                population: quire_exact::NodeKey::new(
+                                    "test/orders",
+                                    vec![
+                                        quire_exact::PathSegment::Text("relation".to_owned()),
+                                        quire_exact::PathSegment::Text("population".to_owned()),
+                                        quire_exact::PathSegment::Text(
+                                            "ix://test/orders/pop".to_owned(),
+                                        ),
+                                    ],
+                                    0,
+                                )
+                                .unwrap(),
+                            }],
+                        },
+                    )],
                     observation: Some(&observation),
                 },
                 &mut meter,

@@ -485,13 +485,12 @@ pub struct ModelSystem<'a> {
 pub(crate) type ClockCount = (DeclarationKey, StateField, u64, Option<u64>);
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
-    AdmissionFailure::Refused(record(code, cause, fields))
+    AdmissionFailure::Refused(Box::new(record(code, cause, fields)))
 }
 
 fn record(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionRecord {
     AdmissionRecord {
-        code,
-        cause,
+        catalog: quire_semantic_value::catalog::CatalogCode::new(code.as_str(), cause),
         fields: fields.iter().cloned().collect(),
         path: Vec::new(),
         kernel: None,
@@ -691,11 +690,11 @@ impl<'a> ModelSystem<'a> {
                 model.admit_initial(request.snapshots, document, request.observation)?;
             for population in universes.keys() {
                 if !state.populations.contains_key(population) {
-                    return Err(AdmissionFailure::Incomplete(record(
+                    return Err(AdmissionFailure::Incomplete(Box::new(record(
                         Code::IncompletePopulation,
                         "incomplete-scope",
                         &[("population", population.node.clone())],
-                    )));
+                    ))));
                 }
             }
             for (population, objects) in &state.populations {

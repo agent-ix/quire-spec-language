@@ -14,9 +14,9 @@
 //! node per CST node, so S1's node limit bounds it (FR-257).
 
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
+use quire_semantic_value::absence::AbsenceMode;
 
 use super::dispatch::{Construct, FormsCause, FormsRefusal};
 use super::spans::{DeclarationSpans, ExpressionSpans};
