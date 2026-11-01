@@ -103,6 +103,8 @@ pub enum ParameterDomain {
     Integers(Option<IntegerInterval>),
     /// A finite enum or union domain, in the checked declaration's order.
     Values(Vec<Value>),
+    /// A union whose payload domains are enumerated lazily under `max_cases`.
+    Union(Vec<(quire_exact::UnionMember, Vec<ParameterDomain>)>),
     /// The mathematical `Integer`, which a bound must restrict.
     Unbounded,
     /// A type the arm does not enumerate.
@@ -310,6 +312,7 @@ impl<'p> ValueTarget<'p> {
                     ParameterDomain::Unbounded => ParameterDomain::Integers(Some(interval.clone())),
                     other @ (ParameterDomain::Boolean
                     | ParameterDomain::Values(_)
+                    | ParameterDomain::Union(_)
                     | ParameterDomain::Unsupported(_)) => other,
                 };
         }
@@ -441,6 +444,20 @@ impl<'p> ValueTarget<'p> {
                     (value, ParameterDomain::Values(values)) => {
                         values.iter().any(|candidate| same_value(candidate, value))
                     }
+                    (Value::Union(union), ParameterDomain::Union(cases)) => cases
+                        .iter()
+                        .find(|(member, _)| {
+                            member.declaration() == union.declaration()
+                                && member.variant() == union.member().variant()
+                        })
+                        .is_some_and(|(_, domains)| {
+                            union.payload().len() == domains.len()
+                                && union
+                                    .payload()
+                                    .iter()
+                                    .zip(domains)
+                                    .all(|(value, domain)| value_in_domain(value, domain))
+                        }),
                     _ => false,
                 })
     }
@@ -502,8 +519,8 @@ impl<'p> ValueTarget<'p> {
     }
 }
 
-/// The enumerable domain for a claim parameter. Primitive numeric domains
-/// stay lazy; enum and union domains retain their finite checked values.
+/// The enumerable domain for a claim parameter. Primitive numeric and union
+/// payload domains stay lazy; enum domains retain their finite checked values.
 fn parameter_domain(value_type: &ValueType, types: &TypeEnvironment) -> ParameterDomain {
     match value_type {
         ValueType::Boolean => ParameterDomain::Boolean,
@@ -523,10 +540,10 @@ fn parameter_domain(value_type: &ValueType, types: &TypeEnvironment) -> Paramete
         ValueType::Composite(declaration) => types
             .composite(declaration.clone())
             .and_then(|declaration| match declaration.shape() {
-                CompositeShape::Union(members) => union_values(members),
+                CompositeShape::Union(members) => union_domains(members),
                 _ => None,
             })
-            .map(ParameterDomain::Values)
+            .map(ParameterDomain::Union)
             .unwrap_or(ParameterDomain::Unsupported(
                 UnsupportedDomain::ParameterType,
             )),
@@ -534,62 +551,33 @@ fn parameter_domain(value_type: &ValueType, types: &TypeEnvironment) -> Paramete
     }
 }
 
-/// Enumerate a closed union whose payloads are bounded integers or Booleans.
-/// Refuse a declaration with an unsupported payload instead of silently
-/// proving over a partial member domain.
-fn union_values(
+/// The lazy per-member domains of a closed union with Boolean or bounded
+/// integer payloads. Refuse a declaration with an unsupported payload
+/// instead of silently proving over a partial member domain.
+fn union_domains(
     members: &[quire_semantic_value::declaration::UnionMemberDeclaration],
-) -> Option<Vec<Value>> {
-    const MAX_MATERIALIZED_VALUES: usize = 65_536;
-    let mut values = Vec::new();
+) -> Option<Vec<(quire_exact::UnionMember, Vec<ParameterDomain>)>> {
+    let mut cases = Vec::new();
+    let mut members: Vec<_> = members.iter().collect();
+    members.sort_by(|left, right| {
+        left.identifier()
+            .as_bytes()
+            .cmp(right.identifier().as_bytes())
+    });
     for member in members {
         let identity = member.member()?.clone();
-        let payload_domains: Vec<Vec<Value>> = member
+        let payload_domains: Vec<ParameterDomain> = member
             .positions()
             .iter()
             .map(|position| match position {
-                ValueType::Boolean => Some(vec![Value::Boolean(false), Value::Boolean(true)]),
-                ValueType::Int(interval) => {
-                    let span = interval
-                        .upper()
-                        .sub(interval.lower())
-                        .add(&Integer::one())
-                        .to_u64()?;
-                    let size = usize::try_from(span).ok()?;
-                    if size > MAX_MATERIALIZED_VALUES {
-                        return None;
-                    }
-                    Some(integers(interval).map(Value::Integer).collect())
-                }
+                ValueType::Boolean => Some(ParameterDomain::Boolean),
+                ValueType::Int(interval) => Some(ParameterDomain::Integers(Some(interval.clone()))),
                 _ => None,
             })
             .collect::<Option<_>>()?;
-        let mut payloads = vec![Vec::new()];
-        for domain in payload_domains {
-            if payloads.len().saturating_mul(domain.len()) > MAX_MATERIALIZED_VALUES {
-                return None;
-            }
-            payloads = payloads
-                .into_iter()
-                .flat_map(|prefix| {
-                    domain.iter().cloned().map(move |value| {
-                        let mut payload = prefix.clone();
-                        payload.push(value);
-                        payload
-                    })
-                })
-                .collect();
-        }
-        if values.len().saturating_add(payloads.len()) > MAX_MATERIALIZED_VALUES {
-            return None;
-        }
-        values.extend(
-            payloads
-                .into_iter()
-                .map(|payload| quire_exact::UnionValue::from_admitted(identity.clone(), payload)),
-        );
+        cases.push((identity, payload_domains));
     }
-    Some(values)
+    Some(cases)
 }
 
 /// Equality for the deliberately small materialized domain used by union
@@ -600,15 +588,19 @@ fn same_value(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::Boolean(left), Value::Boolean(right)) => left == right,
         (Value::Integer(left), Value::Integer(right)) => left == right,
-        (Value::Union(left), Value::Union(right)) => {
-            left.declaration() == right.declaration()
-                && left.member().variant() == right.member().variant()
-                && left.payload().len() == right.payload().len()
-                && left
-                    .payload()
-                    .iter()
-                    .zip(right.payload())
-                    .all(|(left, right)| same_value(left, right))
+        (Value::Enum(left), Value::Enum(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn value_in_domain(value: &Value, domain: &ParameterDomain) -> bool {
+    match (value, domain) {
+        (Value::Boolean(_), ParameterDomain::Boolean) => true,
+        (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
+            n >= interval.lower() && n <= interval.upper()
+        }
+        (value, ParameterDomain::Values(values)) => {
+            values.iter().any(|candidate| same_value(candidate, value))
         }
         _ => false,
     }

@@ -180,6 +180,7 @@ fn values(domain: &ParameterDomain) -> Box<dyn Iterator<Item = Value>> {
             Box::new([Value::Boolean(false), Value::Boolean(true)].into_iter())
         }
         ParameterDomain::Values(values) => Box::new(values.clone().into_iter()),
+        ParameterDomain::Union(cases) => Box::new(UnionValues::new(cases.clone())),
         ParameterDomain::Integers(None)
         | ParameterDomain::Unbounded
         | ParameterDomain::Unsupported(_) => Box::new(std::iter::empty()),
@@ -209,6 +210,62 @@ impl Digit {
         self.values.next();
         self.current = self.first.clone();
         false
+    }
+}
+
+/// A lazy product of a union's member payload domains. The checked union
+/// remains ordered by its declaration; each member's last payload position
+/// advances fastest.
+struct UnionValues {
+    cases: Vec<(quire_exact::UnionMember, Vec<ParameterDomain>)>,
+    case: usize,
+    digits: Option<Vec<Digit>>,
+}
+
+impl UnionValues {
+    fn new(cases: Vec<(quire_exact::UnionMember, Vec<ParameterDomain>)>) -> Self {
+        let mut values = Self {
+            cases,
+            case: 0,
+            digits: None,
+        };
+        values.start_case();
+        values
+    }
+
+    fn start_case(&mut self) {
+        while let Some((_, domains)) = self.cases.get(self.case) {
+            let Some(digits) = domains.iter().map(Digit::first).collect() else {
+                self.case += 1;
+                continue;
+            };
+            self.digits = Some(digits);
+            return;
+        }
+        self.digits = None;
+    }
+}
+
+impl Iterator for UnionValues {
+    type Item = Value;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (member, domains) = self.cases.get(self.case)?;
+        let digits = self.digits.as_mut()?;
+        let payload = digits.iter().map(|digit| digit.current.clone()).collect();
+        let value = quire_exact::UnionValue::from_admitted(member.clone(), payload);
+        let mut advanced = false;
+        for at in (0..digits.len()).rev() {
+            if digits[at].advance(&domains[at]) {
+                advanced = true;
+                break;
+            }
+        }
+        if !advanced {
+            self.case += 1;
+            self.start_case();
+        }
+        Some(value)
     }
 }
 

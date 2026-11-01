@@ -789,6 +789,29 @@ fn a_case_clause_enumerates_union_members_and_replays_the_payload() {
     assert!(matches!(union.payload(), [Value::Integer(n)] if n.to_string() == "0"));
 }
 
+#[trace("QSpec-TC-973", "QSpec-FR-483-AC-4")]
+#[test]
+fn a_large_union_domain_stops_at_the_item_case_budget() {
+    let package = package_of(
+        "union Shape { Circle(Int[0, 100000]) }\n\
+         function subject using v(s: Shape): Boolean pure \
+         { case s { Circle(r): r >= 0; } }",
+    );
+    let key = key_of(
+        &package,
+        "subject",
+        &serde_json::json!({"role": "claim", "ordinal": 0}),
+    );
+    let record = run(&package, &key, "subject", Some(2));
+    assert!(matches!(
+        terminal(&record),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::ValueCheckMaxCases,
+            value: 2,
+        })
+    ));
+}
+
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-7")]
 #[test]
 fn an_undefined_subexpression_is_located_at_its_own_occurrence() {
