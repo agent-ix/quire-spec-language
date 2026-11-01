@@ -48,7 +48,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use quire_exact::{CollectionKind, NodeKey, Origin, Role};
-use NodeKeyDebug;
 
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, Expression, FieldInitializer,

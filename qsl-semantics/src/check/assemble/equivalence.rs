@@ -43,7 +43,7 @@ pub enum EquivalenceFault {
 /// What a dimension-equivalence refusal retains (QSpec FR-142 "Dimension
 /// equivalence"): the declarations, dimensions, units and values its step
 /// names.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EquivalenceRetained {
     /// An equivalence declaration: its two dimension names as written and
     /// its span.
@@ -67,25 +67,6 @@ pub enum EquivalenceRetained {
     },
     /// A value: a unit's composed offset or a ratio number.
     Value(Rational),
-}
-
-impl std::fmt::Debug for EquivalenceRetained {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Declaration { dimensions, span } => f
-                .debug_struct("Declaration")
-                .field("dimensions", &dimensions)
-                .field("span", &span)
-                .finish(),
-            Self::Dimension { name, key } => f
-                .debug_struct("Dimension")
-                .field("name", &name)
-                .field("key", &key.as_ref().map(NodeKeyDebug))
-                .finish(),
-            Self::Unit { name } => f.debug_struct("Unit").field("name", &name).finish(),
-            Self::Value(value0) => f.debug_tuple("Value").field(&value0).finish(),
-        }
-    }
 }
 
 impl std::fmt::Display for EquivalenceRetained {
