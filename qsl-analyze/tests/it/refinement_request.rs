@@ -52,12 +52,12 @@ fn subject(world: &World) -> ModelSubject<'_> {
     }
 }
 
-/// FR-144-AC-1 (TC-549 step 1): `CasRefinesCounter` writes one record
+/// FR-144-AC-1 / AC-8 (TC-549 step 1, TC-1167): `CasRefinesCounter` writes one record
 /// (`temporal-satisfaction`, `Refinement{liveness: true}`) over its concrete
 /// model subject, and with its `ensure` row removed `liveness: false`. No
-/// other record is keyed at the refinement's node, and the record routes to
-/// the explicit-state provider.
-#[trace("TC-549", "FR-144-AC-1")]
+/// other record is keyed at the refinement's node, the form's canonical bytes
+/// are stable, and refinement forms order after `Liveness`.
+#[trace("TC-549", "FR-144-AC-1", "TC-1167", "FR-144-AC-8")]
 #[test]
 fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider() {
     for (body, liveness) in [(cas_refines_counter(), true), (without_ensure(), false)] {
@@ -66,13 +66,14 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
         let requirements = record.requirements();
         assert_eq!(requirements.kind(), Capability::TemporalSatisfaction);
         assert!(requirements.model_subject());
+        let form = PropertyForm::Refinement { liveness };
+        assert_eq!(requirements.property_form(), Some(form));
+        assert_eq!(world.refinement().property_form(), form);
+        let bytes = quire_canonical::to_vec(&form, quire_canonical::Limits::new(u64::MAX))
+            .expect("the property form has canonical bytes");
         assert_eq!(
-            requirements.property_form(),
-            Some(PropertyForm::Refinement { liveness })
-        );
-        assert_eq!(
-            world.refinement().property_form(),
-            PropertyForm::Refinement { liveness }
+            bytes,
+            format!(r#"{{"refinement":{{"liveness":{liveness}}}}}"#).as_bytes()
         );
         let records = world.package().graph().requirements();
         let roles: Vec<&str> = records
@@ -111,6 +112,10 @@ fn a_refinement_writes_one_temporal_record_routed_to_the_explicit_state_provider
             .collect();
         assert_eq!(candidates, [en1::BACKEND_ID]);
     }
+    assert!(PropertyForm::Liveness < PropertyForm::Refinement { liveness: false });
+    assert!(
+        PropertyForm::Refinement { liveness: false } < PropertyForm::Refinement { liveness: true }
+    );
 }
 
 /// The deadlock-freedom items of a request holding `CasRefinesCounter` over
