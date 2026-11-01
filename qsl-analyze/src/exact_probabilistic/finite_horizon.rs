@@ -557,6 +557,8 @@ mod tests {
             initial: vec![(0, None, ProbStateId(0))],
             decided: Vec::new(),
             labels: vec![Vec::new(); 3],
+            fairness_operations: Vec::new(),
+            fairness: Vec::new(),
         }
     }
 
@@ -596,6 +598,8 @@ mod tests {
             initial: vec![(0, None, ProbStateId(0))],
             decided: Vec::new(),
             labels: vec![Vec::new(); 3],
+            fairness_operations: Vec::new(),
+            fairness: Vec::new(),
         }
     }
 

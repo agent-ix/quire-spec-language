@@ -7,10 +7,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    backward_induction, build_product, decide_bounded_event, Accumulator, Amount, ExactProbLimits,
+    backward_induction, build_product, decide_bounded_event, decide_fair_long_run_mdp,
+    decide_fair_reachability, maximal_fair_end_components, Accumulator, Amount, ExactProbLimits,
     FhObjective, FhResult, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
     ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind,
-    ProductRefusal, ProductRequest, ProductStop, UndefinedRead,
+    ProductRefusal, ProductRequest, ProductStop, UnboundedObjective, UndefinedRead,
 };
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::Limits;
@@ -604,6 +605,9 @@ const DELIVER: &str = "probabilistic Deliver using ev on M over (m: M::Msg) unde
      on origin { probability >= 0.97 [ eventually[0,2] holds(m.delivered) ] }\n\
      probabilistic DeliverMax using ev on M over (m: M::Msg) under every scheduler \
      on origin { probability <= 0.97 [ eventually[0,2] holds(m.delivered) ] }\n\
+     probabilistic DeliverFair using ev on M over (m: M::Msg) \
+     under every scheduler fair weak Msg::send_a \
+     on origin { probability >= 0.97 [ eventually[0,2] holds(m.delivered) ] }\n\
      probabilistic DeliverEven using ev on M over (m: M::Msg) under Even \
      on origin { probability >= 0.97 [ eventually[0,2] holds(m.delivered) ] }";
 
@@ -702,6 +706,203 @@ fn deliver_backward_induction_matches_the_published_scheduler_vectors() {
         .to;
     assert_eq!(workload[workload_initial.index()], ratio(391, 400));
     assert_eq!(workload[workload_lost.index()], ratio(17, 20));
+}
+
+/// FR-200-AC-4 (TC-635): bounded decisions are unchanged by fairness, while
+/// the checked fairness set accompanies the output.
+#[trace("TC-635", "FR-200-AC-4")]
+#[test]
+fn fair_deliver_keeps_the_24_over_25_minimum_and_records_weak_fairness() {
+    let world = World::new(&prob_world::link(DELIVER));
+    let ordinary = built(&world, "Deliver");
+    let fair = built(&world, "DeliverFair");
+    let fair_claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("DeliverFair")
+        .expect("fair claim checks");
+    let checked_fairness = fair_claim.fairness.clone();
+    let result = qsl_analyze::exact_probabilistic::decide_fair_bounded_event(
+        &fair,
+        &qsl_semantics::check::Bound::AtLeast(ratio(97, 100)),
+        &ExactProbLimits::default(),
+    )
+    .expect("bounded event is unchanged under fairness");
+    let qsl_analyze::exact_probabilistic::FhResult::Exact { values, .. } = result.outcome else {
+        panic!("bounded result remains exact");
+    };
+    assert_eq!(values[start(&ordinary).index()], ratio(24, 25));
+    assert_eq!(values[start(&fair).index()], ratio(24, 25));
+    assert_eq!(fair.fairness, checked_fairness);
+    assert_eq!(result.fairness, fair.fairness);
+}
+
+/// FR-200-AC-3 (TC-635): the fair infimum is the slow-repair limit, while a
+/// k=1 exact randomized witness mixes both repairs equally and refutes .9995.
+#[trace("TC-635", "FR-200-AC-3")]
+#[test]
+fn fair_availability_uses_long_run_limit_and_randomized_refutation() {
+    const CLAIM: &str = "probabilistic AvailFair using inf on M over (s: M::Server) \
+         under every scheduler fair strong Server::repair_fast on origin \
+         { long_run_fraction holds(s.up) >= rational(9995, 10000) }";
+    let world = World::new(&prob_world::avail2(CLAIM));
+    let product = built(&world, "AvailFair");
+    let components = maximal_fair_end_components(&product, &product.fairness)
+        .expect("well-formed checked fairness");
+    assert_eq!(components.len(), 1, "{components:?}");
+    assert_eq!(components[0].states.len(), 2);
+    assert_eq!(components[0].actions.len(), 3);
+
+    let predicate = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let result = decide_fair_long_run_mdp(
+        &product,
+        &predicate,
+        None,
+        &qsl_semantics::check::Bound::AtLeast(ratio(9995, 10000)),
+        &ExactProbLimits::default(),
+    )
+    .expect("exact fair long-run decision");
+    assert_eq!(result.components[0].rho, ratio(1000, 1001));
+    assert_eq!(
+        result.values[start(&product).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1000, 1001))
+    );
+    let witness = result.witness.as_ref().expect("the threshold is refuted");
+    assert_eq!(witness.k, 1);
+    assert_eq!(
+        witness.values[start(&product).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1400, 1401))
+    );
+    let down = product
+        .ids()
+        .find(|state| !predicate[state.index()])
+        .expect("down state");
+    let randomized = match witness.policy[down.index()]
+        .as_ref()
+        .expect("down scheduler choice")
+    {
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Randomized(choices) => choices,
+        other => panic!("expected a randomized fair witness, got {other:?}"),
+    };
+    assert_eq!(randomized.len(), 2);
+    assert!(randomized
+        .iter()
+        .all(|(_, probability)| probability == &ratio(1, 2)));
+    let mut names = randomized
+        .iter()
+        .map(|(choice, _)| {
+            product
+                .outgoing(down)
+                .iter()
+                .filter_map(|edge| edge.action.as_ref())
+                .fold(Vec::<String>::new(), |mut names, action| {
+                    if !names.contains(&action.operation) {
+                        names.push(action.operation.clone());
+                    }
+                    names
+                })
+                .get(choice.0)
+                .expect("selected action index")
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    assert!(names[0].contains("repair_fast"));
+    assert!(names[1].contains("repair_slow"));
+    assert_eq!(result.fairness, product.fairness);
+}
+
+/// FR-198-AC-2 under FR-200: a zero-reward wait MEC collapses while retaining
+/// its positive-reward exit, yielding a finite maximum of five.
+#[trace("TC-633", "FR-198-AC-2")]
+#[test]
+fn fair_max_expected_reward_preserves_zero_reward_mec_exits() {
+    const CLAIM: &str = "probabilistic CostFair using inf on M over (p: M::Proc) \
+         under every scheduler fair strong Proc::exit on origin \
+         { expected accumulate cost until holds(p.done) <= 5 }";
+    let world = World::new(&prob_world::zero_reward_exit(CLAIM));
+    let product = built(&world, "CostFair");
+    let target = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let result = qsl_analyze::exact_probabilistic::decide_fair_expected_reward(
+        &product,
+        &target,
+        "cost",
+        UnboundedObjective::Max,
+        &ExactProbLimits::default(),
+    )
+    .expect("the strong-fair expected maximum is finite");
+    assert_eq!(
+        result.values[start(&product).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(5, 1))
+    );
+    let action = match result.policy.as_ref().expect("a fair scheduler")[start(&product).index()]
+        .as_ref()
+        .expect("a live choice")
+    {
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Deterministic(
+            qsl_analyze::exact_probabilistic::ActionChoice(index),
+        ) => *index,
+        other => panic!("expected the exit action, got {other:?}"),
+    };
+    let mut operations = Vec::new();
+    for edge in product.outgoing(start(&product)) {
+        if let Some(identity) = edge.action.as_ref() {
+            if !operations.iter().any(|seen| seen == identity) {
+                operations.push(identity.clone());
+            }
+        }
+    }
+    assert!(operations[action].operation.contains("exit"));
+}
+
+/// FR-200 FS-8: an unfair wait MEC collapses to a proper route into the fair
+/// recurrent component instead of becoming a closed policy class.
+#[trace("TC-635")]
+#[test]
+fn fair_long_run_routes_away_from_a_nonfair_mec() {
+    const CLAIM: &str = "probabilistic FairEscape using inf on M over (p: M::Proc) \
+         under every scheduler fair strong Proc::go_fair on origin \
+         { long_run_fraction holds(p.fair) >= rational(9, 10) }";
+    let world = World::new(&prob_world::fair_longrun_escape(CLAIM));
+    let product = built(&world, "FairEscape");
+    let fair_components = maximal_fair_end_components(&product, &product.fairness)
+        .expect("well-formed checked fairness");
+    assert_eq!(fair_components.len(), 1);
+    assert_eq!(fair_components[0].states.len(), 1);
+    assert!(fair_components[0].actions[0]
+        .1
+        .operation
+        .contains("continue_fair"));
+    let predicate = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let result = decide_fair_long_run_mdp(
+        &product,
+        &predicate,
+        None,
+        &qsl_semantics::check::Bound::AtLeast(ratio(9, 10)),
+        &ExactProbLimits::default(),
+    )
+    .expect("fair long-run routes through the non-fair MEC");
+    assert_eq!(
+        result.values[start(&product).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1, 1))
+    );
+    assert_eq!(
+        result.gain_bias[0].bias,
+        vec![(fair_components[0].states[0], ratio(0, 1))]
+    );
 }
 
 /// Checks FR-196-AC-3 (TC-631 step 3): §15.4's `Deliver` over every scheduler is an
@@ -1251,6 +1452,12 @@ const REACH: &str =
      probabilistic FairTerminates using inf on M over (p: M::Proc) \
      under every scheduler fair strong Proc::flip \
      on origin { probability >= 0.99 [ eventually holds(p.done) ] }\n\
+     probabilistic WeakFairTerminates using inf on M over (p: M::Proc) \
+     under every scheduler fair weak Proc::flip \
+     on origin { probability >= 0.99 [ eventually holds(p.done) ] }\n\
+     probabilistic FairMax using inf on M over (p: M::Proc) \
+     under every scheduler fair strong Proc::wait \
+     on origin { probability <= 0.99 [ eventually holds(p.done) ] }\n\
      probabilistic Unless using inf on M over (p: M::Proc) under Even on origin \
      { probability >= 0.9 [ holds(not p.done) until holds(p.done) ] }";
 
@@ -1319,6 +1526,265 @@ fn an_unbounded_form_labels_the_model_states() {
     assert_eq!(until.kind, ProductKind::Dtmc);
     // `A` then `B`: not yet done, then done.
     assert_eq!(until.labels, [[true, false], [false, true]]);
+}
+
+/// FR-200-AC-1 (TC-635): fairness removes the live wait component for both
+/// weak and strong fairness to `flip`, making termination's infimum one.
+#[trace("TC-635", "FR-200-AC-1")]
+#[test]
+fn fair_coin_has_no_nonterminal_fair_end_component() {
+    let world = World::new(&prob_world::process(REACH));
+    for name in ["FairTerminates", "WeakFairTerminates"] {
+        let product = built(&world, name);
+        let components = maximal_fair_end_components(&product, &product.fairness)
+            .expect("well-formed checked fairness");
+        assert!(components.is_empty(), "{name}: {components:?}");
+        let target = product
+            .labels
+            .iter()
+            .map(|labels| labels[0])
+            .collect::<Vec<_>>();
+        let result = decide_fair_reachability(
+            &product,
+            None,
+            &target,
+            UnboundedObjective::Min,
+            &ExactProbLimits::default(),
+        )
+        .expect("exact fair reachability");
+        assert!(
+            result.components.is_empty(),
+            "the non-target restriction has no fair end component"
+        );
+        assert_eq!(
+            result.values[start(&product).index()],
+            qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1, 1)),
+            "target={target:?}, product labels={:?}, fair states={:?}",
+            product.labels,
+            result.components
+        );
+        assert_eq!(result.fairness, product.fairness);
+    }
+    let plain = built(&world, "Terminates");
+    let target = plain
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let plain_min = qsl_analyze::exact_probabilistic::decide_reachability(
+        &plain,
+        &target,
+        UnboundedObjective::Min,
+        &ExactProbLimits::default(),
+    )
+    .expect("exact unrestricted reachability");
+    assert_eq!(
+        plain_min.values[start(&plain).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(0, 1))
+    );
+
+    let maximizing = built(&world, "FairMax");
+    let components = maximal_fair_end_components(&maximizing, &maximizing.fairness)
+        .expect("well-formed fairness");
+    assert!(components.iter().any(|component| {
+        component.states.contains(&start(&maximizing))
+            && component
+                .actions
+                .iter()
+                .any(|(_, action)| action.operation.contains("wait"))
+    }));
+    let target = maximizing
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let maximum = decide_fair_reachability(
+        &maximizing,
+        None,
+        &target,
+        UnboundedObjective::Max,
+        &ExactProbLimits::default(),
+    )
+    .expect("fair maximum reachability");
+    assert_eq!(
+        maximum.values[start(&maximizing).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1, 1))
+    );
+    let flip_index = match maximum.policy[start(&maximizing).index()]
+        .as_ref()
+        .expect("a maximizing action")
+    {
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Deterministic(
+            qsl_analyze::exact_probabilistic::ActionChoice(index),
+        ) => *index,
+        other => panic!("the positive-value state takes FR-198's policy: {other:?}"),
+    };
+    let mut operations = Vec::new();
+    for edge in maximizing.outgoing(start(&maximizing)) {
+        if let Some(action) = edge.action.as_ref() {
+            if !operations.iter().any(|seen| seen == action) {
+                operations.push(action.clone());
+            }
+        }
+    }
+    assert!(operations[flip_index].operation.contains("flip"));
+}
+
+/// FR-200-AC-2 (TC-635): a strong-fair scheduler can reach the stuck state,
+/// where `stall` is the only action and the fairness constraint is disabled.
+#[trace("TC-635", "FR-200-AC-2")]
+#[test]
+fn coin2_stall_is_a_fair_end_component_and_witness() {
+    const CLAIM: &str = "probabilistic StuckFair using inf on M over (p: M::Proc) \
+         under every scheduler fair strong Proc::flip on origin \
+         { probability >= 0.99 [ eventually holds(p.done) ] }\n\
+         probabilistic RewardFair using inf on M over (p: M::Proc) \
+         under every scheduler fair strong Proc::flip on origin \
+         { expected accumulate cost until holds(p.done) <= 3 }";
+    let world = World::new(&prob_world::process_coin2(CLAIM));
+    let product = built(&world, "StuckFair");
+    let components = maximal_fair_end_components(&product, &product.fairness)
+        .expect("well-formed checked fairness");
+    assert_eq!(components.len(), 1, "{components:?}");
+    let component = &components[0];
+    assert_eq!(component.states.len(), 1);
+    assert_eq!(component.actions.len(), 1);
+    assert!(component.actions[0].1.operation.contains("stall"));
+
+    let target = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let result = decide_fair_reachability(
+        &product,
+        None,
+        &target,
+        UnboundedObjective::Min,
+        &ExactProbLimits::default(),
+    )
+    .expect("exact fair reachability");
+    assert_eq!(
+        result.values[start(&product).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(0, 1))
+    );
+    let live = start(&product);
+    let selected = match result.policy[live.index()].as_ref().expect("live choice") {
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Deterministic(
+            qsl_analyze::exact_probabilistic::ActionChoice(index),
+        ) => *index,
+        other => panic!("expected the exact reachability action, got {other:?}"),
+    };
+    let mut identities = Vec::new();
+    for edge in product.outgoing(live) {
+        if let Some(identity) = edge.action.as_ref() {
+            if !identities.iter().any(|seen| seen == identity) {
+                identities.push(identity.clone());
+            }
+        }
+    }
+    assert!(identities[selected].operation.contains("stall"));
+    assert!(component.states.contains(&component.actions[0].0));
+
+    let reward_product = built(&world, "RewardFair");
+    let target = reward_product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let maximum = qsl_analyze::exact_probabilistic::decide_fair_expected_reward(
+        &reward_product,
+        &target,
+        "cost",
+        UnboundedObjective::Max,
+        &ExactProbLimits::default(),
+    )
+    .expect("the fair reward maximum is unbounded");
+    assert_eq!(
+        maximum.values[start(&reward_product).index()],
+        qsl_analyze::exact_probabilistic::ExtRational::PlusInfinity
+    );
+    assert!(
+        maximum.policy.is_some(),
+        "the result carries a fair scheduler"
+    );
+    let stuck = component.actions[0].0;
+    let operation_choices = |state| {
+        let mut choices = Vec::new();
+        for edge in reward_product.outgoing(state) {
+            if let Some(identity) = edge.action.as_ref() {
+                if !choices.iter().any(|seen| seen == identity) {
+                    choices.push(identity.clone());
+                }
+            }
+        }
+        choices
+    };
+    let reward_policy = maximum.policy.as_ref().expect("a fair scheduler");
+    let selected = match reward_policy[stuck.index()]
+        .as_ref()
+        .expect("stuck scheduler choice")
+    {
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Deterministic(
+            qsl_analyze::exact_probabilistic::ActionChoice(index),
+        ) => vec![*index],
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Randomized(choices) => choices
+            .iter()
+            .filter(|(_, probability)| probability > &ratio(0, 1))
+            .map(|(choice, _)| choice.0)
+            .collect(),
+    };
+    assert!(selected
+        .iter()
+        .any(|index| operation_choices(stuck)[*index].operation.contains("stall")));
+    let minimum = qsl_analyze::exact_probabilistic::decide_fair_expected_reward(
+        &reward_product,
+        &target,
+        "cost",
+        UnboundedObjective::Min,
+        &ExactProbLimits::default(),
+    )
+    .expect("the fair reward minimum uses FR-198");
+    let fr198_minimum = qsl_analyze::exact_probabilistic::decide_expected_reward(
+        &reward_product,
+        &target,
+        "cost",
+        UnboundedObjective::Min,
+        &ExactProbLimits::default(),
+    )
+    .expect("the FR-198 minimum is exact");
+    assert_eq!(minimum.values, fr198_minimum.values);
+    assert!(
+        minimum.policy.is_some(),
+        "the result carries a fair scheduler"
+    );
+}
+
+/// `each` fairness creates an obligation for every scheduled identity,
+/// including the receiver component of an otherwise shared operation.
+#[test]
+fn fair_each_refines_one_operation_into_per_receiver_identities() {
+    const CLAIM: &str = "probabilistic EachIdentity using inf on M over (p: M::Proc) \
+         under every scheduler fair strong each Proc::wait on origin \
+         { probability >= 0.5 [ eventually holds(p.done) ] }";
+    let fixture = prob_world::process(CLAIM);
+    let world = World::symmetric_objects(&fixture, &["a", "b"]);
+    let product = built(&world, "EachIdentity");
+    assert_eq!(product.fairness.len(), 1);
+    assert_eq!(
+        product.fairness[0].granularity(),
+        quire_semantic_value::fairness::FairnessGranularity::Each
+    );
+
+    let components = maximal_fair_end_components(&product, &product.fairness)
+        .expect("checked per-identity fairness");
+    let wait_identities = components
+        .iter()
+        .flat_map(|component| component.actions.iter())
+        .filter(|(_, identity)| identity.operation.contains("wait"))
+        .map(|(_, identity)| identity.receiver.clone())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(wait_identities.len(), 2, "{components:?}");
 }
 
 const COST: &str = "probabilistic Cost using ev on M over (m: M::Msg) under Even on origin \

@@ -21,9 +21,9 @@ use quire_semantic_value::catalog::InternalFault;
 
 use super::plan::{Plan, PlanFault, Reads};
 use super::{
-    Accumulator, PathStep, Pending, ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId,
-    ProductAction, ProductKind, ProductRefusal, ProductRequest, ProductStop, UndefinedPath,
-    UndefinedRead,
+    Accumulator, FairnessOperationIdentity, PathStep, Pending, ProbBuild, ProbEdge, ProbKey,
+    ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductRequest,
+    ProductStop, UndefinedPath, UndefinedRead,
 };
 use super::{FormulaState, MonitorState};
 
@@ -92,6 +92,22 @@ pub fn build_product(
         readings: BTreeMap::new(),
         edges: Vec::new(),
         queue: VecDeque::new(),
+        fairness_operations: claim
+            .fairness
+            .iter()
+            .filter_map(|constraint| {
+                system
+                    .operation_text(
+                        constraint.operation().declaring_type(),
+                        constraint.operation().name(),
+                    )
+                    .map(|text| FairnessOperationIdentity {
+                        operation: constraint.operation().clone(),
+                        text: text.to_owned(),
+                    })
+            })
+            .collect(),
+        fairness: claim.fairness.clone(),
     };
     builder.run()
 }
@@ -228,6 +244,8 @@ struct Builder<'r, 'c> {
     readings: BTreeMap<(usize, Vec<u8>), Vec<bool>>,
     edges: Vec<ProbEdge>,
     queue: VecDeque<usize>,
+    fairness_operations: Vec<FairnessOperationIdentity>,
+    fairness: Vec<quire_semantic_value::fairness::FairnessConstraint>,
 }
 
 /// A predicate that has no value at a model state.
@@ -312,6 +330,8 @@ impl Builder<'_, '_> {
             initial,
             decided,
             labels,
+            fairness_operations: self.fairness_operations,
+            fairness: self.fairness,
         }
     }
 

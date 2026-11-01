@@ -26,12 +26,19 @@
 //! here.
 
 mod build;
+mod fair;
 mod finite_horizon;
 pub(crate) mod plan;
 mod settle;
 mod unbounded;
 
 pub use build::build_product;
+pub use fair::{
+    decide_fair_bounded_event, decide_fair_expected_reward, decide_fair_long_run_mdp,
+    decide_fair_reachability, maximal_fair_end_components, ActionChoice, FairBoundedResult,
+    FairEndComponent, FairExpectedRewardResult, FairLongRunResult, FairProductError,
+    FairRandomizedWitness, FairUnboundedResult, SchedulerChoice,
+};
 pub use finite_horizon::{
     backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
 };
@@ -340,6 +347,20 @@ pub struct ProbProduct {
     /// `B` of a reachability claim, `B` of an expected reward, `P` of a
     /// long-run fraction. Empty for a bounded form.
     pub labels: Vec<Vec<bool>>,
+    /// Resolved operation names used to match checked fairness constraints
+    /// to the declaration-identity text carried by scheduled edges.
+    pub fairness_operations: Vec<FairnessOperationIdentity>,
+    /// Checked fairness set retained with this scheduler product.
+    pub fairness: Vec<quire_semantic_value::fairness::FairnessConstraint>,
+}
+
+/// A checked operation name and the exact transition identity text it denotes.
+#[derive(Clone, Debug)]
+pub struct FairnessOperationIdentity {
+    /// The checked declaring type and operation name.
+    pub operation: quire_semantic_value::fairness::FairnessOperation,
+    /// The operation identity text carried by product edges.
+    pub text: String,
 }
 
 impl ProbProduct {
