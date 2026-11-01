@@ -185,6 +185,14 @@ fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_for
             .emission
             .selected_model_enums(&admitted, 128)
             .expect("the selected enum member rows join");
+        let row_id = serde_json::to_value(&row.structural_node)
+            .expect("the selected enum row id serializes");
+        assert!(
+            node_where(&emitted.wire, "value", "enum_value")
+                .iter()
+                .any(|node| node["node_id"] == row_id),
+            "the selected enum member row names an emitted enum_value node"
+        );
         assert_eq!(
             selected.read_member(&admitted, &row.structural_node),
             Ok(row)

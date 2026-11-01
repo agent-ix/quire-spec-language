@@ -848,9 +848,8 @@ mod selected_exact_identity_tests {
         }));
     }
 
-    /// FR-396-AC-2 / TC-1090: intake retains a selected tuple's original
-    /// identity and the Exact key corresponding to its checked declaration.
-    #[trace("FR-396-AC-2", "TC-1090")]
+    /// QSL-1398 ticket-level acceptance evidence: intake retains a selected
+    /// tuple's original identity and the Exact key for its checked declaration.
     #[test]
     fn intake_mints_a_tuple_row_from_the_selected_model_record() {
         let tuple = key("ix://acme/orders/Pair");

@@ -14,8 +14,16 @@ fn tuple_document() -> Vec<u8> {
         "tuple",
         json!({
             "positions": [
-                {"identity": fixture::id("Pair/p0"), "typeRef": "ix://quire/native/Boolean"},
-                {"identity": fixture::id("Pair/p1"), "typeRef": "ix://quire/native/Boolean"},
+                {
+                    "identity": fixture::id("Pair/p0"),
+                    "typeRef": "ix://quire/native/Boolean",
+                    "origin": fixture::origin("Pair/p0"),
+                },
+                {
+                    "identity": fixture::id("Pair/p1"),
+                    "typeRef": "ix://quire/native/Boolean",
+                    "origin": fixture::origin("Pair/p1"),
+                },
             ],
         }),
     );
@@ -25,7 +33,7 @@ fn tuple_document() -> Vec<u8> {
         "construct": {
             "identity": "none",
             "shape": "tuple",
-            "members": {},
+            "members": {"positions": "required"},
             "meaning": meaning::TUPLE_VALUE_TYPE,
         },
     });
