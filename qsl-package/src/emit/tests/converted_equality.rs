@@ -706,9 +706,8 @@ fn unit_identity_join_refuses_missing_and_ambiguous_compound_keys() {
 #[test]
 fn text_and_plan_equality_rows_retain_operand_type_identities() {
     let emission = emitted(
-        "record R { x: Integer; }\n\
-         function text_eq using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
-         function plan_eq using v(a: R, b: R): Boolean pure { a = b }",
+        "function text_eq using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
+         function plan_eq using v(a: Int[-100, 100], b: Int[-100, 100]): Boolean pure { a = b }",
     );
     super::assert_equality_reader_outcomes(&emission, read_back(&emission));
     assert_eq!(emission.equality_producer_identity_rows().len(), 2);
@@ -776,11 +775,10 @@ fn equality_producer_rows_are_emitted_in_checked_term_data() {
     let emission = emitted(
         "dimension Time; unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;\n\
          enum Color { Blue, Green }\n\
-         record Point { x: Integer; }\n\
          function text using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
          function enumeration using v(a: Color, b: Color): Boolean pure { a != b }\n\
          function quantity using v(a: Quantity<ms>, b: Quantity<s>): Boolean pure { convert<Quantity<s>>(a) = b }\n\
-         function plan using v(a: Point, b: Point): Boolean pure { a = b }",
+         function plan using v(a: Int[-100, 100], b: Int[-100, 100]): Boolean pure { a = b }",
     );
     super::assert_equality_reader_outcomes(&emission, read_back(&emission));
     let wire = wire(&emission);

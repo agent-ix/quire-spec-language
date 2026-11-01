@@ -334,8 +334,8 @@ const NOT_LOWERED: [&str; 8] = [
 /// `positive-control-operations.json` whose identity a row lowers, the node
 /// QSL emits for a function holding that operation equals the fixture node
 /// on the AC's members. The admitted-equality accessor materializes supported
-/// built-in Plan rows and names exact missing per-fact witnesses for other
-/// schedules or declaration-backed Plan types.
+/// Plan rows and names exact missing per-fact witnesses for Text, Enum, and
+/// Quantity schedules.
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
