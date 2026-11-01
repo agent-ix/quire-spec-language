@@ -4738,53 +4738,153 @@ impl<'a> Lowering<'a> {
         data: &EqualityProducerData,
     ) -> Result<super::ir::EqualityProducerIdentity, CheckRefusal> {
         let unit_ids: Vec<_> = data.units().ids().collect();
-        let mut pending = Vec::new();
+        let mut unit_facts = Vec::with_capacity(unit_ids.len());
         for unit_id in &unit_ids {
-            match self.units.get(unit_id.clone()) {
-                Some(quire_semantic_value::quantity::QuantityUnit::Declared(unit)) => {
-                    pending.push(unit.key());
-                }
-                Some(quire_semantic_value::quantity::QuantityUnit::Compound(compound)) => {
-                    pending.extend(compound.terms().map(|(root, _)| root));
-                }
-                None => return Err(fault(&location, KeyFault::UnheldUnit(unit_id.clone()))),
-            }
-        }
-
-        let mut dimension_declarations = BTreeSet::new();
-        let mut dimension_terms = Vec::new();
-        let mut conversion_edge_targets = BTreeSet::new();
-        let mut visited = BTreeSet::new();
-        while let Some(key) = pending.pop() {
-            if !visited.insert(key.clone()) {
-                continue;
-            }
-            let Some(nominal) = self.units.nominal_node(&key) else {
-                return Err(fault(&location, KeyFault::UnheldNominal(key)));
+            let Some(unit) = self.units.get(unit_id.clone()) else {
+                return Err(fault(&location, KeyFault::UnheldUnit(unit_id.clone())));
             };
-            match &nominal.form {
-                quire_semantic_value::unit::NominalUnitForm::Dimension { terms } => {
-                    dimension_declarations.insert(key.clone());
-                    for (position, (base, exponent)) in terms.iter().enumerate() {
-                        dimension_terms.push((
-                            key.clone(),
-                            position,
-                            base.clone(),
-                            exponent.clone(),
+            let mut facts = super::ir::EqualityUnitIdentityFact {
+                unit_id: unit_id.clone(),
+                dimensions: Vec::new(),
+                dimension_terms: Vec::new(),
+                conversion_edges: Vec::new(),
+            };
+            match unit {
+                quire_semantic_value::quantity::QuantityUnit::Declared(unit) => {
+                    let mut pending = vec![(
+                        unit.dimension_node(),
+                        super::ir::EqualityDimensionRole::UnitDimension,
+                    )];
+                    let mut visited = BTreeSet::new();
+                    while let Some((key, role)) = pending.pop() {
+                        if !visited.insert(key.clone()) {
+                            continue;
+                        }
+                        let Some(nominal) = self.units.nominal_node(&key) else {
+                            return Err(fault(&location, KeyFault::UnheldNominal(key)));
+                        };
+                        let quire_semantic_value::unit::NominalUnitForm::Dimension { terms } =
+                            &nominal.form
+                        else {
+                            return Err(fault(&location, KeyFault::UnheldNominal(key)));
+                        };
+                        facts.dimensions.push(super::ir::EqualityDimensionIdentity {
+                            unit_id: unit_id.clone(),
+                            node: key.clone(),
+                            role,
+                            ordinal: facts.dimensions.len(),
+                        });
+                        for (ordinal, (base, exponent)) in terms.iter().enumerate() {
+                            facts
+                                .dimension_terms
+                                .push(super::ir::EqualityDimensionTermIdentity {
+                                    unit_id: unit_id.clone(),
+                                    declaration: key.clone(),
+                                    ordinal,
+                                    base: base.clone(),
+                                    exponent: exponent.clone(),
+                                });
+                            pending.push((
+                                base.clone(),
+                                super::ir::EqualityDimensionRole::BaseDimension,
+                            ));
+                        }
+                    }
+
+                    let mut current = unit.key();
+                    let mut visited_edges = BTreeSet::new();
+                    let mut ordinal = 0;
+                    loop {
+                        if !visited_edges.insert(current.clone()) {
+                            return Err(fault(&location, KeyFault::UnheldNominal(current)));
+                        }
+                        let Some(nominal) = self.units.nominal_node(&current) else {
+                            return Err(fault(&location, KeyFault::UnheldNominal(current)));
+                        };
+                        let quire_semantic_value::unit::NominalUnitForm::Unit { target, .. } =
+                            &nominal.form
+                        else {
+                            return Err(fault(&location, KeyFault::UnheldNominal(current)));
+                        };
+                        let Some(target) = target else { break };
+                        facts
+                            .conversion_edges
+                            .push(super::ir::EqualityConversionEdgeIdentity {
+                                unit_id: unit_id.clone(),
+                                source: current,
+                                ordinal,
+                                target: target.clone(),
+                            });
+                        current = target.clone();
+                        ordinal += 1;
+                    }
+                    for edge in &facts.conversion_edges {
+                        let Some(target_nominal) = self.units.nominal_node(&edge.target) else {
+                            return Err(fault(
+                                &location,
+                                KeyFault::UnheldNominal(edge.target.clone()),
+                            ));
+                        };
+                        let quire_semantic_value::unit::NominalUnitForm::Unit { dimension, .. } =
+                            &target_nominal.form
+                        else {
+                            return Err(fault(
+                                &location,
+                                KeyFault::UnheldNominal(edge.target.clone()),
+                            ));
+                        };
+                        pending.push((
+                            dimension.clone(),
+                            super::ir::EqualityDimensionRole::ConversionDimension,
                         ));
-                        pending.push(base.clone());
+                    }
+                    while let Some((key, role)) = pending.pop() {
+                        if !visited.insert(key.clone()) {
+                            continue;
+                        }
+                        let Some(nominal) = self.units.nominal_node(&key) else {
+                            return Err(fault(&location, KeyFault::UnheldNominal(key)));
+                        };
+                        let quire_semantic_value::unit::NominalUnitForm::Dimension { terms } =
+                            &nominal.form
+                        else {
+                            return Err(fault(&location, KeyFault::UnheldNominal(key)));
+                        };
+                        facts.dimensions.push(super::ir::EqualityDimensionIdentity {
+                            unit_id: unit_id.clone(),
+                            node: key.clone(),
+                            role,
+                            ordinal: facts.dimensions.len(),
+                        });
+                        for (ordinal, (base, exponent)) in terms.iter().enumerate() {
+                            facts
+                                .dimension_terms
+                                .push(super::ir::EqualityDimensionTermIdentity {
+                                    unit_id: unit_id.clone(),
+                                    declaration: key.clone(),
+                                    ordinal,
+                                    base: base.clone(),
+                                    exponent: exponent.clone(),
+                                });
+                            pending.push((
+                                base.clone(),
+                                super::ir::EqualityDimensionRole::BaseDimension,
+                            ));
+                        }
                     }
                 }
-                quire_semantic_value::unit::NominalUnitForm::Unit {
-                    dimension, target, ..
-                } => {
-                    pending.push(dimension.clone());
-                    if let Some(target) = target {
-                        conversion_edge_targets.insert(target.clone());
-                        pending.push(target.clone());
+                quire_semantic_value::quantity::QuantityUnit::Compound(compound) => {
+                    for (ordinal, (dimension, _)) in compound.dimension().exponents().enumerate() {
+                        facts.dimensions.push(super::ir::EqualityDimensionIdentity {
+                            unit_id: unit_id.clone(),
+                            node: dimension,
+                            role: super::ir::EqualityDimensionRole::CompoundBase,
+                            ordinal,
+                        });
                     }
                 }
             }
+            unit_facts.push(facts);
         }
 
         let text_plan_type_nodes = if matches!(
@@ -4897,10 +4997,11 @@ impl<'a> Lowering<'a> {
             application,
             location,
             unit_ids,
-            dimension_declarations,
-            dimension_terms,
-            conversion_edge_targets,
-            super::ir::EqualityTypeIdentityFacts::new(text_plan_type_nodes, enum_member_facts),
+            super::ir::EqualityTypeIdentityFacts::new(
+                text_plan_type_nodes,
+                enum_member_facts,
+                unit_facts,
+            ),
         ))
     }
 

@@ -267,8 +267,9 @@ fn emission_retains_unit_and_dimension_identity_roles() {
     let emission = emitted(
         "dimension Length; dimension Area = Length;\n\
          unit m : Length = rational(1, 1); unit cm : Length = rational(1, 100) * m;\n\
+         unit mm : Length = rational(1, 10) * cm;\n\
          unit sqm : Area = rational(1, 1);\n\
-         function quantity using v(a: Quantity<cm>, b: Quantity<m>): Boolean pure { convert<Quantity<m>>(a) = b }\n\
+         function quantity using v(a: Quantity<mm>, b: Quantity<m>): Boolean pure { convert<Quantity<m>>(a) = b }\n\
          function area using v(a: Quantity<sqm>, b: Quantity<sqm>): Boolean pure { a = b }\n\
          function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }",
     );
@@ -303,23 +304,122 @@ fn emission_retains_unit_and_dimension_identity_roles() {
         .unit_ids()
         .iter()
         .any(|unit| unit.domain() == UnitDomain::Compound));
-    assert!(!compound
+    assert!(compound
         .producer_identity()
-        .dimension_declarations()
-        .is_empty());
+        .unit_facts()
+        .iter()
+        .any(|fact| !fact.dimensions.is_empty()));
     let derived = rows
         .iter()
-        .find(|row| !row.producer_identity().dimension_terms().is_empty())
+        .find(|row| {
+            row.producer_identity()
+                .unit_facts()
+                .iter()
+                .any(|fact| !fact.dimension_terms.is_empty())
+        })
         .expect("derived dimension rows retain their exact term positions");
     assert!(derived
         .producer_identity()
-        .dimension_terms()
+        .unit_facts()
         .iter()
-        .any(|(_, position, _, _)| *position == 0));
+        .flat_map(|fact| &fact.dimension_terms)
+        .any(|term| term.ordinal == 0));
     assert!(!declared
         .producer_identity()
-        .conversion_edge_targets()
+        .unit_facts()
+        .iter()
+        .flat_map(|fact| &fact.conversion_edges)
+        .collect::<Vec<_>>()
         .is_empty());
+
+    let witnesses = emission.equality_fact_witness_rows();
+    assert!(witnesses
+        .iter()
+        .any(|row| matches!(row.fact(), EqualityFactWitness::Unit { .. })));
+    assert!(witnesses
+        .iter()
+        .any(|row| matches!(row.fact(), EqualityFactWitness::DimensionDeclaration { .. })));
+    assert!(witnesses
+        .iter()
+        .any(|row| matches!(row.fact(), EqualityFactWitness::DimensionTerm { .. })));
+    assert!(witnesses
+        .iter()
+        .any(|row| matches!(row.fact(), EqualityFactWitness::ConversionEdge { .. })));
+    let emitted_ids = wire(&emission)["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("emitted nodes")
+        .iter()
+        .filter_map(|node| node.get("node_id").cloned())
+        .collect::<Vec<_>>();
+    for row in witnesses {
+        assert!(
+            emitted_ids.contains(&serde_json::to_value(row.structural_node()).unwrap()),
+            "fact key {:?} joins to emitted ID {:?}",
+            row.structural_key(),
+            row.structural_node()
+        );
+        assert_eq!(row.source_map_entry().node_id, *row.checked_application());
+        assert_eq!(row.source_map_entry().role, row.occurrence().role);
+        assert_eq!(row.source_map_entry().ordinal, row.occurrence().ordinal);
+    }
+    assert!(
+        witnesses.iter().any(|row| row.owner().is_some()),
+        "source/model fact context is retained"
+    );
+    let ordered_edges = witnesses
+        .iter()
+        .filter_map(|row| match row.fact() {
+            EqualityFactWitness::ConversionEdge { ordinal, .. } => Some(*ordinal),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        ordered_edges.windows(2).any(|pair| pair == [0, 1]),
+        "edge order remains visible: {ordered_edges:?}"
+    );
+}
+
+/// QSL-1430: missing, foreign, and mismatched node joins refuse typed.
+#[ix_trace_rs::trace("QSL-1430", "IR-FR-353")]
+#[test]
+fn equality_fact_witness_join_refuses_missing_foreign_and_mismatched_rows() {
+    let graph = checked_graph(
+        "dimension Length; unit m : Length = rational(1, 1);\n\
+         function quantity using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
+    );
+    let emission = emit_checked(&CheckedPackage::link(checked_graph(
+        "dimension Length; unit m : Length = rational(1, 1);\n\
+         function quantity using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
+    )))
+    .expect("valid producer emits");
+    let rows = emission.equality_producer_identity_rows();
+    assert!(!rows.is_empty());
+
+    let missing = equality_fact_witness_rows(&graph, &std::collections::HashMap::new(), &[], rows);
+    assert!(matches!(
+        missing,
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+
+    let row = rows.first().expect("one equality identity row");
+    let mut foreign = std::collections::HashMap::new();
+    foreign.insert(row.application().clone(), row.checked_node().clone());
+    let foreign = equality_fact_witness_rows(&graph, &foreign, &[], rows);
+    assert!(matches!(
+        foreign,
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+
+    let other = checked_graph(
+        "dimension Time; unit s : Time = rational(1, 1);\n\
+         function quantity using v(a: Quantity<s>, b: Quantity<s>): Boolean pure { a = b }",
+    );
+    let mismatched =
+        equality_fact_witness_rows(&other, &std::collections::HashMap::new(), &[], rows);
+    assert!(matches!(
+        mismatched,
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
 }
 
 /// QSL-1390: Text and Plan comparisons retain the exact operand type keys.
@@ -332,6 +432,14 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
          function plan_eq using v(a: R, b: R): Boolean pure { a = b }",
     );
     assert_eq!(emission.equality_producer_identity_rows().len(), 2);
+    assert!(emission
+        .equality_fact_witness_rows()
+        .iter()
+        .any(|row| matches!(row.fact(), EqualityFactWitness::TextPlanType { .. })));
+    assert!(emission
+        .equality_fact_witness_rows()
+        .iter()
+        .any(|row| matches!(row.fact(), EqualityFactWitness::OperandType { .. })));
     for row in emission.equality_producer_identity_rows() {
         let type_rows = row.producer_identity().text_plan_type_nodes();
         assert_eq!(type_rows.len(), 2);
