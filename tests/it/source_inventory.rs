@@ -8,11 +8,6 @@ use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_contract_model as ir;
-
-fn expected_node(key: &quire_exact::NodeKey) -> ir::CheckedNodeId {
-    let value = qsl_foundation::node_wire::node_key_to_json(key).expect("node wire");
-    serde_json::from_str(&value.to_string()).expect("checked node id")
-}
 use quire_contract_model::source_obligation::{
     SourceDeclarationHandle, SourceInventoryCompleteness, SourceInventoryIdentity,
     SourceInventoryIncompleteReason, SourceInventoryOwner, SourceInventoryScope,
@@ -172,12 +167,14 @@ fn requirement_and_pending_sets_stay_separate_identity_kinds() {
                     )
                 })
                 .count();
+            // Keep the graph's keys as the oracle; inventory ids are typed
+            // structural values, not standalone indexed-wire JSON.
             let expected: Vec<_> = graph
                 .requirements()
                 .keys()
                 .map(|key| {
                     (
-                        expected_node(key.node()),
+                        key.node().clone(),
                         key.origin().role().as_str().to_owned(),
                         key.origin().ordinal(),
                     )
@@ -186,7 +183,14 @@ fn requirement_and_pending_sets_stay_separate_identity_kinds() {
             assert!(expected.len() >= 2, "both guarded occurrences are records");
             let reported: Vec<_> = requirements
                 .iter()
-                .map(|record| (record.node.clone(), record.role.to_string(), record.ordinal))
+                .map(|record| {
+                    (
+                        qsl_semantics::check::wire_id::node_key(&record.node)
+                            .expect("the inventory's structural id projects to a checked key"),
+                        record.role.to_string(),
+                        record.ordinal,
+                    )
+                })
                 .collect();
             assert_eq!(reported, expected);
             let obligations: usize = types
