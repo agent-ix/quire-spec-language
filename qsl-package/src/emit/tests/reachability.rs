@@ -123,6 +123,10 @@ pub(super) struct Lowered {
     /// The unbounded population domains each `claim` occurrence's
     /// requirement record names, from the checked graph.
     pub(super) claim_domains: Vec<usize>,
+    /// Selected identity rows minted during the graph's model admission.
+    pub(super) selected_exact_declarations: Vec<quire_contract_model::SelectedExactDeclarationRow>,
+    /// Record field rows minted during the graph's model admission.
+    pub(super) selected_exact_fields: Vec<quire_contract_model::SelectedExactFieldRow>,
 }
 
 pub(super) fn lower(clauses: &str) -> Lowered {
@@ -168,6 +172,8 @@ pub(super) fn lower_package(
             qsl_semantics::family::ClaimExtent::Bounded => 0,
         })
         .collect();
+    let selected_exact_declarations = graph.selected_exact_declaration_rows().to_vec();
+    let selected_exact_fields = graph.selected_exact_field_rows().to_vec();
     let package = CheckedPackage::link(graph);
     let activation_rows = package.protocol_activation_relation();
     let emission = emit_checked(&package).expect("the package emits");
@@ -192,6 +198,8 @@ pub(super) fn lower_package(
         activation_rows,
         verified: matches!(read_with(&emission, &evidence), Read::Verified { .. }),
         claim_domains,
+        selected_exact_declarations,
+        selected_exact_fields,
     }
 }
 

@@ -9,7 +9,7 @@
 use qsl_semantics::check::{CheckRefusal, ProtocolConstruct};
 use quire_contract_model::{
     read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageReadLimits,
+    CheckedPackageReadLimits, ExactTypeProjectionErrorCode, SelectedExactIdentities,
 };
 
 use super::population_bound::document;
@@ -157,6 +157,51 @@ fn a_clause_names_the_object_type_its_over_input_references() {
         serde_json::to_value(&typed.node_id).unwrap(),
         clause["node_id"]
     );
+}
+
+/// QSL-1377: model-intake identity rows are carried into the admitted IR
+/// projection, and an identity-bearing reference refuses when the rows are
+/// absent.
+#[trace("FR-352-AC-11", "TC-142")]
+#[test]
+fn selected_model_identity_rows_back_reference_projection_and_missing_rows_refuse() {
+    let lowered = emitted(&flow("M::Order"));
+    let admitted = lowered.ir.as_ref().expect("IR admits the package");
+    assert!(
+        lowered.selected_exact_declarations.iter().any(|row| {
+            row.selected_document.as_ref() == "acme/orders"
+                && row.original_identity.as_ref() == "ix://acme/orders/Order"
+                && row.form == quire_contract_model::SelectedExactDeclarationForm::ObjectType
+        }),
+        "the model intake stage minted the selected Order identity row"
+    );
+    let identities = SelectedExactIdentities::from_stage_rows(
+        admitted,
+        lowered.selected_exact_declarations.clone(),
+        lowered.selected_exact_fields.clone(),
+    )
+    .expect("IR validates the intake rows against the admitted selected model");
+
+    let mut witnessed = false;
+    let mut refused_without_rows = false;
+    for node in &admitted.graph().nodes {
+        if let Ok(projected) = admitted.project_exact_type(&node.node_id, &identities, 64) {
+            if matches!(projected.value_type(), quire_exact::ValueType::Reference(_)) {
+                witnessed = true;
+                let refusal = admitted
+                    .project_exact_type(&node.node_id, &SelectedExactIdentities::empty(), 64)
+                    .expect_err("a reference cannot project without selected identity rows");
+                assert_eq!(
+                    refusal.code,
+                    ExactTypeProjectionErrorCode::UnavailableIdentityWitness
+                );
+                refused_without_rows = true;
+                break;
+            }
+        }
+    }
+    assert!(witnessed, "the package has a reference projection backed by Order");
+    assert!(refused_without_rows, "the empty witness was refused by IR");
 }
 
 /// FR-383-AC-26: two clauses over different object types have distinct owner
