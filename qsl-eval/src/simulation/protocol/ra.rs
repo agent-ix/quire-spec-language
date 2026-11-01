@@ -1039,22 +1039,37 @@ impl RaComponent {
     /// A view as a map from location to message depth, and its frontier as
     /// the number of live events of each thread it covers.
     fn view_enc(&self, view: &View) -> Enc {
-        let at = view
-            .at
-            .iter()
-            .filter_map(|(location, id)| {
-                let shared = self.shared.get(location)?;
-                let len = shared.messages.len();
-                let at = shared
-                    .messages
-                    .iter()
-                    .position(|message| message.id == *id)?;
-                Some((
-                    location_enc(location, Some(&shared.cell)),
-                    Enc::text(depth(len, at).to_string()),
-                ))
-            })
-            .collect();
+        // Both maps are ordered by location. Walk them together so looking
+        // up every view location does not perform a separate tree search in
+        // `shared`.
+        let mut at = Vec::new();
+        let mut locations = view.at.iter().peekable();
+        let mut shared = self.shared.iter().peekable();
+        while let (Some((location, id)), Some((shared_location, cell))) =
+            (locations.peek(), shared.peek())
+        {
+            match location.cmp(shared_location) {
+                std::cmp::Ordering::Less => {
+                    locations.next();
+                }
+                std::cmp::Ordering::Greater => {
+                    shared.next();
+                }
+                std::cmp::Ordering::Equal => {
+                    let len = cell.messages.len();
+                    if let Some(position) =
+                        cell.messages.iter().position(|message| message.id == **id)
+                    {
+                        at.push((
+                            location_enc(location, Some(&cell.cell)),
+                            Enc::text(depth(len, position).to_string()),
+                        ));
+                    }
+                    locations.next();
+                    shared.next();
+                }
+            }
+        }
         let frontier = view
             .frontier
             .iter()
