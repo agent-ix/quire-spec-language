@@ -645,13 +645,13 @@ mod tests {
             alloc::format!(
                 "WithNodes {{ value: PackageSourceMap {{ entries: {{\
                  (#0, Role(\"operand\"), 2): {}, \
-                 (#1, Role(\"operand\"), 1): {}, \
-                 (#2, Role(\"operand\"), 0): {}}} }}, \
+                 (#2, Role(\"operand\"), 0): {}, \
+                 (#1, Role(\"operand\"), 1): {}}} }}, \
                  nodes: {{#0: pkg:[\"add\",#1,]:1, #1: pkg:[\"add\",#2,]:0, \
                  #2: pkg:[\"leaf\",]:0}} }}",
                 region(2),
-                region(1),
-                region(0)
+                region(0),
+                region(1)
             )
         );
     }

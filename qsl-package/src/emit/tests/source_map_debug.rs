@@ -44,7 +44,7 @@ fn map_of(keys: impl IntoIterator<Item = NodeKey>) -> PackageSourceMap {
 }
 
 /// The fastest of three runs of `map`'s debug formatting.
-fn debug_time(map: &PackageSourceMap) -> (Duration, usize) {
+fn debug_time(map: &impl std::fmt::Debug) -> (Duration, usize) {
     let mut best = Duration::MAX;
     let mut bytes = 0;
     for _ in 0..3 {
@@ -125,7 +125,7 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
     std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
         .spawn(|| {
-            let sizes: Vec<usize> = [100, 200, 400]
+            let sizes: Vec<(usize, usize)> = [100, 200, 400]
                 .into_iter()
                 .map(|levels| {
                     let graph = declarations(Form::Add, levels)
@@ -134,12 +134,16 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
                     let package = CheckedPackage::link(graph);
                     let mut count = ByteCount(0);
                     write!(&mut count, "{package:?}").unwrap();
-                    count.0
+                    let emission = emit_checked(&package).unwrap();
+                    let mut after = ByteCount(0);
+                    write!(&mut after, "{package:?}").unwrap();
+                    drop(emission);
+                    (count.0, after.0)
                 })
                 .collect();
             for pair in sizes.windows(2) {
                 assert!(
-                    pair[1] < pair[0] * 5 / 2,
+                    pair[1].0 < pair[0].0 * 5 / 2 && pair[1].1 < pair[0].1 * 5 / 2,
                     "each doubling of the depth at most doubles the output: {sizes:?}"
                 );
             }

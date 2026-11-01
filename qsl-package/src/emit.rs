@@ -1518,12 +1518,13 @@ fn source_map(
 
 /// The exact typed source map represented by the just-built v2 entries.
 fn inspection_source_map(
+    ids: &StructuralIds,
     entries: &[CheckedSourceMapEntry],
 ) -> Result<PackageSourceMap, EmitRefusal> {
     let mut mapped = Vec::with_capacity(entries.len());
     // One memo for every entry: a nested operand is converted once, so the
     // map is linear in the package, not in the sum of each id's depth.
-    let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
+    let mut keys = ids.key_reader();
     for entry in entries {
         let node = keys
             .key(&entry.node_id)
@@ -2296,7 +2297,7 @@ pub fn emit_timed_models(
     let mut source_map = base.source_map().to_vec();
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
-    let inspection_source_map = inspection_source_map(&source_map)?;
+    let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut [])?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
@@ -3111,7 +3112,7 @@ fn emit_package_inner(
         dependency_selections: dependency_selections(package),
         refinement_internals: None,
     };
-    let inspection_source_map = inspection_source_map(&source_map)?;
+    let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
@@ -3223,7 +3224,7 @@ fn write_index_segments(
 ) -> Result<(), EmitRefusal> {
     use quire_contract_model::CheckedNodePathSegment as Segment;
     let is_operand = |segment: &Segment| matches!(segment, Segment::Node(_));
-    let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
+    let mut keys = ids.key_reader();
     let invariant = |_| EmitRefusal::SourceMapInvariant;
     let graph_keys = nodes
         .iter()
