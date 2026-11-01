@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
@@ -140,6 +141,176 @@ const ALL_EDGES: [&str; 6] = ["E1", "E2", "E3", "E4", "E5", "E6"];
 /// (FR-230), and its request is `operation-contract`/`bounded`
 /// (FR-345-AC-6).
 const LAYERS: [HeaderLayer; 6] = HeaderLayer::ALL;
+
+/// FR-345-AC-10: the public comparison core uses the real FR-278 composition
+/// and production registry snapshot. Negotiation changes only the six witness
+/// results; without negotiation its JSON is byte-equal to the CLI's report.
+#[trace("TC-868", "FR-345-AC-10")]
+#[test]
+fn production_comparison_matches_cli_and_negotiates_each_witness() {
+    let corpus = real_corpus();
+    let registry = RegistrySnapshot::production().expect("QSL's production registry builds");
+    let candidates = |kind| match registry.candidates(kind) {
+        qsl_route::CandidateOutcome::Candidates(candidates) => candidates,
+        qsl_route::CandidateOutcome::UnknownBackend(backend) => {
+            panic!("production candidate lookup for {backend:?} is named")
+        }
+    };
+
+    let cli = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .args(["refinement", "layering"])
+        .arg(corpus.path())
+        .output()
+        .expect("the no-negotiation CLI runs");
+    assert_eq!(cli.status.code(), Some(21), "the CLI reports unsupported");
+    assert!(
+        cli.stderr.is_empty(),
+        "the CLI writes no diagnostic: {:?}",
+        cli.stderr
+    );
+    let cli_report = String::from_utf8(cli.stdout).expect("CLI report is UTF-8");
+
+    let no_negotiation = compare(corpus.path(), compile_unit, &registry, None);
+    assert_eq!(no_negotiation.verdict, Verdict::Unsupported);
+    assert_eq!(no_negotiation.exit, 21);
+    assert_eq!(
+        no_negotiation.to_json().expect("report serializes"),
+        cli_report,
+        "the no-negotiation core report is byte-equal to the CLI report"
+    );
+    assert_eq!(cases(&no_negotiation.results), expected_cases());
+    for each_layer in LAYERS {
+        let EntryResult::Layer {
+            result, witnesses, ..
+        } = layer(&no_negotiation.results, each_layer.identity())
+        else {
+            unreachable!("layer lookup returns a layer")
+        };
+        assert_eq!(
+            *result,
+            CaseResult::UnresolvedUnsupported,
+            "{}",
+            each_layer.identity()
+        );
+        assert_eq!(
+            witnesses.len(),
+            1,
+            "{} has one witness",
+            each_layer.identity()
+        );
+        assert_eq!(witnesses[0].result, CaseResult::UnresolvedUnsupported);
+        assert_eq!(witnesses[0].reason.as_deref(), Some("not-negotiated"));
+        assert!(!witnesses[0].candidates.is_empty());
+        assert!(witnesses[0]
+            .candidates
+            .iter()
+            .all(|candidate| candidate.disposition == "not-negotiated"));
+    }
+
+    let mut requests = Vec::new();
+    let negotiated = {
+        let mut negotiate =
+            |request: WitnessRequest, candidate: &Candidate, _: &CheckedStateClause| {
+                requests.push((request.kind, candidate.id().as_str().to_owned()));
+                Disposition::Supported(candidate.clone())
+            };
+        compare(corpus.path(), compile_unit, &registry, Some(&mut negotiate))
+    };
+    assert_eq!(negotiated.verdict, Verdict::Success);
+    assert_eq!(negotiated.exit, 0);
+    let non_layer_results = |results: &[EntryResult]| {
+        results
+            .iter()
+            .filter(|result| !matches!(result, EntryResult::Layer { .. }))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        non_layer_results(&negotiated.results),
+        non_layer_results(&no_negotiation.results),
+        "case and edge results are unchanged by negotiation"
+    );
+    assert_eq!(
+        edges(&negotiated.results),
+        ALL_EDGES.map(|edge| (edge.to_owned(), CaseResult::Holds))
+    );
+    for each_layer in LAYERS {
+        let EntryResult::Layer {
+            result: negotiated_result,
+            witnesses: negotiated_witnesses,
+            ..
+        } = layer(&negotiated.results, each_layer.identity())
+        else {
+            unreachable!("layer lookup returns a layer")
+        };
+        let EntryResult::Layer {
+            result: no_negotiation_result,
+            witnesses: no_negotiation_witnesses,
+            ..
+        } = layer(&no_negotiation.results, each_layer.identity())
+        else {
+            unreachable!("layer lookup returns a layer")
+        };
+        assert_eq!(
+            *negotiated_result,
+            CaseResult::Holds,
+            "{}",
+            each_layer.identity()
+        );
+        assert_eq!(*no_negotiation_result, CaseResult::UnresolvedUnsupported);
+        assert_eq!(
+            negotiated_witnesses.len(),
+            1,
+            "{} has one witness",
+            each_layer.identity()
+        );
+        let negotiated_witness = &negotiated_witnesses[0];
+        let no_negotiation_witness = &no_negotiation_witnesses[0];
+        assert_eq!(negotiated_witness.result, CaseResult::Holds);
+        assert_eq!(negotiated_witness.class, no_negotiation_witness.class);
+        assert_eq!(negotiated_witness.codes, no_negotiation_witness.codes);
+        assert_eq!(negotiated_witness.reason, None);
+        assert_eq!(
+            negotiated_witness
+                .candidates
+                .iter()
+                .map(|candidate| candidate.backend.as_str())
+                .collect::<Vec<_>>(),
+            no_negotiation_witness
+                .candidates
+                .iter()
+                .map(|candidate| candidate.backend.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(negotiated_witness
+            .candidates
+            .iter()
+            .all(|candidate| candidate.disposition == "supported"));
+    }
+
+    let mut expected_requests = Vec::new();
+    for each_layer in LAYERS {
+        let request = each_layer.witness_request();
+        let kind = match request.kind {
+            WitnessKind::OperationContract => Capability::OperationContract,
+            WitnessKind::ValueValidity => Capability::ValueValidity,
+        };
+        expected_requests.extend(
+            candidates(kind)
+                .candidates()
+                .iter()
+                .map(|candidate| (request.kind, candidate.id().as_str().to_owned())),
+        );
+    }
+    assert_eq!(requests.len(), expected_requests.len());
+    let order = |request: &(WitnessKind, String)| (format!("{:?}", request.0), request.1.clone());
+    requests.sort_by_key(order);
+    expected_requests.sort_by_key(order);
+    assert_eq!(
+        requests, expected_requests,
+        "one request per candidate per layer"
+    );
+}
 
 /// FR-345-AC-4 and AC-7 over the real corpus, with no negotiation function:
 /// on each of E1 to E6 the both-refuse case holds reporting both sides'
