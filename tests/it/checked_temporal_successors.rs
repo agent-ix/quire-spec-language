@@ -34,6 +34,14 @@ fn checked_activation(
     body: &str,
     activation: &str,
 ) -> qsl_replay::spine::CheckedUnit {
+    try_checked_activation(identity, body, activation).expect("S1-S4 checked activation package")
+}
+
+fn try_checked_activation(
+    identity: &str,
+    body: &str,
+    activation: &str,
+) -> Result<qsl_replay::spine::CheckedUnit, Box<qsl_replay::spine::CompileRefusal>> {
     let packages =
         qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
             .expect("checked model fixture");
@@ -45,7 +53,6 @@ fn checked_activation(
         &packages,
         &DependencyInput::default(),
     )
-    .expect("S1-S4 checked activation package")
 }
 
 fn checked(body: &str, profile: &str) -> qsl_replay::spine::CheckedUnit {
@@ -873,6 +880,20 @@ fn checked_activation_keeps_siblings_and_capture_identity() {
     assert_eq!(active.receipts, ["receipt-1", "receipt-2"]);
     assert_eq!(active.capture_evaluations, 1);
     assert_eq!(active.captures[0].value, "7");
+}
+
+/// FR-044-AC-6: a capture initializer may read earlier captures but the S3
+/// checked route refuses a forward reference before creating a package.
+#[trace("TC-123", "FR-044-AC-6")]
+#[test]
+fn checked_capture_initializer_cannot_read_a_later_capture() {
+    let refusal = try_checked_activation(
+        "test:checked-temporal-forward-capture",
+        "capture first: Integer = later; capture later: Integer = trigger.code; always[0,1] true",
+        "on each (trigger: M::Widget)",
+    )
+    .expect_err("S3 refuses a later capture name");
+    assert!(format!("{refusal:?}").contains("later"));
 }
 
 /// FR-044-AC-5/7: empty admitted closed scopes and guard-false scopes are
