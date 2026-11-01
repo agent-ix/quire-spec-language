@@ -347,7 +347,8 @@ fn a_variant_value_is_passed_by_ref_and_compared_by_the_enumeration_equality() {
 /// QSL-1390: model enum members keep their exact declaration and member
 /// identities in the equality sidecar, including case names that are not
 /// source identifiers.
-#[ix_trace_rs::trace("QSL-1390")]
+/// Provenance: QSL-1390, QSL-1445
+#[ix_trace_rs::trace("QSpec-FR-322-AC-288")]
 #[test]
 fn model_enum_equality_emits_exact_member_identities() {
     let emitted = emit_unit(UNIT);
@@ -373,6 +374,75 @@ fn model_enum_equality_emits_exact_member_identities() {
         assert_eq!(member_node["semantic_form"], "enum_value");
         assert_eq!(member_node["semantic_type"], variant["node_id"]);
         assert_eq!(member_node["body"]["value"], case);
+    }
+
+    let identity = emitted
+        .emission
+        .equality_producer_identity_rows()
+        .iter()
+        .find(|row| {
+            row.producer_identity()
+                .enum_member_facts()
+                .iter()
+                .any(|(_, _, _, case, _, _)| ODD_CASES.contains(&case.as_ref()))
+        })
+        .expect("selected imported Odd enum equality has producer rows");
+    let odd_facts = identity
+        .producer_identity()
+        .enum_member_facts()
+        .iter()
+        .filter(|(_, _, _, case, _, _)| ODD_CASES.contains(&case.as_ref()))
+        .collect::<Vec<_>>();
+    assert_eq!(odd_facts.len(), ODD_CASES.len());
+    let emitted_ids = nodes(&emitted.wire)
+        .iter()
+        .filter_map(|node| node.get("node_id").cloned())
+        .collect::<Vec<_>>();
+    for (source_declaration, declaration, member, case, ordinal, ordered) in odd_facts {
+        let rows = emitted
+            .emission
+            .equality_fact_witness_rows()
+            .iter()
+            .filter(|row| {
+                row.application() == identity.application()
+                    && row.occurrence() == identity.occurrence()
+                    && row.structural_key() == member
+                    && matches!(row.fact(), EqualityFactWitness::EnumMember { .. })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1, "each exact selected enum fact has one row");
+        let row = rows[0];
+        let EqualityFactWitness::EnumMember {
+            source_declaration: actual_source,
+            source_declaration_node: actual_source_node,
+            declaration: actual_declaration,
+            declaration_node: actual_declaration_node,
+            member: actual_member,
+            member_node: actual_member_node,
+            case: actual_case,
+            ordinal: actual_ordinal,
+            ordered: actual_ordered,
+        } = row.fact()
+        else {
+            unreachable!()
+        };
+        assert_eq!(actual_source, source_declaration);
+        assert_eq!(actual_declaration, declaration);
+        assert_eq!(actual_member, member);
+        assert_eq!(actual_case.as_ref(), case.as_ref());
+        assert_eq!(actual_ordinal, ordinal);
+        assert_eq!(actual_ordered, ordered);
+        assert_eq!(row.structural_node(), actual_member_node);
+        for node in [
+            actual_source_node,
+            actual_declaration_node,
+            actual_member_node,
+        ] {
+            assert!(
+                emitted_ids.contains(&serde_json::to_value(node).unwrap()),
+                "each exact selected key maps to an emitted checked node"
+            );
+        }
     }
 }
 
