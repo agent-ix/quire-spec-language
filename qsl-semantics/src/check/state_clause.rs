@@ -19,6 +19,7 @@
 //! [`PackageDeclarations::check`]: super::PackageDeclarations::check
 
 use qsl_foundation::source::node_table::NodeKeyDebug;
+use quire_checked::node::{AuthoredBound, NodeKind};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{ClauseKind, DeclarationSpans, Expression, StateClauseKind};
@@ -30,8 +31,8 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
 use super::facts::{CheckedFacts, Definedness};
-use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind};
-use super::lowering::{AdmittedModel, AuthoredBound, LoweredClause};
+use super::ir::{CheckedBody, CheckedNode, DispatchTable};
+use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
 use super::references::{body_objects, ModelReferences};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};

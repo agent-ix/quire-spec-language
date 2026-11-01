@@ -45,6 +45,9 @@
 //! flagged.
 
 use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use quire_checked::node::{
+    Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -53,10 +56,7 @@ mod native_literal;
 mod typing;
 use typing::TypedOperand;
 
-use super::ir::{
-    Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
-    OrderedKind, RecordField, RecordSlot, Slot, Visit,
-};
+use super::ir::{BodyBuilder, DispatchTable, Node, NodeId, Slot};
 use super::navigation::Relationships;
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
@@ -69,7 +69,6 @@ use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
     FieldInitializer, FunctionDeclaration,
 };
-use qsl_foundation::absence::AbsenceMode;
 use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
 use quire_exact::DecimalType;
@@ -85,6 +84,7 @@ use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{NodeKey, VariantId};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
@@ -1866,7 +1866,7 @@ pub(crate) struct NamedPopulation {
     /// The requirement-record domain it adds (FR-104 "Requirements").
     pub(crate) domain: super::state_clause::PopulationDomain,
     /// The unit's authored bound on it (FR-380).
-    pub(crate) bound: Option<super::lowering::AuthoredBound>,
+    pub(crate) bound: Option<quire_checked::node::AuthoredBound>,
 }
 
 impl NamedScope {
@@ -1987,7 +1987,7 @@ fn ineligible(location: &Location) -> CheckRefusal {
     CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible)
 }
 
-fn node(kind: NodeKind, value_type: ValueType, location: &Location) -> Node {
+fn node(kind: NodeKind<NodeId>, value_type: ValueType, location: &Location) -> Node {
     Node {
         kind,
         value_type,
@@ -3755,7 +3755,7 @@ impl<'a> Typer<'a> {
     /// the slot it fills and the type it is checked against once typed.
     fn record_field<'d>(
         declared: &'d [FieldDeclaration],
-        supplied: &mut [Option<RecordSlot>],
+        supplied: &mut [Option<RecordSlot<NodeId>>],
         field: &str,
         initializer: FieldInitializer,
         field_location: &Location,
@@ -3774,7 +3774,7 @@ impl<'a> Typer<'a> {
         let optional = declaration.presence() == Presence::Optional;
         match initializer {
             FieldInitializer::Null if optional => {
-                *slot = Some(RecordSlot::Null);
+                *slot = Some(RecordSlot::<NodeId>::Null);
                 Ok(None)
             }
             FieldInitializer::Null => Err(mismatch(field_location)),
@@ -3789,14 +3789,16 @@ impl<'a> Typer<'a> {
     fn record(
         key: quire_exact::NodeKey,
         declared: &[FieldDeclaration],
-        supplied: Vec<Option<RecordSlot>>,
+        supplied: Vec<Option<RecordSlot<NodeId>>>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let mut slots = Vec::with_capacity(declared.len());
         for (declaration, slot) in declared.iter().zip(supplied) {
             slots.push(match slot {
                 Some(slot) => slot,
-                None if declaration.presence() == Presence::Optional => RecordSlot::Absent,
+                None if declaration.presence() == Presence::Optional => {
+                    RecordSlot::<NodeId>::Absent
+                }
                 None => return Err(mismatch(location)),
             });
         }
@@ -4289,7 +4291,7 @@ fn catalogued_step(
         ) -> ControlFlow<(), ()> {
             match self.body.get(id) {
                 Some(node) if !(self.is_accumulator)(node) => {
-                    children.extend(node.kind.children());
+                    children.extend(super::ir::node_children(&node.kind));
                     ControlFlow::Continue(())
                 }
                 _ => ControlFlow::Break(()),

@@ -593,6 +593,11 @@ impl CheckedPackage {
         &self.graph
     }
 
+    /// The in-process evaluation view tied to this linked package.
+    pub fn evaluation_view(&self) -> crate::evaluation_view::AdmittedEvaluationView<'_> {
+        crate::evaluation_view::AdmittedEvaluationView::in_process(self)
+    }
+
     /// This package's checked graph, shared: an importing package's E3
     /// types an imported name from it (ADR-015 D-5).
     pub fn shared_graph(&self) -> Arc<CheckedGraph> {

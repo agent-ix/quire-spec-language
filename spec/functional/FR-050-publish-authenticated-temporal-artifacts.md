@@ -91,6 +91,24 @@ The public L5 entry points SHALL be
 `temporal::mapping_support_v2(&protocol_artifact::v2::AdmittedPackage, declaration, closure)`,
 with the same result types as their existing strict `/1` counterparts.
 
+The checked-route successors SHALL be
+`temporal::evaluate_checked_v2(&qsl_package::CheckedPackage, &protocol_artifact::v2::AdmittedPackage, checked_declaration, trace, limits)`,
+`temporal::evaluate_checked_with_progress_v2(..., ledger)` and
+`temporal::mapping_support_checked_v2(&qsl_package::CheckedPackage, &protocol_artifact::v2::AdmittedPackage, checked_declaration, closure)`.
+They SHALL derive the clause, formula, profile and activation from S3 checked
+nodes and SHALL accept the artifact only when exactly one admitted temporal
+declaration has the same checked source authority and identity, declaration
+name and source byte span. The checked profile and clock name SHALL agree with
+that admitted declaration's definition and typed clock binding. A missing,
+ambiguous or changed source-locus selection SHALL be a typed reference
+refusal; a profile or clock mismatch SHALL be a typed binding refusal.
+Evaluation SHALL authenticate the trace's profile, clock name and complete
+parameter map before visiting positions and SHALL retain the exact selected
+definition identity/revision and typed clock configuration in its report.
+The checked mapping entry point SHALL retain that same declaration and
+definition/clock selection but SHALL NOT claim to authenticate trace parameters
+because it takes no trace.
+
 The existing `temporal::evaluate`, `evaluate_with_progress` and
 `mapping_support` entry points SHALL retain their `/1` signatures and
 unauthenticated-premise behavior for compatibility.
@@ -184,6 +202,12 @@ revision, clock binding name and exact parameter map to the admitted `/2`
 selection before visiting positions; a mismatch is a typed binding refusal and
 no longer an unauthenticated retained premise.
 
+Each checked-route `/2` evaluation entry point SHALL perform the exact S3
+source-locus and declaration selection join before the same trace comparison.
+The checked S3 formula remains the only evaluation source; the admitted `/2`
+view supplies authenticated definition and clock evidence, never a reconstructed
+formula or caller-authored truth.
+
 `mapping_support_v2` takes no runtime trace. It SHALL require the declaration's
 admitted binding to select the same definition/profile before classifying the
 requested surrounding-execution closure; it SHALL NOT claim to authenticate a
@@ -206,14 +230,14 @@ extension.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity/revision/artifact reference and the matching event-position, fixed-sample or timestamped configuration. | Test (TC-138) |
-| FR-050-AC-2 | Missing, surplus, duplicate, reordered, foreign-owner and out-of-range bindings refuse independently; a definition/profile mismatch and every wrong clock alternative refuse without defaulting or shape-based selection. | Test (TC-138) |
-| FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and substituted definition identity/revision/artifact reference produce their exact typed causes without a partial package. | Test (TC-138) |
-| FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138) |
-| FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138) |
-| FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results, while the existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138) |
-| FR-050-AC-7 | The three member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
-| FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138) |
+| FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity/revision/artifact reference and the matching event-position, fixed-sample or timestamped configuration. | Test (TC-138, TC-150) |
+| FR-050-AC-2 | Missing, surplus, duplicate, reordered, foreign-owner and out-of-range bindings refuse independently; a definition/profile mismatch and every wrong clock alternative refuse without defaulting or shape-based selection. | Test (TC-138, TC-150) |
+| FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and substituted definition identity/revision/artifact reference produce their exact typed causes without a partial package. | Test (TC-138, TC-150) |
+| FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138, TC-150) |
+| FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138, TC-150) |
+| FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results; checked `/2` counterparts additionally join the exact S3 source locus, declaration, profile and clock before evaluation and retain the same admitted definition/clock evidence. The existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138, TC-150) |
+| FR-050-AC-7 | The three member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138, TC-150) |
+| FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138, TC-150) |
 | FR-050-AC-9 | Withdrawn: the generated-not-committed rule is stated in the Description; a git-tracking test caught no functional failure. | Withdrawn |
 | FR-050-AC-10 | Withdrawn: a file-name scan for checksum manifests caught no functional failure; the rule is stated in the Description. | Withdrawn |
 | FR-050-AC-11 | Withdrawn: a layout check of the manifest directory caught no failure the writers' own source reads do not. | Withdrawn |

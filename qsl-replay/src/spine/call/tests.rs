@@ -972,13 +972,13 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
 #[test]
 #[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
 fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners() {
-    use qsl_foundation::absence::AbsenceMode;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::population::{
         admit_binding, lookup, AdmissionMeter, AdmissionOutcome, LookupKey, LookupOutcome,
         PopulationAdmissionLimits, PopulationDocument, PopulationMember,
     };
     use quire_exact::{LimitKind, Meter};
+    use quire_semantic_value::absence::AbsenceMode;
 
     let (view, object_type, population_key) = synthetic_model("tc-792-lookup");
     let document = PopulationDocument {

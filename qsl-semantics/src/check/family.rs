@@ -44,6 +44,7 @@
 //! direction (ADR-011 §6.1).
 
 use qsl_foundation::source::node_table::NodeKeyDebug;
+use quire_checked::node::NodeKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
@@ -53,11 +54,11 @@ use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, Expression, FieldInitializer,
     FunctionDeclaration,
 };
-use qsl_foundation::absence::AbsenceMode;
 #[cfg(test)]
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
 use qsl_foundation::Setting;
+use quire_semantic_value::absence::AbsenceMode;
 // The relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
 // general typer this family delegates to for a body or a call's
@@ -1152,7 +1153,7 @@ impl<'a> Application<'a> {
                 function,
                 signature,
             } => Ok(Node {
-                kind: super::ir::NodeKind::Call {
+                kind: NodeKind::Call {
                     function,
                     arguments,
                 },
@@ -1164,7 +1165,7 @@ impl<'a> Application<'a> {
                 function,
                 signature,
             } => Ok(Node {
-                kind: super::ir::NodeKind::ImportedCall {
+                kind: NodeKind::ImportedCall {
                     callee,
                     function,
                     arguments,
@@ -1173,7 +1174,7 @@ impl<'a> Application<'a> {
                 location: location.clone(),
             }),
             Self::Tuple { declaration, .. } => Ok(Node {
-                kind: super::ir::NodeKind::Tuple {
+                kind: NodeKind::Tuple {
                     declaration: declaration.clone(),
                     arguments,
                 },
@@ -1194,7 +1195,7 @@ impl<'a> Application<'a> {
                     ));
                 };
                 Ok(Node {
-                    kind: super::ir::NodeKind::IeeeSquareRoot(float.rounding(), *operand),
+                    kind: NodeKind::IeeeSquareRoot(float.rounding(), *operand),
                     value_type: ValueType::Float(*float),
                     location: location.clone(),
                 })
@@ -2314,7 +2315,7 @@ pub(crate) mod checking_tests {
         assert_eq!(checked.root().value_type(), &ValueType::Boolean);
         assert!(matches!(
             checked.root().kind(),
-            super::super::ir::NodeKind::Call { function: 0, .. }
+            super::NodeKind::Call { function: 0, .. }
         ));
     }
 

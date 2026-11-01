@@ -50,6 +50,11 @@ pub struct Position {
     /// declaration's temporal arena. A leaf absent from this map at a required
     /// position is a missing valuation, never a false one.
     pub valuations: BTreeMap<u32, bool>,
+    /// Predicate valuations established for one semantic obligation instance.
+    /// These take precedence over shared valuations and let a holds expression
+    /// use that instance's immutable capture environment without allowing a
+    /// sibling trigger's value to satisfy it.
+    pub instance_valuations: BTreeMap<String, BTreeMap<u32, bool>>,
 }
 
 /// Whether trigger evidence was admitted, absent or refused. Absent and refused

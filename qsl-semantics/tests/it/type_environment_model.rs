@@ -14,7 +14,6 @@
 //! - `object_type_supertypes`' injective re-key.
 
 use ix_trace_rs::trace;
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Stopped};
 use qsl_semantics::check::object_type_supertypes;
@@ -38,6 +37,7 @@ use quire_exact::{
     FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OriginalDeclarationKey,
     Presence, ScalarLimits, UniverseId, Value, ValueType,
 };
+use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 use quire_semantic_value::declaration::{
     Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,

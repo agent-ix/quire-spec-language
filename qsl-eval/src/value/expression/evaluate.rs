@@ -7,6 +7,10 @@
 //! parameters, `let` names, field projections, `present`, `value` and `if`
 //! make no charge.
 
+use quire_checked::node::{
+    Arithmetic, AuthoredBound, CheckedLiteral, Connective, EndSide, IntegerDivisionOperator,
+    NodeKind, OrderedKind, RecordSlot, Visit,
+};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -22,9 +26,7 @@ use super::s6a::separation::{
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
-    Arithmetic, AuthoredBound, CheckedGraph, CheckedLiteral, CheckedNode, Connective,
-    DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
-    RecordSlot, Scope, Slot, Visit,
+    CheckedGraph, CheckedNode, DispatchTable, NodeId, Operator, Scope, Slot,
 };
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
@@ -2858,10 +2860,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         node: CheckedNode<'a>,
         population: &DeclarationKey,
         members: &[quire_exact::EffectiveId],
-        absence: qsl_foundation::absence::AbsenceMode,
+        absence: quire_semantic_value::absence::AbsenceMode,
         reference: Value,
     ) -> Result<Value, Halt> {
-        use qsl_foundation::absence::AbsenceMode;
+        use quire_semantic_value::absence::AbsenceMode;
         let Value::Reference(reference) = reference else {
             return Err(invariant("lookup-reference-value-expected"));
         };
@@ -4577,7 +4579,7 @@ mod tests {
     #[trace("TC-467")]
     #[test]
     fn lookup_under_a_protocol_clause_refuses_unsupported_construct() {
-        use qsl_foundation::absence::AbsenceMode;
+        use quire_semantic_value::absence::AbsenceMode;
 
         let (package, _identity) = population_function_package();
         let graph = package.graph();

@@ -68,6 +68,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+use quire_checked::node::NodeKind;
 mod abstraction;
 mod assemble;
 mod call_target;
@@ -220,8 +221,7 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, SemanticGraph,
-    SemanticNode,
+    model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
 };
 pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use node_key::{
@@ -347,11 +347,7 @@ pub use family::fixtures::{
     empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
-pub use ir::{
-    Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
-    IntegerDivisionOperator, Node, NodeId, NodeKind, OrderedKind, RecordField, RecordSlot, Slot,
-    Visit,
-};
+pub use ir::{CheckedBody, CheckedNode, Node, NodeId, Slot};
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
@@ -417,7 +413,7 @@ pub use identity::{
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
-pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
+pub use navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
@@ -672,6 +668,15 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// FR-390: each checked population's exact declaration and effective
+    /// member types, indexed by its canonical checked node.
+    protocol_population_types: BTreeMap<
+        quire_exact::NodeKey,
+        (
+            quire_checked::key::DeclarationKey,
+            Vec<quire_exact::EffectiveId>,
+        ),
+    >,
     /// QSpec FR-322: the `model_root` key of each selection, in the same order.
     model_roots: Vec<quire_exact::NodeKey>,
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -800,6 +805,7 @@ impl fmt::Debug for CheckedGraph {
                     synthesized_spans,
                     embedding,
                     model_selections,
+                    protocol_population_types,
                     model_roots,
                     header_layers,
                     time_sources,
@@ -860,6 +866,10 @@ impl fmt::Debug for CheckedGraph {
                     .field("synthesized_spans", &synthesized_spans)
                     .field("embedding", &embedding)
                     .field("model_selections", &model_selections)
+                    .field(
+                        "protocol_population_types",
+                        &NodeMap(protocol_population_types.iter()),
+                    )
                     .field("model_roots", &NodeList(model_roots.iter()))
                     .field("header_layers", &header_layers)
                     .field("time_sources", &time_sources)
@@ -2161,6 +2171,14 @@ impl PackageDeclarations {
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
         let population_keys = population_key_table(&models);
+        let protocol_population_types = models
+            .iter()
+            .flat_map(AdmittedModel::named_populations)
+            .filter_map(|population| {
+                let node = crate::model::key::population_node_key(population.key).ok()?;
+                Some((node, (population.key.clone(), population.members)))
+            })
+            .collect();
         let declaration_keys = models
             .iter()
             .flat_map(AdmittedModel::record_keys)
@@ -5999,6 +6017,7 @@ impl PackageDeclarations {
             synthesized_spans,
             embedding,
             model_selections,
+            protocol_population_types,
             model_roots,
             header_layers,
             time_sources: self.time_sources,
@@ -6538,6 +6557,20 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The checked declaration and effective member types for a population
+    /// node, when it is one of this package's selected model declarations.
+    pub fn protocol_population_types(
+        &self,
+        node: &quire_exact::NodeKey,
+    ) -> Option<(
+        &quire_checked::key::DeclarationKey,
+        &[quire_exact::EffectiveId],
+    )> {
+        self.protocol_population_types
+            .get(node)
+            .map(|(declaration, members)| (declaration, members.as_slice()))
     }
 
     /// The identity of the domain package the model `model` selects, where

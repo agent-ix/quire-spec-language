@@ -165,6 +165,25 @@ fn checked_once(
     .into_value())
 }
 
+/// S1-S4 checked unit for tests that exercise APIs over the in-process checked
+/// package rather than emitted package bytes.
+pub fn checked(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+) -> Result<CheckedUnit, Box<CompileRefusal>> {
+    checked_once(
+        &source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        SpineLimits::default(),
+    )
+}
+
 /// Formats every source in an actual dependency fixture, then checks each
 /// reached package's own emitted identity, including transitive libraries.
 pub fn dependency_fixture_identity(

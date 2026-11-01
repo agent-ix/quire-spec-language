@@ -29,6 +29,10 @@
 //! `clause` binding, and quantity type nodes. `check` records each model
 //! declaration node it keys in the model correspondence.
 
+use quire_checked::node::{
+    Arithmetic, CaseArm, CheckedLiteral, Connective, IntegerDivisionOperator, NodeKind,
+    OrderedKind, RecordField, RecordSlot, Visit,
+};
 use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::ops::ControlFlow;
@@ -45,10 +49,7 @@ use super::check::{EnumBinding, Scope};
 use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
-use super::ir::{
-    Arithmetic, CaseArm, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId,
-    NodeKind, OrderedKind, RecordField, RecordSlot, Slot, Visit,
-};
+use super::ir::{CheckedNode, NodeId, Slot};
 use super::node_key::{
     AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm,
     TupleMember, TupleTerm,
@@ -96,8 +97,8 @@ pub(crate) use model::{
     strictly_below, QuantityKind,
 };
 pub use model::{
-    collection_kind, model_root_key, AdmittedModel, AuthoredBound, CollectionShape, ForeignView,
-    ModelClause, PlaceRow, PlaceStep,
+    collection_kind, model_root_key, AdmittedModel, CollectionShape, ForeignView, ModelClause,
+    PlaceRow, PlaceStep,
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
@@ -1001,7 +1002,7 @@ struct RecordFrame<'n> {
     node: CheckedNode<'n>,
     semantic_type: NodeRef,
     fields: Vec<FieldDeclaration>,
-    slots: &'n [RecordSlot],
+    slots: &'n [RecordSlot<NodeId>],
     members: Vec<MemberTerm>,
 }
 
@@ -1011,7 +1012,7 @@ struct CaseFrame<'n> {
     node: CheckedNode<'n>,
     /// The scrutinee's union declaration.
     declaration: NodeKey,
-    arms: &'n [CaseArm],
+    arms: &'n [CaseArm<NodeId>],
     /// The scrutinee's term, once it is lowered.
     scrutinee: Option<LeafTerm>,
     /// The arms lowered so far: each a binding of the member's name over its
@@ -4630,12 +4631,12 @@ impl<'a> Lowering<'a> {
                 break;
             };
             match slot {
-                RecordSlot::Present(value) => {
+                RecordSlot::<NodeId>::Present(value) => {
                     let value = frame.node.at(*value);
                     frames.push(LowerFrame::Record(frame));
                     return Ok(LowerStep::Descend(value));
                 }
-                RecordSlot::Null | RecordSlot::Absent => {
+                RecordSlot::<NodeId>::Null | RecordSlot::<NodeId>::Absent => {
                     let option = ValueType::option(field.value_type().clone());
                     let option = self.type_ref(&option, frame.node.location())?;
                     let member = MemberTerm::bound(

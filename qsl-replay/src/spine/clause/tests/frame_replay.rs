@@ -1048,8 +1048,8 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     let ReplayRefusal::Admission(AdmissionFailure::Incomplete(record)) = &refusal else {
         panic!("expected an incomplete admission, got {refusal:?}");
     };
-    assert_eq!(record.code.as_str(), "unavailable_observation");
-    assert_eq!(refusal.code(), record.code);
+    assert_eq!(record.catalog.code(), "unavailable_observation");
+    assert_eq!(refusal.code().as_str(), record.catalog.code());
 }
 
 /// TC-515 step 5 (FR-116-AC-5): replaying step 1's envelope twice gives
@@ -1153,8 +1153,8 @@ fn assert_refused_invalid_value(disposition: &ClauseDisposition) {
     let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = disposition else {
         panic!("expected a refused admission, got {disposition:?}");
     };
-    assert_eq!(record.code.as_str(), "invalid_runtime_input");
-    assert_eq!(record.cause, "invalid-value");
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "invalid-value");
     assert_eq!(
         record.fields.get("object").map(String::as_str),
         Some("child")

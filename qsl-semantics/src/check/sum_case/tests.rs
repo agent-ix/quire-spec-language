@@ -7,10 +7,12 @@
 //! `PackageDeclarations::check` drives; `tests/keys.rs` checks whole packages
 //! and reads the keys lowering gives their union nodes (FR-319).
 
+use crate::check::NodeId;
 use ix_trace_rs::trace;
 use qsl_forms::{build_unit, ClauseKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::SourceIdentity;
+use quire_checked::node::NodeKind;
 use quire_exact::{Identifier, IllTypedCause, NodeKey, UnionMember, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
@@ -21,7 +23,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::mint_union_member_key;
 use super::{ExhaustivenessObligation, SumCaseCause};
 use crate::check::check::{bind_parameters, Scope, Signatures, Typer};
-use crate::check::ir::{CheckedBody, CheckedNode, NodeKind, Slot};
+use crate::check::ir::{CheckedBody, CheckedNode, Slot};
 use crate::check::{
     CheckCause, CheckRefusal, CheckingLimitKind, EnumBinding, PackageDeclarations,
     QualifiedCandidate,
@@ -160,7 +162,7 @@ fn locals(node: CheckedNode<'_>) -> Vec<(Slot, ValueType)> {
         if let NodeKind::Local(slot) = node.kind() {
             found.push((*slot, node.value_type().clone()));
         }
-        stack.extend(node.kind().children().into_iter().map(|id| node.at(id)));
+        stack.extend(node.children());
     }
     found
 }
@@ -496,7 +498,7 @@ fn a_keyed_collection_of_an_ieee_bearing_union_is_refused() {
 }
 
 /// The payload arguments of a `UnionValue` node, and its member position.
-fn union_value(body: &CheckedBody) -> (NodeKey, usize, Vec<(&NodeKind, ValueType)>) {
+fn union_value(body: &CheckedBody) -> (NodeKey, usize, Vec<(&NodeKind<NodeId>, ValueType)>) {
     let root = body.root();
     let NodeKind::UnionValue {
         declaration,

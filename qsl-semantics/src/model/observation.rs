@@ -34,7 +34,8 @@ use qsl_foundation::Setting;
 use quire_exact::{
     CollectionKind, EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value,
 };
-use quire_semantic_value::catalog::{CatalogCoded, InternalFault};
+pub use quire_semantic_value::admission::{AdmissionRecord, PathStep};
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
@@ -361,71 +362,33 @@ impl std::fmt::Display for ObservationForm {
 // Admission failure
 // ---------------------------------------------------------------------------
 
-/// One admission record: a catalog code and cause, and the input path
-/// (document identity, population, object key, field) it names (FR-106
-/// Outputs). Distinct from [`qsl_foundation::diagnostic::RefusalRecord`],
-/// whose `Locus` names a *source* position: an admission defect names a
-/// position in a *document*, which no `Locus` variant represents.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdmissionRecord {
-    /// The catalog code, e.g. [`Code::InvalidRuntimeInput`]: typed, so a
-    /// caller maps it (for example to an exit code) with no string lookup.
-    pub code: Code,
-    /// The catalog cause, e.g. `"wrong-role-mapping"`.
-    pub cause: &'static str,
-    /// The named input path components this record carries, keyed by name
-    /// (`document`, `population`, `object`, `field`, `label`, ...).
-    pub fields: BTreeMap<&'static str, String>,
-    /// For a defect inside a nested value, the typed steps from the checked
-    /// field, parameter or result down to it, outermost first (QSpec FR-207);
-    /// empty when the defect is at the checked value itself.
-    pub path: Vec<PathStep>,
-    /// For a native UUID or Timestamp payload the kernel's canonical
-    /// constructor refused (FR-106 native order, step 7), the kernel's own
-    /// class beneath `invalid-value`; `None` for every other refusal.
-    pub kernel: Option<quire_exact::ConstructionCause>,
-}
-
-/// One typed step of a nested value path (QSpec FR-207): never a rendered
-/// string, so a record field named `0` cannot be taken for the first
-/// element of a sequence.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PathStep {
-    /// A record field, by its exact name.
-    Field(String),
-    /// The payload of a present optional value.
-    OptionValue,
-    /// A collection element, by its position in the array.
-    Index(usize),
-}
-
-impl AdmissionRecord {
-    fn new(code: Code, cause: &'static str) -> Self {
-        Self {
-            code,
-            cause,
-            fields: BTreeMap::new(),
-            path: Vec::new(),
-            kernel: None,
-        }
+/// Build the shared FR-130 record at the FR-106 classification site.
+pub(crate) fn admission_record(code: Code, cause: &'static str) -> AdmissionRecord {
+    AdmissionRecord {
+        catalog: CatalogCode::new(code.as_str(), cause),
+        fields: BTreeMap::new(),
+        path: Vec::new(),
+        kernel: None,
     }
+}
 
-    #[must_use]
+pub(crate) trait AdmissionRecordExt {
+    fn with(self, key: &'static str, value: impl Into<String>) -> Self;
+    fn at(self, path: Vec<PathStep>) -> Self;
+    fn kernel_class(self, class: quire_exact::ConstructionCause) -> Self;
+}
+
+impl AdmissionRecordExt for AdmissionRecord {
     fn with(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.fields.insert(key, value.into());
         self
     }
 
-    /// This record naming the nested value `path`: the typed steps from the
-    /// checked field, parameter or result down to it (FR-106 check 6.5).
-    #[must_use]
     fn at(mut self, path: Vec<PathStep>) -> Self {
         self.path = path;
         self
     }
 
-    /// This record carrying the kernel class beneath it.
-    #[must_use]
     fn kernel_class(mut self, class: quire_exact::ConstructionCause) -> Self {
         self.kernel = Some(class);
         self
@@ -436,13 +399,13 @@ impl AdmissionRecord {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AdmissionFailure {
     /// A real input defect: no `AdmittedObservations` and no truth value.
-    #[error("admission refused: {}/{}", .0.code.as_str(), .0.cause)]
-    Refused(AdmissionRecord),
+    #[error("admission refused: {}/{}", .0.catalog.code(), .0.catalog.cause())]
+    Refused(Box<AdmissionRecord>),
     /// Missing evidence, or an unresolved object/subtype closure: no
     /// `AdmittedObservations`, distinct from a refusal (FR-106 checks 1.1,
     /// 7).
-    #[error("admission incomplete: {}/{}", .0.code.as_str(), .0.cause)]
-    Incomplete(AdmissionRecord),
+    #[error("admission incomplete: {}/{}", .0.catalog.code(), .0.catalog.cause())]
+    Incomplete(Box<AdmissionRecord>),
     /// A broken invariant of admission itself (never a document defect):
     /// the re-supplied domain packages do not re-normalize the way the
     /// already-compiled package did.
@@ -451,11 +414,11 @@ pub enum AdmissionFailure {
 }
 
 fn refuse(record: AdmissionRecord) -> AdmissionFailure {
-    AdmissionFailure::Refused(record)
+    AdmissionFailure::Refused(Box::new(record))
 }
 
 fn incomplete(record: AdmissionRecord) -> AdmissionFailure {
-    AdmissionFailure::Incomplete(record)
+    AdmissionFailure::Incomplete(Box::new(record))
 }
 
 fn fault(invariant: &'static str) -> AdmissionFailure {
@@ -483,6 +446,85 @@ pub struct Observation {
     /// walk order: empty unless this is a post instant admitted under
     /// [`PostStateRange::Witness`].
     pub out_of_range: Vec<OutOfRange>,
+}
+
+/// Recheck explicit protocol-reference population provenance against an
+/// admitted current snapshot, including FR-106's retained recursive closure.
+/// Each tuple is `(reference, exact population node, value-relative path)`.
+/// The population is never inferred from a reference's present membership.
+pub fn admit_protocol_reference_seeds(
+    types: &TypeEnvironment,
+    observation: &Observation,
+    seeds: &[(ObjectReference, quire_exact::NodeKey, Vec<PathStep>)],
+) -> Result<(), AdmissionFailure> {
+    let environment = &observation.environment;
+    let mut required: Vec<(String, Vec<PathStep>)> = Vec::new();
+    for (reference, node, path) in seeds {
+        let Some(provenance) = environment.population_provenance(node) else {
+            let mut record = admission_record(Code::InvalidModelBinding, "wrong-model-selection")
+                .with("population", format!("{node:?}"));
+            record.path = path.clone();
+            return Err(refuse(record));
+        };
+        let compatible = provenance.member_types().iter().any(|(member, universe)| {
+            reference.universe() == universe
+                && types.conforms(reference.object_type().clone(), member.clone())
+        });
+        if !compatible {
+            let mut record = admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                .with("population", provenance.declaration().node.clone());
+            record.path = path.clone();
+            return Err(refuse(record));
+        }
+        let identity = provenance.declaration().node.clone();
+        if !required.iter().any(|(held, _)| *held == identity) {
+            required.push((identity, path.clone()));
+        }
+    }
+
+    let mut index = 0;
+    while index < required.len() {
+        let (population, path) = required[index].clone();
+        let Some(closure) = environment.population_reference_closure(&population) else {
+            return Err(fault("admitted-population-has-reference-closure"));
+        };
+        for nested in closure {
+            if !required.iter().any(|(held, _)| held == nested) {
+                required.push((nested.clone(), path.clone()));
+            }
+        }
+        index += 1;
+    }
+
+    for (population, path) in &required {
+        if !environment.population_complete(population) {
+            let mut record = admission_record(Code::IncompletePopulation, "incomplete-scope")
+                .with("population", population.clone());
+            record.path = path.clone();
+            return Err(incomplete(record));
+        }
+    }
+
+    for (reference, node, path) in seeds {
+        let Some(provenance) = environment.population_provenance(node) else {
+            return Err(fault("validated-protocol-population-stays-admitted"));
+        };
+        let population = &provenance.declaration().node;
+        let present = environment
+            .population_members(population)
+            .is_some_and(|members| members.contains(reference));
+        if !present {
+            let mut record = admission_record(
+                Code::DanglingReference,
+                "absent-target-in-complete-population",
+            )
+            .with("population", population.clone())
+            .with("object", reference.object().to_string());
+            record.path = path.clone();
+            return Err(refuse(record));
+        }
+    }
+    Ok(())
 }
 
 /// The amount [`ObservationLimits`]' three document-shape ceilings actually
@@ -1517,7 +1559,7 @@ fn check_document_valid(
                 crate::model::intake::first_inexact_number(document.root())
             {
                 return Err(refuse(
-                    AdmissionRecord::new(Code::NoncanonicalWire, inexact.as_str())
+                    admission_record(Code::NoncanonicalWire, inexact.as_str())
                         .with("document_pointer", pointer.as_str()),
                 ));
             }
@@ -1550,7 +1592,7 @@ fn read_error_refusal(
         } => {
             crate::model::intake::out_of_range_number(pointer, lexeme).map(|(pointer, inexact)| {
                 refuse(
-                    AdmissionRecord::new(Code::NoncanonicalWire, inexact.as_str())
+                    admission_record(Code::NoncanonicalWire, inexact.as_str())
                         .with("document_pointer", pointer.as_str()),
                 )
             })
@@ -1558,7 +1600,7 @@ fn read_error_refusal(
         // Any other refusal of the shared reader settles at the document
         // root before any member is read (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
         quire_canonical::ReadError::Malformed { .. } => Some(refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+            admission_record(Code::InvalidRuntimeInput, "invalid-value")
                 .with("document_pointer", ""),
         )),
         _ => None,
@@ -1585,7 +1627,7 @@ fn caller_budget_refusal(denial: &BudgetDenial, cause: &'static str) -> Admissio
 
 /// [`caller_budget_refusal`]'s record.
 fn caller_budget_record(denial: &BudgetDenial, cause: &'static str) -> AdmissionRecord {
-    let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
+    let mut record = admission_record(Code::ResourceExhausted, cause);
     record.fields.extend(denial.catalog_fields());
     record
 }
@@ -1594,7 +1636,7 @@ fn caller_budget_record(denial: &BudgetDenial, cause: &'static str) -> Admission
 /// cause and its `kind`, `bound`, `actual` and `setting` fields (FR-255
 /// Behavior 1).
 fn limit_refusal(limit: &LimitExceeded) -> AdmissionFailure {
-    let mut record = AdmissionRecord::new(Code::StageLimitExceeded, limit.kind().catalog_cause());
+    let mut record = admission_record(Code::StageLimitExceeded, limit.kind().catalog_cause());
     if let Some(fields) = limit.catalog_fields() {
         record.fields.extend(fields);
     }
@@ -1653,7 +1695,7 @@ const INSUFFICIENT_NEXT_CHARGE: &str = "insufficient-next-charge";
 /// `requested` bytes of memory.
 fn allocation_failed(requested: usize) -> AdmissionFailure {
     refuse(
-        AdmissionRecord::new(Code::ResourceExhausted, ALLOCATION_FAILED.cause())
+        admission_record(Code::ResourceExhausted, ALLOCATION_FAILED.cause())
             .with("requested", requested.to_string()),
     )
 }
@@ -1775,7 +1817,7 @@ fn admit_current_environment(
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;
     if snapshot.observation != document::ObservationRole::Current {
-        return Err(refuse(AdmissionRecord::new(
+        return Err(refuse(admission_record(
             Code::WrongSnapshot,
             "wrong-observation",
         )));
@@ -1857,12 +1899,7 @@ pub fn admit_observations(
     selection: &ClauseSelection,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
-    let wrong_observation = || {
-        refuse(AdmissionRecord::new(
-            Code::WrongSnapshot,
-            "wrong-observation",
-        ))
-    };
+    let wrong_observation = || refuse(admission_record(Code::WrongSnapshot, "wrong-observation"));
     // Check 2: selection form.
     match (clause.kind, &selection.input) {
         (
@@ -2139,22 +2176,20 @@ fn admit_invariant(
 
     // Check 3: observation role and anchor.
     if snapshot.observation != document::ObservationRole::Current {
-        return Err(refuse(AdmissionRecord::new(
+        return Err(refuse(admission_record(
             Code::WrongSnapshot,
             "wrong-observation",
         )));
     }
-    let document_anchor = snapshot.anchor.as_ref().ok_or_else(|| {
-        refuse(AdmissionRecord::new(
-            Code::WrongSnapshot,
-            "wrong-observation",
-        ))
-    })?;
+    let document_anchor = snapshot
+        .anchor
+        .as_ref()
+        .ok_or_else(|| refuse(admission_record(Code::WrongSnapshot, "wrong-observation")))?;
     // `AnchorKind` derives `PartialEq`; compared directly (SR-750
     // FND-011), never through `as_str()` string equality.
     if document_anchor.kind != anchor.kind || document_anchor.name != anchor.name {
         return Err(refuse(
-            AdmissionRecord::new(Code::WrongSnapshot, "wrong-anchor")
+            admission_record(Code::WrongSnapshot, "wrong-anchor")
                 .with(
                     "required",
                     format!("{} {}", anchor.kind.as_str(), anchor.name),
@@ -2228,7 +2263,7 @@ fn check_model(
     if matches {
         Ok(())
     } else {
-        Err(refuse(AdmissionRecord::new(
+        Err(refuse(admission_record(
             Code::InvalidModelBinding,
             "wrong-model-selection",
         )))
@@ -2251,7 +2286,7 @@ fn check_model_any(
     if matches {
         Ok(())
     } else {
-        Err(refuse(AdmissionRecord::new(
+        Err(refuse(admission_record(
             Code::InvalidModelBinding,
             "wrong-model-selection",
         )))
@@ -2351,9 +2386,7 @@ impl InvocationAdmission {
 /// FR-106 check 9's `self` rule: an object receiver needs an object
 /// reference, a state machine's context has none, so its `self` is `null`.
 fn wrong_self_kind() -> AdmissionFailure {
-    refuse(
-        AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-value-kind").with("field", "self"),
-    )
+    refuse(admission_record(Code::InvalidRuntimeInput, "wrong-value-kind").with("field", "self"))
 }
 
 /// FR-106 checks 1 and 3 to 10 over the invocation `selected`, of the
@@ -2417,7 +2450,7 @@ fn admit_invocation_documents(
     if pre_snapshot.observation != document::ObservationRole::Pre
         || post_snapshot.observation != document::ObservationRole::Post
     {
-        return Err(refuse(AdmissionRecord::new(
+        return Err(refuse(admission_record(
             Code::WrongSnapshot,
             "wrong-observation",
         )));
@@ -2705,12 +2738,7 @@ fn check_operation(
     receiver: &Receiver<'_>,
     source: OperationSource<'_>,
 ) -> Result<OperationDeclaration, AdmissionFailure> {
-    let wrong_invocation = || {
-        refuse(AdmissionRecord::new(
-            Code::WrongSnapshot,
-            "wrong-invocation",
-        ))
-    };
+    let wrong_invocation = || refuse(admission_record(Code::WrongSnapshot, "wrong-invocation"));
     if !receiver.state_machine {
         let OperationSource::Clause(operation) = source else {
             return Err(fault("context-selection-of-an-object-receiver"));
@@ -2821,7 +2849,7 @@ fn admit_pre_call(
 
     // Check 3: observation role.
     if snapshot.observation != document::ObservationRole::Pre {
-        return Err(refuse(AdmissionRecord::new(
+        return Err(refuse(admission_record(
             Code::WrongSnapshot,
             "wrong-observation",
         )));
@@ -3389,7 +3417,7 @@ mod helpers {
     }
 
     pub(crate) fn admission_record(code: Code, cause: &'static str) -> AdmissionRecord {
-        AdmissionRecord::new(code, cause)
+        super::admission_record(code, cause)
     }
 }
 
@@ -3415,7 +3443,7 @@ mod tests {
     fn the_shared_reader_settles_a_text_it_refuses_at_check_1_3() {
         let invalid_value = || {
             Err(refuse(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                admission_record(Code::InvalidRuntimeInput, "invalid-value")
                     .with("document_pointer", ""),
             ))
         };
@@ -3448,7 +3476,7 @@ mod tests {
             assert_eq!(
                 check(text.as_bytes()),
                 Err(refuse(
-                    AdmissionRecord::new(Code::NoncanonicalWire, cause)
+                    admission_record(Code::NoncanonicalWire, cause)
                         .with("document_pointer", pointer)
                 )),
                 "{text}"
@@ -3464,7 +3492,7 @@ mod tests {
         assert_eq!(
             check(br#"{"a":1,"a":2,"n":1e-400}"#),
             Err(refuse(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "invalid-value")
+                admission_record(Code::InvalidRuntimeInput, "invalid-value")
                     .with("document_pointer", "")
             ))
         );
@@ -3495,7 +3523,7 @@ mod tests {
     #[test]
     fn an_allocation_failure_refuses_allocation_failed() {
         let expected = refuse(
-            AdmissionRecord::new(Code::ResourceExhausted, "allocation-failed")
+            admission_record(Code::ResourceExhausted, "allocation-failed")
                 .with("requested", "4096"),
         );
         assert_eq!(
