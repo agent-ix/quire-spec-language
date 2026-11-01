@@ -60,6 +60,10 @@ A focused manual traceability pass checked NFR-008-AC-1..5 against PR #2007's ch
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+| FND-004 | still-open | The suite has no checked-v2 Ledger retry where one sibling settles and a later sibling exhausts, so it cannot detect receipt duplication across the partial commit. |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
 
 ## Disposition evidence
 
@@ -111,3 +115,19 @@ The new regression asserts a visit limit of 2 with eight eviction records, so it
 
 - FND-001 and FND-002 remain fixed: retained restoration identity and the scan-refusal retry remain covered.
 - FND-003 remains fixed: the test first probes the sufficient visit usage, then refuses at a formula node under a one-short ceiling, retries under the default ceiling, and checks the receipt list and capture.
+
+
+## New findings (disposition pass 7)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | medium | The checked-v2 retry suite lacks a mutable-ledger case where one trigger settles before a later sibling exhausts, so repeated-receipt behavior on whole-trace retry is unverified. | tests/it/checked_temporal_limits_v2.rs:282 | correct-requirement-no-evidence |
+
+### FND-004 — settled sibling ledger retry is not covered
+
+The AC-2 sibling test verifies only `settled_siblings()` with the non-ledger helper. It does not seed a checked-v2 `Ledger`, force a later instance to exhaust after the first has settled, or retry the same trace and assert the first receipt remains unique. The new post-formula commit path exposes this multi-instance retry case, and the existing single-instance retry test does not cover it.
+
+### Disposition pass 7 evidence
+
+- FND-001 through FND-003 remain fixed: restoration-state identity, scan-refusal retry, and post-scan formula refusal retry are still covered.
+- FND-004 remains open: no successor test retries the same trace through a mutable ledger after a settled sibling has committed and a later instance has exhausted.

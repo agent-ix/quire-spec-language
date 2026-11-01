@@ -34,6 +34,8 @@ pub(super) struct Instance {
 pub(super) struct Failed {
     pub identity: String,
     pub error: Error,
+    /// Receipt to append if the whole checked evaluation commits.
+    pub pending_receipt: Option<String>,
 }
 
 /// One admitted trigger's resolution. A retained instance is represented by
@@ -174,9 +176,6 @@ pub(super) fn resolve(
                 }
                 if let Some(capture) = evicted_capture {
                     work.subject.capture = Some(capture);
-                    if let Some(saved) = retained_instances.get_mut(&trigger.identity) {
-                        saved.receipts.push(trigger.receipt.clone());
-                    }
                     instances.push(Resolved::Failed(Failed {
                         identity: trigger.identity.clone(),
                         error: Incomplete {
@@ -184,6 +183,7 @@ pub(super) fn resolve(
                             subject: work.subject,
                         }
                         .into(),
+                        pending_receipt: Some(trigger.receipt.clone()),
                     }));
                     work.subject.capture = None;
                     continue;
@@ -212,6 +212,7 @@ pub(super) fn resolve(
                             subject: work.subject,
                         }
                         .into(),
+                        pending_receipt: None,
                     }));
                     continue;
                 }
@@ -238,6 +239,7 @@ pub(super) fn resolve(
             Err(error) => instances.push(Resolved::Failed(Failed {
                 identity: trigger.identity.clone(),
                 error,
+                pending_receipt: None,
             })),
         }
     }

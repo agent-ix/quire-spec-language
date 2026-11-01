@@ -851,6 +851,14 @@ struct EvaluationView {
     instance_bound_atoms: BTreeSet<u32>,
 }
 
+enum LedgerUpdate {
+    Insert(activation::Instance),
+    AppendReceipts {
+        identity: String,
+        receipts: Vec<String>,
+    },
+}
+
 fn run_view(
     view: EvaluationView,
     trace: &Trace,
@@ -894,6 +902,7 @@ fn run_view(
         }))]),
         Outcome::Instances(instances) => {
             let mut assessed = Vec::with_capacity(instances.len());
+            let mut ledger_updates = Vec::new();
             for (ordinal, resolved) in instances.into_iter().enumerate() {
                 let subject = Subject {
                     instance: ordinal,
@@ -902,6 +911,12 @@ fn run_view(
                 work.subject = subject;
                 let resolved = match resolved {
                     activation::Resolved::Failed(failed) => {
+                        if let Some(receipt) = failed.pending_receipt {
+                            ledger_updates.push(LedgerUpdate::AppendReceipts {
+                                identity: failed.identity.clone(),
+                                receipts: vec![receipt],
+                            });
+                        }
                         assessed.push(Obligation::Unactivated {
                             subject,
                             instance: failed.identity,
@@ -953,18 +968,20 @@ fn run_view(
                 };
                 let instance = match resolved {
                     activation::Resolved::Owned(instance) => {
-                        if let Some(retained) = retained_instances.as_deref_mut() {
-                            retained.insert(instance.identity.clone(), instance.clone());
+                        if retained_instances.is_some() {
+                            ledger_updates.push(LedgerUpdate::Insert(instance.clone()));
                         }
                         instance
                     }
                     activation::Resolved::Retained { identity, receipts } => {
                         let saved = retained_instances
-                            .as_deref_mut()
-                            .and_then(|retained| retained.get_mut(&identity))
+                            .as_deref()
+                            .and_then(|retained| retained.get(&identity))
                             .expect("the retained instance remains in the ledger");
-                        saved.receipts.extend(receipts);
-                        saved.clone()
+                        let mut restored = saved.clone();
+                        restored.receipts.extend(receipts.iter().cloned());
+                        ledger_updates.push(LedgerUpdate::AppendReceipts { identity, receipts });
+                        restored
                     }
                     activation::Resolved::Failed(_) => unreachable!("failed activation handled"),
                 };
@@ -981,6 +998,20 @@ fn run_view(
                     support,
                     premises: premises.clone(),
                 })));
+            }
+            if let Some(retained) = retained_instances {
+                for update in ledger_updates {
+                    match update {
+                        LedgerUpdate::Insert(instance) => {
+                            retained.insert(instance.identity.clone(), instance);
+                        }
+                        LedgerUpdate::AppendReceipts { identity, receipts } => {
+                            if let Some(saved) = retained.get_mut(&identity) {
+                                saved.receipts.extend(receipts);
+                            }
+                        }
+                    }
+                }
             }
             Ok(assessed)
         }

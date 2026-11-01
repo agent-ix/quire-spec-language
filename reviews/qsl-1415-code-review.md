@@ -92,6 +92,16 @@ Reviewed PR #2007 at head `20ed8801881d3ca9f6477bda7e22bac5cb864281` against bas
 | FND-007 | fixed | - |
 | FND-008 | fixed | Retained-instance and new retained-ledger instance clone costs are charged before cloning. |
 | FND-009 | still-open | Clone byte estimates are charged to `Visits`, whose published unit is temporal graph-node visits; this changes usage and can refuse an evaluation before the node-visit ceiling is reached. |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+| FND-009 | fixed | Retained-instance clones and ledger receipt commits are deferred until formula evaluation returns; Visits remains graph-node visits. |
+| FND-010 | still-open | A settled sibling's receipt is committed before a later sibling can exhaust; retrying the same trace stages and commits that already recorded receipt again. |
 
 ## Disposition evidence
 
@@ -179,3 +189,20 @@ The helper `instance_clone_work` returns an estimated byte count, then callers a
 - FND-001 through FND-007 remain fixed on head `7f3862a821192d2dc464f6a7414dcd5421c52e46`: caller ceilings, retention demand, scan accounting, charge-before-insert, retry-safe receipts, pre-scan validation, and post-formula receipt commit remain in place.
 - FND-008 is fixed: `instance_clone_work` is charged before cloning both restored instances and instances copied into the retained ledger. The updated formula-refusal regression probes successful visit usage, sets a one-short ceiling, confirms refusal is at a formula node, and retries with the default ceiling while asserting one receipt and preserved capture.
 - FND-009 remains open: the precharge reuses a counter whose published unit is graph-node visits, so cost accounting changes API semantics and result usage.
+
+
+## New findings (disposition pass 7)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | medium | When one trigger instance settles and is committed to the ledger before a later sibling exhausts the shared work limit, retrying the same trace appends the first instance's already committed receipt again. | src/temporal.rs:954 |
+
+### FND-010 — settled sibling receipt duplicates on whole-trace retry
+
+`run_view` commits each successful instance's state and receipts inside the loop. If the next instance returns `Error::Exhausted`, the function returns with the earlier sibling still committed. On retrying the same trace, activation resolves that first trigger from the retained ledger and stages its receipt again; the successful retry extends that receipt a second time. The existing sibling-exhaustion test checks the returned settled assessment but uses no mutable `Ledger`, so it does not detect the repeated receipt. Ensure the retry path recognizes an already committed delivery receipt or otherwise makes the multi-instance commit/retry idempotent.
+
+## Disposition pass 7 evidence
+
+- FND-001 through FND-008 remain fixed on head `5f5d9f5e81ca65419fab782be81a09fe98a6195e`: the prior limit, scan, retention, receipt, and pre-refusal-copy fixes remain present.
+- FND-009 is fixed: `Resolved::Retained` keeps only identity and new receipts through formula work; saved receipts and the retained-instance clone occur after an outcome, while new instances enter the ledger only after their formula settles. The updated regression asserts graph visit usage is exactly three and retries without duplicate receipts for one instance.
+- FND-010 remains open: per-instance commits are not atomic or deduplicated across a later sibling's visit exhaustion, so the same trace can append an already committed sibling receipt during retry.

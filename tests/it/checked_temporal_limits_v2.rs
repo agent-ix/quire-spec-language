@@ -593,6 +593,98 @@ fn checked_v2_formula_refusal_retries_without_duplicate_receipt() {
     });
 }
 
+/// AC-5: a later sibling's refusal leaves earlier retained receipt updates
+/// uncommitted, so retrying the whole trace does not duplicate the first one.
+#[trace("TC-124", "NFR-008-AC-5")]
+#[test]
+fn checked_v2_sibling_refusal_retries_without_duplicate_receipts() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) { always[0,0] holds(view.code > 0) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let mut input = activated_trace(atom);
+        input.triggers[0].captures.clear();
+        input.triggers.push(temporal::Trigger {
+            identity: "trigger:two".into(),
+            receipt: "receipt:two".into(),
+            anchor: "event-1".into(),
+            payload: "payload:two".into(),
+            guard: None,
+            captures: Vec::new(),
+        });
+        let mut ledger = temporal::Ledger::new();
+        let seeded = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits::default(),
+            &mut ledger,
+        );
+        assert!(seeded.result().is_ok());
+
+        input.triggers[0].receipt = "receipt:one-retry".into();
+        input.triggers[1].receipt = "receipt:two-retry".into();
+        let one = temporal::Trigger {
+            receipt: "receipt:one-retry".into(),
+            ..input.triggers[0].clone()
+        };
+        let mut one_trace = input.clone();
+        one_trace.triggers = vec![one];
+        let mut probe_ledger = ledger.clone();
+        let single = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &one_trace,
+            temporal::Limits::default(),
+            &mut probe_ledger,
+        );
+        let one_instance_visits = single.usage().visits;
+        assert!(single.result().is_ok());
+
+        let stopped = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits {
+                visits: one_instance_visits + 2,
+                ..temporal::Limits::default()
+            },
+            &mut ledger,
+        );
+        let Err(temporal::Error::Exhausted(exhaustion)) = stopped.result() else {
+            panic!("the later sibling exhausts the shared visit ceiling");
+        };
+        assert_eq!(exhaustion.dimension, temporal::LimitDimension::Visits);
+        assert_eq!(exhaustion.subject.instance, 1);
+        let [temporal::Obligation::Assessed(sibling)] = stopped.settled_siblings() else {
+            panic!(
+                "the first sibling settled before the later refusal: {:?}, usage {:?}, result {:?}",
+                stopped.settled_siblings(),
+                stopped.usage(),
+                stopped.result()
+            );
+        };
+        assert_eq!(sibling.receipts, ["receipt:one", "receipt:one-retry"]);
+
+        let retried = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits::default(),
+            &mut ledger,
+        );
+        let [temporal::Obligation::Assessed(first), temporal::Obligation::Assessed(second)] =
+            retried.result().unwrap()
+        else {
+            panic!("the unchanged ledger permits both siblings to retry");
+        };
+        assert_eq!(first.receipts, ["receipt:one", "receipt:one-retry"]);
+        assert_eq!(second.receipts, ["receipt:two", "receipt:two-retry"]);
+    });
+}
+
 /// AC-5: exact ceilings permit the full result, one-short ceilings refuse the
 /// first unpaid charge, and retries reproduce the result from unchanged input.
 #[trace("TC-124", "NFR-008-AC-5")]
