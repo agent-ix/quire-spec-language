@@ -11,12 +11,13 @@ use qsl_foundation::diagnostic::{Code, StageFailure};
 use qsl_foundation::Span;
 use qsl_semantics::check::{
     check_hyper_clauses, Capability, CheckCause, CheckRefusal, CheckedHyper, CheckedHyperClause,
-    CheckedModelRelation, HyperCause, HyperForm, HyperTraceFamily, HyperUnsupported, NodeKind,
+    CheckedModelRelation, HyperCause, HyperForm, HyperTraceFamily, HyperUnsupported,
     PackageDeclarations, StepRead, TemporalCause, TemporalProfile,
 };
 use qsl_semantics::family::{ClaimExtent, FamilyContract};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
+use quire_checked::node::NodeKind;
 use quire_exact::{NodeKey, PathSegment};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;

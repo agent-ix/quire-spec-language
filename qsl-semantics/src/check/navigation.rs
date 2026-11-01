@@ -5,6 +5,7 @@
 //! source end's role names the forward end, and the target end's role, when it
 //! declares one, names the inverse end.
 
+use quire_checked::node::EndSide;
 use std::collections::BTreeMap;
 
 use quire_exact::EffectiveId;
@@ -12,15 +13,6 @@ use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::model::domain_package::{Multiplicity, RelationshipDirection};
 use quire_checked::key::DeclarationKey;
-
-/// One end of a relationship.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum EndSide {
-    /// The source end.
-    Source,
-    /// The target end.
-    Target,
-}
 
 /// One declared end: the object type it names, its role and its multiplicity.
 #[derive(Clone, Debug, Eq, PartialEq)]

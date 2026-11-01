@@ -6,7 +6,9 @@ use quire_exact::{NodeKey, Value};
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::location::Location;
 
-use qsl_semantics::model::observation::Observation;
+use qsl_package::AdmittedProtocolObservation;
+use quire_semantic_value::admission::{ObservationAdmission, PathStep};
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 pub(crate) mod resolve;
 
@@ -33,15 +35,42 @@ pub enum SuppliedValue {
     Unavailable(CatalogCode),
 }
 
+/// The selected population for one reference occurrence in a supplied value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolReferenceOccurrence {
+    /// The typed path from the supplied value's root to this reference.
+    pub path: Vec<PathStep>,
+    /// The exact checked population declaration that supplied the reference.
+    pub population: NodeKey,
+}
+
+/// One binder value with explicit population provenance for every reference.
+#[derive(Clone, Debug)]
+pub struct ProtocolSuppliedValue {
+    /// The value or unavailable source supplied for the binder.
+    pub value: SuppliedValue,
+    /// The reference occurrences in FR-106 value-walk order.
+    pub references: Vec<ProtocolReferenceOccurrence>,
+}
+
+impl From<SuppliedValue> for ProtocolSuppliedValue {
+    fn from(value: SuppliedValue) -> Self {
+        Self {
+            value,
+            references: Vec::new(),
+        }
+    }
+}
+
 /// The values supplied for one protocol-slot evaluation (FR-390).
 #[derive(Clone, Debug)]
 pub struct ProtocolSupply<'a> {
     /// Binder identities and values. A sequence preserves duplicates so
     /// admission can report them before checking for missing binders.
-    pub binders: Vec<(NodeKey, SuppliedValue)>,
+    pub binders: Vec<(NodeKey, ProtocolSuppliedValue)>,
     /// The current admitted observation, required only when a value names an
     /// object reference.
-    pub observation: Option<&'a Observation>,
+    pub observation: Option<&'a ObservationAdmission<AdmittedProtocolObservation<'a>>>,
 }
 
 /// The result of evaluating a checked protocol slot (FR-390).
@@ -62,39 +91,66 @@ pub enum ProtocolSlotEvaluation {
 
 pub(crate) fn foreign_to_observation(
     reference: &quire_exact::ObjectReference,
-    observation: &Observation,
+    observation: &AdmittedProtocolObservation<'_>,
 ) -> bool {
-    let references = observation.environment.references();
+    let references = observation.environment().references();
     !references.is_empty()
         && references
             .iter()
             .all(|held| held.universe() != reference.universe())
 }
 
-/// Reference values nested in one supplied aggregate, in deterministic
-/// depth-first order. The explicit worklist keeps admission independent of
-/// the value's nesting depth.
-pub(crate) fn references(value: &Value) -> Vec<quire_exact::ObjectReference> {
+/// Reference occurrences in one value, preserving their typed field, option
+/// and sequence paths in deterministic depth-first order.
+pub(crate) fn reference_occurrences(
+    value: &Value,
+    types: &TypeEnvironment,
+) -> Vec<(Vec<PathStep>, quire_exact::ObjectReference)> {
     let mut references = Vec::new();
-    let mut pending = vec![value];
-    while let Some(value) = pending.pop() {
+    let mut pending = vec![(value, Vec::new())];
+    while let Some((value, path)) = pending.pop() {
         match value {
-            Value::Reference(reference) => references.push(reference.clone()),
-            Value::Option(option) => pending.extend(option.payload()),
+            Value::Reference(reference) => references.push((path, reference.clone())),
+            Value::Option(option) => {
+                if let Some(value) = option.payload() {
+                    let mut nested = path;
+                    nested.push(PathStep::OptionValue);
+                    pending.push((value, nested));
+                }
+            }
             Value::Composite(composite) => {
+                if let Some(CompositeShape::Record(fields)) = types
+                    .composite(composite.declaration().clone())
+                    .map(quire_semantic_value::declaration::CompositeDeclaration::shape)
+                {
+                    for (field, slot) in fields.iter().zip(composite.slots()).rev() {
+                        if let quire_exact::FieldValue::Present(value) = slot {
+                            let mut nested = path.clone();
+                            nested.push(PathStep::Field(field.name().to_owned()));
+                            if field.presence() == quire_exact::Presence::Optional {
+                                nested.push(PathStep::OptionValue);
+                            }
+                            pending.push((value, nested));
+                        }
+                    }
+                }
+            }
+            Value::Collection(collection) => {
+                for (index, value) in collection.elements().iter().enumerate().rev() {
+                    let mut nested = path.clone();
+                    nested.push(PathStep::Index(index));
+                    pending.push((value, nested));
+                }
+            }
+            Value::Union(union) => {
                 pending.extend(
-                    composite
-                        .slots()
+                    union
+                        .payload()
                         .iter()
                         .rev()
-                        .filter_map(|slot| match slot {
-                            quire_exact::FieldValue::Present(value) => Some(value),
-                            quire_exact::FieldValue::Absent | quire_exact::FieldValue::Null => None,
-                        }),
+                        .map(|value| (value, path.clone())),
                 );
             }
-            Value::Collection(collection) => pending.extend(collection.elements().iter().rev()),
-            Value::Union(union) => pending.extend(union.payload().iter().rev()),
             Value::Boolean(_)
             | Value::Integer(_)
             | Value::Rational(_)

@@ -9,10 +9,10 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     AggregateTerm, BodyTerm, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp,
-    MeasureObligation, NodeKind, StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct,
-    TimedModel,
+    MeasureObligation, StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct, TimedModel,
 };
 use qsl_semantics::model::intake::meaning;
+use quire_checked::node::NodeKind;
 use quire_exact::{Integer, Rational};
 use serde_json::{json, Value};
 

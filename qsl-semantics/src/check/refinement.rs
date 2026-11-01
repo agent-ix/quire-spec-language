@@ -26,6 +26,7 @@
 //! row's use once a subject supplies the universes. A bound that depends on
 //! `n` through any other form is refused as not yet checked.
 
+use quire_checked::node::{NodeKind, Visit};
 mod catalog;
 mod history;
 mod internal_list;
@@ -73,7 +74,7 @@ pub use step_label::{observation, LabelStep, RowObservation, StepLabel};
 use super::check::{
     bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
 };
-use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit};
+use super::ir::{static_integer_range, CheckedBody, CheckedNode};
 use super::lowering::AdmittedModel;
 use super::observation::Observations;
 use super::profile::TemporalProfile;

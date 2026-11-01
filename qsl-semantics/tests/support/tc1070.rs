@@ -144,3 +144,70 @@ pub(crate) fn document() -> Json {
     doc["populations"] = json!([{"identity": model::id("nodes"), "displayName": "nodes", "kind": {"module": model::BUSINESS, "name": "population"}, "members": [model::id("Node")], "extent": "closed", "origin": model::origin("nodes")}]);
     doc
 }
+
+/// TC-1070's E-P reference-provenance model extension. Kept separate from
+/// `document` so the older E/L tests continue to exercise their original
+/// fixture shape.
+#[allow(
+    dead_code,
+    reason = "the E-P extension is consumed by qsl-eval acceptance tests"
+)]
+pub(crate) fn document_ep() -> Json {
+    let mut doc = document();
+    let optional = |mut field: Json| {
+        field["presence"] = json!("optional");
+        field
+    };
+    let other = model::declaration(
+        "Other",
+        "thing",
+        json!({
+            "identityFields": [model::id("Other/marker")],
+            "fields": [model::field("Other", "marker", "ix://quire/native/Boolean"),
+                       optional(model::field("Other", "next", &model::id("Other")))],
+            "relationships": [{
+                "identity": model::id("relationship/otherLinks"), "category": "structural", "composite": false,
+                "direction": "source-to-target", "origin": {"source": {"sourceIdentity": model::id("spec"), "path": "model.qspec", "startLine": 1, "startColumn": 1}},
+                "sourceEnd": {"type": model::id("Other"), "role": "source", "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}},
+                "targetEnd": {"type": model::id("Other"), "role": "target", "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}}
+            }]
+        }),
+    );
+    let elsewhere = model::declaration(
+        "Elsewhere",
+        "thing",
+        json!({"identityFields": [model::id("Elsewhere/marker")], "fields": [model::field("Elsewhere", "marker", "ix://quire/native/Boolean")]}),
+    );
+    let mut sequence = model::field("PeerBundle", "sequence", &model::id("Other"));
+    sequence["multiplicity"] = json!({"lower": 1, "upper": 2, "ordered": true, "unique": false});
+    let peer_bundle = model::declaration(
+        "PeerBundle",
+        "record",
+        json!({"fields": [model::field("PeerBundle", "nested", &model::id("Other")),
+                    optional(model::field("PeerBundle", "optional", &model::id("Other"))), sequence] }),
+    );
+    let mut receipt = doc["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|ty| ty["displayName"] == "Receipt")
+        .unwrap()
+        .clone();
+    receipt["fields"].as_array_mut().unwrap().extend([
+        model::field("Receipt", "peer", &model::id("Other")),
+        model::field("Receipt", "bundle", &model::id("PeerBundle")),
+    ]);
+    let types = doc["types"].as_array_mut().unwrap();
+    let receipt_index = types
+        .iter()
+        .position(|ty| ty["displayName"] == "Receipt")
+        .unwrap();
+    types[receipt_index] = receipt;
+    types.extend([other, elsewhere, peer_bundle]);
+    doc["populations"].as_array_mut().unwrap().extend([
+        json!({"identity": model::id("otherNodes"), "displayName": "otherNodes", "kind": {"module": model::BUSINESS, "name": "population"}, "members": [model::id("Other")], "extent": "closed", "origin": model::origin("otherNodes")}),
+        json!({"identity": model::id("otherSpare"), "displayName": "otherSpare", "kind": {"module": model::BUSINESS, "name": "population"}, "members": [model::id("Other")], "extent": "closed", "origin": model::origin("otherSpare")}),
+        json!({"identity": model::id("elsewhereNodes"), "displayName": "elsewhereNodes", "kind": {"module": model::BUSINESS, "name": "population"}, "members": [model::id("Elsewhere")], "extent": "closed", "origin": model::origin("elsewhereNodes")}),
+    ]);
+    doc
+}

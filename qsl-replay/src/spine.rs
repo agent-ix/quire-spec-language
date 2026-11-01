@@ -91,6 +91,7 @@ pub use native_result::{
     CallOriginRead, ClauseRunRecord, CommandErrorRecord, NativeRunOutcome, NativeRunReadError,
     NativeRunResult, NativeRunResultError, PositionRead, RefusalLocusRead, SourceRefRead, SpanRead,
 };
+pub mod query_proof;
 mod request;
 pub use request::{
     read_clause_run_request, AnchorWire, ClauseArgumentWire, ClauseRequestParts,
