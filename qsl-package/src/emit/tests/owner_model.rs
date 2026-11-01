@@ -283,7 +283,7 @@ fn each_defect_of_the_edge_is_refused_where_the_reader_reaches_it() {
                     envelope["semantic_graph"]["nodes"][position]["owner_model"] = external.clone();
                 }
             }),
-            format!("MalformedWire at {clause_path}/owner_model (None)"),
+            format!("MalformedWire at {clause_path}/owner_model/node (None)"),
         ),
         (
             "the target is not among the dependencies",
