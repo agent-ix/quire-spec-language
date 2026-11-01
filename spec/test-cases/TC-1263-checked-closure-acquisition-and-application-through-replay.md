@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-485-AC-1 through FR-485-AC-12 and FR-262-AC-13 through a consumer that may enter QSL only through `qsl_replay`, comparing the facade with the existing compile and evaluation paths.
+Verify FR-485-AC-1 through FR-485-AC-12, FR-485-AC-18 and FR-262-AC-13 through a consumer that may enter QSL only through `qsl_replay`, comparing the facade with the existing compile and evaluation paths.
 
 ## Test Procedure
 
@@ -24,7 +24,8 @@ Verify FR-485-AC-1 through FR-485-AC-12 and FR-262-AC-13 through a consumer that
 6. Attempt acquisition with malformed source, a same-owner library, a short S1 limit and an S1 limit above the reader limit. Begin `h(p: Population<T>[3]): Boolean` with `Value::Population` carrying a `PopulationId` not recorded in `ApplicationEnvironment` constructed from `ObjectClosure`. Observe Begin before any body read, both before and after FR-405's evaluator switch.
 7. Acquire a unit whose `twice` body calls `f` twice, whose `k` calls an imported `helper`, importing a library whose `outer` calls `helper` twice. For each caller selection, ask `nested_call_site` for every call node and ordinal and compare the issued locations with an independent walk of the declaring checked body. Register a generated body for the caller requesting the callee at each issued `Location`, run it under the work limit equal to the root-only spend, and compare the incomplete outcome's `location`. Repeat for the imported `outer` and assert the dependency's `package_id` and `Origin::Body`.
 8. Refuse a second-acquisition caller, both foreign-owner directions, an unrelated body's call, a function node, an unknown node, a node several other packages own (decided on the pure attribution step, since owner-scoped keys cannot coincide in a real closure) and an unknown ordinal; assert the distinct causes, an open registry, no factory invocation and an unchanged meter. Compare the site before and after registration, after Begin and through a cloned handle.
-9. Inspect production source and run FR-060 T12-A on the consumer checkout for API and ownership boundaries.
+9. Declare `record P { r: Boolean; o: Boolean?; }`, obtain its `nominal_declaration` view from an admitted selection and compare each `RecordField`'s identifier, `ValueType` and `Presence`; repeat for a tuple and a union view.
+10. Inspect production source and run FR-060 T12-A on the consumer checkout for API and ownership boundaries.
 
 ## Expected Results
 
@@ -36,4 +37,5 @@ Verify FR-485-AC-1 through FR-485-AC-12 and FR-262-AC-13 through a consumer that
 6. Acquisition refusals equal `compile_admitted` in class and detail. The missing `PopulationId` returns `ApplicationBeginRefusal::Call(CallFailure::Input(InputRefusal::WrongValueKind))` for parameter `0` at Begin, with no session, charge or body read, on both designated evaluators; no admitted empty population is fabricated.
 7. Each issued site equals the checked call node's location and the denied nested charge reports it; the imported caller's site carries the dependency's package and body origin.
 8. Refusals are the six distinct causes with no registry or meter change; the site is stable across registration, Begin and clones.
-9. The facade uses the existing std reference adapter before FR-405's switch and one designated evaluator afterward, with one compile path, no dual dispatch, compatibility layer, copied leaf or QSL moved-type re-export.
+9. `r` and `o` share one `ValueType` yet report `Presence::Required` and `Presence::Optional`; tuple and union views are unchanged.
+10. The facade uses the existing std reference adapter before FR-405's switch and one designated evaluator afterward, with one compile path, no dual dispatch, compatibility layer, copied leaf or QSL moved-type re-export.

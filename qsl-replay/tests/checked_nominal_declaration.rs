@@ -7,7 +7,7 @@ use qsl_replay::{
     acquire_checked_closure, DependencyInput, NodeKey, NominalDeclarationForm,
     NominalDeclarationMember, ReplayLimits, SourceIdentity, StageLimits,
 };
-use quire_exact::ValueType;
+use quire_exact::{Presence, ValueType};
 use serde_json::Value as JsonValue;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -73,9 +73,9 @@ fn public_consumer_reads_complete_ordered_nominal_members_from_one_selection() {
     assert!(matches!(
         holder.members(),
         [
-            NominalDeclarationMember::RecordField { identifier, value_type: ValueType::Integer },
-            NominalDeclarationMember::RecordField { identifier: second, value_type: ValueType::Composite(_) },
-            NominalDeclarationMember::RecordField { identifier: third, value_type: ValueType::Composite(_) },
+            NominalDeclarationMember::RecordField { identifier, value_type: ValueType::Integer, presence: Presence::Required },
+            NominalDeclarationMember::RecordField { identifier: second, value_type: ValueType::Composite(_), presence: Presence::Required },
+            NominalDeclarationMember::RecordField { identifier: third, value_type: ValueType::Composite(_), presence: Presence::Required },
         ] if identifier.as_str() == "datum" && second.as_str() == "pair" && third.as_str() == "shape"
     ));
 
