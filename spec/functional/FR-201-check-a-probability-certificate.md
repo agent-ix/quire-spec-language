@@ -51,7 +51,8 @@ pub struct ProbabilityCertificate {
 }
 
 pub fn check_probability_certificate(
-    request: &ReplayRequest,                    // FR-098
+    wire: ReplayRequestWire,                    // FR-098
+    subject: &ModelTraceSubject,                // FR-128
     item: &ObligationIdentity,
     certificate: &ProbabilityCertificate,
     limits: &ExactProbLimits,
@@ -129,11 +130,13 @@ product state form `{product_key}` and the second as `{member}`.
 
 - The checker SHALL refuse a certificate whose identity differs from the
   item's.
-- It SHALL recompile the package (FR-098), re-admit the subject, and
-  re-enumerate the product through `ModelSystem` and the monitor, using
+- It SHALL decode `wire` through FR-098's canonical `ByteProvision` and
+  recompile path, re-admit `subject`, and re-enumerate the product through
+  `ModelSystem` and the monitor, using
   `qsl-eval`'s property-automaton translation and enabledness (ADR-018
   LA-5) and its own product enumeration and graph algorithms, and no
-  `qsl-analyze` code: every
+  `qsl-analyze` code. It SHALL NOT accept or reuse an EN-5 solver product as
+  trusted replay data: every
   reachable product state for an `Upper`, `Exact` or `LongRun` certificate,
   and the states the certificate names and their successors for a `Lower`
   one, an unexplored successor counting as value 0.

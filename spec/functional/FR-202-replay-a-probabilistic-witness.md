@@ -61,7 +61,8 @@ pub enum WitnessEvidence { Paths(Vec<WitnessPath>), Subsystem(ProbabilityCertifi
 pub struct WitnessPath { pub steps: Vec<WitnessStep> }  // CX-2 content plus mandatory semantic choice, post-key, draw, elapsed
 
 pub fn replay_probabilistic_witness(
-    request: &ReplayRequest,                     // FR-098
+    wire: ReplayRequestWire,                     // FR-098
+    subject: &ModelTraceSubject,                 // FR-128
     envelope: &WitnessEnvelope<ProbabilisticCounterexample>,
     limits: &ExactProbLimits,
 ) -> Result<ReplayOutcome, ReplayRefusal>;
@@ -123,9 +124,10 @@ No guessed QSpec wire spelling is adopted by this semantic contract.
 
 ### Replay
 
-- `replay_probabilistic_witness` SHALL recompile the package (FR-098) and
-  re-admit the subject's initial state and universes from the provision, as
-  FR-128 does.
+- `replay_probabilistic_witness` SHALL decode `wire` through FR-098's
+  canonical `ByteProvision` and recompile path, and re-admit the initial
+  states, universes and expansion limits in `subject`, as FR-128 does. It
+  SHALL NOT accept or reuse an EN-5 solver product as trusted replay data.
 - For a path set it SHALL re-execute each path through `ModelSystem`:
   rederive the named semantic action and complete post-key, select each
   step's successor by its post-state; check that each
