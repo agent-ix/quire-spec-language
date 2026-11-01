@@ -192,6 +192,52 @@ fn checked_formula_normalization_preserves_all_operator_families() {
     }
 }
 
+/// FR-043-AC-5: equal-coordinate participants require one admitted order
+/// authority; insertion order is never accepted as the ordering premise.
+#[trace("TC-122", "FR-043-AC-5")]
+#[test]
+fn checked_order_sensitive_formula_refuses_unordered_equal_coordinates() {
+    let checked = checked("true until[0,1] true", temporal::EVENT_POSITION);
+    let mut input = origin_trace();
+    input.positions = [0, 1]
+        .into_iter()
+        .map(|_| Position {
+            coordinate: 1,
+            order: None,
+            valuations: BTreeMap::new(),
+            instance_valuations: BTreeMap::new(),
+        })
+        .collect();
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    assert!(matches!(
+        report.result(),
+        Err(temporal::Error::Refused(temporal::Refusal::Order { .. }))
+    ));
+    assert_eq!(report.usage().positions, 0);
+
+    for positions in [[1, 2], [2, 1]] {
+        input.positions = positions
+            .into_iter()
+            .map(|key| Position {
+                coordinate: 1,
+                order: Some(temporal::OrderKey {
+                    authority: "sequence:orders".into(),
+                    key,
+                }),
+                valuations: BTreeMap::new(),
+                instance_valuations: BTreeMap::new(),
+            })
+            .collect();
+        let report =
+            temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+            panic!("admitted order evaluates");
+        };
+        assert_eq!(assessment.truth, Some(Truth::True));
+    }
+}
+
 /// FR-045: TC-125 retains the selected checked clause and classifies from its
 /// reachable operator graph and surrounding closure.
 #[trace("TC-125", "FR-045-AC-1")]
