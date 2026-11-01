@@ -894,9 +894,11 @@ fn checked_past_operator_requires_authoritative_history() {
         .map(|(coordinate, holds)| Position {
             coordinate,
             order: None,
-            valuations: (coordinate != 1)
-                .then(|| BTreeMap::from([(nested_leaf, holds)]))
-                .unwrap_or_default(),
+            valuations: if coordinate != 1 {
+                BTreeMap::from([(nested_leaf, holds)])
+            } else {
+                BTreeMap::new()
+            },
             instance_valuations: BTreeMap::new(),
         })
         .collect();
