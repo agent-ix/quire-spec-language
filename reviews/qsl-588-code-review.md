@@ -45,3 +45,22 @@ FND-001: `claim.rs` computes the timed horizon by summing the upper bound of eve
 - `TC-708` → `FR-253-AC-3`: correct.
 - `TC-708` → `FR-253-AC-4`: correct and direct.
 - `TC-709` → `FR-254-AC-1..4`: criterion tags are direct; the gap artifact records the compound AC-3 oracle limitation.
+
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+
+After excerpt:
+
+```rust
+            let deepest = node
+                .operands()
+                .map(|operand| reach.get(operand.index()).cloned())
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .max()
+                .unwrap_or_else(|| Rational::from_integer(Integer::zero()));
+            *reach.get_mut(index)? = deepest.add(&own);

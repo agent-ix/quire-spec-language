@@ -48,3 +48,21 @@ Audited the QSL-588 criteria and changed implementation/tests against FR-253, FR
 - `TC-709` → `FR-254-AC-1`, `FR-254-AC-2`: correct and direct.
 - `TC-709` → `FR-254-AC-3`: correctly bound, but the test set does not assert all of the criterion's bundled outcomes (FND-001).
 - `TC-709` → `FR-254-AC-4`: correct and direct.
+
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+
+After excerpt:
+
+```rust
+    assert!(matches!(
+        refusal,
+        ProductRefusal::Translation(
+            qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }
+        )
+    ));
+```
