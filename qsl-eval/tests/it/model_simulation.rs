@@ -122,12 +122,16 @@ fn operation(name: &str, params: &[(&str, &str)], result: Option<&str>, frame: J
         .iter()
         .map(|(parameter, type_ref)| {
             let parameter_identity = format!("{identity}/{parameter}");
-            json!({
+            let mut parameter_node = json!({
                 "identity": parameter_identity, "name": parameter, "typeRef": type_ref,
                 "presence": "required", "nullable": false, "defaultKind": "none",
                 "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
                 "origin": origin(&parameter_identity),
-            })
+            });
+            if *type_ref == "ix://quire/native/Decimal" {
+                parameter_node["decimal"] = json!({"precision": 3, "scale": 2});
+            }
+            parameter_node
         })
         .collect();
     let mut node = json!({
@@ -173,6 +177,15 @@ fn counters_document_with(
     extras: bool,
     relationships: Vec<Json>,
 ) -> Vec<u8> {
+    counters_document_with_options(operations, extras, relationships, false)
+}
+
+fn counters_document_with_options(
+    operations: Vec<Json>,
+    extras: bool,
+    relationships: Vec<Json>,
+    decimal: bool,
+) -> Vec<u8> {
     let counter_identity = ident("Counter");
     let constructs = vec![
         ("object_type", meaning::OBJECT_TYPE),
@@ -197,6 +210,11 @@ fn counters_document_with(
         // Granted by no frame and with no finite domain.
         fields.push(wire_field("tag", "ix://quire/native/Integer", "optional"));
         fields.push(wire_field("id", "ix://quire/native/Integer", "required"));
+    }
+    if decimal {
+        let mut price = wire_field("price", "ix://quire/native/Decimal", "required");
+        price["decimal"] = json!({"precision": 3, "scale": 2});
+        fields.push(price);
     }
     json!({
         "contractVersion": "2.0.0",
@@ -234,6 +252,7 @@ fn counters_document_with(
 
 struct World {
     extras: bool,
+    decimal: bool,
     package: CheckedPackage,
     packages: qsl_semantics::model::intake::PackageInput,
     header: Json,
@@ -273,7 +292,24 @@ fn build_world_with(
     extras: bool,
     relationships: Vec<Json>,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let document = counters_document_with(operations, extras, relationships);
+    build_world_options(operations, clauses, extras, relationships, false)
+}
+
+fn build_world_with_decimal(
+    operations: Vec<Json>,
+    clauses: &str,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
+    build_world_options(operations, clauses, false, Vec::new(), true)
+}
+
+fn build_world_options(
+    operations: Vec<Json>,
+    clauses: &str,
+    extras: bool,
+    relationships: Vec<Json>,
+    decimal: bool,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
+    let document = counters_document_with_options(operations, extras, relationships, decimal);
     let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
@@ -309,6 +345,7 @@ fn build_world_with(
     let graph = declarations.check(CheckingLimits::default())?;
     Ok(World {
         extras,
+        decimal,
         package: CheckedPackage::link(graph),
         header: json!({"identity": PACKAGE}),
         packages,
@@ -319,7 +356,7 @@ fn build_world_with(
 /// One object of a snapshot: key, `value`, `label` and `next`.
 struct Obj(&'static str, i64, i64, Option<&'static str>);
 
-fn object_json(object: &Obj, extras: bool) -> Json {
+fn object_json(object: &Obj, extras: bool, decimal: bool) -> Json {
     let next = match object.3 {
         None => json!({"absent": {}}),
         Some(target) => {
@@ -331,6 +368,9 @@ fn object_json(object: &Obj, extras: bool) -> Json {
     if extras {
         fields["tag"] = json!({"absent": {}});
         fields["id"] = json!({"integer": "0"});
+    }
+    if decimal {
+        fields["price"] = json!({"decimal": {"coefficient": "150", "scale": "2"}});
     }
     json!({"key": object.0, "type": ident("Counter"), "fields": fields})
 }
@@ -362,7 +402,7 @@ impl World {
                 "revision": "fixture:1"},
             "observation": observation, "model": self.header,
             "populations": [{"population": ident("counters"), "complete": true,
-                "objects": objects.iter().map(|object| object_json(object, self.extras)).collect::<Vec<_>>()}],
+                "objects": objects.iter().map(|object| object_json(object, self.extras, self.decimal)).collect::<Vec<_>>()}],
         });
         if !anchor.is_null() {
             document["anchor"] = anchor;
@@ -820,6 +860,63 @@ fn the_state_key_is_the_simulation_state_envelope() {
         let expected = canonical(envelope(label, next));
         assert!(keys.contains(&expected), "no key equals {expected}");
     }
+}
+
+/// FR-120-AC-16 (TC-1195): decimal state, transition and effect values all
+/// use the shared typed encoder, retaining the supplied coefficient/scale.
+#[trace("TC-1195", "FR-120-AC-16")]
+#[test]
+fn decimal_state_transition_and_effects_keep_the_retained_form() {
+    let set_price = operation(
+        "setPrice",
+        &[("p", "ix://quire/native/Decimal")],
+        None,
+        frame(&["price"], false, false),
+    );
+    let mut world = build_world_with_decimal(vec![set_price], "").expect("the unit checks");
+    let start = world.start("decimal", &[Obj("i1", 0, 0, None)]);
+    let system = self::system(&world, vec![start], &["i1"], UNLIMITED);
+
+    let state_key = String::from_utf8(
+        quire_canonical::to_vec(
+            &system.key(&system.initial()[0]),
+            quire_canonical::Limits::new(1 << 20),
+        )
+        .expect("the state key encodes"),
+    )
+    .expect("UTF-8");
+    assert!(
+        state_key.contains(r#""price","value":{"coefficient":"150","scale":"2","type":"decimal"}"#),
+        "the state key keeps 1.50's supplied representation: {state_key}"
+    );
+
+    let expansion = system
+        .successors(&system.initial()[0])
+        .expect("the decimal parameter domain expands");
+    let target_argument = r#"{"coefficient":"200","scale":"2","type":"decimal"}"#;
+    let next = expansion
+        .successors
+        .iter()
+        .find(|(transition, _)| {
+            let bytes = quire_canonical::to_vec(transition, quire_canonical::Limits::new(1 << 20))
+                .expect("the transition encodes");
+            String::from_utf8(bytes)
+                .expect("UTF-8")
+                .contains(target_argument)
+        })
+        .map(|(_, state)| state)
+        .expect("the 2.00 transition exists");
+    let effect = next.reached_by().expect("the transition has a step effect");
+    let price = effect
+        .changed
+        .iter()
+        .find(|change| change.field == "price")
+        .expect("the step effect records price");
+    assert_eq!(
+        price.pre.as_deref(),
+        Some(r#"{"coefficient":"150","scale":"2","type":"decimal"}"#)
+    );
+    assert_eq!(price.post.as_deref(), Some(target_argument));
 }
 
 fn counter_text() -> String {
