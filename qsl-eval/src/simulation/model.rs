@@ -34,6 +34,7 @@ mod timed;
 mod walk;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, Weak};
 
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
@@ -163,6 +164,9 @@ pub struct ModelSimState {
     state: ModelState,
     anchor: SelectedAnchor,
     reached_by: Option<StepEffect>,
+    /// The typed semantic key shared with clones whose model state is
+    /// unchanged. Mutations replace this cache before changing a cell.
+    semantic_cache: Arc<Mutex<Option<(Weak<()>, Arc<encode::Enc>)>>>,
 }
 
 impl ModelSimState {
@@ -448,6 +452,9 @@ pub struct ModelSystem<'a> {
     /// `temporal`/`terminal` nodes.
     terminals: Vec<qsl_package::PackageTerminal<'a>>,
     model: StateModel,
+    /// Distinguishes semantic-key caches for systems with different typing
+    /// contexts, even when they encode the same `ModelSimState`.
+    semantic_context: Arc<()>,
     universes: BTreeMap<DeclarationKey, Vec<String>>,
     initial: Vec<ModelSimState>,
     clauses: Clauses,
@@ -719,6 +726,7 @@ impl<'a> ModelSystem<'a> {
                 state,
                 anchor,
                 reached_by: None,
+                semantic_cache: Default::default(),
             });
         }
 
@@ -888,6 +896,7 @@ impl<'a> ModelSystem<'a> {
                 .map_err(|_| fault("terminal-nodes-resolve"))?,
             clauses: Self::clauses_of(request.package)?,
             model,
+            semantic_context: Arc::new(()),
             universes,
             initial,
             applications,
@@ -921,7 +930,7 @@ impl<'a> ModelSystem<'a> {
         state: &ModelSimState,
     ) -> Result<(Vec<u8>, crate::simulation::StateKey), crate::simulation::EncodingRefusal> {
         crate::simulation::key::state_key(
-            &encode::model_key(&self.model, &state.state, self.typing()),
+            &encode::model_key_with_semantic(encode::Enc::Shared(self.semantic_enc_shared(state))),
             identity_limits(),
         )
     }
@@ -932,7 +941,7 @@ impl<'a> ModelSystem<'a> {
         state: &ModelSimState,
     ) -> Result<crate::simulation::StateKey, crate::simulation::EncodingRefusal> {
         crate::simulation::key::canonical_state_key(
-            &encode::model_key(&self.model, &state.state, self.typing()),
+            &encode::model_key_with_semantic(encode::Enc::Shared(self.semantic_enc_shared(state))),
             identity_limits(),
         )
     }
@@ -1494,7 +1503,7 @@ impl TransitionSystem for ModelSystem<'_> {
     }
 
     fn key(&self, state: &Self::State) -> Self::Key {
-        encode::model_key(&self.model, &state.state, self.typing())
+        encode::model_key_with_semantic(encode::Enc::Shared(self.semantic_enc_shared(state)))
     }
 
     fn successors(

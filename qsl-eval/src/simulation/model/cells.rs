@@ -52,6 +52,7 @@ impl ModelSimState {
         else {
             return;
         };
+        self.semantic_cache = Default::default();
         match value {
             Some(value) => {
                 object.fields.insert(cell.field.clone(), value);

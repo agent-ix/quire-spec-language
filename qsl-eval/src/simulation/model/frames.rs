@@ -1400,6 +1400,7 @@ impl Run<'_, '_, '_> {
                             state: candidate,
                             anchor: handler_anchor(&self.application.text),
                             reached_by: Some(effect),
+                            semantic_cache: Default::default(),
                         },
                         receiver: self.row.reference.clone(),
                         arguments: self.args.iter().map(|(_, value)| value.clone()).collect(),

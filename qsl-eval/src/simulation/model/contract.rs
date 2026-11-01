@@ -372,6 +372,7 @@ impl<'a> ModelSystem<'a> {
             state,
             anchor,
             reached_by: None,
+            semantic_cache: Default::default(),
         }
     }
 

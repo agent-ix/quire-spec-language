@@ -138,6 +138,7 @@ impl ModelSystem<'_> {
             state: state.clone(),
             anchor: mapped_anchor(),
             reached_by: None,
+            semantic_cache: Default::default(),
         };
         expand_state(self, &state, None)
     }
@@ -163,6 +164,7 @@ impl ModelSystem<'_> {
             state: pre.clone(),
             anchor: mapped_anchor(),
             reached_by: None,
+            semantic_cache: Default::default(),
         };
         let walk = walk_of(self, &state, None)?;
         let references = walk.references();
@@ -264,6 +266,7 @@ impl ModelSystem<'_> {
             state: request.pre.clone(),
             anchor: mapped_anchor(),
             reached_by: None,
+            semantic_cache: Default::default(),
         };
         let walk = walk_of(self, &state, None)?;
         let row = walk

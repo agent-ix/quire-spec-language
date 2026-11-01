@@ -67,7 +67,32 @@ impl<'a> ModelSystem<'a> {
     /// The `semantic` member of `state`'s key (FR-120 "State, state key and
     /// anchor"), the member a protocol state's key shares (ADR-027 PS-8).
     pub(crate) fn semantic_enc(&self, state: &ModelSimState) -> super::encode::Enc {
-        super::encode::semantic_enc(&self.model, &state.state, self.typing())
+        super::encode::Enc::Shared(self.semantic_enc_shared(state))
+    }
+
+    /// The cached typed semantic key shared by unchanged clones of `state`.
+    /// The cache is scoped to this system's typing context.
+    pub(crate) fn semantic_enc_shared(
+        &self,
+        state: &ModelSimState,
+    ) -> std::sync::Arc<super::encode::Enc> {
+        let context = std::sync::Arc::downgrade(&self.semantic_context);
+        let mut cache = state
+            .semantic_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((cached_context, semantic)) = cache.as_ref() {
+            if std::sync::Weak::ptr_eq(cached_context, &context) {
+                return std::sync::Arc::clone(semantic);
+            }
+        }
+        let semantic = std::sync::Arc::new(super::encode::semantic_enc(
+            &self.model,
+            &state.state,
+            self.typing(),
+        ));
+        *cache = Some((context, std::sync::Arc::clone(&semantic)));
+        semantic
     }
 
     /// Every value of `value_type` over the objects of `state`, in FR-120's
@@ -431,7 +456,9 @@ impl ModelSystem<'_> {
         selected_transitions: Option<&BTreeSet<ModelTransition>>,
         enabled_only: bool,
     ) -> Option<AppliedAt> {
-        let key = super::encode::model_key(&self.model, &observed.state, self.typing());
+        let key = super::encode::model_key_with_semantic(super::encode::Enc::Shared(
+            self.semantic_enc_shared(observed),
+        ));
         let bytes = quire_canonical::to_vec(
             &key,
             quire_canonical::Limits::new(super::identity_limits().input_bytes),

@@ -35,6 +35,8 @@ pub(crate) enum Enc {
     /// A structural effective declaration identity, written as FR-201's
     /// recursive `{owner_effective_type, original}` record.
     Effective(EffectiveId),
+    /// An immutable encoding shared by clones of the same model state.
+    Shared(std::sync::Arc<Enc>),
     /// A tagged object, keeping its fixed `type` member out of the members
     /// vector so each tagged node avoids growing that vector.
     Tagged {
@@ -68,6 +70,7 @@ impl Encode for Enc {
                 write_json(writer, &json)
             }
             Self::Effective(id) => write_effective(writer, id),
+            Self::Shared(value) => value.encode_into(writer),
             Self::Tagged { tag, members } => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -1010,10 +1013,15 @@ fn empty_map() -> Enc {
 /// FR-181's state key for a model state (FR-120 "State, state key and
 /// anchor"): the five members a model state does not use are empty maps.
 pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> ModelKey {
+    model_key_with_semantic(semantic_enc(model, state, typing))
+}
+
+/// The state-key envelope for an already built semantic member.
+pub(super) fn model_key_with_semantic(semantic: Enc) -> ModelKey {
     ModelKey(Enc::tagged(
         "simulation-state",
         vec![
-            ("semantic", semantic_enc(model, state, typing)),
+            ("semantic", semantic),
             ("control", empty_map()),
             ("queues", empty_map()),
             ("roles", empty_map()),

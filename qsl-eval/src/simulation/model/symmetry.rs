@@ -220,6 +220,7 @@ impl ModelSystem<'_> {
                 state: state.state.clone(),
                 anchor: state.anchor.clone(),
                 reached_by: None,
+                semantic_cache: state.semantic_cache.clone(),
             });
         }
         let renaming = self.renaming(permutation);
@@ -264,6 +265,7 @@ impl ModelSystem<'_> {
             },
             anchor: state.anchor.clone(),
             reached_by: None,
+            semantic_cache: Default::default(),
         })
     }
 
