@@ -1180,6 +1180,8 @@ enum Found {
     Temporal(TemporalCause),
     /// A value-typer refusal with its original declaration location.
     Typed(HyperCause, Location),
+    /// A non-hyper refusal, such as a resource limit, retained as reported.
+    Raw(CheckRefusal, Span),
 }
 
 impl Found {
@@ -1188,6 +1190,7 @@ impl Found {
             Self::Hyper(cause) => cause.span().map_or(0, |span| span.start),
             Self::Temporal(cause) => cause.span().start,
             Self::Typed(cause, _) => cause.span().map_or(0, |span| span.start),
+            Self::Raw(_, span) => span.start,
         }
     }
 
@@ -1202,6 +1205,7 @@ impl Found {
                 Location::root(Origin::Expression),
             ),
             Self::Typed(cause, location) => (CheckCause::Hyper(Box::new(cause)), location),
+            Self::Raw(refusal, _) => return StageFailure::Refused(refusal),
         };
         StageFailure::Refused(CheckRefusal {
             // Synthesized clause diagnostics carry their source span in the
@@ -1843,6 +1847,9 @@ fn body_refusal_at(
     execution_fields: &BTreeMap<String, BTreeSet<String>>,
     scope: &Scope,
 ) -> Found {
+    if matches!(&refusal.cause, CheckCause::ResourceExhausted(_)) {
+        return Found::Raw(refusal, span);
+    }
     let location = refusal.location.clone();
     let path = location.path();
     let node_spans = spans.of_nodes(expression);
