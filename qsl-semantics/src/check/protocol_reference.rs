@@ -3,12 +3,13 @@
 //! name: a second reference to one target refuses, and each protocol is
 //! paired with what S3 checked of it for lowering.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use qsl_forms::ProtocolDeclarationForm;
 use quire_semantic_value::location::{Location, Origin};
 
-use super::ir::{CheckedBody, NodeKind};
+use super::ir::CheckedBody;
 use super::lowering::{declaration_origin, ProtocolInput};
 use super::protocol_clause::CheckedProtocol;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault, ProtocolReferenceCause};

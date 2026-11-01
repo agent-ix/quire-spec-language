@@ -1459,6 +1459,7 @@ dependencies = [
  "qsl-cst",
  "qsl-foundation",
  "quire-exact",
+ "quire-semantic-value",
  "quire-walk",
  "syn 2.0.119",
 ]
@@ -1639,7 +1640,7 @@ dependencies = [
 [[package]]
 name = "quire-checked"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#4458da0b4922c709c7bd2ccf1ec8e4aa23d04027"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#e941c90b6a34594b25d6bf907c53710da4c8a016"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1676,7 +1677,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#4458da0b4922c709c7bd2ccf1ec8e4aa23d04027"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#e941c90b6a34594b25d6bf907c53710da4c8a016"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1722,7 +1723,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#9ba48811d1dd83c4fd6f61de20dff2dc029f3320"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#3cc0b27e19a398f336152ada05972072053fa47e"
 dependencies = [
  "quire-canonical",
  "quire-exact",

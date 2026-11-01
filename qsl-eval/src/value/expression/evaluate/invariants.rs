@@ -64,7 +64,9 @@ macro_rules! probe_package {
     }};
 }
 
-fn body(kind: impl FnOnce(&[qsl_semantics::check::NodeId]) -> NodeKind) -> CheckedBody {
+fn body(
+    kind: impl FnOnce(&[qsl_semantics::check::NodeId]) -> NodeKind<qsl_semantics::check::NodeId>,
+) -> CheckedBody {
     CheckedBody::fixture(
         vec![ValueType::Boolean, ValueType::Boolean],
         kind,
@@ -913,7 +915,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
     let lookup = body(|ids| NodeKind::Lookup {
         population: ids[0],
         reference: ids[1],
-        absence: qsl_foundation::absence::AbsenceMode::Empty,
+        absence: quire_semantic_value::absence::AbsenceMode::Empty,
     });
     probe!("query-population-type-expected", m, [], {
         set_values(m, vec![population.clone(), Value::Boolean(true)]);
@@ -924,7 +926,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
         |ids| NodeKind::Lookup {
             population: ids[0],
             reference: ids[1],
-            absence: qsl_foundation::absence::AbsenceMode::Empty,
+            absence: quire_semantic_value::absence::AbsenceMode::Empty,
         },
         ValueType::Boolean,
     );
@@ -949,7 +951,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
             |ids| NodeKind::Lookup {
                 population: ids[0],
                 reference: ids[1],
-                absence: qsl_foundation::absence::AbsenceMode::Empty,
+                absence: quire_semantic_value::absence::AbsenceMode::Empty,
             },
             result_type,
         );
@@ -1044,7 +1046,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
     let key = crate::test_ids::node_key([4]);
     let field = body(|ids| NodeKind::Field {
         operand: ids[0],
-        field: qsl_semantics::check::RecordField::new(key.clone(), "absent"),
+        field: quire_checked::node::RecordField::new(key.clone(), "absent"),
         optional: false,
     });
     probe!("field-slot-unresolved", m, [], {
@@ -1909,7 +1911,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         (
             body(|ids| NodeKind::Field {
                 operand: ids[0],
-                field: qsl_semantics::check::RecordField::new(crate::test_ids::node_key([4]), "x"),
+                field: quire_checked::node::RecordField::new(crate::test_ids::node_key([4]), "x"),
                 optional: false,
             }),
             vec![Value::Boolean(true)],
@@ -1963,7 +1965,7 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
             body(|ids| NodeKind::Lookup {
                 population: ids[0],
                 reference: ids[1],
-                absence: qsl_foundation::absence::AbsenceMode::Empty,
+                absence: quire_semantic_value::absence::AbsenceMode::Empty,
             }),
             vec![Value::Boolean(true), Value::Boolean(true)],
             "query-population-value-expected",

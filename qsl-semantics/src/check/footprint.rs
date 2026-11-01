@@ -14,11 +14,12 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::location::Location;
 
 use crate::check::observation::Observations;
-use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind};
+use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause};
 use crate::model::clause_observation::Observation;
 use crate::model::operation::OperationDeclaration;
 use crate::model::state::StateModel;
 use quire_checked::key::DeclarationKey;
+use quire_checked::node::NodeKind;
 
 /// The object a symbolic location is about: the operation's receiver or the
 /// argument bound to one of its parameters.
@@ -552,7 +553,11 @@ impl<'a> Reader<'a> {
         let mut pending = vec![root];
         while let Some(node) = pending.pop() {
             self.node_reads(scope, node, &mut reads)?;
-            pending.extend(node.kind().children().into_iter().map(|id| node.at(id)));
+            pending.extend(
+                super::ir::node_children(node.kind())
+                    .into_iter()
+                    .map(|id| node.at(id)),
+            );
         }
         Ok(reads)
     }

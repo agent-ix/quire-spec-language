@@ -11,6 +11,7 @@
 //! [`Meter`], reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
 
+use quire_checked::node::{NodeKind, Visit};
 mod causes;
 mod clause_set;
 mod closure;
@@ -1133,7 +1134,6 @@ fn resolve_quantifier<'g>(
     Vec<qsl_semantics::check::CheckedNode<'g>>,
     qsl_semantics::check::CheckedNode<'g>,
 )> {
-    use qsl_semantics::check::{NodeKind, Visit};
     let key = quantifier.node();
     let location = graph.occurrence(key.clone(), quantifier.origin())?;
     let applies_quantify = matches!(

@@ -17,12 +17,13 @@
 //! A reset by selection binds its element by a `parameter` node of the
 //! slot's selector domain, `Integer`, which is its one slot term.
 
+use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{EffectiveId, Identifier, NodeKey, Value, ValueType};
 use quire_semantic_value::location::Location;
 
 use super::{Binder, Binders, Lowering, PlaceStep};
 use crate::check::family::OccurrenceRole;
-use crate::check::ir::{CheckedLiteral, NodeKind};
+
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, LiteralValue, MemberTerm,
     NodeTag, Operation, Operator, TupleMember, TupleTerm,

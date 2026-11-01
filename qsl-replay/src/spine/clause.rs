@@ -11,6 +11,7 @@
 //! Reuses FR-100's outcome mapping ([`super::call::convert_outcome`]) by
 //! reference, rather than restating it.
 
+use quire_checked::node::{Connective, NodeKind};
 use std::collections::BTreeMap;
 
 use qsl_foundation::source::Source;
@@ -965,8 +966,6 @@ fn derive_consequent_source_events(
     clause: &CheckedStateClause,
     evaluation: &qsl_eval::value::ClauseEvaluation,
 ) -> ConsequentSourceEvents {
-    use qsl_semantics::check::{Connective, NodeKind};
-
     let mut events = Vec::new();
     // (node, provably unreached, under a binder)
     let mut pending = vec![(clause.body(), false, false)];
