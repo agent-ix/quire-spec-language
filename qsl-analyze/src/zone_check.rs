@@ -45,6 +45,6 @@ pub use settle::{
 };
 pub use task_product::{
     fixed_work_task_product, task_releases_for_transition, FixedWorkArrival, FixedWorkGateMiss,
-    FixedWorkTask, FixedWorkTaskProduct, TaskJob, TaskJobPhase, TaskSchedulerError,
-    TaskSchedulerState,
+    FixedWorkTask, FixedWorkTaskProduct, TaskCompletionError, TaskJob, TaskJobPhase,
+    TaskSchedulerError, TaskSchedulerState, TaskServiceClock,
 };

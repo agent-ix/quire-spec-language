@@ -2,9 +2,11 @@
 //! QSL FR-249 and QSpec FR-419: compile the exact fixed-work gate and the
 //! finite task-slot bounds shared by EN-6 and the FR-418 reader.
 
+use super::{Dbm, DbmError};
+use num_bigint::BigInt;
 use num_integer::Integer as NumInteger;
 use qsl_eval::simulation::model::ModelSystem;
-use qsl_replay::{TaskAction, TaskTransitionIdentity};
+use qsl_replay::{TaskAction, TaskSubtraction, TaskTransitionIdentity};
 use qsl_semantics::check::{Arrival, CheckedTaskSets, Release, SchedulingPolicy, TaskSet};
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::model_transition::ModelTransition;
@@ -101,6 +103,36 @@ pub struct TaskJob {
     pub phase: TaskJobPhase,
 }
 
+/// The DBM location and ceiling of one suspended job's service clock.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskServiceClock {
+    /// The job whose accumulated service is represented.
+    pub job: TaskTransitionIdentity,
+    /// The clock index in the task-product DBM (zero is reserved).
+    pub index: usize,
+    /// The certificate's stable identity for this clock.
+    pub name: String,
+    /// The exact positive scaled ceiling for this clock.
+    pub maximum: BigInt,
+}
+
+/// Why a fixed-work completion could not update scheduler and DBM state.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TaskCompletionError {
+    /// The scheduler transition was not enabled.
+    #[error("task completion is not enabled: {0:?}")]
+    Scheduler(TaskSchedulerError),
+    /// The task service-clock update is malformed.
+    #[error("task service clock update failed: {0}")]
+    Dbm(DbmError),
+    /// The declared scale does not make the fixed demand integral.
+    #[error("task demand is not integral at the selected DBM scale")]
+    InexactScale,
+    /// A bounded-subtraction guard has no valuation in the input zone.
+    #[error("task completion has no valuation satisfying its subtraction guards")]
+    EmptySuccessor,
+}
+
 /// Per-source-transition occurrence counter, retained in the scheduler
 /// state so repeated activations never reuse a job identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -136,6 +168,85 @@ impl TaskSchedulerState {
     /// The live jobs in canonical task-set/task/slot order.
     pub fn jobs(&self) -> &[TaskJob] {
         &self.jobs
+    }
+
+    /// Complete the running fixed-work job and subtract its exact work from
+    /// every suspended job's unit-rate service clock. The operation is
+    /// transactional across the scheduler state and DBM: a disabled guard
+    /// leaves both unchanged.
+    pub fn complete_with_subtractions(
+        &mut self,
+        product: &FixedWorkTaskProduct,
+        zone: &mut Dbm,
+        scale: &BigInt,
+        service_clocks: &[TaskServiceClock],
+        source_transition: Option<ModelTransition>,
+    ) -> Result<(TaskTransitionIdentity, Vec<TaskSubtraction>), TaskCompletionError> {
+        if scale <= &BigInt::from(0) {
+            return Err(TaskCompletionError::InexactScale);
+        }
+        let running = self.running.as_ref().ok_or(TaskCompletionError::Scheduler(
+            TaskSchedulerError::ActionNotEnabled,
+        ))?;
+        let work = product
+            .tasks
+            .iter()
+            .find(|task| task.task_set == running.taskset && task.task == running.task)
+            .map(|task| task.work.clone())
+            .ok_or(TaskCompletionError::Scheduler(
+                TaskSchedulerError::ActionNotEnabled,
+            ))?;
+        let scaled = work.mul(&Rational::from_integer(Integer::from_big(scale.clone())));
+        if scaled.denominator() != &Integer::one() {
+            return Err(TaskCompletionError::InexactScale);
+        }
+        let amount = scaled.numerator().as_big().clone();
+
+        let mut next_zone = zone.clone();
+        let mut subtractions = Vec::new();
+        for job in self
+            .jobs
+            .iter()
+            .filter(|job| job.phase == TaskJobPhase::Suspended)
+        {
+            let clock = service_clocks
+                .iter()
+                .find(|clock| same_job(&clock.job, &job.identity))
+                .ok_or(TaskCompletionError::Scheduler(
+                    TaskSchedulerError::ActionNotEnabled,
+                ))?;
+            next_zone
+                .subtract_bounded(clock.index, &amount, &clock.maximum)
+                .map_err(TaskCompletionError::Dbm)?;
+            if next_zone.is_empty() {
+                return Err(TaskCompletionError::EmptySuccessor);
+            }
+        }
+
+        let mut next_scheduler = self.clone();
+        let completion = next_scheduler
+            .complete(source_transition)
+            .map_err(TaskCompletionError::Scheduler)?;
+        for job in self
+            .jobs
+            .iter()
+            .filter(|job| job.phase == TaskJobPhase::Suspended)
+        {
+            let clock = service_clocks
+                .iter()
+                .find(|clock| same_job(&clock.job, &job.identity))
+                .ok_or(TaskCompletionError::Scheduler(
+                    TaskSchedulerError::ActionNotEnabled,
+                ))?;
+            subtractions.push(TaskSubtraction {
+                transition: completion.clone(),
+                clock: clock.name.clone(),
+                constant: Integer::from_big(amount.clone()),
+            });
+        }
+        *self = next_scheduler;
+        *zone = next_zone;
+        Ok((completion, subtractions))
     }
 }
 

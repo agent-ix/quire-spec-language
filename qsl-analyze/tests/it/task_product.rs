@@ -3,7 +3,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    fixed_work_task_product, FixedWorkArrival, FixedWorkGateMiss, TaskJobPhase, TaskSchedulerState,
+    fixed_work_task_product, Bound, Dbm, FixedWorkArrival, FixedWorkGateMiss, TaskCompletionError,
+    TaskJobPhase, TaskSchedulerState, TaskServiceClock,
 };
 use qsl_foundation::Span;
 use qsl_replay::{
@@ -42,7 +43,7 @@ fn set(tasks: Vec<Task>) -> TaskSet {
     }
 }
 
-#[trace("TC-704", "FR-419-AC-6")]
+#[trace("TC-372", "FR-419-AC-1")]
 #[test]
 fn exact_gate_uses_checked_fixed_work_and_ceil_deadline_slots() {
     let product = fixed_work_task_product(
@@ -60,7 +61,7 @@ fn exact_gate_uses_checked_fixed_work_and_ceil_deadline_slots() {
     assert_eq!(product.tasks[0].max_jobs, 3);
 }
 
-#[trace("TC-704", "FR-419-AC-6")]
+#[trace("TC-372", "FR-419-AC-1")]
 #[test]
 fn a_wcet_upper_bound_without_equal_bcet_stays_outside_the_exact_gate() {
     let result = fixed_work_task_product(
@@ -71,7 +72,7 @@ fn a_wcet_upper_bound_without_equal_bcet_stays_outside_the_exact_gate() {
     assert_eq!(result, Err(FixedWorkGateMiss::VariableDemand));
 }
 
-#[trace("TC-704", "FR-419-AC-6")]
+#[trace("TC-372", "FR-419-AC-11")]
 #[test]
 fn edf_fixed_work_is_in_the_exact_gate_without_authored_priorities() {
     let mut edf_task = task("a", 4, 4, 1, Wcet::Single(int(1)));
@@ -84,7 +85,7 @@ fn edf_fixed_work_is_in_the_exact_gate_without_authored_priorities() {
     assert_eq!(product.live_job_cap, 2);
 }
 
-#[trace("TC-704", "FR-419-AC-5")]
+#[trace("TC-372", "FR-419-AC-5")]
 #[test]
 fn exact_gate_refuses_bad_policy_premises_without_inventing_scheduler_order() {
     let mut first = task("a", 4, 4, 1, Wcet::Single(int(1)));
@@ -109,7 +110,7 @@ fn exact_gate_refuses_bad_policy_premises_without_inventing_scheduler_order() {
     );
 }
 
-#[trace("FR-181-AC-14", "FR-419-AC-6")]
+#[trace("TC-372", "FR-419-AC-11")]
 #[test]
 fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation() {
     let product = fixed_work_task_product(
@@ -142,7 +143,7 @@ fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation()
     assert_eq!(second.generation, first.generation + 1);
 }
 
-#[trace("TC-372-RT-29", "FR-419-AC-11")]
+#[trace("TC-372", "FR-419-AC-11")]
 #[test]
 fn edf_uses_absolute_deadline_then_task_name_and_keeps_optional_priority() {
     let mut a = task("a", 4, 4, 1, Wcet::Single(int(1)));
@@ -173,7 +174,7 @@ fn edf_uses_absolute_deadline_then_task_name_and_keeps_optional_priority() {
     assert_eq!(dispatched.priority, Some(9));
 }
 
-#[trace("TC-372-RT-30", "FR-419-AC-11")]
+#[trace("TC-372", "FR-419-AC-11")]
 #[test]
 fn edf_preempts_for_earlier_deadline_and_uses_activation_identity_for_ties() {
     let mut a = task("a", 4, 4, 1, Wcet::Single(int(1)));
@@ -271,4 +272,72 @@ fn task_certificate_gate_is_typed_and_checks_cap_and_singleton_work() {
     let mut variable_work = certificate;
     variable_work.queue_bounds[0].work_upper = int(2);
     assert!(!variable_work.has_valid_shape());
+}
+
+#[trace("TC-371", "FR-418-AC-11")]
+#[test]
+fn completion_subtracts_exact_work_from_suspended_service_clocks_atomically() {
+    let mut a = task("a", 4, 4, 1, Wcet::Single(int(1)));
+    let mut b = task("b", 4, 4, 1, Wcet::Single(int(1)));
+    a.priority = Some(1);
+    b.priority = Some(2);
+    let product = fixed_work_task_product(&set(vec![a, b]), SchedulingPolicy::FixedPriority)
+        .expect("fixed-priority exact product");
+    let transition = |name: &str| {
+        quire_semantic_value::model_transition::ModelTransition::new(
+            format!("\"{name}\""),
+            None,
+            Vec::new(),
+            quire_canonical::Limits::new(1024),
+        )
+        .expect("source transition identity")
+    };
+    let mut scheduler = TaskSchedulerState::default();
+    let suspended = scheduler
+        .activate(&product, "b", transition("b_release"), int(0), int(0))
+        .expect("activate b");
+    scheduler.dispatch(&product).expect("b starts");
+    scheduler
+        .activate(&product, "a", transition("a_release"), int(0), int(0))
+        .expect("activate a");
+    scheduler.preempt(&product).expect("a preempts b");
+    scheduler.dispatch(&product).expect("a starts");
+
+    let clock = TaskServiceClock {
+        job: suspended,
+        index: 2,
+        name: "task:Ctl.b:slot0:service".to_owned(),
+        maximum: num_bigint::BigInt::from(4),
+    };
+    let scale = num_bigint::BigInt::from(1);
+    let mut empty = Dbm::zero(3);
+    empty
+        .constrain(2, 0, Bound::le(num_bigint::BigInt::from(0)))
+        .expect("service clock is in range");
+    let before_scheduler = scheduler.clone();
+    let before_zone = empty.clone();
+    assert_eq!(
+        scheduler.complete_with_subtractions(&product, &mut empty, &scale, &[clock.clone()], None,),
+        Err(TaskCompletionError::EmptySuccessor)
+    );
+    assert_eq!(scheduler, before_scheduler);
+    assert_eq!(empty, before_zone);
+
+    let mut zone = Dbm::zero(3);
+    zone.up();
+    zone.constrain(2, 0, Bound::le(num_bigint::BigInt::from(2)))
+        .expect("service clock upper bound");
+    zone.constrain(0, 2, Bound::le(num_bigint::BigInt::from(-2)))
+        .expect("service clock lower bound");
+    let (completion, subtractions) = scheduler
+        .complete_with_subtractions(&product, &mut zone, &scale, &[clock], None)
+        .expect("the bounded subtraction has an enabled zone");
+    assert_eq!(completion.action, qsl_replay::TaskAction::Complete);
+    assert_eq!(subtractions.len(), 1);
+    assert_eq!(subtractions[0].transition, completion);
+    assert_eq!(subtractions[0].constant, Integer::one());
+    assert_eq!(
+        zone.bound(2, 0),
+        Ok(&Bound::le(num_bigint::BigInt::from(1)))
+    );
 }
