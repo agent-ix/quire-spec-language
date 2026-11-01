@@ -251,6 +251,7 @@ pub fn sample_timed(
 
 /// Recompute a recorded timed sample from its seed and compare every draw,
 /// delay, successor and end position (FR-254 witness replay).
+#[allow(clippy::too_many_arguments)] // each value is an explicit replay input
 pub fn replay_timed_sample(
     system: &TimedSystem<'_, '_>,
     initial: &TimedState,
