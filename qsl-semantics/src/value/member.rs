@@ -360,4 +360,15 @@ mod tests {
         };
         assert_ne!(field, operation);
     }
+
+    #[test]
+    fn field_debug_reports_explicit_deref() {
+        let field = Member::Field {
+            declaration: node(7),
+            name: Identifier::new("same").unwrap(),
+            explicit_deref: Some(true),
+        };
+
+        assert!(format!("{field:?}").contains("explicit_deref: Some(true)"));
+    }
 }
