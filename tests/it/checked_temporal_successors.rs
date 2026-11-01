@@ -860,11 +860,11 @@ fn checked_past_operator_requires_authoritative_history() {
         Some(temporal::Dimension::History)
     );
 
-    let nested = checked(
+    let nested_unit = checked(
         "eventually[3,3] once[1,2] holds(view.code > 0)",
         temporal::EVENT_POSITION,
     );
-    let nested_clause = &nested.package().graph().temporal_clauses()[0];
+    let nested_clause = &nested_unit.package().graph().temporal_clauses()[0];
     let nested_leaf = nested_clause
         .clause()
         .formula()
@@ -886,7 +886,7 @@ fn checked_past_operator_requires_authoritative_history() {
         })
         .collect();
     let report = temporal::evaluate_checked(
-        nested.package(),
+        nested_unit.package(),
         0,
         &interior_gap,
         temporal::Limits::default(),
