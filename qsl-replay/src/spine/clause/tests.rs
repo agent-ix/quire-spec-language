@@ -769,7 +769,8 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
     let (mut unit, packages) = unit_and_packages();
     unit = unit.replace(
         "invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }",
-        "invariant Query using v on M::Node at current { contains(map(item in sequence[0, 1]: item), 0) }",
+        "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] pure { xs }\n\
+         invariant Query using v on M::Node at current { contains(map(item in ints(sequence[0, 1]): item), 0) }",
     );
     let label = DocumentRef {
         authority: "test".to_owned(),
