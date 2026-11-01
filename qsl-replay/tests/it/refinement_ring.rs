@@ -438,15 +438,15 @@ fn an_incomplete_step_row_argument_is_undetermined() {
     );
 }
 
-/// FR-142 (TC-547): an abstract system whose evaluation meter admits no
-/// charge stops the step check with `Stopped`, not a fault: `take` from
-/// `head = 1`, `size = 2` exhausts the meter at `deq`'s precondition.
+/// FR-142 (TC-547): an abstract system with zero `work_units` and every other
+/// accounting limit at its default stops the step check with `Stopped`, not a
+/// fault: `take` from `head = 1`, `size = 2` exhausts `deq`'s precondition.
 #[trace("TC-547")]
 #[test]
 fn an_exhausted_abstract_meter_stops_the_step_check() {
     let world = RingWorld::new();
     let concrete = world.concrete_system(UNLIMITED);
-    let starved = world.abstract_system(ZERO);
+    let starved = world.abstract_system(qsl_replay::spine::default_accounting(0));
     let verdict = verdict_with(
         &world,
         &concrete,
