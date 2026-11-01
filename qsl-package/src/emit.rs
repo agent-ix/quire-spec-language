@@ -217,8 +217,9 @@ impl EmitRefusal {
             Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
-            Self::ProbabilisticModelNotEmitted { .. }
-            | Self::TimedModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_) | Self::RefinementSubjectNotEmitted => {
                 Code::RuntimeInvariant
@@ -237,8 +238,9 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
-            Self::ProbabilisticModelNotEmitted { .. }
-            | Self::TimedModelNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
