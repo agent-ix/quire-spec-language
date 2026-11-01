@@ -679,14 +679,26 @@ impl Workspace {
     /// The exact Cargo package identities selected by the test arguments.
     /// Artifacts for dependencies are not suites of this invocation, even
     /// when their target names match selected libraries.
-    fn select_ids(&self, packages: &Packages) -> Result<BTreeSet<String>> {
-        let selected_manifests = self.select(packages)?;
-        Ok(self
-            .members
+    fn select_ids(&self, packages: &Packages) -> BTreeSet<String> {
+        let selected_names: BTreeSet<String> = match packages {
+            Packages::Default => self.defaults.clone(),
+            Packages::Workspace { excluded } => self
+                .members
+                .keys()
+                .filter(|name| !excluded.contains(*name))
+                .cloned()
+                .collect(),
+            Packages::Named(names) => names
+                .iter()
+                .filter(|name| self.members.contains_key(*name))
+                .cloned()
+                .collect(),
+        };
+        self.member_ids
             .iter()
-            .filter(|(_, manifest)| selected_manifests.contains(*manifest))
-            .filter_map(|(name, _)| self.member_ids.get(name).cloned())
-            .collect())
+            .filter(|(name, _)| selected_names.contains(*name))
+            .map(|(_, id)| id.clone())
+            .collect()
     }
 }
 
@@ -1510,7 +1522,7 @@ pub fn run_lane(
 ) -> Result<String> {
     let selection = Selection::from_cargo_args(cargo_args)?;
     let workspace = read_workspace(workspace_root, cargo_args)?;
-    let selected_package_ids = workspace.select_ids(&selection.packages)?;
+    let selected_package_ids = workspace.select_ids(&selection.packages);
     let artifacts = read_artifacts(
         workspace_root,
         cargo_args,
@@ -2664,17 +2676,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     fn selected_workspace_packages_keep_their_exact_cargo_ids() {
         let workspace = workspace();
         assert_eq!(
-            workspace
-                .select_ids(&Packages::Default)
-                .expect("default package ids"),
+            workspace.select_ids(&Packages::Default),
             BTreeSet::from(["path+file:///ws/a#a@0.1.0".to_owned()])
         );
         assert_eq!(
-            workspace
-                .select_ids(&Packages::Workspace {
-                    excluded: names(&["b"]),
-                })
-                .expect("workspace package ids"),
+            workspace.select_ids(&Packages::Workspace {
+                excluded: names(&["b"]),
+            }),
             BTreeSet::from([
                 "path+file:///ws/a#a@0.1.0".to_owned(),
                 "path+file:///ws/c#c@0.1.0".to_owned(),
@@ -2682,9 +2690,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             ])
         );
         assert_eq!(
-            workspace
-                .select_ids(&Packages::Named(names(&["b"])))
-                .expect("named package ids"),
+            workspace.select_ids(&Packages::Named(names(&["b"]))),
             BTreeSet::from(["path+file:///ws/b#b@0.1.0".to_owned()])
         );
     }
