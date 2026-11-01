@@ -160,7 +160,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(document), document.to_vec())
+        .insert_domain_package_document(package_identity(&document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
