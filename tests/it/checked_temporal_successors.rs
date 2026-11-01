@@ -1007,10 +1007,11 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
     assert_eq!(truths, [Some(Truth::True), Some(Truth::False)]);
     assert!(matches!(
         &obligations[2],
-        temporal::Obligation::Unactivated {
-            error: temporal::Error::Incomplete(incomplete),
-            ..
-        } if incomplete.dimension == temporal::Dimension::Valuation
+        temporal::Obligation::Assessed(assessment)
+            if assessment.truth.is_none()
+        && assessment.basis == Some(Basis::Unavailable)
+        && assessment.incomplete.as_ref().map(|incomplete| incomplete.dimension)
+            == Some(temporal::Dimension::Valuation)
     ));
 }
 
