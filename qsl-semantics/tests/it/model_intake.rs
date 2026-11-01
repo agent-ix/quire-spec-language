@@ -781,8 +781,10 @@ fn unit_intake_projection_charge_denial_returns_no_selected_models() {
     let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
     let normalization_work = meter.consumed(LimitKind::WorkUnits);
-    let mut limits = ModelNormalizationLimits::default();
-    limits.work_units = normalization_work;
+    let limits = ModelNormalizationLimits {
+        work_units: normalization_work,
+        ..ModelNormalizationLimits::default()
+    };
     let packages = PackageInput::from([(package_identity.to_owned(), document)]);
 
     let refusal = admit_unit(&[unit_selection(package_identity)], &packages, limits)
