@@ -766,21 +766,10 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
 #[test]
 #[trace("TC-127", "FR-046-AC-5")]
 fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
-    let mut model: serde_json::Value = serde_json::from_slice(&domain_document()).unwrap();
-    model["types"][0]["fields"][0]["multiplicity"] = json!({
-        "lower": 0,
-        "upper": 5,
-        "ordered": true,
-        "unique": false,
-    });
-    let model = model.to_string().into_bytes();
-    let packages = qsl_semantics::model::intake::package_input([model.as_slice()])
-        .expect("the bounded ordered sequence model is admitted");
-    let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.model.complete/v1\";\n\
-         model M = {PACKAGE_IDENTITY:?};\n\
-         invariant Query using v on M::Node at current {{ contains(map(item in self.code: item), 0) }}\n"
+    let (mut unit, packages) = unit_and_packages();
+    unit = unit.replace(
+        "invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }",
+        "invariant Query using v on M::Node at current { contains(map(item in ints(sequence[0, 1]): item), 0) }",
     );
     let label = DocumentRef {
         authority: "test".to_owned(),
