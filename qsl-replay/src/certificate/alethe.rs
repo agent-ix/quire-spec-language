@@ -1111,6 +1111,8 @@ struct PolyRelations {
     right: (Rc<Term>, Rc<Term>),
 }
 
+type OrderedRelation = (Rc<str>, (Rc<Term>, Rc<Term>));
+
 #[derive(Debug)]
 struct ReadClause {
     literals: Vec<Rc<Term>>,
@@ -1571,7 +1573,7 @@ fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<ReadClause> {
 /// equality symmetry makes their pair order immaterial, while each relation
 /// term retains its own operand order.
 fn ordered_poly_relations(term: &Term) -> Option<PolyRelations> {
-    fn relation(term: &Term) -> Option<(Rc<str>, (Rc<Term>, Rc<Term>))> {
+    fn relation(term: &Term) -> Option<OrderedRelation> {
         let Term::App(operator, arguments) = term else {
             return None;
         };
