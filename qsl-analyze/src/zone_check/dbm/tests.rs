@@ -226,6 +226,26 @@ mod reference {
         }
         out
     }
+
+    /// Whether a post-update point has a source valuation in the input zone
+    /// that maps to it under the bounded subtraction. This oracle reconstructs
+    /// the source point and checks the original constraints; it does not
+    /// transform DBM rows or columns.
+    pub(super) fn subtract_bounded_image_contains(
+        constraints: &Constraints,
+        x: usize,
+        amount: i64,
+        ceiling: i64,
+        post: &[i64],
+        scale: i64,
+    ) -> bool {
+        let mut source = post.to_vec();
+        source[x] += amount * scale;
+        let source_clock = source[x];
+        source_clock >= amount * scale
+            && source_clock <= ceiling * scale
+            && holds(constraints, &source, scale)
+    }
 }
 
 use reference::{Constraints, Plain};
@@ -493,6 +513,240 @@ fn tc_693_operations_agree_with_the_grid_reference() {
     // The generator reaches both outcomes often enough to matter.
     assert!(non_empty > 2_000, "{non_empty} non-empty zones");
     assert!(included > 100, "{included} inclusions");
+}
+
+/// FR-238-AC-4: bounded subtraction agrees with an independent semantic
+/// image oracle over the source zone's full scaled grid, including diagonal
+/// constraints and both ends of the bounded guard.
+#[trace("TC-693", "FR-238-AC-4")]
+#[test]
+fn bounded_subtraction_matches_reference_with_diagonal_constraints() {
+    // Values are scaled by six, so amount=5 represents 5/6 and ceiling=24
+    // represents 4. The source zone has x in [0, 5], y in [0, 3], and two
+    // diagonal bounds. The update clips x to [5, 24], then subtracts 5.
+    let dim = 3;
+    let mut raw = vec![Plain::Inf; dim * dim];
+    for clock in 0..dim {
+        raw[clock * dim + clock] = Plain::Le(0);
+        raw[clock] = Plain::Le(0);
+    }
+    raw[X * dim] = Plain::Le(30);
+    raw[Y * dim] = Plain::Le(18);
+    raw[X * dim + Y] = Plain::Le(6);
+    raw[Y * dim + X] = Plain::Lt(12);
+
+    let mut result = Dbm {
+        dim,
+        bounds: raw.iter().copied().map(to_bound).collect(),
+    };
+    result.close();
+    let source_constraints = reference::of_matrix(dim, &raw);
+    result
+        .subtract_bounded(X, &BigInt::from(5), &BigInt::from(24))
+        .expect("a valid task-product update");
+
+    assert_eq!(result.bound(X, 0), Ok(&le(19)));
+    assert_eq!(result.bound(0, X), Ok(&le(0)));
+    assert_eq!(result.bound(X, Y), Ok(&le(1)));
+    assert_eq!(result.bound(Y, X), Ok(&lt(17)));
+    let scale = 6;
+    // All source clocks are bounded to [0, 5] in this fixture; enumerate a
+    // 1/6-grid over that full rectangle, including exact guard endpoints.
+    let points = window(&[0, 0, 0], 30 * scale);
+    for point in &points {
+        assert_eq!(
+            engine_holds(&result, point, scale),
+            reference::subtract_bounded_image_contains(&source_constraints, X, 5, 24, point, scale,),
+            "bounded subtraction at {point:?}"
+        );
+    }
+    let lower_boundary = [0, 0, 0]; // post x=0 came from source x=amount.
+    let upper_boundary = [0, 19 * scale, 18 * scale]; // post x=19 came from source x=ceiling.
+    assert!(reference::subtract_bounded_image_contains(
+        &source_constraints,
+        X,
+        5,
+        24,
+        &lower_boundary,
+        scale,
+    ));
+    assert!(reference::subtract_bounded_image_contains(
+        &source_constraints,
+        X,
+        5,
+        24,
+        &upper_boundary,
+        scale,
+    ));
+    let mut closed = result.clone();
+    closed.close();
+    assert_eq!(closed, result, "bounded subtraction leaves a canonical DBM");
+
+    // A zero subtraction remains the identity on values under its ceiling.
+    let mut zero_amount = Dbm {
+        dim,
+        bounds: raw.iter().copied().map(to_bound).collect(),
+    };
+    zero_amount.close();
+    zero_amount
+        .subtract_bounded(X, &BigInt::from(0), &BigInt::from(12))
+        .expect("zero is a valid non-negative subtraction");
+    assert_eq!(zero_amount.bound(X, 0), Ok(&le(12)));
+    for point in window(&[0, 0, 0], 30 * scale) {
+        assert_eq!(
+            engine_holds(&zero_amount, &point, scale),
+            reference::subtract_bounded_image_contains(
+                &source_constraints,
+                X,
+                0,
+                12,
+                &point,
+                scale,
+            ),
+            "zero subtraction at {point:?}"
+        );
+    }
+
+    // A changed subtraction constant has a different exact image, and an
+    // input entirely above its ceiling has no successor.
+    let mut changed_amount = Dbm {
+        dim,
+        bounds: raw.iter().copied().map(to_bound).collect(),
+    };
+    changed_amount.close();
+    changed_amount
+        .subtract_bounded(X, &BigInt::from(6), &BigInt::from(24))
+        .expect("a valid task-product update");
+    let changed_rows = rows(&changed_amount);
+    assert_eq!(changed_rows[X][0], le(18));
+    assert_eq!(changed_rows[X][Y], le(0));
+    assert_eq!(changed_rows[Y][X], lt(18));
+    for point in window(&[0, 0, 0], 30 * scale) {
+        assert_eq!(
+            engine_holds(&changed_amount, &point, scale),
+            reference::subtract_bounded_image_contains(
+                &source_constraints,
+                X,
+                6,
+                24,
+                &point,
+                scale,
+            ),
+            "changed amount at {point:?}"
+        );
+    }
+
+    // When amount equals the ceiling, only the boundary x=amount=ceiling is
+    // enabled and every successor has the subtracted clock exactly zero.
+    let mut ceiling_amount = Dbm {
+        dim,
+        bounds: raw.iter().copied().map(to_bound).collect(),
+    };
+    ceiling_amount.close();
+    ceiling_amount
+        .subtract_bounded(X, &BigInt::from(12), &BigInt::from(12))
+        .expect("amount may equal the positive ceiling");
+    assert_eq!(ceiling_amount.bound(X, 0), Ok(&le(0)));
+    assert_eq!(ceiling_amount.bound(0, X), Ok(&le(0)));
+    for point in window(&[0, 0, 0], 30 * scale) {
+        assert_eq!(
+            engine_holds(&ceiling_amount, &point, scale),
+            reference::subtract_bounded_image_contains(
+                &source_constraints,
+                X,
+                12,
+                12,
+                &point,
+                scale,
+            ),
+            "amount equals ceiling at {point:?}"
+        );
+    }
+
+    // TC-371 ZC-15's representative subtraction is by one with a finite
+    // ceiling. Both service/deadline clocks and their diagonal relation take
+    // part in the independent semantic comparison.
+    let dim = 3;
+    let mut one_work_raw = vec![Plain::Inf; dim * dim];
+    for clock in 0..dim {
+        one_work_raw[clock * dim + clock] = Plain::Le(0);
+        one_work_raw[clock] = Plain::Le(0);
+    }
+    one_work_raw[X * dim] = Plain::Le(2);
+    one_work_raw[Y * dim] = Plain::Le(2);
+    one_work_raw[X * dim + Y] = Plain::Le(1);
+    one_work_raw[Y * dim + X] = Plain::Le(1);
+    let one_work_constraints = reference::of_matrix(dim, &one_work_raw);
+    let mut one_work = Dbm {
+        dim,
+        bounds: one_work_raw.iter().copied().map(to_bound).collect(),
+    };
+    one_work.close();
+    one_work
+        .subtract_bounded(X, &BigInt::from(1), &BigInt::from(2))
+        .expect("the ZC-15 subtraction by one is in range");
+    assert_eq!(one_work.bound(X, 0), Ok(&le(1)));
+    for point in window(&[0, 0, 0], 2 * scale) {
+        assert_eq!(
+            engine_holds(&one_work, &point, scale),
+            reference::subtract_bounded_image_contains(
+                &one_work_constraints,
+                X,
+                1,
+                2,
+                &point,
+                scale,
+            ),
+            "ZC-15 subtraction at {point:?}"
+        );
+    }
+
+    let mut disabled = Dbm::zero(2);
+    disabled.up();
+    disabled.constrain(X, 0, le(1)).expect("x is a clock");
+    disabled
+        .subtract_bounded(X, &BigInt::from(2), &BigInt::from(4))
+        .expect("the product update has a valid range");
+    assert!(disabled.is_empty(), "no valuation satisfies x >= amount");
+
+    let mut above_ceiling = Dbm::zero(2);
+    above_ceiling
+        .reset(X, &BigInt::from(5))
+        .expect("x is a clock");
+    above_ceiling
+        .subtract_bounded(X, &BigInt::from(1), &BigInt::from(4))
+        .expect("the product update has a valid range");
+    assert!(
+        above_ceiling.is_empty(),
+        "no valuation satisfies x <= ceiling"
+    );
+}
+
+#[trace("TC-693", "FR-238-AC-4")]
+#[test]
+fn bounded_subtraction_refuses_malformed_ranges_and_clock_indices_transactionally() {
+    let mut zone = x_equals_y_up_to_three();
+    let before = zone.clone();
+    assert_eq!(
+        zone.subtract_bounded(3, &BigInt::from(1), &BigInt::from(3)),
+        Err(DbmError::ClockOutOfRange { clock: 3, dim: 3 })
+    );
+    assert_eq!(zone, before);
+    assert_eq!(
+        zone.subtract_bounded(0, &BigInt::from(1), &BigInt::from(3)),
+        Err(DbmError::SubtractReferenceClock)
+    );
+    assert_eq!(zone, before);
+    for (amount, ceiling) in [(-1, 3), (4, 3), (1, 0)] {
+        assert_eq!(
+            zone.subtract_bounded(X, &BigInt::from(amount), &BigInt::from(ceiling)),
+            Err(DbmError::InvalidSubtractionRange {
+                amount: BigInt::from(amount),
+                ceiling: BigInt::from(ceiling),
+            })
+        );
+        assert_eq!(zone, before);
+    }
 }
 
 /// FR-239 "Abstraction": `x = 7` is covered by `x = 6` under the aLU

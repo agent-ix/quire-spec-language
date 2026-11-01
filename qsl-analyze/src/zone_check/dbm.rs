@@ -157,6 +157,19 @@ pub enum DbmError {
         /// The clock assigned more than once.
         clock: usize,
     },
+    /// A bounded subtraction used a negative amount, a non-positive ceiling,
+    /// or an amount above its ceiling.
+    #[error("bounded subtraction amount {amount} and ceiling {ceiling} are not a valid range")]
+    InvalidSubtractionRange {
+        /// The amount to subtract.
+        amount: BigInt,
+        /// The declared upper ceiling.
+        ceiling: BigInt,
+    },
+    /// The reference clock, which is fixed at zero, was selected for bounded
+    /// subtraction.
+    #[error("the reference clock cannot be subtracted")]
+    SubtractReferenceClock,
     /// Two matrices of different dimensions were compared.
     #[error("DBMs of dimension {left} and {right} cannot be compared")]
     DimensionMismatch {
@@ -335,6 +348,69 @@ impl Dbm {
             self.set(clock, k, to.sum(self.at(0, k)));
             self.set(k, clock, self.at(k, 0).sum(&from));
         }
+        Ok(())
+    }
+
+    /// Apply the task-product bounded subtraction `clock := clock - amount`
+    /// under the guard `amount <= clock <= ceiling`.
+    ///
+    /// The input zone is first intersected with the guard, so valuations
+    /// outside the bounded update are excluded from its successor. The
+    /// selected clock's row is shifted down by `amount`, its column is shifted
+    /// up by `amount`, and the result is closed again. Other clocks and all
+    /// diagonal differences between unmodified clocks are preserved.
+    ///
+    /// # Errors
+    ///
+    /// [`DbmError::ClockOutOfRange`] when `clock` is outside this DBM,
+    /// [`DbmError::SubtractReferenceClock`] when it is the fixed reference
+    /// clock, and [`DbmError::InvalidSubtractionRange`] when `amount` is
+    /// negative, `ceiling` is non-positive, or `amount > ceiling`. On error,
+    /// this DBM is unchanged.
+    pub fn subtract_bounded(
+        &mut self,
+        clock: usize,
+        amount: &BigInt,
+        ceiling: &BigInt,
+    ) -> Result<(), DbmError> {
+        self.in_range(clock)?;
+        if clock == 0 {
+            return Err(DbmError::SubtractReferenceClock);
+        }
+        if amount < &BigInt::zero() || ceiling <= &BigInt::zero() || amount > ceiling {
+            return Err(DbmError::InvalidSubtractionRange {
+                amount: amount.clone(),
+                ceiling: ceiling.clone(),
+            });
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        // Only the valuations satisfying the task product's bounded update
+        // have successors. Constraining a copy keeps errors transactional.
+        let mut enabled = self.clone();
+        enabled.constrain(0, clock, Bound::le(-amount))?;
+        enabled.constrain(clock, 0, Bound::le(ceiling.clone()))?;
+        if enabled.is_empty() {
+            *self = enabled;
+            return Ok(());
+        }
+
+        let before = enabled.clone();
+        let negative_amount = -amount;
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                let shifted = match (i == clock, j == clock) {
+                    (true, false) => shift(before.at(i, j), &negative_amount),
+                    (false, true) => shift(before.at(i, j), amount),
+                    _ => before.at(i, j).clone(),
+                };
+                enabled.set(i, j, shifted);
+            }
+        }
+        enabled.close();
+        *self = enabled;
         Ok(())
     }
 
