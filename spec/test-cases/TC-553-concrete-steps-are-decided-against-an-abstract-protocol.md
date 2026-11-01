@@ -15,7 +15,7 @@ internal concrete steps, refutations that replay, and QSpec FR-177's
 divergence-freedom, refusal-set, terminal-success and environment-assumption
 checks on the same product.
 
-Scope: FR-148-AC-1 to FR-148-AC-11; FR-144-AC-9.
+Scope: FR-148-AC-1 to FR-148-AC-12; FR-144-AC-9 to FR-144-AC-10.
 
 ## Test Procedure
 
@@ -74,6 +74,14 @@ model (ADR-020 §8) with `peek` removed; `CasTwice` with `peek` kept.
     success mismatches; and replay with a wrong position, label and direction.
     Include an incoming step-rule failure at the same post-state and a model
     abstract subject to verify precedence and exclusion.
+12. At a reachable paired state, make the source-checked enabledness of the
+    concrete `assume` fairness target return `ContractUndetermined`, with no
+    reachable paired lasso that satisfies `S` and violates `I`. Check and
+    settle `ProtocolAssumptionNotEstablished{reason: relation-undetermined}`
+    with the exact assumption identities, both finite prefixes to that state,
+    and the typed undecided-predicate locus. Replay it, then change the locus
+    and verify `ReplayParity`. Keep this case separate from step 8's
+    product-limit `incomplete` result.
 
 Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 
@@ -114,3 +122,9 @@ Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
   replays under FR-379-AC-13; malformed positions, labels or directions
   settle `inconclusive`, `replay-parity`; the incoming step-rule failure
   takes precedence and a model abstract subject yields neither kind.
+- Step 12: no strengthening lasso exists. The typed result is
+  `ProtocolAssumptionNotEstablished{reason: relation-undetermined}` with the
+  paired finite prefixes and exact `ContractUndetermined` locus; replay
+  reproduces this as an inconclusive no-proof result, never `refuted` or
+  `proved`. A changed locus settles `inconclusive`, `replay-parity`, while
+  the separate product-limit case is `incomplete`.

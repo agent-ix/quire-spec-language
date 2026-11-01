@@ -80,9 +80,14 @@ operation/receiver/argument identity when the selected member form applies.
 identity and specification identity or identities, and either (a) for
 `strengthened`, a concrete prefix and loop plus the corresponding abstract
 protocol prefix and loop, or (b) for `relation-undetermined`, those paired
-paths when a path has been evaluated. The abstract path SHALL be a member of
-the product candidate relation at every paired position; both loops SHALL
-close at their respective entry states.
+finite prefixes ending at the first paired product state whose fairness
+enabledness is undetermined. The latter reason is reserved for an undecided
+source-side fairness predicate (for example, `ContractUndetermined` while
+determining whether the identified class is enabled); it is not used merely
+because target identities differ. A product limit uses the limit-incomplete
+outcome, not `relation-undetermined`. The abstract path SHALL be a member of
+the product candidate relation at every paired position; loops SHALL close
+at their respective entry states.
 
 ## Behavior
 
@@ -180,10 +185,13 @@ close at their respective entry states.
   of `I`. Because QSpec FR-379 expressly does not define an assumption
   failure kind, this witness SHALL settle the QSL item `inconclusive`,
   `unsettled`, with the typed `ProtocolAssumptionNotEstablished` cause; it
-  SHALL NOT settle `refuted` or `proved`. If incomparable source-class
-  identities prevent the implication from being established and no violating
-  paired lasso is available, the result SHALL use reason
-  `relation-undetermined` and carry both exact typed identities. A configured
+  SHALL NOT settle `refuted` or `proved`. If the enabledness or taken-step
+  predicate for an identified source fairness class is
+  `ContractUndetermined` at a reachable paired product state and no
+  violating paired lasso is available, the result SHALL use reason
+  `relation-undetermined` and carry both exact typed identities plus the
+  concrete and abstract finite prefixes to that state. Replay SHALL recompute
+  the same undecided predicate at the final paired state. A configured
   product limit that prevents deciding the relation SHALL instead settle
   `incomplete` with its limit cause. Neither outcome SHALL settle proved.
   Replay (FR-145) SHALL recompile both admitted subjects, reconstruct the
@@ -214,6 +222,7 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | FR-148-AC-9 | For a single finite transition class, a strong each constraint on the specification side implies a weak whole constraint for the same operation on the implementation side; a weak specification constraint does not imply a strong implementation constraint on a lasso where the operation is enabled infinitely often but not continuously and is never taken. The first relation passes; the second returns the typed non-proof outcome with a replayable paired witness. | Test (TC-553) |
 | FR-148-AC-10 | For an abstract `tso` protocol with `scheduling adversarial`, the specification assumption set includes the derived `fair weak each flush(thread)` memory constraint. A reachable paired lasso that cycles a buffered `tick` write and its flush, never takes the continuously enabled `inc`, satisfies the memory fairness constraint but violates the concrete `assume fair weak whole inc`; the product returns `ProtocolAssumptionNotEstablished{reason: strengthened}` with exact identities and paired paths, and replay confirms flush fairness and the violated `inc` constraint. | Test (TC-553) |
 | FR-148-AC-11 | At each reachable product state whose incoming step rules passed, a refusal violation reports `RefusalNotPermitted{position, label}` with QSpec FR-379's canonical full `ObservationLabel`; a terminal-success mismatch reports `TerminalSuccessMismatch{position, direction}`. The first failing step rule takes precedence, then refusal precedes terminal success, and replay recomputes each recorded condition; model abstract subjects report neither kind. | Test (TC-553) |
+| FR-148-AC-12 | When an identified concrete or protocol fairness class has `ContractUndetermined` enabledness at a reachable paired state and no violating paired lasso exists, the product returns `ProtocolAssumptionNotEstablished{reason: relation-undetermined}` with the exact checked identities and both finite prefixes to the undecided state; FR-145 replay reproduces the same undecided predicate and the item settles `inconclusive`, `unsettled`, never `refuted` or `proved`. This is distinct from product-limit `incomplete`. | Test (TC-553) |
 
 ## Dependencies
 

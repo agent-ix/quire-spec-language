@@ -15,6 +15,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-072
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-145
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-027
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-323
@@ -166,6 +170,15 @@ list.
   after the shared request decode, dependency validation and recompile have
   completed once; the executor SHALL pass that
   checked package and the typed request to FR-331 without recompiling them.
+- When a decoded request carries `ReplaySource::ProtocolAssumption`, the
+  executor SHALL validate its checked refinement identity against the
+  recompiled package and dispatch its typed `ProtocolAssumptionWitness` to
+  FR-145 after the shared request decode, dependency validation and recompile
+  have completed once. It SHALL pass the already-recompiled checked packages
+  for both subjects and the typed request, and SHALL NOT rebuild either
+  package in FR-145. This source arm does not require a function, frame or
+  state-clause replay target and SHALL NOT be treated as an observed temporal
+  request or backend `Witness`.
 - For requests without that typed arm, the function-only target refusal SHALL
   continue to apply.
 - The executor SHALL resolve the `function` replay target by name lookup in the recompiled
@@ -620,6 +633,7 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-26 | Refusal order: AC-25's request of `p` with `r`'s occurrence refuses `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; with an assignment naming a node that is no parameter of `p` added, it still refuses `ClaimOccurrence`, not `UnknownParameter`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
 | FR-098-AC-27 | Over `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }`, each request at the occurrence of its `10 mod (n - 1)` record, from an `Input` assignment: `n = 1` settles `reproduced-without-witness` with value `false`, the selected call's own evaluation of the site being undefined (`frame_depth` 0) after `d(0)` completes `0`; `n = 2` and `n = 3` settle `inconclusive` with cause `NoValue`, the call stopping undefined at the same `Location` inside a nested call (`frame_depth` 1 for `n = 2`, 2 for `n = 3`), which is no observation; `n = 0` evaluates the site on no path and settles `inconclusive` with cause `Verdicts` and value `true`. Calling `d` through S6a directly, the `Evaluation` of `d(1)` is undefined at that `Location` with `frame_depth` 0 and that of `d(3)` with `frame_depth` 2. | Test (TC-444) |
 | FR-098-AC-28 | An observed temporal request with a `state_clause` target and the typed `TemporalCounterexample::Observed` payload is dispatched to FR-331 through `qsl_replay::replay` and reaches observed-document admission. | Test (TC-847) |
+| FR-098-AC-29 | A `ProtocolAssumption` request is decoded, its package references are validated and its concrete and abstract packages are recompiled exactly once before `ProtocolAssumptionWitness` dispatch to FR-145; a malformed refinement identity refuses before witness replay, and the existing Witness/Input and observed-temporal dispatches retain their own arms. | Test (TC-553) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union

@@ -11,6 +11,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-071
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-145
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: references
 ---
 # FR-072: Implement the typed replay result and record carrier
 
@@ -19,8 +23,8 @@ relationships:
 QSL SHALL implement a typed replay result, defined in the layer-6 `replay`
 module and part of its public API (ADR-013 O-27), as one per-item result
 whose `arm` member is a sum of distinct, independently-typed arm results —
-a `Witness`-arm result, an `Input`-arm result, and an observed-temporal
-result. The `Witness` and `Input` results each carry their own settlement,
+a `Witness`-arm result, an `Input`-arm result, an observed-temporal
+result, and a `ProtocolAssumption` result. The `Witness` and `Input` results each carry their own settlement,
 the O-16 category, evaluated value, decisive QSpec FR-351 record, resolved
 nested regions (ADR-013 O-12), and replay charges. The observed-temporal
 result carries its own settlement, O-16 category, decoded trace position,
@@ -47,11 +51,14 @@ type for consumers such as #217's function-application exemplar.
 - A native execution outcome (kernel `Outcome`, ADR-013 O-16) for the
   replayed item, or an observed temporal evaluation and its decoded
   `trace_position` (FR-331).
-- The originating `ReplaySource` arm (`Witness` or `Input`) and, for the
+- The originating `ReplaySource` arm (`Witness`, `Input` or
+  `ProtocolAssumption`) and, for the
   `Witness` arm, the QSpec FR-351 separating-witness record decoded from it.
 - For the observed-temporal arm, the shared `WitnessEnvelope` and observed
   `TemporalCounterexample` payload, the decoded packet position, and the
   typed temporal outcome at that position (FR-331).
+- For the `ProtocolAssumption` arm, FR-148's typed
+  `ProtocolAssumptionNotEstablished` outcome and its FR-145 replay result.
 - Replay accounting charges.
 
 ## Outputs
@@ -59,12 +66,14 @@ type for consumers such as #217's function-application exemplar.
 - A typed replay result carrying the O-16 category, arm-specific settlement,
   nested QSpec FR-351 witness record where decisive, resolved regions and
   charges; the observed-temporal arm additionally carries its decoded trace
-  position and typed evaluated temporal value.
+  position and typed evaluated temporal value. The `ProtocolAssumption` arm
+  carries the typed reason, exact assumption identities, paired paths when
+  present, and its replay settlement.
 
 ## Behavior
 
-- The result's `arm` member SHALL be a sum of `Witness`, `Input` and
-  observed-temporal results; each arm SHALL carry its own `settlement`, and
+- The result's `arm` member SHALL be a sum of `Witness`, `Input`, observed-
+  temporal and `ProtocolAssumption` results; each arm SHALL carry its own `settlement`, and
   no shared, arm-agnostic Boolean or flag SHALL represent agreement across
   the arms.
 - Agreement on the `Witness` arm SHALL settle `reproduced-with-evaluated-witness`.
@@ -98,6 +107,14 @@ type for consumers such as #217's function-application exemplar.
   source locus and catalogued cause; it SHALL NOT encode these as a rendered
   diagnostic string. Its QSpec FR-323 `observed_temporal` encoding SHALL use
   the closed member set and value union defined by FR-323-AC-24.
+- A `ProtocolAssumption` result SHALL carry
+  `ProtocolAssumptionNotEstablished{reason, identities, witness}` and SHALL
+  have O-16 category `inconclusive`. Its arm settlement SHALL be
+  `reproduced-with-evaluated-witness` only when FR-145 reproduces the exact
+  typed outcome. For `relation-undetermined`, the result carries the paired
+  finite prefixes and typed `ContractUndetermined` locus, with no lasso. This
+  arm remains a distinct type and cannot convert to a `Witness`-arm result,
+  backend-evidence verdict, or `RefinementFailure`.
 - A disagreement between the proved and replayed verdicts (each taken from
   the fixed O-16-category-to-verdict map) SHALL settle `inconclusive` with a
   typed cause, with no public API path on the result type that constructs
@@ -145,6 +162,7 @@ type for consumers such as #217's function-application exemplar.
 | FR-072-AC-4 | #217's function-application exemplar constructs and compares a replay result using only this type together with FR-070's witness envelope and FR-071's request type, with no new witness or replay type defined in #217's repository scope. | Test (TC-192) |
 | FR-072-AC-5 | A result whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated result is returned. | Test (TC-191) |
 | FR-072-AC-6 | The observed-temporal result constructor preserves the decoded packet position and typed temporal outcome; FR-331's undefined evaluation at the same position, source locus and cause settles `reproduced-with-evaluated-witness`, while one at another position settles `inconclusive` with `ReplayParity`. `Holds`, `Violated`, `Undefined`, `InsufficientData`, `Pending` and incomplete values retain the O-16 category and typed fields assigned by FR-327/328/329, with QSpec FR-323's closed `observed_temporal` encoding. | Test (TC-847) |
+| FR-072-AC-7 | A `ProtocolAssumption` replay whose strengthening witness or no-lasso `relation-undetermined` prefixes and `ContractUndetermined` locus reproduce returns the distinct arm result with arm settlement `reproduced-with-evaluated-witness` and O-16 category `inconclusive`; a changed identity, prefix, reason or locus returns `inconclusive` with `ReplayParity`. Neither result is convertible to a `Witness`-arm or backend-evidence result. | Test (TC-553) |
 
 ## Dependencies
 
