@@ -20,3 +20,20 @@ The base checklist examined the changed NFR-012 statement, scaling and denial ve
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | TC-434 has no procedure or expected result for NFR-012's new unit-intake scaling and denied-charge checks | spec/non-functional/NFR-012-bound-model-normalization-and-population-admission.md:23-30; spec/test-cases/TC-434-model-limits-have-finite-defaults-and-bound-normalization-work.md:19-68 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in fix commit e260c297: TC-434 now specifies the unit-intake scaling procedure and denied-charge procedure with expected results. See `after_excerpt` below. |
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    after_excerpt: |-
+      - TC-434's 1,000 / 4,000 / 16,000 unit-intake control completes for the
+        specified record-value and field arrangement, and total `WorkUnits` increase
+        by no more than 5x at either 4x input-size step. The scaling result is
+        recorded on the change's tracker item.
+```

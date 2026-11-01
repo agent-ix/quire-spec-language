@@ -34,3 +34,17 @@ The failure-domain analysis was not selected for this review; no separate failur
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The scaling oracle does not specify a workload arrangement that forces the repeated-scan paths to be exercised | spec/non-functional/NFR-012-bound-model-normalization-and-population-admission.md:94,155-159 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in fix commit e260c297: the scaling workload now fixes record ordering and ownership, and TC-434 specifies the matching construction. See `after_excerpt` below. |
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    after_excerpt: |-
+      | Unit model-intake scaling | Linear charged work in declaration and field records | For each N = 1000, 4000 and 16000, use N record-value declarations followed by N field records, with exactly one owned field per declaration; each 4x increase in N increases total `WorkUnits` by at most 5x | Scaling control (TC-434) |
+```
