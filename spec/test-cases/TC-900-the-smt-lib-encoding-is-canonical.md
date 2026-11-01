@@ -13,11 +13,11 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6, FR-315-AC-15 to FR-315-AC-32 and FR-315-AC-53 to FR-315-AC-56.
+Scope: FR-315-AC-1 to FR-315-AC-6, FR-315-AC-15 to FR-315-AC-32 and FR-315-AC-53 to FR-315-AC-57.
 
 Steps 8, 10, 18 and 20 read scripts with a `QF_LIA` solver, steps 18 and
-20 with replay as well; every other step reads
-the printed script.
+20 with replay as well; step 29 reads normalized terms, and every other step
+reads the printed script or the stated refusal.
 
 ## Test Procedure
 
@@ -91,6 +91,15 @@ the printed script.
     and `CasRefinesCounter2`, read each assertion's subterms for the shapes
     FR-315-AC-56 excludes, and normalise one term per rule of FR-315
     "Normal form".
+29. Inside `qsl-eval`, normalize the two Int terms from FR-314-AC-18's
+    `t28`: `(* 1 (- (+ 1 x) y))` and
+    `(* 1 (- x (+ (- 1) y)))`. Compare their printed normal forms, and encode
+    a refinement mapping with a product of two nonconstant terms to confirm
+    that FR-315 refuses it `out-of-fragment` instead of expanding it. Also
+    normalize `(+ x (- y))` and assert the rule 7 subtraction form `(- x y)`;
+    normalize `(+ (- x) (- y))` and `(+ (* 2 x) (- y))` and assert those
+    general canonical `+` forms. Rule 9's subtraction form has precedence
+    only for exactly two atoms with coefficients +1 and -1 and zero constant.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -200,3 +209,6 @@ and no other application is enabled, so the script is unsatisfiable.
 - Step 28: no excluded shape in any assertion, the `commitB` row (row 1)
   included; the `Initial` and `commitA` assertions FR-315-AC-56 gives; each
   rule's stated result.
+- Step 29: both Int terms print as `(+ x (- y) 1)`; their bytes are equal.
+  `(+ x (- y))` prints as `(- x y)`. The linear normalizer does not expand a
+  product of two nonconstant terms.
