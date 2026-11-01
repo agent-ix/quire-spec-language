@@ -545,4 +545,17 @@ mod tests {
         assert!(lower.rational() <= rational(1, 4));
         assert!(rational(1, 4) <= upper.rational());
     }
+
+    /// Trace: TC-638, FR-203-AC-2
+    #[trace("TC-638", "FR-203-AC-2")]
+    #[test]
+    fn exact_limits_publish_the_fr203_defaults() {
+        let limits = super::super::ExactProbLimits::default();
+        assert_eq!(limits.max_iterations, 1_000_000);
+        assert_eq!(limits.precision_bits, 64);
+        assert_eq!(limits.max_precision_bits, 4_096);
+        assert_eq!(limits.max_rational_bits, 65_536);
+        assert_eq!(limits.max_policy_iterations, 10_000);
+        assert_eq!(limits.max_witness_paths, 1_024);
+    }
 }
