@@ -18,6 +18,7 @@ mod automaton_kernels;
 mod automaton_key;
 mod automaton_key_bounded;
 mod call_verdicts;
+mod canonical_node_probe;
 mod checked_package_call;
 mod child_composite;
 mod clause_read_paths;

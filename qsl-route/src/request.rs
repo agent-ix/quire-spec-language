@@ -47,7 +47,9 @@ use std::collections::BTreeMap;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
-use qsl_semantics::check::{Capability, PathGuard, RequirementMap, RequirementRecord};
+use qsl_semantics::check::{
+    Capability, PathGuard, RequirementMap, RequirementRecord, TerminalKeys,
+};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
@@ -277,6 +279,7 @@ impl DerivedLimits {
 struct DerivedPart {
     candidates: CandidateOutcome,
     limits: DerivedLimits,
+    terminals: Option<TerminalKeys>,
 }
 
 /// One requested item (ADR-013 O-20): the occurrence it requests a claim
@@ -328,6 +331,16 @@ impl RequestItem {
     /// derived.
     pub fn derived_limits(&self) -> Option<&DerivedLimits> {
         self.derived.as_ref().map(|derived| &derived.limits)
+    }
+
+    /// A model subject's derived `deadlock-freedom` item's record field: the
+    /// terminal node key of each model alias of the package the request
+    /// was written over (FR-411 "Deadlock-freedom verdict join"). `None`
+    /// for every other item.
+    pub fn derived_terminals(&self) -> Option<&TerminalKeys> {
+        self.derived
+            .as_ref()
+            .and_then(|derived| derived.terminals.as_ref())
     }
 
     /// The property form its record carries (FR-144: a refinement's TP-5
@@ -571,7 +584,8 @@ impl RequestWriter {
     /// "Negotiation"): a `temporal-satisfaction` item at its subject's
     /// anchor `claim`, unbounded with no finite bound available, with no
     /// `hybrid` and no `requirements`, its `candidates` computed by the
-    /// caller and its caller-set `limits`.
+    /// caller, its caller-set `limits` and, for a model subject's
+    /// `deadlock-freedom` item, the `terminals` it is joined on (FR-411).
     pub(crate) fn derived_item(
         &mut self,
         claim: OccurrenceKey,
@@ -579,6 +593,7 @@ impl RequestWriter {
         property_form: Option<quire_semantic_value::fairness::PropertyForm>,
         candidates: CandidateOutcome,
         limits: DerivedLimits,
+        terminals: Option<TerminalKeys>,
     ) -> RequestIndex {
         let index = RequestIndex::new(self.items.len());
         self.items.push(RequestItem {
@@ -595,7 +610,11 @@ impl RequestWriter {
             property_form,
             item_kind: Some(item_kind),
             abstract_subject: None,
-            derived: Some(DerivedPart { candidates, limits }),
+            derived: Some(DerivedPart {
+                candidates,
+                limits,
+                terminals,
+            }),
         });
         index
     }

@@ -7,9 +7,10 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind};
-use qsl_semantics::check::{CheckedGraph, CheckedNode, NodeKind};
+use qsl_semantics::check::{CheckedGraph, CheckedNode};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::clause_observation::Observation;
+use quire_checked::node::{NodeKind, Visit};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Identifier, IntegerInterval, ValueType,
 };
@@ -30,7 +31,7 @@ fn nodes(root: CheckedNode<'_>) -> Vec<CheckedNode<'_>> {
     let mut found = Vec::new();
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
-        pending.extend(node.kind().children().into_iter().map(|id| node.at(id)));
+        pending.extend(node.children());
         found.push(node);
     }
     found
@@ -330,7 +331,7 @@ fn count_type(graph: &CheckedGraph, name: &str) -> ValueType {
             matches!(
                 node.kind(),
                 NodeKind::Query {
-                    visit: qsl_semantics::check::Visit::Count,
+                    visit: Visit::Count,
                     ..
                 }
             )

@@ -11,6 +11,7 @@
 //! [`Meter`], reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
 
+use quire_checked::node::{NodeKind, Visit};
 mod causes;
 mod clause_set;
 mod closure;
@@ -27,6 +28,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::SelfKind;
 use quire_eval::Registry;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
+use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -39,7 +41,10 @@ pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use closure::{PackageClosure, PackageTask};
 pub use evaluate::refusal_record;
 pub use family::{InvalidQualifiedName, QualifiedName};
-pub use protocol_slot::{ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply, SuppliedValue};
+pub use protocol_slot::{
+    ProtocolReferenceOccurrence, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSuppliedValue,
+    ProtocolSupply, SuppliedValue,
+};
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
     Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
@@ -58,6 +63,53 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, Evaluation};
 use quire_semantic_value::catalog::CatalogCode;
+
+fn protocol_reference_failure(
+    authority: &qsl_package::AdmittedProtocolObservation<'_>,
+    binder: NodeKey,
+    failure: qsl_semantics::model::observation::AdmissionFailure,
+) -> CallFailure {
+    let (record, incomplete) = match failure {
+        qsl_semantics::model::observation::AdmissionFailure::Refused(record) => (*record, false),
+        qsl_semantics::model::observation::AdmissionFailure::Incomplete(record) => (*record, true),
+        qsl_semantics::model::observation::AdmissionFailure::Fault(fault) => {
+            return CallFailure::Fault(fault)
+        }
+    };
+    let locus = match record.fields.get("population") {
+        Some(population) if matches!(record.catalog.code(), "incomplete_population") => {
+            match authority.environment().population_node(population) {
+                Some(node) => CallAdmissionLocus::Population(node.clone()),
+                None => {
+                    return CallFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "admitted-population-record-has-checked-node",
+                    ))
+                }
+            }
+        }
+        _ => CallAdmissionLocus::Binder(binder),
+    };
+    let failure = quire_eval::CallAdmissionRecord { record, locus };
+    CallFailure::Admission(Box::new(if incomplete {
+        CallAdmissionFailure::Incomplete(failure)
+    } else {
+        CallAdmissionFailure::Refused(failure)
+    }))
+}
+
+fn occurrence_record(
+    code: &'static str,
+    cause: &'static str,
+    path: Vec<quire_semantic_value::admission::PathStep>,
+) -> AdmissionRecord {
+    AdmissionRecord {
+        catalog: CatalogCode::new(code, cause),
+        fields: Default::default(),
+        path,
+        kernel: None,
+    }
+}
 
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
 /// body (it reads no local), to its outcome under `meter`. `slots` is the
@@ -1082,7 +1134,6 @@ fn resolve_quantifier<'g>(
     Vec<qsl_semantics::check::CheckedNode<'g>>,
     qsl_semantics::check::CheckedNode<'g>,
 )> {
-    use qsl_semantics::check::{NodeKind, Visit};
     let key = quantifier.node();
     let location = graph.occurrence(key.clone(), quantifier.origin())?;
     let applies_quantify = matches!(
@@ -1289,19 +1340,25 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     "admitted-source-is-supplied",
                 )));
             };
-            match supplied {
+            match &supplied.value {
                 SuppliedValue::Value(value) => {
-                    if let (
-                        ValueType::Reference(_),
-                        Value::Reference(reference),
-                        Some(observation),
-                    ) = (&source.value_type, value, supply.observation)
+                    if let Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
+                        observation,
+                    )) = supply.observation
                     {
-                        if protocol_slot::foreign_to_observation(reference, observation) {
+                        if protocol_slot::reference_occurrences(value, self.graph().scope().types())
+                            .iter()
+                            .any(|(_, reference)| {
+                                protocol_slot::foreign_to_observation(reference, observation)
+                                    || !observation
+                                        .environment()
+                                        .has_population_universe(reference.universe())
+                            })
+                        {
                             return Err(protocol_slot::resolve::refused(
                                 "foreign_reference",
                                 "foreign-universe",
-                                CallAdmissionLocus::Binder(key),
+                                CallAdmissionLocus::Binder(key.clone()),
                             ));
                         }
                     }
@@ -1329,49 +1386,210 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             CallAdmissionLocus::Binder(key),
                         ));
                     }
-                    for reference in protocol_slot::references(value) {
-                        let Some(observation) = supply.observation else {
+                    let occurrences =
+                        protocol_slot::reference_occurrences(value, self.graph().scope().types());
+                    for (position, metadata) in supplied.references.iter().enumerate() {
+                        if supplied.references[..position]
+                            .iter()
+                            .any(|prior| prior.path == metadata.path)
+                        {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                    record: occurrence_record(
+                                        "invalid_runtime_input",
+                                        "duplicate-member",
+                                        metadata.path.clone(),
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        }
+                    }
+                    for metadata in &supplied.references {
+                        if !occurrences.iter().any(|(path, _)| *path == metadata.path) {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                    record: occurrence_record(
+                                        "invalid_runtime_input",
+                                        "unknown-member",
+                                        metadata.path.clone(),
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        }
+                    }
+                    for (path, _) in &occurrences {
+                        if !supplied
+                            .references
+                            .iter()
+                            .any(|metadata| metadata.path == *path)
+                        {
+                            return Err(CallFailure::Admission(Box::new(
+                                CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                    record: occurrence_record(
+                                        "invalid_runtime_input",
+                                        "missing-member",
+                                        path.clone(),
+                                    ),
+                                    locus: CallAdmissionLocus::Binder(key),
+                                }),
+                            )));
+                        }
+                    }
+                    for (path, reference) in &occurrences {
+                        let Some(metadata) = supplied
+                            .references
+                            .iter()
+                            .find(|metadata| metadata.path == *path)
+                        else {
+                            return Err(CallFailure::Fault(InternalFault::new(
+                                "FR-390",
+                                "reference-occurrence-metadata-is-matched",
+                            )));
+                        };
+                        let Some((declaration, members)) =
+                            self.graph().protocol_population_types(&metadata.population)
+                        else {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key.clone()),
+                            ));
+                        };
+                        if declaration.package != reference.object_type().original().package() {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key.clone()),
+                            ));
+                        }
+                        if !members.iter().any(|member| {
+                            self.graph()
+                                .scope()
+                                .types()
+                                .conforms(reference.object_type().clone(), member.clone())
+                        }) {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_runtime_input",
+                                "wrong-value-kind",
+                                CallAdmissionLocus::Binder(key.clone()),
+                            ));
+                        }
+                    }
+                    if !occurrences.is_empty() {
+                        let Some(observation_admission) = supply.observation else {
                             return Err(CallFailure::Admission(Box::new(
                                 CallAdmissionFailure::Incomplete(quire_eval::CallAdmissionRecord {
-                                    code: CatalogCode::new(
+                                    record: occurrence_record(
                                         "unavailable_observation",
                                         "missing-required-artifact",
+                                        occurrences[0].0.clone(),
                                     ),
                                     locus: CallAdmissionLocus::Binder(key),
                                 }),
                             )));
                         };
-                        if !observation.environment.references().contains(&reference) {
-                            if protocol_slot::foreign_to_observation(&reference, observation) {
+                        let observation = match observation_admission {
+                            quire_semantic_value::admission::ObservationAdmission::Admitted(
+                                observation,
+                            ) => observation,
+                            quire_semantic_value::admission::ObservationAdmission::Refused(
+                                record,
+                            ) => {
+                                return Err(CallFailure::Admission(Box::new(
+                                    CallAdmissionFailure::Refused(
+                                        quire_eval::CallAdmissionRecord {
+                                            record: record.clone(),
+                                            locus: CallAdmissionLocus::Binder(key),
+                                        },
+                                    ),
+                                )))
+                            }
+                            quire_semantic_value::admission::ObservationAdmission::Incomplete(
+                                record,
+                            ) => {
+                                return Err(CallFailure::Admission(Box::new(
+                                    CallAdmissionFailure::Incomplete(
+                                        quire_eval::CallAdmissionRecord {
+                                            record: record.clone(),
+                                            locus: CallAdmissionLocus::Binder(key),
+                                        },
+                                    ),
+                                )))
+                            }
+                            quire_semantic_value::admission::ObservationAdmission::Fault(fault) => {
+                                return Err(CallFailure::Fault(fault.clone()))
+                            }
+                        };
+                        if !self
+                            .graph()
+                            .model_selections()
+                            .contains(observation.model_selection())
+                        {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key),
+                            ));
+                        }
+                        if !observation.is_for_package(self) {
+                            return Err(protocol_slot::resolve::refused(
+                                "invalid_model_binding",
+                                "wrong-model-selection",
+                                CallAdmissionLocus::Binder(key),
+                            ));
+                        }
+                        let mut seeds = Vec::with_capacity(occurrences.len());
+                        for (path, reference) in occurrences {
+                            let metadata = supplied
+                                .references
+                                .iter()
+                                .find(|metadata| metadata.path == path)
+                                .ok_or_else(|| {
+                                    CallFailure::Fault(InternalFault::new(
+                                        "FR-390",
+                                        "reference-occurrence-metadata-is-matched",
+                                    ))
+                                })?;
+                            if protocol_slot::foreign_to_observation(&reference, observation)
+                                || !observation
+                                    .environment()
+                                    .has_population_universe(reference.universe())
+                            {
                                 return Err(protocol_slot::resolve::refused(
                                     "foreign_reference",
                                     "foreign-universe",
                                     CallAdmissionLocus::Binder(key),
                                 ));
                             }
-                            if observation.populations.values().any(|complete| !complete) {
-                                return Err(CallFailure::Admission(Box::new(
-                                    CallAdmissionFailure::Incomplete(
-                                        quire_eval::CallAdmissionRecord {
-                                            code: CatalogCode::new(
-                                                "incomplete_population",
-                                                "incomplete-scope",
-                                            ),
-                                            locus: CallAdmissionLocus::Binder(key),
-                                        },
-                                    ),
-                                )));
-                            }
-                            return Err(protocol_slot::resolve::refused(
-                                "dangling_reference",
-                                "absent-target-in-complete-population",
-                                CallAdmissionLocus::Binder(key),
-                            ));
+                            seeds.push((reference, metadata.population.clone(), path));
+                        }
+                        if let Err(failure) =
+                            qsl_semantics::model::observation::admit_protocol_reference_seeds(
+                                self.graph().scope().types(),
+                                observation.observation(),
+                                &seeds,
+                            )
+                        {
+                            return Err(protocol_reference_failure(observation, key, failure));
                         }
                     }
                     frame[index] = Some(value.clone());
                 }
                 SuppliedValue::Unavailable(cause) => {
+                    if let Some(metadata) = supplied.references.first() {
+                        return Err(CallFailure::Admission(Box::new(
+                            CallAdmissionFailure::Refused(quire_eval::CallAdmissionRecord {
+                                record: occurrence_record(
+                                    "invalid_runtime_input",
+                                    "unknown-member",
+                                    metadata.path.clone(),
+                                ),
+                                locus: CallAdmissionLocus::Binder(key),
+                            }),
+                        )));
+                    }
                     unavailable.insert(index, (key, *cause));
                 }
             }
@@ -1379,7 +1597,8 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let empty = ObjectEnvironment::default();
         let current = supply
             .observation
-            .map(|observation| &observation.environment)
+            .and_then(|admission| admission.authority().ok())
+            .map(|observation| observation.environment())
             .unwrap_or(&empty);
         frame.resize(selected.body.frame_slots(frame.len()), None);
         let result = Machine::with_pre(

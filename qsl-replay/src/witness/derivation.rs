@@ -6,7 +6,8 @@
 //! (`execute::replay_state_clause`) both call [`derive_separating_witness`],
 //! so producer and replay derive the record the same way.
 
-use qsl_semantics::check::{CheckedNode, CheckedStateClause, Connective, NodeKind, Visit};
+use qsl_semantics::check::{CheckedNode, CheckedStateClause};
+use quire_checked::node::{Connective, NodeKind, Visit};
 use quire_eval::FamilyOutcome;
 use quire_exact::{Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;

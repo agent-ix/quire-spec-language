@@ -14,6 +14,7 @@ mod outcome_facade;
 mod parse_outcome_facade;
 mod quantity_namespace_source;
 mod quantity_type_source;
+mod query_proof;
 #[path = "../../../tests/support/refinement_aux.rs"]
 mod refinement_aux;
 #[path = "../../../tests/support/refinement_cas.rs"]

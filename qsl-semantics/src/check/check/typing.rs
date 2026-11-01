@@ -16,6 +16,9 @@
 //! the same point of that order, so every checked tree, slot and refusal is
 //! that typer's.
 
+use quire_checked::node::{
+    CheckedLiteral, Connective, IntegerDivisionOperator, NodeKind, RecordSlot, Visit,
+};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -26,10 +29,7 @@ use super::{
 };
 use crate::check::call_target::{resolve_target, ResolvedTarget};
 use crate::check::family::Application;
-use crate::check::ir::{
-    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, IntegerRange, Node, NodeId,
-    NodeKind, RecordSlot, Slot, Visit,
-};
+use crate::check::ir::{CheckedBody, IntegerRange, Node, NodeId, Slot};
 use crate::check::refusal::{CheckCause, CheckRefusal, IdentityForm, IdentityNode, KeyFault};
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
@@ -39,13 +39,13 @@ use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
     FieldInitializer, NameForm, PopulationForm,
 };
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{
     ArithmeticOperator, CollectionKind, CollectionType, FloatType, IeeeValue, IeeeWidth,
     IllTypedCause, Integer, IntegerInterval, NodeKey, OrderingOperator, RoundingMode, Value,
     ValueType,
 };
+use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
 use quire_semantic_value::location::Location;
@@ -517,7 +517,7 @@ struct RecordFrame<'e, 'r> {
     next: usize,
     /// The next value initializer's location child index.
     child: usize,
-    supplied: Vec<Option<RecordSlot>>,
+    supplied: Vec<Option<RecordSlot<NodeId>>>,
     /// The declared field the operand being typed fills.
     awaiting: Option<usize>,
     location: Location,
@@ -2195,7 +2195,7 @@ impl<'a> Typer<'a> {
             Frame::Record(mut frame) => {
                 if let Some(index) = frame.awaiting.take() {
                     if let Some(slot) = frame.supplied.get_mut(index) {
-                        *slot = Some(RecordSlot::Present(self.push(typed)));
+                        *slot = Some(RecordSlot::<NodeId>::Present(self.push(typed)));
                     }
                 }
                 Self::record_step(frame, frames)

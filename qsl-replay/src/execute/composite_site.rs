@@ -10,7 +10,8 @@
 
 use qsl_eval::value::evaluate_closed;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::{CheckedNode, NodeKind};
+use qsl_semantics::check::CheckedNode;
+use quire_checked::node::NodeKind;
 use quire_eval::FamilyOutcome;
 use quire_exact::NodeKey;
 use quire_exact::Origin as BodyKey;

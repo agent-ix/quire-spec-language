@@ -13,6 +13,7 @@ use super::budget::{Dimension as Charge, Work};
 use super::profile::Profile;
 use super::result::{Completeness, Dimension, Error, Incomplete, Refusal, Subject, Support};
 use super::trace::{Closure, Eviction, Trace};
+use std::collections::BTreeSet;
 
 /// Kleene three-valued truth over the observed prefix.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,9 +64,14 @@ pub(super) struct Evaluator<'a> {
     pub trace: &'a Trace,
     /// Trace position indices in admitted clock order.
     pub ordered: Vec<usize>,
-    pub nodes: &'a [w::Temporal],
+    pub nodes: &'a [w::TemporalOperation],
     pub declaration: usize,
     pub instance: usize,
+    /// Semantic trigger/origin identity for instance-specific valuations.
+    pub instance_identity: &'a str,
+    /// Checked atoms whose authored expression reads an immutable capture.
+    /// Their valuation must be supplied under this instance identity.
+    pub instance_bound_atoms: &'a BTreeSet<u32>,
     /// Progress in force for this binding, in the profile's clock domain. It is
     /// the trace's own assertion, or the progress a ledger retains for the
     /// binding; progress asserted under any other binding never reaches here.
@@ -118,13 +124,9 @@ impl<'a> Evaluator<'a> {
         work.subject = self.locate(node, offset);
         work.visit()?;
         work.charge(Charge::Depth, depth)?;
-        let operation =
-            self.nodes
-                .get(node)
-                .map(|entry| &entry.operation)
-                .ok_or(Refusal::Reference {
-                    subject: work.subject,
-                })?;
+        let operation = self.nodes.get(node).ok_or(Refusal::Reference {
+            subject: work.subject,
+        })?;
         match operation {
             // A source constant keeps its authored value at every offset,
             // including beyond a closed decision scope.
@@ -443,7 +445,7 @@ impl<'a> Evaluator<'a> {
             return Ok(self.outside(offset));
         }
 
-        let Some(position) = self.position_at(offset) else {
+        let Some(position_index) = self.position_at(offset) else {
             return Ok(self.outside(offset));
         };
         if self.trace.evicted.iter().any(|evicted| {
@@ -451,7 +453,7 @@ impl<'a> Evaluator<'a> {
                 evicted,
                 Eviction::Valuation { node, coordinate }
                     if *node == leaf
-                        && *coordinate == self.trace.positions[position].coordinate
+                        && *coordinate == self.trace.positions[position_index].coordinate
             )
         }) {
             return Err(Incomplete {
@@ -460,13 +462,23 @@ impl<'a> Evaluator<'a> {
             }
             .into());
         }
-        match self.trace.positions[position].valuations.get(&leaf) {
+        let position = &self.trace.positions[position_index];
+        let instance_value = position
+            .instance_valuations
+            .get(self.instance_identity)
+            .and_then(|valuations| valuations.get(&leaf));
+        let value = if self.instance_bound_atoms.contains(&leaf) {
+            instance_value
+        } else {
+            instance_value.or_else(|| position.valuations.get(&leaf))
+        };
+        match value {
             Some(true) => {
-                self.support.push(position);
+                self.support.push(position_index);
                 Ok(Tri::True)
             }
             Some(false) => {
-                self.support.push(position);
+                self.support.push(position_index);
                 Ok(Tri::False)
             }
             // A leaf absent from a required position's map is a missing
@@ -617,6 +629,8 @@ mod tests {
             nodes: &[],
             declaration: 37,
             instance: 11,
+            instance_identity: "execution:fixture",
+            instance_bound_atoms: &BTreeSet::new(),
             watermark: 0,
             support: Support::default(),
         };

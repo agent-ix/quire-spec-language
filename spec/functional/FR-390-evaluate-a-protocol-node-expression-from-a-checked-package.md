@@ -289,27 +289,74 @@ identity, source-map and dependency associations for its entire lifetime.
 Exposing the successful reader result does not change I2 admission or its
 existing staged refusal vocabulary.
 
-Under `std`, `qsl-package` SHALL expose its existing
-`read_checked_package_v2(bytes: &[u8], identity: LibraryName,
-limits: V2ReadLimits, evidence: &CheckedPackageEvidence) -> V2ReadOutcome`
-and the successful `V2Read` carrier, with its fields private. `V2ReadOutcome`
-SHALL remain `Result<Staged<V2Read>, StageFailure<V2ReadRefusal>>`.
-`V2Read::evaluation_view(&self)` SHALL be the reader-result entry above.
-This exposes the existing admission result; it does not add a second reader.
+Under `std`, `qsl-package` SHALL expose its existing checked-package v2 read
+operation and the successful `V2Read` carrier, with its fields private.
+`V2ReadOutcome` SHALL remain
+`Result<Staged<V2Read>, StageFailure<V2ReadRefusal>>`. The read operation's
+evidence input SHALL be a QSL-owned read-evidence wrapper. It SHALL pair the
+existing IR `CheckedPackageEvidence` used for I2 admission with the authentic
+selected-identity rows produced by QSL's model-selection identity stage
+(QSL-1377). Those rows SHALL be retained from the selected model through the
+checked package and its emission, and SHALL accompany that emission's bytes
+when they are read. The wrapper SHALL NOT derive, reconstruct or infer any
+identity row from package bytes, decoded nodes, display names or source text.
 
-The layer-5 `CheckedTermView` SHALL select a slot with
-`select_protocol_slot(&self, slot: &ProtocolSlot) ->
-Result<SelectedProtocolTerm<'_>, CallFailure>`. `SelectedProtocolTerm` SHALL
-have private fields and read accessors for its expression handle and ordered
-source descriptors. Each descriptor SHALL expose the admitted binder's
-`NodeKey`, level, `ValueType` and read location. The expression handle
-`TermHandle<'a>` SHALL be a layer-4 opaque value, tied to the exact borrowed view and owning
-body, and unavailable from an integer, a node key, a free-standing term or
-another view. Operand handles SHALL retain that same owner; dependency calls
-SHALL resolve within the witness's exact admitted closure. Slot selection and
-source ordering SHALL obey the selection and supply admission rules below.
-`ProtocolSlot`, `SelectedProtocolTerm`, source descriptors and `CallFailure`
-SHALL remain layer-5 inputs and results; layer 4 SHALL import none of them.
+After I2 successfully admits the package, QSL SHALL join the retained producer
+rows to that exact admitted package using IR's `SelectedExactIdentities`
+projection. The resulting identity witness SHALL remain associated with the
+successful `V2Read` for its lifetime. `V2Read::evaluation_view(&self)` SHALL
+remain a no-argument reader-result entry. If the successful read has no
+producer rows, contains a row that does not identify an admitted identity, or
+contains a row for a different model/package, evaluation-view creation SHALL
+return the typed `ViewFailure::Unsupported` with respectively
+`MissingIdentityWitness`, `UnknownIdentityWitness` or
+`ForeignIdentityWitness` at the deterministic package-wide locus. Each case
+SHALL yield no partial view, SHALL charge no evaluation meter, and SHALL leave
+the successful I2 read and its staged result intact. A failed I2 read retains
+its existing staged result. This exposes the existing admission result; it
+does not add a second reader.
+
+The protocol-slot selector SHALL be owned by `qsl-package` and SHALL run
+behind `AdmittedEvaluationView`. The layer-5 sealed
+`qsl_eval::value::CheckedTermView` resolver SHALL translate the requested
+layer-5 slot into qsl-package's own public, plain-data typed slot descriptor.
+The descriptor SHALL be qsl-package's input type, not a shared layer-C type;
+it SHALL contain selection data only, confer no authority, and include no
+layer-5 type. The resolver SHALL delegate that descriptor to the view and
+SHALL NOT perform a second selection or mint a handle. The single
+qsl-package selector SHALL validate the descriptor against the exact admitted
+view and apply the selection and source-ordering rules below. Its result
+SHALL contain the opaque root handle and ordered plain-data source
+descriptors; the layer-5 resolver SHALL forward those as
+`SelectedProtocolTerm` without selecting again or constructing a handle.
+
+`SelectedProtocolTerm` SHALL have private fields and read accessors for the
+selected expression handle and ordered source descriptors. Each descriptor
+SHALL expose the admitted binder's `NodeKey`, level, `ValueType` and read
+location. `TermHandle<'a>` SHALL be an opaque qsl-package-owned value tied to
+the exact borrowed `AdmittedEvaluationView` and owning body. Its fields and
+constructor SHALL be private to the qsl-package module that owns
+`AdmittedEvaluationView`; its opaque type MAY be named and borrowed through
+public read interfaces. That view SHALL mint a handle only after validating
+the typed descriptor and the selected expression against its admitted owner.
+Operand handles SHALL retain that same owner; dependency calls SHALL resolve
+within the exact admitted closure. A handle SHALL be unavailable from an
+integer, `NodeKey`, `CheckedNode`, decoded graph, free-standing term or
+another view. `ProtocolSlot`, `SelectedProtocolTerm`, source descriptors and
+`CallFailure` SHALL remain layer-5 inputs and results; layer 4 SHALL import
+none of those layer-5 types.
+
+The qsl-package descriptor SHALL not be a mintable authority or a
+checked-term construction capability. The public API SHALL expose no
+constructor for a `TermHandle`; it SHALL expose handles only as results of the
+qsl-package view's validated single selector. This module-privacy boundary
+SHALL be verified with external-crate compile-fail probes from both qsl-eval
+and an unrelated consumer for direct `TermHandle` construction and for
+attempted construction from a `NodeKey`, `CheckedNode`, decoded graph,
+free-standing term or another view. An API-surface inspection SHALL confirm
+that qsl-eval's sealed resolver only delegates the qsl-package descriptor and
+cannot mint a handle or invoke a second selector. This design SHALL use no
+unsafe handoff and SHALL not enable checked-term construction.
 
 The layer-4 view SHALL expose
 `read_node<'v>(&'v self, handle: &TermHandle<'v>) ->
@@ -363,12 +410,24 @@ or fallback to an unchecked or serialized interpretation.
 `Unsupported(UnsupportedView)`, `Limit(LimitExceeded)` or `Fault(InternalFault)`.
 `UnsupportedView` SHALL carry the catalog pair
 `unknown_required_feature`/`unsupported-feature`, the owning package identity,
-the affected node's `NodeKey`, its `Location`, and one typed reason:
-`MissingTypeRepresentation`, `MissingLiteralProjection`,
-`MissingOperationProjection`, `MissingBindingProjection` or
-`MissingChargeSemantics`.
-If more than one projection is unsupported, view creation SHALL report the
-first by ascending package identity, node key and the reason order above.
+a typed locus and one typed reason. The locus SHALL be either
+`Package` (the package-level locus, with no node key or source location) or
+`Node { key: NodeKey, location: Location }`. `MissingIdentityWitness`,
+`UnknownIdentityWitness` and `ForeignIdentityWitness` SHALL use the `Package`
+locus because producer-row validity is package-scoped and has no affected
+node. `MissingTypeRepresentation`, `MissingLiteralProjection`,
+`MissingOperationProjection`, `MissingBindingProjection` and
+`MissingChargeSemantics` SHALL use the affected `Node` locus. When more than
+one projection is unsupported, view creation SHALL report the first by
+ascending package identity, then locus order (`Package` before `Node`), then
+ascending node key for `Node` loci, then this reason order:
+`MissingTypeRepresentation`, `MissingIdentityWitness`,
+`UnknownIdentityWitness`, `ForeignIdentityWitness`,
+`MissingLiteralProjection`, `MissingOperationProjection`,
+`MissingBindingProjection`, `MissingChargeSemantics`. Producer-row
+validation SHALL be checked after successful I2 admission and before node
+projection; any package-locus identity-witness refusal SHALL yield no partial
+view or meter charge and SHALL leave the successful I2 read intact.
 This is evaluation-input admission before S6a, category unsupported, exit 21;
 it SHALL yield no partial view and SHALL leave the successful I2 read intact.
 View creation SHALL accept no `Meter`; it SHALL neither create, replace nor
@@ -381,7 +440,8 @@ return `ViewFailure::Limit` with the existing I2 limit vocabulary, never
 
 The upstream dependencies are tracked as IR-1193 (public typed literal,
 binding-name and operation/member reads), IR-969 (checked-term placement),
-IR-1194 (semantic-type and exact identity joins), and STD-611 (lossless
+IR-1194 (semantic-type and exact identity joins), QSL-1377 (selected-model
+identity-row production), and STD-611 (lossless
 bare/explicit-dereference semantics). FR-400 owns the canonical checked-term
 read vocabulary. The projections require protocol slot and binder
 identities/levels/types, exact source occurrences and callable/dispatch closure
@@ -594,10 +654,10 @@ value; check 6 does not apply to it.
 | FR-390-AC-11 | Running one call twice gives equal results and charge logs; a call over the package the contract reader returns for FR-383's emitted nodes gives the same result and charge log as over the checked package that was emitted; a refused call leaves the meter as it was. | Test (TC-1073) |
 | FR-390-AC-12 | A package whose capture initializer reads itself, a later capture or another template's capture is refused at S3 (FR-381) and no package is built; a package mutated in its bytes so an activation capture's initializer reads its own binder, or another template's capture binder, is refused by the contract reader with `missing_declaration`/`missing-name` (`read` `forward` and `foreign`), and no evaluation call is possible. | Test (TC-1074) |
 | FR-390-AC-13 | With the S6a probe variant of FR-107-AC-6 added, the build fails with E0004 at exactly the checked-in S6a seam list: the arm serving state clauses and protocol slots is the one `ProtocolClause` arm. | Test (TC-1074) |
-| FR-390-AC-14 | A consumer can obtain a view from an in-process package and from a successful I2 reader result. Construction of a reader view or expression handle from a decoded graph, free-standing term, `ImportView`, raw bytes, integer or node key fails to compile. A refused, limited, cancelled or faulted read exposes no evaluation view. | Test |
+| FR-390-AC-14 | A consumer can obtain a view from an in-process package and from a successful I2 reader result. The qsl-package view's validated single slot selector returns an opaque `TermHandle` tied to that exact view. External-crate compile-fail probes from qsl-eval and an unrelated consumer prove they cannot construct a `TermHandle` directly or from a `NodeKey`, `CheckedNode`, decoded graph, free-standing term, `ImportView`, raw bytes, integer or another view. API-surface inspection confirms the handle constructor is private to qsl-package and qsl-eval's sealed resolver delegates only the plain-data slot descriptor, with no duplicate selector or handle construction path. A refused, limited, cancelled or faulted read exposes no evaluation view. | Test |
 | FR-390-AC-15 | For every TC-1070 slot, AC-11 compares the in-process view with a view obtained by emitting and actually admitting that package's bytes: the complete result (including value, unavailable binder, catalog code/cause, location and losses) and every ordered charge-log entry are equal. Repeat for unavailable and short-circuited supplies, each AC-9 counter boundary, and AC-10's shared-meter sequence; each selection/supply refusal has the same locus and leaves its meter unchanged. No fixture recompiles source to produce the reader-side evaluation. | Test |
-| FR-390-AC-16 | Inspection finds one slot-selection view contract and one existing machine/ProtocolClause execution path for both input variants, using FR-400's single generic `NodeKind` read vocabulary, no checked-term reconstruction, no new `construct` caller and no second family dispatch. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
-| FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package/node/location and `MissingTypeRepresentation`; no meter is accepted or charged. A missing literal, operation or binding projection yields its corresponding typed reason. A projection-resource limit yields `Limit`, no partial view. A handle from another owner returns an invariant fault rather than a node. | Test |
+| FR-390-AC-16 | Inspection finds one qsl-package slot selector behind `AdmittedEvaluationView` and one existing machine/ProtocolClause execution path for both input variants, using FR-400's single generic `NodeKind` read vocabulary and no checked-term reconstruction, new `construct` caller, duplicate qsl-eval selector or second family dispatch. The qsl-package descriptor is its own public plain-data input type and grants no mint authority; qsl-eval's sealed resolver delegates that descriptor and never constructs a `TermHandle`. qsl-package imports no layer-5 selection type. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
+| FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package and `Node` locus containing its `NodeKey` and `Location`, and `MissingTypeRepresentation`; missing, unknown or foreign QSL-1377 producer rows yield `MissingIdentityWitness`, `UnknownIdentityWitness` or `ForeignIdentityWitness`, respectively, at the deterministic `Package` locus after successful I2 admission and before node projection. Each identity-witness refusal yields no partial view or meter charge and leaves successful I2 admission intact. A missing literal, operation or binding projection yields its corresponding typed reason at the affected `Node` locus. A projection-resource limit yields `Limit`, no partial view. A handle from another owner returns an invariant fault rather than a node. | Test |
 | FR-390-AC-18 | Reader views resolve Boolean, bounded Integer, record/composite and Reference<Node> identities of TC-1070 fixture E to the exact kernel values/types of the in-process view, including recursively nested Option/Collection values used by a slot. AC-11/15 fail if a required QSL-emitted type is reported unsupported; unsupported cases cannot replace any required result/log comparison. | Test |
 | FR-390-AC-19 | A bare `view.total` read and an explicit `deref(view).total` read over the same observation retain their respective in-process charge logs through emitted-package admission and `NodeRead`, including FR-107's explicit-dereference charge distinction. If the representation erases that distinction, view creation returns `MissingChargeSemantics` before a view or meter charge exists, and AC-11 remains unmet; equal completed values or an unsupported result cannot pass the required parity comparison. | Test |
 | FR-390-AC-20 | TC-1071 row 20 uses a successful immutable observation authority in the typed result; although `n5` exists, `nodes` incomplete returns `CallFailure::Admission` with category incomplete, the population locus and the unchanged QSV FR-106 record. An unrelated incomplete population does not alter the successful call. The meter is unchanged on either admission failure. | Test |

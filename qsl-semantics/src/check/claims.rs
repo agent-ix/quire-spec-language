@@ -36,6 +36,7 @@
 //! of a `let` binder contributes the roots its bound value reads; a
 //! literal contributes none.
 
+use quire_checked::node::{Connective, NodeKind, Visit};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::ops::ControlFlow;
@@ -46,9 +47,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
-use super::ir::{
-    coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
-};
+use super::ir::{coerce_builds_narrow, scalar_conversion_target, CheckedNode, Slot};
 use super::lowering::SemanticGraph;
 use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm, NodeKeyRefusal};
 use super::references::{read_object, ModelReferences};
@@ -691,7 +690,7 @@ impl<'n> ClaimsWalk<'n, '_> {
                 );
             }
             (NodeKind::Connective(connective, left, _), 1) => {
-                let holds = !matches!(connective, super::ir::Connective::Or);
+                let holds = !matches!(connective, Connective::Or);
                 guard_on(
                     node.at(*left).location(),
                     holds,

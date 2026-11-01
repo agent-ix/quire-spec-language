@@ -183,6 +183,7 @@ pub fn position(coordinate: i64, valuations: &[(u32, bool)]) -> temporal::Positi
         coordinate,
         order: None,
         valuations: valuations.iter().copied().collect(),
+        instance_valuations: BTreeMap::new(),
     }
 }
 
