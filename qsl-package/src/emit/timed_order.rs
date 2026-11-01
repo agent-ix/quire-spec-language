@@ -620,10 +620,28 @@ mod tests {
         let mut replayed = 0;
         for case in cases.iter().filter(|case| selected(case)) {
             let id = &case["id"];
-            let outcome = crate::checked_v2::tests::read_fixture_graph(
-                case["fixture"].as_str().expect("a fixture"),
-                case.get("patch"),
-            );
+            let fixture = case["fixture"]
+                .as_str()
+                .unwrap_or("fixtures/positive-timed-clause-nodes.json");
+            let outcome = crate::checked_v2::tests::read_fixture_graph(fixture, case.get("patch"));
+            if case["schema"] == "invalid" && case.get("expected").is_none() {
+                let Err((code, locus)) = outcome else {
+                    panic!("{id}: expected a typed refusal");
+                };
+                assert_eq!(
+                    code,
+                    quire_contract_model::CheckedPackageRefusalCode::InvalidSemanticGraph,
+                    "{id}"
+                );
+                assert!(
+                    locus
+                        .as_deref()
+                        .is_some_and(|pointer| { pointer.starts_with("/semantic_graph/nodes/70") }),
+                    "{id} refuses at the execution point node, got {locus:?}"
+                );
+                replayed += 1;
+                continue;
+            }
             match (case["expected"].as_str(), outcome) {
                 (Some("admitted"), Ok((nodes, source_map))) => {
                     let found = first_out_of_order(&nodes, &source_map)
@@ -632,11 +650,11 @@ mod tests {
                 }
                 (Some("admitted"), Err(refusal)) => panic!("{id} is admitted: {refusal:?}"),
                 (_, Err((code, locus))) => {
-                    assert_eq!(
-                        code,
-                        quire_contract_model::CheckedPackageRefusalCode::InvalidSemanticGraph,
-                        "{id}"
-                    );
+                    let expected_code = serde_json::from_value::<
+                        quire_contract_model::CheckedPackageRefusalCode,
+                    >(case["expected_code"].clone())
+                    .unwrap_or_else(|_| panic!("{id}: unrecognized refusal code"));
+                    assert_eq!(code, expected_code, "{id}");
                     assert_eq!(
                         locus.as_deref(),
                         case["locus"].as_str(),
@@ -665,18 +683,23 @@ mod tests {
         replay(cases, |_| true);
     }
 
-    /// QSpec FR-322-AC-265 (TC-367 CK-36): the clause vectors' order cases
-    /// (`CL-16`, `CL-29`..`CL-53`) and the published clause package replay:
-    /// members of one region are ordered by their structural member key,
-    /// never by a digest or a shared term's region.
+    /// QSpec FR-322-AC-265 (TC-367 CK-36): clause member-key cases and
+    /// quantified binder vectors replay, including admitted guard/invariant
+    /// binders and the published typed refusals.
     #[trace("QSpec-FR-322-AC-265", "QSpec-TC-367")]
+    #[trace("QSpec-FR-322-AC-295")]
     #[test]
     fn conformance_the_clause_member_key_vectors_replay() {
         let directory = proposals();
         let vectors = read(&directory.join("timed-clause-node-vectors.json"));
         let cases = vectors["cases"].as_array().expect("CL cases");
         replay(cases, |case| {
-            case["expected"] == "admitted" || case["expected_code"] == "invalid_semantic_graph"
+            case["expected"] == "admitted"
+                || case["expected_code"] == "invalid_semantic_graph"
+                || matches!(
+                    case["id"].as_str(),
+                    Some("CL-57" | "CL-58" | "CL-59" | "CL-60" | "CL-61" | "CL-62")
+                )
         });
     }
 

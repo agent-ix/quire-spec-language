@@ -165,6 +165,8 @@ pub enum CheckedResetTarget {
 pub struct CheckedGuardPart {
     /// The part's Boolean expression node.
     pub predicate: CheckedNodeId,
+    /// The `parameter` nodes the guard quantifies, in slot order.
+    pub binders: Vec<CheckedNodeId>,
     /// The part's `clock_constraint` nodes, in aggregate order.
     pub constraints: Vec<CheckedNodeId>,
 }
@@ -187,6 +189,8 @@ pub struct CheckedTimeInvariant {
     pub metadata: TimedNodeMetadata,
     /// The Boolean expression node where the bounds hold.
     pub predicate: CheckedNodeId,
+    /// The `parameter` nodes the invariant quantifies, in slot order.
+    pub binders: Vec<CheckedNodeId>,
     /// The nonempty upper bounds, `clock_constraint` nodes of kind `place`
     /// in aggregate order.
     pub bounds: Vec<CheckedNodeId>,
@@ -682,8 +686,11 @@ fn write_guard(guard: &CheckedClockGuard) -> CheckedSemanticNodeV2 {
         .parts
         .iter()
         .map(|part| {
+            let binders = (!part.binders.is_empty())
+                .then(|| binding_term("binders", reference_terms(&part.binders)));
             aggregate_term(
                 std::iter::once(binding_term("predicate", reference_term(&part.predicate)))
+                    .chain(binders)
                     .chain(part.constraints.iter().map(reference_term))
                     .collect(),
             )
@@ -699,12 +706,22 @@ fn write_guard(guard: &CheckedClockGuard) -> CheckedSemanticNodeV2 {
 }
 
 fn write_invariant(invariant: &CheckedTimeInvariant) -> CheckedSemanticNodeV2 {
+    let binders = (!invariant.binders.is_empty())
+        .then(|| binding_term("binders", reference_terms(&invariant.binders)));
     invariant.metadata.node(
         "time_invariant",
-        aggregate_term(vec![
-            binding_term("predicate", reference_term(&invariant.predicate)),
-            binding_term("bounds", reference_terms(&invariant.bounds)),
-        ]),
+        aggregate_term(
+            std::iter::once(binding_term(
+                "predicate",
+                reference_term(&invariant.predicate),
+            ))
+            .chain(binders)
+            .chain(std::iter::once(binding_term(
+                "bounds",
+                reference_terms(&invariant.bounds),
+            )))
+            .collect(),
+        ),
     )
 }
 
@@ -1082,17 +1099,25 @@ fn project_guard(node: &CheckedSemanticNodeV2) -> Result<CheckedClockGuard, &'st
     let parts = aggregate(binding(body, "parts")?)?
         .iter()
         .map(|part| {
-            let (predicate, constraints) = aggregate(part)?
-                .split_first()
-                .ok_or("a guard part is empty")?;
+            let members = aggregate(part)?;
+            let (predicate, remaining) = members.split_first().ok_or("a guard part is empty")?;
             let CheckedTerm::Binding { name, value } = predicate else {
                 return Err("a guard part does not begin with its predicate");
             };
             if name.as_ref() != "predicate" {
                 return Err("a guard part does not begin with its predicate");
             }
+            let (binders, constraints) = match remaining.split_first() {
+                Some((CheckedTerm::Binding { name, value }, rest))
+                    if name.as_ref() == "binders" =>
+                {
+                    (reference_list(value)?, rest)
+                }
+                _ => (Vec::new(), remaining),
+            };
             Ok(CheckedGuardPart {
                 predicate: reference(value)?,
+                binders,
                 constraints: constraints
                     .iter()
                     .map(reference)
@@ -1112,9 +1137,14 @@ fn project_invariant(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeInvarian
         return Err("time invariant reference has wrong form");
     }
     let body = &node.body;
+    let binders = optional_binding(body, "binders")
+        .map(reference_list)
+        .transpose()?
+        .unwrap_or_default();
     Ok(CheckedTimeInvariant {
         metadata: TimedNodeMetadata::from_node(node),
         predicate: reference(binding(body, "predicate")?)?,
+        binders,
         bounds: reference_list(binding(body, "bounds")?)?,
     })
 }
@@ -1203,6 +1233,19 @@ fn binding<'a>(value: &'a CheckedTerm, name: &str) -> Result<&'a CheckedTerm, &'
             _ => None,
         })
         .ok_or("admitted timed-model binding is absent")
+}
+
+fn optional_binding<'a>(value: &'a CheckedTerm, name: &str) -> Option<&'a CheckedTerm> {
+    aggregate(value)
+        .ok()?
+        .iter()
+        .find_map(|member| match member {
+            CheckedTerm::Binding {
+                name: member_name,
+                value,
+            } if member_name.as_ref() == name => Some(value.as_ref()),
+            _ => None,
+        })
 }
 
 fn aggregate(value: &CheckedTerm) -> Result<&[CheckedTerm], &'static str> {

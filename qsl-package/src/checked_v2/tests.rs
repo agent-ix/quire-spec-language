@@ -2559,8 +2559,11 @@ fn assert_timed_refusal(
 /// anchor of another model whose frame is that model's, refused by the
 /// timed-model join; `CL-54` is the same reset whose frame stays on the
 /// first model, refused `invalid_model_binding` in the state step first.
+/// `CL-57` and `CL-59` admit typed guard/invariant binders; `CL-58`, `CL-60`
+/// and `CL-62` refuse typed binder violations.
 #[trace("TC-685", "FR-230-AC-34")]
 #[trace("QSpec-FR-322-AC-261", "QSpec-FR-322-AC-262", "QSpec-FR-322-AC-263")]
+#[trace("QSpec-FR-322-AC-295", "QSpec-TC-367")]
 #[test]
 fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -2572,13 +2575,35 @@ fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
     let mut replayed = 0_usize;
     for case in vectors["cases"].as_array().expect("CL cases") {
         let id = &case["id"];
-        let fixture = case["fixture"].as_str().expect("a fixture");
+        let fixture = case["fixture"]
+            .as_str()
+            .unwrap_or("fixtures/positive-timed-clause-nodes.json");
         let mut package = read_fixture(&proposals.join(fixture));
         if let Some(patch) = case.get("patch") {
             apply_json_patch(&mut package, patch);
         }
         let (_, outcome) = read_fixture_wire(fixture, &package);
         let locus = case["locus"].as_str().unwrap_or_default();
+        if case["schema"] == "invalid" && case.get("expected").is_none() {
+            let Read::Refused(V2ReadRefusal::Envelope { refusal, locus }) = &outcome else {
+                panic!("{id}: expected a typed refusal, got {outcome:?}");
+            };
+            assert_eq!(
+                refusal.code,
+                CheckedPackageRefusalCode::InvalidSemanticGraph,
+                "{id}"
+            );
+            assert!(
+                matches!(
+                    locus.as_deref(),
+                    Some(Locus::Artifact { pointer, .. })
+                        if pointer.as_str().starts_with("/semantic_graph/nodes/70")
+                ),
+                "{id}: schema-invalid execution point locus, got {locus:?}"
+            );
+            replayed += 1;
+            continue;
+        }
         match case["expected"].as_str().expect("an outcome") {
             "admitted" => assert!(
                 matches!(outcome, Read::Verified { .. }),
