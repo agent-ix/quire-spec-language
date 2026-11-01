@@ -141,14 +141,6 @@ struct ActivationCounter {
     next: u64,
 }
 
-/// Last nominal activation time shared by every checked release binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct LastActivation {
-    task_set: String,
-    task: String,
-    at: Rational,
-}
-
 /// A bounded slot's generation counter. Reusing a finished slot does not
 /// reuse the identity of a live job.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -167,7 +159,6 @@ pub struct TaskSchedulerState {
     /// Which job is currently running, by its stable typed identity.
     pub running: Option<TaskTransitionIdentity>,
     activations: Vec<ActivationCounter>,
-    last_activations: Vec<LastActivation>,
     generations: Vec<SlotGeneration>,
 }
 
@@ -280,7 +271,7 @@ impl TaskSchedulerState {
 }
 
 /// Why a scheduler control operation could not be applied.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TaskSchedulerError {
     /// The product attempted to allocate a slot beyond the reader-checked
     /// finite cap; this is a search stop, never a transition or miss.
@@ -296,11 +287,66 @@ pub enum TaskSchedulerError {
     /// The checked release declaration does not bind this transition to the
     /// selected task set and task.
     InvalidReleaseBinding,
-    /// An activation violates its task's shared periodic or sporadic spacing.
-    ArrivalSpacing,
+    /// The common DBM scale does not make the task interarrival exact.
+    InexactArrivalScale,
+    /// The task arrival-clock guard or reset failed.
+    ArrivalZone(DbmError),
 }
 
 impl TaskSchedulerState {
+    /// Apply the checked task's shared periodic or sporadic arrival rule to
+    /// its unit-rate arrival clock, then reset that clock for the new
+    /// activation. The first activation establishes the phase. All release
+    /// bindings for a task consult the same counter, so changing source
+    /// operation cannot bypass the interarrival constraint.
+    pub fn apply_arrival_guard(
+        &self,
+        product: &FixedWorkTaskProduct,
+        task_name: &str,
+        clock: usize,
+        scale: &BigInt,
+        zone: &mut Dbm,
+    ) -> Result<bool, TaskSchedulerError> {
+        if scale <= &BigInt::from(0) {
+            return Err(TaskSchedulerError::InexactArrivalScale);
+        }
+        let task = product
+            .tasks
+            .iter()
+            .find(|task| task.task == task_name)
+            .ok_or(TaskSchedulerError::ActionNotEnabled)?;
+        let scaled = task
+            .interarrival
+            .mul(&Rational::from_integer(Integer::from_big(scale.clone())));
+        if scaled.denominator() != &Integer::one() {
+            return Err(TaskSchedulerError::InexactArrivalScale);
+        }
+        let interarrival = scaled.numerator().as_big().clone();
+        let has_activated = self
+            .activations
+            .iter()
+            .any(|row| row.task_set == task.task_set && row.task == task.task);
+        let mut successor = zone.clone();
+        if has_activated {
+            successor
+                .constrain(0, clock, Bound::le(-&interarrival))
+                .map_err(TaskSchedulerError::ArrivalZone)?;
+            if task.arrival == FixedWorkArrival::Periodic {
+                successor
+                    .constrain(clock, 0, Bound::le(interarrival))
+                    .map_err(TaskSchedulerError::ArrivalZone)?;
+            }
+        }
+        if successor.is_empty() {
+            return Ok(false);
+        }
+        successor
+            .assign_clocks(&[], &[(clock, BigInt::from(0))])
+            .map_err(TaskSchedulerError::ArrivalZone)?;
+        *zone = successor;
+        Ok(true)
+    }
+
     /// Apply one checked QSL `release` binding for the source transition.
     /// The release is admitted only when its declaration identity resolves
     /// to the operation identity carried by `source` in this model subject.
@@ -346,20 +392,6 @@ impl TaskSchedulerState {
         }
         if jitter < Rational::from_integer(Integer::zero()) || jitter > task.max_jitter {
             return Err(TaskSchedulerError::InvalidJitter);
-        }
-        if let Some(previous) = self
-            .last_activations
-            .iter()
-            .find(|row| row.task_set == task.task_set && row.task == task.task)
-        {
-            let elapsed = nominal_activation.sub(&previous.at);
-            let valid = match task.arrival {
-                FixedWorkArrival::Periodic => elapsed == task.interarrival,
-                FixedWorkArrival::Sporadic => elapsed >= task.interarrival,
-            };
-            if !valid {
-                return Err(TaskSchedulerError::ArrivalSpacing);
-            }
         }
         let live_count = self
             .jobs
@@ -422,19 +454,6 @@ impl TaskSchedulerState {
                 task_set: task.task_set.clone(),
                 task: task.task.clone(),
                 next: 1,
-            });
-        }
-        if let Some(row) = self
-            .last_activations
-            .iter_mut()
-            .find(|row| row.task_set == task.task_set && row.task == task.task)
-        {
-            row.at = nominal_activation.clone();
-        } else {
-            self.last_activations.push(LastActivation {
-                task_set: task.task_set.clone(),
-                task: task.task.clone(),
-                at: nominal_activation.clone(),
             });
         }
         self.jobs.push(TaskJob {

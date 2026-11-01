@@ -164,10 +164,7 @@ fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation()
 #[trace("TC-372", "FR-419-AC-6")]
 #[test]
 fn activations_share_arrival_phase_and_occurrence_across_release_bindings() {
-    let mut spec = task("a", 4, 4, 1, Wcet::Single(int(1)));
-    spec.arrival = Arrival::Sporadic {
-        min_interarrival: int(4),
-    };
+    let spec = task("a", 4, 4, 1, Wcet::Single(int(1)));
     let product = fixed_work_task_product(&set(vec![spec]), SchedulingPolicy::FixedPriority)
         .expect("sporadic fixed-work task");
     let operation = |name: &str| {
@@ -180,17 +177,50 @@ fn activations_share_arrival_phase_and_occurrence_across_release_bindings() {
         .expect("source transition identity")
     };
     let mut scheduler = TaskSchedulerState::default();
+    let mut arrival_zone = Dbm::zero(2);
+    assert!(scheduler
+        .apply_arrival_guard(
+            &product,
+            "a",
+            1,
+            &num_bigint::BigInt::from(1),
+            &mut arrival_zone,
+        )
+        .expect("first activation establishes phase"));
     let first = scheduler
         .activate(&product, "a", operation("start"), int(0), int(0))
         .expect("first activation establishes phase");
     assert_eq!(first.job, 0);
-    assert_eq!(
-        scheduler.activate(&product, "a", operation("alternate"), int(0), int(3)),
-        Err(qsl_analyze::zone_check::TaskSchedulerError::ArrivalSpacing)
-    );
+    let mut early = Dbm::zero(2);
+    early.up();
+    early
+        .constrain(1, 0, Bound::le(num_bigint::BigInt::from(3)))
+        .expect("clock upper bound");
+    let before_early = early.clone();
+    assert!(!scheduler
+        .apply_arrival_guard(&product, "a", 1, &num_bigint::BigInt::from(1), &mut early,)
+        .expect("an early cross-binding activation is disabled"));
+    assert_eq!(early, before_early);
+    let mut on_period = Dbm::zero(2);
+    on_period.up();
+    on_period
+        .constrain(1, 0, Bound::le(num_bigint::BigInt::from(4)))
+        .expect("clock upper bound");
+    on_period
+        .constrain(0, 1, Bound::le(num_bigint::BigInt::from(-4)))
+        .expect("clock lower bound");
+    assert!(scheduler
+        .apply_arrival_guard(
+            &product,
+            "a",
+            1,
+            &num_bigint::BigInt::from(1),
+            &mut on_period,
+        )
+        .expect("a distinct binding shares the exact periodic phase"));
     let second = scheduler
         .activate(&product, "a", operation("alternate"), int(0), int(4))
-        .expect("a distinct operation shares the task's arrival phase");
+        .expect("the shared arrival guard permits the exact next activation");
     assert_eq!(second.job, 1);
 }
 
