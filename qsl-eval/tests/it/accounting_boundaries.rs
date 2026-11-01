@@ -70,7 +70,7 @@ const UNIT: &str = "dimension Time;\n\
  type Total = Integer;\n\
  record Chain { head: Int[0, 9]; tail: Chain?; }\n\
  function integer_sum using v(a: Integer, b: Integer): Integer pure { a + b }\n\
- function decimal_sum using v(a: Decimal[0, 1000000; 0, 0; exact], b: Decimal[0, 1000000; 3, 3; exact]): Decimal[0, 2000000; 0, 3; exact] pure { a + b }\n\
+ function decimal_sum using v(a: Decimal[0, 2000000; 0, 3; exact], b: Decimal[0, 2000000; 0, 3; exact]): Decimal[0, 2000000; 0, 3; exact] pure { a + b }\n\
  function text_order using v(a: Text[0, 16; nfd], b: Text[0, 16; nfd]): Boolean pure { a < b }\n\
  function unit_chain using v(): Boolean pure { convert<Quantity<s>>(5 us) = 5 s }\n\
  function two_elements using v(): Sequence<Integer>[0, 16] pure { sequence[1, 2] }\n\

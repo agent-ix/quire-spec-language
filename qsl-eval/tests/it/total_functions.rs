@@ -1444,6 +1444,9 @@ fn call_evaluated(
 #[trace("FR-090-AC-1", "TC-382")]
 #[test]
 fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
+    let decimal_target = ValueType::Decimal(
+        DecimalType::new(integer(1), integer(10_000), 2, 2, RoundingMode::NearestEven).unwrap(),
+    );
     let package = PackageDeclarations {
         functions: vec![
             function(
@@ -1458,11 +1461,8 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
             ),
             function(
                 "divide",
-                &[("p", decimal_type(0, 100)), ("q", decimal_type(1, 9))],
-                ValueType::Decimal(
-                    DecimalType::new(integer(0), integer(10_000), 2, 2, RoundingMode::NearestEven)
-                        .unwrap(),
-                ),
+                &[("p", decimal_target.clone()), ("q", decimal_target.clone())],
+                decimal_target.clone(),
                 None,
                 binary(BinaryOperator::Divide, name("p"), name("q")),
             ),
@@ -1545,11 +1545,4 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
         matches!(losses[0].loss, ValueLoss::Decimal(_)),
         "{losses:?}"
     );
-}
-
-/// `Decimal[lower..upper]` at scale 0, exact rounding.
-fn decimal_type(lower: i64, upper: i64) -> ValueType {
-    ValueType::Decimal(
-        DecimalType::new(integer(lower), integer(upper), 0, 0, RoundingMode::Exact).unwrap(),
-    )
 }

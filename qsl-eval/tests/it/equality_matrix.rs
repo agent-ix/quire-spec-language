@@ -2240,11 +2240,8 @@ fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations()
 #[test]
 fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     let package = plain_package();
-    let parameters = [
-        ("p", decimal_type(0, 100, 0, 0)),
-        ("q", decimal_type(1, 9, 0, 0)),
-    ];
-    let target = decimal_type_mode(0, 10_000, 2, 2, RoundingMode::NearestEven);
+    let target = decimal_type_mode(1, 10_000, 2, 2, RoundingMode::NearestEven);
+    let parameters = [("p", target.clone()), ("q", target.clone())];
     let quotient = operation(BinaryOperator::Divide, "p", "q");
     let (evaluation, losses, _) = run_in_losses(
         &package,
@@ -2280,16 +2277,14 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     completed_as(&exact, &decimal(400, 2));
     assert!(exact_losses.is_empty());
 
-    let zero_divisor = [
-        ("p", decimal_type(0, 100, 0, 0)),
-        ("q", decimal_type(0, 9, 0, 0)),
-    ];
+    let zero_target = decimal_type_mode(0, 10_000, 2, 2, RoundingMode::NearestEven);
+    let zero_divisor = [("p", zero_target.clone()), ("q", zero_target.clone())];
     assert_eq!(
         refused(check_in(
             &package,
             &zero_divisor,
             &quotient,
-            Some(&target),
+            Some(&zero_target),
             CheckMode::Linked
         )),
         CheckCause::Unproved(Obligation::Nonzero)
