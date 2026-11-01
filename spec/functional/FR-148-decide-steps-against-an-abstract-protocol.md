@@ -19,6 +19,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-147
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-177
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-379
+    type: depends_on
 ---
 # FR-148: Decide concrete steps against an abstract protocol
 
@@ -157,6 +161,7 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | FR-148-AC-7 | When the abstract protocol declares adversarial scheduling and has no memory or authored fairness constraint, while the concrete model declares weak whole fairness for an operation that remains enabled on an infinite stutter loop, the loop satisfies the empty `S` and violates `I`; the check refutes with the assumption-strengthening failure, and replay recomputes the same concrete loop and predicates. | Test (TC-553) |
 | FR-148-AC-8 | With concrete `assume` constraints on two distinct operation classes and an abstract protocol fairness constraint on only one class, a reachable lasso that satisfies the protocol constraint but violates the other concrete assumption refutes the implication even when the fairness classes are incomparable; when a product limit prevents that lasso relation from being decided, settlement is incomplete and never proved. | Test (TC-553) |
 | FR-148-AC-9 | For a single finite transition class, a strong each constraint on the specification side implies a weak whole constraint for the same operation on the implementation side; a weak specification constraint does not imply a strong implementation constraint on a lasso where the operation is enabled infinitely often but not continuously and is never taken. The first relation passes and the second has a replayable assumption-strengthening witness. | Test (TC-553) |
+| FR-148-AC-10 | For an abstract `tso` protocol with `scheduling adversarial`, the specification assumption set includes the derived `fair weak each flush(thread)` memory constraint. A reachable paired lasso that cycles a buffered `tick` write and its flush, never takes the continuously enabled `inc`, satisfies the memory fairness constraint but violates the concrete `assume fair weak whole inc`; the product refutes with an assumption-strengthening witness whose replay confirms the flush fairness and the violated `inc` constraint. | Test (TC-553) |
 
 ## Dependencies
 
@@ -165,6 +170,9 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
   SE-1, TS-1, TS-3, PS-8, PR-2 and PR-3.
 - [FR-137](FR-137-check-a-refinement-s-fairness-rows.md) supplies the checked
   concrete `assume` constraints.
+- [QSpec FR-177](ix://agent-ix/quire-specification/FR-177) owns the protocol
+  refinement relation; [QSpec FR-379](ix://agent-ix/quire-specification/FR-379)
+  owns its typed failure and replay payloads.
 - [FR-141](FR-141-decide-one-concrete-step-against-the-abstract-model.md),
   [FR-142](FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md),
   [FR-145](FR-145-replay-a-refinement-counterexample.md),

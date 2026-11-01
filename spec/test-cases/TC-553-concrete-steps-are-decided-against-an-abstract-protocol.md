@@ -15,7 +15,7 @@ internal concrete steps, refutations that replay, and QSpec FR-177's
 divergence-freedom and environment-assumption implication checks on the same
 product.
 
-Scope: FR-148-AC-1 to FR-148-AC-9.
+Scope: FR-148-AC-1 to FR-148-AC-10.
 
 ## Test Procedure
 
@@ -52,6 +52,14 @@ model (ADR-020 §8) with `peek` removed; `CasTwice` with `peek` kept.
    weak abstract constraint to strong concrete fairness on a lasso where the
    operation is enabled infinitely often but not continuously and never
    taken (which refutes and replays).
+10. Use an abstract protocol with a `tso` `parallel` and
+    `scheduling adversarial`, so its scheduler constraints are absent but its
+    derived memory constraint `fair weak each flush(writer)` remains in `S`.
+    Make `tick` the writer's repeated buffered store and keep concrete `inc`
+    continuously enabled but untaken on the lasso. Check that the lasso takes
+    a `flush(writer)` each cycle, satisfies memory fairness, violates concrete
+    weak whole `assume inc`, and is returned and replayed as the
+    assumption-strengthening witness.
 
 Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 
@@ -79,3 +87,7 @@ Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 - Step 9: strong each implies weak whole for the finite class set; weak does
   not imply strong on the intermittent-enabledness lasso. Replay reproduces
   the latter assumption-strengthening witness.
+- Step 10: `S` contains the memory-origin flush constraint despite adversarial
+  scheduling; the lasso satisfies that constraint, while the concrete `inc`
+  assumption is violated. The assumption-strengthening witness is replayed
+  with the same paired path and fairness predicates.
