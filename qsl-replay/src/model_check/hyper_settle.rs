@@ -259,7 +259,7 @@ pub fn settle_hyper_check(
             ..
         } => {
             count = *reached;
-            Row::stopped_run(*cause, *limit)
+            Row::stopped_run(cause.clone(), *limit)
         }
     };
     Ok(HyperRecord {

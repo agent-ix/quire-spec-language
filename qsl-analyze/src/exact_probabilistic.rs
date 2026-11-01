@@ -26,9 +26,15 @@
 //! here.
 
 mod build;
+mod finite_horizon;
 pub(crate) mod plan;
+mod settle;
 
 pub use build::build_product;
+pub use finite_horizon::{
+    backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
+};
+pub use settle::settle_product_refusal;
 
 use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
@@ -38,8 +44,8 @@ use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{ExpansionStop, NotSimulated};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::Span;
+pub use qsl_replay::ExactProbLimits;
 use qsl_replay::ModelCheckLimit;
-use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Rational, Value};
@@ -473,13 +479,12 @@ pub enum ProductRefusal {
     Internal(InternalFault),
 }
 
-/// A product request (FR-196 `ExactProbRequest`, over FR-126's budgets until
-/// FR-203's `ExactProbLimits` exists).
+/// A product request (FR-196 `ExactProbRequest`).
 pub struct ProductRequest<'a> {
     /// The model subject (FR-125).
     pub subject: ModelSubject<'a>,
     /// The checked claim (FR-186, FR-195).
     pub claim: &'a CheckedProbabilisticClaim,
-    /// `max_states`, `max_transitions` and `max_automaton_states`.
-    pub limits: ModelCheckLimits,
+    /// EN-5's product and arithmetic limits (FR-203).
+    pub limits: ExactProbLimits,
 }

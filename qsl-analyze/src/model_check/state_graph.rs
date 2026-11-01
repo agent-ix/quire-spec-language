@@ -395,16 +395,16 @@ fn bounds_refusal(refusal: NotSimulated) -> ModelCheckRefusal {
 
 /// A stop that ended a run before its frontier emptied: a named limit, a
 /// cancellation, or a stop no named limit caused.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct Halt {
     pub(super) cause: IncompleteCause,
     pub(super) limit: Option<ReachedLimit>,
 }
 
 impl Halt {
-    pub(super) fn end(self) -> RunEnd {
+    pub(super) fn end(&self) -> RunEnd {
         RunEnd::Stopped {
-            cause: self.cause,
+            cause: self.cause.clone(),
             limit: self.limit,
         }
     }

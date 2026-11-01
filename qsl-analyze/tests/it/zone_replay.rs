@@ -589,8 +589,12 @@ fn each_timed_verdict_row_settles_as_stated() {
         limit: ModelCheckLimit::ZoneMaxSymbolicStates,
         value: 9,
     };
-    let record = settle(&proof, ZoneCertificateVerdict::Stopped(limit), Err(fault()));
-    assert_eq!(record.value, TerminalValue::Incomplete(limit));
+    let record = settle(
+        &proof,
+        ZoneCertificateVerdict::Stopped(limit.clone()),
+        Err(fault()),
+    );
+    assert_eq!(record.value, TerminalValue::Incomplete(limit.clone()));
     assert_eq!(record.value.category(), Category::Incomplete);
 
     // V-4: a reproduced formula counterexample.
@@ -800,7 +804,7 @@ fn vacuity_punctuality_and_budgets_settle_as_stated() {
         limit: ModelCheckLimit::ZoneMaxSymbolicStates,
         value: 2,
     };
-    assert_eq!(record.value, TerminalValue::Incomplete(limit));
+    assert_eq!(record.value, TerminalValue::Incomplete(limit.clone()));
     assert_eq!(limit.as_str(), "limit-reached");
     assert_eq!(
         ModelCheckLimit::ZoneMaxSymbolicStates.setting(),

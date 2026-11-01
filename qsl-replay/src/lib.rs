@@ -54,6 +54,7 @@ mod clause_evaluation;
 mod compile;
 mod composite;
 pub mod contract_check;
+mod exact_probabilistic;
 mod execute;
 mod hybrid;
 mod hybrid_replay;
@@ -152,6 +153,9 @@ pub use composite::{
     NativeParityObservation, Refinement, VerifiedShadow, VerifiedShadowReport,
     VerifiedShadowResult,
 };
+pub use exact_probabilistic::{
+    settle_exact_prob_build_issue, ExactProbBuildIssue, ExactProbBuildRecord,
+};
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
     replay_value_parity, replay_with_cancel, settle_verified_shadow, value_parity_obligation,
@@ -211,9 +215,12 @@ pub use model_check::item::{
     Instance, ItemRefusal, LivenessTranslation, ModelCheckItem, Translation,
 };
 pub use model_check::limits::{
-    meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
-    DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
-    DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
+    meter_bound, ExactProbLimit, ExactProbLimits, ModelCheckLimit, ModelCheckLimits, ReachedLimit,
+    DEFAULT_EXACT_PROB_MAX_ITERATIONS, DEFAULT_EXACT_PROB_MAX_POLICY_ITERATIONS,
+    DEFAULT_EXACT_PROB_MAX_PRECISION_BITS, DEFAULT_EXACT_PROB_MAX_RATIONAL_BITS,
+    DEFAULT_EXACT_PROB_MAX_WITNESS_PATHS, DEFAULT_EXACT_PROB_PRECISION_BITS,
+    DEFAULT_MAX_AUTOMATON_STATES, DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS,
+    DEFAULT_MAX_WITNESS_SET, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
 pub use model_check::outcome::{
     MemoryCause, ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause,
@@ -290,8 +297,9 @@ pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,
     read_plugin_basis, read_plugin_cause_kind, read_plugin_certification,
     read_plugin_hybrid_counterexample, read_plugin_inconclusive_cause,
-    read_plugin_inconclusive_cause_over, AppliedReduction, BackendProviderSource, Certification,
-    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
+    read_plugin_inconclusive_cause_over, AppliedReduction, BackendProviderSource, BoundsMethod,
+    Certification, DeclineCode, EmptyEnvelopeSet, ExactBinding, ExactEntry, ExactOrBounds,
+    ExactRational, Extremum, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis,
     ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
     ReportedInconclusiveCause, SettlementBasis, StaleIdentity, StatedInstanceBound,

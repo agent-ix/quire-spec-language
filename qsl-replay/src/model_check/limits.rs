@@ -26,6 +26,19 @@ pub const DEFAULT_WITNESS_SAMPLES: u64 = 64;
 /// walk (ADR-022 GE-2).
 pub const DEFAULT_MAX_WALK_STEPS: u64 = 4_096;
 
+/// FR-203's published defaults for the non-model members of EN-5's limits.
+pub const DEFAULT_EXACT_PROB_MAX_ITERATIONS: u64 = 1_000_000;
+/// FR-203's published initial dyadic precision.
+pub const DEFAULT_EXACT_PROB_PRECISION_BITS: u32 = 64;
+/// FR-203's published maximum dyadic precision.
+pub const DEFAULT_EXACT_PROB_MAX_PRECISION_BITS: u32 = 4_096;
+/// FR-203's published exact rational bit budget.
+pub const DEFAULT_EXACT_PROB_MAX_RATIONAL_BITS: u64 = 65_536;
+/// FR-203's published policy iteration budget.
+pub const DEFAULT_EXACT_PROB_MAX_POLICY_ITERATIONS: u64 = 10_000;
+/// FR-203's published finite witness path budget.
+pub const DEFAULT_EXACT_PROB_MAX_WITNESS_PATHS: u64 = 1_024;
+
 /// FR-166's published default seed, which a request that names none runs
 /// under (QSpec FR-392, ADR-022 QS-7).
 pub const DEFAULT_WITNESS_SEED: u64 = 0;
@@ -63,6 +76,91 @@ impl Default for ModelCheckLimits {
             max_relation_tuples: DEFAULT_MAX_RELATION_TUPLES,
         }
     }
+}
+
+/// The complete caller-raisable limits for one EN-5 exact probabilistic run
+/// (FR-203, ADR-028 LM-1 to LM-3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExactProbLimits {
+    /// The product state, transition and automaton limits.
+    pub model: ModelCheckLimits,
+    /// Maximum interval-iteration sweeps.
+    pub max_iterations: u64,
+    /// Initial dyadic precision.
+    pub precision_bits: u32,
+    /// Maximum dyadic precision.
+    pub max_precision_bits: u32,
+    /// Maximum exact rational numerator or denominator bit length.
+    pub max_rational_bits: u64,
+    /// Maximum policy-iteration count.
+    pub max_policy_iterations: u64,
+    /// Maximum emitted finite witness paths.
+    pub max_witness_paths: u64,
+}
+
+impl Default for ExactProbLimits {
+    fn default() -> Self {
+        Self {
+            model: ModelCheckLimits::default(),
+            max_iterations: DEFAULT_EXACT_PROB_MAX_ITERATIONS,
+            precision_bits: DEFAULT_EXACT_PROB_PRECISION_BITS,
+            max_precision_bits: DEFAULT_EXACT_PROB_MAX_PRECISION_BITS,
+            max_rational_bits: DEFAULT_EXACT_PROB_MAX_RATIONAL_BITS,
+            max_policy_iterations: DEFAULT_EXACT_PROB_MAX_POLICY_ITERATIONS,
+            max_witness_paths: DEFAULT_EXACT_PROB_MAX_WITNESS_PATHS,
+        }
+    }
+}
+
+impl ExactProbLimits {
+    /// The configured value for a limit owned by this EN-5 request. Limits
+    /// owned by the subject or by operation context have no value here.
+    pub fn value_of(&self, limit: ExactProbLimit) -> Option<u64> {
+        match limit {
+            ExactProbLimit::MaxStates => {
+                Some(u64::try_from(self.model.limits.max_states).unwrap_or(u64::MAX))
+            }
+            ExactProbLimit::MaxTransitions => {
+                Some(u64::try_from(self.model.limits.max_transitions).unwrap_or(u64::MAX))
+            }
+            ExactProbLimit::MaxAutomatonStates => Some(self.model.max_automaton_states),
+            ExactProbLimit::MaxIterations => Some(self.max_iterations),
+            ExactProbLimit::MaxPrecisionBits => Some(u64::from(self.max_precision_bits)),
+            ExactProbLimit::MaxRationalBits => Some(self.max_rational_bits),
+            ExactProbLimit::MaxPolicyIterations => Some(self.max_policy_iterations),
+            ExactProbLimit::Time
+            | ExactProbLimit::ClauseMeter
+            | ExactProbLimit::MaxCandidates
+            | ExactProbLimit::Cancelled => None,
+        }
+    }
+}
+
+/// The exhausted cause of one EN-5 run (FR-203).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExactProbLimit {
+    /// Product states, from `exact_prob.max_states`.
+    MaxStates,
+    /// Product transitions, from `exact_prob.max_transitions`.
+    MaxTransitions,
+    /// Monitor states, from `exact_prob.max_automaton_states`.
+    MaxAutomatonStates,
+    /// Interval-iteration sweeps.
+    MaxIterations,
+    /// Dyadic precision.
+    MaxPrecisionBits,
+    /// Exact rational numerator or denominator bits.
+    MaxRationalBits,
+    /// Policy-iteration steps.
+    MaxPolicyIterations,
+    /// Operation deadline.
+    Time,
+    /// A typed clause accounting meter.
+    ClauseMeter,
+    /// Candidate expansion bound.
+    MaxCandidates,
+    /// Cancellation.
+    Cancelled,
 }
 
 impl ModelCheckLimits {
@@ -108,6 +206,16 @@ pub enum ModelCheckLimit {
     /// `ModelCheckLimits::max_automaton_states`; setting
     /// `exact_prob.max_automaton_states`.
     ExactProbMaxAutomatonStates,
+    /// EN-5 interval iteration sweeps.
+    ExactProbMaxIterations,
+    /// EN-5 dyadic refinement precision.
+    ExactProbMaxPrecisionBits,
+    /// EN-5 exact rational numerator or denominator size.
+    ExactProbMaxRationalBits,
+    /// EN-5 policy-iteration steps.
+    ExactProbMaxPolicyIterations,
+    /// EN-5 finite witness path count.
+    ExactProbMaxWitnessPaths,
     /// The subject's evaluation meter budget.
     EvaluationMeter {
         /// The denied accounting counter.
@@ -181,6 +289,11 @@ impl ModelCheckLimit {
             Self::ExactProbMaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
             Self::ExactProbMaxAutomatonStates => "max_automaton_states",
+            Self::ExactProbMaxIterations => "max_iterations",
+            Self::ExactProbMaxPrecisionBits => "max_precision_bits",
+            Self::ExactProbMaxRationalBits => "max_rational_bits",
+            Self::ExactProbMaxPolicyIterations => "max_policy_iterations",
+            Self::ExactProbMaxWitnessPaths => "max_witness_paths",
             Self::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => "integer_bits",
                 LimitKind::DecimalDigits => "decimal_digits",
@@ -230,6 +343,11 @@ impl ModelCheckLimit {
             Self::ExactProbMaxStates => "exact_prob.max_states",
             Self::ExactProbMaxTransitions => "exact_prob.max_transitions",
             Self::ExactProbMaxAutomatonStates => "exact_prob.max_automaton_states",
+            Self::ExactProbMaxIterations => "exact_prob.max_iterations",
+            Self::ExactProbMaxPrecisionBits => "exact_prob.max_precision_bits",
+            Self::ExactProbMaxRationalBits => "exact_prob.max_rational_bits",
+            Self::ExactProbMaxPolicyIterations => "exact_prob.max_policy_iterations",
+            Self::ExactProbMaxWitnessPaths => "exact_prob.max_witness_paths",
             Self::EvaluationMeter { counter } => {
                 crate::limits::AccountingLimits::setting_of(counter).name()
             }
@@ -288,7 +406,7 @@ pub struct ReachedLimit {
 
 #[cfg(test)]
 mod tests {
-    use super::ModelCheckLimit;
+    use super::{ExactProbLimits, ModelCheckLimit};
     use crate::statistical::StatisticalLimit;
     use ix_trace_rs::trace;
     use quire_exact::LimitKind;
@@ -319,6 +437,55 @@ mod tests {
             assert_eq!((exact.as_str(), exact.setting()), (name, setting));
             assert_ne!(exact.setting(), model.setting());
         }
+    }
+
+    #[trace("TC-638", "FR-203-AC-2")]
+    #[test]
+    fn exact_prob_limits_have_the_published_defaults() {
+        let limits = ExactProbLimits::default();
+        assert_eq!(limits.max_iterations, 1_000_000);
+        assert_eq!(limits.precision_bits, 64);
+        assert_eq!(limits.max_precision_bits, 4_096);
+        assert_eq!(limits.max_rational_bits, 65_536);
+        assert_eq!(limits.max_policy_iterations, 10_000);
+        assert_eq!(limits.max_witness_paths, 1_024);
+        assert_eq!(
+            limits.model.used().map(|(limit, _)| limit),
+            [
+                ModelCheckLimit::MaxStates,
+                ModelCheckLimit::MaxTransitions,
+                ModelCheckLimit::MaxAutomatonStates,
+            ]
+        );
+        assert_eq!(limits.value_of(super::ExactProbLimit::Time), None);
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxStates),
+            Some(u64::try_from(limits.model.limits.max_states).unwrap_or(u64::MAX))
+        );
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxTransitions),
+            Some(u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX))
+        );
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxAutomatonStates),
+            Some(limits.model.max_automaton_states)
+        );
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxIterations),
+            Some(limits.max_iterations)
+        );
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxPrecisionBits),
+            Some(u64::from(limits.max_precision_bits))
+        );
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxRationalBits),
+            Some(limits.max_rational_bits)
+        );
+        assert_eq!(
+            limits.value_of(super::ExactProbLimit::MaxPolicyIterations),
+            Some(limits.max_policy_iterations)
+        );
     }
 
     #[trace("TC-521", "FR-126-AC-19")]
@@ -360,6 +527,21 @@ mod tests {
             }
             ModelCheckLimit::ExactProbMaxAutomatonStates => {
                 ("max_automaton_states", "exact_prob.max_automaton_states")
+            }
+            ModelCheckLimit::ExactProbMaxIterations => {
+                ("max_iterations", "exact_prob.max_iterations")
+            }
+            ModelCheckLimit::ExactProbMaxPrecisionBits => {
+                ("max_precision_bits", "exact_prob.max_precision_bits")
+            }
+            ModelCheckLimit::ExactProbMaxRationalBits => {
+                ("max_rational_bits", "exact_prob.max_rational_bits")
+            }
+            ModelCheckLimit::ExactProbMaxPolicyIterations => {
+                ("max_policy_iterations", "exact_prob.max_policy_iterations")
+            }
+            ModelCheckLimit::ExactProbMaxWitnessPaths => {
+                ("max_witness_paths", "exact_prob.max_witness_paths")
             }
             ModelCheckLimit::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => ("integer_bits", "accounting.integer_bits"),
@@ -449,6 +631,11 @@ mod tests {
             ModelCheckLimit::ExactProbMaxStates,
             ModelCheckLimit::ExactProbMaxTransitions,
             ModelCheckLimit::ExactProbMaxAutomatonStates,
+            ModelCheckLimit::ExactProbMaxIterations,
+            ModelCheckLimit::ExactProbMaxPrecisionBits,
+            ModelCheckLimit::ExactProbMaxRationalBits,
+            ModelCheckLimit::ExactProbMaxPolicyIterations,
+            ModelCheckLimit::ExactProbMaxWitnessPaths,
             ModelCheckLimit::MaxCandidates,
             ModelCheckLimit::SolverSteps,
             ModelCheckLimit::SmtMaxSolverSteps,

@@ -479,7 +479,7 @@ fn settle<T: SubjectTransition>(
         ModelCheckOutcome::RefutedIgnoringConstraints { .. } => {
             Row::inconclusive(InconclusiveCause::RefutedIgnoringConstraints)
         }
-        ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
+        ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(cause.clone(), *limit),
         ModelCheckOutcome::Violated {
             counterexample: payload,
             ..
@@ -682,7 +682,8 @@ impl Row {
                     }
                     IncompleteCause::TimedOut
                     | IncompleteCause::Cancelled { .. }
-                    | IncompleteCause::ResourceExhausted => None,
+                    | IncompleteCause::ResourceExhausted
+                    | IncompleteCause::PrecisionBudget { .. } => None,
                 };
                 Self::incomplete(cause, limit_reached)
             }

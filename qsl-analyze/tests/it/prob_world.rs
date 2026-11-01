@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_analyze::exact_probabilistic::ProductRequest;
+use qsl_analyze::exact_probabilistic::{ExactProbLimits, ProductRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_package::CheckedPackage;
@@ -467,7 +467,10 @@ impl World {
         ProductRequest {
             subject: self.subject(),
             claim: self.claim(name),
-            limits,
+            limits: ExactProbLimits {
+                model: limits,
+                ..ExactProbLimits::default()
+            },
         }
     }
 }

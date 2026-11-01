@@ -31,7 +31,7 @@ use qsl_semantics::model::observation::AdmissionFailure;
 use quire_checked::key::DeclarationKey;
 use quire_contract_model::Std001Code;
 use quire_exact::NodeKey;
-use quire_exact::{CancelCause, Integer};
+use quire_exact::{CancelCause, Integer, Rational};
 use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
@@ -98,6 +98,30 @@ pub enum ProofBasis {
     /// admitted violation and the core's checker accepted its zone
     /// certificate (FR-245).
     ZoneCertified,
+    /// FR-203: an exact probabilistic value whose certificate the qualified
+    /// core accepted.
+    ExactValue {
+        /// The value at the least favourable initial state.
+        value: ExactRational,
+        /// The values for every initial state and binding.
+        entries: Vec<ExactEntry>,
+        /// The reductions used by the run.
+        reductions: Vec<AppliedReduction>,
+    },
+    /// FR-203: an outward interval whose lower or upper certificate the
+    /// qualified core accepted.
+    ValueBounds {
+        /// The lower endpoint.
+        lower: ExactRational,
+        /// The upper endpoint.
+        upper: ExactRational,
+        /// The method used to produce the interval.
+        method: BoundsMethod,
+        /// The values or intervals for every initial state and binding.
+        entries: Vec<ExactEntry>,
+        /// The reductions used by the run.
+        reductions: Vec<AppliedReduction>,
+    },
     /// The property was established by induction.
     Inductive {
         /// Induction depth.
@@ -144,6 +168,100 @@ pub enum ProofBasis {
     Reduced {
         /// Each applied reduction, in the order symmetry, partial-order.
         reductions: Vec<AppliedReduction>,
+    },
+}
+
+/// The extremum an exact probabilistic item computes over scheduler choices.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Extremum {
+    /// The least scheduler value.
+    Min,
+    /// The greatest scheduler value.
+    Max,
+}
+
+/// A claim's bound object instance in a terminal exact entry.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ExactBinding {
+    /// The population declaration identity.
+    pub population: String,
+    /// The authored object key.
+    pub key: String,
+}
+
+/// One value for an initial state and optional `over` binding.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ExactEntry {
+    /// The initial state's index in subject order.
+    pub initial: u32,
+    /// The bound instance, absent when the claim has no `over` parameter.
+    pub binding: Option<ExactBinding>,
+    /// The exact value or its certified interval.
+    pub value: ExactOrBounds,
+    /// The scheduler extremum, absent for a workload.
+    pub extremum: Option<Extremum>,
+}
+
+/// An exact value or the outward interval accepted by the checker.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ExactOrBounds {
+    /// An exact rational value.
+    Exact {
+        /// The reduced exact value.
+        value: ExactRational,
+    },
+    /// An interval containing the true value.
+    Bounds {
+        /// Lower endpoint.
+        lower: ExactRational,
+        /// Upper endpoint.
+        upper: ExactRational,
+    },
+}
+
+/// A reduced exact rational with FR-331's decimal-string JSON form.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ExactRational(Rational);
+
+impl ExactRational {
+    /// Wrap a rational value for a terminal record.
+    pub fn new(value: Rational) -> Self {
+        Self(value)
+    }
+
+    /// The reduced rational value.
+    pub fn value(&self) -> &Rational {
+        &self.0
+    }
+}
+
+impl Serialize for ExactRational {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut object = serializer.serialize_struct("ExactRational", 2)?;
+        object.serialize_field("numerator", &self.0.numerator().to_string())?;
+        object.serialize_field("denominator", &self.0.denominator().to_string())?;
+        object.end()
+    }
+}
+
+/// The interval method FR-203 records beside an accepted probabilistic proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum BoundsMethod {
+    /// Finite-horizon backward induction (FR-197).
+    BackwardInduction {
+        /// Dyadic precision used.
+        precision_bits: u32,
+    },
+    /// Interval iteration for an unbounded form.
+    IntervalIteration {
+        /// Dyadic precision used.
+        precision_bits: u32,
+        /// The number of completed sweeps.
+        sweeps: u64,
     },
 }
 
@@ -327,7 +445,7 @@ impl SettlementBasis {
 }
 
 /// FR-331's `incomplete` cause: which charge point the run failed to complete.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum IncompleteCause {
     /// The run exceeded its configured time budget.
     TimedOut,
@@ -347,15 +465,24 @@ pub enum IncompleteCause {
         /// The value the run used for it.
         value: u64,
     },
+    /// FR-203: dyadic refinement exhausted its precision while the initial
+    /// value still straddled the claim threshold.
+    PrecisionBudget {
+        /// The lower endpoint.
+        lower: Box<ExactRational>,
+        /// The upper endpoint.
+        upper: Box<ExactRational>,
+    },
 }
 
 impl IncompleteCause {
     /// The cause's FR-331 wire spelling.
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::TimedOut => "timed-out",
             Self::Cancelled { .. } => "cancelled",
             Self::ResourceExhausted | Self::LimitReached { .. } => "limit-reached",
+            Self::PrecisionBudget { .. } => "precision-budget",
         }
     }
 }
@@ -1061,6 +1188,8 @@ impl TerminalValue {
                     | ProofBasis::BoundedComplete { .. }
                     | ProofBasis::Inductive { .. }
                     | ProofBasis::ClosedForm { .. }
+                    | ProofBasis::ExactValue { .. }
+                    | ProofBasis::ValueBounds { .. }
                     | ProofBasis::BoundedSolver { .. }
                     | ProofBasis::InductiveSolver { .. }
                     | ProofBasis::Witness { .. }

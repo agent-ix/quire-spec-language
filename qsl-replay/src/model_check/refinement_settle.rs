@@ -160,7 +160,7 @@ fn settle_liveness(
         ModelCheckOutcome::RefutedIgnoringConstraints { .. } => {
             Row::inconclusive(InconclusiveCause::RefutedIgnoringConstraints)
         }
-        ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
+        ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(cause.clone(), *limit),
         // The second phase of a refinement returns no other outcome.
         ModelCheckOutcome::Holds { .. }
         | ModelCheckOutcome::Reduction { .. }
@@ -246,7 +246,7 @@ pub fn settle_refinement_safety(
             Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })
         }
         SafetyOutcome::Undecided { cause, .. } => Row::inconclusive(cause.cause()),
-        SafetyOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
+        SafetyOutcome::Stopped { cause, limit, .. } => Row::stopped_run(cause.clone(), *limit),
         SafetyOutcome::Fault { .. } => Row::failed(),
     };
     record_of(row, limits, depth, counterexample)

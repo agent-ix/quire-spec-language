@@ -43,6 +43,7 @@ pub fn build_product(
         claim,
         limits,
     } = request;
+    let limits = limits.model;
     let package = subject.simulation.package;
     let system = ModelSystem::new(subject.simulation).map_err(ProductRefusal::Admission)?;
     let (kind, workload) = match &claim.scheduler {

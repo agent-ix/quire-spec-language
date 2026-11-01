@@ -65,7 +65,9 @@ impl StepRecordVerdict {
             TerminalValue::Inconclusive(cause) => {
                 Self::Other(OtherBackendResult::Inconclusive(cause.clone()))
             }
-            TerminalValue::Incomplete(cause) => Self::Other(OtherBackendResult::Incomplete(*cause)),
+            TerminalValue::Incomplete(cause) => {
+                Self::Other(OtherBackendResult::Incomplete(cause.clone()))
+            }
             TerminalValue::Unsupported(cause) => {
                 Self::Other(OtherBackendResult::Unsupported(cause.clone()))
             }
@@ -99,7 +101,7 @@ impl StepCertification {
             Some(Ok(SmtProofCheck::Verified)) => BackendCertificate::Verified,
             Some(Ok(SmtProofCheck::Unverifiable { .. } | SmtProofCheck::Unencodable { .. }))
             | Some(Err(_)) => BackendCertificate::Unverifiable,
-            Some(Ok(SmtProofCheck::Stopped(cause))) => BackendCertificate::Stopped(*cause),
+            Some(Ok(SmtProofCheck::Stopped(cause))) => BackendCertificate::Stopped(cause.clone()),
             Some(Ok(SmtProofCheck::Fault(_))) => BackendCertificate::Fault,
         };
         let rejected = match check {

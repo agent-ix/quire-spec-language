@@ -1544,7 +1544,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                         best = Some((depth, hit));
                         continue;
                     }
-                    _ => return Ok(stopped(*cause, *limit, totals.stats())),
+                    _ => return Ok(stopped(cause.clone(), *limit, totals.stats())),
                 }
             }
             let bound = [

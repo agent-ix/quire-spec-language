@@ -302,6 +302,10 @@ pub struct ItemCause {
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    lower: Option<crate::proof_result::ExactRational>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    upper: Option<crate::proof_result::ExactRational>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     setting: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     boundary_states: Option<u64>,
@@ -457,6 +461,8 @@ impl ItemCause {
             certificate_at: None,
             limit: None,
             value: None,
+            lower: None,
+            upper: None,
             setting: None,
             boundary_states: None,
             max_depth: None,
@@ -772,6 +778,10 @@ impl OutcomeItem {
                         item.limit = Some(limit.as_str());
                         item.value = Some(*value);
                         item.setting = Some(limit.setting());
+                    }
+                    IncompleteCause::PrecisionBudget { lower, upper } => {
+                        item.lower = Some((**lower).clone());
+                        item.upper = Some((**upper).clone());
                     }
                     IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
                 }
@@ -2316,6 +2326,41 @@ mod tests {
                 "{value:?}"
             );
         }
+    }
+
+    #[trace("TC-638", "FR-203-AC-2")]
+    #[test]
+    fn precision_budget_cause_serializes_its_exact_interval() {
+        let lower = crate::proof_result::ExactRational::new(
+            quire_exact::Rational::new(1_i64.into(), 3_i64.into()).expect("nonzero divisor"),
+        );
+        let upper = crate::proof_result::ExactRational::new(
+            quire_exact::Rational::new(2_i64.into(), 3_i64.into()).expect("nonzero divisor"),
+        );
+        let document = OutcomeDocument::settled(
+            Operation::Analyze,
+            None,
+            vec![record(
+                0,
+                TerminalValue::Incomplete(IncompleteCause::PrecisionBudget {
+                    lower: Box::new(lower),
+                    upper: Box::new(upper),
+                }),
+            )],
+        );
+        assert_eq!(
+            json_of(&document)["items"][0],
+            json!({
+                "request_index": 0,
+                "result": "incomplete",
+                "cause": {
+                    "kind": "precision-budget",
+                    "lower": {"numerator": "1", "denominator": "3"},
+                    "upper": {"numerator": "2", "denominator": "3"},
+                },
+                "category": "incomplete",
+            })
+        );
     }
 
     /// FR-286-AC-4: an undefined claim evaluation in an `analyze` or

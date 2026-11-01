@@ -242,7 +242,7 @@ pub fn settle_state_graph(
         StateGraphOutcome::NoDecision {
             end: RunEnd::Stopped { cause, limit },
             ..
-        } => Row::stopped_run(*cause, *limit),
+        } => Row::stopped_run(cause.clone(), *limit),
         StateGraphOutcome::NoDecision {
             end: RunEnd::Completed,
             open,

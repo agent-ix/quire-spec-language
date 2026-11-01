@@ -342,13 +342,17 @@ fn polynomial_normalization_stops_at_the_certificate_edge_budget() {
             limit: ModelCheckLimit::CertificateMaxEdges,
             value: one_short,
         };
-        assert_eq!(verified(one_short), Ok(SmtProofCheck::Stopped(stopped)));
-        let checked = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(stopped))), 7);
+        assert_eq!(
+            verified(one_short),
+            Ok(SmtProofCheck::Stopped(stopped.clone()))
+        );
+        let checked =
+            StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(stopped.clone()))), 7);
         let holds = vec![StepRecordVerdict::Holds; 8];
         let settled = settle_step_records(&holds, &checked, &[], no_replay);
         assert_eq!(
             values(&settled),
-            vec![TerminalValue::Incomplete(stopped); 8]
+            vec![TerminalValue::Incomplete(stopped.clone()); 8]
         );
         assert_eq!(settled.safety.value, TerminalValue::Incomplete(stopped));
     });
@@ -918,7 +922,7 @@ fn a_stopped_or_faulted_check_settles_incomplete_or_failed() {
     let fault = quire_semantic_value::catalog::InternalFault::new("smt", "broken");
     for (check, value) in [
         (
-            SmtProofCheck::Stopped(limit),
+            SmtProofCheck::Stopped(limit.clone()),
             TerminalValue::Incomplete(limit),
         ),
         (SmtProofCheck::Fault(fault), TerminalValue::Failed),
@@ -1080,7 +1084,7 @@ fn the_rule_order_outranks_the_query_order() {
         limit: ModelCheckLimit::CertificateMaxBytes,
         value: 1,
     };
-    let stopped = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(limit))), 7);
+    let stopped = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(limit.clone()))), 7);
     assert_eq!(
         half(&with(&[]), &stopped, &[]),
         TerminalValue::Incomplete(limit)
