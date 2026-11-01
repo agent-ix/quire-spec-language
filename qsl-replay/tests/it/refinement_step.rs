@@ -57,6 +57,7 @@ fn position(world: &World, concrete: &ModelState) -> RefinementPosition {
         concrete: concrete.clone(),
         history: HistoryValues::default(),
         abstract_states: vec![mapped.visible],
+        abstract_protocol_states: Vec::new(),
     }
 }
 

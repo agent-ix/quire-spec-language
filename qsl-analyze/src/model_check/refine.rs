@@ -292,14 +292,11 @@ fn check_with(
     };
     let liveness = if refinement.abstract_operation_fairness().next().is_none() {
         None
-    } else if run.abstract_protocol.is_some() {
-        Some(LivenessHalf::Unsupported(
-            UnavailabilityCause::HiddenFieldLiveness,
-        ))
-    } else if refinement
-        .objects()
-        .iter()
-        .any(|object| !object.hidden.is_empty())
+    } else if run.abstract_protocol.is_some()
+        || refinement
+            .objects()
+            .iter()
+            .any(|object| !object.hidden.is_empty())
     {
         Some(LivenessHalf::Unsupported(
             UnavailabilityCause::HiddenFieldLiveness,

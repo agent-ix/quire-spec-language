@@ -991,6 +991,7 @@ fn a_failed_update_skips_the_rows_of_its_own_object_only() {
         history: initial_history(world.refinement(), &system, &pre),
         concrete: pre.clone(),
         abstract_states: vec![world.abstract_state(&[("value", int(0)), ("prev", int(0))])],
+        abstract_protocol_states: Vec::new(),
     };
     let (written, reached) = transition(
         &world,
