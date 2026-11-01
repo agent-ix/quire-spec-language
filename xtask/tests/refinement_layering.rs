@@ -7,9 +7,11 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use gag::BufferRedirect;
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::BackendId;
@@ -38,6 +40,36 @@ fn real_corpus() -> tempfile::TempDir {
     let out = tempfile::tempdir().expect("a temporary directory");
     generate(&repository(), out.path()).expect("the corpus generates");
     out
+}
+
+/// Run a library call while redirecting both process streams, and require it
+/// to leave them empty (FR-345-AC-10).
+fn assert_silent<T>(call: impl FnOnce() -> T) -> T {
+    let stdout = BufferRedirect::stdout().expect("stdout redirects");
+    let stderr = BufferRedirect::stderr().expect("stderr redirects");
+    let result = call();
+    std::io::stdout().flush().expect("stdout flushes");
+    std::io::stderr().flush().expect("stderr flushes");
+
+    let mut stdout = stdout.into_inner();
+    let mut stderr = stderr.into_inner();
+    let mut stdout_bytes = Vec::new();
+    let mut stderr_bytes = Vec::new();
+    stdout
+        .read_to_end(&mut stdout_bytes)
+        .expect("captured stdout reads");
+    stderr
+        .read_to_end(&mut stderr_bytes)
+        .expect("captured stderr reads");
+    assert!(
+        stdout_bytes.is_empty(),
+        "compare wrote to stdout: {stdout_bytes:?}"
+    );
+    assert!(
+        stderr_bytes.is_empty(),
+        "compare wrote to stderr: {stderr_bytes:?}"
+    );
+    result
 }
 
 /// A backend named `name` advertising `capabilities` in `bounded` mode.
@@ -170,7 +202,7 @@ fn production_comparison_matches_cli_and_negotiates_each_witness() {
     );
     let cli_report = String::from_utf8(cli.stdout).expect("CLI report is UTF-8");
 
-    let no_negotiation = compare(corpus.path(), compile_unit, &registry, None);
+    let no_negotiation = assert_silent(|| compare(corpus.path(), compile_unit, &registry, None));
     assert_eq!(no_negotiation.verdict, Verdict::Unsupported);
     assert_eq!(no_negotiation.exit, 21);
     assert_eq!(
@@ -214,7 +246,7 @@ fn production_comparison_matches_cli_and_negotiates_each_witness() {
                 requests.push((request.kind, candidate.id().as_str().to_owned()));
                 Disposition::Supported(candidate.clone())
             };
-        compare(corpus.path(), compile_unit, &registry, Some(&mut negotiate))
+        assert_silent(|| compare(corpus.path(), compile_unit, &registry, Some(&mut negotiate)))
     };
     assert_eq!(negotiated.verdict, Verdict::Success);
     assert_eq!(negotiated.exit, 0);
