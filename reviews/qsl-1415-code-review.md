@@ -68,8 +68,26 @@ Reviewed PR #2007 at head `20ed8801881d3ca9f6477bda7e22bac5cb864281` against bas
 | FND-002 | fixed | - |
 | FND-003 | still-open | The fix removed the eviction-list length charge, but formula and activation paths still scan the complete list without charging scan work; a large list can cause unbounded or multiplied work outside the counters. |
 | FND-004 | still-open | `BTreeSet::insert` mutates/allocates the retained-demand entry before `Work::charge` can refuse it. Compute and charge the next distinct demand before inserting. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | still-open | The retained instance's `receipts` vector is mutated before the new scan calls `work.visit()?`; visit exhaustion therefore leaves ledger state changed before refusal, and a retry can append the same receipt again. |
 
 ## Disposition evidence
 
 - FND-001 fixed: `Limits::bounded` now returns caller-supplied limits unchanged.
 - FND-002 fixed: checked-v2 no longer charges the total eviction-list length as retention; the new irrelevant-eviction regression test retains only the demanded valuation count.
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | A work-limit refusal while scanning evicted captures occurs after a receipt is appended to the retained instance, so retrying with sufficient limits can append the same receipt twice. | src/temporal/activation.rs:140 |
+
+### FND-005 — retained receipts mutate before eviction-scan exhaustion
+
+The retained-instance path appends `trigger.receipt` to the ledger's saved instance before scanning the eviction list with `work.visit()?`. If the visit ceiling is exhausted during that scan, evaluation returns an error after mutating caller-owned `Ledger` state. Retrying the same trigger after raising the ceiling appends the same receipt again, so the retry is not from an unchanged state.
+
+### Disposition pass 2 evidence
+
+- FND-003 fixed: formula, activation, and protocol preflight scans now charge visit/work accounting before inspecting eviction candidates; focused tests cover formula and capture scan exhaustion.
+- FND-004 fixed: checked-v2 computes prospective distinct valuation demand, charges it, and only then inserts the record; unit coverage verifies a refused charge leaves the set empty and duplicate demand charges once.

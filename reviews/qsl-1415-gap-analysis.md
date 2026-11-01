@@ -51,7 +51,23 @@ A focused manual traceability pass checked NFR-008-AC-1..5 against PR #2007's ch
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | - |
+| FND-002 | still-open | The scan exhaustion tests do not exercise a retained instance or retry the same input after a visit refusal; add that successor case to establish AC-5 for the mutable ledger path. |
 
 ## Disposition evidence
 
 The checked-v2 test `checked_v2_restored_capture_state_participates_in_result_identity` now seeds two distinct retained capture values, replays each restored state, verifies repeat identity, and asserts the two restored results differ.
+
+## Disposition pass 2
+
+No new gap-analysis finding required a disposition row in this round. FND-001's latest outcome remains `fixed` from round 1; the new scan and retention-accounting regression tests were reviewed against their NFR-008 bindings.
+
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-002 | medium | The checked-v2 retry tests do not exercise a visit-limit refusal during retained-capture eviction scanning followed by retry, so the AC-5 unmutated-state guarantee is unverified for the mutable ledger path. | tests/it/checked_temporal_limits_v2.rs:435 | correct-requirement-no-evidence |
+
+### FND-002 — retained-ledger retry after scan refusal lacks coverage
+
+The new capture scan test starts with a fresh obligation and checks only the typed visit exhaustion and usage. It does not seed a `Ledger`, trigger the existing-instance scan, or retry after the scan refusal. Consequently, it does not detect the receipt mutation found in code review FND-005.

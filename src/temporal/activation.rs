@@ -127,8 +127,9 @@ pub(super) fn resolve(
         }
 
         if let Some(existing) = retained
-            .as_deref_mut()
-            .and_then(|retained| retained.get_mut(&trigger.identity))
+            .as_deref()
+            .and_then(|retained| retained.get(&trigger.identity))
+            .cloned()
         {
             if existing.payload != trigger.payload {
                 return Err(Refusal::Contradiction {
@@ -137,7 +138,6 @@ pub(super) fn resolve(
                 }
                 .into());
             }
-            existing.receipts.push(trigger.receipt.clone());
             let mut evicted_capture = None;
             for evicted in &trace.evicted {
                 work.visit()?;
@@ -150,6 +150,12 @@ pub(super) fn resolve(
             }
             if let Some(capture) = evicted_capture {
                 work.subject.capture = Some(capture);
+                if let Some(saved) = retained
+                    .as_deref_mut()
+                    .and_then(|retained| retained.get_mut(&trigger.identity))
+                {
+                    saved.receipts.push(trigger.receipt.clone());
+                }
                 instances.push(Err(Failed {
                     identity: trigger.identity.clone(),
                     error: Incomplete {
@@ -161,7 +167,15 @@ pub(super) fn resolve(
                 work.subject.capture = None;
                 continue;
             }
-            instances.push(Ok(existing.clone()));
+            let mut restored = existing;
+            restored.receipts.push(trigger.receipt.clone());
+            if let Some(saved) = retained
+                .as_deref_mut()
+                .and_then(|retained| retained.get_mut(&trigger.identity))
+            {
+                saved.receipts.push(trigger.receipt.clone());
+            }
+            instances.push(Ok(restored));
             continue;
         }
 

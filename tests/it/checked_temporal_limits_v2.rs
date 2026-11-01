@@ -463,6 +463,69 @@ fn checked_v2_eviction_scan_work_is_bounded_for_capture_lookups() {
     });
 }
 
+/// AC-5: a visit refusal during retained-instance eviction scanning leaves the
+/// ledger unchanged, so retrying the same delivery appends its receipt once.
+#[trace("TC-124", "NFR-008-AC-5")]
+#[test]
+fn checked_v2_retained_capture_scan_refusal_retries_without_duplicate_receipt() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) { capture saved: M::Widget = trigger; always[0,0] holds(view.code > 0) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let mut ledger = temporal::Ledger::new();
+        let mut input = activated_trace(atom);
+        let seeded = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits::default(),
+            &mut ledger,
+        );
+        assert!(seeded.result().is_ok());
+
+        input.triggers[0].receipt = "receipt:retry".into();
+        input.triggers[0].captures = vec![temporal::CaptureInput::WrongType];
+        input
+            .evicted
+            .extend((1..=8).map(|coordinate| temporal::Eviction::Valuation {
+                node: atom.saturating_add(100),
+                coordinate,
+            }));
+        let stopped = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits {
+                visits: 2,
+                ..temporal::Limits::default()
+            },
+            &mut ledger,
+        );
+        let Err(temporal::Error::Exhausted(exhaustion)) = stopped.result() else {
+            panic!("the retained-instance scan stops at the visit limit");
+        };
+        assert_eq!(exhaustion.dimension, temporal::LimitDimension::Visits);
+        assert_eq!(stopped.usage().visits, 2);
+
+        let retried = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &input,
+            temporal::Limits {
+                visits: 32,
+                ..temporal::Limits::default()
+            },
+            &mut ledger,
+        );
+        let temporal::Obligation::Assessed(assessment) = &retried.result().unwrap()[0] else {
+            panic!("the unchanged retained state permits a successful retry");
+        };
+        assert_eq!(assessment.receipts, ["receipt:one", "receipt:retry"]);
+        assert_eq!(assessment.captures[0].value, "17");
+    });
+}
+
 /// AC-5: exact ceilings permit the full result, one-short ceilings refuse the
 /// first unpaid charge, and retries reproduce the result from unchanged input.
 #[trace("TC-124", "NFR-008-AC-5")]
