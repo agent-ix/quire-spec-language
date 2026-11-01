@@ -706,11 +706,13 @@ fn unit_identity_join_refuses_missing_and_ambiguous_compound_keys() {
 #[test]
 fn text_and_plan_equality_rows_retain_operand_type_identities() {
     let emission = emitted(
-        "function text_eq using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
-         function plan_eq using v(a: Int[-100, 100], b: Int[-100, 100]): Boolean pure { a = b }",
+        "record Point { x: Integer; }\n\
+         function text_eq using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
+         function plan_eq using v(a: Int[-100, 100], b: Int[-100, 100]): Boolean pure { a = b }\n\
+         function point_eq using v(a: Point, b: Point): Boolean pure { a = b }",
     );
     super::assert_equality_reader_outcomes(&emission, read_back(&emission));
-    assert_eq!(emission.equality_producer_identity_rows().len(), 2);
+    assert_eq!(emission.equality_producer_identity_rows().len(), 3);
     assert!(emission
         .equality_fact_witness_rows()
         .iter()
@@ -719,6 +721,21 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
         .equality_fact_witness_rows()
         .iter()
         .any(|row| matches!(row.fact(), EqualityFactWitness::OperandType { .. })));
+    assert!(
+        emission
+            .equality_producer_identity_rows()
+            .iter()
+            .any(|row| {
+                row.producer_data().schedule()
+                    == quire_semantic_value::declaration::EqualitySchedule::Plan
+                    && row
+                        .producer_data()
+                        .operand_type_facts()
+                        .iter()
+                        .any(|fact| matches!(fact.value_type, quire_exact::ValueType::Composite(_)))
+            }),
+        "the emitted rows include declaration-bearing Point Plan equality"
+    );
     for row in emission.equality_producer_identity_rows() {
         let producer_data = row.producer_data();
         let type_rows = row.producer_identity().text_plan_type_nodes();
@@ -783,8 +800,9 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
     }
 }
 
+/// Provenance: QSL-1445.
 /// QSpec FR-322-AC-288: each enum member is an exact structural witness row.
-#[ix_trace_rs::trace("QSpec-FR-322-AC-288", "QSL-1445")]
+#[ix_trace_rs::trace("QSpec-FR-322-AC-288")]
 #[test]
 fn enum_member_facts_join_source_and_lowered_declarations_to_nodes() {
     use quire_semantic_value::declaration::EqualitySchedule;
@@ -865,6 +883,48 @@ fn enum_member_facts_join_source_and_lowered_declarations_to_nodes() {
             assert!(emitted_ids.contains(&serde_json::to_value(node).unwrap()));
         }
     }
+}
+
+/// QSpec FR-322-AC-288: enum fact joins preserve each exact structural key.
+#[ix_trace_rs::trace("QSpec-FR-322-AC-288")]
+#[test]
+fn enum_fact_node_id_helper_keeps_distinct_key_associations() {
+    let graph = checked_graph(
+        "enum Color { Blue, Green }\n\
+         function enumeration using v(a: Color, b: Color): Boolean pure { a != b }",
+    );
+    let keys = graph
+        .semantic_graph()
+        .nodes()
+        .take(3)
+        .map(|node| node.key().clone())
+        .collect::<Vec<_>>();
+    assert_eq!(keys.len(), 3);
+    assert_ne!(keys[0], keys[1]);
+    assert_ne!(keys[0], keys[2]);
+    assert_ne!(keys[1], keys[2]);
+
+    let emitted_node_ids = keys
+        .iter()
+        .map(|key| (key.clone(), super::checked_node_id_of(key)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let expected = keys
+        .iter()
+        .map(super::checked_node_id_of)
+        .collect::<Vec<_>>();
+    let (source, declaration, member) =
+        super::enum_member_node_ids(&emitted_node_ids, &keys[0], &keys[1], &keys[2], &keys[0])
+            .expect("each exact structural key resolves independently");
+
+    assert_eq!(source, expected[0], "source declaration retains its key");
+    assert_eq!(
+        declaration, expected[1],
+        "lowered declaration retains its key"
+    );
+    assert_eq!(member, expected[2], "member retains its key");
+    assert_ne!(source, declaration);
+    assert_ne!(source, member);
+    assert_ne!(declaration, member);
 }
 
 /// QSL-1390: every equality schedule is emitted to the IR carrier with its

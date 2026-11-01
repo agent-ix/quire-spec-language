@@ -1900,6 +1900,30 @@ fn equality_producer_emission_rows(
         .collect()
 }
 
+/// Resolves each enum witness key independently through the emitter's exact
+/// structural-key map. Keeping this join in one helper lets tests exercise
+/// source, lowered declaration, and member associations with distinct keys.
+fn enum_member_node_ids(
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    source_declaration: &NodeKey,
+    declaration: &NodeKey,
+    member: &NodeKey,
+    application: &NodeKey,
+) -> Result<(CheckedNodeId, CheckedNodeId, CheckedNodeId), EmitRefusal> {
+    let lookup = |key: &NodeKey| {
+        emitted_node_ids.get(key).cloned().ok_or_else(|| {
+            EmitRefusal::MissingEqualityIdentityContext {
+                application: application.clone(),
+            }
+        })
+    };
+    Ok((
+        lookup(source_declaration)?,
+        lookup(declaration)?,
+        lookup(member)?,
+    ))
+}
+
 fn equality_fact_witness_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
@@ -2071,23 +2095,14 @@ fn equality_fact_witness_rows(
             for (source_declaration, declaration, member, case, ordinal, ordered) in
                 row.producer_identity.enum_member_facts()
             {
-                let Some(source_declaration_node) =
-                    emitted_node_ids.get(source_declaration).cloned()
-                else {
-                    return Err(EmitRefusal::MissingEqualityIdentityContext {
-                        application: row.application().clone(),
-                    });
-                };
-                let Some(declaration_node) = emitted_node_ids.get(declaration).cloned() else {
-                    return Err(EmitRefusal::MissingEqualityIdentityContext {
-                        application: row.application().clone(),
-                    });
-                };
-                let Some(member_node) = emitted_node_ids.get(member).cloned() else {
-                    return Err(EmitRefusal::MissingEqualityIdentityContext {
-                        application: row.application().clone(),
-                    });
-                };
+                let (source_declaration_node, declaration_node, member_node) =
+                    enum_member_node_ids(
+                        emitted_node_ids,
+                        source_declaration,
+                        declaration,
+                        member,
+                        row.application(),
+                    )?;
                 add(
                     member,
                     EqualityFactWitness::EnumMember {
