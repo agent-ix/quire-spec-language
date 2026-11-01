@@ -179,6 +179,7 @@ fn values(domain: &ParameterDomain) -> Box<dyn Iterator<Item = Value>> {
         ParameterDomain::Boolean => {
             Box::new([Value::Boolean(false), Value::Boolean(true)].into_iter())
         }
+        ParameterDomain::Values(values) => Box::new(values.clone().into_iter()),
         ParameterDomain::Integers(None)
         | ParameterDomain::Unbounded
         | ParameterDomain::Unsupported(_) => Box::new(std::iter::empty()),

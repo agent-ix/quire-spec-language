@@ -766,6 +766,29 @@ fn the_scalar_operation_vectors_are_refuted_when_undefined_and_never_proved() {
 
 // ---- the clause semantics ----
 
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-3")]
+#[test]
+fn a_case_clause_enumerates_union_members_and_replays_the_payload() {
+    let package = package_of(
+        "union Shape { Empty, Circle(Int[0, 1]), Rect(Int[0, 1], Int[0, 1]) }\n\
+         function subject using v(s: Shape): Boolean pure \
+         { case s { Circle(r): r > 0; Rect(w, h): true; Empty: true; } }",
+    );
+    let key = key_of(
+        &package,
+        "subject",
+        &serde_json::json!({"role": "claim", "ordinal": 0}),
+    );
+    let record = run(&package, &key, "subject", None);
+    assert!(matches!(terminal(&record), TerminalValue::Refuted));
+    let counterexample = record.value_check.as_ref().unwrap();
+    let Value::Union(union) = &counterexample.reproduced.assignment()[0] else {
+        panic!("the counterexample must preserve the active union member")
+    };
+    assert_eq!(union.member().identifier(), "Circle");
+    assert!(matches!(union.components(), [Value::Integer(n)] if n.to_string() == "0"));
+}
+
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-7")]
 #[test]
 fn an_undefined_subexpression_is_located_at_its_own_occurrence() {

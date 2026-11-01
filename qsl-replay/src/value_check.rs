@@ -46,6 +46,7 @@ use quire_exact::{
     Role, Undefined, Value, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::location::Location;
 
 use crate::limits::AccountingLimits;
@@ -100,6 +101,8 @@ pub enum ParameterDomain {
     /// An integer type's inclusive bounds, restricted by the item's bounds.
     /// `None` when the restriction left no value.
     Integers(Option<IntegerInterval>),
+    /// A finite enum or union domain, in the checked declaration's order.
+    Values(Vec<Value>),
     /// The mathematical `Integer`, which a bound must restrict.
     Unbounded,
     /// A type the arm does not enumerate.
@@ -269,17 +272,13 @@ impl<'p> ValueTarget<'p> {
                 .ok_or(Selection::MissingNode)?;
             ClaimForm::ScalarOperation
         };
+        let types = graph.scope().types();
         let parameters = parameters
             .into_iter()
             .zip(callable.parameters)
             .map(|(node, (_, value_type))| TargetParameter {
                 node,
-                domain: match value_type {
-                    ValueType::Boolean => ParameterDomain::Boolean,
-                    ValueType::Int(interval) => ParameterDomain::Integers(Some(interval.clone())),
-                    ValueType::Integer => ParameterDomain::Unbounded,
-                    _ => ParameterDomain::Unsupported(UnsupportedDomain::ParameterType),
-                },
+                domain: parameter_domain(&value_type, types),
             })
             .collect();
         Ok(Self {
@@ -309,7 +308,9 @@ impl<'p> ValueTarget<'p> {
                         declared.and_then(|declared| intersect(&declared, interval)),
                     ),
                     ParameterDomain::Unbounded => ParameterDomain::Integers(Some(interval.clone())),
-                    other @ (ParameterDomain::Boolean | ParameterDomain::Unsupported(_)) => other,
+                    other @ (ParameterDomain::Boolean
+                    | ParameterDomain::Values(_)
+                    | ParameterDomain::Unsupported(_)) => other,
                 };
         }
         self
@@ -437,6 +438,7 @@ impl<'p> ValueTarget<'p> {
                     (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
                         n >= interval.lower() && n <= interval.upper()
                     }
+                    (value, ParameterDomain::Values(values)) => values.contains(value),
                     _ => false,
                 })
     }
@@ -496,6 +498,97 @@ impl<'p> ValueTarget<'p> {
         let only = found.next()?;
         found.next().is_none().then_some(only)
     }
+}
+
+/// The enumerable domain for a claim parameter. Primitive numeric domains
+/// stay lazy; enum and union domains retain their finite checked values.
+fn parameter_domain(value_type: &ValueType, types: &TypeEnvironment) -> ParameterDomain {
+    match value_type {
+        ValueType::Boolean => ParameterDomain::Boolean,
+        ValueType::Int(interval) => ParameterDomain::Integers(Some(interval.clone())),
+        ValueType::Integer => ParameterDomain::Unbounded,
+        ValueType::Enum(shape) => ParameterDomain::Values(
+            shape
+                .variants()
+                .enumerate()
+                .filter_map(|(rank, variant)| {
+                    u32::try_from(rank).ok().map(|rank| {
+                        Value::Enum(quire_exact::EnumMember::new(variant.clone(), rank))
+                    })
+                })
+                .collect(),
+        ),
+        ValueType::Composite(declaration) => types
+            .composite(declaration.clone())
+            .and_then(|declaration| match declaration.shape() {
+                CompositeShape::Union(members) => union_values(members),
+                _ => None,
+            })
+            .map(ParameterDomain::Values)
+            .unwrap_or(ParameterDomain::Unsupported(
+                UnsupportedDomain::ParameterType,
+            )),
+        _ => ParameterDomain::Unsupported(UnsupportedDomain::ParameterType),
+    }
+}
+
+/// Enumerate a closed union whose payloads are bounded integers or Booleans.
+/// Refuse a declaration with an unsupported payload instead of silently
+/// proving over a partial member domain.
+fn union_values(
+    members: &[quire_semantic_value::declaration::UnionMemberDeclaration],
+) -> Option<Vec<Value>> {
+    const MAX_MATERIALIZED_VALUES: usize = 65_536;
+    let mut values = Vec::new();
+    for member in members {
+        let identity = member.member()?.clone();
+        let payload_domains: Vec<Vec<Value>> = member
+            .positions()
+            .iter()
+            .map(|position| match position {
+                ValueType::Boolean => Some(vec![Value::Boolean(false), Value::Boolean(true)]),
+                ValueType::Int(interval) => {
+                    let span = interval
+                        .upper()
+                        .sub(interval.lower())
+                        .add(&Integer::one())
+                        .to_u64()?;
+                    let size = usize::try_from(span).ok()?;
+                    if size > MAX_MATERIALIZED_VALUES {
+                        return None;
+                    }
+                    Some(integers(interval).map(Value::Integer).collect())
+                }
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let mut payloads = vec![Vec::new()];
+        for domain in payload_domains {
+            if payloads.len().saturating_mul(domain.len()) > MAX_MATERIALIZED_VALUES {
+                return None;
+            }
+            payloads = payloads
+                .into_iter()
+                .flat_map(|prefix| {
+                    domain.iter().cloned().map(move |value| {
+                        let mut payload = prefix.clone();
+                        payload.push(value);
+                        payload
+                    })
+                })
+                .collect();
+        }
+        if values.len().saturating_add(payloads.len()) > MAX_MATERIALIZED_VALUES {
+            return None;
+        }
+        values.extend(payloads.into_iter().map(|payload| {
+            Value::Union(quire_exact::UnionValue::from_admitted(
+                identity.clone(),
+                payload,
+            ))
+        }));
+    }
+    Some(values)
 }
 
 fn undefined_reason(reason: Undefined) -> &'static str {
