@@ -351,6 +351,12 @@ pub struct PackageDeclarations {
         Vec<crate::model::intake::SelectedModel>,
         crate::model::accounting::Meter,
     )>,
+    /// Exact identity rows minted by model intake, kept alongside this
+    /// package's checked declarations for IR projection after admission.
+    pub selected_exact_identity_rows: (
+        Vec<quire_contract_model::SelectedExactDeclarationRow>,
+        Vec<quire_contract_model::SelectedExactFieldRow>,
+    ),
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
@@ -649,13 +655,14 @@ impl PackageDeclarations {
         identity: qsl_foundation::IdentityLimits,
         selected: crate::model::intake::SelectedModels,
     ) -> Self {
-        let (entries, meter) = selected.into_parts();
+        let (entries, meter, exact_declarations, exact_fields) = selected.into_parts();
         let mut declarations = Self::new(source, package_name, identity);
         declarations.models = entries
             .iter()
             .map(|entry| super::AdmittedModel::from_view(&entry.view))
             .collect();
         declarations.model_inputs = Some((entries, meter));
+        declarations.selected_exact_identity_rows = (exact_declarations, exact_fields);
         declarations
     }
 
@@ -669,6 +676,7 @@ impl PackageDeclarations {
     ) -> Self {
         Self {
             model_inputs: None,
+            selected_exact_identity_rows: (Vec::new(), Vec::new()),
             pending_types: None,
             source,
             package_name: package_name.into(),

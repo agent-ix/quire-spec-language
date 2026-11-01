@@ -669,6 +669,12 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// Exact identity rows issued by model intake for the same selected
+    /// documents, carried to the package's IR projection boundary.
+    selected_exact_identity_rows: (
+        Vec<quire_contract_model::SelectedExactDeclarationRow>,
+        Vec<quire_contract_model::SelectedExactFieldRow>,
+    ),
     /// FR-390: each checked population's exact declaration and effective
     /// member types, indexed by its canonical checked node.
     protocol_population_types: BTreeMap<
@@ -806,6 +812,7 @@ impl fmt::Debug for CheckedGraph {
                     synthesized_spans,
                     embedding,
                     model_selections,
+                    selected_exact_identity_rows,
                     protocol_population_types,
                     model_roots,
                     header_layers,
@@ -867,6 +874,10 @@ impl fmt::Debug for CheckedGraph {
                     .field("synthesized_spans", &synthesized_spans)
                     .field("embedding", &embedding)
                     .field("model_selections", &model_selections)
+                    .field(
+                        "selected_exact_identity_rows",
+                        &selected_exact_identity_rows,
+                    )
                     .field(
                         "protocol_population_types",
                         &NodeMap(protocol_population_types.iter()),
@@ -6018,6 +6029,7 @@ impl PackageDeclarations {
             synthesized_spans,
             embedding,
             model_selections,
+            selected_exact_identity_rows: self.selected_exact_identity_rows,
             protocol_population_types,
             model_roots,
             header_layers,
@@ -6558,6 +6570,34 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The model-intake declaration and field rows, validated against the
+    /// IR package admitted from this checked graph's selected documents.
+    pub fn selected_exact_identities(
+        &self,
+        package: &quire_contract_model::CheckedPackageV2,
+    ) -> Result<
+        quire_contract_model::SelectedExactIdentities,
+        quire_contract_model::ExactTypeProjectionError,
+    > {
+        crate::model::intake::selected_exact_identities_from_rows(
+            package,
+            &self.selected_exact_identity_rows.0,
+            &self.selected_exact_identity_rows.1,
+        )
+    }
+
+    /// The QSL model-intake declaration rows carried by this checked graph.
+    pub fn selected_exact_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedExactDeclarationRow] {
+        &self.selected_exact_identity_rows.0
+    }
+
+    /// The QSL model-intake record-field rows carried by this checked graph.
+    pub fn selected_exact_field_rows(&self) -> &[quire_contract_model::SelectedExactFieldRow] {
+        &self.selected_exact_identity_rows.1
     }
 
     /// The checked declaration and effective member types for a population

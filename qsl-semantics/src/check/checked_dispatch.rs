@@ -1228,7 +1228,7 @@ pub fn checked_dispatch_selected_operation(
     source: qsl_foundation::source::provenance::RawSourceRef,
     identity: qsl_foundation::IdentityLimits,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
-    let (entries, mut meter) = selected.into_parts();
+    let (entries, mut meter, exact_declarations, exact_fields) = selected.into_parts();
     let Some(ordinal) = entries
         .iter()
         .position(|entry| entry.view.model_selection().identity == root.key.package)
@@ -1252,6 +1252,7 @@ pub fn checked_dispatch_selected_operation(
         }
     }
     declarations.model_inputs = Some((entries, meter));
+    declarations.selected_exact_identity_rows = (exact_declarations, exact_fields);
     Ok(declarations)
 }
 
