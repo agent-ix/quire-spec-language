@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::AccessOrdering;
-use qsl_semantics::check::{AccessClass, CheckedProtocol, ProtocolNodeId};
+use qsl_semantics::check::{AccessClass, CheckedProtocol, ControlStep, ProtocolNodeId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -333,6 +333,9 @@ impl WeakAccessFailure {
 #[derive(Clone, Debug, Default)]
 pub struct WeakAccesses {
     attempts: BTreeMap<ProtocolNodeId, WeakAttempt>,
+    /// Potential load locations and the transitions that can read each one,
+    /// indexed once from the static potential classification.
+    load_candidates: BTreeMap<ProtocolNodeId, BTreeMap<Location, BTreeSet<ModelTransition>>>,
     /// Each `event`, `effect`, `commit`, `send` or `receive` node of a weak
     /// `parallel` whose constraint reads a shared location: its static
     /// declaration path and the shared locations it reads.
@@ -372,6 +375,44 @@ pub(crate) struct StateWeakAccesses {
     shared: BTreeSet<Location>,
     cells: BTreeMap<Location, Cell>,
     readers: Vec<(String, BTreeSet<Location>)>,
+}
+
+/// One weak parallel above a protocol control, with the branch label and
+/// static path needed by runtime observations.
+#[derive(Clone, Debug)]
+pub(crate) struct WeakAncestor {
+    pub(crate) parallel: ProtocolNodeId,
+    pub(crate) path: String,
+    pub(crate) branch: String,
+    pub(crate) is_branch_context: bool,
+}
+
+/// The weak-parallel ancestors of each control, inner to outer. The program
+/// and governing models are fixed for a protocol system, so derive these
+/// chains once instead of walking the control tree during every expansion.
+pub(crate) fn weak_ancestors(
+    program: &Program<'_>,
+    governing: &BTreeMap<ProtocolNodeId, qsl_foundation::MemoryModelName>,
+) -> Result<BTreeMap<ProtocolNodeId, Vec<WeakAncestor>>, ProtocolRefusal> {
+    let mut chains = BTreeMap::new();
+    for node in program.controls.keys() {
+        let mut chain = Vec::new();
+        let mut below = *node;
+        while let Some(above) = program.parent(below)? {
+            if governing.get(&above).is_some_and(|model| model.is_weak()) {
+                chain.push(WeakAncestor {
+                    parallel: above,
+                    path: program.text(above)?.to_owned(),
+                    branch: program.control(below)?.name.clone(),
+                    is_branch_context: program.control(above)?.step == ControlStep::Parallel
+                        && program.control(below)?.step == ControlStep::Branch,
+                });
+            }
+            below = above;
+        }
+        chains.insert(*node, chain);
+    }
+    Ok(chains)
 }
 
 impl StateWeakAccesses {
@@ -491,6 +532,14 @@ impl WeakAccesses {
 
     pub(crate) fn of(&self, node: ProtocolNodeId) -> Option<&WeakAttempt> {
         self.attempts.get(&node)
+    }
+
+    /// Potential load locations and their selected transitions for `node`.
+    pub(crate) fn load_candidates(
+        &self,
+        node: ProtocolNodeId,
+    ) -> Option<&BTreeMap<Location, BTreeSet<ModelTransition>>> {
+        self.load_candidates.get(&node)
     }
 
     /// The shared locations the constraint of the node at the static
@@ -888,8 +937,43 @@ pub(crate) fn classify(
             .collect();
         readers.insert(node, (program.text(node)?.to_owned(), shared_reads));
     }
+    let load_candidates = if mode == ClassificationMode::Potential {
+        attempts
+            .iter()
+            .map(|(node, attempt)| {
+                let mut by_location: BTreeMap<Location, BTreeSet<ModelTransition>> =
+                    BTreeMap::new();
+                for candidate in &attempt.instances {
+                    match &candidate.access {
+                        InstanceAccess::Access {
+                            class: AccessClass::Load | AccessClass::Rmw,
+                            location: Some(location),
+                        } => {
+                            by_location
+                                .entry(location.clone())
+                                .or_default()
+                                .insert(candidate.transition.clone());
+                        }
+                        InstanceAccess::Shape { locations } => {
+                            for location in locations {
+                                by_location
+                                    .entry(location.clone())
+                                    .or_default()
+                                    .insert(candidate.transition.clone());
+                            }
+                        }
+                        InstanceAccess::Access { .. } => {}
+                    }
+                }
+                (*node, by_location)
+            })
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
     Ok(WeakAccesses {
         attempts,
+        load_candidates,
         readers,
         shared,
         cells,
@@ -903,26 +987,17 @@ pub(crate) fn classify_enabled_state(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
     program: &Program<'_>,
-    governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
+    weak_ancestors: &BTreeMap<ProtocolNodeId, Vec<WeakAncestor>>,
     observed: &ModelSimState,
     applications: Vec<EnabledApplication>,
     readers: Vec<EnabledReader>,
 ) -> Result<StateWeakAccesses, ProtocolRefusal> {
-    let chain_of =
-        |node: ProtocolNodeId| -> Result<Vec<(ProtocolNodeId, String)>, ProtocolRefusal> {
-            let mut chain = Vec::new();
-            let mut below = node;
-            while let Some(above) = program.parent(below)? {
-                if governing
-                    .get(&above)
-                    .is_some_and(|resolved| resolved.is_weak())
-                {
-                    chain.push((above, program.control(below)?.name.clone()));
-                }
-                below = above;
-            }
-            Ok(chain)
-        };
+    let chain_of = |node: ProtocolNodeId| {
+        weak_ancestors
+            .get(&node)
+            .map(Vec::as_slice)
+            .ok_or_else(|| ProtocolRefusal::fault("a-classified-node-has-weak-ancestors"))
+    };
     let in_weak = |node| -> Result<bool, ProtocolRefusal> { Ok(!chain_of(node)?.is_empty()) };
     let is_apart = |left_instance: u64,
                     left_path: &ThreadPath,
@@ -936,11 +1011,13 @@ pub(crate) fn classify_enabled_state(
         }
         let left_chain = chain_of(left_node)?;
         let right_chain = chain_of(right_node)?;
-        for (parallel, _) in &left_chain {
-            if !right_chain.iter().any(|(other, _)| other == parallel) {
+        for ancestor in left_chain {
+            if !right_chain
+                .iter()
+                .any(|other| other.parallel == ancestor.parallel)
+            {
                 continue;
             }
-            let parallel_text = program.text(*parallel)?;
             for left_step in &left_path.steps {
                 let super::identity::PathStep::Branch {
                     node: left_parallel,
@@ -950,7 +1027,7 @@ pub(crate) fn classify_enabled_state(
                 else {
                     continue;
                 };
-                if left_parallel != parallel_text {
+                if left_parallel != &ancestor.path {
                     continue;
                 }
                 if right_path.steps.iter().any(|right_step| {
@@ -960,7 +1037,7 @@ pub(crate) fn classify_enabled_state(
                             node: right_parallel,
                             branch: right_branch,
                             ordinal: right_ordinal,
-                        } if right_parallel == parallel_text
+                        } if right_parallel == &ancestor.path
                             && right_ordinal == left_ordinal
                             && right_branch != left_branch
                     )
@@ -1063,7 +1140,7 @@ pub(crate) fn classify_enabled_state(
     for (key, instances) in footprints {
         let parallel = chain_of(key.node)?
             .last()
-            .map(|(node, _)| *node)
+            .map(|ancestor| ancestor.parallel)
             .ok_or_else(|| ProtocolRefusal::fault("a-classified-attempt-is-in-a-weak-parallel"))?;
         if !program.attempts.contains_key(&key.node) {
             return Err(ProtocolRefusal::fault("an-enabled-attempt-is-an-attempt"));

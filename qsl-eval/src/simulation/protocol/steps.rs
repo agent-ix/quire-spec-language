@@ -396,10 +396,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     _ => {}
                 }
                 for observation_path in observations {
-                    for node in self.program.attempts.keys().copied() {
-                        if !self.weak_context_matches(node, &observation_path)? {
-                            continue;
-                        }
+                    let observed_context = self.weak_observation_context(&observation_path);
+                    let Some(attempt_nodes) = self.attempts_by_weak_context.get(&observed_context)
+                    else {
+                        continue;
+                    };
+                    for node in attempt_nodes.iter().copied() {
                         let Some(attempt) = self.program.attempts.get(&node) else {
                             continue;
                         };
@@ -410,48 +412,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 .observe(&state.memory, &observation_path, &state.model);
                         let mut observations = vec![(probe.clone(), None)];
                         let mut read_locations = BTreeSet::new();
-                        let mut selected_by_location = BTreeMap::new();
-                        if let Some(potential) = self.potential.of(node) {
-                            let mut locations = BTreeSet::new();
-                            for candidate in &potential.instances {
-                                if let InstanceAccess::Access {
-                                    class: AccessClass::Load | AccessClass::Rmw,
-                                    location: Some(location),
-                                } = &candidate.access
-                                {
-                                    locations.insert(location.clone());
-                                } else if let InstanceAccess::Shape { locations: shape } =
-                                    &candidate.access
-                                {
-                                    locations.extend(shape.iter().cloned());
-                                }
-                            }
-                            for location in &locations {
-                                let selected = potential
-                                    .instances
-                                    .iter()
-                                    .filter(|candidate| match &candidate.access {
-                                        InstanceAccess::Access {
-                                            class: AccessClass::Load | AccessClass::Rmw,
-                                            location: Some(candidate_location),
-                                        } => candidate_location == location,
-                                        InstanceAccess::Shape { locations } => {
-                                            locations.contains(location)
-                                        }
-                                        _ => false,
-                                    })
-                                    .map(|candidate| candidate.transition.clone())
-                                    .collect::<BTreeSet<_>>();
-                                selected_by_location.insert(location.clone(), selected);
-                            }
-                            for location in locations {
-                                let Some(cell) = self.potential.cell(&location) else {
+                        let load_candidates = self.potential.load_candidates(node);
+                        if let Some(candidates) = load_candidates {
+                            for location in candidates.keys() {
+                                let Some(cell) = self.potential.cell(location) else {
                                     continue;
                                 };
                                 let shared = super::memory::SharedCell {
-                                    location: &location,
+                                    location,
                                     cell,
-                                    non_atomic: self.non_atomic.contains(&location),
+                                    non_atomic: self.non_atomic.contains(location),
                                 };
                                 let reads = self.memory.reads(
                                     &state.memory,
@@ -465,14 +435,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                             .into_iter()
                                             .map(|read| (read.observed, Some(location.clone()))),
                                     );
-                                    read_locations.insert(location);
+                                    read_locations.insert(location.clone());
                                 }
                             }
                         }
                         for (observed, read_location) in observations {
                             let selected_transitions = read_location.as_ref().map(|location| {
-                                selected_by_location
-                                    .get(location)
+                                load_candidates
+                                    .and_then(|candidates| candidates.get(location))
                                     .unwrap_or(&empty_transitions)
                             });
                             let enabled: Vec<(ModelTransition, Option<Value>)> =
@@ -598,7 +568,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             &self.model,
             self.protocol,
             &self.program,
-            &self.governing,
+            &self.weak_ancestors,
             &state.model,
             applications,
             readers,
@@ -606,51 +576,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         .map_err(ExpansionStop::from)
     }
 
-    /// Whether `path` carries exactly the weak-branch observations that
-    /// govern `node`. Attempts in a nested weak parallel are not classified
-    /// until that parallel has forked and its branch steps are in the path.
-    fn weak_context_matches(
-        &self,
-        node: ProtocolNodeId,
-        path: &ThreadPath,
-    ) -> Result<bool, ProtocolRefusal> {
-        let mut context = Vec::new();
-        let mut below = node;
-        while let Some(parent) = self.program.parent(below)? {
-            if self
-                .governing
-                .get(&parent)
-                .is_some_and(|model| model.is_weak())
-                && self.program.control(parent)?.step == ControlStep::Parallel
-                && self.program.control(below)?.step == ControlStep::Branch
-            {
-                context.push((
-                    self.program.text(parent)?.to_owned(),
-                    self.program.control(below)?.name.clone(),
-                ));
-            }
-            below = parent;
-        }
-        context.reverse();
-        if context.is_empty() {
-            return Ok(false);
-        }
-        let mut observed = Vec::new();
-        for step in &path.steps {
-            let super::identity::PathStep::Branch { node, branch, .. } = step else {
-                continue;
-            };
-            for (parallel, model) in &self.governing {
-                if model.is_weak()
-                    && self.program.control(*parallel)?.step == ControlStep::Parallel
-                    && self.program.text(*parallel)? == node
-                {
-                    observed.push((node.clone(), branch.clone()));
-                    break;
-                }
-            }
-        }
-        Ok(context == observed)
+    /// The weak-parallel branch steps of one path, in path order. This
+    /// context selects the statically indexed attempt nodes for an
+    /// observation.
+    fn weak_observation_context(&self, path: &ThreadPath) -> Vec<(String, String)> {
+        path.steps
+            .iter()
+            .filter_map(|step| {
+                let super::identity::PathStep::Branch { node, branch, .. } = step else {
+                    return None;
+                };
+                self.weak_parallel_paths
+                    .contains(node)
+                    .then(|| (node.clone(), branch.clone()))
+            })
+            .collect()
     }
 
     /// The steps of the thread `path` at the event node `node`, by its kind,
