@@ -391,6 +391,7 @@ fn preflight_input(
         });
     }
     let mut valuations = 0usize;
+    let mut preflight_work = 0usize;
     for position in &trace.positions {
         valuations = valuations.saturating_add(position.valuations.len());
         if valuations > limits.valuations {
@@ -401,6 +402,14 @@ fn preflight_input(
             ));
         }
         for instance in position.instance_valuations.values() {
+            preflight_work = preflight_work.saturating_add(1);
+            if preflight_work > limits.visits {
+                return Some(preflight_exhaustion(
+                    Dimension::Visits,
+                    limits.visits,
+                    subject,
+                ));
+            }
             valuations = valuations.saturating_add(instance.len());
             if valuations > limits.valuations {
                 return Some(preflight_exhaustion(
@@ -420,22 +429,21 @@ fn preflight_input(
             subject,
         });
     }
-    // The evaluator visits each delivery and supplied capture even when a
-    // delivery repeats an existing semantic identity. Bound that scan before
-    // constructing any temporary identity state; retained-instance and
-    // capture charges below are then computed once per successful identity.
-    let mut delivery_work = 0usize;
+    // Bound scans over per-instance valuation tables, deliveries, and supplied
+    // captures before constructing temporary identity state. Empty instance
+    // maps still consume scan work; retained-instance and capture charges below
+    // are computed once per successful semantic identity.
     for trigger in &trace.triggers {
-        delivery_work = delivery_work.saturating_add(1);
-        if delivery_work > limits.visits {
+        preflight_work = preflight_work.saturating_add(1);
+        if preflight_work > limits.visits {
             return Some(preflight_exhaustion(
                 Dimension::Visits,
                 limits.visits,
                 subject,
             ));
         }
-        delivery_work = delivery_work.saturating_add(trigger.captures.len());
-        if delivery_work > limits.visits {
+        preflight_work = preflight_work.saturating_add(trigger.captures.len());
+        if preflight_work > limits.visits {
             return Some(preflight_exhaustion(
                 Dimension::Visits,
                 limits.visits,

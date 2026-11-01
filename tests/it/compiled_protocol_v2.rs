@@ -2254,6 +2254,35 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
                     && exhaustion.limit == 2
         ));
 
+        let mut empty_instance_rows = trace.clone();
+        empty_instance_rows.triggers.clear();
+        empty_instance_rows.positions[0].instance_valuations = (0..10)
+            .map(|index| (format!("empty-owner-{index}"), BTreeMap::new()))
+            .collect();
+        let empty_rows_over_budget = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: empty_instance_rows,
+                    trigger_identities: Vec::new(),
+                    correction: None,
+                },
+                temporal::Limits {
+                    visits: 1,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("empty per-instance valuation rows consume bounded scan work");
+        assert!(matches!(
+            empty_rows_over_budget.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Visits
+                    && exhaustion.requested == 2
+                    && exhaustion.limit == 1
+        ));
+
         // A correction changes an admitted leaf valuation and names exactly
         // the prior result. The earlier result remains immutable.
         let mut corrected_trace = trace.clone();
