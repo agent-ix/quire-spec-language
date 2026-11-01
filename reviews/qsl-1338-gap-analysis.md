@@ -12,6 +12,8 @@ relationships:
 
 ## Summary
 
+Current disposition: source ae47df82848dbc3e0687550fd87ea901c9453edc; scoped source review clear, with head-specific evidence and limits in Final integration disposition below.
+
 Ticket: QSL-1338. Final frozen head: 2a164fe0e9474f202a6939233a6b80597bb3491e. Same-reviewer disposition round 1. The owned slice relative to integrated parent c19d214682d414ee481bfdea8f982ab4a71bf39b is Makefile, tests/support/front_end.rs and the two original review records. origin/main...HEAD also contains upstream child #1947 changes; those are separately reviewed and are not newly approved here.
 
 The CST lifetime change remains the reviewed change: first parse drops after producing owned formatted bytes; reparse drops after the second-pass assertion, before emitted_once. Formatting idempotence, retained sources, source revision suffix, limits and model/dependency/checking authority remain unchanged. The proposed serialization was removed. The final Makefile retains the ORIGINAL --test-threads=3 schedule and all five full-depth selectors, exact-name/count checks, ignored-test execution and default-lane artifact reuse. Only stale peak/fallback prose changes in the Makefile relative to its parent. No cap, fixture reduction, new skip/ignore, wrapper or assertion weakening was introduced.
@@ -75,3 +77,15 @@ scope:
 ## Dispositions
 
 Round 1: the original Findings table contains only a schema placeholder, not a defect. There are no finding IDs requiring an outcome and no new findings. Final source review is clear within the owned slice.
+
+## Final integration disposition
+
+Same-reviewer disposition round 2. Current frozen source: ae47df82848dbc3e0687550fd87ea901c9453edc, normal merge of exact main 3166c571fd12b4d3707b5f3756078e4b985283e7. No new findings or original defect dispositions are outstanding. Scoped source review remains clear.
+
+Inspected incoming integration and confirmed Makefile, tests/support/front_end.rs, tests/it/formatter_identity.rs and qsl-cst have no diff from the full-depth-qualified 2a164fe0e9474f202a6939233a6b80597bb3491e. The incoming selected exact identity admission/IR revision 154227dcbcda09f3abf635375777893132fc7686 and upstream SMT/member-read-form changes are upstream integration, not a formatter algorithm, fixture, scheduling or own lifetime-patch change. No broad re-review or new builds performed.
+
+Verified actual combined compile log /home/peter/dev/.agents/tmp/qsl-1338d-checks/compile-ae47df828/cargo-check.log: admitted and finished source heads are ae47df82848dbc3e0687550fd87ea901c9453edc; cargo check --locked -j1 --workspace --all-targets passed, exit 0, command 2m44.13s, maximum RSS 1,362,192 KiB. Cgroup memory.max 21,474,836,480 bytes (20 GiB), memory.peak 1,333,456,896 bytes; before/after low/high/max/oom/oom_kill/oom_group_kill counters all zero. Request/acquisition 05:55:12Z, finish 05:57:56Z.
+
+This is compile evidence at ae47df828, not a fresh full-depth test run. The actual five-case three-thread runtime result remains attributed to 2a164fe0e (363.38s harness, all five pass, cgroup peak 11.91 GiB under 20 GiB, zero memory-limit/OOM/kill events). Unchanged formatter source and own patch support carrying the scoped source clearance forward; the current integration's whole-runtime behavior is not thereby fully requalified. No full CI-green, whole-repository gap-audit PASS or administrative merge authorization is implied. The pre-existing direct checked-package identity oracle limitation under AC-9 remains unchanged and explicit in Oracle limits.
+
+Round 2 dispositions: none. Original findings remain placeholder-only; no new findings.
