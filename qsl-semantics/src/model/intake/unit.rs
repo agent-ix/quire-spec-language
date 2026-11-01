@@ -11,13 +11,13 @@ use qsl_foundation::selection::ModelSelection;
 use std::collections::BTreeMap;
 
 use qsl_foundation::{Code, Span};
-use quire_exact::{Cancel, MemberId, MemberOwner};
-use quire_semantic_value::catalog::CatalogCode;
 use quire_contract_model::{
     CheckedNodeId, CheckedNodePathSegment, SelectedExactDeclarationForm,
     SelectedExactDeclarationRow, SelectedExactFieldRow, SelectedExactIdentities,
     SelectedExactIdentity,
 };
+use quire_exact::{Cancel, MemberId, MemberOwner};
+use quire_semantic_value::catalog::CatalogCode;
 
 use super::{admit_located, read_domain_package, PackageInput};
 use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
@@ -115,8 +115,42 @@ impl SelectedModels {
     ) -> Result<SelectedExactIdentities, quire_contract_model::ExactTypeProjectionError> {
         SelectedExactIdentities::from_stage_rows(
             package,
-            self.exact_declarations.clone(),
-            self.exact_fields.clone(),
+            self.exact_declarations
+                .iter()
+                .filter(|row| {
+                    package.graph().nodes.iter().any(|node| {
+                        node.node_id == row.structural_node
+                            && match row.form {
+                                SelectedExactDeclarationForm::RecordValueType => {
+                                    node.node_tag.as_ref() == "model"
+                                        && node.semantic_form.as_ref() == "record_value_type"
+                                }
+                                SelectedExactDeclarationForm::ObjectType => {
+                                    node.node_tag.as_ref() == "model"
+                                        && node.semantic_form.as_ref() == "object_type"
+                                }
+                                SelectedExactDeclarationForm::Union => {
+                                    node.node_tag.as_ref() == "composite_type"
+                                        && node.semantic_form.as_ref() == "union"
+                                }
+                                SelectedExactDeclarationForm::DeclaredUnit => {
+                                    node.node_tag.as_ref() == "scalar_type"
+                                        && node.semantic_form.as_ref() == "unit"
+                                }
+                            }
+                    })
+                })
+                .cloned(),
+            self.exact_fields
+                .iter()
+                .filter(|row| {
+                    package.graph().nodes.iter().any(|node| {
+                        node.node_id == row.record_node
+                            && node.node_tag.as_ref() == "model"
+                            && node.semantic_form.as_ref() == "record_value_type"
+                    })
+                })
+                .cloned(),
         )
     }
 
@@ -450,11 +484,8 @@ fn selected_exact_rows(
                     &record.key.node,
                 )
                 .map_err(|_| ())?;
-                let structural = checked_model_node(
-                    &record.key.package,
-                    "record_value_type",
-                    &record.key.node,
-                );
+                let structural =
+                    checked_model_node(&record.key.package, "record_value_type", &record.key.node);
                 record_keys.insert(record.key.clone(), exact.clone());
                 declarations.push(SelectedExactDeclarationRow::new(
                     structural,
@@ -470,11 +501,7 @@ fn selected_exact_rows(
                 };
                 crate::model::key::object_type_node_key(&record.key).map_err(|_| ())?;
                 declarations.push(SelectedExactDeclarationRow::new(
-                    checked_model_node(
-                        &record.key.package,
-                        "object_type",
-                        &record.key.node,
-                    ),
+                    checked_model_node(&record.key.package, "object_type", &record.key.node),
                     selected_document,
                     SelectedExactDeclarationForm::ObjectType,
                     record.key.node.as_str(),
@@ -498,7 +525,8 @@ fn selected_exact_rows(
         else {
             return Err(());
         };
-        let member_id = MemberId::new(MemberOwner::Node(record_key.clone()), name).map_err(|_| ())?;
+        let member_id =
+            MemberId::new(MemberOwner::Node(record_key.clone()), name).map_err(|_| ())?;
         fields.push(SelectedExactFieldRow::new(
             checked_model_node(&field.owner.package, "record_value_type", &field.owner.node),
             selected_document,
@@ -533,8 +561,8 @@ mod selected_exact_identity_tests {
         RecordValueTypeRecord, ValueTypeRef,
     };
     use crate::model::normalize::{normalize_on, NormalizeOutcome};
-    use serde_json::json;
     use quire_exact::Presence;
+    use serde_json::json;
 
     fn key(node: &str) -> DeclarationKey {
         DeclarationKey {

@@ -127,6 +127,10 @@ pub(super) struct Lowered {
     pub(super) selected_exact_declarations: Vec<quire_contract_model::SelectedExactDeclarationRow>,
     /// Record field rows minted during the graph's model admission.
     pub(super) selected_exact_fields: Vec<quire_contract_model::SelectedExactFieldRow>,
+    /// The selected identity witness validated by the check graph against
+    /// this test's admitted package.
+    pub(super) selected_exact_identities:
+        Result<quire_contract_model::SelectedExactIdentities, String>,
 }
 
 pub(super) fn lower(clauses: &str) -> Lowered {
@@ -191,6 +195,12 @@ pub(super) fn lower_package(
         quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => Ok(admitted),
         other => Err(format!("{other:?}")),
     };
+    let selected_exact_identities = ir.as_ref().map_err(Clone::clone).and_then(|admitted| {
+        package
+            .graph()
+            .selected_exact_identities(admitted)
+            .map_err(|error| format!("{error:?}"))
+    });
     Lowered {
         text: unit,
         wire,
@@ -200,6 +210,7 @@ pub(super) fn lower_package(
         claim_domains,
         selected_exact_declarations,
         selected_exact_fields,
+        selected_exact_identities,
     }
 }
 

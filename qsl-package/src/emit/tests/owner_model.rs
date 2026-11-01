@@ -175,17 +175,16 @@ fn selected_model_identity_rows_back_reference_projection_and_missing_rows_refus
         }),
         "the model intake stage minted the selected Order identity row"
     );
-    let identities = SelectedExactIdentities::from_stage_rows(
-        admitted,
-        lowered.selected_exact_declarations.clone(),
-        lowered.selected_exact_fields.clone(),
-    )
-    .expect("IR validates the intake rows against the admitted selected model");
+    assert!(lowered.selected_exact_fields.is_empty());
+    let identities = lowered
+        .selected_exact_identities
+        .as_ref()
+        .expect("the QSL checked graph validates intake rows against IR admission");
 
     let mut witnessed = false;
     let mut refused_without_rows = false;
     for node in &admitted.graph().nodes {
-        if let Ok(projected) = admitted.project_exact_type(&node.node_id, &identities, 64) {
+        if let Ok(projected) = admitted.project_exact_type(&node.node_id, identities, 64) {
             if matches!(projected.value_type(), quire_exact::ValueType::Reference(_)) {
                 witnessed = true;
                 let refusal = admitted
@@ -200,7 +199,10 @@ fn selected_model_identity_rows_back_reference_projection_and_missing_rows_refus
             }
         }
     }
-    assert!(witnessed, "the package has a reference projection backed by Order");
+    assert!(
+        witnessed,
+        "the package has a reference projection backed by Order"
+    );
     assert!(refused_without_rows, "the empty witness was refused by IR");
 }
 
