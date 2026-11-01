@@ -101,6 +101,10 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 //   RefutedIgnoringConstraints, written as the QSpec FR-331 inconclusive
 //   cause refuted-ignoring-constraints; its lasso violates an explicitly
 //   ignored memory constraint and is not an ordinary counterexample.
+//   ProtocolAssumptionNotEstablished { reason, identities, witness },
+//   written protocol-assumption-not-established (QSL FR-148): protocol
+//   assumption strengthening or an undecided relation; never a
+//   RefinementFailure and never a refutation.
 
 // ProductStateRef, ClosureCertificate, CertificateRule: FR-338.
 // ComponentCertificate, ProofCertificate: FR-339.

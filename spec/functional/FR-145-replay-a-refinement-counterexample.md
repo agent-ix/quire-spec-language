@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-141
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: references
 ---
 # FR-145: Replay a refinement counterexample
 
@@ -54,13 +56,23 @@ count.
   dependency's, that dependency's identity-addressed source (ADR-015).
 - A `WitnessEnvelope<TemporalCounterexample>` whose source is
   `ReplaySource::ModelTrace` naming the refinement node, and whose payload's
-  `refinement` member holds the recorded `RefinementFailure`.
+  `refinement` member holds the recorded `RefinementFailure`; or, for
+  FR-148's assumption-relation non-proof, a
+  `WitnessEnvelope<ProtocolAssumptionWitness>` whose source is
+  `ReplaySource::ProtocolAssumption` naming the same checked refinement. The
+  latter holds the typed reason and `AssumptionIdentity` values and either
+  the paired concrete/abstract prefixes and loops for `strengthened`, or the
+  paired finite prefixes and typed `ContractUndetermined` locus for
+  `relation-undetermined`. It is not a QSpec `TemporalCounterexample` and
+  has no `RefinementFailure` member.
 
 ## Outputs
 
 - An FR-072 replay result on the `ModelTrace` arm whose arm result names
-  the `RefinementFailure` it reproduced, or a typed `ReplayRefusal` with no
-  partial result.
+  the `RefinementFailure` it reproduced, or on the `ProtocolAssumption` arm
+  the distinct typed `ProtocolAssumption` result that names the
+  `ProtocolAssumptionNotEstablished` outcome it reproduced, or a typed
+  `ReplayRefusal` with no partial result.
 
 ## Behavior
 
@@ -99,6 +111,21 @@ count.
   Agreement with the recorded failure SHALL settle
   `reproduced-with-evaluated-witness`; disagreement SHALL settle
   `inconclusive`, `ReplayParity`.
+- **Protocol assumption relation.** For `ReplaySource::ProtocolAssumption`,
+  replay SHALL re-admit both subjects and reconstruct the paired paths from
+  their typed step identities. For reason `strengthened`, it SHALL verify
+  loop closure in both subjects and the paired product, recompute that every
+  specification constraint in `S` holds and that the named implementation
+  constraint in `I` fails, and verify the recorded typed identities. For
+  `relation-undetermined`, it SHALL re-evaluate the final paired state and
+  reproduce the same `ContractUndetermined` fairness predicate at the
+  recorded locus, with no violating paired lasso. Agreement settles the replay
+  as `reproduced-with-evaluated-witness` but leaves the refinement item
+  `inconclusive`; it never converts this outcome to `refuted`. A different
+  reason, identity, path, predicate result or established relation settles
+  `inconclusive`, `ReplayParity`. This arm does not apply QSpec FR-379's
+  concrete-`F_C` fairness requirement to a strengthening witness, because
+  that witness necessarily violates the named member of `I`.
 - **Undefined mapping.** For `RefinementFailure::Undefined{position, row}`
   it SHALL run `check_initial` and `check_step` along the prefix and stop at
   the first `Undefined`. One at `position`, for `row`, at `where`, with an undefined cause equal to the
@@ -122,6 +149,7 @@ count.
 | FR-145-AC-4 | Refusals settle no result: a lasso over `RegisterHistory` with `ensure fair weak Spec::Register::write`, stem `write(r, 1)` and loop `write(r, 1)`, whose loop returns to its entry concrete state (`value` 1) with `last` 0 at entry and 1 at its end (`invalid_runtime_input`/`invalid-value`). Replaying one envelope twice gives equal results. | Test (TC-550) |
 | FR-145-AC-5 | FR-142-AC-8's counterexample replays to `reproduced-with-evaluated-witness`; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `ReplayParity`. | Test (TC-554) |
 | FR-145-AC-6 | Replaying a hand-built payload (a recorded `AbstractStepRejected` over `HeavyEnq`'s `put(1)` step, since `HeavyEnq` under B produces no counterexample) under the meter B settles V-7: execution `resource-incomplete`, `Incomplete(LimitReached{EvaluationMeter, B, setting})`, never `inconclusive`/`ReplayParity`. | Test (TC-550) |
+| FR-145-AC-7 | FR-148's strengthened-assumption paired lasso reproduces `ProtocolAssumptionNotEstablished{reason: strengthened}` only when both paths close in the paired product, every specification assumption holds and the named implementation assumption fails; replay keeps the item inconclusive. A `relation-undetermined` result with no violating paired lasso reproduces only when the exact identities, finite paired prefixes and `ContractUndetermined` fairness-predicate locus agree. A changed identity, path, reason or locus settles `inconclusive`, `ReplayParity`. | Test (TC-553) |
 
 ## Dependencies
 

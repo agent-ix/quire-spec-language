@@ -11,6 +11,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-070
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-145
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-323
@@ -49,6 +53,13 @@ that consumes it (ADR-013 C-13, TK-01 executor entry, is #243's), and it
 performs no recompilation and no function
 call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 
+For `ReplaySource::ProtocolAssumption`, the request uses the QSL
+`ReplayTarget::ProtocolRefinement{package_id, node: NodeKey}` carrying the
+QSL checked-package identity and the structural node identity of the checked
+refinement declaration, and carries FR-148's typed assumption witness. This target is an internal
+QSL replay-request member and is not encoded as a QSpec FR-323 function,
+frame or state-clause target.
+
 The FR-170 `ModelGraph` source is the sole exception: it carries no generic
 replay-target member, because its `GraphEvidenceEnvelope` selects the checked
 claim by claim-node and occurrence identity. Its decoder accepts an absent
@@ -73,6 +84,10 @@ key or request `over` member on that arm.
   FR-364 `TemporalCounterexample` observed arm, including its `{document}`
   trace steps, fairness, interval and `trace_position`; its `ReplaySource`
   SHALL be `Witness`, and every observed document is in the byte provision.
+- For protocol assumption replay, FR-148's typed
+  `ProtocolAssumptionWitness` and checked refinement identity in the
+  `ReplaySource::ProtocolAssumption` arm; the concrete and abstract package
+  bytes used to re-admit its subjects are in the byte provision.
 
 ## Outputs
 
@@ -169,6 +184,12 @@ key or request `over` member on that arm.
   carries a typed counterexample envelope, not canonical input assignments,
   with `invalid_runtime_input`/`invalid-value` at `/replay/source` before
   document admission.
+- When `ReplaySource::ProtocolAssumption` is selected, the request SHALL
+  require exactly one `ProtocolRefinement` target and a
+  `ProtocolAssumptionWitness` payload. A missing or mismatched target or
+  payload SHALL refuse `invalid_runtime_input`/`invalid-value` before byte
+  admission; this source SHALL NOT decode as a `Witness` transcript, an
+  `Input` assignment or an observed temporal payload.
 - The request decoder SHALL refuse a model payload in the observed arm with
   `invalid_runtime_input`/`invalid-value` at
   `/replay/observed_counterexample/trace`, and SHALL refuse the observed arm
@@ -229,6 +250,7 @@ key or request `over` member on that arm.
 | FR-071-AC-14 | A request whose replay target is `function`, one whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and one whose replay target is `state_clause` (`VersionUnchanged`) each round-trip with that one target unchanged. The reader refuses a request with no target `invalid_runtime_input`/`missing-member` at `/replay`, one with `function` and `frame_operation` `invalid_runtime_input`/`invalid-value` at `/replay/frame_operation`, one with `function` and `state_clause` the same at `/replay/state_clause`, and the frame request carrying `arguments` `invalid_runtime_input`/`unknown-member` at `/replay/arguments`, each with a byte-provision entry removed changing none of these refusals (QSpec FR-323-AC-19). | Test (TC-185) |
 | FR-071-AC-15 | A `function` request carrying the `declaration` occurrence key of its function, and one carrying an `expression` occurrence key at ordinal 1, each round-trip with the key unchanged; the same request without `occurrence_key` refuses `invalid_runtime_input`/`missing-member` at `/replay/occurrence_key`, and refuses so with a byte-provision entry removed. | Test (TC-185) |
 | FR-071-AC-16 | A `ModelGraph` request with no target members decodes with no replay target and uses its envelope identity; the same source with a function target, arguments, occurrence key or request `over` refuses `invalid_runtime_input`/`unknown-member`; a non-`ModelGraph` request with no target still refuses `missing-member` at `/replay`. | Test (TC-595) |
+| FR-071-AC-17 | A `ProtocolAssumption` request round-trips its checked refinement identity, exact assumption identities, typed reason and paired lasso or finite paired prefixes, and carries only byte-provision inputs for recompilation. A malformed source/payload pairing refuses at decode with `invalid_runtime_input`/`invalid-value` and returns no partial request; the existing `Witness`, `Input` and observed-temporal request arms retain their prior shapes. | Test (TC-553) |
 
 ## Dependencies
 

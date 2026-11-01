@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-323
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: references
 ---
 # FR-070: Implement the typed counterexample/witness envelope
 
@@ -22,8 +24,8 @@ relationships:
 
 QSL SHALL implement a typed counterexample/witness envelope, defined in the
 layer-6 `replay` module and part of its public API (ADR-011 FB-05; ADR-013
-O-25), that stores QSL's `Witness`'s admitted transcript as its one stored
-fact and derives every other witness fact (`harness_symbol`,
+O-25), whose `Witness` source stores QSL's admitted transcript as its one
+stored fact and derives every other witness fact (`harness_symbol`,
 `check`/`check_text`, `concrete_values`, `decode`) from that transcript on
 every call, never as a second, independently-stored copy (ADR-013 QC-13; the
 AD-016 Replay-ownership row's five `Witness` fields collapse to this one
@@ -31,23 +33,37 @@ stored field plus four derived ones).
 
 The envelope carries, for deterministic replay, every ADR-013 O-25 member:
 the obligation identity and clause occurrence key; the replay target, exactly
-one QSpec FR-323 replay target member, typed as FR-323 types that member (a
+one QSpec FR-323 replay target member for `Witness` and `Input` sources,
+typed as FR-323 types that member (a
 function packet's `function`, the selected function's `QualifiedName`; a
 frame packet's `frame_operation`, `{object, operation}`; a state-clause
-packet's `state_clause`, the clause's own declared `QualifiedName`); the `package_id` and `RawSourceRef`
-of the package the harness was generated from; the semantic profile
-selections; the `run_limits` and declared domains; the `backend` member
-(O-19); the trace position where the family has one; and the `ReplaySource`
-(`Witness` or `Input`). A packet missing any of these members SHALL be
-refused at reconstruction; none is optional or defaulted.
+packet's `state_clause`, the clause's own declared `QualifiedName`). The
+`ProtocolAssumption` source uses a QSL `ReplayTarget::ProtocolRefinement`
+carrying `{package_id, node: NodeKey}`: the QSL checked-package identity and
+the structural node identity of its refinement declaration, instead of an
+FR-323 target. The
+envelope also carries the `package_id` and `RawSourceRef` of the package the
+claim was generated from; semantic profile selections; `run_limits` and
+declared domains; the `backend` member (O-19; `qsl-analyze` for the
+protocol-assumption source); the trace position where the family has one
+(`null` for protocol-assumption witnesses); and the `ReplaySource`
+(`Witness`, `Input`, or QSL's `ProtocolAssumption`). The first two arms keep
+the exact QSpec FR-323 replay target. The `ProtocolAssumption` arm instead
+uses the checked refinement identity and the typed
+`ProtocolAssumptionWitness` payload defined by FR-148; its producer is
+QSL's `qsl-analyze`, not a proof backend, and it cannot create backend
+evidence. `qsl-replay` SHALL refuse a packet missing any arm-required member at
+reconstruction; none is optional or defaulted.
 
-This requirement builds the common envelope only. It does not add any
-family-specific payload (that is #186's). `qsl-replay` owns `Witness`,
-`ReplaySource` and `WitnessEnvelope` (ADR-013 OQ-H) and implements
-`Witness::parse`'s admission rule; this envelope's constructor requires an
-already-admitted `Witness`. CG builds the envelope from its backend run, and
-its backend adapter parses the backend output into the transcript `parse`
-admits.
+`qsl-replay` owns `Witness`, `ReplaySource` and `WitnessEnvelope` (ADR-013
+OQ-H) and implements `Witness::parse`'s admission rule. `Witness` and
+`Input` constructors retain their existing transcript/assignment payloads;
+the `ProtocolAssumption` constructor accepts only FR-148's typed
+`ProtocolAssumptionWitness` and checked refinement identity. CG builds
+`Witness` envelopes from backend runs and its backend adapter parses backend
+output into the transcript `parse` admits. `qsl-analyze` builds the
+`ProtocolAssumption` envelope from its product outcome. It carries no
+transcript and cannot be converted to a `Witness`-arm backend-evidence result.
 
 A `union` value text decodes, but a replay cannot convert one until S6a
 admits union arguments (QSL-503).
@@ -56,10 +72,13 @@ admits union arguments (QSL-503).
 
 - A `WitnessPacket` carrying `source: ReplaySource` and its O-25 members
   (obligation identity, occurrence key, package reference, profile
-  selections, bounds, backend, trace position), built by CG.
+  selections, bounds, backend, trace position), built by CG for `Witness`
+  and `Input`, or by QSL `qsl-analyze` for `ProtocolAssumption`.
 - An already-admitted QSL `Witness` (admitted through `Witness::parse`) for
   the `ReplaySource::Witness` arm, or canonical assignments for the
   `ReplaySource::Input` arm.
+- FR-148's `ProtocolAssumptionWitness` and checked refinement identity for
+  the `ReplaySource::ProtocolAssumption` arm.
 
 ## Outputs
 
@@ -69,12 +88,12 @@ admits union arguments (QSL-503).
 
 ## Behavior
 
-- The envelope SHALL store the admitted transcript as its only witness-shape
+- For `ReplaySource::Witness`, the envelope SHALL store the admitted transcript as its only witness-shape
   field; `harness_symbol()`, `check()`, `check_text()`, `concrete_values()`
   and `decode(&[WitnessBinding])` SHALL each recompute their answer from the
   stored transcript on every call, so the envelope cannot disagree with its
   own backend evidence.
-- `decode` SHALL read each transcript entry as its binding's declared
+- For `ReplaySource::Witness`, `decode` SHALL read each transcript entry as its binding's declared
   `WitnessValueType`: `Boolean` as `0` or `1`, `I128` as a decimal `i128`,
   and `Canonical` as a witness value text (below). It SHALL return one
   `WitnessValue` per binding, in binding order, or one `DecodeRefusal`
@@ -85,7 +104,7 @@ admits union arguments (QSL-503).
   it carries, and SHALL build no envelope in either case. No target is
   defaulted, inferred from the payload or taken from a `selected_function`
   member, which the packet does not have.
-- Envelope construction SHALL refuse a transcript that is not the exact,
+- For `ReplaySource::Witness`, envelope construction SHALL refuse a transcript that is not the exact,
   single, trimmed assertion block `Witness::parse` selects (a cover
   transcript, an untrimmed transcript, or a transcript with zero or more
   than one assertion block), and SHALL NOT produce a partially-populated
@@ -95,7 +114,7 @@ admits union arguments (QSL-503).
   identity, occurrence key, `package_id` and every `RawSourceRef`,
   semantic profile selections, `run_limits` and declared domains, `backend`
   member, trace position, and the `ReplaySource` variant (with its
-  `Witness`/`Input` payload).
+  `Witness`/`Input`/`ProtocolAssumption` payload).
 - Envelope reconstruction SHALL refuse when any one O-25 member is absent,
   and SHALL NOT substitute a default value for the missing member.
 - The common envelope type SHALL expose an extension point through which a
@@ -274,12 +293,13 @@ length of its escaped value text.
 |----|----------|--------------|
 | FR-070-AC-1 | The envelope stores the transcript once; `harness_symbol`, `concrete_values` and `decode` each recompute their result from that one stored transcript rather than from a separately-stored value, so no code path can leave the envelope's derived facts disagreeing with its transcript. | Test (TC-180) |
 | FR-070-AC-2 | A cover transcript, an untrimmed transcript, and a transcript with zero or two assertion blocks each refuse at envelope construction; none produces a partially-built envelope. | Test (TC-181) |
-| FR-070-AC-3 | A positive envelope's construct → serialize → read round trip preserves the transcript byte-for-byte and every O-25 member (obligation identity, occurrence key, package reference, profile selections, bounds and domains, backend, trace position, `ReplaySource` variant) exactly, with no member re-derived, reordered or dropped. | Test (TC-182) |
+| FR-070-AC-3 | A positive `Witness` envelope's construct → serialize → read round trip preserves the transcript byte-for-byte and every O-25 member (obligation identity, occurrence key, package reference, profile selections, bounds and domains, backend, trace position, `ReplaySource` variant) exactly, with no member re-derived, reordered or dropped. | Test (TC-182) |
 | FR-070-AC-4 | An O-25 packet missing any one required member (for example, no trace position on a family that carries one, or no `backend` member) refuses at reconstruction; no envelope is built with a defaulted or absent value in that member's place. | Test (TC-183) |
 | FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract, and the extension point itself is typed (a trait or generic parameter), never a `String`-keyed untyped map. | Test (TC-184) |
 | FR-070-AC-6 | **RETIRED (no digest domains).** This envelope defines no `contract_version` member of its own; version ownership is delegated to the FR-331 envelope. | Test (TC-181), retired |
 | FR-070-AC-7 | An envelope whose encoded size exceeds the configured reader bound refuses at construction, with no truncated or partially-populated envelope returned. | Test (TC-181) |
 | FR-070-AC-8 | A transcript with one `Canonical` entry and one `I128` entry decodes to two `WitnessValue`s in binding order. The `Canonical` entry is a record whose fields hold a nested record with a present field, an absent optional field and a `null` slot; a present option and a `none` option; a three-element sequence; a set and a bag in ascending JCS order (the bag with a duplicate); an ordered set; a union with a one-component member; and a union with a nullary member. Each slot state, option state, element order, member identifier and declaration node id decodes exactly as written. The `I128` entry decodes as it did before this change. | Test (TC-905) |
+| FR-070-AC-20 | A `ProtocolAssumption` envelope round-trips the checked refinement identity, typed `ProtocolAssumptionWitness`, exact assumption identities, typed reason and paired lasso or finite paired prefixes without requiring a transcript or claiming an FR-323 target. Its backend member identifies `qsl-analyze`, its trace position is null, and no result from it is convertible to a backend-evidence `Witness` result. | Test (TC-553) |
 | FR-070-AC-9 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: trailing bytes; added whitespace; record members out of JCS order; an unknown `type` tag; a record field entry with no `value` member; an integer `"007"`, and an integer as a JSON number; a rational `2`/`4`, and one with denominator `-1`; a `float64` with 15 hex digits, and one with uppercase hex; a reference `identity` of odd length; `{"type":"null"}` as a sequence element; a set with two equal elements; set elements out of order; an ordered set with two equal elements; a raw `%` not starting an escape; a lowercase escape `%3b`; and a record field name written `\u0061` where JCS writes `a`. | Test (TC-905) |
 | FR-070-AC-10 | On a thread with a 512 KiB stack, a transcript entry holding a 100,000-long recursive list (`record List { head: Int[0, 9]; tail?: List; }`) decodes, with the envelope's reader bound raised to fit it through `replay.input_bytes`. The decoded value clones, compares equal to itself, renders its redacted `Debug` and drops with no stack overflow. With the bound one byte below the envelope's size, construction refuses `BoundExceeded` naming `replay.input_bytes`. | Test (TC-736) |
 | FR-070-AC-11 | One `Canonical` entry per leaf family decodes exactly as written: an integer `-170141183460469231731687303715884105728` (outside `i64`); an enum member; the text `a;b=c<<<d>>>e%f` (its entry holds `a%3Bb=c%3C%3C%3Cd%3E%3E%3Ee%25f`, and its escaped bytes count toward `replay.input_bytes`), which parses as one block whose entry splits only at its own delimiters; the rational `-3`/`4`; the decimal with coefficient `1050` and scale `2`; a `float32` NaN with payload `7fc00001` and a `float64` negative zero `8000000000000000`; a quantity `{"type":"decimal","coefficient":"15","scale":"1","unit":"<unit>"}`; and a reference. A sequence of text values holding `;` and `>` decodes in order. | Test (TC-905) |
