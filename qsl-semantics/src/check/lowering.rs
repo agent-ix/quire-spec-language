@@ -655,6 +655,10 @@ pub(crate) struct Lowered {
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
     pub(crate) equality_producer_data: BTreeMap<(NodeKey, Location), EqualityProducerData>,
+    /// Exact identity witnesses for each equality occurrence, produced while
+    /// the application and its quantity type nodes are being lowered.
+    pub(crate) equality_producer_identities:
+        BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -767,6 +771,11 @@ pub(crate) struct Lowering<'a> {
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
     equality_producer_data: BTreeMap<(NodeKey, Location), EqualityProducerData>,
+    /// The quantity type node built for each semantic unit id.
+    quantity_type_nodes: BTreeMap<quire_exact::UnitId, NodeKey>,
+    /// Exact identity witnesses for equality application occurrences.
+    equality_producer_identities:
+        BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
     /// Attempts and compensation nodes retained for clauses delayed until
     /// their required temporal clause keys are available.
     protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
@@ -1751,6 +1760,8 @@ impl<'a> Lowering<'a> {
             protocol_keys: Vec::new(),
             protocol_members: BTreeMap::new(),
             equality_producer_data: BTreeMap::new(),
+            quantity_type_nodes: BTreeMap::new(),
+            equality_producer_identities: BTreeMap::new(),
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
             temporal_keys: BTreeMap::new(),
@@ -1835,6 +1846,7 @@ impl<'a> Lowering<'a> {
             .collect(),
             protocol_members: self.protocol_members,
             equality_producer_data: self.equality_producer_data,
+            equality_producer_identities: self.equality_producer_identities,
         }
     }
 
@@ -4673,8 +4685,11 @@ impl<'a> Lowering<'a> {
                     else {
                         return Err(fault(location, KeyFault::UnresolvedDraft));
                     };
+                    let identity = self.equality_identity(key.clone(), location.clone(), &data)?;
                     self.equality_producer_data
                         .insert((key.clone(), location.clone()), data);
+                    self.equality_producer_identities
+                        .insert((key.clone(), location.clone()), identity);
                 }
                 Ok(term)
             }
@@ -4715,6 +4730,60 @@ impl<'a> Lowering<'a> {
             ),
         }
         .map(LowerStep::Lowered)
+    }
+
+    fn equality_identity(
+        &self,
+        application: NodeKey,
+        location: Location,
+        data: &EqualityProducerData,
+    ) -> Result<super::ir::EqualityProducerIdentity, CheckRefusal> {
+        let mut quantity_type_nodes = BTreeMap::new();
+        let mut pending = Vec::new();
+        for unit_id in data.units().ids() {
+            let Some(type_node) = self.quantity_type_nodes.get(&unit_id) else {
+                return Err(fault(&location, KeyFault::UnheldUnit(unit_id)));
+            };
+            quantity_type_nodes.insert(unit_id.clone(), type_node.clone());
+            match self.units.get(unit_id.clone()) {
+                Some(quire_semantic_value::quantity::QuantityUnit::Declared(unit)) => {
+                    pending.push(unit.key());
+                }
+                Some(quire_semantic_value::quantity::QuantityUnit::Compound(compound)) => {
+                    pending.extend(compound.terms().map(|(root, _)| root));
+                }
+                None => return Err(fault(&location, KeyFault::UnheldUnit(unit_id))),
+            }
+        }
+
+        let mut nominal_nodes = BTreeMap::new();
+        while let Some(key) = pending.pop() {
+            if nominal_nodes.contains_key(&key) {
+                continue;
+            }
+            let Some(nominal) = self.units.nominal_node(&key) else {
+                return Err(fault(&location, KeyFault::UnheldNominal(key)));
+            };
+            match &nominal.form {
+                quire_semantic_value::unit::NominalUnitForm::Dimension { terms } => {
+                    pending.extend(terms.iter().map(|(base, _)| base.clone()));
+                }
+                quire_semantic_value::unit::NominalUnitForm::Unit {
+                    dimension, target, ..
+                } => {
+                    pending.push(dimension.clone());
+                    pending.extend(target.iter().cloned());
+                }
+            }
+            nominal_nodes.insert(key, nominal.clone());
+        }
+
+        Ok(super::ir::EqualityProducerIdentity::new(
+            application,
+            location,
+            quantity_type_nodes,
+            nominal_nodes,
+        ))
     }
 
     /// Append a record value's members in declaration order up to its next

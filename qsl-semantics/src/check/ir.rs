@@ -4,14 +4,14 @@
 
 use quire_checked::node::{Arithmetic, AuthoredBound, CheckedLiteral, NodeKind, RecordSlot};
 use quire_exact::EffectiveId;
-use quire_exact::{CollectionKind, Integer, IntegerInterval};
+use quire_exact::{CollectionKind, Integer, IntegerInterval, NodeKey};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperand;
 use quire_semantic_value::declaration::{EqualityOperator, EqualitySchedule};
 use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::UnitTable;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fmt;
 use std::ops::ControlFlow;
@@ -89,6 +89,54 @@ pub struct EqualityProducerData {
     pub(crate) units: UnitTable,
     /// The compared enum's own filtered member index, or empty otherwise.
     pub(crate) enum_members: EnumMemberIndex,
+}
+
+/// Exact QSL identity witnesses retained for one typed equality occurrence.
+/// The application key and occurrence come from lowering; quantity type keys
+/// come from the checker's typed UnitIds, and nominal unit/dimension keys come
+/// from the admitted UnitTable closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityProducerIdentity {
+    application: NodeKey,
+    location: Location,
+    quantity_type_nodes: BTreeMap<quire_exact::UnitId, NodeKey>,
+    nominal_nodes: BTreeMap<NodeKey, quire_semantic_value::unit::NominalUnitNode>,
+}
+
+impl EqualityProducerIdentity {
+    pub(crate) fn new(
+        application: NodeKey,
+        location: Location,
+        quantity_type_nodes: BTreeMap<quire_exact::UnitId, NodeKey>,
+        nominal_nodes: BTreeMap<NodeKey, quire_semantic_value::unit::NominalUnitNode>,
+    ) -> Self {
+        Self {
+            application,
+            location,
+            quantity_type_nodes,
+            nominal_nodes,
+        }
+    }
+
+    /// The exact checked application node selected by QSL lowering.
+    pub fn application(&self) -> &NodeKey {
+        &self.application
+    }
+
+    /// The authored occurrence paired with the application node.
+    pub fn location(&self) -> &Location {
+        &self.location
+    }
+
+    /// Exact semantic quantity-type node keys by their admitted UnitIds.
+    pub fn quantity_type_nodes(&self) -> &BTreeMap<quire_exact::UnitId, NodeKey> {
+        &self.quantity_type_nodes
+    }
+
+    /// Exact admitted unit and dimension descriptor nodes in closure order.
+    pub fn nominal_nodes(&self) -> &BTreeMap<NodeKey, quire_semantic_value::unit::NominalUnitNode> {
+        &self.nominal_nodes
+    }
 }
 
 impl EqualityProducerData {

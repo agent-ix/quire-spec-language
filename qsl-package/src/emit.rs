@@ -322,6 +322,8 @@ pub struct Emission {
         Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
     pub(crate) selected_model_enum_member_rows:
         Vec<quire_contract_model::SelectedModelEnumMemberRow>,
+    /// Exact QSL identity witnesses for emitted equality occurrences.
+    pub(crate) equality_producer_identity_rows: Vec<qsl_semantics::check::EqualityProducerIdentity>,
 }
 
 impl Emission {
@@ -373,6 +375,13 @@ impl Emission {
         &self,
     ) -> &[quire_contract_model::SelectedModelEnumMemberRow] {
         &self.selected_model_enum_member_rows
+    }
+
+    /// QSL-owned identity rows keyed by equality application and occurrence.
+    pub fn equality_producer_identity_rows(
+        &self,
+    ) -> &[qsl_semantics::check::EqualityProducerIdentity] {
+        &self.equality_producer_identity_rows
     }
 
     /// Validates the selected model enum rows against this admitted package.
@@ -2442,6 +2451,7 @@ pub fn emit_timed_models(
         selected_source_unit_rows: Vec::new(),
         selected_model_enum_declaration_rows: Vec::new(),
         selected_model_enum_member_rows: Vec::new(),
+        equality_producer_identity_rows: Vec::new(),
     })
 }
 
@@ -2803,6 +2813,12 @@ fn emit_package_inner(
             .filter(|row| emitted_keys.contains(&row.node_key))
             .cloned()
             .collect();
+    let equality_producer_identity_rows = graph
+        .equality_producer_identities()
+        .values()
+        .filter(|row| emitted_keys.contains(row.application()))
+        .cloned()
+        .collect();
     let selected_model_enum_declaration_rows: Vec<
         quire_contract_model::SelectedModelEnumDeclarationRow,
     > = graph
@@ -3410,6 +3426,7 @@ fn emit_package_inner(
         selected_source_unit_rows,
         selected_model_enum_declaration_rows,
         selected_model_enum_member_rows,
+        equality_producer_identity_rows,
     })
 }
 
