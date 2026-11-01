@@ -1418,7 +1418,9 @@ mod tests {
     #[trace("TC-1195", "FR-120-AC-18")]
     #[test]
     fn a_population_value_keeps_its_typed_refusal() {
-        let value = Value::Population(quire_exact::PopulationId::fixture(1));
+        let value = Value::Population(quire_exact::PopulationId::new(crate::test_ids::node_key([
+            1,
+        ])));
         assert!(matches!(
             untyped_value_enc(&value).canonical_text(Limits::new(1024)),
             Err(Error::Serialize(_))
