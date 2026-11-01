@@ -190,6 +190,51 @@ fn checked_package_formula_uses_the_shared_bounded_evaluator() {
     assert_eq!(assessed.basis, Some(Basis::ClosedScope));
 }
 
+/// FR-043-AC-1/2: the selected profile controls closed-boundary semantics and
+/// is retained in the report premises, even when formula and interval bytes
+/// are identical.
+#[trace("TC-122", "FR-043-AC-1", "FR-043-AC-2")]
+#[test]
+fn checked_profiles_keep_distinct_closed_boundary_results() {
+    let mut reports = Vec::new();
+    for (profile, expected) in [
+        (temporal::EVENT_POSITION, Truth::False),
+        (temporal::FIXED_SAMPLE, Truth::False),
+        (temporal::TIMESTAMPED_WINDOW, Truth::True),
+    ] {
+        let checked = checked("always[0,1] holds(view.code > 0)", profile);
+        let clause = &checked.package().graph().temporal_clauses()[0];
+        let leaf = clause
+            .clause()
+            .formula()
+            .nodes()
+            .iter()
+            .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+            .and_then(|index| u32::try_from(index).ok())
+            .expect("checked hold atom");
+        let mut input = origin_trace();
+        input.clock.profile_identity = profile.into();
+        input.watermark = 1;
+        input.positions = vec![Position {
+            coordinate: 0,
+            order: None,
+            valuations: BTreeMap::from([(leaf, true)]),
+            instance_valuations: BTreeMap::new(),
+        }];
+        let report =
+            temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+            panic!("profile-specific formula assessed");
+        };
+        assert_eq!(assessment.truth, Some(expected), "{profile}");
+        assert_eq!(assessment.premises.profile.identity(), profile);
+        reports.push(assessment.premises.profile);
+    }
+    assert_ne!(reports[0], reports[1]);
+    assert_ne!(reports[1], reports[2]);
+    assert_ne!(reports[0], reports[2]);
+}
+
 /// FR-043: the checked formula adapter preserves every unary and binary
 /// bounded operator and pointwise connective when it enters the shared core.
 #[trace("TC-122", "FR-043-AC-6")]
