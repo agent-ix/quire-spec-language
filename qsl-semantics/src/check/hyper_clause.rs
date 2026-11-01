@@ -46,7 +46,6 @@ use super::temporal_clause::{
     build_formula, checked_constraint, checked_operators, in_safety_fragment, CheckedFormula,
     CheckedOperator, IntervalReading, TemporalClaim, TemporalDeclarations, TemporalSelection,
 };
-#[cfg(any(test, feature = "test-support"))]
 use super::Scope;
 use super::{AdmittedModel, Capability};
 use crate::family::requirements::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
