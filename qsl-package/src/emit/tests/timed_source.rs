@@ -57,6 +57,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n\
          model Config = {:?};\n\
+         invariant ParentOrder using v on Config::ConfigVersion at current {{ \
+         present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
          dimension Time;\nunit ms : Time = rational(1, 1);\n\
          time Config dense unit ms;\n",
         config_version_unit::PACKAGE_IDENTITY,
