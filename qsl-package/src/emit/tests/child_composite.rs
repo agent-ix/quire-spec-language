@@ -103,6 +103,97 @@ fn records_are_model_owned_nodes_and_the_call_takes_its_argument_by_ref() {
     assert_eq!(projects, 1, "occurredAt reads its field once");
 }
 
+/// Model-intake identity rows join the admitted record and its inherited
+/// fields; an omitted field witness refuses the complete record projection.
+#[trace("FR-390-AC-17")]
+#[test]
+fn selected_record_and_inherited_field_rows_join_ir_projection() {
+    let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         {UNIT}\n",
+        package = fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let declaration_rows = graph.selected_exact_declaration_rows().to_vec();
+    let checked = CheckedPackage::link(graph);
+    let emission = emit_checked(&checked).expect("the record package emits");
+    assert_eq!(emission.omitted, []);
+
+    let mut evidence = super::read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(fixture::PACKAGE, document.as_slice())
+        .expect("the selected document is retained as evidence");
+    let admitted = match quire_contract_model::read_checked_package(
+        emission.package.bytes(),
+        quire_contract_model::CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
+        other => panic!("the emitted record package admits: {other:?}"),
+    };
+
+    let record_identity = fixture::id("ExpressOrderPlaced");
+    let record_row = declaration_rows
+        .iter()
+        .find(|row| row.original_identity.as_ref() == record_identity)
+        .expect("intake minted the selected child-record row");
+    let record_node = record_row.structural_node.clone();
+    let witnesses = checked
+        .graph()
+        .selected_exact_identities(&admitted)
+        .expect("record and inherited field rows join IR admission");
+    let projection = admitted
+        .project_exact_type(&record_node, &witnesses, 256)
+        .expect("the selected record has a complete Exact view");
+    let view = projection.record_view().expect("the record projection");
+    let projected_fields: std::collections::BTreeSet<_> = view
+        .fields()
+        .iter()
+        .map(|field| field.ir_identity().to_owned())
+        .collect();
+    let selected_rows: std::collections::BTreeSet<_> = witnesses
+        .field_rows()
+        .iter()
+        .filter(|row| row.record_original_identity.as_ref() == record_identity)
+        .map(|row| row.field_original_identity.to_string())
+        .collect();
+    assert_eq!(projected_fields, selected_rows);
+    assert!(projected_fields.contains(&fixture::id("OrderPlaced/occurred_at")));
+    assert!(projected_fields.contains(&fixture::id("OrderPlaced/order_id")));
+    assert!(projected_fields.contains(&fixture::id("ExpressOrderPlaced/promised_by")));
+
+    let missing_rows = witnesses
+        .field_rows()
+        .iter()
+        .filter(|row| {
+            !(row.record_original_identity.as_ref() == record_identity
+                && row.field_original_identity.as_ref() == fixture::id("OrderPlaced/order_id"))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let declarations = witnesses.declaration_rows().cloned().collect::<Vec<_>>();
+    let missing = quire_contract_model::SelectedExactIdentities::from_stage_rows(
+        &admitted,
+        declarations,
+        missing_rows,
+    )
+    .expect("remaining producer rows still join");
+    let refusal = admitted
+        .project_exact_type(&record_node, &missing, 256)
+        .expect_err("a missing inherited-field witness refuses the whole view");
+    assert_eq!(
+        refusal.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
+    );
+}
+
 /// FR-359-AC-3, FR-359-AC-8: the package reads back `Verified` through IR's
 /// reader (quire-contract-ir FR-347, a conforming record at an operation
 /// argument, and QSpec FR-322's `record_value_type` owner).

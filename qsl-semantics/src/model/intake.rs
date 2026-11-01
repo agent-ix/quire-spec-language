@@ -67,6 +67,60 @@ use quire_canonical::Node;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, TextProfile, TextType};
 
+/// Join the selected-model stage's producer rows to the declaration forms
+/// admitted in `package`. Rows for declarations not present in this package
+/// graph are outside the emitted projection and do not enter the witness.
+pub(crate) fn selected_exact_identities_from_rows(
+    package: &quire_contract_model::CheckedPackageV2,
+    declaration_rows: &[quire_contract_model::SelectedExactDeclarationRow],
+    field_rows: &[quire_contract_model::SelectedExactFieldRow],
+) -> Result<
+    quire_contract_model::SelectedExactIdentities,
+    quire_contract_model::ExactTypeProjectionError,
+> {
+    use quire_contract_model::SelectedExactDeclarationForm;
+
+    quire_contract_model::SelectedExactIdentities::from_stage_rows(
+        package,
+        declaration_rows
+            .iter()
+            .filter(|row| {
+                package.graph().nodes.iter().any(|node| {
+                    node.node_id == row.structural_node
+                        && match row.form {
+                            SelectedExactDeclarationForm::RecordValueType => {
+                                node.node_tag.as_ref() == "model"
+                                    && node.semantic_form.as_ref() == "record_value_type"
+                            }
+                            SelectedExactDeclarationForm::ObjectType => {
+                                node.node_tag.as_ref() == "model"
+                                    && node.semantic_form.as_ref() == "object_type"
+                            }
+                            SelectedExactDeclarationForm::Union => {
+                                node.node_tag.as_ref() == "composite_type"
+                                    && node.semantic_form.as_ref() == "union"
+                            }
+                            SelectedExactDeclarationForm::DeclaredUnit => {
+                                node.node_tag.as_ref() == "scalar_type"
+                                    && node.semantic_form.as_ref() == "unit"
+                            }
+                        }
+                })
+            })
+            .cloned(),
+        field_rows
+            .iter()
+            .filter(|row| {
+                package.graph().nodes.iter().any(|node| {
+                    node.node_id == row.record_node
+                        && node.node_tag.as_ref() == "model"
+                        && node.semantic_form.as_ref() == "record_value_type"
+                })
+            })
+            .cloned(),
+    )
+}
+
 mod unit;
 pub use unit::{
     admit_unit, admit_unit_with_cancel, OperationClauseFailure, SelectedModel, SelectedModels,
