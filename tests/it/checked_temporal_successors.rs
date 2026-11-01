@@ -73,6 +73,7 @@ fn checked_timed_mapping() -> qsl_replay::spine::CheckedUnit {
     let source = r#"
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
+profile tc = "quire.temporal.complete/v1";
 profile t = "quire.temporal.timed/v1";
 model M = "acme/orders";
 dimension Time;
