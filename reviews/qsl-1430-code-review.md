@@ -24,6 +24,7 @@ Reviewed the expanded QSL-1390/QSL-1430 producer change at the frozen PR head. E
 | FND-001 | medium | Dimension identity traversal deduplicates only by `NodeKey`, before considering `EqualityDimensionRole`. A normal declared-unit conversion reaches the same dimension first as `UnitDimension` and again as `ConversionDimension`; the second visit is discarded, so the emitted per-fact rows omit that distinct role and its multiplicity. Preserve visits by exact `(node, role)` provenance and test that both roles join to the same structural id with their distinct ordinals. | qsl-semantics/src/check/lowering.rs:4754-4761, 4815-4840 |
 | FND-002 | medium | Compound UnitId rows recover `quantity_key`/`unit_key` by scanning all graph nodes and selecting the first `compound_unit` whose body terms equal the compound's terms. This reverse-maps semantic contents to identity instead of carrying the exact operand/type witness; a future structural representation change or competing candidate can produce an unrelated association. Carry the exact checked type key with the producer fact and validate its UnitId, or refuse when that witness is absent. | qsl-package/src/emit.rs:2062-2078, 2830-2868 |
 | FND-003 | medium | The new stage-row test asserts that some rows of each variant exist and that each selected structural id occurs somewhere in the wire node list, but never checks the row's UnitId-to-quantity id, dimension role/ordinal, declaration-to-base id, edge source/target/scale, or Text/Plan type id/role against producer facts. Wrong cross-joins therefore pass the test despite these rows being the new trust boundary. Assert exact producer-to-emitted pairings for each row family, including source and conversion roles. | qsl-package/src/emit/tests/converted_equality.rs:335-379, 428-448 |
+| FND-004 | medium | The variant-type reader tests still require `UnsupportedConstruct` at the first equality row. IR `67f4ffe6` now admits the carrier, and both tests fail with `Read::Verified`; they therefore do not exercise the enum accessor's typed missing-witness result. Route them through the common `assert_equality_reader_outcomes` helper while retaining the sidecar wire assertions. | qsl-package/src/emit/tests/variant_types.rs:100-121, 383-402 |
 
 ## Coverage
 
@@ -50,7 +51,8 @@ Reviewed the expanded QSL-1390/QSL-1430 producer change at the frozen PR head. E
 | --- | --- | --- |
 | FND-001 | fixed | The lowering now keys dimension traversal by node and role, and the regression asserts both roles map to the same structural node with distinct ordinals. |
 | FND-002 | fixed | Checker-retained `structural_node` is used directly for the UnitId/type join; missing or conflicting mappings return `MissingEqualityIdentityContext`. |
-| FND-003 | still-open | The test now compares row contents with producer facts, but groups witnesses by application only and never asserts `witness.occurrence() == equality.occurrence()`. Two occurrences that share one structural application can still satisfy the assertions with each other's witness rows. |
+| FND-003 | fixed | The updated witness selection and shared-key regression bind on both the exact application and occurrence. |
+| FND-004 | fixed | Commit `89697bbe0b654d02ca4c29207d1ead8cd8452e69` routes the variant tests through the admitted-equality outcome helper. Both tests pass and assert `UnavailableEqualityWitness(EnumMember)` at the serialized member node. |
 
 FND-001 after_excerpt:
 
@@ -66,17 +68,38 @@ FND-002 after_excerpt:
 let quantity_key = &unit_fact.structural_node;
 ```
 
+FND-004 after_excerpt:
 
-## Fix-round 2 coder update (pending reviewer disposition)
+```rust
+assert_eq!(error.witness, Some(expected_witness), "decision {index}");
+assert_eq!(serde_json::to_value(error.at.as_ref()).unwrap(), expected_at);
+```
 
-The first expanded review's findings are retained above. Its code-review disposition marked FND-001 and FND-002 fixed, with FND-003 still open for exact occurrence matching. The companion gap review marked FND-001 and FND-003 fixed, with its FND-002 still open for exact row/occurrence pairing. The two numbered lists refer to the same underlying gaps: code-review FND-002 and gap-analysis FND-003 are the compound UnitId key join; code-review FND-003 and gap-analysis FND-002 are exact witness row assertions.
+### Round 2
 
-At fix-round 2 head, the coder update is:
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Rechecked: the test now exercises two distinct dimension roles for one structural key, with exact emitted-node and ordinal assertions. |
+| FND-002 | fixed | Rechecked: UnitId resolution uses the exact type key retained by checking; no body-term reverse search remains, and missing/ambiguous mappings refuse. |
+| FND-003 | fixed | The witness helper and shared-key regression now join and assert on both application and occurrence, so rows from the other occurrence cannot satisfy the query. |
 
-| Finding | Update |
-| --- | --- |
-| FND-001 | Retained: lowering visits dimensions by `(NodeKey, EqualityDimensionRole)`; the shared-dimension conversion regression asserts both role rows share the final ID and have distinct ordinals. |
-| Compound UnitId key join (code FND-002 / gap FND-003) | Retained: checker-held operand type facts lower directly to structural keys; body/term search is removed; missing and ambiguous exact-key joins refuse. |
-| Exact row assertions (code FND-003 / gap FND-002) | Updated: test selection now joins both application and occurrence. A shared structural application test proves a witness from the other occurrence cannot satisfy the join. |
+FND-001 after_excerpt:
 
-The final status awaits reviewer disposition round 2. Earlier reviewer comments and findings remain preserved above.
+```rust
+if !visited.insert((key.clone(), role)) {
+    continue;
+}
+```
+
+FND-002 after_excerpt:
+
+```rust
+let quantity_key = &unit_fact.structural_node;
+```
+
+FND-003 after_excerpt:
+
+```rust
+witness.application() == identity.application()
+    && witness.occurrence() == identity.occurrence()
+```

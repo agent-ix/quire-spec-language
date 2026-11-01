@@ -3,7 +3,7 @@ id: SR-202610310139
 title: "Code review — QSL-1390 equality sidecar producer"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@436299918af3ea46a5257f705eab08575b50a0e9; git diff origin/main...HEAD; qsl-package/src/emit.rs; qsl-package/src/emit/tests/converted_equality.rs; qsl-package/src/emit/tests/variant_types.rs; qsl-semantics/src/check/ir.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/refusal.rs; QSpec FR-322-AC-288; IR FR-353-AC-1; IR pinned ref f9e28341; QSL-1390"
+scope: "agent-ix/quire-spec-language#2013@31070ce6c178705abdb0d2e928c9600d5c9ec645; git diff origin/main...HEAD; qsl-package/src/emit.rs; qsl-package/src/emit/tests.rs; qsl-package/src/emit/tests/converted_equality.rs; qsl-package/src/emit/tests/golden.rs; qsl-package/src/emit/tests/variant_types.rs; qsl-semantics/src/check/ir.rs; qsl-semantics/src/check/lowering.rs; QSpec FR-322-AC-288; IR FR-353-AC-1; IR main 67f4ffe6; QSL-1390; QSL-1430"
 review_set: subset
 relationships:
   - { target: "ix://agent-ix/quire-spec-language/FR-093", type: references }
@@ -11,24 +11,27 @@ relationships:
 
 ## Summary
 
-Reviewed the frozen QSL-1390 producer-side equality sidecar implementation and its tests against QSpec FR-322-AC-288, the QSL ticket contract, and the IR pinned at f9e28341. The IR reader's typed refusal for nonempty equality rows is an expected boundary for this PR; one occurrence-specific sidecar assertion is still missing.
+Reviewed PR #2013 at `31070ce6` against current `origin/main` and QSpec FR-322-AC-288 / IR FR-353-AC-1. The per-fact producer rows remain within scope; the newly integrated IR read exposes one stale enum test that still expects the prior package-level refusal.
 
 ## Verdict
 
-**CONDITIONAL** — the emitter preserves the exact `(NodeKey, Location)` association in implementation, but the regression test for structurally shared equality nodes does not assert that the serialized sidecar retains both distinct conversion decisions.
+**CONDITIONAL** — one enum-sidecar test still asserts the obsolete `UnsupportedConstruct` package refusal instead of exercising the admitted equality accessor's typed missing-witness outcome.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The shared-key regression checks producer facts and emitted identity rows, but never reads `checked_term_data.equality_decisions` for the two occurrences. The separate sidecar test uses distinct equality applications. A regression that assigns the same conversion target to both serialized rows would therefore pass, despite FR-322 requiring occurrence-specific nullable conversion targets. Assert each row's application/occurrence key and `left.conversion_target` (`null` vs the exact emitted ms type) in the sidecar. | qsl-package/src/emit/tests/converted_equality.rs:142-186, 275-337 |
+| FND-002 | medium | The two variant-type reader tests still require `UnsupportedConstruct` at `/checked_term_data/equality_decisions/0`, but locked IR `67f4ffe6` now admits the package and exposes typed equality outcomes through `admitted_equality`. Both tests fail because the read is `Verified`; they no longer verify the intended enum `UnavailableEqualityWitness`. Route these cases through `assert_equality_reader_outcomes` and preserve the wire assertions. | qsl-package/src/emit/tests/variant_types.rs:100-121, 383-402 |
 
 ## Coverage
 
 - Rust review: changed emitter, lowering, refusal and test files; exact identity joins, conversion provenance, unit and enum descriptor provenance, missing-witness refusals, canonical sidecar shape, side effects and feature preservation inspected.
 - Gates: `cargo fmt --check` passed; `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed; `cargo test -p qsl-package --lib converted_equality::` passed (20/20); `cargo test -p qsl-package --lib variant_types::` passed (9/9). The broader `cargo test -p qsl-package -p qsl-semantics` run was interrupted while unrelated 100,000-node/deep-body tests were still running. `cargo deny check` exited 4 on the existing AGPL license allowlist and Git-source policy.
 - No CI workflow files changed. No applicable AssuranceProfile was present under `spec/`.
-- IR boundary: reader refusal at `/checked_term_data/equality_decisions/0` is expected at pinned IR `f9e28341`; no reader implementation is requested by this review.
+- IR boundary: the producer emits rows and calls IR's typed admitted-equality accessor; the known converted-Plan and TextBounds mismatches are tracked in IR-1233. No IR implementation changes are requested from this QSL PR.
+- Updated integration checks: `converted_equality::` passed 22/22; `conforming_reference_equality_is_accepted_by_the_i2_read` passed 1/1; `enum_members_no_literal_names_are_placed_under_an_equality` passed 1/1. `pending_equality_sidecar` failed both variant-type tests because their assertion still expects `UnsupportedConstruct`, while package admission now returns `Verified`. `cargo fmt --check` and `git diff --check origin/main...HEAD` passed. A broader `emit::tests::` invocation hit known unrelated package failures and was interrupted during a 100,000-depth test; no aggregate pass is claimed.
+- Main alignment: current QSL main `61c05758` changes only probabilistic scheduler/spec paths; no changed paths overlap the PR's equality implementation. The IR-1233 converted-Plan mismatch and TextBounds witness mismatch remain external tracked issues.
 
 ## Examined scope
 
@@ -49,6 +52,7 @@ Reviewed the frozen QSL-1390 producer-side equality sidecar implementation and i
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Commit `60c4b386be5c55b8069de3e0a48dc23c96a4322a` adds a regression that reads canonical serialized package bytes, joins each decision by emitted application and occurrence, and asserts `null` for the unconverted occurrence versus the exact emitted ms type for the converted occurrence. The focused test passes. |
+| FND-002 | fixed | Commit `89697bbe0b654d02ca4c29207d1ead8cd8452e69` replaces the obsolete package-refusal assertion with the shared equality outcome check. The two enum tests pass and check `UnavailableEqualityWitness(EnumMember)` at the serialized member node. |
 
 FND-001 after_excerpt:
 
@@ -65,4 +69,11 @@ if facts.authored_operands()[0].target().is_some() {
 } else {
     assert_eq!(decision["left"]["conversion_target"], Value::Null);
 }
+```
+
+FND-002 after_excerpt:
+
+```rust
+assert_eq!(error.witness, Some(expected_witness), "decision {index}");
+assert_eq!(serde_json::to_value(error.at.as_ref()).unwrap(), expected_at);
 ```
