@@ -763,6 +763,65 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
     }
 }
 
+#[test]
+#[trace("TC-127", "FR-046-AC-5")]
+fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
+    let mut model: serde_json::Value = serde_json::from_slice(&domain_document()).unwrap();
+    model["types"][0]["fields"][0]["multiplicity"] = json!({
+        "lower": 0,
+        "upper": 5,
+        "ordered": true,
+        "unique": false,
+    });
+    let model = model.to_string().into_bytes();
+    let packages = qsl_semantics::model::intake::package_input([model.as_slice()])
+        .expect("the bounded ordered sequence model is admitted");
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         model M = {PACKAGE_IDENTITY:?};\n\
+         invariant Query using v on M::Node at current {{ contains(map(item in self.code: item), 0) }}\n"
+    );
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "unused-snapshot".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+    };
+    let mut selection = no_cycle_selection(label, "a");
+    selection.name = "Query".to_owned();
+    let mut request = request(ClauseRunSelection::Clause(selection));
+    request.source = ClauseRunSource::Program {
+        identity: source(),
+        path: "checked-query-unsupported.native".to_owned(),
+        bytes: unit.into_bytes(),
+    };
+    request.packages = packages;
+
+    let report = run_clause(request).expect("a checked query returns a report");
+    let ClauseDisposition::UnsupportedProofRepresentation { cause, query } = report.disposition
+    else {
+        panic!(
+            "ordered query is explicitly unsupported: {:?}",
+            report.disposition
+        );
+    };
+    assert_eq!(cause, super::UnsupportedProofCause::ValueRepresentation);
+    assert_eq!(query.visit, qsl_semantics::check::Visit::Map);
+    assert!(matches!(
+        query.result_type,
+        quire_exact::ValueType::Collection(_)
+    ));
+    assert_eq!(report.disposition.truth(), None);
+    assert_eq!(
+        report.disposition.category(),
+        quire_semantic_value::catalog::Category::Unsupported
+    );
+    assert_eq!(report.usage.evaluation_admissions, 0);
+    assert!(report.usage.evaluation_consumed.is_empty());
+    assert!(report.witness.is_none());
+}
+
 /// A healthy-parent (acyclic) or violating-parent (cyclic) `NoCycle`
 /// request, for FR-109-AC-1 and FR-109-AC-5.
 fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, DocumentRef) {
