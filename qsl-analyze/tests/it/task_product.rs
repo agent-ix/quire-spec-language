@@ -2,7 +2,9 @@
 //! FR-249 / FR-419: exact fixed-work task-product gate and finite slot bounds.
 
 use ix_trace_rs::trace;
-use qsl_analyze::zone_check::{fixed_work_task_product, FixedWorkArrival, FixedWorkGateMiss};
+use qsl_analyze::zone_check::{
+    fixed_work_task_product, FixedWorkArrival, FixedWorkGateMiss, TaskJobPhase, TaskSchedulerState,
+};
 use qsl_foundation::Span;
 use qsl_replay::{
     TaskArrivalKind, TaskClockCeiling, TaskClosureMethod, TaskProductAbstraction,
@@ -67,6 +69,52 @@ fn a_wcet_upper_bound_without_equal_bcet_stays_outside_the_exact_gate() {
     );
 
     assert_eq!(result, Err(FixedWorkGateMiss::VariableDemand));
+}
+
+#[trace("TC-704", "FR-419-AC-6")]
+#[test]
+fn edf_fixed_work_is_in_the_exact_gate_without_authored_priorities() {
+    let mut edf_task = task("a", 4, 4, 1, Wcet::Single(int(1)));
+    edf_task.priority = None;
+    let product = fixed_work_task_product(&set(vec![edf_task]), SchedulingPolicy::Edf)
+        .expect("EDF scheduling order is derived from absolute deadlines");
+
+    assert_eq!(product.policy, SchedulingPolicy::Edf);
+    assert_eq!(product.tasks[0].priority, None);
+    assert_eq!(product.live_job_cap, 2);
+}
+
+#[trace("FR-181-AC-14", "FR-419-AC-6")]
+#[test]
+fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation() {
+    let product = fixed_work_task_product(
+        &set(vec![task("a", 4, 4, 1, Wcet::Single(int(1)))]),
+        SchedulingPolicy::FixedPriority,
+    )
+    .expect("the checked fixed-work task enters the exact route");
+    let source = quire_semantic_value::model_transition::ModelTransition::new(
+        "\"activate\"".to_owned(),
+        None,
+        Vec::new(),
+        quire_canonical::Limits::new(1024),
+    )
+    .expect("source transition identity");
+    let mut scheduler = TaskSchedulerState::default();
+    let first = scheduler
+        .activate(&product, "a", source.clone(), int(0), int(0))
+        .expect("first activation");
+
+    assert_eq!(scheduler.jobs[0].phase, TaskJobPhase::Ready);
+    let dispatched = scheduler.dispatch().expect("ready job dispatches");
+    assert_eq!(dispatched.action, qsl_replay::TaskAction::Dispatch);
+    let completed = scheduler.complete(None).expect("running job completes");
+    assert_eq!(completed.action, qsl_replay::TaskAction::Complete);
+
+    let second = scheduler
+        .activate(&product, "a", source, int(0), int(4))
+        .expect("slot is reused after completion");
+    assert_eq!(second.slot, first.slot);
+    assert_eq!(second.generation, first.generation + 1);
 }
 
 #[trace("TC-371", "FR-418-AC-11")]

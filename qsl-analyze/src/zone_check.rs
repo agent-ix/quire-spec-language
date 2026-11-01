@@ -44,6 +44,7 @@ pub use settle::{
     settle_timed_refinement, settle_zone_check, ZoneCheckRecord, ZoneItem, ZONE_CERTIFIED,
 };
 pub use task_product::{
-    fixed_work_task_product, FixedWorkArrival, FixedWorkGateMiss, FixedWorkTask,
-    FixedWorkTaskProduct,
+    fixed_work_task_product, task_releases_for_transition, FixedWorkArrival, FixedWorkGateMiss,
+    FixedWorkTask, FixedWorkTaskProduct, TaskJob, TaskJobPhase, TaskSchedulerError,
+    TaskSchedulerState,
 };
