@@ -806,6 +806,313 @@ pub(crate) fn process(extra: &str) -> Model {
     }
 }
 
+/// Coin2: `stall` moves the process into a stuck state where it remains
+/// enabled, while both `flip` and `wait` are disabled. The fair component at
+/// `stuck` therefore witnesses strong fairness to `flip` vacuously.
+pub(crate) fn process_coin2(extra: &str) -> Model {
+    Model {
+        package: "test/proc2",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![("done", BOOLEAN.to_owned()), ("stuck", BOOLEAN.to_owned())],
+        operations: vec![
+            Operation {
+                name: "flip",
+                parameters: vec![("heads", BOOLEAN.to_owned())],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+            Operation {
+                name: "wait",
+                parameters: vec![],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+            Operation {
+                name: "stall",
+                parameters: vec![],
+                modifies: vec!["stuck"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Live_flip using v on M::Proc::flip {{ not self.stuck and not self.done }}\n\
+             post Flipped using v on M::Proc::flip {{ self.done = heads }}\n\
+             pre Live_wait using v on M::Proc::wait {{ not self.stuck and not self.done }}\n\
+             post Waited using v on M::Proc::wait {{ self.done = pre(self.done) }}\n\
+             pre Stuck_stall using v on M::Proc::stall {{ not self.done }}\n\
+             post Stalled using v on M::Proc::stall {{ self.stuck = true }}\n\
+             random Proc::flip(heads) ~ {{ true: 1, false: 1 }};\n\
+             terminal Done using v on M when {{ self.done }};\n\
+             reward cost on Proc::stall = 1;\n\
+             workload Even on M {{ weight Proc::flip = 1; weight Proc::wait = 1; weight Proc::stall = 1; }}\n{extra}"
+        ),
+        initial: json!({"done": {"boolean": false}, "stuck": {"boolean": false}}),
+    }
+}
+
+/// Availability process used by FR-199/FR-200: `tick` occasionally takes the
+/// system down, and fast/slow repairs return it to `up` with different odds.
+pub(crate) fn avail2(extra: &str) -> Model {
+    const PACKAGE: &str = "test/avail2";
+    Model {
+        package: PACKAGE,
+        object: "Server",
+        population: "servers",
+        key: "s",
+        integers: vec![],
+        fields: vec![("up", BOOLEAN.to_owned())],
+        operations: vec![
+            Operation {
+                name: "tick",
+                parameters: vec![("to_down", BOOLEAN.to_owned())],
+                modifies: vec!["up"],
+                deletes: false,
+            },
+            Operation {
+                name: "repair_fast",
+                parameters: vec![("ok", BOOLEAN.to_owned())],
+                modifies: vec!["up"],
+                deletes: false,
+            },
+            Operation {
+                name: "repair_slow",
+                parameters: vec![("ok", BOOLEAN.to_owned())],
+                modifies: vec!["up"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Up_tick using v on M::Server::tick {{ self.up }}\n\
+             post Ticked using v on M::Server::tick {{ self.up = not to_down }}\n\
+             pre Down_fast using v on M::Server::repair_fast {{ not self.up }}\n\
+             post Fast using v on M::Server::repair_fast {{ self.up = ok }}\n\
+             pre Down_slow using v on M::Server::repair_slow {{ not self.up }}\n\
+             post Slow using v on M::Server::repair_slow {{ self.up = ok }}\n\
+             random Server::tick(to_down) ~ {{ true: 1, false: 1999 }};\n\
+             random Server::repair_fast(ok) ~ {{ true: 9, false: 1 }};\n\
+             random Server::repair_slow(ok) ~ {{ true: 1, false: 1 }};\n\
+             workload Steady on M {{ weight Server::tick = 1; weight Server::repair_fast = 1; weight Server::repair_slow = 1; }}\n{extra}"
+        ),
+        initial: json!({"up": {"boolean": true}}),
+    }
+}
+
+/// A zero-reward wait MEC with a positive-reward exit to the target. Strong
+/// fairness to `exit` makes the fair expected maximum finite and requires the
+/// collapse to retain its leaving action.
+pub(crate) fn zero_reward_exit(extra: &str) -> Model {
+    Model {
+        package: "test/exit",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![("done", BOOLEAN.to_owned())],
+        operations: vec![
+            Operation {
+                name: "wait",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+            Operation {
+                name: "exit",
+                parameters: vec![],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Live_wait using v on M::Proc::wait {{ not self.done }}\n\
+             post Waited using v on M::Proc::wait {{ self.done = pre(self.done) }}\n\
+             pre Live_exit using v on M::Proc::exit {{ not self.done }}\n\
+             post Exited using v on M::Proc::exit {{ self.done = true }}\n\
+             reward cost on Proc::exit = 5;\n\
+             terminal Done using v on M when {{ self.done }};\n{extra}"
+        ),
+        initial: json!({"done": {"boolean": false}}),
+    }
+}
+
+/// `proceed` reaches the target `done`; `abandon` reaches the non-target
+/// terminal `stopped`, whose only subsequent edge is terminal stutter.
+pub(crate) fn fair_terminal_stutter(extra: &str) -> Model {
+    Model {
+        package: "test/terminal-fair",
+        object: "TerminalFair",
+        population: "terminals",
+        key: "t",
+        integers: vec![],
+        fields: vec![
+            ("done", BOOLEAN.to_owned()),
+            ("stopped", BOOLEAN.to_owned()),
+        ],
+        operations: vec![
+            Operation {
+                name: "proceed",
+                parameters: vec![],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+            Operation {
+                name: "abandon",
+                parameters: vec![],
+                modifies: vec!["stopped"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Live_proceed using v on M::TerminalFair::proceed {{ not self.done and not self.stopped }}\n\
+             post Proceeded using v on M::TerminalFair::proceed {{ self.done = true and self.stopped = pre(self.stopped) }}\n\
+             pre Live_abandon using v on M::TerminalFair::abandon {{ not self.done and not self.stopped }}\n\
+             post Abandoned using v on M::TerminalFair::abandon {{ self.stopped = true and self.done = pre(self.done) }}\n\
+             terminal End using v on M when {{ self.done or self.stopped }};\n{extra}"
+        ),
+        initial: json!({"done": {"boolean": false}, "stopped": {"boolean": false}}),
+    }
+}
+
+/// A zero-reward self-loop and a unit-reward target action used to check fair
+/// expected-reward minimization.
+pub(crate) fn fair_min_reward(extra: &str) -> Model {
+    Model {
+        package: "test/fair-min-reward",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![("done", BOOLEAN.to_owned())],
+        operations: vec![
+            Operation {
+                name: "free",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+            Operation {
+                name: "costly",
+                parameters: vec![],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Live_free using v on M::Proc::free {{ not self.done }}\n\
+             post Free using v on M::Proc::free {{ self.done = pre(self.done) }}\n\
+             pre Live_costly using v on M::Proc::costly {{ not self.done }}\n\
+             post Costly using v on M::Proc::costly {{ self.done = true }}\n\
+             reward cost on Proc::costly = 1;\n\
+             terminal Done using v on M when {{ self.done }};\n{extra}"
+        ),
+        initial: json!({"done": {"boolean": false}}),
+    }
+}
+
+/// A probabilistic split into two disjoint fair bottom components.
+pub(crate) fn fair_two_bottoms(extra: &str) -> Model {
+    Model {
+        package: "test/split",
+        object: "Split",
+        population: "splits",
+        key: "s",
+        integers: vec![],
+        fields: vec![
+            ("selected", BOOLEAN.to_owned()),
+            ("right", BOOLEAN.to_owned()),
+        ],
+        operations: vec![
+            Operation {
+                name: "split",
+                parameters: vec![("right", BOOLEAN.to_owned())],
+                modifies: vec!["selected", "right"],
+                deletes: false,
+            },
+            Operation {
+                name: "step",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre At_start using v on M::Split::split {{ not self.selected }}\n\
+             post Split using v on M::Split::split {{ self.selected = true and self.right = right }}\n\
+             pre At_step using v on M::Split::step {{ self.selected }}\n\
+             post Stepped using v on M::Split::step {{ self.selected = pre(self.selected) and self.right = pre(self.right) }}\n\
+             random Split::split(right) ~ {{ true: 1, false: 1 }};\n{extra}"
+        ),
+        initial: json!({"selected": {"boolean": false}, "right": {"boolean": false}}),
+    }
+}
+
+/// Two receivers each have a continuously enabled `tick` self-loop.
+pub(crate) fn pair_tick(extra: &str) -> Model {
+    Model {
+        package: "test/pair",
+        object: "Pair",
+        population: "pairs",
+        key: "a",
+        integers: vec![],
+        fields: vec![("live", BOOLEAN.to_owned())],
+        operations: vec![Operation {
+            name: "tick",
+            parameters: vec![],
+            modifies: vec![],
+            deletes: false,
+        }],
+        body: format!(
+            "pre Live_tick using v on M::Pair::tick {{ self.live }}\n\
+             post Ticked using v on M::Pair::tick {{ self.live = pre(self.live) }}\n{extra}"
+        ),
+        initial: json!({"live": {"boolean": true}}),
+    }
+}
+
+/// A non-fair wait MEC that strong fairness forces to route into a fair
+/// recurrent component.
+pub(crate) fn fair_longrun_escape(extra: &str) -> Model {
+    Model {
+        package: "test/fair-escape",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![("fair", BOOLEAN.to_owned())],
+        operations: vec![
+            Operation {
+                name: "wait",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+            Operation {
+                name: "go_fair",
+                parameters: vec![],
+                modifies: vec!["fair"],
+                deletes: false,
+            },
+            Operation {
+                name: "continue_fair",
+                parameters: vec![],
+                modifies: vec![],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Before_wait using v on M::Proc::wait {{ not self.fair }}\n\
+             post Waiting using v on M::Proc::wait {{ self.fair = false }}\n\
+             pre Before_go using v on M::Proc::go_fair {{ not self.fair }}\n\
+             post Went using v on M::Proc::go_fair {{ self.fair = true }}\n\
+             pre Fair_continue using v on M::Proc::continue_fair {{ self.fair }}\n\
+             post Continued using v on M::Proc::continue_fair {{ self.fair = true }}\n{extra}"
+        ),
+        initial: json!({"fair": {"boolean": false}}),
+    }
+}
+
 /// FR-189-AC-7's `Wide`: `spin(x: Boolean)` writes `v = x`, with `x` drawn
 /// by weights whose total, `2^256 + 1`, is above the draw range.
 pub(crate) fn wide(extra: &str) -> Model {

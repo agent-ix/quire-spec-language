@@ -10,7 +10,7 @@ use quire_exact::{Integer, Rational, Value};
 type PolicySolution = (Vec<Rational>, Vec<Option<usize>>, u64);
 type RewardPolicySolution = (Vec<ExtRational>, Vec<Option<usize>>, u64);
 type IntervalStep = (Vec<Rational>, Vec<Rational>, Vec<Option<usize>>);
-type MecOptimization = (Rational, Vec<Option<usize>>, Vec<Rational>, u64);
+pub(crate) type MecOptimization = (Rational, Vec<Option<usize>>, Vec<Rational>, u64);
 
 #[derive(Clone, Copy)]
 struct PolicyLimits {
@@ -712,7 +712,8 @@ pub fn decide_long_run_mdp(
             bias: component
                 .iter()
                 .copied()
-                .map(|state| (ProbStateId(state), bias[state].clone()))
+                .enumerate()
+                .map(|(local, state)| (ProbStateId(state), bias[local].clone()))
                 .collect(),
         });
     }
@@ -739,17 +740,17 @@ pub fn decide_long_run_mdp(
 }
 
 #[derive(Clone)]
-struct Choice<'a> {
-    edges: Vec<&'a ProbEdge>,
+pub(crate) struct Choice<'a> {
+    pub(crate) edges: Vec<&'a ProbEdge>,
 }
 
-struct Graph<'a> {
-    product: &'a ProbProduct,
-    choices: Vec<Vec<Choice<'a>>>,
+pub(crate) struct Graph<'a> {
+    pub(crate) product: &'a ProbProduct,
+    pub(crate) choices: Vec<Vec<Choice<'a>>>,
 }
 
 impl<'a> Graph<'a> {
-    fn new(product: &'a ProbProduct) -> Result<Self, UnboundedError> {
+    pub(crate) fn new(product: &'a ProbProduct) -> Result<Self, UnboundedError> {
         let mut choices = Vec::with_capacity(product.states.len());
         for state in product.ids() {
             let edges = product.outgoing(state);
@@ -1033,7 +1034,7 @@ fn same_action(left: &ProductAction, right: &ProductAction) -> bool {
     }
 }
 
-fn policy_iteration(
+pub(crate) fn policy_iteration(
     graph: &Graph<'_>,
     fixed: &[Option<Rational>],
     objective: UnboundedObjective,
@@ -1697,9 +1698,18 @@ fn strongly_connected_components(graph: &Graph<'_>) -> Result<Vec<Vec<usize>>, U
     Ok(components)
 }
 
-fn maximal_end_components(graph: &Graph<'_>) -> Result<Vec<Vec<usize>>, UnboundedError> {
-    let mut pending =
-        vec![(0..graph.product.states.len()).collect::<std::collections::BTreeSet<_>>()];
+pub(crate) fn maximal_end_components(graph: &Graph<'_>) -> Result<Vec<Vec<usize>>, UnboundedError> {
+    maximal_end_components_from(
+        graph,
+        (0..graph.product.states.len()).collect::<std::collections::BTreeSet<_>>(),
+    )
+}
+
+pub(crate) fn maximal_end_components_from(
+    graph: &Graph<'_>,
+    initial: std::collections::BTreeSet<usize>,
+) -> Result<Vec<Vec<usize>>, UnboundedError> {
+    let mut pending = vec![initial];
     let mut result = Vec::new();
     while let Some(mut candidate) = pending.pop() {
         loop {
@@ -1773,7 +1783,7 @@ struct FractionPolicy {
     weights: Vec<Rational>,
 }
 
-fn optimize_mec_fraction(
+pub(crate) fn optimize_mec_fraction(
     graph: &Graph<'_>,
     component: &[usize],
     predicate: &[bool],
@@ -2264,6 +2274,8 @@ mod tests {
             initial: Vec::new(),
             decided: Vec::new(),
             labels: Vec::new(),
+            fairness_operations: Vec::new(),
+            fairness: Vec::new(),
         }
     }
 
