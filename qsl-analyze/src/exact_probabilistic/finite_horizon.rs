@@ -455,3 +455,94 @@ fn rational_zero() -> Rational {
 fn rational_one() -> Rational {
     Rational::from_integer(Integer::one())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn rational(numerator: i64, denominator: i64) -> Rational {
+        Rational::new(Integer::from(numerator), Integer::from(denominator))
+            .expect("nonzero denominator")
+    }
+
+    fn product() -> ProbProduct {
+        let key = |model| super::super::ProbKey {
+            binding: None,
+            model: vec![model],
+            monitor: None,
+            accumulator: None,
+            pending: None,
+        };
+        ProbProduct {
+            states: vec![key(0), key(1), key(2)],
+            kind: ProductKind::Dtmc,
+            edges: vec![
+                ProbEdge {
+                    from: ProbStateId(0),
+                    choice: ProductAction::TerminalStutter,
+                    action: None,
+                    draw: None,
+                    to: ProbStateId(1),
+                    probability: rational(1, 4),
+                    rewards: Vec::new(),
+                },
+                ProbEdge {
+                    from: ProbStateId(0),
+                    choice: ProductAction::TerminalStutter,
+                    action: None,
+                    draw: None,
+                    to: ProbStateId(2),
+                    probability: rational(3, 4),
+                    rewards: Vec::new(),
+                },
+            ],
+            initial: vec![(0, None, ProbStateId(0))],
+            decided: Vec::new(),
+            labels: vec![Vec::new(); 3],
+        }
+    }
+
+    /// Trace: TC-632, FR-197-AC-1
+    #[trace("TC-632", "FR-197-AC-1")]
+    #[test]
+    fn computes_the_exact_weighted_value() {
+        let result = backward_induction(
+            &product(),
+            &[None, Some(rational(1, 1)), Some(rational(0, 1))],
+            FhObjective::Min,
+            &rational(1, 4),
+            128,
+            8,
+            64,
+        )
+        .expect("valid finite product");
+
+        let FhResult::Exact { values, .. } = result else {
+            panic!("small rational result should remain exact");
+        };
+        assert_eq!(values[0], rational(1, 4));
+    }
+
+    /// Trace: TC-632, FR-197-AC-4
+    #[trace("TC-632", "FR-197-AC-4")]
+    #[test]
+    fn precision_budget_contains_an_exact_threshold() {
+        let result = backward_induction(
+            &product(),
+            &[None, Some(rational(1, 1)), Some(rational(0, 1))],
+            FhObjective::Min,
+            &rational(1, 4),
+            0,
+            4,
+            8,
+        )
+        .expect("valid finite product");
+
+        let FhResult::PrecisionBudget { lower, upper, .. } = result else {
+            panic!("exact threshold remains inside every outward interval");
+        };
+        assert!(lower.rational() <= rational(1, 4));
+        assert!(rational(1, 4) <= upper.rational());
+    }
+}
