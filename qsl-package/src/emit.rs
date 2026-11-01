@@ -345,6 +345,7 @@ pub struct EqualityProducerEmissionRow {
     location: quire_exact::Location,
     source_map_entry: CheckedSourceMapEntry,
     producer_identity: qsl_semantics::check::EqualityProducerIdentity,
+    producer_data: qsl_semantics::check::EqualityProducerData,
 }
 
 impl EqualityProducerEmissionRow {
@@ -1662,12 +1663,32 @@ fn equality_producer_emission_rows(
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     source_map: &[CheckedSourceMapEntry],
 ) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
+    let producer_data = graph.equality_producer_data();
+    let producer_identities = graph.equality_producer_identities();
+    if producer_data.len() != producer_identities.len()
+        || producer_data.keys().ne(producer_identities.keys())
+    {
+        let application = producer_data
+            .keys()
+            .next()
+            .or_else(|| producer_identities.keys().next())
+            .map(|(application, _)| application.clone())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        return Err(EmitRefusal::MissingEqualityIdentityContext { application });
+    }
     graph
         .equality_producer_identities()
         .iter()
-        .filter(|((application, _), _)| emitted_node_ids.contains_key(application))
         .map(|((application, expression_location), producer_identity)| {
             let Some(checked_node) = emitted_node_ids.get(application).cloned() else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: application.clone(),
+                });
+            };
+            let Some(producer_data) = producer_data
+                .get(&(application.clone(), expression_location.clone()))
+                .cloned()
+            else {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: application.clone(),
                 });
@@ -1712,9 +1733,174 @@ fn equality_producer_emission_rows(
                 location: quire_exact::Location::new(node, origin),
                 source_map_entry,
                 producer_identity: producer_identity.clone(),
+                producer_data,
             })
         })
         .collect()
+}
+
+/// Turns the checked equality decision and its exact occurrence witness into
+/// FR-322's wire sidecar. The structural graph supplies operand type nodes;
+/// the producer rows supply the schedule and occurrence-specific decision.
+fn checked_equality_term_data(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    rows: &[EqualityProducerEmissionRow],
+) -> Result<Option<quire_contract_model::CheckedTermDataV2>, EmitRefusal> {
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    let graph_nodes = graph
+        .semantic_graph()
+        .nodes()
+        .map(|node| (node.key(), node))
+        .collect::<HashMap<_, _>>();
+    let mut equality_decisions = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Some(application) = graph_nodes.get(row.application()) else {
+            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                application: row.application().clone(),
+            });
+        };
+        let qsl_semantics::check::BodyTerm::Application(application_body) = application.body()
+        else {
+            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                application: row.application().clone(),
+            });
+        };
+        let expected_operator = match row.producer_data.operator() {
+            quire_semantic_value::declaration::EqualityOperator::Equal => "quire.op.structural.eq",
+            quire_semantic_value::declaration::EqualityOperator::NotEqual => {
+                "quire.op.structural.ne"
+            }
+        };
+        if application_body.operation.identity() != expected_operator
+            || application_body.arguments.len() != 2
+        {
+            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                application: row.application().clone(),
+            });
+        }
+        let mut operands = Vec::with_capacity(2);
+        for (position, authored) in row.producer_data.authored_operands().iter().enumerate() {
+            let Some(qsl_semantics::check::MemberTerm::Leaf(
+                qsl_semantics::check::LeafTerm::Reference { target },
+            )) = application_body.arguments.get(position)
+            else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                });
+            };
+            let Some(operand_key) = target.admitted() else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                });
+            };
+            let Some(operand_node) = graph_nodes.get(operand_key) else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                });
+            };
+            let mut source_type = operand_node.semantic_type().ok_or_else(|| {
+                EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                }
+            })?;
+            if authored.target().is_some() {
+                if let qsl_semantics::check::BodyTerm::Application(convert) = operand_node.body() {
+                    if convert.operation.identity() == "quire.op.numeric.convert" {
+                        let Some(qsl_semantics::check::MemberTerm::Leaf(
+                            qsl_semantics::check::LeafTerm::Reference { target },
+                        )) = convert.arguments.first()
+                        else {
+                            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                                application: row.application().clone(),
+                            });
+                        };
+                        let Some(source_node) =
+                            target.admitted().and_then(|key| graph_nodes.get(key))
+                        else {
+                            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                                application: row.application().clone(),
+                            });
+                        };
+                        source_type = source_node.semantic_type().ok_or_else(|| {
+                            EmitRefusal::MissingEqualityIdentityContext {
+                                application: row.application().clone(),
+                            }
+                        })?;
+                    }
+                }
+            }
+            let source_type = emitted_node_ids.get(&source_type).cloned().ok_or_else(|| {
+                EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                }
+            })?;
+            let conversion_target = if authored.target().is_some() {
+                Some(
+                    emitted_node_ids
+                        .get(&operand_node.semantic_type().ok_or_else(|| {
+                            EmitRefusal::MissingEqualityIdentityContext {
+                                application: row.application().clone(),
+                            }
+                        })?)
+                        .cloned()
+                        .ok_or_else(|| EmitRefusal::MissingEqualityIdentityContext {
+                            application: row.application().clone(),
+                        })?,
+                )
+            } else {
+                None
+            };
+            operands.push(quire_contract_model::CheckedEqualityOperandDecision {
+                operand: u8::try_from(position).map_err(|_| EmitRefusal::SourceMapInvariant)?,
+                source_type,
+                conversion_target,
+            });
+        }
+        let mut operands = operands.into_iter();
+        let left = operands.next().ok_or(EmitRefusal::SourceMapInvariant)?;
+        let right = operands.next().ok_or(EmitRefusal::SourceMapInvariant)?;
+        let operator = match row.producer_data.operator() {
+            quire_semantic_value::declaration::EqualityOperator::Equal => {
+                quire_contract_model::CheckedEqualityOperator::Equal
+            }
+            quire_semantic_value::declaration::EqualityOperator::NotEqual => {
+                quire_contract_model::CheckedEqualityOperator::NotEqual
+            }
+        };
+        let schedule = match row.producer_data.schedule() {
+            quire_semantic_value::declaration::EqualitySchedule::Text => {
+                quire_contract_model::CheckedEqualitySchedule::Text
+            }
+            quire_semantic_value::declaration::EqualitySchedule::Enum => {
+                quire_contract_model::CheckedEqualitySchedule::Enum
+            }
+            quire_semantic_value::declaration::EqualitySchedule::Quantity => {
+                quire_contract_model::CheckedEqualitySchedule::Quantity
+            }
+            quire_semantic_value::declaration::EqualitySchedule::Plan => {
+                quire_contract_model::CheckedEqualitySchedule::Plan
+            }
+        };
+        equality_decisions.push(quire_contract_model::CheckedEqualityDecision {
+            application: row.checked_node().clone(),
+            occurrence: row.occurrence().clone(),
+            term_path: Vec::new(),
+            operator,
+            left,
+            right,
+            schedule,
+            units: Vec::new(),
+            enum_members: Vec::new(),
+        });
+    }
+    Ok(Some(quire_contract_model::CheckedTermDataV2 {
+        equality_decisions,
+        protocol_locations: Vec::new(),
+        dispatch_tables: Vec::new(),
+    }))
 }
 
 /// The source map of the written nodes, in graph order, and the raw sources
@@ -3441,6 +3627,8 @@ fn emit_package_inner(
     let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
     let equality_producer_identity_rows =
         equality_producer_emission_rows(graph, &emitted_node_ids, &source_map)?;
+    let checked_equality_term_data =
+        checked_equality_term_data(graph, &emitted_node_ids, &equality_producer_identity_rows)?;
     let selected_operation_member_rows = selected_operation_member_rows
         .into_iter()
         .map(|(key, mut row)| {
@@ -3525,7 +3713,7 @@ fn emit_package_inner(
                 source_map: &source_map,
                 refinement_step_rows: (!step_rows.is_empty()).then_some(step_rows.as_slice()),
             },
-            None,
+            checked_equality_term_data.as_ref(),
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
