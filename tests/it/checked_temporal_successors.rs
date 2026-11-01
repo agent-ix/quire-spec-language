@@ -889,7 +889,7 @@ fn checked_activation_keeps_siblings_and_capture_identity() {
 fn checked_capture_initializer_cannot_read_a_later_capture() {
     let refusal = try_checked_activation(
         "test:checked-temporal-forward-capture",
-        "capture first: Integer = later; capture later: Integer = trigger.code; always[0,1] true",
+        "capture initialCapture: Integer = futureCapture; capture futureCapture: Integer = trigger.code; always[0,1] true",
         "on each (trigger: M::Widget)",
     )
     .expect_err("S3 refuses a later capture name");
@@ -898,7 +898,7 @@ fn checked_capture_initializer_cannot_read_a_later_capture() {
     };
     assert!(refusals.iter().any(|refusal| matches!(
         &refusal.cause,
-        qsl_semantics::check::CheckCause::MissingName(name) if name == "later"
+        qsl_semantics::check::CheckCause::MissingName(name) if name == "futureCapture"
     )));
 }
 
