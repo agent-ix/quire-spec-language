@@ -394,6 +394,101 @@ fn a_capture_of_every_declared_type_is_admitted() {
     }
 }
 
+/// FR-322-AC-34 / QSpec TC-281 RP-09 and RP-10: the source read form remains
+/// distinct in both QSL's keyed graph and IR's typed admitted projection.
+#[trace("FR-322-AC-34", "TC-1073", "FR-390-AC-19")]
+#[test]
+fn model_field_read_form_survives_emission_and_typed_readback() {
+    let qspec = std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR names the QSpec checkout");
+    let vectors: Value = serde_json::from_slice(
+        &std::fs::read(
+            std::path::PathBuf::from(qspec)
+                .join("proposals/checked-package-v2/model-member-type-vectors.json"),
+        )
+        .expect("QSpec model-member vectors are readable"),
+    )
+    .expect("QSpec model-member vectors are JSON");
+    let projection_cases = vectors["projection_cases"]
+        .as_array()
+        .expect("QSpec has projection cases");
+    let vector = |name: &str| {
+        projection_cases
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap_or_else(|| panic!("QSpec vector {name} exists"))
+    };
+    let bare_vector = vector("RP-09");
+    let explicit_vector = vector("RP-10");
+    assert_eq!(bare_vector["source_expression"], "view.total");
+    assert_eq!(explicit_vector["source_expression"], "deref(view).total");
+
+    let declarations = format!("{}{TICK}", super::protocol_graph::CARRIED);
+    let lower = |initial: &str| {
+        let text = capture_of(&declarations, "UUID", initial);
+        let lowered = lower_with(typed_orders_document(), PROFILES, &text);
+        assert!(lowered.verified, "{}", lowered.text);
+        assert!(
+            lowered.ir.is_ok(),
+            "{:?}\n{}",
+            lowered.ir.err(),
+            lowered.text
+        );
+        lowered
+    };
+    let bare = lower("input.uid");
+    let explicit = lower("deref(input).uid");
+    let model_projection = |lowered: &Lowered, expected_form: &Value| {
+        let (_, initializer) = captures(&lowered.wire)
+            .into_iter()
+            .next()
+            .expect("one capture");
+        let projected = target(&lowered.wire, initializer);
+        assert_eq!(
+            projected["body"]["operation"]["identity"],
+            "quire.op.record.project"
+        );
+        assert_eq!(
+            projected["body"]["operation"]["member"]["read_form"],
+            expected_form.clone()
+        );
+        projected.clone()
+    };
+    let bare_projection = model_projection(&bare, &bare_vector["member"]["read_form"]);
+    let explicit_projection = model_projection(&explicit, &explicit_vector["member"]["read_form"]);
+    assert_ne!(bare_projection["node_id"], explicit_projection["node_id"]);
+    assert_ne!(bare.wire, explicit.wire);
+
+    let ir_form = |lowered: &Lowered, projection: &Value| {
+        use quire_contract_model::{CheckedOperationMember, CheckedTerm};
+
+        let package = lowered.ir.as_ref().expect("admitted IR package");
+        let id: quire_contract_model::CheckedNodeId =
+            serde_json::from_value(projection["node_id"].clone()).expect("projected node id");
+        let Some(CheckedTerm::Application { operation, .. }) = package.term(&id) else {
+            panic!("the admitted projection is a typed application");
+        };
+        match operation
+            .read()
+            .expect("IR exposes the admitted typed operation projection")
+            .member
+        {
+            Some(CheckedOperationMember::Field {
+                read_form: Some(read_form),
+                ..
+            }) => *read_form,
+            other => panic!("expected typed model field read form, got {other:?}"),
+        }
+    };
+    assert_eq!(
+        ir_form(&bare, &bare_projection),
+        quire_contract_model::CheckedFieldReadForm::Bare
+    );
+    assert_eq!(
+        ir_form(&explicit, &explicit_projection),
+        quire_contract_model::CheckedFieldReadForm::ExplicitDeref
+    );
+}
+
 /// A protocol over `M::Order` with one capture `c: declared = initial`.
 fn capture_of(declarations: &str, declared: &str, initial: &str) -> String {
     format!(

@@ -77,6 +77,10 @@ pub enum Member {
         declaration: NodeKey,
         /// The field's own identifier.
         name: Identifier,
+        /// Source explicitness for a model-object projection. `None` for an
+        /// ordinary record projection; `Some` is admitted by IR as its typed
+        /// `CheckedFieldReadForm` member projection.
+        explicit_deref: Option<bool>,
     },
     /// A tuple's positional element.
     Position {
@@ -268,6 +272,7 @@ mod tests {
         let field = Member::Field {
             declaration: node(7),
             name: Identifier::new("same").unwrap(),
+            explicit_deref: None,
         };
         let operation = Member::Operation {
             declaration: node(7),
