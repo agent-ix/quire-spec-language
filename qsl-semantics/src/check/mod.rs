@@ -68,6 +68,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+use quire_checked::node::NodeKind;
 mod abstraction;
 mod assemble;
 mod call_target;
@@ -217,8 +218,7 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, SemanticGraph,
-    SemanticNode,
+    model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
 };
 pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use node_key::{
@@ -344,11 +344,7 @@ pub use family::fixtures::{
     empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
-pub use ir::{
-    Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
-    IntegerDivisionOperator, Node, NodeId, NodeKind, OrderedKind, RecordField, RecordSlot, Slot,
-    Visit,
-};
+pub use ir::{CheckedBody, CheckedNode, Node, NodeId, Slot};
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
@@ -414,7 +410,7 @@ pub use identity::{
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
-pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
+pub use navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,

@@ -18,6 +18,7 @@
 //! captures or the activation from being checked, and the refusals come
 //! back in source order.
 
+use quire_checked::node::NodeKind;
 mod cause;
 #[cfg(test)]
 mod tests;
@@ -38,7 +39,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::check::{bind_parameters, Scope, StateContext, Typer};
 use super::facts::Definedness;
-use super::ir::{CheckedBody, NodeKind};
+use super::ir::CheckedBody;
 use super::lowering::{protocol_location, ProtocolSite};
 use super::observation::Observations;
 use super::protocol_clause::{CheckedProtocol, ProtocolNodeId};

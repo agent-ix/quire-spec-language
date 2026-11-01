@@ -17,11 +17,10 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind,
-};
+use qsl_semantics::check::{AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::clause_observation::Observation;
+use quire_checked::node::NodeKind;
 use quire_exact::ValueType;
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;

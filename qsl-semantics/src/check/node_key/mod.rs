@@ -12,8 +12,8 @@ use serde::Serialize;
 use crate::value::semantic_node::{NodeOwner, OwnerSubject};
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
-use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Timestamp, Uuid};
+use quire_semantic_value::absence::AbsenceMode;
 
 use crate::value::definition::DefinitionReference;
 use crate::value::member::{AcceptedPoint, Member};

@@ -7,14 +7,16 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer 2: S2 parsed semantic forms -- the forms core's closed dispatch entry table, the parsed-form contract and the shared parsed-form types."
 
-# ADR-011 §6.1 layer 2 depends on "1, F, K" and the shared walker leaf W
-# (`quire-walk`, ADR-030 D-1 item 2) only. The root crate's
+# ADR-011 §6.1 layer 2 depends on "1, F, K", the shared walker leaf W
+# (`quire-walk`, ADR-030 D-1 item 2), and layer SV's canonical absence-mode
+# vocabulary from `quire-semantic-value`. The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-398) asserts that this table and
 # `[dev-dependencies]` name no other workspace crate.
 [dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-cst = { path = "../qsl-cst" }
 qsl-foundation = { path = "../qsl-foundation" }
+quire-semantic-value = { workspace = true }
 quire-exact = { workspace = true }
 quire-walk = { workspace = true }
 

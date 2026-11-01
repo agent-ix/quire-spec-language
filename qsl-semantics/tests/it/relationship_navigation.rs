@@ -6,8 +6,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AmbiguousMember, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, EndSide, MemberCandidate,
-    NavigationBound, NodeKind, PackageDeclarations,
+    AmbiguousMember, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, MemberCandidate,
+    NavigationBound, PackageDeclarations,
 };
 use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -18,6 +18,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::intake::SelectedModels;
 use quire_checked::key::DeclarationKey;
+use quire_checked::node::{EndSide, NodeKind};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IllTypedCause, Presence,
     ValueType,

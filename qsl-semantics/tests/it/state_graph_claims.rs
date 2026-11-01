@@ -11,9 +11,10 @@ use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     Capability, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, CheckedStateGraphClaim,
-    NodeKind, StateGraphCause, StateGraphForm,
+    StateGraphCause, StateGraphForm,
 };
 use qsl_semantics::family::ClaimExtent;
+use quire_checked::node::NodeKind;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
