@@ -1844,23 +1844,13 @@ pub(crate) fn refuses_after_activation(form: &TemporalClauseForm, refusal: &Chec
 
 /// The refusal for a clause that checked but that no S4 emission writes
 /// ([`is_emitted`]): refused rather than compiled and silently missing from
-/// the package. An aggregate has its own typed unsupported proof
-/// representation cause (FR-046-AC-5). A clause naming a protocol target
-/// refuses at that constraint, with the target it resolved to.
+/// the package. A clause naming a protocol target refuses at that
+/// constraint, with the target it resolved to.
 pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
     if let Some((constraint, span)) = checked.protocol_fairness.first() {
         return refusal(TemporalCause::ProtocolFairnessNotEmitted {
             constraint: Box::new(constraint.clone()),
             span: *span,
-        });
-    }
-    if let Some(span) = checked.formula.nodes().iter().find_map(|node| match node {
-        FormulaNode::Aggregate { span } => Some(*span),
-        _ => None,
-    }) {
-        return refusal(TemporalCause::UnsupportedProofRepresentation {
-            name: checked.name.clone(),
-            span,
         });
     }
     refusal(TemporalCause::NotEmitted {

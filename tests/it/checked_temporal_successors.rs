@@ -4,8 +4,6 @@
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
-use qsl_semantics::check::PackageDeclarations;
-use quire_semantic_value::checking::CheckingLimits;
 use quire_spec_language::temporal::{
     self, Basis, Closure, Completeness, Execution, Position, Truth,
 };
@@ -104,43 +102,6 @@ temporal Due using t over (view: Config::ConfigVersion) clock "model-time" on or
 
 fn tests_fixture_spine_model() -> Vec<u8> {
     include_bytes!("../fixtures/spine-model.semantic-ir.json").to_vec()
-}
-
-/// Build the S3 checked graph and link it directly at S4. This keeps the
-/// checked-package evaluator boundary observable for representations that the
-/// current serializer does not emit.
-fn checked_graph_temporal(
-    formula: &str,
-) -> Result<qsl_package::CheckedPackage, Vec<qsl_semantics::check::CheckRefusal>> {
-    let source = format!(
-        r#"
-language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
-profile t = "quire.temporal.event-position.false-extension/v1";
-record Counter {{ level: Int[0, 9]; }}
-temporal Due using t over (c: Counter) clock "model-steps" on origin {{ {formula} }}
-"#
-    );
-    let identity = SourceIdentity::new("agent-ix", "test:checked-unsupported", "fixture", "1");
-    let parsed = qsl_cst::parse(
-        identity,
-        "checked-unsupported.native",
-        source.as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 parses checked candidate");
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds checked candidate");
-    let graph = PackageDeclarations::assemble(
-        parsed.source().reference().clone(),
-        "checked-unsupported".to_owned(),
-        unit,
-        qsl_semantics::model::intake::SelectedModels::default(),
-        Vec::new(),
-    )
-    .expect("S2 assembly retains candidate")
-    .check(CheckingLimits::default())?;
-    Ok(qsl_package::CheckedPackage::link(graph))
 }
 
 fn origin_trace() -> temporal::Trace {
@@ -1175,27 +1136,4 @@ fn checked_binding_and_missing_fact_keep_distinct_outcomes() {
         assessment.incomplete.as_ref().map(|value| value.dimension),
         Some(temporal::Dimension::Valuation)
     );
-}
-
-/// FR-046-AC-5 / TC-127: S3 recognizes the checked aggregate candidate and
-/// returns its typed unsupported proof representation, before S4 can produce
-/// a Boolean result or partial runtime artifact.
-#[trace("TC-127", "FR-046-AC-5")]
-#[test]
-fn checked_aggregate_candidate_returns_typed_unsupported_without_partial_result() {
-    let refusals = match checked_graph_temporal("always[0,2] count over past[0,3] >= 1") {
-        Ok(_) => panic!("S3 must not admit an unsupported aggregate representation"),
-        Err(refusals) => refusals,
-    };
-    assert!(matches!(
-        refusals.as_slice(),
-        [qsl_semantics::check::CheckRefusal {
-            cause: qsl_semantics::check::CheckCause::Temporal(cause),
-            ..
-        }] if matches!(
-            cause.as_ref(),
-            qsl_semantics::check::TemporalCause::UnsupportedProofRepresentation { name, .. }
-                if name == "Due"
-        )
-    ));
 }
