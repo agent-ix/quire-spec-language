@@ -2088,6 +2088,7 @@ fn write_clauses(
             }
             parts.push(CheckedGuardPart {
                 predicate: node_id(ids, &part.predicate),
+                binders: Vec::new(),
                 constraints,
             });
         }
@@ -2125,6 +2126,7 @@ fn write_clauses(
         model.invariants.push(CheckedTimeInvariant {
             metadata,
             predicate,
+            binders: Vec::new(),
             bounds,
         });
     }
