@@ -2040,12 +2040,6 @@ impl Disposition {
                         .fields(BTreeMap::from([("name", name.clone())])),
                 );
             }
-            ClauseDisposition::ProofValueNotFound { name } => {
-                result.refusal = Some(
-                    RefusalWire::new(Code::MissingDeclaration.as_str(), Some("missing-name"))
-                        .fields(BTreeMap::from([("name", name.clone())])),
-                );
-            }
             ClauseDisposition::NotAPredicate { name } => {
                 result.refusal = Some(
                     RefusalWire::new(Code::IllTyped.as_str(), Some("type-mismatch"))
@@ -2223,28 +2217,6 @@ impl Disposition {
                 let mut record = RefusalWire::new(witness.code.as_str(), Some(witness.cause));
                 record.frame_witness = Some(FrameWitnessWire::from(witness.as_ref()));
                 result.refusal = Some(record);
-            }
-            ClauseDisposition::UnsupportedProofRepresentation { cause, query } => {
-                let cause = match cause {
-                    super::UnsupportedProofCause::ValueRepresentation => "value-representation",
-                };
-                let visit = match query.visit {
-                    qsl_semantics::check::Visit::Map => "map",
-                    qsl_semantics::check::Visit::Filter => "filter",
-                    qsl_semantics::check::Visit::Count => "count",
-                    qsl_semantics::check::Visit::Sum => "sum",
-                    qsl_semantics::check::Visit::Forall => "forall",
-                    qsl_semantics::check::Visit::Exists => "exists",
-                    qsl_semantics::check::Visit::Only => "only",
-                };
-                result.refusal = Some(
-                    RefusalWire::new(Code::UnknownRequiredFeature.as_str(), Some(cause)).fields(
-                        BTreeMap::from([
-                            ("query_visit", visit.to_owned()),
-                            ("query_result_type", format!("{:?}", query.result_type)),
-                        ]),
-                    ),
-                );
             }
             ClauseDisposition::EvaluateFault(fault) => {
                 result.internal_fault = Some(InternalFaultWire {

@@ -79,7 +79,6 @@ pub use clause::{
     ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState,
     OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
     TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
-    UnsupportedProofCause, UnsupportedQuerySelection,
 };
 mod refinement;
 pub use refinement::{
@@ -93,11 +92,12 @@ pub use native_result::{
     NativeRunResult, NativeRunResultError, PositionRead, RefusalLocusRead, SourceRefRead, SpanRead,
 };
 mod request;
+pub mod query_proof;
 pub use request::{
     read_clause_run_request, AnchorWire, ClauseArgumentWire, ClauseRequestParts,
     ClauseRequestReadError, ClauseRunSelectionWire, ClauseSelectionParts, ClauseSelectionPartsKind,
     ClauseSelectionWire, FrameSelectionWire, FunctionSelectionWire, ObjectReferenceWire,
-    ObservationLimitsWire, ProofValueSelectionWire, SuppliedObservation,
+    ObservationLimitsWire, SuppliedObservation,
 };
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
 pub(crate) use clause::{check_clause_admitted, check_frame, ClauseCheck, CompiledRun, FrameCheck};

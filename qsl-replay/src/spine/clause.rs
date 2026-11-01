@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::source::Source;
 use qsl_foundation::source_map::NativeLanguage;
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind, Visit};
+use qsl_semantics::check::{CheckedGraph, CheckedStateClause};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, admit_frame_invocation, admit_observations, population_universe_for,
@@ -72,12 +72,6 @@ pub struct ClauseArgument {
 pub enum ClauseRunSelection {
     /// A state clause, admitted per FR-106.
     Clause(ClauseSelection),
-    /// FR-046: request proof transfer for the first checked collection-valued
-    /// `map` or `filter` query in a state clause.
-    ProofValue {
-        /// The state clause containing the selected checked query.
-        name: String,
-    },
     /// A function, called as a claim (FR-109's own `Function` selection).
     Function {
         /// The function's name (FR-100's `function` rule; one segment,
@@ -247,23 +241,6 @@ pub enum ClauseRunStage {
     Evaluate,
 }
 
-/// A checked ordered-query selection that the clause-run spine cannot
-/// transfer to its result evaluator yet.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UnsupportedQuerySelection {
-    /// The query form selected by the checked node.
-    pub visit: Visit,
-    /// The result type retained by that same checked node.
-    pub result_type: ValueType,
-}
-
-/// Why a checked query selection has no supported clause-run result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnsupportedProofCause {
-    /// The selected query value representation has no sound proof transfer.
-    ValueRepresentation,
-}
-
 /// FR-109's disposition: one record per non-`Evaluate` stage, or the S6a
 /// outcome (FR-100's mapping, reused unchanged) for `Evaluate`.
 #[derive(Debug)]
@@ -282,12 +259,6 @@ pub enum ClauseDisposition {
     /// Stage `select`, `missing_declaration`/`missing-name`.
     MissingName {
         /// The selected name.
-        name: String,
-    },
-    /// Stage `select`: the clause has no checked collection-valued `map` or
-    /// `filter` query to transfer as a proof value.
-    ProofValueNotFound {
-        /// The selected state clause.
         name: String,
     },
     /// Stage `select`, `ill_typed`/`type-mismatch`: a `Function` selection
@@ -321,15 +292,6 @@ pub enum ClauseDisposition {
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
     EvaluateFault(quire_semantic_value::catalog::InternalFault),
-    /// Stage `evaluate`, category `unsupported`: S3 selected a checked
-    /// ordered query whose value/result representation has no clause-run
-    /// transfer. No observation evaluation or result value was produced.
-    UnsupportedProofRepresentation {
-        /// The typed proof-transfer cause.
-        cause: UnsupportedProofCause,
-        /// The exact selected query node's form and checked result type.
-        query: UnsupportedQuerySelection,
-    },
 }
 
 impl ClauseDisposition {
@@ -337,15 +299,12 @@ impl ClauseDisposition {
     pub fn stage(&self) -> ClauseRunStage {
         match self {
             Self::Compile(_) | Self::UnknownLanguage { .. } => ClauseRunStage::Compile,
-            Self::MissingName { .. }
-            | Self::ProofValueNotFound { .. }
-            | Self::NotAPredicate { .. } => ClauseRunStage::Select,
+            Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
             Self::Evaluate(_)
             | Self::Temporal(_)
             | Self::TemporalRefusal(_)
             | Self::FrameViolation(_)
-            | Self::UnsupportedProofRepresentation { .. }
             | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
         }
     }
@@ -366,7 +325,6 @@ impl ClauseDisposition {
             Self::ArgumentRefusal(refusal) => refusal.category(),
             Self::UnknownLanguage { .. }
             | Self::MissingName { .. }
-            | Self::ProofValueNotFound { .. }
             | Self::NotAPredicate { .. } => Category::Refusal,
             Self::Admit(AdmissionFailure::Refused(record)) => {
                 qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
@@ -377,7 +335,6 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
-            Self::UnsupportedProofRepresentation { .. } => Category::Unsupported,
             Self::Temporal(outcome) => outcome.category(),
             // The refusal's own catalog code decides: a malformed trace is a
             // refusal, a profile the evaluator does not read is unsupported.
@@ -936,20 +893,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             };
             Ok(check_clause(&run, clause, selection))
         }
-        ClauseRunSelection::ProofValue { ref name } => {
-            let Some(clause) = package.graph().state_clause(name) else {
-                return Ok(run.report(ClauseDisposition::MissingName { name: name.clone() }));
-            };
-            if let Some(query) = unsupported_query_selection(clause.body()) {
-                return Ok(
-                    run.report(ClauseDisposition::UnsupportedProofRepresentation {
-                        cause: UnsupportedProofCause::ValueRepresentation,
-                        query,
-                    }),
-                );
-            }
-            Ok(run.report(ClauseDisposition::ProofValueNotFound { name: name.clone() }))
-        }
         ClauseRunSelection::Function {
             ref name,
             ref arguments,
@@ -965,30 +908,6 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref over,
         } => Ok(temporal::run_temporal(&run, name, trace, over)),
     }
-}
-
-/// Select the first ordered query form for which the clause-run spine has no
-/// result transfer. Selection is derived only from the resolved clause's
-/// checked graph; source spelling and caller-provided query inventories are
-/// never consulted.
-fn unsupported_query_selection(root: CheckedNode<'_>) -> Option<UnsupportedQuerySelection> {
-    let mut pending = vec![root];
-    while let Some(node) = pending.pop() {
-        if let NodeKind::Query {
-            visit: visit @ (Visit::Map | Visit::Filter),
-            ..
-        } = node.kind()
-        {
-            if matches!(node.value_type(), ValueType::Collection(_)) {
-                return Some(UnsupportedQuerySelection {
-                    visit: *visit,
-                    result_type: node.value_type().clone(),
-                });
-            }
-        }
-        pending.extend(node.children().into_iter().rev());
-    }
-    None
 }
 
 /// What a clause run or an FR-115 frame run reads besides its selection:

@@ -528,9 +528,6 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
         ClauseDisposition::MissingName { .. } => {
             one(Absent, Code::MissingDeclaration, Some("missing-name"))
         }
-        ClauseDisposition::ProofValueNotFound { .. } => {
-            one(Absent, Code::MissingDeclaration, Some("missing-name"))
-        }
         ClauseDisposition::NotAPredicate { .. } => {
             one(Refused, Code::IllTyped, Some("type-mismatch"))
         }
@@ -551,16 +548,6 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
         ClauseDisposition::Evaluate(outcome) => classify_outcome(outcome),
         ClauseDisposition::FrameViolation(witness) => {
             one(Refused, witness.code, Some(witness.cause))
-        }
-        ClauseDisposition::UnsupportedProofRepresentation { cause, .. } => {
-            let cause = match cause {
-                super::UnsupportedProofCause::ValueRepresentation => "value-representation",
-            };
-            one(
-                RefinementClass::Unsupported,
-                Code::UnknownRequiredFeature,
-                Some(cause),
-            )
         }
         ClauseDisposition::EvaluateFault(_) => one(ToolFailure, Code::RuntimeInvariant, None),
         // A refinement check runs state clauses and functions; it selects no

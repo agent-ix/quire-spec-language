@@ -278,11 +278,9 @@ pub fn replay_frame(
         ClauseDisposition::Compile(_)
         | ClauseDisposition::UnknownLanguage { .. }
         | ClauseDisposition::MissingName { .. }
-        | ClauseDisposition::ProofValueNotFound { .. }
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::Temporal(_)
         | ClauseDisposition::TemporalRefusal(_)
-        | ClauseDisposition::UnsupportedProofRepresentation { .. }
         | ClauseDisposition::ArgumentRefusal(_) => {
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",
