@@ -63,6 +63,7 @@ pub struct WitnessPath { pub steps: Vec<WitnessStep> }  // CX-2 content plus man
 pub fn replay_probabilistic_witness(
     wire: ReplayRequestWire,                     // FR-098
     subject: &ModelTraceSubject,                 // FR-128
+    replay_limits: ReplayLimits,                  // FR-098 replay.input_bytes bound
     envelope: &WitnessEnvelope<ProbabilisticCounterexample>,
     limits: &ExactProbLimits,
 ) -> Result<ReplayOutcome, ReplayRefusal>;
@@ -125,7 +126,9 @@ No guessed QSpec wire spelling is adopted by this semantic contract.
 ### Replay
 
 - `replay_probabilistic_witness` SHALL decode `wire` through FR-098's
-  canonical `ByteProvision` and recompile path, and re-admit the initial
+  canonical `ByteProvision` and recompile path, passing `replay_limits` to
+  `ReplayRequest::decode` so the encoded request is bounded by
+  `replay.input_bytes` before provision access. It SHALL re-admit the initial
   states, universes and expansion limits in `subject`, as FR-128 does. It
   SHALL NOT accept or reuse an EN-5 solver product as trusted replay data.
 - For a path set it SHALL re-execute each path through `ModelSystem`:

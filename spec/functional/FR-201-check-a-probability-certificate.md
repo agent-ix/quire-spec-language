@@ -53,6 +53,7 @@ pub struct ProbabilityCertificate {
 pub fn check_probability_certificate(
     wire: ReplayRequestWire,                    // FR-098
     subject: &ModelTraceSubject,                // FR-128
+    replay_limits: ReplayLimits,                 // FR-098 replay.input_bytes bound
     item: &ObligationIdentity,
     certificate: &ProbabilityCertificate,
     limits: &ExactProbLimits,
@@ -131,7 +132,9 @@ product state form `{product_key}` and the second as `{member}`.
 - The checker SHALL refuse a certificate whose identity differs from the
   item's.
 - It SHALL decode `wire` through FR-098's canonical `ByteProvision` and
-  recompile path, re-admit `subject`, and re-enumerate the product through
+  recompile path, passing `replay_limits` to `ReplayRequest::decode` so the
+  encoded request is bounded by `replay.input_bytes` before provision access;
+  it SHALL re-admit `subject` and re-enumerate the product through
   `ModelSystem` and the monitor, using
   `qsl-eval`'s property-automaton translation and enabledness (ADR-018
   LA-5) and its own product enumeration and graph algorithms, and no
