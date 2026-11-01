@@ -209,7 +209,7 @@ struct Subject {
 fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
     let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n\
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
          model M = \"{PACKAGE}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{}\n",
         clauses.join("\n"),
