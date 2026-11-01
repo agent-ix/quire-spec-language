@@ -37,3 +37,27 @@ Reviewed PR #2038's bounded-subtraction DBM operation and its tests, including R
 
 - The implementation first intersects a cloned zone with `amount <= x <= ceiling`, then shifts only the selected clock's row and column and recloses. The coordinate substitution is correct for `x' = x - amount`; `BigInt` avoids overflow and errors are returned before mutating `self`.
 - Focused DBM tests, formatting, Clippy, and dependency bans passed. Aggregate/full-package failures reproduced on the base commit and are recorded separately to the lead.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The new oracle reconstructs the source valuation and checks the original constraint set directly; it does not duplicate the production DBM row/column update. |
+| FND-002 | fixed | The bounded-subtraction tests now trace only to FR-238-AC-4, and TC-693's scope and procedure include AC-4. |
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    after_excerpt: |-
+      let mut source = post.to_vec();
+      source[x] += amount * scale;
+      let source_clock = source[x];
+      source_clock >= amount * scale
+          && source_clock <= ceiling * scale
+          && holds(constraints, &source, scale)
+  - fnd: FND-002
+    outcome: fixed
+    after_excerpt: |-
+      #[trace("TC-693", "FR-238-AC-4")]
+```

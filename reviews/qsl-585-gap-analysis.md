@@ -38,3 +38,18 @@ Manual acceptance-criteria-to-test and reverse-gap review of the bounded-subtrac
 | --- | --- | --- |
 | FR-238-AC-4 | `bounded_subtraction_matches_reference_with_diagonal_constraints` | Partial: one diagonal fixture, a grid check, canonicality, zero update, and disabled update are covered; oracle independence/full specified cases are not established. |
 | FR-238-AC-4 | `bounded_subtraction_refuses_malformed_ranges_and_clock_indices_transactionally` | Covers invalid clock index/reference clock and malformed numeric ranges transactionally. |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The source-point oracle checks the preimage against the original unclosed constraints, avoiding the same row/column formula as production. Coverage now includes strict and non-strict diagonal bounds, guard boundaries, zero and changed amounts, disabled zones, malformed inputs, and TC-371 ZC-15; TC-693 scope/procedure now includes AC-4. |
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    after_excerpt: |-
+      Scope: FR-238-AC-1 to FR-238-AC-4.
+      4. For bounded subtraction, independently enumerate source valuations over the full scaled grid, retain only values within `amount <= x <= ceiling`, subtract from the selected source clock, and compare the resulting image with the canonical DBM.
+```
