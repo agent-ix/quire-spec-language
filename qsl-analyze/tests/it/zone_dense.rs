@@ -56,6 +56,30 @@ fn timers_claiming(latching: bool, body: &str) -> World {
 /// [`timers_claiming`] over the timers `keys`, those `armed` armed at
 /// the start.
 fn timers_over(latching: bool, body: &str, keys: &[&str], armed: &[&str]) -> World {
+    timers_declaring(latching, body, keys, armed, "")
+}
+
+/// FR-430-AC-3's latching `Timer` pair, whose both-armed state is terminal,
+/// with the model text `terminal` (a `terminal` declaration, or none)
+/// (FR-411-AC-5).
+pub(crate) fn latching_timers(terminal: &str) -> World {
+    timers_declaring(
+        true,
+        "always holds(not t.inflight)",
+        &["t1", "t2"],
+        &[],
+        terminal,
+    )
+}
+
+/// [`timers_over`] with the extra model text `terminal`.
+fn timers_declaring(
+    latching: bool,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+    terminal: &str,
+) -> World {
     let arm: (&str, &[&str]) = ("arm", &["inflight", "x"]);
     let both = [arm, ("disarm", &["inflight", "x"])];
     let operations: &[(&str, &[&str])] = if latching { &both[..1] } else { &both };
@@ -73,6 +97,7 @@ fn timers_over(latching: bool, body: &str, keys: &[&str], armed: &[&str]) -> Wor
              pre Arm using v on M::Call::arm {{ not self.inflight and self.x >= 1 ms }}\n\
              post Armed using v on M::Call::arm {{ self.inflight and self.x = 0 ms }}\n\
              {disarm}\
+             {terminal}\
              temporal Unarmed using inf over (t: M::Call) clock \"model-steps\" on origin \
              {{ {body} }}\n"
         ),
@@ -98,7 +123,7 @@ fn refused_symmetry(outcome: ZoneCheckOutcome<&'static str>) {
 }
 
 /// The symmetry `[[t1, t2]]` over [`calls`].
-fn swap() -> Reductions {
+pub(crate) fn swap() -> Reductions {
     Reductions {
         symmetry: vec![SymmetryDeclaration {
             population: calls(),

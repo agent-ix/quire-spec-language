@@ -6,19 +6,21 @@
 
 use qsl_eval::simulation::model::{ClauseOutcome, DEFAULT_MAX_CLOCKS};
 use qsl_eval::simulation::protocol::ProtocolTransition;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
+use qsl_package::CheckedPackage;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::{
     check_zone_certificate, settle_hyper_form, CertificateCheckLimits, CertificateRequest,
-    DeclineCode, ModelTraceReplayResult, ProofRefusalCause, RefinementTraceSettlement,
-    ReplayRefusal, SubjectRefusal, TemporalCounterexample, TerminalValue, UnavailabilityCause,
-    ZoneCertificateRequest,
+    DeclineCode, ModelTraceRefusal, ModelTraceReplayResult, ProofRefusalCause,
+    RefinementTraceSettlement, ReplayRefusal, SubjectRefusal, TemporalCounterexample,
+    TerminalValue, UnavailabilityCause, ZoneCertificateRequest,
 };
 use qsl_replay::{ModelCheckItem, ModelCheckLimits, ProtocolCertificateRequest, SubjectIdentity};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::request::{DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem};
 use qsl_route::Mode;
-use qsl_semantics::check::{Capability, HyperForm};
+use qsl_semantics::check::{Capability, HyperForm, TerminalKeys, TerminalMismatch};
 use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::CatalogCode;
@@ -83,7 +85,28 @@ pub type CounterexampleReplayFn<'a> =
 /// The `temporal-satisfaction` item that runs `item` on EN-1 and settles it
 /// by `settle_model_check` (FR-127). It is `Supported(EN-1)` until the
 /// caller's negotiation says otherwise ([`AnalyzeItem::disposed`]).
-pub fn model_item<'a>(index: RequestIndex, item: ModelItem<'a>) -> AnalyzeItem<'a> {
+///
+/// # Errors
+///
+/// [`DerivedItemMismatch::DerivedRun`] when `item` runs a derived item
+/// (deadlock or race freedom): a derived item settles only through
+/// [`derived_model_item`] or [`derived_protocol_item`], which join its
+/// verdict to the request item it answers (FR-411, QSpec FR-368).
+pub fn model_item<'a>(
+    index: RequestIndex,
+    item: ModelItem<'a>,
+) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
+    match item.request.item {
+        ModelCheckItem::Clause { .. } => Ok(run_model_item(index, item)),
+        ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
+            Err(DerivedItemMismatch::DerivedRun { index })
+        }
+    }
+}
+
+/// [`model_item`] with no check of what `item` runs: the derived adapters'
+/// path once they have joined the run to its request item.
+fn run_model_item(index: RequestIndex, item: ModelItem<'_>) -> AnalyzeItem<'_> {
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
@@ -134,7 +157,25 @@ pub type ProtocolReplayFn<'a> = dyn FnOnce(
 /// protocol subject and settles it by `settle_protocol_check` (FR-215,
 /// FR-217). It is `Supported(EN-1)` until the caller's negotiation says
 /// otherwise ([`AnalyzeItem::disposed`]).
-pub fn protocol_item<'a>(index: RequestIndex, item: ProtocolItem<'a>) -> AnalyzeItem<'a> {
+///
+/// # Errors
+///
+/// [`DerivedItemMismatch::DerivedRun`] when `item` runs a derived item, as
+/// [`model_item`] refuses it.
+pub fn protocol_item<'a>(
+    index: RequestIndex,
+    item: ProtocolItem<'a>,
+) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
+    match item.request.item {
+        ModelCheckItem::Clause { .. } => Ok(run_protocol_item(index, item)),
+        ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => {
+            Err(DerivedItemMismatch::DerivedRun { index })
+        }
+    }
+}
+
+/// [`protocol_item`] with no check of what `item` runs.
+fn run_protocol_item(index: RequestIndex, item: ProtocolItem<'_>) -> AnalyzeItem<'_> {
     AnalyzeItem::new(
         index,
         Capability::TemporalSatisfaction,
@@ -211,7 +252,26 @@ pub struct TimedItem<'a, S> {
 /// by `settle_zone_check` (FR-235), its certificate checked by FR-245's
 /// `check_zone_certificate`. It is `Supported(EN-6)` until the caller's
 /// negotiation says otherwise ([`AnalyzeItem::disposed`]).
+///
+/// # Errors
+///
+/// [`DerivedItemMismatch::DerivedRun`] when `item` runs a derived item
+/// (deadlock or time-lock freedom): it settles only through
+/// [`derived_zone_item`] (FR-411, QSpec FR-368).
 pub fn zone_item<'a, S: Clone + Eq + 'a>(
+    index: RequestIndex,
+    item: TimedItem<'a, S>,
+) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
+    match item.request.item {
+        ZoneCheckItem::Clause { .. } => Ok(run_zone_item(index, item)),
+        ZoneCheckItem::DeadlockFreedom | ZoneCheckItem::TimeLockFreedom => {
+            Err(DerivedItemMismatch::DerivedRun { index })
+        }
+    }
+}
+
+/// [`zone_item`] with no check of what `item` runs.
+fn run_zone_item<'a, S: Clone + Eq + 'a>(
     index: RequestIndex,
     item: TimedItem<'a, S>,
 ) -> AnalyzeItem<'a> {
@@ -284,6 +344,99 @@ pub enum DerivedItemMismatch {
         /// The bound the run or its check holds.
         run: u64,
     },
+    /// A derived item's run handed to [`model_item`], [`protocol_item`] or
+    /// [`zone_item`], which settle it with no join to its request item: a
+    /// derived item settles only through its derived adapter (FR-411).
+    #[error("request item {index:?}'s run is a derived item's; it settles only through its derived adapter")]
+    DerivedRun {
+        /// The request item's index.
+        index: RequestIndex,
+    },
+    /// A run or certificate check is over a package that holds no
+    /// `model_root` anchor equal to the derived request item's claim, the
+    /// node of its obligation identity (QSpec FR-368, ADR-013 O-09): the
+    /// run answers another subject's item.
+    #[error("stale_dependency/content-mismatch: no model_root of the run's package anchors request item {index:?} at {occurrence}")]
+    OtherAnchor {
+        /// The request item's index.
+        index: RequestIndex,
+        /// The request item's anchor occurrence.
+        occurrence: OccurrenceKey,
+    },
+    /// A model subject's deadlock-freedom run or its certificate check is
+    /// over a package whose terminal declaration differs from the one the
+    /// request item was written under (FR-411 "Deadlock-freedom verdict
+    /// join"); no verdict is settled.
+    #[error("stale_dependency/content-mismatch: request item {index:?}'s {mismatch}")]
+    TerminalDeclaration {
+        /// The request item's index.
+        index: RequestIndex,
+        /// The first model alias whose declaration differs, and the two
+        /// terminal node keys.
+        mismatch: TerminalMismatch,
+    },
+}
+
+/// QSpec FR-368 "Claim and anchor": every package a run or a certificate
+/// check of `derived` is over holds the `model_root` node `derived` is
+/// anchored at, with its `generated` occurrence 0 (FR-411
+/// "Deadlock-freedom verdict join": the node of the obligation identity).
+fn join_anchor<'p>(
+    derived: &RequestItem,
+    packages: impl IntoIterator<Item = &'p CheckedPackage>,
+) -> Result<(), DerivedItemMismatch> {
+    let claim = derived.occurrence();
+    for package in packages {
+        let anchored = package
+            .graph()
+            .model_roots()
+            .any(|(_, root)| OccurrenceKey::generated(root) == *claim);
+        if !anchored {
+            return Err(DerivedItemMismatch::OtherAnchor {
+                index: derived.index(),
+                occurrence: claim.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// FR-411 "Deadlock-freedom verdict join": the terminal node keys `derived`
+/// was written under, compared with those of each package a run or a
+/// certificate check of it is over.
+fn join_terminals<'p>(
+    derived: &RequestItem,
+    packages: impl IntoIterator<Item = &'p CheckedPackage>,
+) -> Result<TerminalKeys, DerivedItemMismatch> {
+    let index = derived.index();
+    let expected = derived
+        .derived_terminals()
+        .ok_or(DerivedItemMismatch::NotDerived { index })?;
+    for package in packages {
+        if let Some(mismatch) = expected.mismatch(&package.graph().terminal_keys()) {
+            return Err(DerivedItemMismatch::TerminalDeclaration { index, mismatch });
+        }
+    }
+    Ok(expected.clone())
+}
+
+/// `replay`, refusing `stale_dependency`/`content-mismatch` when the
+/// recompiled package it replayed over declares other terminal states than
+/// `expected` (FR-411 "Deadlock-freedom verdict join"), so a refutation
+/// found under one declaration never settles the item under another.
+fn joined_replay<'a>(
+    replay: Box<CounterexampleReplayFn<'a>>,
+    expected: TerminalKeys,
+) -> Box<CounterexampleReplayFn<'a>> {
+    Box::new(move |payload| {
+        let replayed = replay(payload)?;
+        match expected.mismatch(&replayed.terminals) {
+            None => Ok(replayed),
+            Some(mismatch) => Err(ReplayRefusal::ModelTrace(Box::new(
+                ModelTraceRefusal::TerminalDeclaration(mismatch),
+            ))),
+        }
+    })
 }
 
 /// The run's limits under a derived item's caller settings (QSpec FR-368
@@ -319,7 +472,13 @@ fn derived_graph_limits(limits: &DerivedLimits) -> qsl_eval::simulation::Limits 
 /// # Errors
 ///
 /// [`DerivedItemMismatch`] when `derived` is no `deadlock-freedom` item, or
-/// `item` runs another item or is over another subject than `obligation`'s.
+/// `item` runs another item or is over another subject than `obligation`'s,
+/// or its run or certificate check is over a package with another terminal
+/// declaration than `derived` was written under (FR-411). A replay over
+/// such a package refuses `stale_dependency`/`content-mismatch`, so the
+/// item settles `inconclusive`, never `refuted`.
+/// A run or check over a package that does not hold `derived`'s anchor
+/// refuses [`DerivedItemMismatch::OtherAnchor`].
 pub fn derived_model_item<'a>(
     derived: &RequestItem,
     obligation: &ItemObligation<SubjectIdentity>,
@@ -346,9 +505,16 @@ pub fn derived_model_item<'a>(
             kind: ItemKind::DeadlockFreedom,
         });
     }
+    let packages = [
+        item.request.subject.simulation.package,
+        item.certificate.subject.simulation.package,
+    ];
+    join_anchor(derived, packages)?;
+    let expected = join_terminals(derived, packages)?;
+    item.replay = joined_replay(item.replay, expected);
     item.request.limits.limits = derived_graph_limits(limits);
     item.request.max_depth = None;
-    Ok(model_item(index, item))
+    Ok(run_model_item(index, item))
 }
 
 /// The EN-1 item that runs the derived `deadlock-freedom` (QSpec FR-429) or
@@ -420,7 +586,7 @@ pub fn derived_protocol_item<'a, S>(
     item.certificate.max_store_buffer = max_store_buffer;
     item.certificate.max_messages = max_messages;
     item.certificate.max_live_instances = max_live_instances;
-    Ok(protocol_item(index, item))
+    Ok(run_protocol_item(index, item))
 }
 
 /// The EN-6 item that runs the derived `deadlock-freedom` or
@@ -434,7 +600,13 @@ pub fn derived_protocol_item<'a, S>(
 ///
 /// [`DerivedItemMismatch`] when `derived` is no such item, `item` runs
 /// another item, or `item`'s timed subject or certificate check bounds the
-/// live clocks by another value than the item's `max_clocks`.
+/// live clocks by another value than the item's `max_clocks`, or, for a
+/// `deadlock-freedom` item, its run or its certificate check is over a
+/// package with another terminal declaration than `derived` was written
+/// under (FR-411);
+/// its replay then refuses as [`derived_model_item`]'s does. A run or check
+/// over a package that does not hold `derived`'s anchor refuses
+/// [`DerivedItemMismatch::OtherAnchor`].
 pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
     derived: &RequestItem,
     mut item: TimedItem<'a, S>,
@@ -458,6 +630,18 @@ pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
     };
     if !runs {
         return Err(DerivedItemMismatch::OtherItem { index, kind });
+    }
+    // The run's own package as well as the check's: a symmetry-reduced
+    // deadlock-freedom run settles `Proved{Reduced, Uncertified}` with no
+    // certificate check (FR-160), so the run alone can decide the verdict.
+    let packages = [
+        item.request.subject.system().package(),
+        item.certificate.simulation.package,
+    ];
+    join_anchor(derived, packages)?;
+    if kind == ItemKind::DeadlockFreedom {
+        let expected = join_terminals(derived, packages)?;
+        item.replay = joined_replay(item.replay, expected);
     }
     // The clock bound is fixed when the timed subject is built, so the
     // adapter checks it rather than setting it.
@@ -485,7 +669,7 @@ pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
         DerivedLimit::MaxTransitions,
         defaults.max_symbolic_transitions,
     );
-    Ok(zone_item(index, item))
+    Ok(run_zone_item(index, item))
 }
 
 /// An EN-6 timed refinement item (QSpec FR-430, FR-144): the safety half's
