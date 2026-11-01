@@ -348,6 +348,7 @@ pub struct EqualityFactWitnessRow {
     structural_key: NodeKey,
     structural_node: CheckedNodeId,
     owner: Option<CheckedNodeOwner>,
+    value_type: Option<quire_exact::ValueType>,
     fact: EqualityFactWitness,
 }
 
@@ -396,6 +397,19 @@ pub enum EqualityFactWitness {
     TextPlanType {
         position: usize,
         role: EqualityOperandTypeRole,
+    },
+    /// One selected enum member, joined to its exact source and lowered
+    /// declarations and the member's checked-package node.
+    EnumMember {
+        source_declaration: NodeKey,
+        source_declaration_node: CheckedNodeId,
+        declaration: NodeKey,
+        declaration_node: CheckedNodeId,
+        member: NodeKey,
+        member_node: CheckedNodeId,
+        case: Box<str>,
+        ordinal: usize,
+        ordered: bool,
     },
 }
 
@@ -455,6 +469,11 @@ impl EqualityProducerEmissionRow {
     /// The QSL-owned typed producer identities for this occurrence.
     pub fn producer_identity(&self) -> &qsl_semantics::check::EqualityProducerIdentity {
         &self.producer_identity
+    }
+
+    /// The checker's exact equality schedule and typed producer values.
+    pub fn producer_data(&self) -> &qsl_semantics::check::EqualityProducerData {
+        &self.producer_data
     }
 }
 
@@ -598,6 +617,12 @@ impl EqualityFactWitnessRow {
     /// The emitted source/model owner context of the fact node, if present.
     pub fn owner(&self) -> Option<&CheckedNodeOwner> {
         self.owner.as_ref()
+    }
+
+    /// The checker's exact static type for this producer row when it names a
+    /// typed operand or comparison type.
+    pub fn value_type(&self) -> Option<&quire_exact::ValueType> {
+        self.value_type.as_ref()
     }
 
     /// The exact producer fact retained for this row.
@@ -1888,7 +1913,9 @@ fn equality_fact_witness_rows(
         .collect::<HashMap<_, _>>();
     let mut witnesses = Vec::new();
     for row in rows {
-        let mut add = |key: &NodeKey, fact: EqualityFactWitness| {
+        let mut add = |key: &NodeKey,
+                       fact: EqualityFactWitness,
+                       value_type: Option<quire_exact::ValueType>| {
             let Some(structural_node) = emitted_node_ids.get(key).cloned() else {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
@@ -1911,6 +1938,7 @@ fn equality_fact_witness_rows(
                 structural_key: key.clone(),
                 structural_node,
                 owner,
+                value_type,
                 fact,
             });
             Ok(())
@@ -1947,6 +1975,7 @@ fn equality_fact_witness_rows(
                         }
                     },
                 },
+                Some(producer_fact.value_type.clone()),
             )?;
         }
         if matches!(
@@ -1984,6 +2013,24 @@ fn equality_fact_witness_rows(
                         application: row.application().clone(),
                     });
                 }
+                let mut typed_facts = identity_type_nodes
+                    .iter()
+                    .zip(row.producer_data.operand_type_facts())
+                    .filter(|(identity_fact, _)| {
+                        identity_fact.operand_position == position
+                            && identity_fact.role == expected_role
+                            && identity_fact.node == *key
+                    });
+                let Some((_, typed_fact)) = typed_facts.next() else {
+                    return Err(EmitRefusal::MissingEqualityIdentityContext {
+                        application: row.application().clone(),
+                    });
+                };
+                if typed_facts.next().is_some() {
+                    return Err(EmitRefusal::MissingEqualityIdentityContext {
+                        application: row.application().clone(),
+                    });
+                }
                 add(
                     key,
                     EqualityFactWitness::TextPlanType {
@@ -1997,6 +2044,64 @@ fn equality_fact_witness_rows(
                             }
                         },
                     },
+                    Some(typed_fact.value_type.clone()),
+                )?;
+            }
+        }
+
+        if row.producer_data.schedule() == quire_semantic_value::declaration::EqualitySchedule::Enum
+        {
+            let enum_types = row
+                .producer_data
+                .operand_type_facts()
+                .iter()
+                .filter(|fact| matches!(fact.value_type, quire_exact::ValueType::Enum(_)))
+                .map(|fact| &fact.value_type)
+                .collect::<Vec<_>>();
+            let Some(enum_type) = enum_types.first() else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                });
+            };
+            if enum_types.iter().any(|other| *other != *enum_type) {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: row.application().clone(),
+                });
+            }
+            for (source_declaration, declaration, member, case, ordinal, ordered) in
+                row.producer_identity.enum_member_facts()
+            {
+                let Some(source_declaration_node) =
+                    emitted_node_ids.get(source_declaration).cloned()
+                else {
+                    return Err(EmitRefusal::MissingEqualityIdentityContext {
+                        application: row.application().clone(),
+                    });
+                };
+                let Some(declaration_node) = emitted_node_ids.get(declaration).cloned() else {
+                    return Err(EmitRefusal::MissingEqualityIdentityContext {
+                        application: row.application().clone(),
+                    });
+                };
+                let Some(member_node) = emitted_node_ids.get(member).cloned() else {
+                    return Err(EmitRefusal::MissingEqualityIdentityContext {
+                        application: row.application().clone(),
+                    });
+                };
+                add(
+                    member,
+                    EqualityFactWitness::EnumMember {
+                        source_declaration: source_declaration.clone(),
+                        source_declaration_node,
+                        declaration: declaration.clone(),
+                        declaration_node,
+                        member: member.clone(),
+                        member_node,
+                        case: case.clone(),
+                        ordinal: *ordinal,
+                        ordered: *ordered,
+                    },
+                    Some((*enum_type).clone()),
                 )?;
             }
         }
@@ -2048,6 +2153,7 @@ fn equality_fact_witness_rows(
                             operand_position,
                             role,
                         },
+                        None,
                     )?;
                     for dimension in &unit_fact.dimensions {
                         let exact_role = match &unit {
@@ -2107,6 +2213,7 @@ fn equality_fact_witness_rows(
                                 role: dimension.role,
                                 ordinal: dimension.ordinal,
                             },
+                            None,
                         )?;
                     }
                     for term in &unit_fact.dimension_terms {
@@ -2143,6 +2250,7 @@ fn equality_fact_witness_rows(
                                 base_node,
                                 exponent: term.exponent.to_string().into_boxed_str(),
                             },
+                            None,
                         )?;
                     }
                     for edge in &unit_fact.conversion_edges {
@@ -2184,6 +2292,7 @@ fn equality_fact_witness_rows(
                                 scale: checked_rational(payload.factor()),
                                 offset: checked_rational(payload.offset()),
                             },
+                            None,
                         )?;
                     }
                 }

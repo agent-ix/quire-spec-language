@@ -720,7 +720,13 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
         .iter()
         .any(|row| matches!(row.fact(), EqualityFactWitness::OperandType { .. })));
     for row in emission.equality_producer_identity_rows() {
+        let producer_data = row.producer_data();
         let type_rows = row.producer_identity().text_plan_type_nodes();
+        assert!(matches!(
+            producer_data.schedule(),
+            quire_semantic_value::declaration::EqualitySchedule::Text
+                | quire_semantic_value::declaration::EqualitySchedule::Plan
+        ));
         assert_eq!(type_rows.len(), 2);
         let occurrence_witnesses =
             witnesses_for_occurrence(emission.equality_fact_witness_rows(), row);
@@ -759,10 +765,104 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
                         } if *actual_position == position)
                 })
                 .expect("operand source fact retains exact type node");
+            let typed_fact = producer_data
+                .operand_type_facts()
+                .iter()
+                .find(|fact| {
+                    fact.operand_position == position
+                        && fact.role == qsl_semantics::check::EqualityUnitOperandRole::Source
+                })
+                .expect("the checker retains the exact operand ValueType");
+            assert_eq!(type_witness.value_type(), Some(&typed_fact.value_type));
+            assert_eq!(operand_witness.value_type(), Some(&typed_fact.value_type));
             assert_eq!(
                 type_witness.structural_node(),
                 operand_witness.structural_node()
             );
+        }
+    }
+}
+
+/// QSpec FR-322-AC-288: each enum member is an exact structural witness row.
+#[ix_trace_rs::trace("QSpec-FR-322-AC-288", "QSL-1445")]
+#[test]
+fn enum_member_facts_join_source_and_lowered_declarations_to_nodes() {
+    use quire_semantic_value::declaration::EqualitySchedule;
+
+    let emission = emitted(
+        "enum Color { Blue, Green }\n\
+         function enumeration using v(a: Color, b: Color): Boolean pure { a != b }",
+    );
+    let identity = emission
+        .equality_producer_identity_rows()
+        .iter()
+        .find(|row| row.producer_data().schedule() == EqualitySchedule::Enum)
+        .expect("enum equality retains exact producer data");
+    let producer_members = identity.producer_identity().enum_member_facts();
+    assert_eq!(
+        producer_members.len(),
+        2,
+        "both selected enum members are retained"
+    );
+    let member_rows = witnesses_for_occurrence(emission.equality_fact_witness_rows(), identity)
+        .into_iter()
+        .filter(|row| matches!(row.fact(), EqualityFactWitness::EnumMember { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(member_rows.len(), producer_members.len());
+
+    let emitted_ids = wire(&emission)["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("emitted nodes")
+        .iter()
+        .filter_map(|node| node.get("node_id").cloned())
+        .collect::<Vec<_>>();
+    let enum_type = identity
+        .producer_data()
+        .operand_type_facts()
+        .iter()
+        .find(|fact| matches!(fact.value_type, quire_exact::ValueType::Enum(_)))
+        .expect("the checker retains the exact enum ValueType");
+
+    for (source_declaration, declaration, member, case, ordinal, ordered) in producer_members {
+        let matches = member_rows
+            .iter()
+            .filter(|row| {
+                row.structural_key() == member
+                    && matches!(row.fact(), EqualityFactWitness::EnumMember {
+                        source_declaration: actual_source,
+                        declaration: actual_declaration,
+                        member: actual_member,
+                        case: actual_case,
+                        ordinal: actual_ordinal,
+                        ordered: actual_ordered,
+                        ..
+                    } if actual_source == source_declaration
+                        && actual_declaration == declaration
+                        && actual_member == member
+                        && actual_case.as_ref() == case.as_ref()
+                        && actual_ordinal == ordinal
+                        && actual_ordered == ordered)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1, "each selected member has one exact row");
+        let row = matches[0];
+        let EqualityFactWitness::EnumMember {
+            source_declaration_node,
+            declaration_node,
+            member_node,
+            ..
+        } = row.fact()
+        else {
+            unreachable!()
+        };
+        assert_eq!(row.structural_node(), member_node);
+        assert_eq!(
+            row.value_type(),
+            Some(&enum_type.value_type),
+            "the selected member row carries the checker-held enum type"
+        );
+        for node in [source_declaration_node, declaration_node, member_node] {
+            assert!(emitted_ids.contains(&serde_json::to_value(node).unwrap()));
         }
     }
 }
