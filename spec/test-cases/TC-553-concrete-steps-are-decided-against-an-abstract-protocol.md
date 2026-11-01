@@ -25,7 +25,8 @@ model (ADR-020 §8) with `peek` removed; `CasTwice` with `peek` kept.
    commit, over `CasTwice`.
 2. Check and settle `CasTwice` over universe `counters = {c}`, without
    applying the model-subject simulation-certificate checker to its
-   abstract-protocol safety result.
+   abstract-protocol safety result; the protocol step decisions and further
+   checks have no core certificate checker.
 3. Check the lost-update model against `Twice` and replay its
    counterexample.
 4. Check `CasTwice` against `Once` and replay its counterexample.
@@ -38,7 +39,9 @@ Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 
 - Step 1: one state at `a1`, `value` 0; the state at `a2`, `value` 1; the
   finished state with `value` 2.
-- Step 2: `proved`, `closed-scope`, `Uncertified`.
+- Step 2: `proved`, `closed-scope`, `Uncertified`; FR-149 does not certify
+  protocol-subject step decisions, and the further checks have no core
+  certificate checker.
 - Step 3: `refuted`, `NoAbstractMatch` at the commit that leaves `value`
   unchanged; `reproduced-with-evaluated-witness`.
 - Step 4: `refuted`, `NoAbstractMatch{position: 4}` at the second commit;

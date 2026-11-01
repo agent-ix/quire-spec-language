@@ -110,8 +110,9 @@ often than the protocol allows, is refuted with a prefix that replays.
   `refinement_failure` kind QSpec FR-379 gives it (ADR-020 QS-8), as a
   prefix or lasso over concrete steps.
 - A `proved` protocol refinement SHALL be labelled `Uncertified` (ADR-018
-  PC-1, ADR-020 CT-4): FR-149 certifies the step rules only, and the further
-  checks have no core certificate checker.
+  PC-1, ADR-020 CT-4): FR-149's simulation-certificate checker covers the
+  model-subject step relation and does not certify these protocol-subject
+  step decisions; the further checks also have no core certificate checker.
 - Replay (FR-145) SHALL recompute the abstract sets with `ProtocolSystem`
   and rerun the same check at the failing position or over the loop.
 
@@ -122,7 +123,7 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-148-AC-1 | `check_initial` on `CasTwice`'s concrete initial state gives one abstract state, at rest at `a1` with `value` 0. After `beginA`, `commitA` the set holds the state at rest at `a2` with `value` 1; after a second commit, the state with `value` 2 and the protocol finished, since the closure takes the internal `finish`. | Test (TC-553) |
-| FR-148-AC-2 | `CasTwice` settles `proved`, basis `closed-scope`, as QSpec FR-379 settles a completed explicit-state run with no failure, holding for the concrete initial states and universe `counters = {c}`, labelled `Uncertified` (ADR-018 PC-1), since the further checks of QSpec FR-177 have no core certificate checker (ADR-020 CT-4). | Test (TC-553) |
+| FR-148-AC-2 | `CasTwice` settles `proved`, basis `closed-scope`, as QSpec FR-379 settles a completed explicit-state run with no failure, holding for the concrete initial states and universe `counters = {c}`, labelled `Uncertified` (ADR-018 PC-1), since FR-149 does not certify protocol-subject step decisions and the further checks of QSpec FR-177 have no core certificate checker (ADR-020 CT-4). | Test (TC-553) |
 | FR-148-AC-3 | The lost-update model (ADR-020 §8) with `peek` removed, against `Twice` with the same rows, settles `refuted` with `NoAbstractMatch` at the commit that leaves `value` unchanged, and the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-553) |
 | FR-148-AC-4 | `CasTwice` against the protocol `Once` (`a1` then `finish`) settles `refuted` with `NoAbstractMatch{position: 4}`, whose step is the second commit, and the counterexample replays. | Test (TC-553) |
 | FR-148-AC-5 | `CasTwice` with `peek` kept in the concrete model and mapped `-> stutter` settles `refuted`, basis `decisive-counterexample`, by QSpec FR-177's divergence-freedom check with divergence observable, with a lasso whose loop is one `peek` step at the initial state, where the abstract `a1` is enabled. It refutes with no `assume` or `ensure` row present, because QSpec FR-177-AC-6 refutes an observable internal loop under every fairness set, including an empty one. | Test (TC-553) |

@@ -25,6 +25,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-143
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: depends_on
   - target: ix://agent-ix/quire-semantic-value/FR-121
     type: depends_on
 ---
@@ -133,12 +135,14 @@ beside it as a separate item.
 - **Certificate.** A refinement whose abstract subject is a model and whose
   product proves SHALL settle `proved` only after FR-149's checker accepts
   its certificate. A protocol refinement whose abstract side is a protocol
-  subject follows FR-148: its step decisions have no core certificate
-  checker, so its completed proof settles `proved` with
-  `certification: Uncertified` (FR-148-AC-2, TC-553). For a concrete subject
-  that declares `time dense` and an abstract model subject, the certificate is the zone
-  certificate of FR-244's refinement form and the checker is FR-245's
-  (FR-430); a rejection
+  subject follows FR-148: neither its protocol-step decisions nor its
+  additional checks have a core certificate checker. FR-149's simulation
+  certificate covers the model-subject step relation and does not certify
+  protocol-subject decisions. A completed proof of the protocol refinement
+  therefore settles `proved` with `certification: Uncertified`
+  (FR-148-AC-2, TC-553). For a concrete subject that declares `time dense`
+  and an abstract model subject, the certificate is the zone certificate of
+  FR-244's refinement form and the checker is FR-245's (FR-430); a rejection
   SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
   V-7 naming the limit, a cancelled check V-7 naming the cancellation, and a check stopped by an expansion that names no limit V-7 `ResourceExhausted` (ADR-020 CT-3).
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's
@@ -170,7 +174,8 @@ beside it as a separate item.
   [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md),
   [FR-142](FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md),
-  [FR-143](FR-143-check-a-refinement-s-liveness-half-under-abstract-fairness.md).
+  [FR-143](FR-143-check-a-refinement-s-liveness-half-under-abstract-fairness.md),
+  [FR-148](FR-148-decide-steps-against-an-abstract-protocol.md).
 - quire-semantic-value FR-121: the shared `PropertyForm`, which must carry
   the `Refinement { liveness }` variant, its spelling and its order before
   FR-144-AC-8 can pass.
