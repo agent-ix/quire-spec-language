@@ -812,6 +812,7 @@ impl fmt::Debug for CheckedGraph {
                     synthesized_spans,
                     embedding,
                     model_selections,
+                    selected_exact_identity_rows,
                     protocol_population_types,
                     model_roots,
                     header_layers,
@@ -873,6 +874,10 @@ impl fmt::Debug for CheckedGraph {
                     .field("synthesized_spans", &synthesized_spans)
                     .field("embedding", &embedding)
                     .field("model_selections", &model_selections)
+                    .field(
+                        "selected_exact_identity_rows",
+                        &selected_exact_identity_rows,
+                    )
                     .field(
                         "protocol_population_types",
                         &NodeMap(protocol_population_types.iter()),
