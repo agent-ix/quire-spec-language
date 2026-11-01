@@ -37,6 +37,7 @@ use qsl_eval::simulation::model::{NotMarkov, UndecidedSuccessor};
 use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{ExpansionStop, NotSimulated};
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::Span;
 use qsl_replay::ModelCheckLimit;
 use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
@@ -458,6 +459,12 @@ pub enum ProductRefusal {
     /// The claim's event does not translate to a monitor.
     #[error("the event has no monitor: {0}")]
     Translation(AutomatonError),
+    /// FR-204 does not admit this timed probabilistic form shape.
+    #[error("unsupported timed probabilistic form at {span:?}")]
+    TimedFormShape {
+        /// The source span of the unsupported form.
+        span: Span,
+    },
     /// A budget or a cancellation ended the build.
     #[error("the build stopped: {0:?}")]
     Stopped(ProductStop),

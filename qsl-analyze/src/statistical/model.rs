@@ -388,6 +388,7 @@ fn automaton_halt(error: AutomatonError) -> SampleHalt {
 fn plan_halt(fault: PlanFault) -> SampleHalt {
     match fault {
         PlanFault::Automaton(error) => automaton_halt(error),
+        PlanFault::TimedFormShape { .. } => broken(),
         PlanFault::Broken(_) => broken(),
     }
 }
@@ -474,7 +475,7 @@ fn measure_of(measure: &BoundedMeasure) -> Option<Measure<'_>> {
             until,
             within: *within,
         }),
-        BoundedMeasure::Fraction(_) => None,
+        BoundedMeasure::Elapsed { .. } | BoundedMeasure::Fraction(_) => None,
     }
 }
 
