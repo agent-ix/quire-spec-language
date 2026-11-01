@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    backward_induction, build_product, Accumulator, Amount, FhObjective, FhResult, FormulaState,
-    MeasurePhase, MonitorState, MonitorVerdict, PredicateRole, ProbBuild, ProbEdge, ProbKey,
-    ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductStop,
+    build_product, decide_bounded_event, Accumulator, Amount, ExactProbLimits, FhResult,
+    FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole, ProbBuild, ProbEdge,
+    ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductStop,
     UndefinedRead,
 };
 use qsl_eval::simulation::Limits;
@@ -70,17 +70,6 @@ fn total(edges: &[ProbEdge]) -> Rational {
         .fold(ratio(0, 1), |sum, edge| sum.add(&edge.probability))
 }
 
-fn event_terminals(product: &ProbProduct) -> Vec<Option<Rational>> {
-    let mut terminal = vec![None; product.states.len()];
-    for (state, verdict) in &product.decided {
-        terminal[state.index()] = Some(match verdict {
-            MonitorVerdict::Accept => ratio(1, 1),
-            MonitorVerdict::Reject => ratio(0, 1),
-        });
-    }
-    terminal
-}
-
 /// The one state of `product` with no incoming edge and every initial state
 /// of the subject: the product has one.
 fn start(product: &ProbProduct) -> ProbStateId {
@@ -130,16 +119,14 @@ const NO_FAULT: &str = "probabilistic NoFault using ev on M over (n: M::Node) un
 fn no_fault_uses_exact_then_dyadic_backward_induction() {
     let world = World::new(&prob_world::no_fault(NO_FAULT));
     let product = built(&world, "NoFault");
-    let terminal = event_terminals(&product);
     let start = start(&product);
-    let exact = backward_induction(
+    let exact = decide_bounded_event(
         &product,
-        &terminal,
-        FhObjective::Min,
-        &ratio(999, 1000),
-        23_254,
-        64,
-        4096,
+        &qsl_semantics::check::Bound::AtLeast(ratio(999, 1000)),
+        &ExactProbLimits {
+            max_rational_bits: 23_254,
+            ..ExactProbLimits::default()
+        },
     )
     .expect("acyclic bounded product");
     let FhResult::Exact { values, .. } = exact else {
@@ -150,14 +137,13 @@ fn no_fault_uses_exact_then_dyadic_backward_induction() {
         .expect("positive integer exponent");
     assert_eq!(values[start.index()], expected);
 
-    let bounded = backward_induction(
+    let bounded = decide_bounded_event(
         &product,
-        &terminal,
-        FhObjective::Min,
-        &ratio(999, 1000),
-        1024,
-        64,
-        4096,
+        &qsl_semantics::check::Bound::AtLeast(ratio(999, 1000)),
+        &ExactProbLimits {
+            max_rational_bits: 1024,
+            ..ExactProbLimits::default()
+        },
     )
     .expect("dyadic fallback");
     let FhResult::Bounds {

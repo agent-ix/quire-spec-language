@@ -30,7 +30,9 @@ mod finite_horizon;
 pub(crate) mod plan;
 
 pub use build::build_product;
-pub use finite_horizon::{backward_induction, Dyadic, FhError, FhObjective, FhResult};
+pub use finite_horizon::{
+    backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
+};
 
 use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};

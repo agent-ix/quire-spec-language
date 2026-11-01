@@ -8,7 +8,10 @@ use num_integer::Integer as _;
 use num_traits::Zero as _;
 use quire_exact::{Integer, Rational};
 
-use super::{ProbEdge, ProbProduct, ProbStateId, ProductAction, ProductKind};
+use super::{
+    ExactProbLimits, MonitorVerdict, ProbEdge, ProbProduct, ProbStateId, ProductAction, ProductKind,
+};
+use qsl_semantics::check::Bound;
 
 /// The scheduler objective for a bounded claim over every scheduler.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,6 +88,44 @@ pub enum FhError {
     /// Precision limits are inconsistent or cannot be represented.
     #[error("the precision limits are invalid")]
     InvalidPrecision,
+}
+
+/// Decide a bounded formula event on an already-built product (FR-197).
+///
+/// The terminal values come from FR-196's decided monitor states. Under every
+/// scheduler, a lower probability bound selects the minimum and an upper
+/// probability bound selects the maximum; a workload product has one action.
+///
+/// # Errors
+/// Returns [`FhError`] when the product is malformed or its graph is cyclic.
+pub fn decide_bounded_event(
+    product: &ProbProduct,
+    bound: &Bound,
+    limits: &ExactProbLimits,
+) -> Result<FhResult, FhError> {
+    let mut terminal = vec![None; product.states.len()];
+    for (state, verdict) in &product.decided {
+        let value = match verdict {
+            MonitorVerdict::Accept => rational_one(),
+            MonitorVerdict::Reject => rational_zero(),
+        };
+        *terminal
+            .get_mut(state.index())
+            .ok_or(FhError::InvalidState)? = Some(value);
+    }
+    let (objective, threshold) = match bound {
+        Bound::AtLeast(threshold) => (FhObjective::Min, threshold),
+        Bound::AtMost(threshold) => (FhObjective::Max, threshold),
+    };
+    backward_induction(
+        product,
+        &terminal,
+        objective,
+        threshold,
+        limits.max_rational_bits,
+        limits.precision_bits,
+        limits.max_precision_bits,
+    )
 }
 
 /// Evaluate a finite-horizon product in exact rationals first, then in
