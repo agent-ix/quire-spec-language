@@ -40,6 +40,7 @@ pub struct AdmittedPackage {
     pub(crate) package: wire::Package,
     pub(crate) artifact: Option<crate::protocol_artifact::wire::ArtifactRef>,
     pub(crate) model_schema: Vec<Option<crate::native_model::NativeModel>>,
+    pub(crate) temporal: v2::AdmittedPackage,
 }
 
 impl AdmittedPackage {
@@ -65,5 +66,9 @@ impl AdmittedPackage {
     /// substitute a relation from unrelated package coordinates.
     pub fn activation_mappings(&self) -> &[wire::ActivationMapping] {
         &self.package.activation_mappings
+    }
+
+    pub(crate) fn temporal_selection(&self) -> &v2::AdmittedPackage {
+        &self.temporal
     }
 }

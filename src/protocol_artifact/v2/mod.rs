@@ -95,3 +95,19 @@ impl AdmittedPackage {
         self.artifact.as_ref()
     }
 }
+
+/// Retain the already admitted version-2 temporal selection from a strict
+/// version-3 read. The v3 contract adds activation mappings without changing
+/// the inherited temporal binding evidence.
+pub(crate) fn admitted_from_v3(
+    package: wire::Package,
+    artifact: Option<ArtifactRef>,
+    model_schema: Vec<Option<crate::native_model::NativeModel>>,
+) -> AdmittedPackage {
+    AdmittedPackage {
+        clocks: super::ClockNames::of_v2(&package),
+        package,
+        artifact,
+        model_schema,
+    }
+}
