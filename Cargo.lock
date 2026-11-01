@@ -146,6 +146,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayvec"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1654,7 +1660,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?rev=d5c3e5faa8f9afe7651dbf6aa8d7ddd294c9ba11#d5c3e5faa8f9afe7651dbf6aa8d7ddd294c9ba11"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#5450c14aa008bdb3a3927029743929c0f905b812"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1689,9 +1695,10 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#82e8f9b4d9583ba4eee505550ff80a211333696f"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#eb07c1043ddf63703f90d5a922a1bf5514d0333f"
 dependencies = [
  "allocator-api2",
+ "arrayvec",
  "num-bigint",
  "num-integer",
  "num-traits",
