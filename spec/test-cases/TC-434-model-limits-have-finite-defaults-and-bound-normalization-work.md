@@ -42,6 +42,20 @@ Verify NFR-012:
    and read the retained facts and each inherited member's inherit fact.
 7. Normalize a 10-deep chain at `ancestor_steps` 5, first with
    `declaration_records` 10, then with it unlimited.
+8. For each `N` in 1,000, 4,000 and 16,000, construct one selected unit model
+   whose `package.records` contains, in order, `N` record-value declarations
+   followed by `N` field records. Give each record-value declaration exactly
+   one field record that names it as owner. Use no inheritance, subsets or
+   redefinitions. Admit the unit at the default limits, read total
+   `WorkUnits` from `SelectedModels::consumed(LimitKind::WorkUnits)`, and
+   record the three counts and both adjacent ratios on the QSL-1406 tracker
+   item.
+9. For a one-record-value/one-field input, first normalize the exact admitted
+   `DomainPackage` with the same other limits and a high work ceiling; record
+   the completed normalization's consumed `WorkUnits` as `W`. Admit the same
+   input through unit intake with those limits unchanged except for the work
+   ceiling set to `W`; observe the selected-row projection's first denied
+   charge.
 
 ## Expected Results
 
@@ -64,3 +78,11 @@ Verify NFR-012:
 7. The first run is incomplete on `declaration_records` at
    `normalize.record`; the second is incomplete on `ancestor_steps` naming
    bound 5.
+8. All three unit intakes complete. If their consumed work counts are
+   `W1000`, `W4000` and `W16000`, then `W4000 <= 5 * W1000` and
+   `W16000 <= 5 * W4000`; the three counts and ratios are recorded on
+   QSL-1406.
+9. Unit intake returns an error whose cause is the `WorkUnits` limit's
+   incomplete result, with bound `W` and denied counter `W + 1` at the
+   selected-row projection charge. It returns no `SelectedModels` value and
+   exposes no partial selected-model result.

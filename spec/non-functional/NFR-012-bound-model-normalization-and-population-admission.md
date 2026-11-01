@@ -15,10 +15,21 @@ relationships:
 
 ## Statement
 
-If the next normalization or admission charge would exceed a selected
-ceiling, then the model binder shall stop with an incomplete result naming
-the ceiling's kind, its bound and the denied charge, without performing that
-charge or the work it prices.
+Whenever a normalization or admission charge would exceed a selected ceiling,
+the model binder SHALL stop with an incomplete result naming the ceiling's
+kind, its bound and the denied charge, without performing that charge or the
+work it prices.
+
+The unit model binder SHALL keep lookup and selection work in the model-intake
+projection linear in the admitted declaration and field records.
+
+Before inspecting a package declaration or field record, or a declaration row
+in the normalized view, the unit model binder SHALL charge that inspection to
+the same `ModelNormalizationLimitsV1` work meter used for normalization.
+
+If a selected-row projection charge is denied, the unit model binder SHALL
+return the existing limit-incomplete result with no partial selected-model
+result.
 
 ## Scope
 
@@ -27,6 +38,11 @@ One normalization of a domain package under one
 ([FR-081](../functional/FR-081-preserve-model-correspondence-and-declaration-identity.md)),
 and one population binding admission under one `PopulationAdmissionLimitsV1`
 ([FR-084](../functional/FR-084-admit-closed-populations-and-resolve-lookup.md)).
+It also covers the selected-row projection performed during unit model intake
+after normalization completes ([FR-081](../functional/FR-081-preserve-model-correspondence-and-declaration-identity.md)).
+For this projection, linear work is measured against the number of admitted
+declaration and field records; it does not impose a fixed depth or input-size
+cap, or change the separate work specified for inheritance and redefinition.
 The ceilings are inclusive unsigned counts. The values below are the
 defaults a caller gets from `ModelNormalizationLimits::default()` and
 `PopulationAdmissionLimits::default()`. A caller may set each ceiling
@@ -70,13 +86,13 @@ per-charge record, so its memory does not grow with the work it bounds.
 | Derivation facts | At most the selected ceiling (default 1600000) per normalization | 1600000 facts by default | negative-abuse-testing |
 | Effective declarations | At most the selected ceiling (default 1600000) per normalization | 1600000 declarations by default | negative-abuse-testing |
 | Dispatch candidates | At most the selected ceiling (default 1600000) per dispatch link | 1600000 candidates by default | negative-abuse-testing |
-| Hashed preimage bytes | **RETIRED (QSL computes no hash and meters none).** None. | None | Withdrawn |
 | Normalization work | At most the selected ceiling (default 16777216 work units) per normalization | 16777216 units by default | negative-abuse-testing |
 | Ancestor steps | At most the selected ceiling (default 16777216 edges) per conformance walk | 16777216 edges by default | negative-abuse-testing |
 | Family steps | At most the selected ceiling (default 16777216 edges) per dispatch-family link | 16777216 edges by default | negative-abuse-testing |
 | Population members | At most the selected ceiling (default 100000) per admission | 100000 members by default | negative-abuse-testing |
 | Admission work | At most the selected ceiling (default 16777216 work units) per admission | 16777216 units by default | negative-abuse-testing |
 | Meter memory | Constant in the number of charges | No allocation per charge | inspection-and-test |
+| Unit model-intake scaling | Linear charged work in declaration and field records | For each N = 1000, 4000 and 16000, use N record-value declarations followed by N field records, with exactly one owned field per declaration; each 4x increase in N increases total `WorkUnits` by at most 5x | Scaling control (TC-434) |
 
 ## Default derivation
 
@@ -97,11 +113,6 @@ per-charge record, so its memory does not grow with the work it bounds.
   ceiling does not bind before the fact ceiling. A dispatch candidate pairs
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
-- **Hashed bytes.** The QSpec limit `hashed_bytes` is QSpec's; QSL computes
-  no hash and meters none.
-  A chain whose every type declares one field has (n+1)(n+2)/2 effective
-  members and is refused beyond 1786 edges on the effective-declaration
-  ceiling; those are member counts, which identity chaining does not reduce.
 - **Work, 16777216.** NFR-011's default work ceiling. Each record, fact,
   declaration and direct-edge cycle check charges one unit, which is
   linear in the facts. The phase-4 `normalize.redefinition-check` (`m + r` per
@@ -137,6 +148,13 @@ TC-434 covers the defaults and the bound on work:
   `ancestor_steps`.
 - A production meter and a production admission meter allocate nothing per
   charge.
+- TC-434's 1,000 / 4,000 / 16,000 unit-intake control completes for the
+  specified record-value and field arrangement, and total `WorkUnits` increase
+  by no more than 5x at either 4x input-size step. The scaling result is
+  recorded on the change's tracker item.
+- When TC-434 denies a selected-row projection charge, unit intake returns the
+  limit-incomplete result and no partial selected-model result. No fixed depth
+  or input-size cap is introduced.
 
 ## Dependencies
 
