@@ -110,7 +110,7 @@ pub enum ParameterDomain {
 }
 
 /// One parameter of the claim's function.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct TargetParameter {
     node: NodeKey,
     domain: ParameterDomain,
@@ -583,12 +583,11 @@ fn union_values(
         if values.len().saturating_add(payloads.len()) > MAX_MATERIALIZED_VALUES {
             return None;
         }
-        values.extend(payloads.into_iter().map(|payload| {
-            Value::Union(std::sync::Arc::new(quire_exact::UnionValue::from_admitted(
-                identity.clone(),
-                payload,
-            )))
-        }));
+        values.extend(
+            payloads
+                .into_iter()
+                .map(|payload| quire_exact::UnionValue::from_admitted(identity.clone(), payload)),
+        );
     }
     Some(values)
 }
@@ -602,12 +601,13 @@ fn same_value(left: &Value, right: &Value) -> bool {
         (Value::Boolean(left), Value::Boolean(right)) => left == right,
         (Value::Integer(left), Value::Integer(right)) => left == right,
         (Value::Union(left), Value::Union(right)) => {
-            left.member() == right.member()
-                && left.components().len() == right.components().len()
+            left.declaration() == right.declaration()
+                && left.member().variant() == right.member().variant()
+                && left.payload().len() == right.payload().len()
                 && left
-                    .components()
+                    .payload()
                     .iter()
-                    .zip(right.components())
+                    .zip(right.payload())
                     .all(|(left, right)| same_value(left, right))
         }
         _ => false,
