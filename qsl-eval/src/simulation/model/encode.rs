@@ -1381,6 +1381,19 @@ mod tests {
                 )
             );
         }
+
+        let option_type = ValueType::option(decimal_type.clone());
+        let option = quire_exact::OptionValue::from_admitted(decimal_type, Some(decimal));
+        let nested = from_admitted(
+            CollectionType::new(CollectionKind::Set, option_type, None),
+            vec![option],
+        );
+        assert_eq!(
+            untyped_value_enc(&nested)
+                .canonical_text(Limits::new(1024))
+                .expect("a nested decimal set encodes"),
+            r#"{"elements":[{"type":"option","value":{"coefficient":"15","scale":"1","type":"decimal"}}],"type":"set"}"#
+        );
     }
 
     /// A value with no form refuses to write rather than writing a guess.
