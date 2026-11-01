@@ -621,6 +621,8 @@ fn run_view(
                 };
                 let outcome = evaluator.root(view.root, work);
                 work.charge(LimitDimension::Retention, evaluator.support.len())?;
+                let support = std::mem::take(&mut evaluator.support);
+                drop(evaluator);
                 let (truth, basis, incomplete) = match outcome {
                     Ok(value) => {
                         let (truth, basis) = settle(value, trace);
@@ -641,7 +643,7 @@ fn run_view(
                     truth,
                     basis,
                     incomplete,
-                    support: evaluator.support,
+                    support,
                     premises: premises.clone(),
                 })));
             }

@@ -441,7 +441,7 @@ impl<'a> Evaluator<'a> {
             return Ok(self.outside(offset));
         }
 
-        let Some(position) = self.position_at(offset) else {
+        let Some(position_index) = self.position_at(offset) else {
             return Ok(self.outside(offset));
         };
         if self.trace.evicted.iter().any(|evicted| {
@@ -449,7 +449,7 @@ impl<'a> Evaluator<'a> {
                 evicted,
                 Eviction::Valuation { node, coordinate }
                     if *node == leaf
-                        && *coordinate == self.trace.positions[position].coordinate
+                        && *coordinate == self.trace.positions[position_index].coordinate
             )
         }) {
             return Err(Incomplete {
@@ -458,7 +458,7 @@ impl<'a> Evaluator<'a> {
             }
             .into());
         }
-        let position = &self.trace.positions[position];
+        let position = &self.trace.positions[position_index];
         let value = position
             .instance_valuations
             .get(self.instance_identity)
@@ -466,11 +466,11 @@ impl<'a> Evaluator<'a> {
             .or_else(|| position.valuations.get(&leaf));
         match value {
             Some(true) => {
-                self.support.push(position);
+                self.support.push(position_index);
                 Ok(Tri::True)
             }
             Some(false) => {
-                self.support.push(position);
+                self.support.push(position_index);
                 Ok(Tri::False)
             }
             // A leaf absent from a required position's map is a missing
