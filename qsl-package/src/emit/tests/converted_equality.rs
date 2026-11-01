@@ -184,6 +184,78 @@ fn structurally_reused_equality_keys_retain_each_occurrence() {
             && row.source_map_entry().role == row.occurrence().role
             && row.source_map_entry().ordinal == row.occurrence().ordinal
     }));
+
+    let serialized = emission.package.bytes();
+    let round_trip: Value =
+        serde_json::from_slice(serialized).expect("the canonical package bytes read back as JSON");
+    assert_eq!(
+        serialized,
+        jcs(&round_trip),
+        "the package bytes are canonical"
+    );
+    let decisions = round_trip["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .expect("the serialized package retains equality decisions");
+    assert_eq!(decisions.len(), identity_rows.len());
+    let producer_data = graph.equality_producer_data();
+    let mut serialized_occurrences = Vec::new();
+    let mut serialized_targets = Vec::new();
+    let mut converted_type = None;
+    for identity in identity_rows {
+        let application = serde_json::to_value(identity.checked_node())
+            .expect("the emitted application id serializes");
+        let occurrence =
+            serde_json::to_value(identity.occurrence()).expect("the emitted occurrence serializes");
+        let matching = decisions
+            .iter()
+            .filter(|decision| {
+                decision["application"] == application && decision["occurrence"] == occurrence
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1, "each application occurrence has one row");
+        serialized_occurrences.push(occurrence);
+
+        let facts = producer_data
+            .get(&(
+                identity.application().clone(),
+                identity.producer_identity().location().clone(),
+            ))
+            .expect("the exact application/location pair retains producer facts");
+        let decision = matching[0];
+        assert_eq!(decision["left"]["operand"], json!(0));
+        assert_eq!(decision["right"]["operand"], json!(1));
+        serialized_targets.push(decision["left"]["conversion_target"].clone());
+        if facts.authored_operands()[0].target().is_some() {
+            assert_ne!(decision["left"]["conversion_target"], Value::Null);
+            assert_eq!(
+                decision["left"]["conversion_target"], decision["right"]["source_type"],
+                "the converted occurrence targets the exact emitted ms type"
+            );
+            assert!(converted_type
+                .replace(decision["right"]["source_type"].clone())
+                .is_none());
+        } else {
+            assert_eq!(decision["left"]["conversion_target"], Value::Null);
+        }
+    }
+    assert_ne!(serialized_occurrences[0], serialized_occurrences[1]);
+    assert_eq!(
+        serialized_targets
+            .iter()
+            .filter(|target| target.is_null())
+            .count(),
+        1,
+        "the unconverted occurrence has a null target"
+    );
+    let converted_type = converted_type.expect("one occurrence has an exact conversion target");
+    assert_eq!(
+        serialized_targets
+            .iter()
+            .filter(|target| **target == converted_type)
+            .count(),
+        1,
+        "the converted occurrence retains the emitted ms type"
+    );
 }
 
 /// QSL-1390: emitted identity rows retain unit ids and dimension roles.
