@@ -377,6 +377,69 @@ fn checked_activation_keeps_siblings_and_capture_identity() {
     assert_eq!(active.captures[0].value, "7");
 }
 
+/// FR-044-AC-5/7: empty admitted closed scopes and guard-false scopes are
+/// inactive, while open, missing-evidence and unknown-guard cases remain
+/// unknown/incomplete without evaluating temporal positions.
+#[trace("TC-123", "FR-044-AC-5", "FR-044-AC-7")]
+#[test]
+fn checked_activation_dispositions_never_become_temporal_truth() {
+    let checked = checked_activation(
+        "test:checked-temporal-dispositions",
+        "always[0,1] true",
+        "on each (trigger: M::Widget) when (trigger.code > 0)",
+    );
+
+    let mut no_triggers = origin_trace();
+    no_triggers.triggers.clear();
+    let report = temporal::evaluate_checked(
+        checked.package(),
+        0,
+        &no_triggers,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(inactive) = &report.result().unwrap()[0] else {
+        panic!("closed empty trigger scope returns a disposition");
+    };
+    assert_eq!(inactive.activation, temporal::Activation::Inactive);
+    assert_eq!((inactive.truth, inactive.basis), (None, None));
+    assert_eq!(report.usage().positions, 0);
+
+    no_triggers.trigger_scope = Closure::Open;
+    let report = temporal::evaluate_checked(
+        checked.package(),
+        0,
+        &no_triggers,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(unknown) = &report.result().unwrap()[0] else {
+        panic!("open trigger scope returns a disposition");
+    };
+    assert_eq!(
+        unknown.activation,
+        temporal::Activation::Unknown {
+            completeness: Completeness::Complete,
+            execution: Execution::Completed,
+        }
+    );
+    assert_eq!((unknown.truth, unknown.basis), (None, None));
+    assert_eq!(report.usage().positions, 0);
+
+    let mut false_guard = origin_trace();
+    false_guard.triggers[0].guard = Some(false);
+    let report = temporal::evaluate_checked(
+        checked.package(),
+        0,
+        &false_guard,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(inactive) = &report.result().unwrap()[0] else {
+        panic!("all guard-false triggers return inactive");
+    };
+    assert_eq!(inactive.activation, temporal::Activation::Inactive);
+    assert_eq!((inactive.truth, inactive.basis), (None, None));
+    assert_eq!(report.usage().positions, 0);
+}
+
 /// FR-043: checked profile and clock identity are authenticated before any
 /// position work, and a missing required valuation is unavailable rather than
 /// a false truth.
