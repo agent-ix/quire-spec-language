@@ -1952,6 +1952,28 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
     assert_eq!(race.location, location_of(&racing, "x"));
 }
 
+/// FR-411-AC-6 for a protocol subject: the public `protocol_item` refuses a
+/// derived item's run, deadlock or race freedom, with `DerivedRun`, so it
+/// settles only through `derived_protocol_item`.
+#[trace("TC-1142", "FR-411-AC-6")]
+#[test]
+fn protocol_item_refuses_a_derived_run() {
+    let case = profiled_stores("y");
+    let selection = ra();
+    let index = qsl_foundation::RequestIndex::new(1);
+    for (label, item) in [
+        ("deadlock freedom", ModelCheckItem::DeadlockFreedom),
+        ("race freedom", ModelCheckItem::RaceFreedom),
+    ] {
+        assert_eq!(
+            qsl_analyze::analyze::protocol_item(index, protocol_run(&case, &selection, item, item))
+                .err(),
+            Some(DerivedItemMismatch::DerivedRun { index }),
+            "{label}"
+        );
+    }
+}
+
 /// QSpec FR-368-AC-20 for a protocol subject's derived item through
 /// `derived_protocol_item`: the caller's `max_states` reaches EN-1's run,
 /// and its `max_messages` reaches both the run and the certificate check, so

@@ -505,6 +505,12 @@ fn fault(invariant: &'static str) -> AdmissionFailure {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// The checked package this system is over: what a settlement joins a
+    /// run's verdict on, such as its terminal declarations (FR-411).
+    pub fn package(&self) -> &'a CheckedPackage {
+        self.package
+    }
+
     /// Every field some operation's frame grants: the fields it writes and
     /// every field of a type it creates.
     fn granted(&self) -> BTreeSet<DeclarationKey> {

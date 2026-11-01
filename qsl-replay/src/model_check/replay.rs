@@ -61,7 +61,7 @@ use qsl_eval::temporal::{AtomReading, CaptureReading};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, TerminalKeys, TerminalMismatch};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Meter, Rational, ScalarLimits};
@@ -273,6 +273,11 @@ pub enum ModelTraceRefusal {
         /// The occurrence key the payload's item has.
         expected_key: Box<OccurrenceKey>,
     },
+    /// A deadlock-freedom item's replay read another terminal declaration
+    /// from the recompiled package than the one the item was written under
+    /// (FR-411 "Deadlock-freedom verdict join").
+    #[error("stale_dependency/content-mismatch: the replay's {0}")]
+    TerminalDeclaration(TerminalMismatch),
     /// The payload's fairness set is not the recompiled clause's.
     #[error("stale_dependency/content-mismatch: the payload's fairness set {payload:?} is not the recompiled clause's {recompiled:?}")]
     FairnessSet {
@@ -469,6 +474,7 @@ impl ModelTraceRefusal {
         match self {
             Self::UnknownTemporalClause { .. }
             | Self::ItemIdentity { .. }
+            | Self::TerminalDeclaration(_)
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
@@ -527,6 +533,7 @@ impl ModelTraceRefusal {
         match self {
             Self::UnknownTemporalClause { .. }
             | Self::ItemIdentity { .. }
+            | Self::TerminalDeclaration(_)
             | Self::FairnessSet { .. }
             | Self::ProtocolFairnessSet { .. }
             | Self::PostState { .. }
@@ -653,6 +660,10 @@ pub struct ModelTraceReplayResult {
     /// The hints, in the model's canonical operation order; empty unless the
     /// settlement reproduced a lasso.
     pub hints: Vec<StrongFairnessHint>,
+    /// The recompiled package's terminal node key per model alias, which
+    /// the replay's terminal classes were read under (FR-411
+    /// "Deadlock-freedom verdict join").
+    pub terminals: TerminalKeys,
 }
 
 /// The disagreement of a replay that reads `replayed` where a model
@@ -1021,7 +1032,11 @@ fn replay_on(
         meter,
     };
     let (settlement, hints) = replay((package, compiled.package.clone()), &simulation, meter)?;
-    Ok(ModelTraceReplayResult { settlement, hints })
+    Ok(ModelTraceReplayResult {
+        settlement,
+        hints,
+        terminals: package.graph().terminal_keys(),
+    })
 }
 
 pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {

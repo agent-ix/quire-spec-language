@@ -233,6 +233,8 @@ pub(crate) struct World {
     snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: DocumentRef,
     keys: Vec<String>,
+    /// The package identity the world's model and population are in.
+    identity: String,
 }
 
 /// `document` checked with `body` as its unit, under the model and the
@@ -272,12 +274,27 @@ pub(crate) fn world_built(
     armed: &[&str],
     extra: &Json,
 ) -> World {
+    world_built_in(PACKAGE, document, profiles, body, keys, armed, extra)
+}
+
+/// [`world_built`] over `document` written for the package `package`
+/// (`renamed_package`), for a second package of one run.
+#[allow(clippy::too_many_arguments)] // one fixture's package, text and universe
+pub(crate) fn world_built_in(
+    package: &str,
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+    keys: &[&str],
+    armed: &[&str],
+    extra: &Json,
+) -> World {
     let packages = package_input([document]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.complete/v1\";\n{profiles}\
-         model M = \"{PACKAGE}\";\n{body}"
+         model M = \"{package}\";\n{body}"
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "fr-239", "fixture", "1"),
@@ -309,7 +326,7 @@ pub(crate) fn world_built(
     .with_unwritten_timed_members()
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
-    let header = json!({"identity": PACKAGE});
+    let header = json!({"identity": package});
     let mut fields = json!({"phase": {"integer": "0"}, "inflight": {"boolean": false},
         "late": {"boolean": false}, "retried": {"boolean": false}});
     for (name, value) in extra.as_object().expect("extra fields") {
@@ -321,11 +338,11 @@ pub(crate) fn world_built(
             "revision": "fixture:1"},
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
-        "populations": [{"population": ident("calls"), "complete": true,
+        "populations": [{"population": format!("ix://{package}/calls"), "complete": true,
             "objects": keys.iter().map(|key| {
                 let mut fields = fields.clone();
                 fields["inflight"] = json!({"boolean": armed.contains(key)});
-                json!({"key": key, "type": ident("Call"), "fields": fields})
+                json!({"key": key, "type": format!("ix://{package}/Call"), "fields": fields})
             }).collect::<Vec<_>>()}],
     });
     let bytes = snapshot.to_string().into_bytes();
@@ -344,6 +361,7 @@ pub(crate) fn world_built(
             revision: "fixture:1".to_owned(),
         },
         keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+        identity: package.to_owned(),
     }
 }
 
@@ -376,8 +394,8 @@ impl World {
             initial: vec![self.initial.clone()],
             universes: vec![PopulationUniverse {
                 population: DeclarationKey {
-                    package: PACKAGE.to_owned(),
-                    node: ident("calls"),
+                    package: self.identity.clone(),
+                    node: format!("ix://{}/calls", self.identity),
                 },
                 keys: self.keys.clone(),
             }],
