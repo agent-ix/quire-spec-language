@@ -435,6 +435,7 @@ fn retarget(
             source_map: base.source_map(),
             refinement_step_rows: base.refinement_step_rows(),
         },
+        None,
         base.capability_report(),
         base.diagnostics(),
         limits,
