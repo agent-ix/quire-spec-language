@@ -2550,6 +2550,131 @@ fn assert_timed_refusal(
     );
 }
 
+fn binder_groups(
+    term: &quire_contract_model::CheckedTerm,
+) -> Vec<Vec<quire_contract_model::CheckedNodeId>> {
+    use quire_contract_model::{CheckedNodeId, CheckedTerm};
+
+    match term {
+        CheckedTerm::Aggregate { members } => members.iter().flat_map(binder_groups).collect(),
+        CheckedTerm::Binding { name, value } if name.as_ref() == "binders" => {
+            let CheckedTerm::Aggregate { members } = value.as_ref() else {
+                panic!("a binder binding contains an aggregate");
+            };
+            let binders = members
+                .iter()
+                .map(|member| {
+                    let CheckedTerm::Reference { target } = member else {
+                        panic!("each binder is a typed reference");
+                    };
+                    target.clone()
+                })
+                .collect::<Vec<CheckedNodeId>>();
+            vec![binders]
+        }
+        CheckedTerm::Binding { value, .. } => binder_groups(value),
+        _ => Vec::new(),
+    }
+}
+
+fn assert_admitted_binder_round_trip(
+    case: &Value,
+    package: &Value,
+    admitted: &quire_contract_model::CheckedPackageV2,
+) {
+    use quire_contract_model::CheckedNodeId;
+
+    let id = case["id"].as_str().expect("a vector id");
+    let patch_path = case["patch"][0]["path"]
+        .as_str()
+        .expect("the binder vector patches a node");
+    let node_index = patch_path
+        .split('/')
+        .nth(3)
+        .expect("the patched graph node index")
+        .parse::<usize>()
+        .expect("the patched graph node index is numeric");
+    let node = &package["semantic_graph"]["nodes"][node_index];
+    let node_id = serde_json::from_value::<CheckedNodeId>(node["node_id"].clone())
+        .expect("the timed clause node has an identity");
+    let expected_binders = case["patch"][0]["value"]["value"]["members"]
+        .as_array()
+        .expect("the vector publishes its binder references")
+        .iter()
+        .map(|member| {
+            serde_json::from_value::<CheckedNodeId>(member["target"].clone())
+                .expect("a published binder target is a checked node id")
+        })
+        .collect::<Vec<_>>();
+    assert!(!expected_binders.is_empty(), "{id} publishes binders");
+
+    let projected = super::timed_model::CheckedTimedModel::from_admitted(admitted)
+        .unwrap_or_else(|failure| panic!("{id}: typed timed model projects: {failure}"));
+    let model = match id {
+        "CL-57" => projected
+            .iter()
+            .find(|model| {
+                model
+                    .guards
+                    .iter()
+                    .any(|guard| guard.metadata.node_id == node_id)
+            })
+            .unwrap_or_else(|| panic!("{id}: typed model contains its guard")),
+        "CL-59" => projected
+            .iter()
+            .find(|model| {
+                model
+                    .invariants
+                    .iter()
+                    .any(|invariant| invariant.metadata.node_id == node_id)
+            })
+            .unwrap_or_else(|| panic!("{id}: typed model contains its invariant")),
+        other => panic!("{other}: no admitted binder round-trip assertion"),
+    };
+    let projected_binders = match id {
+        "CL-57" => model
+            .guards
+            .iter()
+            .find(|guard| guard.metadata.node_id == node_id)
+            .expect("the CL-57 guard is projected")
+            .parts[0]
+            .binders
+            .clone(),
+        "CL-59" => model
+            .invariants
+            .iter()
+            .find(|invariant| invariant.metadata.node_id == node_id)
+            .expect("the CL-59 invariant is projected")
+            .binders
+            .clone(),
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        projected_binders, expected_binders,
+        "{id} projected binder order"
+    );
+
+    let written = model
+        .write_nodes()
+        .unwrap_or_else(|failure| panic!("{id}: typed model writes: {failure}"));
+    let written_clause = written
+        .iter()
+        .find(|written| written.node_id == node_id)
+        .unwrap_or_else(|| panic!("{id}: typed writer emits the clause node"));
+    assert_eq!(
+        binder_groups(&written_clause.body),
+        vec![expected_binders.clone()],
+        "{id} writer preserves the exact ordered binders"
+    );
+    let round_tripped = super::timed_model::CheckedTimedModel::from_nodes(&written)
+        .unwrap_or_else(|failure| panic!("{id}: typed writer round-trips: {failure}"));
+    assert_eq!(
+        round_tripped,
+        vec![(*model).clone()],
+        "{id} typed model round-trips"
+    );
+}
+
 /// QSpec FR-322 "Clause nodes" (TC-367 CK-36): each clause vector of
 /// `timed-clause-node-vectors.json`, its RFC 6902 patch applied to the
 /// published clause package, reaches QSL's I2 read with its published
@@ -2605,10 +2730,14 @@ fn conformance_timed_clause_vectors_keep_their_published_outcomes() {
             continue;
         }
         match case["expected"].as_str().expect("an outcome") {
-            "admitted" => assert!(
-                matches!(outcome, Read::Verified { .. }),
-                "{id}: expected admitted, got {outcome:?}"
-            ),
+            "admitted" => {
+                let Read::Verified { admitted, .. } = &outcome else {
+                    panic!("{id}: expected admitted, got {outcome:?}");
+                };
+                if matches!(id.as_str(), Some("CL-57" | "CL-59")) {
+                    assert_admitted_binder_round_trip(case, &package, admitted);
+                }
+            }
             "refused-by-schema" => {
                 let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &outcome else {
                     panic!("{id}: expected malformed_wire, got {outcome:?}");
