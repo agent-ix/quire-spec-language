@@ -348,7 +348,9 @@ pub use family::fixtures::{
     empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
-pub use ir::{CheckedBody, CheckedNode, EqualityProducerData, Node, NodeId, Slot};
+pub use ir::{
+    CheckedBody, CheckedNode, EqualityProducerData, EqualityProducerIdentity, Node, NodeId, Slot,
+};
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
@@ -660,6 +662,14 @@ pub struct CheckedGraph {
         ),
         ir::EqualityProducerData,
     >,
+    /// Exact QSL identity witnesses retained for equality occurrences.
+    equality_producer_identities: BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::EqualityProducerIdentity,
+    >,
     /// NFR-011: the ceilings this package was checked under.
     effective_limits: CheckingLimits,
     /// FR-096: each function's form spans, by declaration index, so a
@@ -818,6 +828,7 @@ impl fmt::Debug for CheckedGraph {
                     type_nodes,
                     semantic_graph,
                     equality_producer_data,
+                    equality_producer_identities,
                     effective_limits,
                     form_spans,
                     type_spans,
@@ -888,6 +899,7 @@ impl fmt::Debug for CheckedGraph {
                             .map(|((node, location), data)| ((NodeKeyDebug(node), location), data))
                             .collect::<Vec<_>>(),
                     )
+                    .field("equality_producer_identities", equality_producer_identities)
                     .field("effective_limits", &effective_limits)
                     .field("form_spans", &form_spans)
                     .field("type_spans", &type_spans)
@@ -5228,6 +5240,7 @@ impl PackageDeclarations {
         let (
             semantic_graph,
             equality_producer_data,
+            equality_producer_identities,
             model_correspondence,
             identities,
             binders,
@@ -5235,6 +5248,7 @@ impl PackageDeclarations {
         ) = (
             lowered.graph,
             lowered.equality_producer_data,
+            lowered.equality_producer_identities,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
@@ -6056,6 +6070,7 @@ impl PackageDeclarations {
                 .collect(),
             semantic_graph,
             equality_producer_data,
+            equality_producer_identities,
             effective_limits: limits,
             form_spans,
             type_spans,
@@ -6598,6 +6613,23 @@ impl CheckedGraph {
         ir::EqualityProducerData,
     > {
         &self.equality_producer_data
+    }
+
+    /// Exact identity witnesses for each equality application occurrence.
+    ///
+    /// The keys are the application `NodeKey` selected by lowering and its
+    /// authored `Location`; equality nodes may share a structural key while
+    /// retaining separate occurrence witnesses.
+    pub fn equality_producer_identities(
+        &self,
+    ) -> &BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::EqualityProducerIdentity,
+    > {
+        &self.equality_producer_identities
     }
 
     /// Checked time sources of this package, in declaration order.

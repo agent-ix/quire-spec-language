@@ -4,7 +4,7 @@
 
 use quire_checked::node::{Arithmetic, AuthoredBound, CheckedLiteral, NodeKind, RecordSlot};
 use quire_exact::EffectiveId;
-use quire_exact::{CollectionKind, Integer, IntegerInterval};
+use quire_exact::{CollectionKind, Integer, IntegerInterval, NodeKey};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperand;
 use quire_semantic_value::declaration::{EqualityOperator, EqualitySchedule};
@@ -89,6 +89,78 @@ pub struct EqualityProducerData {
     pub(crate) units: UnitTable,
     /// The compared enum's own filtered member index, or empty otherwise.
     pub(crate) enum_members: EnumMemberIndex,
+}
+
+/// Exact QSL identity witnesses retained for one typed equality occurrence.
+/// The application key and occurrence come from lowering; quantity type keys
+/// come from the checker's typed UnitIds, and nominal unit/dimension keys come
+/// from the admitted UnitTable closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityProducerIdentity {
+    application: NodeKey,
+    location: Location,
+    unit_ids: Vec<quire_exact::UnitId>,
+    dimension_declarations: BTreeSet<NodeKey>,
+    dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
+    conversion_edge_targets: BTreeSet<NodeKey>,
+    text_plan_type_nodes: Vec<(usize, NodeKey)>,
+}
+
+impl EqualityProducerIdentity {
+    pub(crate) fn new(
+        application: NodeKey,
+        location: Location,
+        unit_ids: Vec<quire_exact::UnitId>,
+        dimension_declarations: BTreeSet<NodeKey>,
+        dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
+        conversion_edge_targets: BTreeSet<NodeKey>,
+        text_plan_type_nodes: Vec<(usize, NodeKey)>,
+    ) -> Self {
+        Self {
+            application,
+            location,
+            unit_ids,
+            dimension_declarations,
+            dimension_terms,
+            conversion_edge_targets,
+            text_plan_type_nodes,
+        }
+    }
+
+    /// The exact checked application node selected by QSL lowering.
+    pub fn application(&self) -> &NodeKey {
+        &self.application
+    }
+
+    /// The authored occurrence paired with the application node.
+    pub fn location(&self) -> &Location {
+        &self.location
+    }
+
+    /// Source and compound unit identities retained by the equality checker.
+    pub fn unit_ids(&self) -> &[quire_exact::UnitId] {
+        &self.unit_ids
+    }
+
+    /// Exact dimension declaration keys in the retained unit closure.
+    pub fn dimension_declarations(&self) -> &BTreeSet<NodeKey> {
+        &self.dimension_declarations
+    }
+
+    /// `(dimension declaration, term position, base dimension, exponent)` rows.
+    pub fn dimension_terms(&self) -> &[(NodeKey, usize, NodeKey, Integer)] {
+        &self.dimension_terms
+    }
+
+    /// Exact targets of admitted conversion edges in the retained unit closure.
+    pub fn conversion_edge_targets(&self) -> &BTreeSet<NodeKey> {
+        &self.conversion_edge_targets
+    }
+
+    /// Exact Text/Plan comparison type keys by authored operand position.
+    pub fn text_plan_type_nodes(&self) -> &[(usize, NodeKey)] {
+        &self.text_plan_type_nodes
+    }
 }
 
 impl EqualityProducerData {
