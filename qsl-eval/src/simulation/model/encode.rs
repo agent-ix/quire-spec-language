@@ -1104,11 +1104,6 @@ mod tests {
         );
     }
 
-    /// The structural object text of `crate::test_ids::node_key([seed])`.
-    fn node_json(seed: u8) -> String {
-        format!(r#"{{"ordinal":0,"package":"fixture","path":["[{seed}]"]}}"#)
-    }
-
     fn declaration_json(seed: u8) -> String {
         format!(r#"{{"node":"[{seed}]","package":"fixture"}}"#)
     }
@@ -1321,7 +1316,7 @@ mod tests {
         let unit = UnitId::declared(crate::test_ids::node_key([0xab]));
         let quantity = Value::Quantity(Quantity::new(
             Rational::new(Integer::from(3_i64), Integer::from(2_i64)).expect("nonzero"),
-            unit,
+            unit.clone(),
         ));
         let text = untyped_value_enc(&quantity)
             .canonical_text(Limits::new(1024))
