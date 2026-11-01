@@ -14,8 +14,8 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
 use quire_contract_model::{
     ApplicationOperator, CheckedNodeId, CheckedOccurrenceRole, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticNodeV2,
-    CheckedTerm,
+    CheckedPackageReadLimits, CheckedPackageSidecarsRef, CheckedPackageV2,
+    CheckedPackageV2ReadResult, CheckedSemanticNodeV2, CheckedTerm,
 };
 use quire_spec_language::emit_checked_v2::{emit, run, Error, Request};
 use serde_json::{json, Value};
@@ -427,7 +427,10 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
             source_map: read.source_map(),
             refinement_step_rows: read.refinement_step_rows(),
         },
-        None,
+        CheckedPackageSidecarsRef {
+            checked_term_data: None,
+            temporal_bindings: None,
+        },
         read.capability_report(),
         read.diagnostics(),
         quire_canonical::Limits::new(1 << 24),
