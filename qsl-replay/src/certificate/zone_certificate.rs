@@ -661,7 +661,7 @@ pub enum CertificateTransition {
     /// An admitted source-model operation transition.
     Source(ModelTransition),
     /// An FR-419 task-derived scheduler transition.
-    Task(TaskTransitionIdentity),
+    Task(Box<TaskTransitionIdentity>),
 }
 
 impl CertificateTransition {

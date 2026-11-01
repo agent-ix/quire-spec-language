@@ -1050,7 +1050,7 @@ fn source_only_reader_does_not_reinterpret_a_task_edge_as_a_source_step() {
         .and_then(qsl_replay::CertificateTransition::source)
         .expect("a source operation edge")
         .clone();
-    certificate.edges[0].transition = Some(qsl_replay::CertificateTransition::Task(
+    certificate.edges[0].transition = Some(qsl_replay::CertificateTransition::Task(Box::new(
         qsl_replay::TaskTransitionIdentity {
             action: qsl_replay::TaskAction::Activate,
             taskset: "Ctl".to_owned(),
@@ -1066,7 +1066,7 @@ fn source_only_reader_does_not_reinterpret_a_task_edge_as_a_source_step() {
             priority: None,
             budget_delta: None,
         },
-    ));
+    )));
 
     assert_ne!(
         check(&world, &certificate, CertificateCheckLimits::default()),

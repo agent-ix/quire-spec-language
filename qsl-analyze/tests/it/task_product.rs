@@ -317,7 +317,13 @@ fn completion_subtracts_exact_work_from_suspended_service_clocks_atomically() {
     let before_scheduler = scheduler.clone();
     let before_zone = empty.clone();
     assert_eq!(
-        scheduler.complete_with_subtractions(&product, &mut empty, &scale, &[clock.clone()], None,),
+        scheduler.complete_with_subtractions(
+            &product,
+            &mut empty,
+            &scale,
+            std::slice::from_ref(&clock),
+            None,
+        ),
         Err(TaskCompletionError::EmptySuccessor)
     );
     assert_eq!(scheduler, before_scheduler);
