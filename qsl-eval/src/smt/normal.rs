@@ -247,8 +247,8 @@ fn product(factor: Integer, term: Term) -> Term {
 }
 
 /// Collect an integer-linear expression into coefficients of its atoms.
-/// The first occurrence order is retained; unsupported arithmetic shapes
-/// remain opaque atoms, and no product of two non-constant terms is formed.
+/// Unsupported arithmetic shapes remain opaque atoms, and no product of two
+/// non-constant terms is formed.
 fn linear_form(term: Term) -> Term {
     fn collect(
         term: Term,
@@ -285,6 +285,7 @@ fn linear_form(term: Term) -> Term {
     let mut atoms = Vec::new();
     let mut constant = Integer::zero();
     collect(term, Integer::one(), &mut atoms, &mut constant);
+    atoms.sort_by(|(left, _), (right, _)| left.text().as_bytes().cmp(right.text().as_bytes()));
     let mut terms = Vec::new();
     for (atom, coefficient) in atoms {
         if coefficient.is_zero() {
@@ -304,6 +305,19 @@ fn linear_form(term: Term) -> Term {
     match terms.len() {
         0 => Term::Int(Integer::zero()),
         1 => terms.remove(0),
+        2 => {
+            let second = terms.remove(1);
+            let first = terms.remove(0);
+            match (first, second) {
+                (Term::Negate(negative), positive) if !matches!(&positive, Term::Int(_)) => {
+                    difference(positive, *negative)
+                }
+                (positive, Term::Negate(negative)) if !matches!(&positive, Term::Int(_)) => {
+                    difference(positive, *negative)
+                }
+                (first, second) => Term::Add(vec![first, second]),
+            }
+        }
         _ => Term::Add(terms),
     }
 }
@@ -358,6 +372,9 @@ mod tests {
         );
         assert_eq!(normal(left.clone()), normal(right));
         assert_eq!(normal(left), "(+ x (- y) 1)");
+        assert_eq!(normal(Term::Add(vec![y.clone(), x.clone()])), "(+ x y)");
+        assert_eq!(normal(Term::Add(vec![x.clone(), y.clone()])), "(+ x y)");
+        assert_eq!(normal(x.clone().plus(y.clone().negated())), "(- x y)");
         assert_eq!(
             normal(Term::Add(vec![
                 x.clone(),

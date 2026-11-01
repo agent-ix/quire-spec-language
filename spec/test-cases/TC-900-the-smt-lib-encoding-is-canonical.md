@@ -95,7 +95,10 @@ reads the printed script or the stated refusal.
     `t28`: `(* 1 (- (+ 1 x) y))` and
     `(* 1 (- x (+ (- 1) y)))`. Compare their printed normal forms, and encode
     a refinement mapping with a product of two nonconstant terms to confirm
-    that FR-315 refuses it `out-of-fragment` instead of expanding it.
+    that FR-315 refuses it `out-of-fragment` instead of expanding it. Also
+    normalize `(+ x (- y))` and assert the rule 7 subtraction form `(- x y)`;
+    the two-atom subtraction exception in rule 9 has this precedence over its
+    general multiple-term `+` form.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -206,4 +209,5 @@ and no other application is enabled, so the script is unsatisfiable.
   included; the `Initial` and `commitA` assertions FR-315-AC-56 gives; each
   rule's stated result.
 - Step 29: both Int terms print as `(+ x (- y) 1)`; their bytes are equal.
-  The linear normalizer does not expand a product of two nonconstant terms.
+  `(+ x (- y))` prints as `(- x y)`. The linear normalizer does not expand a
+  product of two nonconstant terms.

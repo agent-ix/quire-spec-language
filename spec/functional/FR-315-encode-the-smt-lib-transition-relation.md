@@ -974,7 +974,10 @@ the term's meaning:
    the atom, -1 as its unary negation and any other coefficient as literal
    scaling; a nonzero integer constant follows all atom terms. A zero
    coefficient or zero constant is omitted, a single remaining term prints
-   alone, no remaining term prints `0`, and multiple terms print as one `+`
+   alone, and no remaining term prints `0`. When exactly two atom terms remain
+   with coefficients 1 and -1, the normalizer prints the rule 7 subtraction
+   form `(- t u)`, where `t` has coefficient 1 and `u` has coefficient -1,
+   regardless of source order. Otherwise multiple terms print as one `+`
    with the atom terms in canonical order and the constant last. This rule
    does not multiply two nonconstant terms. A term with such a product is
    outside `QF_LIA` and is refused `out-of-fragment` by the existing Refusals

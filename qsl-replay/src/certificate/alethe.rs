@@ -945,6 +945,9 @@ enum Rule {
     LaMultNeg,
     PolySimp,
     PolySimpRel,
+    RareRewrite,
+    Evaluate,
+    AciSimp,
     Bind,
     Subproof,
 }
@@ -1008,6 +1011,9 @@ const CHECKED: &[(&str, Rule)] = &[
     ("subproof", Rule::Subproof),
     ("poly_simp", Rule::PolySimp),
     ("poly_simp_rel", Rule::PolySimpRel),
+    ("rare_rewrite", Rule::RareRewrite),
+    ("evaluate", Rule::Evaluate),
+    ("aci_simp", Rule::AciSimp),
 ];
 
 /// The checked rule `name` names, or `None` for an unchecked rule
@@ -1658,10 +1664,10 @@ fn polynomial(
         factor: &Integer,
         charge: &mut impl FnMut(u64) -> bool,
     ) -> Result<(), ()> {
-        if !charge(u64::try_from(from.len()).unwrap_or(u64::MAX).max(1)) {
-            return Err(());
-        }
         for (monomial, coefficient) in from {
+            if !charge(1) {
+                return Err(());
+            }
             let coefficient = coefficient.mul(factor);
             let value = into
                 .get(&monomial)
@@ -1682,7 +1688,9 @@ fn polynomial(
     match term {
         Term::Number { value, real: false } if value.is_integer() => {
             let mut result = Polynomial::new();
-            result.insert(Vec::new(), value.numerator().clone());
+            if !value.numerator().is_zero() {
+                result.insert(Vec::new(), value.numerator().clone());
+            }
             Ok(Some(result))
         }
         Term::Number { .. } => Ok(None),
@@ -1729,16 +1737,18 @@ fn polynomial(
                 let Some(part) = polynomial(arg, query, charge)? else {
                     return Ok(None);
                 };
-                let work = result.len().saturating_mul(part.len());
-                if !charge(u64::try_from(work).unwrap_or(u64::MAX).max(1)) {
-                    return Err(());
-                }
                 let mut product = Polynomial::new();
                 for (left, a) in &result {
                     for (right, b) in &part {
+                        if !charge(1) {
+                            return Err(());
+                        }
                         let mut monomial = left.clone();
                         monomial.extend(right.iter().cloned());
                         monomial.sort();
+                        if !charge(1) {
+                            return Err(());
+                        }
                         let coefficient = a.mul(b);
                         let total = product
                             .get(&monomial)
@@ -1785,10 +1795,13 @@ fn polynomial_rule(
 ) -> Result<Check, ()> {
     let clause = match step.clause.as_slice() {
         [literal] => literal,
-        _ => return Ok(Check::Undecided),
+        _ => return Ok(Check::Fails),
     };
     let (left, right) = if rule == Rule::PolySimp {
         if !step.premises.is_empty() {
+            return Ok(Check::Fails);
+        }
+        if clause.args_of("=").is_none() {
             return Ok(Check::Fails);
         }
         let Some((left, right)) = polynomial_equality(clause, query, charge)? else {
@@ -1884,7 +1897,25 @@ fn relation_polynomial(
         return Ok(None);
     };
     add_polynomial(&mut third, fourth, &Integer::from(-1_i64), charge)?;
+    if left_op == "=" {
+        first = canonical_equality_difference(first);
+        third = canonical_equality_difference(third);
+    }
     Ok(Some((left_op, first, right_op, third)))
+}
+
+/// Equality atoms are symmetric, so their difference has no semantic
+/// orientation. Choose one exact representative before comparing scales.
+fn canonical_equality_difference(polynomial: Polynomial) -> Polynomial {
+    let negative = polynomial
+        .iter()
+        .map(|(monomial, coefficient)| (monomial.clone(), coefficient.neg()))
+        .collect::<Polynomial>();
+    if negative < polynomial {
+        negative
+    } else {
+        polynomial
+    }
 }
 
 /// Whether `right` is a positive exact-rational multiple of `left`. A
@@ -1947,10 +1978,10 @@ fn add_polynomial(
     factor: &Integer,
     charge: &mut impl FnMut(u64) -> bool,
 ) -> Result<(), ()> {
-    if !charge(u64::try_from(from.len()).unwrap_or(u64::MAX).max(1)) {
-        return Err(());
-    }
     for (monomial, coefficient) in from {
+        if !charge(1) {
+            return Err(());
+        }
         let total = into
             .get(&monomial)
             .cloned()
@@ -1972,6 +2003,104 @@ impl From<bool> for Check {
         } else {
             Self::Fails
         }
+    }
+}
+
+fn term_nodes(term: &Term) -> u64 {
+    let children = match term {
+        Term::App(_, args) => args
+            .iter()
+            .map(|arg| term_nodes(arg))
+            .fold(0, u64::saturating_add),
+        Term::Binder { body, .. } => term_nodes(body),
+        Term::Symbol(_) | Term::Number { .. } | Term::Other(_) => 0,
+    };
+    children.saturating_add(1)
+}
+
+/// Evaluate only closed integer-literal arithmetic expressions.
+fn evaluate_integer(term: &Term) -> Option<Integer> {
+    match term {
+        Term::Number { value, real: false } if value.is_integer() => {
+            Some(value.numerator().clone())
+        }
+        Term::App(name, args) if &**name == "+" && !args.is_empty() => args
+            .iter()
+            .map(|arg| evaluate_integer(arg))
+            .try_fold(Integer::zero(), |sum, value| Some(sum.add(&value?))),
+        Term::App(name, args) if &**name == "-" && !args.is_empty() => {
+            let [first, rest @ ..] = args.as_slice() else {
+                return None;
+            };
+            let mut value = evaluate_integer(first)?;
+            if rest.is_empty() {
+                return Some(value.neg());
+            }
+            for arg in rest {
+                value = value.sub(&evaluate_integer(arg)?);
+            }
+            Some(value)
+        }
+        Term::App(name, args) if &**name == "*" && !args.is_empty() => args
+            .iter()
+            .map(|arg| evaluate_integer(arg))
+            .try_fold(Integer::one(), |product, value| Some(product.mul(&value?))),
+        _ => None,
+    }
+}
+
+/// Canonicalize just the associative, commutative and idempotent Boolean
+/// junctions, with their neutral and absorbing constants.
+fn aci_normal(term: &Term) -> Option<Rc<Term>> {
+    match term {
+        Term::App(name, args) if &**name == "and" || &**name == "or" => {
+            let conjunction = &**name == "and";
+            let mut pending: Vec<Rc<Term>> = args
+                .iter()
+                .map(|arg| aci_normal(arg))
+                .collect::<Option<Vec<_>>>()?;
+            let mut kept: Vec<Rc<Term>> = Vec::new();
+            while let Some(term) = pending.pop() {
+                let same_head = matches!(&*term, Term::App(head, _) if &**head == if conjunction { "and" } else { "or" });
+                if same_head {
+                    if let Term::App(_, nested) = &*term {
+                        pending.extend(nested.iter().cloned());
+                    }
+                } else if term.is_symbol(if conjunction { "false" } else { "true" }) {
+                    return Some(Rc::new(Term::Symbol(
+                        if conjunction { "false" } else { "true" }.into(),
+                    )));
+                } else if term.is_symbol(if conjunction { "true" } else { "false" }) {
+                    continue;
+                } else if !kept.contains(&term) {
+                    kept.push(term);
+                }
+            }
+            kept.sort();
+            match kept.len() {
+                0 => Some(Rc::new(Term::Symbol(
+                    if conjunction { "true" } else { "false" }.into(),
+                ))),
+                1 => kept.pop(),
+                _ => Some(Term::app(if conjunction { "and" } else { "or" }, kept)),
+            }
+        }
+        Term::App(name, args) => Some(Term::app(
+            name,
+            args.iter()
+                .map(|arg| aci_normal(arg))
+                .collect::<Option<Vec<_>>>()?,
+        )),
+        Term::Binder {
+            quantifier,
+            vars,
+            body,
+        } => Some(Rc::new(Term::Binder {
+            quantifier: quantifier.clone(),
+            vars: vars.clone(),
+            body: aci_normal(body)?,
+        })),
+        Term::Symbol(_) | Term::Number { .. } | Term::Other(_) => Some(Rc::new(term.clone())),
     }
 }
 
@@ -2025,7 +2154,24 @@ impl Step {
             return Ok(Check::Undecided);
         };
         if matches!(rule, Rule::PolySimp | Rule::PolySimpRel) {
+            if self.closes.is_some() {
+                return Ok(Check::Fails);
+            }
             return polynomial_rule(self, rule, query, charge);
+        }
+        match rule {
+            Rule::RareRewrite | Rule::Evaluate | Rule::AciSimp => {
+                if self.closes.is_some() {
+                    return Ok(Check::Fails);
+                }
+                return match rule {
+                    Rule::RareRewrite => self.rare_rewrite(query, charge),
+                    Rule::Evaluate => self.evaluate(charge),
+                    Rule::AciSimp => self.aci_simp(query, charge),
+                    _ => Ok(Check::Undecided),
+                };
+            }
+            _ => {}
         }
         Ok(match (&self.closes, rule) {
             (Some(subproof), Rule::Subproof) if subproof.arguments.is_empty() => {
@@ -2045,6 +2191,166 @@ impl Step {
             },
             (None, Rule::Resolution) => resolution(&self.premises, &self.clause, &self.args),
             (None, rule) => self.follows(rule, query).into(),
+        })
+    }
+
+    fn charge_work(&self, charge: &mut impl FnMut(u64) -> bool) -> Result<(), ()> {
+        let work = self
+            .clause
+            .iter()
+            .chain(&self.args)
+            .map(|term| term_nodes(term))
+            .fold(0_u64, u64::saturating_add)
+            .max(1);
+        if charge(work) {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn equality(&self) -> Option<(&Term, &Term)> {
+        let [literal] = self.clause.as_slice() else {
+            return None;
+        };
+        let [left, right] = literal.args_of("=")? else {
+            return None;
+        };
+        Some((left, right))
+    }
+
+    fn equality_is(&self, expected_left: &Term, expected_right: &Term) -> bool {
+        self.equality().is_some_and(|(left, right)| {
+            (left == expected_left && right == expected_right)
+                || (left == expected_right && right == expected_left)
+        })
+    }
+
+    fn rare_rewrite(
+        &self,
+        query: &Query,
+        charge: &mut impl FnMut(u64) -> bool,
+    ) -> Result<Check, ()> {
+        if !self.premises.is_empty() {
+            return Ok(Check::Fails);
+        }
+        let Some((name, arguments)) = self.args.split_first() else {
+            return Ok(Check::Undecided);
+        };
+        let Term::Symbol(name) = &**name else {
+            return Ok(Check::Undecided);
+        };
+        let Some(name) = name
+            .strip_prefix('"')
+            .and_then(|name| name.strip_suffix('"'))
+        else {
+            return Ok(Check::Undecided);
+        };
+        let known = matches!(
+            name,
+            "bool-double-not-elim"
+                | "arith-elim-lt"
+                | "arith-elim-leq"
+                | "arith-leq-norm"
+                | "eq-refl"
+        );
+        if !known {
+            return Ok(Check::Undecided);
+        }
+        if name == "arith-leq-norm"
+            && matches!(arguments, [_, bound] if evaluate_integer(bound).is_none())
+        {
+            return Ok(Check::Undecided);
+        }
+        let arithmetic_arguments = match (name, arguments) {
+            ("arith-elim-lt", [value, bound])
+            | ("arith-elim-leq", [bound, value])
+            | ("arith-leq-norm", [value, bound]) => Some([value, bound]),
+            _ => None,
+        };
+        if arithmetic_arguments.is_some_and(|arguments| {
+            arguments
+                .into_iter()
+                .any(|term| sort_of(term, query, &mut Vec::new()) != Ok(Sort::Int))
+        }) {
+            return Ok(Check::Undecided);
+        }
+        self.charge_work(charge)?;
+        let holds = match (name, arguments) {
+            ("bool-double-not-elim", [operand]) => {
+                let double_not = Term::not(&Term::not(operand));
+                self.equality_is(operand, &double_not)
+            }
+            ("arith-elim-lt", [value, bound]) => {
+                let less = Term::app("<", vec![value.clone(), bound.clone()]);
+                let greater_equal = Term::app(">=", vec![value.clone(), bound.clone()]);
+                let negated = Term::not(&greater_equal);
+                self.equality_is(&less, &negated)
+            }
+            ("arith-elim-leq", [bound, value]) => {
+                let less_equal = Term::app("<=", vec![bound.clone(), value.clone()]);
+                let greater_equal = Term::app(">=", vec![value.clone(), bound.clone()]);
+                self.equality_is(&less_equal, &greater_equal)
+            }
+            ("arith-leq-norm", [value, bound]) => {
+                let incremented = Term::app(
+                    "+",
+                    vec![
+                        bound.clone(),
+                        Rc::new(Term::Number {
+                            value: Rational::from_integer(Integer::one()),
+                            real: false,
+                        }),
+                    ],
+                );
+                let greater_equal = Term::app(">=", vec![value.clone(), incremented]);
+                let negated = Term::not(&greater_equal);
+                let less_equal = Term::app("<=", vec![value.clone(), bound.clone()]);
+                self.equality_is(&less_equal, &negated)
+            }
+            ("eq-refl", [term]) => {
+                let reflexive = Term::app("=", vec![term.clone(), term.clone()]);
+                let truth = Rc::new(Term::Symbol("true".into()));
+                self.equality_is(&reflexive, &truth)
+            }
+            _ => false,
+        };
+        Ok(holds.into())
+    }
+
+    fn evaluate(&self, charge: &mut impl FnMut(u64) -> bool) -> Result<Check, ()> {
+        if !self.premises.is_empty() || !self.args.is_empty() {
+            return Ok(Check::Fails);
+        }
+        self.charge_work(charge)?;
+        let Some((left, right)) = self.equality() else {
+            return Ok(Check::Fails);
+        };
+        let Some(left) = evaluate_integer(left) else {
+            return Ok(Check::Undecided);
+        };
+        let Some(right) = evaluate_integer(right) else {
+            return Ok(Check::Undecided);
+        };
+        Ok((left == right).into())
+    }
+
+    fn aci_simp(&self, query: &Query, charge: &mut impl FnMut(u64) -> bool) -> Result<Check, ()> {
+        if !self.premises.is_empty() || !self.args.is_empty() {
+            return Ok(Check::Fails);
+        }
+        self.charge_work(charge)?;
+        let Some((left, right)) = self.equality() else {
+            return Ok(Check::Fails);
+        };
+        if sort_of(left, query, &mut Vec::new()) != Ok(Sort::Bool)
+            || sort_of(right, query, &mut Vec::new()) != Ok(Sort::Bool)
+        {
+            return Ok(Check::Undecided);
+        }
+        Ok(match (aci_normal(left), aci_normal(right)) {
+            (Some(left), Some(right)) => (*left == *right).into(),
+            _ => Check::Undecided,
         })
     }
 
@@ -2461,6 +2767,8 @@ impl Step {
             }
             // Dispatched from `judge`, where polynomial work is budgeted.
             Rule::PolySimp | Rule::PolySimpRel => false,
+            // Dispatched from `judge`, with their own local checkers.
+            Rule::RareRewrite | Rule::Evaluate | Rule::AciSimp => false,
         }
     }
 
@@ -3174,9 +3482,33 @@ mod tests {
         };
         assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
 
+        let qsl_1306_swapped_equality =
+            "(step t23 (cl (= (* 1 (- x (+ 1 y))) (* (- 1) (- (+ 1 y) x)))) :rule poly_simp)\
+             (step t24 (cl (= (= (+ 1 y) x) (= x (+ 1 y)))) :rule poly_simp_rel :premises (t23))";
+        let Reading::Read(proof) =
+            read_proof(qsl_1306_swapped_equality.as_bytes(), &q, &mut |_| true)
+        else {
+            panic!("QSL-1306 swapped equality steps read");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
         let nonlinear = "(step t0 (cl (= (* x y) (* y x))) :rule poly_simp)";
         let Reading::Read(proof) = read_proof(nonlinear.as_bytes(), &q, &mut |_| true) else {
             panic!("nonlinear polynomial step reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
+        let distributed =
+            "(step t0 (cl (= (* (+ x y) (+ y 1)) (+ (* x y) x (* y y) y))) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(distributed.as_bytes(), &q, &mut |_| true) else {
+            panic!("distributed polynomial step reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
+        let zero_cancellation = "(step t0 (cl (= (- x x) 0)) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(zero_cancellation.as_bytes(), &q, &mut |_| true)
+        else {
+            panic!("zero cancellation step reads");
         };
         assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
 
@@ -3186,9 +3518,33 @@ mod tests {
         else {
             panic!("negative equality relation reads");
         };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(None));
+
+        let changed_relation =
+            "(step p0 (cl (= (* 1 (- (+ 1 x) y)) (* 1 (- x (+ (- 1) y))))) :rule poly_simp)\
+             (step p1 (cl (= (= (+ 1 x) y) (= x (+ 1 y)))) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) = read_proof(changed_relation.as_bytes(), &q, &mut |_| true)
+        else {
+            panic!("changed relation step reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(1)));
+
+        let scaled_premise_query = read_query(
+            b"(set-logic QF_LIA)\n(declare-const x Int)\n(declare-const y Int)\n(declare-const u Int)\n(declare-const v Int)\n(assert (= (* 2 (- x y)) (* (- 2) (- u v))))\n(check-sat)\n",
+        )
+        .expect("scaled-premise query reads");
+        let scaled_premise = "(assume p0 (= (* 2 (- x y)) (* (- 2) (- u v))))\
+             (step p1 (cl (= (< x y) (< u v))) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) = read_proof(
+            scaled_premise.as_bytes(),
+            &scaled_premise_query,
+            &mut |_| true,
+        ) else {
+            panic!("scaled-premise proof reads");
+        };
         assert_eq!(
-            proof.outcome(&q, &mut |_| true),
-            Ok(ProofOutcome::Unverifiable { step: 1 })
+            proof.invalid_step(&scaled_premise_query, &mut |_| true),
+            Ok(Some(1))
         );
 
         let negative_same_order = "(step p0 (cl (= (+ x (- y)) (+ x (- y)))) :rule poly_simp)\
@@ -3217,6 +3573,40 @@ mod tests {
         };
         assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(0)));
 
+        for unsupported in [
+            "(step t0 (cl (= (div x 2) (div x 2))) :rule poly_simp)",
+            "(step t0 (cl (= (mod x 2) (mod x 2))) :rule poly_simp)",
+        ] {
+            let Reading::Read(proof) = read_proof(unsupported.as_bytes(), &q, &mut |_| true) else {
+                panic!("unsupported division or modulo step reads");
+            };
+            assert_eq!(
+                proof.outcome(&q, &mut |_| true),
+                Ok(ProofOutcome::Unverifiable { step: 0 })
+            );
+        }
+
+        for unchecked in [
+            "(step t0 (cl (= x x)) :rule hole)",
+            "(step t0 (cl (= x x)) :rule lia_generic)",
+            "(step t0 (cl (= x x)) :rule rare_rewrite :args (unknown-rewrite))",
+        ] {
+            let Reading::Read(proof) = read_proof(unchecked.as_bytes(), &q, &mut |_| true) else {
+                panic!("unchecked rule step reads");
+            };
+            assert_eq!(
+                proof.outcome(&q, &mut |_| true),
+                Ok(ProofOutcome::Unverifiable { step: 0 }),
+                "{unchecked}"
+            );
+        }
+
+        let wrong_shape = "(step t0 (cl true) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(wrong_shape.as_bytes(), &q, &mut |_| true) else {
+            panic!("non-equality polynomial conclusion reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(0)));
+
         let real_query = read_query(
             b"(set-logic QF_LRA)\n(declare-const r Real)\n(assert (= r r))\n(check-sat)\n",
         )
@@ -3235,6 +3625,128 @@ mod tests {
             panic!("captured polynomial step reads");
         };
         assert_eq!(proof.invalid_step(&q, &mut |_| false), Err(()));
+    }
+
+    /// Only the named rewrite instances and literal local rules used by the
+    /// QSL-1306 dsl-rewrite proof are checked; unknown names remain holes.
+    #[trace("TC-893", "FR-314-AC-21")]
+    #[test]
+    fn target_named_rewrites_evaluate_and_aci_are_locally_checked() {
+        let query = read_query(
+            b"(set-logic QF_LIA)\n\
+              (declare-const x Int)\n(declare-const y Int)\n\
+              (declare-const b Bool)\n\
+              (assert (! (>= x 3) :named @p_20))\n\
+              (assert (! (not (not (>= x 3))) :named @p_32))\n\
+              (assert (! (< x 2) :named @p_10))\n\
+              (assert (! (>= x 2) :named @p_45))\n\
+              (assert (! (<= (- 1) x) :named @p_76))\n\
+              (assert (! (>= x (- 1)) :named @p_47))\n\
+              (assert (! (<= x 1) :named @p_6))\n\
+              (assert (! (not (>= x (+ 1 1))) :named @p_75))\n\
+              (assert (= (! (- 1) :named @p_7) (- 1)))\n\
+              (assert (= (! (+ 1 1) :named @p_73) 2))\n\
+              (assert (! (= x x) :named @p_63))\n\
+              (assert (! b :named @p_21))\n\
+              (assert (! (not b) :named @p_28))\n\
+              (assert (! (and @p_21 @p_28 true) :named @p_62))\n\
+              (assert (! (and @p_21 @p_28) :named @p_40))\n\
+              (assert (! (<= x 2) :named @p_1))\n\
+              (assert (! (not (>= x (+ 2 1))) :named @p_25))\n\
+              (assert (= (! (+ 2 1) :named @p_23) 3))\n\
+              (assert (! (<= 0 x) :named @p_2))\n\
+              (assert (! (>= x 0) :named @p_26))\n\
+              (assert (! (= @p_2 @p_26) :named @p_29))\n\
+              (check-sat)\n",
+        )
+        .expect("query with named proof aliases reads");
+        let proof = "\
+          (step t1 (cl (= @p_32 @p_20)) :rule rare_rewrite :args (\"bool-double-not-elim\" @p_20))\n\
+          (step t5 (cl (= @p_10 (not @p_45))) :rule rare_rewrite :args (\"arith-elim-lt\" x 2))\n\
+          (step t12 (cl (= @p_76 @p_47)) :rule rare_rewrite :args (\"arith-elim-leq\" (- 1) x))\n\
+          (step t14 (cl (= @p_6 @p_75)) :rule rare_rewrite :args (\"arith-leq-norm\" x 1))\n\
+          (step t9 (cl (= @p_7 (- 1))) :rule evaluate)\n\
+          (step t15 (cl (= @p_73 2)) :rule evaluate)\n\
+          (step t15mul (cl (= (* 2 3) 6)) :rule evaluate)\n\
+          (step t66 (cl (= @p_63 true)) :rule rare_rewrite :args (\"eq-refl\" x))\n\
+          (step t69 (cl (= @p_62 @p_40)) :rule aci_simp)\n\
+          (step t96 (cl (= @p_1 @p_25)) :rule rare_rewrite :args (\"arith-leq-norm\" x 2))\n\
+          (step t97 (cl (= @p_23 3)) :rule evaluate)\n\
+          (step t104 (cl @p_29) :rule rare_rewrite :args (\"arith-elim-leq\" 0 x))\n";
+        let Reading::Read(proof) = read_proof(proof.as_bytes(), &query, &mut |_| true) else {
+            panic!("target named rewrite proof reads");
+        };
+        assert_eq!(proof.invalid_step(&query, &mut |_| true), Ok(None));
+        assert_eq!(
+            proof.outcome(&query, &mut |_| true),
+            Ok(ProofOutcome::Refutes)
+        );
+
+        let unknown =
+            "(step t0 (cl (= @p_20 @p_32)) :rule rare_rewrite :args (\"unlisted-rewrite\" @p_20))";
+        let Reading::Read(proof) = read_proof(unknown.as_bytes(), &query, &mut |_| true) else {
+            panic!("unknown named rewrite reads");
+        };
+        assert_eq!(
+            proof.outcome(&query, &mut |_| true),
+            Ok(ProofOutcome::Unverifiable { step: 0 })
+        );
+
+        for invalid in [
+            "(step t0 (cl (= x x)) :rule rare_rewrite :args (\"bool-double-not-elim\" x))",
+            "(step t0 (cl (= (< x 2) (not (>= y 2)))) :rule rare_rewrite :args (\"arith-elim-lt\" x 2))",
+            "(step t0 (cl (= (<= 0 x) (>= y 0))) :rule rare_rewrite :args (\"arith-elim-leq\" 0 x))",
+            "(step t0 (cl (= (<= x 1) (not (>= x 3)))) :rule rare_rewrite :args (\"arith-leq-norm\" x 1))",
+            "(step t0 (cl (= (= x y) true)) :rule rare_rewrite :args (\"eq-refl\" x))",
+            "(step t0 (cl (= (+ 1 1) 3)) :rule evaluate)",
+            "(step t0 (cl (= (and b true) (or b true))) :rule aci_simp)",
+        ] {
+            let Reading::Read(proof) = read_proof(invalid.as_bytes(), &query, &mut |_| true)
+            else {
+                panic!("invalid local-rule vector reads");
+            };
+            assert_eq!(proof.invalid_step(&query, &mut |_| true), Ok(Some(0)), "{invalid}");
+        }
+
+        for unsupported_evaluate in [
+            "(step t0 (cl (= (+ x 1) x)) :rule evaluate)",
+            "(step t0 (cl (= (div 4 2) 2)) :rule evaluate)",
+        ] {
+            let Reading::Read(proof) =
+                read_proof(unsupported_evaluate.as_bytes(), &query, &mut |_| true)
+            else {
+                panic!("unsupported evaluate vector reads");
+            };
+            assert_eq!(
+                proof.outcome(&query, &mut |_| true),
+                Ok(ProofOutcome::Unverifiable { step: 0 })
+            );
+        }
+
+        let real_query = read_query(
+            b"(set-logic QF_LRA)\n(declare-const r Real)\n(assert (< r 2.0))\n(check-sat)\n",
+        )
+        .expect("real rewrite query reads");
+        let real_rewrite = "(step t0 (cl (= (< r 2.0) (not (>= r 2.0)))) :rule rare_rewrite :args (\"arith-elim-lt\" r 2.0))";
+        let Reading::Read(proof) = read_proof(real_rewrite.as_bytes(), &real_query, &mut |_| true)
+        else {
+            panic!("real arithmetic rewrite reads");
+        };
+        assert_eq!(
+            proof.outcome(&real_query, &mut |_| true),
+            Ok(ProofOutcome::Unverifiable { step: 0 })
+        );
+
+        let unsupported_norm =
+            "(step t0 (cl (= (<= x y) (not (>= x (+ y 1))))) :rule rare_rewrite :args (\"arith-leq-norm\" x y))";
+        let Reading::Read(proof) = read_proof(unsupported_norm.as_bytes(), &query, &mut |_| true)
+        else {
+            panic!("unsupported normalization bound reads");
+        };
+        assert_eq!(
+            proof.outcome(&query, &mut |_| true),
+            Ok(ProofOutcome::Unverifiable { step: 0 })
+        );
     }
 
     /// What FR-314's proof rules say of `proof`: `Err("malformed")`,

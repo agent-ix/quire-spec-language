@@ -307,21 +307,50 @@ fn polynomial_normalization_stops_at_the_certificate_edge_budget() {
     let world = World::new(&cas_refines_counter());
     with_request(&world, |request| {
         let mut certificate = certificate(request, 7);
-        certificate.base.proof = b"(step t0 (cl (= (* 2 3) 6)) :rule poly_simp)".to_vec();
-        for step in &mut certificate.steps {
-            step.proof = b"(assume a0 true)".to_vec();
-        }
-        let limits = CertificateCheckLimits {
-            max_certificate_edges: 8,
-            ..CertificateCheckLimits::default()
+        let base_proof = std::str::from_utf8(&certificate.base.proof).expect("proof is UTF-8");
+        certificate.base.proof = format!(
+            "(step qsl1373_poly_budget (cl (= (* (+ s0.c.value s0.c.tmpA) (+ s0.c.tmpA 1)) (+ (* s0.c.value s0.c.tmpA) s0.c.value (* s0.c.tmpA s0.c.tmpA) s0.c.tmpA))) :rule poly_simp)\n{base_proof}"
+        )
+        .into_bytes();
+
+        let mut full_budget = CertificateCheckLimits::default().max_certificate_edges;
+        let verified = |max_certificate_edges| {
+            let limits = CertificateCheckLimits {
+                max_certificate_edges,
+                ..CertificateCheckLimits::default()
+            };
+            check_refinement_smt_proof(request, &certificate, &limits, &Cancel::new())
         };
+        assert_eq!(verified(full_budget), Ok(SmtProofCheck::Verified));
+
+        let mut too_small = 0;
+        while full_budget - too_small > 1 {
+            let candidate = too_small + (full_budget - too_small) / 2;
+            match verified(candidate) {
+                Ok(SmtProofCheck::Verified) => full_budget = candidate,
+                Ok(SmtProofCheck::Stopped(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::CertificateMaxEdges,
+                    value,
+                })) if value == candidate => too_small = candidate,
+                result => panic!("unexpected check at edge budget {candidate}: {result:?}"),
+            }
+        }
+
+        assert_eq!(verified(full_budget), Ok(SmtProofCheck::Verified));
+        let one_short = full_budget - 1;
+        let stopped = IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::CertificateMaxEdges,
+            value: one_short,
+        };
+        assert_eq!(verified(one_short), Ok(SmtProofCheck::Stopped(stopped)));
+        let checked = StepCertification::of_check(Some(Ok(SmtProofCheck::Stopped(stopped))), 7);
+        let holds = vec![StepRecordVerdict::Holds; 8];
+        let settled = settle_step_records(&holds, &checked, &[], no_replay);
         assert_eq!(
-            check_refinement_smt_proof(request, &certificate, &limits, &Cancel::new()),
-            Ok(SmtProofCheck::Stopped(IncompleteCause::LimitReached {
-                limit: ModelCheckLimit::CertificateMaxEdges,
-                value: 8,
-            }))
+            values(&settled),
+            vec![TerminalValue::Incomplete(stopped); 8]
         );
+        assert_eq!(settled.safety.value, TerminalValue::Incomplete(stopped));
     });
 }
 
