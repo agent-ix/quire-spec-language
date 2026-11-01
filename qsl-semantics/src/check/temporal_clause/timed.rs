@@ -143,16 +143,14 @@ impl std::fmt::Debug for TimeNominalNode {
         let Self {
             key,
             form,
-            qualified_declaration,
-            owner,
+            origin,
             dependencies,
             nominal,
         } = self;
         f.debug_struct("TimeNominalNode")
             .field("key", &NodeKeyDebug(key))
             .field("form", &form)
-            .field("qualified_declaration", &qualified_declaration)
-            .field("owner", &owner)
+            .field("origin", &origin)
             .field("dependencies", &NodeList(dependencies.iter()))
             .field("nominal", &nominal)
             .finish()

@@ -888,8 +888,8 @@ fn a_declaration_without_its_occurrence_is_omitted() {
         &BTreeSet::new(),
     )
     .into_iter()
-        .map(|(_, omission)| omission)
-        .collect();
+    .map(|(_, omission)| omission)
+    .collect();
     assert_eq!(
         omitted,
         [OmittedNode {
