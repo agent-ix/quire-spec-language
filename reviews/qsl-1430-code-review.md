@@ -44,3 +44,39 @@ Reviewed the expanded QSL-1390/QSL-1430 producer change at the frozen PR head. E
 - {id: qsl-semantics/src/check/lowering.rs, path: "qsl-semantics/src/check/lowering.rs", role: examined, excerpt: "Retains per-UnitId dimension declarations, ordered terms and conversion edges, and Text/Plan operand type keys."}
 - {id: qsl-package/src/emit/tests/converted_equality.rs, path: "qsl-package/src/emit/tests/converted_equality.rs", role: examined, excerpt: "Tests canonical occurrence-specific sidecar rows, witness-row existence and typed refusal for missing, foreign and mismatched joins."}
 
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The lowering now keys dimension traversal by node and role, and the regression asserts both roles map to the same structural node with distinct ordinals. |
+| FND-002 | fixed | Checker-retained `structural_node` is used directly for the UnitId/type join; missing or conflicting mappings return `MissingEqualityIdentityContext`. |
+| FND-003 | still-open | The test now compares row contents with producer facts, but groups witnesses by application only and never asserts `witness.occurrence() == equality.occurrence()`. Two occurrences that share one structural application can still satisfy the assertions with each other's witness rows. |
+
+FND-001 after_excerpt:
+
+```rust
+if !visited.insert((key.clone(), role)) {
+    continue;
+}
+```
+
+FND-002 after_excerpt:
+
+```rust
+let quantity_key = &unit_fact.structural_node;
+```
+
+
+## Fix-round 2 coder update (pending reviewer disposition)
+
+The first expanded review's findings are retained above. Its code-review disposition marked FND-001 and FND-002 fixed, with FND-003 still open for exact occurrence matching. The companion gap review marked FND-001 and FND-003 fixed, with its FND-002 still open for exact row/occurrence pairing. The two numbered lists refer to the same underlying gaps: code-review FND-002 and gap-analysis FND-003 are the compound UnitId key join; code-review FND-003 and gap-analysis FND-002 are exact witness row assertions.
+
+At fix-round 2 head, the coder update is:
+
+| Finding | Update |
+| --- | --- |
+| FND-001 | Retained: lowering visits dimensions by `(NodeKey, EqualityDimensionRole)`; the shared-dimension conversion regression asserts both role rows share the final ID and have distinct ordinals. |
+| Compound UnitId key join (code FND-002 / gap FND-003) | Retained: checker-held operand type facts lower directly to structural keys; body/term search is removed; missing and ambiguous exact-key joins refuse. |
+| Exact row assertions (code FND-003 / gap FND-002) | Updated: test selection now joins both application and occurrence. A shared structural application test proves a witness from the other occurrence cannot satisfy the join. |
+
+The final status awaits reviewer disposition round 2. Earlier reviewer comments and findings remain preserved above.

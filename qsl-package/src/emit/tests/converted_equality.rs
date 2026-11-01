@@ -42,6 +42,18 @@ fn emitted(declarations: &str) -> Emission {
     emission
 }
 
+fn witnesses_for_occurrence<'a>(
+    rows: &'a [EqualityFactWitnessRow],
+    identity: &EqualityProducerEmissionRow,
+) -> Vec<&'a EqualityFactWitnessRow> {
+    rows.iter()
+        .filter(|witness| {
+            witness.application() == identity.application()
+                && witness.occurrence() == identity.occurrence()
+        })
+        .collect()
+}
+
 /// QSpec-TC-233's EQ-01..05 positive rows: each typed equality retains its
 /// selected schedule, explicit conversion target, resolved units and enum
 /// sub-index before the IR-owned wire writer is connected.
@@ -135,9 +147,8 @@ fn nested_equalities_each_retain_producer_facts() {
     }));
 }
 
-/// QSL-1390: distinct source occurrences that lower to the same structural
-/// equality key retain their independent authored conversion decisions.
-#[ix_trace_rs::trace("QSL-1390")]
+/// Shared structural keys retain exact per-occurrence equality witnesses.
+#[ix_trace_rs::trace("IR-FR-353-AC-1", "QSpec-FR-322-AC-288")]
 #[test]
 fn structurally_reused_equality_keys_retain_each_occurrence() {
     let graph = checked_graph(
@@ -184,6 +195,22 @@ fn structurally_reused_equality_keys_retain_each_occurrence() {
             && row.source_map_entry().role == row.occurrence().role
             && row.source_map_entry().ordinal == row.occurrence().ordinal
     }));
+    let stage_rows = emission.equality_fact_witness_rows();
+    let first_occurrence = witnesses_for_occurrence(stage_rows, &identity_rows[0]);
+    let second_occurrence = witnesses_for_occurrence(stage_rows, &identity_rows[1]);
+    assert!(!first_occurrence.is_empty());
+    assert!(!second_occurrence.is_empty());
+    assert!(first_occurrence
+        .iter()
+        .all(|witness| witness.occurrence() == identity_rows[0].occurrence()));
+    assert!(second_occurrence
+        .iter()
+        .all(|witness| witness.occurrence() == identity_rows[1].occurrence()));
+    assert_ne!(
+        identity_rows[0].occurrence(),
+        identity_rows[1].occurrence(),
+        "a stage witness from the other structurally shared occurrence cannot satisfy this join"
+    );
 
     let serialized = emission.package.bytes();
     let round_trip: Value =
@@ -369,10 +396,7 @@ fn emission_retains_unit_and_dimension_identity_roles() {
     );
 
     for equality in rows {
-        let witness_rows = witnesses
-            .iter()
-            .filter(|witness| witness.application() == equality.application());
-        let witness_rows = witness_rows.collect::<Vec<_>>();
+        let witness_rows = witnesses_for_occurrence(witnesses, equality);
         for type_fact in equality.producer_identity().operand_type_nodes() {
             let role = match type_fact.role {
                 qsl_semantics::check::EqualityUnitOperandRole::Source => {
@@ -698,6 +722,8 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
     for row in emission.equality_producer_identity_rows() {
         let type_rows = row.producer_identity().text_plan_type_nodes();
         assert_eq!(type_rows.len(), 2);
+        let occurrence_witnesses =
+            witnesses_for_occurrence(emission.equality_fact_witness_rows(), row);
         for (position, (ordinal, key)) in type_rows.iter().enumerate() {
             assert_eq!(*ordinal, position);
             let operand_fact = row
@@ -711,8 +737,7 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
                 operand_fact.role,
                 qsl_semantics::check::EqualityUnitOperandRole::Source
             );
-            let type_witness = emission
-                .equality_fact_witness_rows()
+            let type_witness = occurrence_witnesses
                 .iter()
                 .find(|witness| {
                     witness.application() == row.application()
@@ -723,8 +748,7 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
                         } if *actual_position == position)
                 })
                 .expect("Text/Plan type fact retains exact source role");
-            let operand_witness = emission
-                .equality_fact_witness_rows()
+            let operand_witness = occurrence_witnesses
                 .iter()
                 .find(|witness| {
                     witness.application() == row.application()
