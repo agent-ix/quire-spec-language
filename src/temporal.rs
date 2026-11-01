@@ -31,6 +31,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     Activation as CheckedActivation, CheckedFormula, CheckedInterval, FormulaNode, TemporalProfile,
 };
+use quire_checked::node::NodeKind;
 
 use activation::{Outcome, Shape};
 use formula::{Evaluator, Tri};
@@ -130,7 +131,14 @@ pub fn evaluate_checked_v2(
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
         .and_then(|(binding, _)| {
             authenticated = Some(binding);
-            run_checked(checked, declaration, trace, trace.watermark, &mut work, None)
+            run_checked(
+                checked,
+                declaration,
+                trace,
+                trace.watermark,
+                &mut work,
+                None,
+            )
         });
     Report {
         result,
@@ -204,7 +212,14 @@ pub fn evaluate_checked_with_progress_v2(
                 .record_authenticated(binding, Progress::of(trace))
                 .map_err(Error::from)
                 .and_then(|retained| {
-                    run_checked(checked, declaration, trace, retained.watermark, &mut work, None)
+                    run_checked(
+                        checked,
+                        declaration,
+                        trace,
+                        retained.watermark,
+                        &mut work,
+                        None,
+                    )
                 })
         });
     Report {
@@ -226,8 +241,9 @@ pub fn mapping_support_checked_v2(
     surrounding_execution: Closure,
 ) -> Result<CheckedClassificationV2, Error> {
     let subject = declaration_subject(declaration);
-    let (artifact_declaration, selected) = checked_v2_selection(checked, admitted, declaration, subject)?;
-    let (_, authenticated) = authenticated_selection(
+    let (artifact_declaration, selected) =
+        checked_v2_selection(checked, admitted, declaration, subject)?;
+    let (binding, authenticated) = authenticated_selection(
         admitted,
         artifact_declaration,
         &selected,
@@ -236,11 +252,6 @@ pub fn mapping_support_checked_v2(
             ..Subject::default()
         },
     )?;
-    let binding = admitted
-        .package()
-        .temporal_bindings
-        .get(artifact_declaration)
-        .ok_or(Refusal::Reference { subject })?;
     let classification = mapping_support_checked(checked, declaration, surrounding_execution)
         .map_err(|error| error)?;
     Ok(CheckedClassificationV2 {
@@ -505,29 +516,26 @@ fn checked_v2_selection<'a>(
                     })
         });
     let mut matches = matches;
-    let (artifact_declaration, _) = matches
-        .next()
-        .ok_or(Refusal::Reference { subject })?;
+    let (artifact_declaration, _) = matches.next().ok_or(Refusal::Reference { subject })?;
     if matches.next().is_some() {
         return Err(Refusal::Reference { subject }.into());
     }
-    let artifact_declaration_u32 =
-        u32::try_from(artifact_declaration).map_err(|_| Refusal::Reference { subject })?;
     let selected = select(package, artifact_declaration, subject)?;
-    if selected.declaration.profile != artifact_declaration_u32
-        || selected.profile.identity() != clause.profile().identity()
-    {
+    if selected.profile.identity() != clause.profile().identity() {
         return Err(Refusal::Binding {
             dimension: Dimension::Profile,
             subject,
         }
         .into());
     }
+    let artifact_declaration_index =
+        u32::try_from(artifact_declaration).map_err(|_| Refusal::Reference { subject })?;
     let temporal_binding = admitted
         .package()
         .temporal_bindings
-        .get(artifact_declaration)
-        .filter(|binding| binding.declaration == artifact_declaration_u32)
+        .binary_search_by_key(&artifact_declaration_index, |binding| binding.declaration)
+        .ok()
+        .and_then(|index| admitted.package().temporal_bindings.get(index))
         .ok_or(Refusal::Reference { subject })?;
     if clause.clock() != temporal_binding.clock_name {
         return Err(Refusal::Binding {
@@ -1149,7 +1157,7 @@ fn checked_instance_bound_atoms(
         while let Some(expression) = pending.pop() {
             if matches!(
                 expression.kind(),
-                qsl_semantics::check::NodeKind::Local(slot) if *slot >= first_capture_slot
+                NodeKind::Local(slot) if *slot >= first_capture_slot
             ) {
                 if let Ok(atom) = u32::try_from(index) {
                     result.insert(atom);

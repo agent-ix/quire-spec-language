@@ -9,7 +9,7 @@ use qsl_replay::spine::{
     SpineLimits,
 };
 use qsl_replay::SourceIdentity;
-use qsl_semantics::check::{NodeKind, Visit};
+use quire_checked::node::{NodeKind, Visit};
 use quire_exact::{Cancel, ValueType};
 
 const PACKAGE: &str = "example/config-version";
@@ -88,8 +88,8 @@ fn checked_map_collection_is_explicitly_unsupported_at_proof_transfer() {
         "same-typed checked Map candidates exist"
     );
     for (name, expected_visit) in [
-        ("QueryCandidate", qsl_semantics::check::Visit::Map),
-        ("FilterCandidate", qsl_semantics::check::Visit::Filter),
+        ("QueryCandidate", Visit::Map),
+        ("FilterCandidate", Visit::Filter),
     ] {
         let result = spine::query_proof::select_query_proof(checked.package(), name)
             .expect("the clause is selected from the checked package");

@@ -6,6 +6,7 @@ use crate::support::native_protocol as setup;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Source, SourceIdentity};
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
@@ -22,7 +23,7 @@ const DECLARATIONS: [(&str, R); 3] = [
 ];
 
 #[cfg(feature = "handoff-writer")]
-#[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
+#[trace("TC-138", "TC-150", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-7")]
 #[test]
 fn written_handoff_interchange_records_are_complete() {
     use artifact::handoff::{
@@ -393,6 +394,468 @@ fn trace_input(name: &str, profile_identity: &str, parameters: &[(&str, &str)]) 
         watermark: 0,
         evicted: Vec::new(),
     }
+}
+
+fn checked_fr050_inputs() -> Inputs {
+    let units = [
+        Unit {
+            name: "event-time",
+            body: "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on origin { eventually[0,0] holds(view.code > 0) }",
+            declarations: &["ByEvent"],
+        },
+        Unit {
+            name: "sample-time",
+            body: "temporal BySample using F over (view: M::Widget) clock \"sample-clock\" on origin { eventually[0,0] holds(view.code > 0) }",
+            declarations: &["BySample"],
+        },
+        Unit {
+            name: "timestamp-time",
+            body: "temporal ByTimestamp using W over (view: M::Widget) clock \"timestamp-clock\" on origin { eventually[0,0] holds(view.code > 0) }",
+            declarations: &["ByTimestamp"],
+        },
+        Unit {
+            name: "consumer",
+            body: "protocol Flow using P over (view: M::Plain) on origin { role Service on M::Node; requires temporal ByEvent; requires temporal BySample; requires temporal ByTimestamp; run sequence Main { event Happened by Service as (happened: M::Plain) { happened.ready }; } finish Closed as (closed: M::Plain) { closed.ready }; }",
+            declarations: &["Flow"],
+        },
+    ];
+    let mut model: serde_json::Value =
+        serde_json::from_str(crate::support::native_rule_model::fixture())
+            .expect("native model fixture JSON");
+    model["package"] = serde_json::json!("acme/orders");
+    model["records"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name": "Widget",
+            "fields": [{"name": "code", "type": {"kind": "scalar", "name": "Version"}}]
+        }));
+    model["records"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name": "Plain",
+            "fields": [{"name": "ready", "type": {"kind": "boolean"}}]
+        }));
+    let model = crate::support::native_rule_model::from_text(
+        &serde_json::to_string(&model).expect("serialize test model"),
+        "fr050-native-model.json",
+        "1",
+    )
+    .expect("native model fixture with the same checked model identity")
+    .model();
+    let mut inputs = Inputs::with_model(&units, model);
+    for (index, retained) in ["T", "F", "W"].into_iter().enumerate() {
+        let source = &inputs.sources[index];
+        let text = source
+            .text()
+            .split_inclusive('\n')
+            .map(|line| {
+                let unused_temporal_profile = ["T", "F", "W"].into_iter().any(|alias| {
+                    alias != retained && line.starts_with(&format!("profile {alias} ="))
+                });
+                if unused_temporal_profile {
+                    let content_len = line.strip_suffix('\n').unwrap_or(line).len();
+                    format!(
+                        "{}{}",
+                        " ".repeat(content_len),
+                        if line.ends_with('\n') { "\n" } else { "" }
+                    )
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<String>();
+        let replaced = Source::read(
+            source.identity().clone(),
+            source.path(),
+            text.as_bytes(),
+            quire_spec_language::Limits::default().source_bytes,
+        )
+        .expect("one checked temporal profile remains in each source");
+        inputs.sources[index] = replaced.clone();
+        inputs.formal[index] = quire_spec_language::formal_source::FormalSource::new(
+            replaced,
+            inputs.formal[index].identity().clone(),
+        );
+        inputs.mappings[index].source = inputs.formal[index].clone();
+    }
+    // The checked graph's RawSourceRef uses the source identity's authority;
+    // the admitted artifact selection must retain that exact pair too.
+    for source in &mut inputs.source_references {
+        source.authority = "test".into();
+    }
+    inputs
+}
+
+fn checked_fr050_unit(inputs: &Inputs, index: usize) -> qsl_replay::spine::CheckedUnit {
+    checked_fr050_unit_with_identity(
+        inputs,
+        index,
+        SourceIdentity::new(
+            inputs.sources[index].identity().authority.clone(),
+            inputs.sources[index].identity().identity.clone(),
+            inputs.sources[index].identity().revision_namespace.clone(),
+            inputs.sources[index].identity().revision.clone(),
+        ),
+    )
+}
+
+fn checked_fr050_unit_with_identity(
+    inputs: &Inputs,
+    index: usize,
+    identity: SourceIdentity,
+) -> qsl_replay::spine::CheckedUnit {
+    let model = include_bytes!("../fixtures/spine-model.semantic-ir.json");
+    let packages = qsl_semantics::model::intake::package_input([model.as_slice()])
+        .expect("admit the checked package model fixture");
+    let source = &inputs.sources[index];
+    crate::support::front_end::checked(
+        identity,
+        "fr050-checked-successor.native",
+        source.text().as_bytes(),
+        &packages,
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("checked route admits the emitted native source")
+}
+
+#[trace("TC-150", "FR-050-AC-1", "FR-050-AC-6")]
+#[test]
+fn checked_successor_authenticates_each_emitted_profile_and_clock_before_evaluation() {
+    with_v2_inputs(
+        checked_fr050_inputs(),
+        |inputs, proofs, _, tables, emitted| {
+            let expected = inputs.read_v2(proofs, emitted, &tables.expected);
+            let admitted = expected
+                .into_result()
+                .expect("strict reader admits the emitted v2 bytes");
+            for (index, (clock_name, profile, parameters)) in [
+                (
+                    "event-clock",
+                    temporal::EVENT_POSITION,
+                    vec![("sequence_authority", "orders")],
+                ),
+                (
+                    "sample-clock",
+                    temporal::FIXED_SAMPLE,
+                    vec![
+                        ("epoch", "{\"kind\":\"integer\",\"decimal\":\"0\"}"),
+                        (
+                            "period",
+                            "{\"kind\":\"rational\",\"numerator\":\"1\",\"denominator\":\"2\"}",
+                        ),
+                        ("unit", "second"),
+                    ],
+                ),
+                (
+                    "timestamp-clock",
+                    temporal::TIMESTAMPED_WINDOW,
+                    vec![("timestamp_unit", "millisecond")],
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let checked = checked_fr050_unit(&inputs, index);
+                let mut trace = trace_input(clock_name, profile, &parameters);
+                let clause = checked.package().graph().temporal_clauses()[0].clause();
+                let hold = clause
+                    .formula()
+                    .nodes()
+                    .iter()
+                    .position(|node| {
+                        matches!(node, qsl_semantics::check::FormulaNode::Holds { .. })
+                    })
+                    .and_then(|index| u32::try_from(index).ok())
+                    .expect("checked hold atom index");
+                trace.positions.push(temporal::Position {
+                    coordinate: 0,
+                    order: None,
+                    valuations: BTreeMap::from([(hold, true)]),
+                    instance_valuations: BTreeMap::new(),
+                });
+                let raw = temporal::evaluate_checked(
+                    checked.package(),
+                    0,
+                    &trace,
+                    temporal::Limits::default(),
+                );
+                assert!(
+                    raw.result().is_ok(),
+                    "raw checked evaluation: {:?}",
+                    raw.result()
+                );
+                let report = temporal::evaluate_checked_v2(
+                    checked.package(),
+                    &admitted,
+                    0,
+                    &trace,
+                    temporal::Limits::default(),
+                );
+                assert!(
+                    report.result().is_ok(),
+                    "matching checked selection evaluates: {:?}",
+                    report.result()
+                );
+                let binding = report.authenticated().expect("selection is retained");
+                assert_eq!(
+                    binding.declaration,
+                    declaration(&admitted, DECLARATIONS[index].0)
+                );
+                assert_eq!(binding.clock, clock_name);
+                assert_eq!(
+                    binding.parameters,
+                    parameters
+                        .iter()
+                        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                        .collect()
+                );
+                assert_eq!(
+                    binding.definition_identity,
+                    [R::EventPosition, R::FixedSample, R::TimestampedWindow][index].identity()
+                );
+                assert_eq!(
+                    binding.definition_revision,
+                    tables.expected[index].definition.revision.value
+                );
+                let binding_row = &admitted.package().temporal_bindings[index];
+                let definition = &admitted.inherited().definitions
+                    [usize::try_from(binding_row.definition).unwrap()];
+                let definition_artifact = &admitted.inherited().dependencies
+                    [usize::try_from(definition.artifact).unwrap()]
+                .artifact;
+                assert_eq!(
+                    definition_artifact,
+                    &tables.expected[index].definition.artifact
+                );
+                assert!(
+                    report.usage().positions > 0,
+                    "matching path evaluates formula positions"
+                );
+                let classification = temporal::mapping_support_checked_v2(
+                    checked.package(),
+                    &admitted,
+                    0,
+                    temporal::Closure::Open,
+                )
+                .expect("checked mapping retains the admitted selection");
+                assert_eq!(
+                    classification.authenticated.definition_identity(),
+                    tables.expected[index].definition.identity
+                );
+                assert_eq!(
+                    classification.authenticated.definition_revision(),
+                    &tables.expected[index].definition.revision
+                );
+                assert_eq!(classification.clock_name, clock_name);
+                assert_eq!(
+                    classification.clock,
+                    tables.expected[index].definition.clock
+                );
+                let mut ledger = temporal::Ledger::default();
+                let mut established_trace = trace.clone();
+                established_trace.watermark = 2;
+                let progress_report = temporal::evaluate_checked_with_progress_v2(
+                    checked.package(),
+                    &admitted,
+                    0,
+                    &established_trace,
+                    temporal::Limits::default(),
+                    &mut ledger,
+                );
+                assert!(
+                    progress_report.result().is_ok(),
+                    "checked progress route evaluates with authenticated selection"
+                );
+                assert_eq!(progress_report.authenticated(), Some(binding));
+
+                let mut wrong_profile = trace.clone();
+                wrong_profile.clock.profile_identity = "quire.temporal.other/v1".into();
+                let mut wrong_clock = trace.clone();
+                wrong_clock.clock.name = "other-clock".into();
+                let mut missing_parameter = trace.clone();
+                missing_parameter.clock.parameters.remove(parameters[0].0);
+                let mut extra_parameter = trace.clone();
+                extra_parameter
+                    .clock
+                    .parameters
+                    .insert("extra".into(), "unexpected".into());
+                let substitutions: Vec<(&str, temporal::Trace, temporal::Dimension)> = match index {
+                    0 => vec![(
+                        "sequence authority",
+                        {
+                            let mut changed = trace.clone();
+                            changed
+                                .clock
+                                .parameters
+                                .insert("sequence_authority".into(), "other-orders".into());
+                            changed
+                        },
+                        temporal::Dimension::SequenceAuthority,
+                    )],
+                    1 => vec![
+                        (
+                            "epoch",
+                            {
+                                let mut changed = trace.clone();
+                                changed.clock.parameters.insert(
+                                    "epoch".into(),
+                                    "{\"kind\":\"integer\",\"decimal\":\"1\"}".into(),
+                                );
+                                changed
+                            },
+                            temporal::Dimension::Epoch,
+                        ),
+                        (
+                            "period",
+                            {
+                                let mut changed = trace.clone();
+                                changed.clock.parameters.insert(
+                                        "period".into(),
+                                        "{\"kind\":\"rational\",\"numerator\":\"1\",\"denominator\":\"3\"}".into(),
+                                    );
+                                changed
+                            },
+                            temporal::Dimension::SamplePeriod,
+                        ),
+                        (
+                            "unit",
+                            {
+                                let mut changed = trace.clone();
+                                changed
+                                    .clock
+                                    .parameters
+                                    .insert("unit".into(), "minute".into());
+                                changed
+                            },
+                            temporal::Dimension::ClockUnit,
+                        ),
+                    ],
+                    2 => vec![(
+                        "timestamp unit",
+                        {
+                            let mut changed = trace.clone();
+                            changed
+                                .clock
+                                .parameters
+                                .insert("timestamp_unit".into(), "nanosecond".into());
+                            changed
+                        },
+                        temporal::Dimension::TimestampUnit,
+                    )],
+                    _ => unreachable!("three selected temporal profiles"),
+                };
+                let mut refusals = vec![
+                    ("profile", wrong_profile, temporal::Dimension::Profile),
+                    ("clock", wrong_clock, temporal::Dimension::Clock),
+                    (
+                        "missing parameter",
+                        missing_parameter,
+                        temporal::Dimension::ClockParameters,
+                    ),
+                    (
+                        "extra parameter",
+                        extra_parameter,
+                        temporal::Dimension::ClockParameters,
+                    ),
+                ];
+                refusals.extend(substitutions);
+                for (axis, changed, expected_dimension) in refusals {
+                    let refused = temporal::evaluate_checked_v2(
+                        checked.package(),
+                        &admitted,
+                        0,
+                        &changed,
+                        temporal::Limits::default(),
+                    );
+                    assert!(
+                        matches!(
+                            refused.result(),
+                            Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                                dimension,
+                                ..
+                            })) if *dimension == expected_dimension
+                        ),
+                        "{axis} mismatch has its exact typed refusal: {:?}",
+                        refused.result()
+                    );
+                    assert_eq!(refused.usage().positions, 0, "{axis} refusal precedes work");
+                    assert!(refused.authenticated().is_none(), "{axis} is not retained");
+
+                    let mut changed_progress = changed.clone();
+                    changed_progress.watermark = 3;
+                    let progress_refused = temporal::evaluate_checked_with_progress_v2(
+                        checked.package(),
+                        &admitted,
+                        0,
+                        &changed_progress,
+                        temporal::Limits::default(),
+                        &mut ledger,
+                    );
+                    assert!(matches!(
+                        progress_refused.result(),
+                        Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                            dimension,
+                            ..
+                        })) if *dimension == expected_dimension
+                    ));
+                    assert_eq!(progress_refused.usage().positions, 0);
+                    assert!(progress_refused.authenticated().is_none());
+
+                    let mut regressed = established_trace.clone();
+                    regressed.watermark = 1;
+                    let retained = temporal::evaluate_checked_with_progress_v2(
+                        checked.package(),
+                        &admitted,
+                        0,
+                        &regressed,
+                        temporal::Limits::default(),
+                        &mut ledger,
+                    );
+                    assert!(matches!(
+                        retained.result(),
+                        Err(temporal::Error::Refused(temporal::Refusal::Progress {
+                            dimension: temporal::Dimension::Watermark,
+                            ..
+                        }))
+                    ));
+                }
+            }
+
+            let wrong_source = checked_fr050_unit_with_identity(
+                &inputs,
+                0,
+                SourceIdentity::new("other-authority", "unit:event-time", "test", "authored"),
+            );
+            let mut wrong_trace = trace_input(
+                "event-clock",
+                temporal::EVENT_POSITION,
+                &[("sequence_authority", "orders")],
+            );
+            wrong_trace.positions.push(temporal::Position {
+                coordinate: 0,
+                order: None,
+                valuations: BTreeMap::new(),
+                instance_valuations: BTreeMap::new(),
+            });
+            let refused = temporal::evaluate_checked_v2(
+                wrong_source.package(),
+                &admitted,
+                0,
+                &wrong_trace,
+                temporal::Limits::default(),
+            );
+            assert!(matches!(
+                refused.result(),
+                Err(temporal::Error::Refused(
+                    temporal::Refusal::Reference { .. }
+                ))
+            ));
+            assert_eq!(refused.usage().positions, 0);
+            assert!(refused.authenticated().is_none());
+        },
+    );
 }
 
 fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
@@ -909,6 +1372,7 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
 
 #[trace(
     "TC-138",
+    "TC-150",
     "TC-1277",
     "FR-050-AC-1",
     "FR-050-AC-4",
@@ -1023,7 +1487,7 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
 fn producer_requires_one_exact_source_definition_and_clock_selection() {
     with_v2(|inputs, proofs, selected, temporal, _| {
@@ -1148,7 +1612,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
 #[test]
 fn strict_reader_rejects_structural_and_identity_substitutions() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
@@ -1352,7 +1816,7 @@ fn strict_reader_rejects_structural_and_identity_substitutions() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
 #[test]
 fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
@@ -1504,76 +1968,112 @@ fn malformed_clock_objects_refuse() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-5")]
+#[trace("TC-138", "TC-150", "FR-050-AC-5")]
 #[test]
 fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
-    with_v2(|inputs, proofs, _, temporal, emitted| {
-        let temporal = &temporal.expected;
-        let complete = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());
-        let usage = complete.usage();
-        assert!(
-            usage.byte_work >= emitted.bytes().len(),
-            "byte work charges at least the emitted bytes"
-        );
-        for (dimension, amount) in [
-            (WorkDimension::Entries, usage.entries),
-            (WorkDimension::References, usage.references),
-            (WorkDimension::ByteWork, usage.byte_work),
-            (WorkDimension::OutputBytes, usage.output_bytes),
-        ] {
-            assert!(amount > 0);
-            let mut limits = Limits::default();
-            match dimension {
-                WorkDimension::Entries => limits.entries = amount - 1,
-                WorkDimension::References => limits.references = amount - 1,
-                WorkDimension::ByteWork => limits.byte_work = amount - 1,
-                WorkDimension::OutputBytes => limits.output_bytes = amount - 1,
-                _ => unreachable!(),
-            }
-            let report = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, limits);
-            let Error::Incomplete(exhaustion) = report.result().unwrap_err() else {
-                panic!("{dimension:?}: expected typed exhaustion")
-            };
-            assert_eq!(exhaustion.dimension, dimension);
+    with_v2_inputs(
+        checked_fr050_inputs(),
+        |inputs, proofs, _, temporal, emitted| {
+            let temporal = &temporal.expected;
+            let complete =
+                inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());
+            let usage = complete.usage();
+            assert!(
+                usage.byte_work >= emitted.bytes().len(),
+                "byte work charges at least the emitted bytes"
+            );
+            for (dimension, amount) in [
+                (WorkDimension::Entries, usage.entries),
+                (WorkDimension::References, usage.references),
+                (WorkDimension::ByteWork, usage.byte_work),
+                (WorkDimension::OutputBytes, usage.output_bytes),
+            ] {
+                assert!(amount > 0);
+                let mut limits = Limits::default();
+                match dimension {
+                    WorkDimension::Entries => limits.entries = amount - 1,
+                    WorkDimension::References => limits.references = amount - 1,
+                    WorkDimension::ByteWork => limits.byte_work = amount - 1,
+                    WorkDimension::OutputBytes => limits.output_bytes = amount - 1,
+                    _ => unreachable!(),
+                }
+                let report = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, limits);
+                let Error::Incomplete(exhaustion) = report.result().unwrap_err() else {
+                    panic!("{dimension:?}: expected typed exhaustion")
+                };
+                assert_eq!(exhaustion.dimension, dimension);
 
-            let mut exact = Limits::default();
-            match dimension {
-                WorkDimension::Entries => exact.entries = amount,
-                WorkDimension::References => exact.references = amount,
-                WorkDimension::ByteWork => exact.byte_work = amount,
-                WorkDimension::OutputBytes => exact.output_bytes = amount,
-                _ => unreachable!(),
+                let mut exact = Limits::default();
+                match dimension {
+                    WorkDimension::Entries => exact.entries = amount,
+                    WorkDimension::References => exact.references = amount,
+                    WorkDimension::ByteWork => exact.byte_work = amount,
+                    WorkDimension::OutputBytes => exact.output_bytes = amount,
+                    _ => unreachable!(),
+                }
+                assert!(inputs
+                    .read_v2_bytes(proofs, emitted.bytes(), temporal, exact)
+                    .result()
+                    .is_ok());
             }
-            assert!(inputs
-                .read_v2_bytes(proofs, emitted.bytes(), temporal, exact)
-                .result()
-                .is_ok());
-        }
-        let above_hard = Limits {
-            payload_bytes: usize::MAX,
-            output_bytes: usize::MAX,
-            source_bytes: usize::MAX,
-            content_bytes: usize::MAX,
-            sources: usize::MAX,
-            dependencies: usize::MAX,
-            definitions: usize::MAX,
-            models: usize::MAX,
-            declarations: usize::MAX,
-            entries: usize::MAX,
-            references: usize::MAX,
-            byte_work: usize::MAX,
-            depth: usize::MAX,
-            ..Limits::default()
-        };
-        let clamped = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, above_hard);
-        assert_eq!(clamped.limits(), Limits::default());
-        assert!(clamped.result().is_ok());
-        let retry = inputs
-            .read_v2(proofs, emitted, temporal)
-            .into_result()
-            .expect("fresh sufficient retry");
-        assert_eq!(retry.package(), emitted.admitted().package());
-    });
+            let above_hard = Limits {
+                payload_bytes: usize::MAX,
+                output_bytes: usize::MAX,
+                source_bytes: usize::MAX,
+                content_bytes: usize::MAX,
+                sources: usize::MAX,
+                dependencies: usize::MAX,
+                definitions: usize::MAX,
+                models: usize::MAX,
+                declarations: usize::MAX,
+                entries: usize::MAX,
+                references: usize::MAX,
+                byte_work: usize::MAX,
+                depth: usize::MAX,
+                ..Limits::default()
+            };
+            let clamped = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, above_hard);
+            assert_eq!(clamped.limits(), Limits::default());
+            assert!(clamped.result().is_ok());
+            let retry = inputs
+                .read_v2(proofs, emitted, temporal)
+                .into_result()
+                .expect("fresh sufficient retry");
+            assert_eq!(retry.package(), emitted.admitted().package());
+            let checked = checked_fr050_unit(inputs, 0);
+            let mut trace = trace_input(
+                "event-clock",
+                temporal::EVENT_POSITION,
+                &[("sequence_authority", "orders")],
+            );
+            let clause = checked.package().graph().temporal_clauses()[0].clause();
+            let hold = clause
+                .formula()
+                .nodes()
+                .iter()
+                .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+                .and_then(|index| u32::try_from(index).ok())
+                .expect("checked hold atom index");
+            trace.positions.push(temporal::Position {
+                coordinate: 0,
+                order: None,
+                valuations: BTreeMap::from([(hold, true)]),
+                instance_valuations: BTreeMap::new(),
+            });
+            let checked_result = temporal::evaluate_checked_v2(
+                checked.package(),
+                &retry,
+                0,
+                &trace,
+                temporal::Limits::default(),
+            );
+            assert!(
+                checked_result.result().is_ok(),
+                "fresh strict-read retry reaches its checked successor"
+            );
+            assert_eq!(checked_result.authenticated().unwrap().clock, "event-clock");
+        },
+    );
 }
 
 #[trace("TC-138", "FR-050-AC-6")]

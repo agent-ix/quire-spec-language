@@ -4,7 +4,8 @@
 //! and its result representation.
 
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedNode, NodeId, NodeKind, Visit};
+use qsl_semantics::check::{CheckedNode, NodeId};
+use quire_checked::node::{NodeKind, Visit};
 use quire_exact::{NodeKey, ValueType};
 
 /// The typed proof-transfer outcome for a selected checked clause.
