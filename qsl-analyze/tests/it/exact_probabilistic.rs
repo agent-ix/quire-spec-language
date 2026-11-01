@@ -1637,13 +1637,14 @@ fn fair_coin_has_no_nonterminal_fair_end_component() {
 
 /// A terminal stutter-only component is fair when it remains in the
 /// non-target graph, despite having no scheduled identities.
+#[trace("TC-635", "FR-200-AC-5")]
 #[test]
 fn non_target_terminal_stutter_belongs_to_fair_reachability_u() {
-    const CLAIM: &str = "probabilistic TerminalStutter using inf on M over (p: M::Proc) \
-         under every scheduler fair strong Proc::proceed on origin \
-         { probability >= 0.5 [ eventually holds(p.done) ] }";
+    const CLAIM: &str = "probabilistic TerminalFair using inf on M over (t: M::TerminalFair) \
+         under every scheduler fair strong TerminalFair::proceed on origin \
+         { probability >= 0.5 [ eventually holds(t.done) ] }";
     let world = World::new(&prob_world::fair_terminal_stutter(CLAIM));
-    let product = built(&world, "TerminalStutter");
+    let product = built(&world, "TerminalFair");
     let target = product
         .labels
         .iter()
@@ -1939,12 +1940,13 @@ fn fair_each_refines_one_operation_into_per_receiver_identities() {
     assert_eq!(wait_identities.len(), 2, "{components:?}");
 }
 
+#[trace("TC-635", "FR-200-AC-6")]
 #[test]
 fn fair_weak_each_refines_one_operation_into_per_receiver_identities() {
-    const CLAIM: &str = "probabilistic WeakEachIdentity using inf on M over (p: M::Proc) \
-         under every scheduler fair weak each Proc::wait on origin \
-         { probability >= 0.5 [ eventually holds(p.done) ] }";
-    let fixture = prob_world::process(CLAIM);
+    const CLAIM: &str = "probabilistic WeakEachIdentity using inf on M over (p: M::Pair) \
+         under every scheduler fair weak each Pair::tick on origin \
+         { probability >= 0.5 [ eventually holds(p.live) ] }";
+    let fixture = prob_world::pair_tick(CLAIM);
     let world = World::symmetric_objects(&fixture, &["a", "b"]);
     let product = built(&world, "WeakEachIdentity");
     let components = maximal_fair_end_components(&product, &product.fairness)
@@ -1952,7 +1954,7 @@ fn fair_weak_each_refines_one_operation_into_per_receiver_identities() {
     let wait_identities = components
         .iter()
         .flat_map(|component| component.actions.iter())
-        .filter(|(_, identity)| identity.operation.contains("wait"))
+        .filter(|(_, identity)| identity.operation.contains("tick"))
         .map(|(_, identity)| identity.receiver.clone())
         .collect::<BTreeSet<_>>();
     assert_eq!(wait_identities.len(), 2, "{components:?}");
@@ -1960,24 +1962,26 @@ fn fair_weak_each_refines_one_operation_into_per_receiver_identities() {
 
 /// A randomized split reaches either of two distinct fair bottom SCCs; the
 /// witness is checked against both components.
+#[trace("TC-635", "FR-200-AC-7")]
 #[test]
 fn fair_witness_validates_multiple_bottom_sccs() {
-    const CLAIM: &str = "probabilistic TwoBottoms using inf on M over (p: M::Proc) \
-         under every scheduler fair weak Proc::left_tick fair weak Proc::right_tick on origin \
-         { probability >= 0.5 [ eventually holds(p.right) ] }";
+    const CLAIM: &str = "probabilistic SplitFair using inf on M over (s: M::Split) \
+         under every scheduler fair strong Split::step on origin \
+         { probability >= 0.5 [ eventually holds(s.done) ] }";
     let world = World::new(&prob_world::fair_two_bottoms(CLAIM));
-    let product = built(&world, "TwoBottoms");
+    let product = built(&world, "SplitFair");
     let components = maximal_fair_end_components(&product, &product.fairness)
         .expect("two disjoint fair end components");
     assert_eq!(components.len(), 2, "{components:?}");
-    assert!(components.iter().any(|component| component
-        .actions
-        .iter()
-        .any(|(_, identity)| { identity.operation.contains("left_tick") })));
-    assert!(components.iter().any(|component| component
-        .actions
-        .iter()
-        .any(|(_, identity)| { identity.operation.contains("right_tick") })));
+    assert!(
+        components.iter().all(|component| component
+            .actions
+            .iter()
+            .any(|(_, identity)| identity.operation.contains("step"))),
+        "components={components:?} states={:?} edges={:?}",
+        product.states,
+        product.edges
+    );
 
     let target = product
         .labels
@@ -1994,31 +1998,13 @@ fn fair_witness_validates_multiple_bottom_sccs() {
     .expect("the returned scheduler is checked over every bottom SCC");
     assert_eq!(
         result.values[start(&product).index()],
-        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1, 2))
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(0, 1))
     );
-    let left_bottom = components
+    let bottom_states = components
         .iter()
-        .find(|component| {
-            component
-                .actions
-                .iter()
-                .any(|(_, identity)| identity.operation.contains("left_tick"))
-        })
-        .and_then(|component| component.states.first())
-        .copied()
-        .expect("left bottom state");
-    let right_bottom = components
-        .iter()
-        .find(|component| {
-            component
-                .actions
-                .iter()
-                .any(|(_, identity)| identity.operation.contains("right_tick"))
-        })
-        .and_then(|component| component.states.first())
-        .copied()
-        .expect("right bottom state");
-    assert_ne!(left_bottom, right_bottom);
+        .map(|component| *component.states.first().expect("a bottom state"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(bottom_states.len(), 2);
     let mut reachable = BTreeSet::from([start(&product)]);
     let mut pending = VecDeque::from([start(&product)]);
     while let Some(state) = pending.pop_front() {
@@ -2028,10 +2014,10 @@ fn fair_witness_validates_multiple_bottom_sccs() {
             }
         }
     }
-    assert!(reachable.contains(&left_bottom));
-    assert!(reachable.contains(&right_bottom));
-    assert!(result.policy[left_bottom.index()].is_some());
-    assert!(result.policy[right_bottom.index()].is_some());
+    for bottom in bottom_states {
+        assert!(reachable.contains(&bottom));
+        assert!(result.policy[bottom.index()].is_some());
+    }
 }
 
 const COST: &str = "probabilistic Cost using ev on M over (m: M::Msg) under Even on origin \

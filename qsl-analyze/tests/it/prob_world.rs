@@ -941,10 +941,10 @@ pub(crate) fn zero_reward_exit(extra: &str) -> Model {
 /// terminal `stopped`, whose only subsequent edge is terminal stutter.
 pub(crate) fn fair_terminal_stutter(extra: &str) -> Model {
     Model {
-        package: "test/fair-terminal-stutter",
-        object: "Proc",
-        population: "procs",
-        key: "p",
+        package: "test/terminal-fair",
+        object: "TerminalFair",
+        population: "terminals",
+        key: "t",
         integers: vec![],
         fields: vec![
             ("done", BOOLEAN.to_owned()),
@@ -965,10 +965,10 @@ pub(crate) fn fair_terminal_stutter(extra: &str) -> Model {
             },
         ],
         body: format!(
-            "pre Live_proceed using v on M::Proc::proceed {{ not self.done and not self.stopped }}\n\
-             post Proceeded using v on M::Proc::proceed {{ self.done = true and self.stopped = pre(self.stopped) }}\n\
-             pre Live_abandon using v on M::Proc::abandon {{ not self.done and not self.stopped }}\n\
-             post Abandoned using v on M::Proc::abandon {{ self.stopped = true and self.done = pre(self.done) }}\n\
+            "pre Live_proceed using v on M::TerminalFair::proceed {{ not self.done and not self.stopped }}\n\
+             post Proceeded using v on M::TerminalFair::proceed {{ self.done = true and self.stopped = pre(self.stopped) }}\n\
+             pre Live_abandon using v on M::TerminalFair::abandon {{ not self.done and not self.stopped }}\n\
+             post Abandoned using v on M::TerminalFair::abandon {{ self.stopped = true and self.done = pre(self.done) }}\n\
              terminal End using v on M when {{ self.done or self.stopped }};\n{extra}"
         ),
         initial: json!({"done": {"boolean": false}, "stopped": {"boolean": false}}),
@@ -1014,45 +1014,61 @@ pub(crate) fn fair_min_reward(extra: &str) -> Model {
 /// A probabilistic split into two disjoint fair bottom components.
 pub(crate) fn fair_two_bottoms(extra: &str) -> Model {
     Model {
-        package: "test/fair-two-bottoms",
-        object: "Proc",
-        population: "procs",
-        key: "p",
+        package: "test/split",
+        object: "Split",
+        population: "splits",
+        key: "s",
         integers: vec![],
         fields: vec![
             ("selected", BOOLEAN.to_owned()),
             ("right", BOOLEAN.to_owned()),
+            ("done", BOOLEAN.to_owned()),
         ],
         operations: vec![
             Operation {
                 name: "split",
                 parameters: vec![("right", BOOLEAN.to_owned())],
-                modifies: vec!["selected", "right"],
+                modifies: vec!["selected", "right", "done"],
                 deletes: false,
             },
             Operation {
-                name: "left_tick",
-                parameters: vec![],
-                modifies: vec![],
-                deletes: false,
-            },
-            Operation {
-                name: "right_tick",
+                name: "step",
                 parameters: vec![],
                 modifies: vec![],
                 deletes: false,
             },
         ],
         body: format!(
-            "pre At_start using v on M::Proc::split {{ not self.selected }}\n\
-             post Split using v on M::Proc::split {{ self.selected = true and self.right = right }}\n\
-             pre At_left using v on M::Proc::left_tick {{ self.selected and not self.right }}\n\
-             post Left_tick using v on M::Proc::left_tick {{ self.selected = pre(self.selected) and self.right = pre(self.right) }}\n\
-             pre At_right using v on M::Proc::right_tick {{ self.selected and self.right }}\n\
-             post Right_tick using v on M::Proc::right_tick {{ self.selected = pre(self.selected) and self.right = pre(self.right) }}\n\
-             random Proc::split(right) ~ {{ true: 1, false: 1 }};\n{extra}"
+            "pre At_start using v on M::Split::split {{ not self.selected }}\n\
+             post Split using v on M::Split::split {{ self.selected = true and self.right = right and self.done = false }}\n\
+             pre At_step using v on M::Split::step {{ self.selected }}\n\
+             post Stepped using v on M::Split::step {{ self.selected = pre(self.selected) and self.right = pre(self.right) and self.done = pre(self.done) }}\n\
+             random Split::split(right) ~ {{ true: 1, false: 1 }};\n{extra}"
         ),
-        initial: json!({"selected": {"boolean": false}, "right": {"boolean": false}}),
+        initial: json!({"selected": {"boolean": false}, "right": {"boolean": false}, "done": {"boolean": false}}),
+    }
+}
+
+/// Two receivers each have a continuously enabled `tick` self-loop.
+pub(crate) fn pair_tick(extra: &str) -> Model {
+    Model {
+        package: "test/pair",
+        object: "Pair",
+        population: "pairs",
+        key: "a",
+        integers: vec![],
+        fields: vec![("live", BOOLEAN.to_owned())],
+        operations: vec![Operation {
+            name: "tick",
+            parameters: vec![],
+            modifies: vec![],
+            deletes: false,
+        }],
+        body: format!(
+            "pre Live_tick using v on M::Pair::tick {{ self.live }}\n\
+             post Ticked using v on M::Pair::tick {{ self.live = pre(self.live) }}\n{extra}"
+        ),
+        initial: json!({"live": {"boolean": true}}),
     }
 }
 
