@@ -11,9 +11,9 @@
 //!   at its own occurrence. The evaluator reports neither the occurrences it
 //!   passed through nor those a stop elsewhere masked, so the arm never
 //!   proves one: with no violation found it is `unknown`.
-//! * One case is one assignment evaluated. The count is `check.limits.max_cases`
-//!   or the descriptor default; reaching it before the domain is exhausted is
-//!   `incomplete` `limit-reached`.
+//! * The `max_cases` budget charges one case for each parameter assignment
+//!   and each function-body evaluation, including replay. Reaching it before
+//!   enumeration is complete is `incomplete` `limit-reached`.
 //!
 //! [`value_item`] is the only constructor of the arm's work.
 
@@ -36,7 +36,8 @@ use crate::analyze::{AnalyzeItem, EngineReport, Refusal};
 /// What the arm found, before settlement.
 #[derive(Debug)]
 pub enum ValueOutcome {
-    /// The goal holds at all `cases` assignments of the finite domain.
+    /// The goal holds throughout enumeration; `cases` counts charged
+    /// assignments and function-body evaluations.
     Proved {
         /// The assignments evaluated.
         cases: u64,
@@ -45,7 +46,8 @@ pub enum ValueOutcome {
     Refuted(Box<ReproducedViolation>),
     /// A candidate violation the native replay did not reproduce.
     ReplayParity,
-    /// No assignment: a bound left a parameter without a value.
+    /// No assignment satisfies the premises or reaches the selected
+    /// scalar-operation occurrence.
     Vacuous,
     /// The arm neither established the goal nor found a violation.
     Undecided,
@@ -89,8 +91,14 @@ pub(crate) enum Step {
     Continue,
     /// The goal is violated there.
     Violated(qsl_replay::value_check::Violation),
+    /// A scalar-operation occurrence was not reached in this assignment.
+    NotReached,
     /// The evaluation was stopped.
     Stop(Stop),
+    /// A called function body is outside the checked package closure.
+    CallNotEvaluable,
+    /// The remaining item case budget could not admit another function body.
+    CaseLimit,
     /// The evaluator refused: the arm cannot decide the claim.
     Refuse,
     /// The goal is undefined where the package names no single occurrence:
@@ -101,9 +109,12 @@ pub(crate) enum Step {
 /// The step a verdict is. A refused evaluation is never a held goal.
 pub(crate) fn judge(verdict: Verdict) -> Step {
     match verdict {
-        Verdict::Holds | Verdict::NotDecisive => Step::Continue,
+        Verdict::Holds => Step::Continue,
+        Verdict::NotDecisive => Step::NotReached,
         Verdict::Violated(violation) => Step::Violated(violation),
         Verdict::Stopped(stop) => Step::Stop(stop),
+        Verdict::CallNotEvaluable => Step::CallNotEvaluable,
+        Verdict::CaseLimit => Step::CaseLimit,
         Verdict::Refused => Step::Refuse,
         Verdict::Unlocated => Step::Unlocated,
     }
@@ -127,10 +138,22 @@ fn reproduce(
     assignment: &[Value],
     violation: &qsl_replay::value_check::Violation,
     cancel: &Cancel,
-) -> Result<ValueOutcome, ValueRefusal> {
+    budget: u64,
+    used: u64,
+) -> Result<(ValueOutcome, u64), ValueRefusal> {
+    let remaining = budget.saturating_sub(used);
+    if remaining == 0 {
+        return Ok((ValueOutcome::MaxCases(budget), 0));
+    }
     target
-        .replay(assignment, violation, cancel)
-        .map(replayed)
+        .replay_with_case_budget(assignment, violation, cancel, remaining)
+        .map(|(reproduced, body_cases, exhausted)| {
+            if exhausted {
+                (ValueOutcome::MaxCases(budget), body_cases)
+            } else {
+                (replayed(reproduced), body_cases)
+            }
+        })
         .map_err(ValueRefusal::Fault)
 }
 
@@ -140,20 +163,31 @@ fn confirm_reported(
     target: &ValueTarget<'_>,
     reported: &[Value],
     cancel: &Cancel,
-) -> Result<ValueOutcome, ValueRefusal> {
+    budget: u64,
+) -> Result<(ValueOutcome, u64), ValueRefusal> {
     // A candidate that is no assignment of the target (wrong arity, type or
     // outside its domain) is not a violation the native replay can
     // reproduce: `replay-parity`, never a fault.
     if !target.admits(reported) {
-        return Ok(ValueOutcome::ReplayParity);
+        return Ok((ValueOutcome::ReplayParity, 0));
     }
-    let verdict = target
-        .evaluate(reported, cancel)
+    let (verdict, body_cases) = target
+        .evaluate_with_case_budget(reported, cancel, budget.saturating_sub(1))
         .map_err(ValueRefusal::Fault)?;
     match judge(verdict) {
-        Step::Violated(violation) => reproduce(target, reported, &violation, cancel),
-        Step::Continue | Step::Unlocated => Ok(ValueOutcome::ReplayParity),
-        Step::Stop(stop) => Ok(ValueOutcome::Stopped(stop)),
+        Step::Violated(violation) => {
+            reproduce(target, reported, &violation, cancel, budget, 1 + body_cases)
+                .map(|(outcome, replay_cases)| (outcome, body_cases + replay_cases))
+        }
+        Step::Continue | Step::NotReached | Step::Unlocated => {
+            Ok((ValueOutcome::ReplayParity, body_cases))
+        }
+        Step::Stop(stop) => Ok((ValueOutcome::Stopped(stop), body_cases)),
+        Step::CaseLimit => Ok((ValueOutcome::MaxCases(budget), body_cases)),
+        Step::CallNotEvaluable => Err(ValueRefusal::Unsupported(
+            target.form(),
+            ValueCheckUnsupported::CallNotEvaluable,
+        )),
         Step::Refuse => Err(ValueRefusal::Unsupported(
             target.form(),
             ValueCheckUnsupported::EvaluationRefused,
@@ -309,23 +343,38 @@ pub fn check_value(
     else {
         return Ok(ValueOutcome::Vacuous);
     };
-    if let Some(reported) = &request.reported {
-        return confirm_reported(target, reported, cancel);
-    }
     let mut cases = 0_u64;
+    let mut checked_cases = 0_u64;
+    if let Some(reported) = &request.reported {
+        let (outcome, _) = confirm_reported(target, reported, cancel, budget)?;
+        return Ok(outcome);
+    }
     loop {
         if cases >= budget {
             return Ok(ValueOutcome::MaxCases(budget));
         }
         cases += 1;
         let assignment: Vec<Value> = digits.iter().map(|d| d.current.clone()).collect();
-        let verdict = target
-            .evaluate(&assignment, cancel)
+        let (verdict, body_cases) = target
+            .evaluate_with_case_budget(&assignment, cancel, budget - cases)
             .map_err(ValueRefusal::Fault)?;
+        cases += body_cases;
         match judge(verdict) {
-            Step::Continue => {}
-            Step::Violated(violation) => return reproduce(target, &assignment, &violation, cancel),
+            Step::Continue => checked_cases += 1,
+            Step::NotReached => {}
+            Step::Violated(violation) => {
+                let (outcome, _) =
+                    reproduce(target, &assignment, &violation, cancel, budget, cases)?;
+                return Ok(outcome);
+            }
             Step::Stop(stop) => return Ok(ValueOutcome::Stopped(stop)),
+            Step::CaseLimit => return Ok(ValueOutcome::MaxCases(budget)),
+            Step::CallNotEvaluable => {
+                return Err(ValueRefusal::Unsupported(
+                    form,
+                    ValueCheckUnsupported::CallNotEvaluable,
+                ))
+            }
             // A violation that cannot be named is not a pass: the claim is
             // undecided (`solver-inconclusive`, an element the arm does not
             // cover).
@@ -343,7 +392,8 @@ pub fn check_value(
             if at == 0 {
                 return Ok(match form {
                     ClaimForm::Clause => ValueOutcome::Proved { cases },
-                    ClaimForm::ScalarOperation => ValueOutcome::Undecided,
+                    ClaimForm::ScalarOperation if checked_cases == 0 => ValueOutcome::Vacuous,
+                    ClaimForm::ScalarOperation => ValueOutcome::Proved { cases },
                 });
             }
             at -= 1;
@@ -552,8 +602,10 @@ mod tests {
     #[test]
     fn a_verdict_is_judged_without_turning_a_refusal_or_a_stop_into_a_pass() {
         assert_eq!(judge(Verdict::Holds), Step::Continue);
-        assert_eq!(judge(Verdict::NotDecisive), Step::Continue);
+        assert_eq!(judge(Verdict::NotDecisive), Step::NotReached);
         assert_eq!(judge(Verdict::Refused), Step::Refuse);
+        assert_eq!(judge(Verdict::CallNotEvaluable), Step::CallNotEvaluable);
+        assert_eq!(judge(Verdict::CaseLimit), Step::CaseLimit);
         assert_eq!(judge(Verdict::Unlocated), Step::Unlocated);
         let violation = Violation { undefined: None };
         assert_eq!(

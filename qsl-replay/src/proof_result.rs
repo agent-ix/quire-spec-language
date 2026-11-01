@@ -62,6 +62,8 @@ pub(crate) const KANI_VACUOUS_PROOF_KIND: &str = "kani-vacuous-proof";
 pub enum ValueCheckUnsupported {
     /// A parameter whose type the arm does not enumerate.
     ParameterDomain,
+    /// A function call's body is outside the checked package closure.
+    CallNotEvaluable,
     /// The evaluator refused a result.
     EvaluationRefused,
 }
@@ -71,6 +73,7 @@ impl ValueCheckUnsupported {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ParameterDomain => "parameter-domain-not-enumerable",
+            Self::CallNotEvaluable => "call-not-evaluable",
             Self::EvaluationRefused => "evaluation-refused",
         }
     }

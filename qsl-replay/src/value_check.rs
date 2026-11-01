@@ -28,14 +28,12 @@
 //!   lies in the callee's body when the undefinedness is inside a function
 //!   application, because the evaluator reports the innermost location).
 //! * `scalar-operation`: a `value-validity` requirement record the function
-//!   owns. The goal is violated at an assignment exactly when the call stops
-//!   undefined at the record's own site. The evaluator reports no occurrence
-//!   it merely passed through, so an assignment that completes, or stops
-//!   elsewhere, shows neither that the occurrence was reached nor that it was
-//!   defined there; [`Verdict::NotDecisive`] says so, and the arm never turns
-//!   it into a proof.
+//!   owns. The evaluator records each operator occurrence that completed.
+//!   The goal is violated when the call stops undefined at the record's own
+//!   site, holds when the occurrence completed, and is not decisive when the
+//!   call path never reached it.
 
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{ApplicationObservation, CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{Capability, NodeTag};
@@ -172,11 +170,15 @@ pub enum Verdict {
     /// The goal is false or undefined at the assignment.
     Violated(Violation),
     /// The evaluation neither violated the claim nor showed it held: a
-    /// `scalar-operation` assignment that completed or stopped at another
-    /// occurrence.
+    /// `scalar-operation` assignment whose executed path did not reach the
+    /// selected occurrence.
     NotDecisive,
     /// The evaluation stopped.
     Stopped(Stop),
+    /// A called function body is outside the checked package closure.
+    CallNotEvaluable,
+    /// A function body could not start within the remaining `max_cases`.
+    CaseLimit,
     /// The evaluator refused: the result is defined but not admitted.
     Refused,
     /// The goal is undefined at the assignment but the package locates the
@@ -280,7 +282,7 @@ impl<'p> ValueTarget<'p> {
             .zip(callable.parameters)
             .map(|(node, (_, value_type))| TargetParameter {
                 node,
-                domain: parameter_domain(&value_type, types),
+                domain: parameter_domain(value_type, types),
             })
             .collect();
         Ok(Self {
@@ -353,17 +355,58 @@ impl<'p> ValueTarget<'p> {
         assignment: &[Value],
         cancel: &Cancel,
     ) -> Result<Verdict, InternalFault> {
+        self.evaluate_with_case_budget(assignment, cancel, u64::MAX)
+            .map(|(verdict, _)| verdict)
+    }
+
+    /// Evaluate `assignment` under a limit on value-function body
+    /// evaluations. The returned count lets the check arm charge nested
+    /// callees to the same `max_cases` budget as parameter assignments.
+    pub fn evaluate_with_case_budget(
+        &self,
+        assignment: &[Value],
+        cancel: &Cancel,
+        function_case_limit: u64,
+    ) -> Result<(Verdict, u64), InternalFault> {
+        if function_case_limit == 0 {
+            return Ok((Verdict::CaseLimit, 0));
+        }
         let mut meter = Meter::new(self.limits.0).with_cancel(cancel.clone());
-        let evaluation = match self.package.call(
+        let objects = ObjectEnvironment::default().with_unresolved_references();
+        let mut observed = Vec::new();
+        let mut unavailable_imported_call = false;
+        let mut function_evaluations = 0;
+        let mut function_case_limit_reached = false;
+        let call = self.package.call_observing_applications(
             &self.name,
             assignment.to_vec(),
-            &ObjectEnvironment::default().with_unresolved_references(),
+            &objects,
             &mut meter,
-        ) {
+            ApplicationObservation {
+                observed: &mut observed,
+                unavailable_imported_call: &mut unavailable_imported_call,
+                function_case_limit,
+                function_evaluations: &mut function_evaluations,
+                function_case_limit_reached: &mut function_case_limit_reached,
+            },
+        );
+        let evaluation = match call {
             Ok(evaluation) => evaluation,
-            Err(CallFailure::Cancelled(cause)) => {
-                return Ok(Verdict::Stopped(Stop::Cancelled(cause)));
+            Err(CallFailure::Fault(_)) if function_case_limit_reached => {
+                return Ok((Verdict::CaseLimit, function_evaluations));
             }
+            Err(CallFailure::Fault(_)) if unavailable_imported_call => {
+                return Ok((Verdict::CallNotEvaluable, function_evaluations));
+            }
+            Err(CallFailure::Cancelled(cause)) => {
+                return Ok((
+                    Verdict::Stopped(Stop::Cancelled(cause)),
+                    function_evaluations,
+                ));
+            }
+            Err(CallFailure::Input(quire_semantic_value::call::InputRefusal::UnknownFunction(
+                _,
+            ))) => return Ok((Verdict::CallNotEvaluable, function_evaluations)),
             Err(CallFailure::Fault(fault)) => return Err(fault),
             Err(_) => {
                 return Err(InternalFault::new(
@@ -372,10 +415,50 @@ impl<'p> ValueTarget<'p> {
                 ))
             }
         };
-        if let Some(cause) = cancel.tripped() {
-            return Ok(Verdict::Stopped(Stop::Cancelled(cause)));
+        if function_case_limit_reached {
+            return Ok((Verdict::CaseLimit, function_evaluations));
         }
-        Ok(match (evaluation.outcome, self.form) {
+        if let Some(cause) = cancel.tripped() {
+            return Ok((
+                Verdict::Stopped(Stop::Cancelled(cause)),
+                function_evaluations,
+            ));
+        }
+        let target_location = self
+            .package
+            .graph()
+            .occurrence(self.claim.node().clone(), self.claim.origin());
+        let result_bound = self
+            .package
+            .graph()
+            .requirements()
+            .get(&self.claim)
+            .filter(|_| self.form == ClaimForm::ScalarOperation)
+            .map(|record| record.result_bound().value_type().clone());
+        let target_value = target_location.and_then(|target| {
+            observed
+                .iter()
+                .find(|(at, _)| at == target)
+                .map(|(_, value)| value)
+        });
+        let reached = target_value.is_some();
+        let out_of_bound = result_bound
+            .as_ref()
+            .zip(target_value)
+            .is_some_and(|(bound, value)| !bound.admits(value));
+        let scalar_result = || {
+            if out_of_bound {
+                Verdict::Violated(Violation {
+                    undefined: Some(UndefinedAt {
+                        locus: self.claim.clone(),
+                        reason: "integer-out-of-range",
+                    }),
+                })
+            } else {
+                Verdict::Holds
+            }
+        };
+        let verdict = match (evaluation.outcome, self.form) {
             (
                 FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))),
                 ClaimForm::Clause,
@@ -385,7 +468,11 @@ impl<'p> ValueTarget<'p> {
                 ClaimForm::Clause,
             ) => Verdict::Violated(Violation { undefined: None }),
             (FamilyOutcome::Evaluated(Outcome::Completed(_)), ClaimForm::ScalarOperation) => {
-                Verdict::NotDecisive
+                if reached {
+                    scalar_result()
+                } else {
+                    Verdict::NotDecisive
+                }
             }
             (FamilyOutcome::Evaluated(Outcome::Completed(_)), ClaimForm::Clause) => {
                 return Err(InternalFault::new(
@@ -414,19 +501,34 @@ impl<'p> ValueTarget<'p> {
                             }),
                         })
                     }
+                    (ClaimForm::ScalarOperation, _) if reached => scalar_result(),
                     (ClaimForm::ScalarOperation, _) => Verdict::NotDecisive,
                 }
             }
+            (FamilyOutcome::Evaluated(Outcome::Refused(_)), ClaimForm::ScalarOperation)
+                if reached =>
+            {
+                scalar_result()
+            }
             (FamilyOutcome::Evaluated(Outcome::Refused(_)), _) => Verdict::Refused,
+            (FamilyOutcome::Evaluated(Outcome::Incomplete(_)), ClaimForm::ScalarOperation)
+                if reached =>
+            {
+                scalar_result()
+            }
             (FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)), _) => {
                 Verdict::Stopped(Stop::Meter(incomplete))
+            }
+            (FamilyOutcome::FamilyEvaluated(_), ClaimForm::ScalarOperation) if reached => {
+                scalar_result()
             }
             (FamilyOutcome::FamilyEvaluated(_), _) => Verdict::Refused,
             #[cfg(seam_probe_replay_downstream)]
             (FamilyOutcome::__SeamProbe, _) => {
                 unreachable!("never constructed outside the probe build")
             }
-        })
+        };
+        Ok((verdict, function_evaluations))
     }
 
     /// Whether `assignment` is one of the target's assignments: one value
@@ -476,21 +578,42 @@ impl<'p> ValueTarget<'p> {
         expected: &Violation,
         cancel: &Cancel,
     ) -> Result<Option<ReproducedViolation>, InternalFault> {
+        self.replay_with_case_budget(assignment, expected, cancel, u64::MAX)
+            .map(|(reproduced, _, _)| reproduced)
+    }
+
+    /// Replay a candidate under a remaining function-body case budget.
+    pub fn replay_with_case_budget(
+        &self,
+        assignment: &[Value],
+        expected: &Violation,
+        cancel: &Cancel,
+        function_case_limit: u64,
+    ) -> Result<(Option<ReproducedViolation>, u64, bool), InternalFault> {
         if !self.admits(assignment) {
-            return Ok(None);
+            return Ok((None, 0, false));
         }
-        Ok(match self.evaluate(assignment, cancel)? {
-            Verdict::Violated(found) if found == *expected => Some(ReproducedViolation {
-                assignment: assignment.to_vec(),
-                violation: found,
-            }),
-            Verdict::Violated(_)
-            | Verdict::Holds
-            | Verdict::NotDecisive
-            | Verdict::Stopped(_)
-            | Verdict::Refused
-            | Verdict::Unlocated => None,
-        })
+        let (verdict, function_evaluations) =
+            self.evaluate_with_case_budget(assignment, cancel, function_case_limit)?;
+        let case_limit = matches!(verdict, Verdict::CaseLimit);
+        Ok((
+            match verdict {
+                Verdict::Violated(found) if found == *expected => Some(ReproducedViolation {
+                    assignment: assignment.to_vec(),
+                    violation: found,
+                }),
+                Verdict::Violated(_)
+                | Verdict::Holds
+                | Verdict::NotDecisive
+                | Verdict::Stopped(_)
+                | Verdict::CallNotEvaluable
+                | Verdict::CaseLimit
+                | Verdict::Refused
+                | Verdict::Unlocated => None,
+            },
+            function_evaluations,
+            case_limit,
+        ))
     }
 
     /// The `{node, occurrence}` the evaluator's `location` stands for: the

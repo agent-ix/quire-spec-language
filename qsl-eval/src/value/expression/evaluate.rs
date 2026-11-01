@@ -610,6 +610,18 @@ pub(crate) struct Machine<'a, 'm> {
     /// supplies a `reads` map.
     family: EvaluationFamily,
     meter: &'m mut Meter,
+    /// Completed operator occurrences and their values, when a caller needs
+    /// expression-level evidence (FR-484 scalar-operation obligations).
+    observed_applications: Option<&'m mut Vec<(Location, Value)>>,
+    /// Whether this checked package calls a dependency whose body is absent.
+    /// Only the ValueValidity observer interprets that typed refusal.
+    unavailable_imported_call: Option<&'m mut bool>,
+    /// Case budget for each value-function body evaluation in this call.
+    function_case_limit: Option<u64>,
+    /// Function-body evaluations charged by this call and its nested calls.
+    function_evaluations: Option<&'m mut u64>,
+    /// Whether a nested body evaluation was refused by `max_cases`.
+    function_case_limit_reached: Option<&'m mut bool>,
     dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
     /// FR-125: whether each stack value is still the absent-key parameter
@@ -715,6 +727,26 @@ impl<'a, 'm> Machine<'a, 'm> {
         )
     }
 
+    /// A value-family evaluator that records each completed application and
+    /// its result. An occurrence whose operand or operator stopped is absent
+    /// from the trace.
+    pub(crate) fn observing_applications(
+        scope: &'a Scope,
+        graph: &'a CheckedGraph,
+        objects: &'a ObjectEnvironment,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+        observation: super::ApplicationObservation<'m>,
+    ) -> Self {
+        let mut machine = Self::new(scope, graph, objects, meter, dispatch_tables);
+        machine.observed_applications = Some(observation.observed);
+        machine.unavailable_imported_call = Some(observation.unavailable_imported_call);
+        machine.function_case_limit = Some(observation.function_case_limit);
+        machine.function_evaluations = Some(observation.function_evaluations);
+        machine.function_case_limit_reached = Some(observation.function_case_limit_reached);
+        machine
+    }
+
     /// [`Self::new`], additionally carrying a precondition's or
     /// postcondition's pre observation and the clause's own model-read
     /// observations (FR-107): `pre_objects` is consulted at an `Attribute`
@@ -772,6 +804,11 @@ impl<'a, 'm> Machine<'a, 'm> {
             reads,
             family,
             meter,
+            observed_applications: None,
+            unavailable_imported_call: None,
+            function_case_limit: None,
+            function_evaluations: None,
+            function_case_limit_reached: None,
             dispatch_tables,
             values: Vec::new(),
             value_guard_provenance: Vec::new(),
@@ -1010,6 +1047,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     root
                 }
             };
+            let applied = matches!(&task, Task::Apply(_));
             if let Err(halt) = self.step(task) {
                 let located = self.imported.first().copied().unwrap_or(located);
                 return match halt {
@@ -1039,6 +1077,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                         ),
                     ),
                 };
+            } else if applied {
+                if let Some(observed) = self.observed_applications.as_deref_mut() {
+                    if let Some(value) = self.values.last() {
+                        observed.push((located.location().clone(), value.clone()));
+                    }
+                }
             }
         }
         let value = match self.pop() {
@@ -1482,6 +1526,30 @@ impl<'a, 'm> Machine<'a, 'm> {
                 "population-argument-unresolved-past-admission",
             ))),
         }
+    }
+
+    /// Charge one nested value-function body against FR-484's `max_cases`.
+    fn enter_function_case(&mut self) -> Result<(), Halt> {
+        let Some(limit) = self.function_case_limit else {
+            return Ok(());
+        };
+        let Some(evaluations) = self.function_evaluations.as_deref_mut() else {
+            return Err(invariant("value-check-function-case-counter-present"));
+        };
+        if *evaluations >= limit {
+            if let Some(reached) = self.function_case_limit_reached.as_deref_mut() {
+                *reached = true;
+            }
+            return Err(Halt::Stop(Stop::Incomplete(Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit,
+                consumed: limit,
+                next_charge: Integer::from(1_i64),
+                charge_point: ChargePoint::FunctionCall,
+            })));
+        }
+        *evaluations += 1;
+        Ok(())
     }
 
     fn step(&mut self, task: Task<'a>) -> Result<(), Halt> {
@@ -2247,6 +2315,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
+                self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
@@ -2273,16 +2342,21 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let library = self
-                    .graph
-                    .scope()
-                    .imported_graph(callee)
-                    .ok_or_else(|| invariant("evaluation-imported-graph-unresolved"))?;
-                let callable = library
-                    .function_state(*function)
-                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                let Some(library) = self.graph.scope().imported_graph(callee) else {
+                    if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
+                        *unavailable = true;
+                    }
+                    return Err(invariant("evaluation-imported-graph-unresolved"));
+                };
+                let Some(callable) = library.function_state(*function) else {
+                    if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
+                        *unavailable = true;
+                    }
+                    return Err(invariant("evaluation-callable-unresolved"));
+                };
                 let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
+                self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
