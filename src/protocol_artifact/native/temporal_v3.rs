@@ -78,6 +78,7 @@ pub fn admit_v3(
             package,
             artifact: None,
             model_schema: inherited_v2.model_schema.clone(),
+            temporal: inherited_v2.clone(),
         };
         Ok(AdmissionV3 {
             candidate,

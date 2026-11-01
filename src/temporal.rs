@@ -21,6 +21,7 @@ mod formula;
 mod mapping;
 mod profile;
 mod progress;
+mod protocol;
 mod result;
 mod trace;
 
@@ -45,6 +46,10 @@ pub use mapping::{
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
 use progress::{CheckedAuthenticatedBinding, CheckedBinding};
+pub use protocol::{
+    ProtocolEvaluation, ProtocolEvaluationId, ProtocolEvaluationInput, ProtocolLedger,
+    ProtocolRefusal, ProtocolSelection, SemanticTriggerIdentity,
+};
 pub use result::{
     Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
     Incomplete, Obligation, Premises, Refusal, Report, Subject, Support as DecisionSupport, Truth,
