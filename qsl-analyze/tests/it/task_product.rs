@@ -161,6 +161,38 @@ fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation()
     assert_eq!(second.generation, first.generation + 1);
 }
 
+#[trace("TC-371", "FR-419-AC-6")]
+#[test]
+fn task_control_key_keeps_timing_in_the_dbm_not_discrete_identity() {
+    let mut product = fixed_work_task_product(
+        &set(vec![task("a", 4, 4, 1, Wcet::Single(int(1)))]),
+        SchedulingPolicy::FixedPriority,
+    )
+    .expect("fixed-work task");
+    product.tasks[0].max_jitter = int(2);
+    let source = quire_semantic_value::model_transition::ModelTransition::new(
+        "\"activate\"".to_owned(),
+        None,
+        Vec::new(),
+        quire_canonical::Limits::new(1024),
+    )
+    .expect("source transition identity");
+    let mut first = TaskSchedulerState::default();
+    first
+        .activate(&product, "a", source.clone(), int(1), int(0))
+        .expect("first selected jitter");
+    let mut second = TaskSchedulerState::default();
+    second
+        .activate(&product, "a", source, int(2), int(9))
+        .expect("second selected jitter");
+
+    assert_eq!(
+        first.canonical_control_key(),
+        second.canonical_control_key(),
+        "per-job jitter/deadline are DBM values, not finite control state"
+    );
+}
+
 #[trace("TC-372", "FR-419-AC-6")]
 #[test]
 fn activations_share_arrival_phase_and_occurrence_across_release_bindings() {

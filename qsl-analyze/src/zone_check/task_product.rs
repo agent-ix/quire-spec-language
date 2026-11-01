@@ -291,9 +291,87 @@ pub enum TaskSchedulerError {
     InexactArrivalScale,
     /// The task arrival-clock guard or reset failed.
     ArrivalZone(DbmError),
+    /// A source transition exceeded the canonical identity encoding bound.
+    IdentityEncoding,
 }
 
 impl TaskSchedulerState {
+    /// The scheduler's finite discrete key. Job activation/deadline timing
+    /// (jitter and absolute deadline) is deliberately carried by the
+    /// task-clock DBM, not by this finite control key. Exact selected demand,
+    /// source activation identity, occurrence, slot generation and policy
+    /// provenance remain discrete and therefore remain in the key.
+    pub fn canonical_control_key(&self) -> Result<Vec<u8>, TaskSchedulerError> {
+        let mut key = b"qsl-task-control-v1\0".to_vec();
+        put_count(&mut key, self.jobs.len());
+        for job in &self.jobs {
+            let identity = &job.identity;
+            put_text(&mut key, &identity.taskset);
+            put_text(&mut key, &identity.task);
+            key.extend_from_slice(&identity.job.to_be_bytes());
+            key.extend_from_slice(&identity.slot.to_be_bytes());
+            key.extend_from_slice(&identity.generation.to_be_bytes());
+            let transition = identity
+                .release
+                .canonical_bytes(quire_canonical::Limits::new(1 << 20))
+                .map_err(|_| TaskSchedulerError::IdentityEncoding)?;
+            put_bytes(&mut key, &transition);
+            key.push(match job.phase {
+                TaskJobPhase::Pending => 0,
+                TaskJobPhase::Ready => 1,
+                TaskJobPhase::Running => 2,
+                TaskJobPhase::Suspended => 3,
+                TaskJobPhase::Missed => 4,
+            });
+            put_text(&mut key, &identity.demand.to_string());
+            match identity.priority {
+                Some(priority) => {
+                    key.push(1);
+                    key.extend_from_slice(&priority.to_be_bytes());
+                }
+                None => key.push(0),
+            }
+        }
+        match &self.running {
+            Some(running) => {
+                key.push(1);
+                put_text(&mut key, &running.taskset);
+                put_text(&mut key, &running.task);
+                key.extend_from_slice(&running.job.to_be_bytes());
+                key.extend_from_slice(&running.slot.to_be_bytes());
+                key.extend_from_slice(&running.generation.to_be_bytes());
+                let transition = running
+                    .release
+                    .canonical_bytes(quire_canonical::Limits::new(1 << 20))
+                    .map_err(|_| TaskSchedulerError::IdentityEncoding)?;
+                put_bytes(&mut key, &transition);
+            }
+            None => key.push(0),
+        }
+        let mut activations: Vec<_> = self.activations.iter().collect();
+        activations.sort_by(|left, right| {
+            (&left.task_set, &left.task).cmp(&(&right.task_set, &right.task))
+        });
+        put_count(&mut key, activations.len());
+        for row in activations {
+            put_text(&mut key, &row.task_set);
+            put_text(&mut key, &row.task);
+            key.extend_from_slice(&row.next.to_be_bytes());
+        }
+        let mut generations: Vec<_> = self.generations.iter().collect();
+        generations.sort_by(|left, right| {
+            (&left.task_set, &left.task, left.slot).cmp(&(&right.task_set, &right.task, right.slot))
+        });
+        put_count(&mut key, generations.len());
+        for row in generations {
+            put_text(&mut key, &row.task_set);
+            put_text(&mut key, &row.task);
+            key.extend_from_slice(&row.slot.to_be_bytes());
+            key.extend_from_slice(&row.next.to_be_bytes());
+        }
+        Ok(key)
+    }
+
     /// Apply the checked task's shared periodic or sporadic arrival rule to
     /// its unit-rate arrival clock, then reset that clock for the new
     /// activation. The first activation establishes the phase. All release
@@ -650,6 +728,19 @@ impl TaskSchedulerState {
             None,
         ))
     }
+}
+
+fn put_count(target: &mut Vec<u8>, count: usize) {
+    target.extend_from_slice(&u64::try_from(count).unwrap_or(u64::MAX).to_be_bytes());
+}
+
+fn put_text(target: &mut Vec<u8>, text: &str) {
+    put_bytes(target, text.as_bytes());
+}
+
+fn put_bytes(target: &mut Vec<u8>, bytes: &[u8]) {
+    put_count(target, bytes.len());
+    target.extend_from_slice(bytes);
 }
 
 fn same_job(left: &TaskTransitionIdentity, right: &TaskTransitionIdentity) -> bool {
