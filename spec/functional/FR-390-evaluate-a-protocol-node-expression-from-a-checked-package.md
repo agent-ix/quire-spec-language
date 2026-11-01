@@ -336,7 +336,23 @@ The witness SHALL identify that view's owner and selected expression body;
 the layer-4 view SHALL verify the owner before it yields the corresponding
 `TermHandle`. No public constructor SHALL create a witness or handle from a
 `NodeKey`, `CheckedNode`, free-standing term, decoded graph or another view.
-This witness SHALL not introduce a layer-4 dependency on layer-5 slot or
+The C-layer witness type SHALL have private fields and no public safe mint
+factory. Its only cross-crate mint boundary SHALL be a narrowly typed unsafe
+operation that accepts the exact view owner and selector-validated body; it
+SHALL accept neither a `NodeKey`, `CheckedNode`, nor a free-standing term.
+The exact selector SHALL be the sole safe-code call site for that boundary,
+after validating the selected body against the exact view. Its safety
+invariant SHALL require that the body was selected for that view by the exact
+slot-selection operation; only that operation SHALL establish this invariant.
+Public safe APIs SHALL expose the witness only as the result of exact slot
+selection, never as a value that can be independently minted or supplied.
+The API boundary SHALL be verified with external-crate compile-fail probes
+for direct witness construction, calling the mint boundary from safe code,
+and bypassing slot selection with raw node/term inputs; an API-surface and
+call-site inspection SHALL confirm the exact selector is the only safe mint
+path. This design uses Rust's public unsafe boundary for the cross-crate
+handoff and does not rely on crate-private access across crates.
+The witness SHALL not introduce a layer-4 dependency on layer-5 slot or
 selection types, and SHALL not enable checked-term construction.
 
 The layer-4 view SHALL expose
@@ -391,12 +407,22 @@ or fallback to an unchecked or serialized interpretation.
 `Unsupported(UnsupportedView)`, `Limit(LimitExceeded)` or `Fault(InternalFault)`.
 `UnsupportedView` SHALL carry the catalog pair
 `unknown_required_feature`/`unsupported-feature`, the owning package identity,
-the affected node's `NodeKey`, its `Location`, and one typed reason:
+a typed locus and one typed reason. The locus SHALL be either
+`Package` (the package-level locus, with no node key or source location) or
+`Node { key: NodeKey, location: Location }`. `MissingIdentityWitness` SHALL
+use the `Package` locus because absence of the producer rows has no affected
+node. `MissingTypeRepresentation`, `MissingLiteralProjection`,
+`MissingOperationProjection`, `MissingBindingProjection` and
+`MissingChargeSemantics` SHALL use the affected `Node` locus. When more than
+one projection is unsupported, view creation SHALL report the first by
+ascending package identity, then locus order (`Package` before `Node`), then
+ascending node key for `Node` loci, then this reason order:
 `MissingTypeRepresentation`, `MissingIdentityWitness`,
-`MissingLiteralProjection`, `MissingOperationProjection`, `MissingBindingProjection` or
-`MissingChargeSemantics`.
-If more than one projection is unsupported, view creation SHALL report the
-first by ascending package identity, node key and the reason order above.
+`MissingLiteralProjection`, `MissingOperationProjection`,
+`MissingBindingProjection`, `MissingChargeSemantics`. Missing
+producer rows SHALL be checked after successful I2 admission and before node
+projection; the package-locus refusal SHALL yield no partial view or meter
+charge and SHALL leave the successful I2 read intact.
 This is evaluation-input admission before S6a, category unsupported, exit 21;
 it SHALL yield no partial view and SHALL leave the successful I2 read intact.
 View creation SHALL accept no `Meter`; it SHALL neither create, replace nor
@@ -623,10 +649,10 @@ value; check 6 does not apply to it.
 | FR-390-AC-11 | Running one call twice gives equal results and charge logs; a call over the package the contract reader returns for FR-383's emitted nodes gives the same result and charge log as over the checked package that was emitted; a refused call leaves the meter as it was. | Test (TC-1073) |
 | FR-390-AC-12 | A package whose capture initializer reads itself, a later capture or another template's capture is refused at S3 (FR-381) and no package is built; a package mutated in its bytes so an activation capture's initializer reads its own binder, or another template's capture binder, is refused by the contract reader with `missing_declaration`/`missing-name` (`read` `forward` and `foreign`), and no evaluation call is possible. | Test (TC-1074) |
 | FR-390-AC-13 | With the S6a probe variant of FR-107-AC-6 added, the build fails with E0004 at exactly the checked-in S6a seam list: the arm serving state clauses and protocol slots is the one `ProtocolClause` arm. | Test (TC-1074) |
-| FR-390-AC-14 | A consumer can obtain a view from an in-process package and from a successful I2 reader result. The selected-slot flow mints an opaque C-layer owner-bound witness for the exact view; only that witness yields its expression handle. Construction of a reader view or expression handle from a decoded graph, free-standing term, `ImportView`, raw bytes, integer, `NodeKey` or `CheckedNode` fails to compile. A refused, limited, cancelled or faulted read exposes no evaluation view. | Test |
+| FR-390-AC-14 | A consumer can obtain a view from an in-process package and from a successful I2 reader result. The exact slot selector's safe API is the only path that returns an opaque C-layer owner-bound witness for the exact view, and only that result yields its expression handle. External-crate compile-fail probes prove direct witness construction, calling the C-layer mint boundary from safe code, and bypassing slot selection with a `NodeKey`, `CheckedNode`, decoded graph, free-standing term, `ImportView`, raw bytes or integer are unavailable. An API-surface and call-site inspection confirms there is no alternate public safe mint authority and the exact selector is the sole safe call site of the unsafe cross-crate mint boundary. The C-layer witness fields remain private; the selector's single unsafe mint call is reviewed against its owner/body safety invariant. Construction of a reader view or expression handle from a decoded graph, free-standing term, `ImportView`, raw bytes, integer, `NodeKey` or `CheckedNode` fails to compile. A refused, limited, cancelled or faulted read exposes no evaluation view. | Test |
 | FR-390-AC-15 | For every TC-1070 slot, AC-11 compares the in-process view with a view obtained by emitting and actually admitting that package's bytes: the complete result (including value, unavailable binder, catalog code/cause, location and losses) and every ordered charge-log entry are equal. Repeat for unavailable and short-circuited supplies, each AC-9 counter boundary, and AC-10's shared-meter sequence; each selection/supply refusal has the same locus and leaves its meter unchanged. No fixture recompiles source to produce the reader-side evaluation. | Test |
 | FR-390-AC-16 | Inspection finds one slot-selection view contract and one existing machine/ProtocolClause execution path for both input variants, using FR-400's single generic `NodeKind` read vocabulary and the C-layer owner-bound selection witness, no checked-term reconstruction, no new `construct` caller and no second family dispatch. Layer 4 imports no layer-5 selection type. With `std` off the in-process view compiles without IR; the reader-result entry is absent, and the existing no_std closure acquires no dependency on IR or `std`. | Inspection |
-| FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package/node/location and `MissingTypeRepresentation`; absent QSL-1377 producer rows yield the same typed outcome with `MissingIdentityWitness` while the successful I2 read remains intact. No meter is accepted or charged. A missing literal, operation or binding projection yields its corresponding typed reason. A projection-resource limit yields `Limit`, no partial view. A selection witness or handle from another owner returns an invariant fault rather than a node. | Test |
+| FR-390-AC-17 | An admitted IR type without a kernel representation yields `ViewFailure::Unsupported` before any view exists, with `unknown_required_feature`/`unsupported-feature`, the affected package and `Node` locus containing its `NodeKey` and `Location`, and `MissingTypeRepresentation`; absent QSL-1377 producer rows yield the same typed outcome with `MissingIdentityWitness` at the `Package` locus, checked after successful I2 admission and before node projection. The refusal yields no partial view or meter charge and leaves successful I2 admission intact. A missing literal, operation or binding projection yields its corresponding typed reason at the affected `Node` locus. A projection-resource limit yields `Limit`, no partial view. A selection witness or handle from another owner returns an invariant fault rather than a node. | Test |
 | FR-390-AC-18 | Reader views resolve Boolean, bounded Integer, record/composite and Reference<Node> identities of TC-1070 fixture E to the exact kernel values/types of the in-process view, including recursively nested Option/Collection values used by a slot. AC-11/15 fail if a required QSL-emitted type is reported unsupported; unsupported cases cannot replace any required result/log comparison. | Test |
 | FR-390-AC-19 | A bare `view.total` read and an explicit `deref(view).total` read over the same observation retain their respective in-process charge logs through emitted-package admission and `NodeRead`, including FR-107's explicit-dereference charge distinction. If the representation erases that distinction, view creation returns `MissingChargeSemantics` before a view or meter charge exists, and AC-11 remains unmet; equal completed values or an unsupported result cannot pass the required parity comparison. | Test |
 | FR-390-AC-20 | TC-1071 row 20 uses a successful immutable observation authority in the typed result; although `n5` exists, `nodes` incomplete returns `CallFailure::Admission` with category incomplete, the population locus and the unchanged QSV FR-106 record. An unrelated incomplete population does not alter the successful call. The meter is unchanged on either admission failure. | Test |
