@@ -333,7 +333,8 @@ const NOT_LOWERED: [&str; 8] = [
 /// `positive-operation-identities.json` and
 /// `positive-control-operations.json` whose identity a row lowers, the node
 /// QSL emits for a function holding that operation equals the fixture node
-/// on the AC's members, and IR's v2 reader admits the emitted package.
+/// on the AC's members. Packages with equality sidecars remain subject to
+/// IR's typed UnsupportedConstruct refusal until its reader follow-up lands.
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
@@ -356,13 +357,49 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
             "{}: nothing is omitted",
             case.identity
         );
-        let read = read_back(&emission);
-        assert!(
-            matches!(read, Read::Verified { .. }),
-            "{}: IR's v2 reader must admit the emitted package, got {read:?}",
-            case.identity
-        );
-        emitted.push(wire(&emission));
+        let emitted_wire = wire(&emission);
+        let has_equality_sidecar = emitted_wire
+            .get("checked_term_data")
+            .and_then(|data| data.get("equality_decisions"))
+            .and_then(Value::as_array)
+            .is_some_and(|rows| !rows.is_empty());
+        if has_equality_sidecar {
+            // IR follow-up: PR #778 admits primitive Plan only; Text, Enum,
+            // and Quantity equality decisions remain unsupported by the reader.
+            match read_back(&emission) {
+                Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+                    assert_eq!(
+                        refusal.code,
+                        quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct,
+                        "{}: equality sidecar remains a typed IR refusal",
+                        case.identity
+                    );
+                    assert_eq!(
+                        refusal
+                            .loci
+                            .first()
+                            .and_then(|locus| locus.path.as_ref())
+                            .map(ToString::to_string)
+                            .as_deref(),
+                        Some("/checked_term_data/equality_decisions/0"),
+                        "{}: refusal identifies the first equality decision",
+                        case.identity
+                    );
+                }
+                outcome => panic!(
+                    "{}: expected typed UnsupportedConstruct for equality sidecar, got {outcome:?}",
+                    case.identity
+                ),
+            }
+        } else {
+            let read = read_back(&emission);
+            assert!(
+                matches!(read, Read::Verified { .. }),
+                "{}: IR's v2 reader must admit a fixture without checked_term_data, got {read:?}",
+                case.identity
+            );
+        }
+        emitted.push(emitted_wire);
     }
 
     let mut compared_nodes = 0_usize;
