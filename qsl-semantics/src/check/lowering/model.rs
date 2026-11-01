@@ -2149,7 +2149,7 @@ impl<'a> Lowering<'a> {
                     declaration_key: declaration.clone(),
                     selected_document: selected_document.clone(),
                     enum_original_identity: enum_original_identity.clone(),
-                    member_original_identity: member_original_identity.into(),
+                    member_original_identity,
                     case: member.case().into(),
                 },
             );

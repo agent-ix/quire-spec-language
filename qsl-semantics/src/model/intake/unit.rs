@@ -446,17 +446,16 @@ pub struct UnitIntakeRefusal {
 /// Produce IR's selected-identity rows from the exact admitted document and
 /// normalization that `SelectedModel` retains. The row payloads are minted
 /// here; consumers only validate and carry these rows with the package.
+struct SelectedExactRows {
+    declarations: Vec<SelectedExactDeclarationRow>,
+    fields: Vec<SelectedExactFieldRow>,
+    tuples: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
+}
+
 fn selected_exact_rows(
     package: &DomainPackage,
     view: &EffectiveView,
-) -> Result<
-    (
-        Vec<SelectedExactDeclarationRow>,
-        Vec<SelectedExactFieldRow>,
-        Vec<quire_contract_model::SelectedTupleDeclarationRow>,
-    ),
-    (),
-> {
+) -> Result<SelectedExactRows, ()> {
     let selected_document = package.model_selection.identity.as_str();
     let mut declarations = Vec::new();
     let mut fields = Vec::new();
@@ -577,7 +576,11 @@ fn selected_exact_rows(
             ));
         }
     }
-    Ok((declarations, fields, tuples))
+    Ok(SelectedExactRows {
+        declarations,
+        fields,
+        tuples,
+    })
 }
 
 /// Structural IR node recipe for one selected model declaration. The path
@@ -656,7 +659,11 @@ pub fn admit_unit_with_cancel(
                 return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
             }
         };
-        let (declarations, fields, tuples) = selected_exact_rows(&package, &view)
+        let SelectedExactRows {
+            declarations,
+            fields,
+            tuples,
+        } = selected_exact_rows(&package, &view)
             .map_err(|()| refuse(selection, UnitIntakeCause::Invariant))?;
         exact_declarations.extend(declarations);
         exact_fields.extend(fields);
@@ -793,7 +800,11 @@ mod selected_exact_identity_tests {
             other => panic!("the fixture model normalizes: {other:?}"),
         };
 
-        let (declarations, fields, tuples) = selected_exact_rows(&package, &view)
+        let SelectedExactRows {
+            declarations,
+            fields,
+            tuples,
+        } = selected_exact_rows(&package, &view)
             .expect("the admitted model produces typed identity rows");
         let record_node = checked_model_node(&record.package, "record_value_type", &record.node);
         let record_key = crate::model::key::model_node_key(
@@ -874,8 +885,11 @@ mod selected_exact_identity_tests {
             panic!("the tuple model normalizes")
         };
 
-        let (declarations, fields, tuples) =
-            selected_exact_rows(&package, &view).expect("tuple identity is valid");
+        let SelectedExactRows {
+            declarations,
+            fields,
+            tuples,
+        } = selected_exact_rows(&package, &view).expect("tuple identity is valid");
         let row = tuples.first().expect("one selected tuple row");
         let exact = crate::model::key::model_node_key(
             &tuple.package,
