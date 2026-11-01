@@ -766,64 +766,99 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
 #[test]
 #[trace("TC-127", "FR-046-AC-5")]
 fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
-    let (mut unit, packages) = unit_and_packages();
-    unit = unit.replace(
-        "invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }",
-        "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] pure { xs }\n\
-         invariant Query using v on M::Node at current { contains(map(item in ints(sequence[0, 1]): item), 0) }",
-    );
-    let label = DocumentRef {
-        authority: "test".to_owned(),
-        identity: "unused-snapshot".to_owned(),
-        revision_namespace: "fixture".to_owned(),
-        revision: "1".to_owned(),
-    };
-    let mut selection = no_cycle_selection(label, "a");
-    selection.name = "Query".to_owned();
-    let mut request = request(ClauseRunSelection::Clause(selection));
-    request.source = ClauseRunSource::Program {
-        identity: source(),
-        path: "checked-query-unsupported.native".to_owned(),
-        bytes: unit.into_bytes(),
-    };
-    request.packages = packages;
+    let cases = [
+        (
+            "Map",
+            "contains(map(item in ints(sequence[0, 1]): item), 0)",
+            qsl_semantics::check::Visit::Map,
+        ),
+        (
+            "Filter",
+            "contains(filter(item in ints(sequence[0, 1]): item >= 0), 0)",
+            qsl_semantics::check::Visit::Filter,
+        ),
+        (
+            "Count",
+            "count<CountBound>(item in ints(sequence[0, 1]): item >= 0) >= 0",
+            qsl_semantics::check::Visit::Count,
+        ),
+        (
+            "Sum",
+            "sum<Total>(item in ints(sequence[0, 1]): item) >= 0",
+            qsl_semantics::check::Visit::Sum,
+        ),
+    ];
 
-    let report = run_clause(request).expect("a checked query returns a report");
-    let ClauseDisposition::UnsupportedProofRepresentation { cause, query } = &report.disposition
-    else {
-        panic!(
-            "ordered query is explicitly unsupported: {:?}",
-            report.disposition
+    for (name, expression, expected_visit) in cases {
+        let (mut unit, packages) = unit_and_packages();
+        unit = unit.replace(
+            "invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }",
+            &format!(
+                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] pure {{ xs }}\n\
+                 type CountBound = Int[0, 3];\n\
+                 type Total = Int[0, 3];\n\
+                 invariant {name} using v on M::Node at current {{ {expression} }}"
+            ),
         );
-    };
-    assert_eq!(*cause, super::UnsupportedProofCause::ValueRepresentation);
-    assert_eq!(query.visit, qsl_semantics::check::Visit::Map);
-    assert!(matches!(
-        query.result_type,
-        quire_exact::ValueType::Collection(_)
-    ));
-    assert_eq!(report.disposition.truth(), None);
-    assert_eq!(
-        report.disposition.category(),
-        quire_semantic_value::catalog::Category::Unsupported
-    );
-    assert_eq!(report.usage.evaluation_admissions, 0);
-    assert!(report.usage.evaluation_consumed.is_empty());
-    assert!(report.witness.is_none());
-    let result = crate::spine::write_clause_run_result(&report)
-        .expect("the unsupported proof result has a typed wire disposition");
-    let wire: serde_json::Value = serde_json::from_slice(&result).unwrap();
-    assert_eq!(wire["disposition"]["category"], "unsupported");
-    assert!(wire["disposition"].get("truth").is_none());
-    assert!(wire["disposition"].get("outcome").is_none());
-    assert_eq!(
-        wire["disposition"]["refusal"]["cause"],
-        "value-representation"
-    );
-    assert_eq!(
-        wire["disposition"]["refusal"]["fields"]["query_visit"],
-        "map"
-    );
+        let label = DocumentRef {
+            authority: "test".to_owned(),
+            identity: "unused-snapshot".to_owned(),
+            revision_namespace: "fixture".to_owned(),
+            revision: "1".to_owned(),
+        };
+        let mut selection = no_cycle_selection(label, "a");
+        selection.name = name.to_owned();
+        let mut request = request(ClauseRunSelection::Clause(selection));
+        request.source = ClauseRunSource::Program {
+            identity: source(),
+            path: "checked-query-unsupported.native".to_owned(),
+            bytes: unit.into_bytes(),
+        };
+        request.packages = packages;
+
+        let report = run_clause(request).expect("a checked query returns a report");
+        let ClauseDisposition::UnsupportedProofRepresentation { cause, query } =
+            &report.disposition
+        else {
+            panic!(
+                "ordered query is explicitly unsupported: {:?}",
+                report.disposition
+            );
+        };
+        assert_eq!(*cause, super::UnsupportedProofCause::ValueRepresentation);
+        assert_eq!(query.visit, expected_visit);
+        assert_eq!(report.disposition.truth(), None);
+        assert_eq!(
+            report.disposition.category(),
+            quire_semantic_value::catalog::Category::Unsupported
+        );
+        assert_eq!(report.usage.evaluation_admissions, 0);
+        assert!(report.usage.evaluation_consumed.is_empty());
+        assert!(report.witness.is_none());
+
+        let result = crate::spine::write_clause_run_result(&report)
+            .expect("the unsupported proof result has a typed wire disposition");
+        let wire: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(wire["disposition"]["category"], "unsupported");
+        assert!(wire["disposition"].get("truth").is_none());
+        assert!(wire["disposition"].get("outcome").is_none());
+        assert_eq!(
+            wire["disposition"]["refusal"]["cause"],
+            "value-representation"
+        );
+        assert_eq!(
+            wire["disposition"]["refusal"]["fields"]["query_visit"],
+            match expected_visit {
+                qsl_semantics::check::Visit::Map => "map",
+                qsl_semantics::check::Visit::Filter => "filter",
+                qsl_semantics::check::Visit::Count => "count",
+                qsl_semantics::check::Visit::Sum => "sum",
+                qsl_semantics::check::Visit::Forall => unreachable!(),
+                qsl_semantics::check::Visit::Exists => unreachable!(),
+                qsl_semantics::check::Visit::Only => unreachable!(),
+            }
+        );
+    }
 }
 
 /// A healthy-parent (acyclic) or violating-parent (cyclic) `NoCycle`
