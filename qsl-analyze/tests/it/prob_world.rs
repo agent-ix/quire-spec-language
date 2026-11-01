@@ -1022,13 +1022,12 @@ pub(crate) fn fair_two_bottoms(extra: &str) -> Model {
         fields: vec![
             ("selected", BOOLEAN.to_owned()),
             ("right", BOOLEAN.to_owned()),
-            ("done", BOOLEAN.to_owned()),
         ],
         operations: vec![
             Operation {
                 name: "split",
                 parameters: vec![("right", BOOLEAN.to_owned())],
-                modifies: vec!["selected", "right", "done"],
+                modifies: vec!["selected", "right"],
                 deletes: false,
             },
             Operation {
@@ -1040,12 +1039,12 @@ pub(crate) fn fair_two_bottoms(extra: &str) -> Model {
         ],
         body: format!(
             "pre At_start using v on M::Split::split {{ not self.selected }}\n\
-             post Split using v on M::Split::split {{ self.selected = true and self.right = right and self.done = false }}\n\
+             post Split using v on M::Split::split {{ self.selected = true and self.right = right }}\n\
              pre At_step using v on M::Split::step {{ self.selected }}\n\
-             post Stepped using v on M::Split::step {{ self.selected = pre(self.selected) and self.right = pre(self.right) and self.done = pre(self.done) }}\n\
+             post Stepped using v on M::Split::step {{ self.selected = pre(self.selected) and self.right = pre(self.right) }}\n\
              random Split::split(right) ~ {{ true: 1, false: 1 }};\n{extra}"
         ),
-        initial: json!({"selected": {"boolean": false}, "right": {"boolean": false}, "done": {"boolean": false}}),
+        initial: json!({"selected": {"boolean": false}, "right": {"boolean": false}}),
     }
 }
 

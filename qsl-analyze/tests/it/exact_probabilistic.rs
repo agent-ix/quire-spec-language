@@ -1967,7 +1967,7 @@ fn fair_weak_each_refines_one_operation_into_per_receiver_identities() {
 fn fair_witness_validates_multiple_bottom_sccs() {
     const CLAIM: &str = "probabilistic SplitFair using inf on M over (s: M::Split) \
          under every scheduler fair strong Split::step on origin \
-         { probability >= 0.5 [ eventually holds(s.done) ] }";
+         { probability >= 0.5 [ eventually holds(s.right) ] }";
     let world = World::new(&prob_world::fair_two_bottoms(CLAIM));
     let product = built(&world, "SplitFair");
     let components = maximal_fair_end_components(&product, &product.fairness)
@@ -1998,7 +1998,7 @@ fn fair_witness_validates_multiple_bottom_sccs() {
     .expect("the returned scheduler is checked over every bottom SCC");
     assert_eq!(
         result.values[start(&product).index()],
-        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(0, 1))
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1, 2))
     );
     let bottom_states = components
         .iter()
