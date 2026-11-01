@@ -11,8 +11,8 @@ use qsl_eval::simulation::model::{
     Unsteppable,
 };
 use qsl_eval::simulation::{
-    sample_probabilistic, Exploration, Limits, NotSimulated, Outcome, ReplayError, SampleStop,
-    StopReason, TransitionSystem,
+    replay, sample_probabilistic, Exploration, Limits, NotSimulated, Outcome, ReplayError,
+    SampleStop, StopReason, TransitionSystem,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
@@ -234,6 +234,7 @@ fn counters_document_with(
 
 struct World {
     extras: bool,
+    enum_mode: bool,
     package: CheckedPackage,
     packages: qsl_semantics::model::intake::PackageInput,
     header: Json,
@@ -274,6 +275,63 @@ fn build_world_with(
     relationships: Vec<Json>,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let document = counters_document_with(operations, extras, relationships);
+    build_world_document(document, clauses, extras, false)
+}
+
+/// The same fixture with an admitted two-case enum field, used to exercise
+/// FR-120's typed enum identity through state keys and sampled transitions.
+fn build_world_with_enum_mode(
+    operations: Vec<Json>,
+    clauses: &str,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
+    let mut document: Json =
+        serde_json::from_slice(&counters_document_with(operations, false, Vec::new()))
+            .expect("the fixture document is JSON");
+    let mode = ident("Mode");
+    let type_origin = origin(&mode);
+    let cases = ["Ready", "Busy"];
+    document["constructs"].as_array_mut().unwrap().push(json!({
+        "kind": {"module": PACKAGE, "name": "tier"}, "moduleVersion": "1.0.0",
+        "construct": {"identity": "none", "shape": "enumeration",
+            "members": {"variants": "required"},
+            "meaning": qsl_semantics::model::intake::meaning::VARIANT_TYPE}
+    }));
+    document["types"].as_array_mut().unwrap().push(json!({
+        "identity": mode, "displayName": "Mode",
+        "kind": {"module": PACKAGE, "name": "tier"}, "roles": [],
+        "origin": type_origin, "constraints": [], "extensions": [],
+        "unknownPolicy": "reject",
+        "variants": cases.iter().map(|case| {
+            let identity = ident(&format!("variant/Mode-{case}"));
+            json!({"identity": identity, "name": case, "origin": {"source": {
+                "sourceIdentity": ident("spec"), "path": "spec.qspec",
+                "startLine": 1, "startColumn": 1
+            }}})
+        }).collect::<Vec<_>>()
+    }));
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|ty| ty["identity"] == ident("Counter"))
+        .expect("Counter declaration")["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(wire_field("mode", &mode, "required"));
+    build_world_document(
+        serde_json::to_vec(&document).expect("the fixture serializes"),
+        clauses,
+        false,
+        true,
+    )
+}
+
+fn build_world_document(
+    document: Vec<u8>,
+    clauses: &str,
+    extras: bool,
+    enum_mode: bool,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
     let packages = package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
@@ -309,6 +367,7 @@ fn build_world_with(
     let graph = declarations.check(CheckingLimits::default())?;
     Ok(World {
         extras,
+        enum_mode,
         package: CheckedPackage::link(graph),
         header: json!({"identity": PACKAGE}),
         packages,
@@ -319,7 +378,7 @@ fn build_world_with(
 /// One object of a snapshot: key, `value`, `label` and `next`.
 struct Obj(&'static str, i64, i64, Option<&'static str>);
 
-fn object_json(object: &Obj, extras: bool) -> Json {
+fn object_json(object: &Obj, extras: bool, enum_mode: bool) -> Json {
     let next = match object.3 {
         None => json!({"absent": {}}),
         Some(target) => {
@@ -331,6 +390,10 @@ fn object_json(object: &Obj, extras: bool) -> Json {
     if extras {
         fields["tag"] = json!({"absent": {}});
         fields["id"] = json!({"integer": "0"});
+    }
+    if enum_mode {
+        let case = if object.2 == 0 { "Ready" } else { "Busy" };
+        fields["mode"] = json!({"variant": {"type": ident("Mode"), "case": case}});
     }
     json!({"key": object.0, "type": ident("Counter"), "fields": fields})
 }
@@ -362,7 +425,7 @@ impl World {
                 "revision": "fixture:1"},
             "observation": observation, "model": self.header,
             "populations": [{"population": ident("counters"), "complete": true,
-                "objects": objects.iter().map(|object| object_json(object, self.extras)).collect::<Vec<_>>()}],
+                "objects": objects.iter().map(|object| object_json(object, self.extras, self.enum_mode)).collect::<Vec<_>>()}],
         });
         if !anchor.is_null() {
             document["anchor"] = anchor;
@@ -1215,7 +1278,19 @@ fn a_huge_candidate_product_stops_at_the_candidate_bound() {
 #[trace("TC-472", "TC-1195", "FR-120-AC-8")]
 #[test]
 fn a_sampled_trace_replays_and_two_equal_runs_agree() {
-    let mut world = world(vec![increment()], &clauses(&[CAN_INC, INC, SMALL]));
+    let toggle_mode =
+        "post ToggleMode using v on M::Counter::increment { self.mode != pre(self.mode) }";
+    let increment_with_mode = operation(
+        "increment",
+        &[("mode", &ident("Mode"))],
+        None,
+        frame(&["value", "mode"], false, false),
+    );
+    let mut world = build_world_with_enum_mode(
+        vec![increment_with_mode],
+        &clauses(&[CAN_INC, INC, toggle_mode, SMALL]),
+    )
+    .expect("the enum-typed fixture checks");
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let system = self::system(&world, vec![s0], &["c1", "c2"], UNLIMITED);
     let sampler = sampler();
@@ -1233,12 +1308,11 @@ fn a_sampled_trace_replays_and_two_equal_runs_agree() {
     assert_eq!(sampled.trace.findings.len(), 1);
     assert_eq!(sampled.trace.findings[0].depth, 2);
     assert_eq!(sampled.effects.len(), 2);
-    let [first_change] = &sampled.effects[0].changed[..] else {
-        panic!(
-            "the first transition changes one field: {:?}",
-            sampled.effects[0]
-        );
-    };
+    let first_change = sampled.effects[0]
+        .changed
+        .iter()
+        .find(|change| change.field == "value")
+        .expect("the first transition changes its integer value");
     assert_eq!(
         first_change.pre.as_deref(),
         Some(r#"{"type":"integer","value":"0"}"#)
@@ -1247,6 +1321,10 @@ fn a_sampled_trace_replays_and_two_equal_runs_agree() {
         first_change.post.as_deref(),
         Some(r#"{"type":"integer","value":"1"}"#)
     );
+    assert!(sampled.effects[0]
+        .changed
+        .iter()
+        .any(|change| change.field == "mode"));
     assert!(replay(
         &system,
         &sampled.trace,
