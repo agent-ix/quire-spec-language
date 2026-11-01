@@ -5892,16 +5892,11 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                         declaration,
                         name,
                     } => {
-                        walk.text(
-                            if matches!(
-                                target,
-                                crate::value::member::FairnessTarget::Operation { .. }
-                            ) {
-                                "operation"
-                            } else {
-                                "hybrid_transition"
-                            },
-                        );
+                        // The declaring node and member name retain the
+                        // historical semantic key. The wire target kind
+                        // distinguishes the checked union arm, while the
+                        // typed node identity already distinguishes these
+                        // declarations for interning.
                         walk.push(PathSegment::Node(declaration.clone()));
                         walk.text(name.as_str());
                     }
