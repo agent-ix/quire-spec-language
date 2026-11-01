@@ -467,6 +467,17 @@ pub struct SequenceTypeRecord {
     pub items: ValueTypeRef,
 }
 
+/// A package option value type (QSpec FR-154): its values are either absent
+/// or carry one value of `inner`. Presence on a field remains a separate
+/// member property.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OptionTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// The value type carried when the option is present.
+    pub inner: ValueTypeRef,
+}
+
 /// A package `alias` of a clock or a unit (FCD's core kind `alias`, FCD
 /// #315): the type its `target` names, under its own name (QSL FR-230
 /// "Clocks and resets", FR-230-AC-17).
@@ -948,6 +959,8 @@ pub enum DomainPackageRecord {
     ScalarType(ScalarTypeRecord),
     /// A package sequence type (QSpec FR-154).
     SequenceType(SequenceTypeRecord),
+    /// A package option value type (QSpec FR-154).
+    OptionType(OptionTypeRecord),
     /// A package alias of a clock or a unit (FCD #315).
     AliasType(AliasTypeRecord),
     /// A `min` or `max` constraint on clocks (FCD #315).
@@ -986,6 +999,7 @@ impl DomainPackageRecord {
             Self::PersistenceInterface(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::SequenceType(record) => &record.key,
+            Self::OptionType(record) => &record.key,
             Self::AliasType(record) => &record.key,
             Self::ValueBound(record) => &record.key,
             Self::OperationMember(record) => &record.key,

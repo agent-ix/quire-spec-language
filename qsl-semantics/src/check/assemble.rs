@@ -1382,7 +1382,9 @@ fn model_object_types(
                 },
                 span,
             }),
-            DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_) => {}
+            DomainPackageRecord::SequenceType(_)
+            | DomainPackageRecord::OptionType(_)
+            | DomainPackageRecord::AliasType(_) => {}
         }
     }
     let mut declarations = Vec::new();
@@ -2017,6 +2019,35 @@ fn model_value_type(
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
             },
+            Some(DomainPackageRecord::OptionType(option)) => {
+                let (inner, sequences) = unaliased(&option.inner, |key| records.get(key).copied())
+                    .ok_or(Unmapped::Unsupported)?;
+                // Option cannot directly wrap another option or a clock
+                // place, including through aliases. A sequence boundary is
+                // a real value type boundary, so Sequence<Option<T>> remains
+                // valid as the payload of a different option.
+                if sequences == 0
+                    && (matches!(inner, ValueTypeRef::Clock)
+                        || matches!(inner, ValueTypeRef::Package(key)
+                            if matches!(records.get(key), Some(DomainPackageRecord::OptionType(_)))))
+                {
+                    return Err(Unmapped::Unsupported);
+                }
+                ValueType::option(model_value_type(
+                    &option.inner,
+                    Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    records,
+                    identities,
+                    meaning_handles,
+                    variant_shapes,
+                    units,
+                )?)
+            }
             // FR-360 item 3: a payload-free variant type is its enum type,
             // never a `Reference`. Payload-bearing variants use their union
             // composite handle instead.

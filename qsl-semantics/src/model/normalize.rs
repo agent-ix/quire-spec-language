@@ -114,7 +114,7 @@ use crate::model::key::{
 };
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use quire_checked::key::DeclarationKey;
-use quire_exact::{length_amount, Cancel};
+use quire_exact::{length_amount, Cancel, Presence};
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
@@ -1522,6 +1522,82 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
     refusals
 }
 
+/// QSpec FR-154 option validity is a package-level check because `inner` and
+/// field `typeRef` may name declarations that appear later in the document.
+/// Presence stays independent of the value type, except that a required
+/// option value cannot be made optional a second time at `[1,1]`.
+fn validate_option_types(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let records: BTreeMap<_, _> = domain_package
+        .records
+        .iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let mut refusals = Vec::new();
+
+    for record in &domain_package.records {
+        match record {
+            DomainPackageRecord::OptionType(option) => {
+                let resolved = crate::model::domain_package::unaliased(&option.inner, |key| {
+                    records.get(key).copied()
+                });
+                let invalid = resolved.map_or(true, |(inner, sequences)| {
+                    sequences == 0
+                        && (matches!(inner, ValueTypeRef::Clock)
+                            || matches!(inner, ValueTypeRef::Package(key)
+                                if matches!(records.get(key), Some(DomainPackageRecord::OptionType(_)))))
+                });
+                if invalid {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: malformed_at(
+                            domain_package,
+                            &option.key,
+                            MemberPath::type_definition().name("inner"),
+                        ),
+                        detail: format!(
+                            "{}: TypeDefinition.inner: Option<Option<T>> and Option<Clock> are not admitted",
+                            option.key.node
+                        ),
+                    });
+                }
+            }
+            DomainPackageRecord::FieldMember(field)
+                if field.presence == Presence::Optional
+                    && field.multiplicity.lower == 1
+                    && field.multiplicity.upper == Some(1) =>
+            {
+                let is_option = crate::model::domain_package::unaliased(&field.value_type, |key| {
+                    records.get(key).copied()
+                })
+                .is_some_and(|(value_type, sequences)| {
+                    sequences == 0
+                        && matches!(value_type, ValueTypeRef::Package(key)
+                            if matches!(records.get(key), Some(DomainPackageRecord::OptionType(_))))
+                });
+                if is_option {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: malformed_at(
+                            domain_package,
+                            &field.key,
+                            MemberPath::new(MemberRoot::Field).name("presence"),
+                        ),
+                        detail: format!(
+                            "{}: Field.presence: an Option<T> field cannot also be optional at multiplicity [1,1]",
+                            field.key.node
+                        ),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    refusals.sort_by(|left, right| {
+        crate::model::intake::refusal_node(left).cmp(&crate::model::intake::refusal_node(right))
+    });
+    refusals
+}
+
 /// FR-208-AC-5: a state machine declares at least one operation, state and
 /// transition. Each missing member is `invalid_model_binding`/
 /// `malformed-declaration` naming the machine.
@@ -2145,6 +2221,7 @@ fn check_node<'a>(
         DomainPackageRecord::PersistenceInterface(_) => {}
         DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::OptionType(_)
         | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::ValueBound(_) => {}
         DomainPackageRecord::OperationMember(op) => {
@@ -2790,6 +2867,9 @@ fn build(
         }
     }
     if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
+        return Err(Denial::Refused(refusals));
+    }
+    if let Ok(refusals) = Refusals::try_from(validate_option_types(domain_package)) {
         return Err(Denial::Refused(refusals));
     }
     if let Ok(refusals) = Refusals::try_from(validate_process_meanings(domain_package)) {
@@ -4302,9 +4382,60 @@ fn into_outcome(
 mod tests {
     use ix_trace_rs::trace;
 
-    use crate::model::domain_package::{ClauseRecord, NamespaceRecord};
+    use crate::model::domain_package::{
+        ClauseRecord, FieldMemberRecord, Multiplicity, NamespaceRecord, NativeValueType,
+        OptionTypeRecord, ValueTypeRef,
+    };
 
     use super::*;
+
+    #[trace("QSpec-FR-154-AC-40")]
+    #[test]
+    fn option_validation_refuses_double_wrapping_and_optional_presence() {
+        let option_key = DeclarationKey::fixture("model.OptInt");
+        let nested_key = DeclarationKey::fixture("model.OptOptInt");
+        let field_key = DeclarationKey::fixture("model.Holder/value");
+        let records = vec![
+            DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: option_key.clone(),
+                inner: ValueTypeRef::Native(NativeValueType::Integer),
+            }),
+            DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: nested_key.clone(),
+                inner: ValueTypeRef::Package(option_key.clone()),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: field_key.clone(),
+                owner: DeclarationKey::fixture("model.Holder"),
+                value_type: ValueTypeRef::Package(option_key),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                presence: Presence::Optional,
+                subsets: Vec::new(),
+                redefines: None,
+                position: 0,
+            }),
+        ];
+        let package = DomainPackage::new(DomainPackageRef::fixture("model"), records);
+        let refusals = validate_option_types(&package);
+        assert_eq!(refusals.len(), 2);
+        assert!(refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                if node == &nested_key.node
+                    && *member == MemberPath::type_definition().name("inner")
+        )));
+        assert!(refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                if node == &field_key.node
+                    && *member == MemberPath::new(MemberRoot::Field).name("presence")
+        )));
+    }
 
     /// A synthetic type-level [`ViewEntry`] whose own effective identity is
     /// `byte` repeated 32 times, for a hand-built [`EffectiveView`] that

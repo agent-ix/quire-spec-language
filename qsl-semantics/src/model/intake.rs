@@ -52,11 +52,11 @@ use crate::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
     OperationContractClause, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
-    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
-    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
-    ScalarValueDomain, SequenceTypeRecord, TuplePositionRecord, TupleValueTypeRecord,
-    ValueBoundRecord, ValueTypeRef, VariantRecord,
+    OperationResult, OptionTypeRecord, OriginalDeclaration, PackageDimensionRecord,
+    PackageUnitRecord, PersistenceInterfaceRecord, PopulationRecord, PortDirection,
+    RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+    ScalarTypeRecord, ScalarValueDomain, SequenceTypeRecord, TuplePositionRecord,
+    TupleValueTypeRecord, ValueBoundRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
 use crate::model::refusal::{Inexact, IntakeLimit, MemberPath, MemberRoot};
@@ -4574,6 +4574,38 @@ fn read_type_node(
             SequenceTypeRecord { key, items },
         )]);
     }
+    if type_value.get("kind").and_then(Value::as_str) == Some("option") {
+        // QSpec FR-154: an option wraps one value type. Field presence remains
+        // a separate member property, and Option<Clock> is not a value type.
+        if !ctx.array_field("fields")?.is_empty()
+            || !ctx.array_field("operations")?.is_empty()
+            || !ctx.array_field("relationships")?.is_empty()
+            || !ctx.array_field("supertypes")?.is_empty()
+            || !ctx.array_field("constraints")?.is_empty()
+        {
+            return Err(ctx
+                .malformed(
+                    "an option type declares no fields, operations, relationships, supertypes, or constraints",
+                )
+                .into());
+        }
+        let Some(inner) = type_value.get("inner").and_then(Value::as_str) else {
+            return Err(ctx.malformed_in("inner", "missing or not a string").into());
+        };
+        let inner = read_value_type_ref(package, &ctx, inner, false).map_err(|mut refusal| {
+            // The option contract calls this member `inner`; keep native
+            // typeRef resolution errors anchored at that schema path.
+            if let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &mut refusal.cause
+            {
+                *member = MemberPath::type_definition().name("inner");
+            }
+            refusal
+        })?;
+        return Ok(vec![DomainPackageRecord::OptionType(OptionTypeRecord {
+            key,
+            inner,
+        })]);
+    }
     if !type_value.get("kind").is_some_and(Value::is_object) {
         // Other bare-string core kinds remain outside this reader's declared
         // FR-208 meanings: a `map` has no value type to read as (quire-exact
@@ -4731,6 +4763,7 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::OptionType(_)
         | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
@@ -5684,6 +5717,60 @@ fn inherit_process_identity_fields(records: &mut [DomainPackageRecord]) {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    #[trace("QSpec-FR-154-AC-39", "QSpec-FR-154-AC-40", "QSpec-FR-154-AC-41")]
+    #[test]
+    fn reads_option_value_type_and_refuses_invalid_inner_shape() {
+        let meanings = HashMap::new();
+        let shapes = HashMap::new();
+        let type_meanings = HashMap::new();
+        let read = |value: Value| {
+            read_type_node(
+                "acme/orders",
+                &meanings,
+                &shapes,
+                &type_meanings,
+                &value,
+                "$.types[0]",
+                &mut Vec::new(),
+            )
+        };
+        let records = read(serde_json::json!({
+            "identity": "ix://acme/orders/OptInt",
+            "kind": "option",
+            "inner": "ix://quire/native/Integer",
+            "fields": [], "operations": [], "relationships": [],
+            "supertypes": [], "constraints": []
+        }))
+        .expect("an option over a native value is admitted by the QSL reader");
+        assert_eq!(
+            records,
+            vec![DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/OptInt"),
+                inner: ValueTypeRef::Native(NativeValueType::Integer),
+            })]
+        );
+
+        for malformed in [
+            serde_json::json!({
+                "identity": "ix://acme/orders/OptInt", "kind": "option",
+                "fields": [], "operations": [], "relationships": [],
+                "supertypes": [], "constraints": []
+            }),
+            serde_json::json!({
+                "identity": "ix://acme/orders/OptInt", "kind": "option",
+                "inner": null, "fields": [], "operations": [], "relationships": [],
+                "supertypes": [], "constraints": []
+            }),
+            serde_json::json!({
+                "identity": "ix://acme/orders/OptInt", "kind": "option",
+                "inner": "ix://quire/native/Clock", "fields": [], "operations": [],
+                "relationships": [], "supertypes": [], "constraints": []
+            }),
+        ] {
+            assert!(read(malformed).is_err());
+        }
+    }
 
     /// QSpec FR-154-AC-33: package intake retains a tuple declaration and
     /// each ordinal position's value type in authored product order.

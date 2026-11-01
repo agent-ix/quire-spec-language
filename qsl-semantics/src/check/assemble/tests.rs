@@ -22,8 +22,8 @@ use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
-    StateMachineStateRecord, StateMachineTransitionRecord, TuplePositionRecord,
+    OperationParameterRecord, OptionTypeRecord, ScalarTypeRecord, ScalarValueDomain,
+    StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord, TuplePositionRecord,
     TupleValueTypeRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
@@ -1633,6 +1633,145 @@ fn optional_presence_over_one_one_is_optional_not_multiplicity_driven() {
     let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Optional).unwrap();
     assert_eq!(declaration.value_type(), &ValueType::Integer);
     assert_eq!(declaration.presence(), Presence::Optional);
+}
+
+/// An option value type's type-level wrapper is projected independently of
+/// the field Presence property (QSpec FR-154-AC-39 / FR-322-AC-298).
+#[trace("TC-234", "FR-154-AC-39", "FR-322-AC-298")]
+#[test]
+fn option_value_type_projects_option_and_preserves_field_presence() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    let option = DomainPackageRecord::OptionType(OptionTypeRecord {
+        key: option_key.clone(),
+        inner: ValueTypeRef::Native(NativeValueType::Integer),
+    });
+    let records = BTreeMap::from([(&option_key, &option)]);
+    let identities = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+    let variants = BTreeMap::new();
+    let units = BTreeMap::new();
+    let field = FieldMemberRecord {
+        key: DeclarationKey::fixture("model.Holder/a"),
+        owner: DeclarationKey::fixture("model.Holder"),
+        value_type: ValueTypeRef::Package(option_key.clone()),
+        multiplicity: mult(1, Some(1), false, true),
+        presence: Presence::Required,
+        subsets: Vec::new(),
+        redefines: None,
+        position: 0,
+    };
+
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &variants,
+        &units,
+    )
+    .unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &ValueType::option(ValueType::Integer)
+    );
+    assert_eq!(declaration.presence(), Presence::Required);
+
+    let mut optional_native_field =
+        presence_field(mult(1, Some(1), false, true), Presence::Optional);
+    optional_native_field.value_type = ValueTypeRef::Native(NativeValueType::Integer);
+    let no_records = BTreeMap::new();
+    let optional_native = model_field(
+        &optional_native_field,
+        &no_records,
+        &identities,
+        &meaning_handles,
+        &variants,
+        &units,
+    )
+    .unwrap();
+    assert_eq!(optional_native.value_type(), &ValueType::Integer);
+    assert_eq!(optional_native.presence(), Presence::Optional);
+}
+
+/// Multiplicity wraps the option element itself (FR-154-AC-39 / FR-322-AC-298).
+#[trace("TC-234", "FR-154-AC-39", "FR-322-AC-298")]
+#[test]
+fn option_field_multiplicity_wraps_the_option_element() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    let option = DomainPackageRecord::OptionType(OptionTypeRecord {
+        key: option_key.clone(),
+        inner: ValueTypeRef::Native(NativeValueType::Integer),
+    });
+    let records = BTreeMap::from([(&option_key, &option)]);
+    let identities = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+    let variants = BTreeMap::new();
+    let units = BTreeMap::new();
+    let field = FieldMemberRecord {
+        key: DeclarationKey::fixture("model.Holder/d"),
+        owner: DeclarationKey::fixture("model.Holder"),
+        value_type: ValueTypeRef::Package(option_key.clone()),
+        multiplicity: mult(0, Some(3), true, false),
+        presence: Presence::Required,
+        subsets: Vec::new(),
+        redefines: None,
+        position: 0,
+    };
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &variants,
+        &units,
+    )
+    .unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &ValueType::collection(CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::option(ValueType::Integer),
+            Some(CardinalityBound::new(0, 3).unwrap()),
+        ))
+    );
+    assert_eq!(declaration.presence(), Presence::Required);
+}
+
+/// Projection refuses values that would produce an unsupported nested option
+/// or optional clock place (FR-154-AC-40).
+#[trace("TC-234", "FR-154-AC-40")]
+#[test]
+fn option_projection_rejects_nested_option_and_clock_inner_types() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    for inner in [
+        ValueTypeRef::Package(option_key.clone()),
+        ValueTypeRef::Clock,
+    ] {
+        let option = DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: option_key.clone(),
+            inner,
+        });
+        let records = BTreeMap::from([(&option_key, &option)]);
+        let field = FieldMemberRecord {
+            key: DeclarationKey::fixture("model.Holder/a"),
+            owner: DeclarationKey::fixture("model.Holder"),
+            value_type: ValueTypeRef::Package(option_key.clone()),
+            multiplicity: mult(1, Some(1), false, true),
+            presence: Presence::Required,
+            subsets: Vec::new(),
+            redefines: None,
+            position: 0,
+        };
+        let outcome = model_field(
+            &field,
+            &records,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        assert!(matches!(outcome, Err(Unmapped::Unsupported)), "{outcome:?}");
+    }
 }
 
 /// Optional presence composes with a bounded collection exactly the same

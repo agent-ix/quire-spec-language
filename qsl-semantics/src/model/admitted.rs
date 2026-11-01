@@ -288,6 +288,7 @@ impl AdmittedPackage {
                 | DomainPackageRecord::PersistenceInterface(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::SequenceType(_)
+                | DomainPackageRecord::OptionType(_)
                 | DomainPackageRecord::AliasType(_)
                 | DomainPackageRecord::ValueBound(_)
                 | DomainPackageRecord::Component(_)
@@ -434,6 +435,7 @@ impl AdmittedPackage {
             DomainPackageRecord::PersistenceInterface(_) => DeclarationKind::PersistenceInterface,
             DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::SequenceType(_)
+            | DomainPackageRecord::OptionType(_)
             | DomainPackageRecord::AliasType(_) => DeclarationKind::ValueType,
             // A constraint is a clause on the type that declares it.
             DomainPackageRecord::ValueBound(_) => DeclarationKind::Clause,

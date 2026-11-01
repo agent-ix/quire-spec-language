@@ -1966,6 +1966,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
+        | DomainPackageRecord::OptionType(_)
         | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
