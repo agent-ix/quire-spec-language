@@ -14,8 +14,8 @@ use quire_eval::{
     Admission, BodyFactory, CallFailure, Evaluation, Progress, Registry, Session, Signature,
 };
 use quire_exact::{
-    Identifier, Meter, NodeKey, Origin as OccurrenceOrigin, Role, UnionMember, Value, ValueType,
-    VariantId,
+    Identifier, Meter, NodeKey, Origin as OccurrenceOrigin, Presence, Role, UnionMember, Value,
+    ValueType, VariantId,
 };
 use quire_semantic_value::declaration::CompositeShape;
 use quire_semantic_value::location::Location;
@@ -41,12 +41,15 @@ pub enum NominalDeclarationForm {
 /// One checked member of a nominal declaration, in source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NominalDeclarationMember {
-    /// A record field and its exact admitted type.
+    /// A record field, its exact admitted type and its presence.
     RecordField {
         /// The field's checked identifier.
         identifier: Identifier,
         /// The field's exact admitted value type.
         value_type: ValueType,
+        /// Whether the checked declaration makes the field required or
+        /// optional. The value type does not determine it (FR-485-AC-18).
+        presence: Presence,
     },
     /// A tuple position and its exact admitted type.
     TuplePosition {
@@ -388,6 +391,7 @@ impl CheckedClosureHandle {
                     Ok(NominalDeclarationMember::RecordField {
                         identifier,
                         value_type: field.value_type().clone(),
+                        presence: field.presence(),
                     })
                 })
                 .collect::<Result<Vec<_>, NominalDeclarationRefusal>>()?,
@@ -2239,7 +2243,6 @@ mod tests {
     #[test]
     fn nominal_declaration_views_preserve_checked_members_and_identity() {
         use crate::{NominalDeclarationForm, NominalDeclarationMember};
-        use quire_exact::{Presence, ValueType};
         use quire_semantic_value::declaration::{
             CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
             UnionMemberDeclaration,
@@ -2278,12 +2281,15 @@ mod tests {
         let [NominalDeclarationMember::RecordField {
             identifier: flag,
             value_type: ValueType::Boolean,
+            presence: Presence::Required,
         }, NominalDeclarationMember::RecordField {
             identifier: pair_name,
             value_type: ValueType::Composite(pair_key),
+            presence: Presence::Required,
         }, NominalDeclarationMember::RecordField {
             identifier: shape_name,
             value_type: ValueType::Composite(_),
+            presence: Presence::Required,
         }] = holder.members()
         else {
             panic!("record members preserve their checked declaration order and types");
@@ -2375,10 +2381,11 @@ mod tests {
                                 NominalDeclarationMember::RecordField {
                                     identifier,
                                     value_type,
+                                    presence,
                                 } => FieldDeclaration::new(
                                     identifier.as_str(),
                                     value_type.clone(),
-                                    Presence::Required,
+                                    *presence,
                                 ),
                                 _ => unreachable!("record view has record members"),
                             })
@@ -2439,6 +2446,78 @@ mod tests {
         );
         assert_eq!(*pair_key, pair.key().clone());
         assert_eq!(holder.members().len(), 3);
+    }
+
+    #[trace("TC-1263", "FR-485-AC-18")]
+    #[test]
+    fn record_field_views_carry_required_and_optional_presence() {
+        use crate::{NominalDeclarationForm, NominalDeclarationMember};
+
+        let source = format!(
+            "{HEADER}tuple Pair(Boolean, Integer);\nrecord P {{ r: Boolean; o: Boolean?; pair: Pair; }}\nfunction consume using v(x: P): Boolean pure {{ true }}\n"
+        );
+        let acquired = acquire(&source, &DependencyInput::default());
+        let handle = acquired.handle();
+        let graph = handle.package.graph();
+        let selection = handle
+            .lookup_callable(handle.package_name(), &wire(&handle.package, "consume"))
+            .expect("the function selection is checked");
+        let composite_id = |name: &str| {
+            graph
+                .semantic_graph()
+                .nodes()
+                .find(|node| {
+                    node.declaration()
+                        .and_then(|name| name.last())
+                        .is_some_and(|segment| segment.as_str() == name)
+                })
+                .expect("composite node")
+                .key()
+                .clone()
+        };
+
+        let record = handle
+            .nominal_declaration(&selection, &composite_id("P"))
+            .expect("the signature's record declaration is available");
+        assert_eq!(record.form(), NominalDeclarationForm::Record);
+        let [NominalDeclarationMember::RecordField {
+            identifier: required,
+            value_type: required_type,
+            presence: required_presence,
+        }, NominalDeclarationMember::RecordField {
+            identifier: optional,
+            value_type: optional_type,
+            presence: optional_presence,
+        }, NominalDeclarationMember::RecordField {
+            presence: Presence::Required,
+            ..
+        }] = record.members()
+        else {
+            panic!("record members preserve their declared order and presence");
+        };
+        assert_eq!(required.as_str(), "r");
+        assert_eq!(optional.as_str(), "o");
+        assert_eq!(required_type, &ValueType::Boolean);
+        assert_eq!(required_type, optional_type);
+        assert_eq!(*required_presence, Presence::Required);
+        assert_eq!(*optional_presence, Presence::Optional);
+
+        let pair = handle
+            .nominal_declaration(&selection, &composite_id("Pair"))
+            .expect("the nested tuple is reachable through the record");
+        assert_eq!(
+            pair.members(),
+            &[
+                NominalDeclarationMember::TuplePosition {
+                    position: 0,
+                    value_type: ValueType::Boolean,
+                },
+                NominalDeclarationMember::TuplePosition {
+                    position: 1,
+                    value_type: ValueType::Integer,
+                },
+            ]
+        );
     }
 
     fn owner_bytes_fixture() -> (DependencyInput, String) {
