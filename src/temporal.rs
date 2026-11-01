@@ -37,8 +37,9 @@ use formula::{Evaluator, Tri};
 
 pub use budget::{Dimension as LimitDimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 pub use mapping::{
-    classify, AuthenticatedSelection, CheckedClassification, CheckedRetained, Classification,
-    Operators, Retained, Support, Target, Unmatched, OUTSTANDING_PREMISES,
+    classify, AuthenticatedSelection, CheckedClassification, CheckedClassificationV2,
+    CheckedRetained, Classification, Operators, Retained, Support, Target, Unmatched,
+    OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
 use progress::CheckedBinding;
@@ -108,6 +109,37 @@ pub fn evaluate_checked(
     }
 }
 
+/// Evaluate an S3 checked temporal clause after joining it to one strict `/2`
+/// admitted temporal selection.
+///
+/// The join requires the checked source identity, declaration name and source
+/// span to match the independently admitted artifact. The selected profile
+/// and clock name must also match before the v2 clock fields are authenticated.
+/// All checks happen before temporal positions are visited. The formula and
+/// activation are evaluated from `checked`, never reconstructed from the v2
+/// artifact.
+pub fn evaluate_checked_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let mut authenticated = None;
+    let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
+        .and_then(|(binding, _)| {
+            authenticated = Some(binding);
+            run_checked(checked, declaration, trace, trace.watermark, &mut work, None)
+        });
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated,
+    }
+}
+
 /// Checked-package counterpart of [`evaluate_with_progress`].
 pub fn evaluate_checked_with_progress(
     package: &CheckedPackage,
@@ -148,6 +180,76 @@ pub fn evaluate_checked_with_progress(
         usage: work.usage,
         authenticated: None,
     }
+}
+
+/// Checked-package counterpart of [`evaluate_with_progress_v2`].
+///
+/// Progress is retained under the strict artifact declaration, selected
+/// definition identity/revision and exact authenticated clock configuration.
+/// A different admitted selection cannot settle this checked clause.
+pub fn evaluate_checked_with_progress_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+    ledger: &mut Ledger,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let mut authenticated = None;
+    let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
+        .and_then(|(binding, _)| {
+            authenticated = Some(binding.clone());
+            ledger
+                .record_authenticated(binding, Progress::of(trace))
+                .map_err(Error::from)
+                .and_then(|retained| {
+                    run_checked(checked, declaration, trace, retained.watermark, &mut work, None)
+                })
+        });
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated,
+    }
+}
+
+/// Classify the checked clause only after matching its exact S3 source locus
+/// and profile to a strict `/2` admitted selection.
+///
+/// No trace is supplied, so this operation authenticates no parameter map.
+pub fn mapping_support_checked_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    surrounding_execution: Closure,
+) -> Result<CheckedClassificationV2, Error> {
+    let subject = declaration_subject(declaration);
+    let (artifact_declaration, selected) = checked_v2_selection(checked, admitted, declaration, subject)?;
+    let (_, authenticated) = authenticated_selection(
+        admitted,
+        artifact_declaration,
+        &selected,
+        Subject {
+            declaration: artifact_declaration,
+            ..Subject::default()
+        },
+    )?;
+    let binding = admitted
+        .package()
+        .temporal_bindings
+        .get(artifact_declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let classification = mapping_support_checked(checked, declaration, surrounding_execution)
+        .map_err(|error| error)?;
+    Ok(CheckedClassificationV2 {
+        support: classification.support,
+        retained: classification.retained,
+        authenticated,
+        clock_name: binding.clock_name.clone(),
+        clock: binding.clock.clone(),
+    })
 }
 
 /// Evaluate against a trace whose progress is retained across evaluations under
@@ -364,6 +466,131 @@ fn declaration_subject(declaration: usize) -> Subject {
         declaration,
         ..Subject::default()
     }
+}
+
+/// Find the admitted declaration whose exact source, name and byte span name
+/// the selected checked temporal node. The v2 declaration index is returned
+/// separately because it indexes the artifact binding table, not S3 nodes.
+fn checked_v2_selection<'a>(
+    checked: &CheckedPackage,
+    admitted: &'a v2::AdmittedPackage,
+    declaration: usize,
+    subject: Subject,
+) -> Result<(usize, Selected<'a>), Error> {
+    let node = checked
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let clause = node.clause();
+    let source = checked.graph().source();
+    let span = clause.span();
+    let start = u32::try_from(span.start).map_err(|_| Refusal::Reference { subject })?;
+    let end = u32::try_from(span.end).map_err(|_| Refusal::Reference { subject })?;
+    let package = admitted.inherited();
+    let matches = package
+        .declarations
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| {
+            candidate.name == clause.name()
+                && candidate.locus.span.start == start
+                && candidate.locus.span.end == end
+                && package
+                    .sources
+                    .get(usize::try_from(candidate.locus.source).unwrap_or(usize::MAX))
+                    .is_some_and(|origin| {
+                        origin.artifact.authority == source.authority()
+                            && origin.artifact.identity == source.identity()
+                    })
+        });
+    let mut matches = matches;
+    let (artifact_declaration, _) = matches
+        .next()
+        .ok_or(Refusal::Reference { subject })?;
+    if matches.next().is_some() {
+        return Err(Refusal::Reference { subject }.into());
+    }
+    let artifact_declaration_u32 =
+        u32::try_from(artifact_declaration).map_err(|_| Refusal::Reference { subject })?;
+    let selected = select(package, artifact_declaration, subject)?;
+    if selected.declaration.profile != artifact_declaration_u32
+        || selected.profile.identity() != clause.profile().identity()
+    {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    let temporal_binding = admitted
+        .package()
+        .temporal_bindings
+        .get(artifact_declaration)
+        .filter(|binding| binding.declaration == artifact_declaration_u32)
+        .ok_or(Refusal::Reference { subject })?;
+    if clause.clock() != temporal_binding.clock_name {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Clock,
+            subject,
+        }
+        .into());
+    }
+    Ok((artifact_declaration, selected))
+}
+
+/// Authenticate the strict artifact's exact clock inputs against the checked
+/// clause before evaluation begins, then return evidence identifying the same
+/// selected definition and configuration.
+fn authenticate_checked_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    work: &mut budget::Work,
+) -> Result<(progress::AuthenticatedBinding, usize), Error> {
+    let subject = declaration_subject(declaration);
+    work.subject = subject;
+    let (artifact_declaration, selected) =
+        checked_v2_selection(checked, admitted, declaration, subject)?;
+    if trace.clock.profile_identity != selected.profile.identity() {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    let clock_name = admitted
+        .clock_names()
+        .get(artifact_declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    if trace.clock.name != clock_name {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Clock,
+            subject,
+        }
+        .into());
+    }
+    let (binding, selection) =
+        authenticated_selection(admitted, artifact_declaration, &selected, subject)?;
+    let expected = expected_parameters(&binding.clock, subject)?;
+    if trace.clock.parameters != expected {
+        return Err(Refusal::Binding {
+            dimension: parameter_dimension(&binding.clock, trace, &expected),
+            subject,
+        }
+        .into());
+    }
+    Ok((
+        progress::AuthenticatedBinding {
+            declaration: selection.declaration(),
+            definition_identity: selection.definition_identity().into(),
+            definition_revision: selection.definition_revision().value.clone(),
+            clock: clock_name.into(),
+            parameters: expected,
+        },
+        artifact_declaration,
+    ))
 }
 
 fn classify_selected(

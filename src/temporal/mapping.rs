@@ -190,6 +190,22 @@ pub struct CheckedClassification {
     pub retained: CheckedRetained,
 }
 
+/// FR-045 classification made from checked nodes after authenticating the
+/// matching strict `/2` source selection and its definition/clock binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedClassificationV2 {
+    /// The FR-045 disposition derived from checked operators.
+    pub support: Support,
+    /// Exact checked declaration retained by the classification.
+    pub retained: CheckedRetained,
+    /// The admitted definition selection that was authenticated.
+    pub authenticated: AuthenticatedSelection,
+    /// Exact clock name selected by the admitted package.
+    pub clock_name: String,
+    /// Exact clock configuration selected by the admitted package.
+    pub clock: crate::protocol_artifact::v2::wire::ClockConfiguration,
+}
+
 /// Checked declaration facts retained by FR-045.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedRetained {
