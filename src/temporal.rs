@@ -922,9 +922,9 @@ fn run_view(
                     instance_bound_atoms: &view.instance_bound_atoms,
                     watermark,
                     support: Vec::new(),
+                    retained_valuations: BTreeSet::new(),
                 };
                 let outcome = evaluator.root(view.root, work);
-                work.charge(LimitDimension::Retention, evaluator.support.len())?;
                 let support = std::mem::take(&mut evaluator.support);
                 drop(evaluator);
                 let (truth, basis, incomplete) = match outcome {
@@ -975,11 +975,6 @@ fn run_checked(
 ) -> Result<Vec<Obligation>, Error> {
     let subject = declaration_subject(declaration);
     work.subject = subject;
-    if !work.legacy_depth_limit {
-        // The checked-v2 route charges the caller's explicit eviction schedule
-        // against retained-state work before it can inspect or discard records.
-        work.charge(budget::Dimension::Retention, trace.evicted.len())?;
-    }
     let node = package
         .graph()
         .temporal_clauses()

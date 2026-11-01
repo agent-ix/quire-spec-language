@@ -76,6 +76,8 @@ pub(super) struct Evaluator<'a> {
     pub watermark: i64,
     /// Positions consulted while establishing the reported truth.
     pub support: Support,
+    /// Distinct required valuation records touched by this obligation.
+    pub retained_valuations: BTreeSet<(u32, usize)>,
 }
 
 enum FrameState {
@@ -657,6 +659,9 @@ impl<'a> Evaluator<'a> {
         let Some(position_index) = self.position_at(offset) else {
             return Ok(self.outside(offset));
         };
+        if self.retained_valuations.insert((leaf, position_index)) {
+            work.charge(Charge::Retention, self.retained_valuations.len())?;
+        }
         if self.trace.evicted.iter().any(|evicted| {
             matches!(
                 evicted,
@@ -842,6 +847,7 @@ mod tests {
             instance_bound_atoms: &BTreeSet::new(),
             watermark: 0,
             support: Support::default(),
+            retained_valuations: BTreeSet::new(),
         };
         let mut work = Work::new(Limits {
             visits: 0,

@@ -382,7 +382,7 @@ impl Report {
             Err(error) => Err(error),
         }
     }
-    /// Effective ceilings after clamping, which participate in result identity.
+    /// Effective caller ceilings, which participate in result identity.
     pub fn limits(&self) -> super::budget::Limits {
         self.limits
     }

@@ -339,7 +339,15 @@ fn checked_v2_eviction_is_an_incomplete_result_not_a_narrower_window() {
             node: atom,
             coordinate: 0,
         });
-        let report = checked_report(checked, admitted, &trace, temporal::Limits::default());
+        let report = checked_report(
+            checked,
+            admitted,
+            &trace,
+            temporal::Limits {
+                retention: 1,
+                ..temporal::Limits::default()
+            },
+        );
         let temporal::Obligation::Assessed(assessment) =
             &report.result().expect("eviction is an obligation result")[0]
         else {
@@ -353,6 +361,38 @@ fn checked_v2_eviction_is_an_incomplete_result_not_a_narrower_window() {
         assert_eq!(incomplete.dimension, temporal::Dimension::Valuation);
         assert_eq!(incomplete.subject.declaration, 0);
         assert_eq!(incomplete.subject.position, Some(0));
+        assert_eq!(report.usage().retention, 1);
+    });
+}
+
+/// AC-3: retention tracks valuation records the obligation actually requires,
+/// not unrelated records in the supplied eviction list.
+#[trace("TC-124", "NFR-008-AC-3")]
+#[test]
+fn checked_v2_irrelevant_evictions_do_not_consume_retention() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on origin { eventually[0,0] holds(view.code > 0) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let mut trace = event_trace(atom);
+        trace
+            .evicted
+            .extend((1..=128).map(|coordinate| temporal::Eviction::Valuation {
+                node: atom.saturating_add(100),
+                coordinate,
+            }));
+        let report = checked_report(
+            checked,
+            admitted,
+            &trace,
+            temporal::Limits {
+                retention: 1,
+                ..temporal::Limits::default()
+            },
+        );
+        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+            panic!("irrelevant eviction instructions do not stop the obligation");
+        };
+        assert_eq!(assessment.truth, Some(temporal::Truth::True));
+        assert_eq!(report.usage().retention, 1);
     });
 }
 
@@ -528,7 +568,8 @@ fn checked_v2_effective_limits_participate_in_result_identity() {
                 ..temporal::Limits::default()
             },
         );
-        assert_eq!(above.limits().visits, temporal::Limits::default().visits);
+        assert_eq!(above.limits().visits, usize::MAX);
+        assert_ne!(first.result(), above.result());
         let zero = checked_report(
             checked,
             admitted,
@@ -539,6 +580,135 @@ fn checked_v2_effective_limits_participate_in_result_identity() {
             },
         );
         assert_eq!(zero.limits().visits, 0);
+    });
+}
+
+/// AC-4: admitted restoration state participates in checked-v2 result identity.
+/// Repeating the same restored state reproduces the result; restoring a
+/// different retained capture under the same checked binding produces a
+/// distinct assessment.
+#[trace("TC-124", "NFR-008-AC-4")]
+#[test]
+fn checked_v2_restored_capture_state_participates_in_result_identity() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) { capture saved: M::Widget = trigger; always[0,0] holds(view.code > 0) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let trigger = |capture: temporal::CaptureInput, receipt: &str| temporal::Trigger {
+            identity: "trigger:restore".into(),
+            receipt: receipt.into(),
+            anchor: "event-1".into(),
+            payload: "stable-payload".into(),
+            guard: None,
+            captures: vec![capture],
+        };
+        let trace = |capture: temporal::CaptureInput, receipt: &str| {
+            let mut trace = event_trace(atom);
+            trace.anchor = "event-1".into();
+            trace.triggers = vec![trigger(capture, receipt)];
+            trace
+        };
+        let seed = |value: &str| {
+            trace(
+                temporal::CaptureInput::Value {
+                    anchor: "event-1".into(),
+                    value: value.into(),
+                },
+                "receipt:seed",
+            )
+        };
+        let replay = trace(temporal::CaptureInput::WrongType, "receipt:replay");
+
+        let mut seven_state = temporal::Ledger::new();
+        temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &seed("17"),
+            temporal::Limits::default(),
+            &mut seven_state,
+        );
+        let mut seven_replay_a = seven_state.clone();
+        let mut seven_replay_b = seven_state.clone();
+        let restored_seven = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &replay,
+            temporal::Limits::default(),
+            &mut seven_replay_a,
+        );
+        let repeated_seven = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &replay,
+            temporal::Limits::default(),
+            &mut seven_replay_b,
+        );
+        assert_eq!(restored_seven.result(), repeated_seven.result());
+
+        let mut nine_state = temporal::Ledger::new();
+        temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &seed("18"),
+            temporal::Limits::default(),
+            &mut nine_state,
+        );
+        let restored_nine = temporal::evaluate_checked_with_progress_v2(
+            checked.package(),
+            admitted,
+            0,
+            &replay,
+            temporal::Limits::default(),
+            &mut nine_state,
+        );
+
+        let temporal::Obligation::Assessed(seven) = &restored_seven.result().unwrap()[0] else {
+            panic!("the seven-valued capture is restored");
+        };
+        let temporal::Obligation::Assessed(nine) = &restored_nine.result().unwrap()[0] else {
+            panic!("the nine-valued capture is restored");
+        };
+        assert_eq!(seven.captures[0].value, "17");
+        assert_eq!(nine.captures[0].value, "18");
+        assert_ne!(restored_seven.result(), restored_nine.result());
+    });
+}
+
+/// AC-4: a caller-raised ceiling admits work whose visit count exceeds the
+/// published default and retains that effective ceiling in result identity.
+#[trace("TC-124", "NFR-008-AC-4")]
+#[test]
+fn checked_v2_raised_visit_limit_admits_work_above_the_default() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on origin { always[0,500000] (holds(view.code > 0) and true) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let trace = event_trace(atom);
+        let default = checked_report(checked, admitted, &trace, temporal::Limits::default());
+        let Err(temporal::Error::Exhausted(exhaustion)) = default.result() else {
+            panic!(
+                "the published visit ceiling is below this work: {:?}",
+                default.result()
+            );
+        };
+        assert_eq!(exhaustion.dimension, temporal::LimitDimension::Visits);
+        assert_eq!(default.usage().visits, temporal::Limits::default().visits);
+
+        let raised = checked_report(
+            checked,
+            admitted,
+            &trace,
+            temporal::Limits {
+                visits: 3_000_000,
+                ..temporal::Limits::default()
+            },
+        );
+        let temporal::Obligation::Assessed(assessment) = &raised.result().unwrap()[0] else {
+            panic!("the raised limit admits the complete evaluation");
+        };
+        assert_eq!(assessment.truth, Some(temporal::Truth::False));
+        assert!(raised.usage().visits > temporal::Limits::default().visits);
+        assert_eq!(raised.limits().visits, 3_000_000);
     });
 }
 

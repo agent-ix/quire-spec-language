@@ -421,15 +421,6 @@ fn preflight_input(
             }
         }
     }
-    if trace.evicted.len() > limits.retention {
-        return Some(super::Exhaustion {
-            dimension: Dimension::Retention,
-            used: 0,
-            requested: trace.evicted.len(),
-            limit: limits.retention,
-            subject,
-        });
-    }
     // Bound scans over per-instance valuation tables, deliveries, and supplied
     // captures before constructing temporary identity state. Empty instance
     // maps still consume scan work; retained-instance and capture charges below
