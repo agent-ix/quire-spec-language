@@ -31,3 +31,13 @@ Not applicable: no production implementation changed. The FR-081 test-matrix tra
 ## Scope
 
 - **model_identity_contracts::tc217_child_reports_normalization_output** (examined; `qsl-semantics/tests/it/model_identity_contracts.rs`): The helper reports child-process normalization output when QSL_TC217_CHILD is set.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The child-process branch is now inside the tagged `an_intervening_package_does_not_change_normalization_results` test. Ordinary test execution makes the assertions; child mode is reached only through the test’s own subprocess invocation. |
+
+## Current status
+
+The original FND-001 is fixed on PR head `cf7b077e942d35475b2b88e812471b913276b5d0`; no unresolved finding remains in this method.

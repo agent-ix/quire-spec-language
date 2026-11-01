@@ -21,3 +21,13 @@ The revised identity pair and the separate derivation provenance now align with 
 - **FR-081-AC-12** (examined; `spec/functional/FR-081-preserve-model-correspondence-and-declaration-identity.md`): For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types) run on a thread with a 524,288-byte (512 KiB) stack, normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts.
 - **FR-081-AC-13** (examined; `spec/functional/FR-081-preserve-model-correspondence-and-declaration-identity.md`): The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra.
 - **TC-1023** (context_only; `spec/test-cases/TC-1023-model-identity-chain-is-unique-and-binds-ancestry.md`): TC-1023 verifies FR-081-AC-10 identity and provenance changes.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The full-size test now carries local `TC-1025`, `FR-081-AC-12`, and `FR-081-AC-13` trace tags. Scoped Quire validation passes with these references. |
+
+## Current status
+
+The original FND-001 is fixed on PR head `cf7b077e942d35475b2b88e812471b913276b5d0`; no unresolved finding remains in this method.
