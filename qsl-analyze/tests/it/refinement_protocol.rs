@@ -122,7 +122,7 @@ fn a_twice_protocol_refinement_holds_uncertified() {
     )
     .expect("the abstract protocol subject is admitted");
     assert!(matches!(
-        outcome.safety,
+        &outcome.safety,
         SafetyOutcome::HoldsUncertified { .. }
     ));
     let settled = settle_refinement_safety(
