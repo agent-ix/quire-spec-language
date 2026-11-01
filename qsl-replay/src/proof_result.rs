@@ -62,6 +62,8 @@ pub(crate) const KANI_VACUOUS_PROOF_KIND: &str = "kani-vacuous-proof";
 pub enum ValueCheckUnsupported {
     /// A parameter whose type the arm does not enumerate.
     ParameterDomain,
+    /// A function call's body is outside the checked package closure.
+    CallNotEvaluable,
     /// The evaluator refused a result.
     EvaluationRefused,
 }
@@ -71,6 +73,7 @@ impl ValueCheckUnsupported {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ParameterDomain => "parameter-domain-not-enumerable",
+            Self::CallNotEvaluable => "call-not-evaluable",
             Self::EvaluationRefused => "evaluation-refused",
         }
     }
@@ -780,6 +783,10 @@ impl UnavailabilityCause {
 /// (ADR-013 C-09) and a second spelling of it must be unrepresentable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InconclusiveCause {
+    /// The premises held for no assignment in a value-validity check arm
+    /// (QSpec FR-483). This is an inconclusive terminal result, not a proof
+    /// with zero Kani SUCCESS checks.
+    KaniVacuousProof,
     /// The completed search horizon found no counterexample.
     BoundReached {
         /// Completed search depth.
@@ -1016,6 +1023,7 @@ impl InconclusiveCause {
     /// The cause's FR-331 wire spelling.
     pub const fn as_str(&self) -> &'static str {
         match self {
+            Self::KaniVacuousProof => KANI_VACUOUS_PROOF_KIND,
             Self::BoundReached { .. } => "bound-reached",
             Self::InductionNotClosed { .. } => "induction-not-closed",
             Self::HypothesesNotEstablished { .. } => "hypotheses-not-established",
@@ -1051,7 +1059,8 @@ impl InconclusiveCause {
     /// the nested witness records and failure of a parity disagreement.
     fn measured_bytes(&self) -> usize {
         match self {
-            Self::BoundReached { .. }
+            Self::KaniVacuousProof
+            | Self::BoundReached { .. }
             | Self::InductionNotClosed { .. }
             | Self::HypothesesNotEstablished { .. }
             | Self::UndecidedSuccessor
@@ -1100,13 +1109,13 @@ impl InconclusiveCause {
 }
 
 /// FR-331's `inconclusive` cause as an envelope reports it (ADR-013 O-16
-/// inconclusive row): a closed set covering both the vacuous proof and
-/// the replay causes.
+/// inconclusive row): a closed set covering Kani and ValueValidity vacuity,
+/// as well as the other typed inconclusive causes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReportedInconclusiveCause {
-    /// `kani_vacuous_proof`: a `Proved` run with zero SUCCESS checks in the
-    /// obligation, derived from the `Checks { success_checks: 0 }` basis by
-    /// [`TerminalValue::vacuous_proof_cause`].
+    /// `kani_vacuous_proof`: either a `Proved` run with zero SUCCESS checks,
+    /// derived from its `Checks { success_checks: 0 }` basis, or a
+    /// ValueValidity inconclusive result whose premises admit no assignment.
     KaniVacuousProof,
     /// The cause of a `TerminalValue::Inconclusive`.
     Cause(InconclusiveCause),
@@ -1244,6 +1253,9 @@ impl TerminalValue {
     /// `None` for every other value.
     pub fn inconclusive_cause(&self) -> Option<ReportedInconclusiveCause> {
         match self {
+            Self::Inconclusive(InconclusiveCause::KaniVacuousProof) => {
+                Some(ReportedInconclusiveCause::KaniVacuousProof)
+            }
             Self::Inconclusive(cause) => Some(ReportedInconclusiveCause::Cause(cause.clone())),
             Self::Proved { .. } => self.vacuous_proof_cause(),
             Self::Tested
@@ -2220,11 +2232,11 @@ mod tests {
 
     /// FR-069-AC-1 (TC-177): every FR-331 wire value maps to its exact
     /// O-16 category, `proved`/`tested` stay distinct within `success`, and
-    /// a vacuous `Proved` (zero SUCCESS checks) maps to `inconclusive`, not
-    /// `success` -- distinguished from an ordinary `Proved` only by the
-    /// SUCCESS-check count, not by a different outer tag. An `Inconclusive`
-    /// value maps to `inconclusive` with its own typed cause, whichever it
-    /// is, and each record is keyed by its `request_index`.
+    /// a vacuous `Proved` (zero SUCCESS checks) and a value-validity
+    /// `Inconclusive` with `KaniVacuousProof` both map to `inconclusive` but
+    /// keep distinct terminal values. An `Inconclusive` value maps to
+    /// `inconclusive` with its own typed cause, and each record is keyed by
+    /// its `request_index`.
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
@@ -2242,6 +2254,11 @@ mod tests {
                     basis: ProofBasis::Checks { success_checks: 0 },
                     certification: Certification::Certified,
                 },
+                Category::Inconclusive,
+                Some(ReportedInconclusiveCause::KaniVacuousProof),
+            ),
+            (
+                TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof),
                 Category::Inconclusive,
                 Some(ReportedInconclusiveCause::KaniVacuousProof),
             ),

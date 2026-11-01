@@ -152,6 +152,9 @@ fn source(e: &Json) -> String {
                     let args: Vec<String> = (2..items.len()).map(arg).collect();
                     format!("{}({})", items[1].as_str().unwrap(), args.join(", "))
                 }
+                // The vector's `narrow` annotation supplies the function's
+                // result bound; the checked source body remains its operand.
+                "narrow" => arg(3),
                 "if" => format!("(if {} then {} else {})", arg(1), arg(2), arg(3)),
                 "@" => arg(2),
                 "/" => format!("({} div {})", arg(1), arg(2)),
@@ -282,15 +285,75 @@ fn declarations_of(model: &Json) -> String {
             source(&model["goal"])
         );
     } else {
-        let boolean = matches!(model["body"][0].as_str(), Some("and" | ">" | "<" | "="));
+        let result_type = match model["body"][0].as_str() {
+            Some("and" | ">" | "<" | "=") => "Boolean".to_owned(),
+            Some("narrow") => format!("Int[{}, {}]", model["body"][1], model["body"][2]),
+            _ => "Integer".to_owned(),
+        };
         text += &format!(
             "function subject using v({}): {} pure {{ {} }}\n",
             param_list(model),
-            if boolean { "Boolean" } else { "Integer" },
+            result_type,
             source(&model["body"])
         );
     }
     text
+}
+
+/// The path to a vector's marked expression, using the same child indices as
+/// the checked package's body locations. The `@` marker labels the expression
+/// but does not add a source node of its own.
+fn marked_path(expression: &Json, marker: &str) -> Option<Vec<usize>> {
+    fn visit(expression: &Json, marker: &str, path: &mut Vec<usize>) -> bool {
+        let Json::Array(items) = expression else {
+            return false;
+        };
+        if items.first().and_then(Json::as_str) == Some("@")
+            && items.get(1).and_then(Json::as_str) == Some(marker)
+        {
+            return true;
+        }
+        if items.first().and_then(Json::as_str) == Some("narrow") {
+            return items.get(3).is_some_and(|child| visit(child, marker, path));
+        }
+        for (index, child) in items.iter().enumerate().skip(1) {
+            path.push(index - 1);
+            if visit(child, marker, path) {
+                return true;
+            }
+            path.pop();
+        }
+        false
+    }
+
+    let mut path = Vec::new();
+    visit(expression, marker, &mut path).then_some(path)
+}
+
+fn marked_scalar_key(package: &CheckedPackage, model: &Json) -> OccurrenceKey {
+    let marker = model["occurrence"]
+        .as_str()
+        .expect("vector occurrence label");
+    let path = marked_path(&model["body"], marker)
+        .unwrap_or_else(|| panic!("the model has no occurrence marker {marker:?}"));
+    let matches: Vec<OccurrenceKey> = package
+        .graph()
+        .requirements()
+        .iter()
+        .filter_map(|(key, record)| {
+            if record.requirements().kind() != Capability::ValueValidity
+                || record.owner() != Some("subject")
+            {
+                return None;
+            }
+            let location = package
+                .graph()
+                .occurrence(key.node().clone(), key.origin())?;
+            (location.path() == path).then(|| key.clone())
+        })
+        .collect();
+    assert_eq!(matches.len(), 1, "{marker}: {matches:?}");
+    matches.into_iter().next().expect("one marked occurrence")
 }
 
 // ---- compiling and running ----
@@ -673,49 +736,26 @@ fn the_clause_vectors_settle_as_the_vectors_state() {
     }
 }
 
-/// The scalar-operation vectors. VV-05 is decided as stated. VV-04 and VV-06
-/// state `proved`, which the arm cannot establish: the evaluator reports no
-/// occurrence it passed through, so the arm answers `inconclusive` and never
-/// `proved`. VV-10 states the vacuous path condition, which needs the same
-/// reach information, and VV-08 a range-narrowing operand, whose bound the
-/// arm does not check.
+/// Scalar-operation vectors use the evaluator's occurrence trace to prove
+/// assignments that reach the selected operator, including the target range
+/// supplied by a direct narrowing conversion.
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-4")]
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-5")]
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-6")]
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-7")]
 #[test]
-fn the_scalar_operation_vectors_are_refuted_when_undefined_and_never_proved() {
+fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
     let cases: Vec<Json> = supported()
         .into_iter()
         .filter(|c| shape(c) == Shape::Scalar)
         .collect();
     let ids: Vec<&str> = cases.iter().map(id_of).collect();
-    assert_eq!(ids, ["VV-04", "VV-05", "VV-06", "VV-08", "VV-10"]);
+    assert_eq!(ids, ["VV-04", "VV-05", "VV-06", "VV-08", "VV-10", "VV-18"]);
     for case in cases {
         let id = id_of(&case);
         let model = &case["model"];
-        let body = model["body"].to_string();
-        if body.contains("\"narrow\"") {
-            // Named deviation: no QSL spelling of the narrowing, and the
-            // operand's bound is not an obligation this arm discharges.
-            assert_eq!(id, "VV-08");
-            continue;
-        }
         let package = package_of(&declarations_of(model));
-        let mut records: Vec<OccurrenceKey> = package
-            .graph()
-            .requirements()
-            .iter()
-            .filter(|(_, r)| {
-                r.requirements().kind() == Capability::ValueValidity && r.owner() == Some("subject")
-            })
-            .map(|(k, _)| k.clone())
-            .collect();
-        records.sort_by_key(|k| k.origin().ordinal());
-        let ordinal = case["item"]["occurrence"]["ordinal"].as_u64().unwrap();
-        let key = records
-            .iter()
-            .find(|k| k.origin().ordinal() == ordinal)
-            .unwrap_or_else(|| {
-                panic!("{id}: no requirement record at ordinal {ordinal}: {records:?}")
-            })
-            .clone();
+        let key = marked_scalar_key(&package, model);
         let record = run(&package, &key, "subject", None);
         let outcome = label(&record);
         match id {
@@ -743,21 +783,46 @@ fn the_scalar_operation_vectors_are_refuted_when_undefined_and_never_proved() {
             }
             "VV-04" | "VV-06" => {
                 assert_eq!(case["outcome"]["results"][0]["result"], "proved");
-                assert_eq!(outcome, "inconclusive", "{id}: never proved");
+                assert_eq!(outcome, "proved", "{id}: reached occurrences are decided");
+            }
+            "VV-08" => {
+                assert_eq!(outcome, "refuted");
+                let found = record.value_check.as_ref().unwrap();
+                let at = found.reproduced.violation().undefined.as_ref().unwrap();
+                assert_eq!(at.locus, key, "the undefined modulus is the occurrence");
+                assert_eq!(at.reason, NATIVE_ZERO_DIVISOR_CAUSE);
+                let candidate = candidate_of(model, &case["candidate"]);
                 assert!(matches!(
-                    terminal(&record),
-                    TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive { .. })
+                    candidate.as_slice(),
+                    [Value::Integer(value)] if value.to_string() == "0"
                 ));
+                let replayed = run_in(
+                    &Engines::qsl().unwrap(),
+                    &package,
+                    &key,
+                    "subject",
+                    Ask {
+                        max_cases: None,
+                        reported: Some(candidate),
+                    },
+                );
+                assert_eq!(label(&replayed), "refuted");
+                let again = replayed.value_check.as_ref().unwrap();
+                assert_eq!(again.reproduced.violation(), found.reproduced.violation());
             }
             "VV-10" => {
                 assert_eq!(outcome, "inconclusive");
                 assert!(
                     matches!(
                         terminal(&record),
-                        TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive { .. })
+                        TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof)
                     ),
-                    "the vector's kani_vacuous_proof needs reach information the evaluator lacks"
+                    "no assignment reaches the occurrence, so the path premises are vacuous"
                 );
+            }
+            "VV-18" => {
+                assert_eq!(case["outcome"]["results"][0]["result"], "proved");
+                assert_eq!(outcome, "proved", "the target narrow's bound is retained");
             }
             other => panic!("unexpected scalar vector {other}"),
         }
@@ -765,6 +830,92 @@ fn the_scalar_operation_vectors_are_refuted_when_undefined_and_never_proved() {
 }
 
 // ---- the clause semantics ----
+
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-3")]
+#[test]
+fn a_case_clause_enumerates_union_members_and_replays_the_payload() {
+    let package = package_of(
+        "union Shape { Empty, Circle(Int[0, 1]), Rect(Int[0, 1], Int[0, 1]) }\n\
+         function subject using v(s: Shape): Boolean pure \
+         { case s { Circle(r): r > 0; Rect(w, h): true; Empty: true; } }",
+    );
+    let key = key_of(
+        &package,
+        "subject",
+        &serde_json::json!({"role": "claim", "ordinal": 0}),
+    );
+    let record = run(&package, &key, "subject", None);
+    assert!(matches!(terminal(&record), TerminalValue::Refuted));
+    let counterexample = record.value_check.as_ref().unwrap();
+    let Value::Union(union) = &counterexample.reproduced.assignment()[0] else {
+        panic!("the counterexample must preserve the active union member")
+    };
+    assert_eq!(union.member().identifier(), "Circle");
+    assert!(matches!(union.payload(), [Value::Integer(n)] if n.to_string() == "0"));
+}
+
+#[trace("QSpec-TC-973", "QSpec-FR-483-AC-4")]
+#[test]
+fn a_large_union_domain_stops_at_the_item_case_budget() {
+    let package = package_of(
+        "union Shape { Circle(Int[0, 100000]) }\n\
+         function subject using v(s: Shape): Boolean pure \
+         { case s { Circle(r): r >= 0; } }",
+    );
+    let key = key_of(
+        &package,
+        "subject",
+        &serde_json::json!({"role": "claim", "ordinal": 0}),
+    );
+    let record = run(&package, &key, "subject", Some(2));
+    assert!(matches!(
+        terminal(&record),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::ValueCheckMaxCases,
+            value: 2,
+        })
+    ));
+}
+
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-9")]
+#[trace("QSpec-TC-972", "QSpec-FR-483-AC-4")]
+#[test]
+fn recursive_function_body_evaluations_consume_the_item_case_budget() {
+    let package = package_of(
+        "function subject using v(n: Int[0, 20]): Boolean pure decreases(n) \
+         { if n = 0 then true else subject(n - 1) }",
+    );
+    let key = key_of(
+        &package,
+        "subject",
+        &serde_json::json!({"role": "claim", "ordinal": 0}),
+    );
+    let target = ValueTarget::select(&package, "subject", &key).unwrap();
+    let node = target.parameters()[0].node();
+    let only_deep_input =
+        IntegerInterval::new(Integer::from(20_i64), Integer::from(20_i64)).unwrap();
+    let target = target.bounded(node, &only_deep_input);
+    let record = analyze_items(
+        &Engines::qsl().unwrap(),
+        vec![value_item(
+            index(),
+            Ok(ValueRequest {
+                target,
+                max_cases: NonZeroU64::new(5),
+                reported: None,
+            }),
+        )],
+        &guarded(),
+    )
+    .remove(0);
+    assert!(matches!(
+        terminal(&record),
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::ValueCheckMaxCases,
+            value: 5,
+        })
+    ));
+}
 
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-7")]
 #[test]
@@ -797,6 +948,13 @@ fn an_undefined_subexpression_is_located_at_its_own_occurrence() {
     assert_eq!(package_location, &expected);
     assert_ne!(at.locus, key);
     assert_eq!(at.reason, NATIVE_ZERO_DIVISOR_CAUSE);
+    let written = serde_json::to_value(record.outcome_item().expect("a proof result item"))
+        .expect("the item has a wire representation");
+    assert_eq!(written["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(written["cause"]["cause"], NATIVE_ZERO_DIVISOR_CAUSE);
+    assert!(written["cause"]["where"]
+        .as_str()
+        .is_some_and(|where_| where_.contains(&at.locus.node().to_string())));
     // The assignment is the first violating one in enumeration order.
     let first = [integer(-1), integer(0)];
     assert_eq!(found.reproduced.assignment().len(), first.len());
@@ -836,7 +994,7 @@ fn an_undefinedness_inside_a_callee_is_located_in_the_callees_body() {
 
 #[trace("QSpec-TC-972", "QSpec-FR-483-AC-2")]
 #[test]
-fn an_unsatisfiable_domain_proves_no_case_and_is_vacuous_not_proved() {
+fn an_unsatisfiable_domain_is_inconclusive_with_the_value_check_vacuity_cause() {
     let package = package_of("function subject using v(x: Int[0, 3]): Boolean pure { x >= 0 }");
     let key = key_of(
         &package,
@@ -864,14 +1022,12 @@ fn an_unsatisfiable_domain_proves_no_case_and_is_vacuous_not_proved() {
         &guarded(),
     )
     .remove(0);
-    // Zero cases examined: not an exhaustive proof, the vacuous one.
+    // This is an inconclusive ValueValidity result, not a Kani proof with
+    // zero SUCCESS checks.
     assert!(
         matches!(
             terminal(&record),
-            TerminalValue::Proved {
-                basis: ProofBasis::Checks { success_checks: 0 },
-                ..
-            }
+            TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof)
         ),
         "{:?}",
         record.settlement
@@ -1029,11 +1185,12 @@ fn the_item_limit_replaces_the_descriptor_default_and_the_descriptor_default_app
         },
     );
     assert_eq!(limit(&small_item), Some(30));
-    // A budget equal to the domain finishes; one short does not.
-    let exact = run(&package, &key, "subject", Some(256));
+    // Each of 256 assignments and its function-body evaluation consumes one
+    // case; the exact budget finishes and one short does not.
+    let exact = run(&package, &key, "subject", Some(512));
     assert_eq!(limit(&exact), None);
-    let short = run(&package, &key, "subject", Some(255));
-    assert_eq!(limit(&short), Some(255));
+    let short = run(&package, &key, "subject", Some(511));
+    assert_eq!(limit(&short), Some(511));
     // The production default is the descriptor's own.
     let production = Engines::qsl().unwrap();
     let descriptor = production

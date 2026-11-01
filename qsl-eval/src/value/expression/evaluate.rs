@@ -474,6 +474,9 @@ enum Task<'a> {
     /// the arm of its active member and evaluate only that arm's body.
     Select(CheckedNode<'a>),
     Retain(CheckedNode<'a>),
+    /// A function call's body has returned; its result now belongs to the
+    /// call application at `node`.
+    ObserveApplication(CheckedNode<'a>),
     Bind(Slot),
     ChargeElement(CheckedNode<'a>),
     Return,
@@ -610,6 +613,18 @@ pub(crate) struct Machine<'a, 'm> {
     /// supplies a `reads` map.
     family: EvaluationFamily,
     meter: &'m mut Meter,
+    /// Completed operator occurrences and their values, when a caller needs
+    /// expression-level evidence (FR-484 scalar-operation obligations).
+    observed_applications: Option<&'m mut Vec<(Location, Value)>>,
+    /// Whether this checked package calls a dependency whose body is absent.
+    /// Only the ValueValidity observer interprets that typed refusal.
+    unavailable_imported_call: Option<&'m mut bool>,
+    /// Case budget for each value-function body evaluation in this call.
+    function_case_limit: Option<u64>,
+    /// Function-body evaluations charged by this call and its nested calls.
+    function_evaluations: Option<&'m mut u64>,
+    /// Whether a nested body evaluation was refused by `max_cases`.
+    function_case_limit_reached: Option<&'m mut bool>,
     dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
     /// FR-125: whether each stack value is still the absent-key parameter
@@ -715,6 +730,26 @@ impl<'a, 'm> Machine<'a, 'm> {
         )
     }
 
+    /// A value-family evaluator that records each completed application and
+    /// its result. An occurrence whose operand or operator stopped is absent
+    /// from the trace.
+    pub(crate) fn observing_applications(
+        scope: &'a Scope,
+        graph: &'a CheckedGraph,
+        objects: &'a ObjectEnvironment,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+        observation: super::ApplicationObservation<'m>,
+    ) -> Self {
+        let mut machine = Self::new(scope, graph, objects, meter, dispatch_tables);
+        machine.observed_applications = Some(observation.observed);
+        machine.unavailable_imported_call = Some(observation.unavailable_imported_call);
+        machine.function_case_limit = Some(observation.function_case_limit);
+        machine.function_evaluations = Some(observation.function_evaluations);
+        machine.function_case_limit_reached = Some(observation.function_case_limit_reached);
+        machine
+    }
+
     /// [`Self::new`], additionally carrying a precondition's or
     /// postcondition's pre observation and the clause's own model-read
     /// observations (FR-107): `pre_objects` is consulted at an `Attribute`
@@ -772,6 +807,11 @@ impl<'a, 'm> Machine<'a, 'm> {
             reads,
             family,
             meter,
+            observed_applications: None,
+            unavailable_imported_call: None,
+            function_case_limit: None,
+            function_evaluations: None,
+            function_case_limit_reached: None,
             dispatch_tables,
             values: Vec::new(),
             value_guard_provenance: Vec::new(),
@@ -1002,6 +1042,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Short(node)
                 | Task::Select(node)
                 | Task::Retain(node)
+                | Task::ObserveApplication(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
                 Task::IterateSeq(iteration) => iteration.node,
@@ -1010,6 +1051,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                     root
                 }
             };
+            let applied = matches!(
+                &task,
+                Task::Apply(node)
+                    if !matches!(
+                        node.kind(),
+                        NodeKind::Call { .. }
+                            | NodeKind::ImportedCall { .. }
+                            | NodeKind::Dispatch { .. }
+                    )
+            );
             if let Err(halt) = self.step(task) {
                 let located = self.imported.first().copied().unwrap_or(located);
                 return match halt {
@@ -1039,6 +1090,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                         ),
                     ),
                 };
+            } else if applied {
+                if let Some(observed) = self.observed_applications.as_deref_mut() {
+                    if let Some(value) = self.values.last() {
+                        observed.push((located.location().clone(), value.clone()));
+                    }
+                }
             }
         }
         let value = match self.pop() {
@@ -1484,6 +1541,30 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
+    /// Charge one nested value-function body against FR-484's `max_cases`.
+    fn enter_function_case(&mut self) -> Result<(), Halt> {
+        let Some(limit) = self.function_case_limit else {
+            return Ok(());
+        };
+        let Some(evaluations) = self.function_evaluations.as_deref_mut() else {
+            return Err(invariant("value-check-function-case-counter-present"));
+        };
+        if *evaluations >= limit {
+            if let Some(reached) = self.function_case_limit_reached.as_deref_mut() {
+                *reached = true;
+            }
+            return Err(Halt::Stop(Stop::Incomplete(Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit,
+                consumed: limit,
+                next_charge: Integer::from(1_i64),
+                charge_point: ChargePoint::FunctionCall,
+            })));
+        }
+        *evaluations += 1;
+        Ok(())
+    }
+
     fn step(&mut self, task: Task<'a>) -> Result<(), Halt> {
         match task {
             Task::Eval(node) => self.eval(node),
@@ -1529,6 +1610,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.push_value(Value::Boolean(result), false);
                 Ok(())
             }
+            Task::ObserveApplication(node) => {
+                if let Some(observed) = self.observed_applications.as_deref_mut() {
+                    let value = self
+                        .values
+                        .last()
+                        .ok_or_else(|| invariant("evaluation-call-result-missing"))?;
+                    observed.push((node.location().clone(), value.clone()));
+                }
+                Ok(())
+            }
             Task::Bind(slot) => {
                 let (value, provenance) = self.pop_forwarded()?;
                 self.bind_with_provenance(slot, value, provenance)
@@ -1549,7 +1640,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     body_function,
                     arguments,
                     failure,
-                    node: _,
+                    node,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames
@@ -1574,6 +1665,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 frame.resize(callable.slots.max(frame.len()), None);
                 let provenance = vec![false; frame.len()];
                 self.push_frame(frame, provenance);
+                self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
                 Ok(())
@@ -2247,6 +2339,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
                 let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
+                self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
@@ -2259,6 +2352,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // Reset to `Post` for the callee, then restore the caller's
                 // anchor once its own `Task::Eval`/`Task::Return` complete
                 // (mirrors `NodeKind::Pre`'s own save/restore pair).
+                self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);
@@ -2273,16 +2367,21 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let library = self
-                    .graph
-                    .scope()
-                    .imported_graph(callee)
-                    .ok_or_else(|| invariant("evaluation-imported-graph-unresolved"))?;
-                let callable = library
-                    .function_state(*function)
-                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                let Some(library) = self.graph.scope().imported_graph(callee) else {
+                    if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
+                        *unavailable = true;
+                    }
+                    return Err(invariant("evaluation-imported-graph-unresolved"));
+                };
+                let Some(callable) = library.function_state(*function) else {
+                    if let Some(unavailable) = self.unavailable_imported_call.as_deref_mut() {
+                        *unavailable = true;
+                    }
+                    return Err(invariant("evaluation-callable-unresolved"));
+                };
                 let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
+                self.enter_function_case()?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
@@ -2296,6 +2395,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     enum_members: library.scope().enum_member_index(),
                 });
                 self.imported.push(node);
+                self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::RestorePackage(Box::new(previous)));
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
@@ -2635,6 +2735,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
                         self.push_frame(frame, provenance);
+                        self.tasks.push(Task::ObserveApplication(node));
                         self.tasks.push(Task::Return);
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());

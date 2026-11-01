@@ -576,6 +576,7 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
+                | InconclusiveCause::KaniVacuousProof
                 | InconclusiveCause::RefutedIgnoringConstraints
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch
@@ -1825,6 +1826,25 @@ mod tests {
             item,
             json!({
                 "request_index": 4,
+                "result": "inconclusive",
+                "cause": {"kind": "kani-vacuous-proof"},
+                "category": "inconclusive",
+            })
+        );
+    }
+
+    /// QSpec FR-483: ValueValidity's no-assignment outcome is an
+    /// `Inconclusive` terminal result carrying the same wire cause as a
+    /// zero-check Kani proof, while remaining distinct in the typed record.
+    #[trace("QSpec-TC-972", "QSpec-FR-483-AC-2")]
+    #[test]
+    fn value_validity_vacuity_is_an_inconclusive_terminal_value() {
+        let value = TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof);
+        let item = serde_json::to_value(record(5, value)).expect("serializes");
+        assert_eq!(
+            item,
+            json!({
+                "request_index": 5,
                 "result": "inconclusive",
                 "cause": {"kind": "kani-vacuous-proof"},
                 "category": "inconclusive",

@@ -27,11 +27,12 @@ use qsl_semantics::check::StepRead;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::SelfKind;
 use quire_eval::Registry;
-use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
+use quire_exact::{FieldValue, Meter, NodeKey, Outcome, Value, ValueType};
 use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
@@ -51,6 +52,21 @@ pub use s6a::separation::{
 };
 pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult};
 
+/// Expression evidence and the ValueValidity-specific accounting state for
+/// one checked function evaluation.
+pub struct ApplicationObservation<'a> {
+    /// Completed checked application locations and their values.
+    pub observed: &'a mut Vec<(Location, Value)>,
+    /// Whether a called dependency body was unavailable in this package.
+    pub unavailable_imported_call: &'a mut bool,
+    /// Maximum value-function body evaluations for this item case.
+    pub function_case_limit: u64,
+    /// Body evaluations charged by this function call and nested calls.
+    pub function_evaluations: &'a mut u64,
+    /// Whether the function body limit prevented a nested evaluation.
+    pub function_case_limit_reached: &'a mut bool,
+}
+
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
 // retired: ADR-011 §7.2 forbids a root re-export of an item that
@@ -61,7 +77,9 @@ pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, Valu
 // scope to call it.
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode};
-use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, Evaluation};
+use quire_eval::{
+    CallAdmissionFailure, CallAdmissionLocus, CallFailure, Evaluation, FamilyOutcome,
+};
 use quire_semantic_value::catalog::CatalogCode;
 
 fn protocol_reference_failure(
@@ -733,6 +751,20 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// Call a function while recording each completed checked application
+    /// location and its value. This is an evaluation trace, not a source
+    /// guess: an operation whose operands or operator stopped is not
+    /// recorded. FR-484 uses it to decide scalar-operation occurrences and
+    /// their checked result bounds.
+    fn call_observing_applications(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+        observation: ApplicationObservation<'_>,
+    ) -> Result<Evaluation, CallFailure>;
+
     /// [`Self::call`] under the caller's supplied-value `run` (FR-277): the
     /// final membership of every argument spends the run's cumulative
     /// admission budget A one event at a time and polls the run's original
@@ -1194,6 +1226,58 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
             .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
         self.call_supplied(function, arguments, objects, meter, &mut run)
+    }
+
+    fn call_observing_applications(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+        observation: ApplicationObservation<'_>,
+    ) -> Result<Evaluation, CallFailure> {
+        let name = function
+            .as_unqualified()
+            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
+        let callable = self
+            .graph()
+            .callable(name)
+            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
+        let state = self
+            .graph()
+            .function_by_identity(callable.identity.clone())
+            .ok_or_else(|| {
+                CallFailure::Fault(InternalFault::new("S6a", "evaluation-callable-unresolved"))
+            })?;
+        let cancel = meter.cancel().cloned().unwrap_or_default();
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), cancel)
+            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+        admit_arguments(
+            callable.parameters,
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+            &mut run,
+        )?;
+        if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
+            quire_exact::ChargePoint::FunctionCall,
+        )) {
+            return Ok(Evaluation {
+                outcome: FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)),
+                location: None,
+                losses: Vec::new(),
+            });
+        }
+        *observation.function_evaluations = 1;
+        Ok(Machine::observing_applications(
+            self.graph().scope(),
+            self.graph(),
+            objects,
+            meter,
+            self.graph().dispatch_tables(),
+            observation,
+        )
+        .run(state.body, state.slots, arguments)?)
     }
 
     fn call_supplied(

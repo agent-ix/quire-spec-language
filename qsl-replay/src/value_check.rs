@@ -28,14 +28,12 @@
 //!   lies in the callee's body when the undefinedness is inside a function
 //!   application, because the evaluator reports the innermost location).
 //! * `scalar-operation`: a `value-validity` requirement record the function
-//!   owns. The goal is violated at an assignment exactly when the call stops
-//!   undefined at the record's own site. The evaluator reports no occurrence
-//!   it merely passed through, so an assignment that completes, or stops
-//!   elsewhere, shows neither that the occurrence was reached nor that it was
-//!   defined there; [`Verdict::NotDecisive`] says so, and the arm never turns
-//!   it into a proof.
+//!   owns. The evaluator records each operator occurrence that completed.
+//!   The goal is violated when the call stops undefined at the record's own
+//!   site, holds when the occurrence completed, and is not decisive when the
+//!   call path never reached it.
 
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{ApplicationObservation, CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{Capability, NodeTag};
@@ -46,6 +44,7 @@ use quire_exact::{
     Role, Undefined, Value, ValueType,
 };
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::location::Location;
 
 use crate::limits::AccountingLimits;
@@ -93,13 +92,17 @@ pub enum UnsupportedDomain {
 }
 
 /// The values one parameter ranges over.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum ParameterDomain {
     /// `Boolean`: `false` and `true`.
     Boolean,
     /// An integer type's inclusive bounds, restricted by the item's bounds.
     /// `None` when the restriction left no value.
     Integers(Option<IntegerInterval>),
+    /// A finite enum or union domain, in the checked declaration's order.
+    Values(Vec<Value>),
+    /// A union whose payload domains are enumerated lazily under `max_cases`.
+    Union(Vec<(quire_exact::UnionMember, Vec<ParameterDomain>)>),
     /// The mathematical `Integer`, which a bound must restrict.
     Unbounded,
     /// A type the arm does not enumerate.
@@ -107,7 +110,7 @@ pub enum ParameterDomain {
 }
 
 /// One parameter of the claim's function.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct TargetParameter {
     node: NodeKey,
     domain: ParameterDomain,
@@ -167,11 +170,15 @@ pub enum Verdict {
     /// The goal is false or undefined at the assignment.
     Violated(Violation),
     /// The evaluation neither violated the claim nor showed it held: a
-    /// `scalar-operation` assignment that completed or stopped at another
-    /// occurrence.
+    /// `scalar-operation` assignment whose executed path did not reach the
+    /// selected occurrence.
     NotDecisive,
     /// The evaluation stopped.
     Stopped(Stop),
+    /// A called function body is outside the checked package closure.
+    CallNotEvaluable,
+    /// A function body could not start within the remaining `max_cases`.
+    CaseLimit,
     /// The evaluator refused: the result is defined but not admitted.
     Refused,
     /// The goal is undefined at the assignment but the package locates the
@@ -269,17 +276,13 @@ impl<'p> ValueTarget<'p> {
                 .ok_or(Selection::MissingNode)?;
             ClaimForm::ScalarOperation
         };
+        let types = graph.scope().types();
         let parameters = parameters
             .into_iter()
             .zip(callable.parameters)
             .map(|(node, (_, value_type))| TargetParameter {
                 node,
-                domain: match value_type {
-                    ValueType::Boolean => ParameterDomain::Boolean,
-                    ValueType::Int(interval) => ParameterDomain::Integers(Some(interval.clone())),
-                    ValueType::Integer => ParameterDomain::Unbounded,
-                    _ => ParameterDomain::Unsupported(UnsupportedDomain::ParameterType),
-                },
+                domain: parameter_domain(value_type, types),
             })
             .collect();
         Ok(Self {
@@ -309,7 +312,10 @@ impl<'p> ValueTarget<'p> {
                         declared.and_then(|declared| intersect(&declared, interval)),
                     ),
                     ParameterDomain::Unbounded => ParameterDomain::Integers(Some(interval.clone())),
-                    other @ (ParameterDomain::Boolean | ParameterDomain::Unsupported(_)) => other,
+                    other @ (ParameterDomain::Boolean
+                    | ParameterDomain::Values(_)
+                    | ParameterDomain::Union(_)
+                    | ParameterDomain::Unsupported(_)) => other,
                 };
         }
         self
@@ -349,17 +355,58 @@ impl<'p> ValueTarget<'p> {
         assignment: &[Value],
         cancel: &Cancel,
     ) -> Result<Verdict, InternalFault> {
+        self.evaluate_with_case_budget(assignment, cancel, u64::MAX)
+            .map(|(verdict, _)| verdict)
+    }
+
+    /// Evaluate `assignment` under a limit on value-function body
+    /// evaluations. The returned count lets the check arm charge nested
+    /// callees to the same `max_cases` budget as parameter assignments.
+    pub fn evaluate_with_case_budget(
+        &self,
+        assignment: &[Value],
+        cancel: &Cancel,
+        function_case_limit: u64,
+    ) -> Result<(Verdict, u64), InternalFault> {
+        if function_case_limit == 0 {
+            return Ok((Verdict::CaseLimit, 0));
+        }
         let mut meter = Meter::new(self.limits.0).with_cancel(cancel.clone());
-        let evaluation = match self.package.call(
+        let objects = ObjectEnvironment::default().with_unresolved_references();
+        let mut observed = Vec::new();
+        let mut unavailable_imported_call = false;
+        let mut function_evaluations = 0;
+        let mut function_case_limit_reached = false;
+        let call = self.package.call_observing_applications(
             &self.name,
             assignment.to_vec(),
-            &ObjectEnvironment::default().with_unresolved_references(),
+            &objects,
             &mut meter,
-        ) {
+            ApplicationObservation {
+                observed: &mut observed,
+                unavailable_imported_call: &mut unavailable_imported_call,
+                function_case_limit,
+                function_evaluations: &mut function_evaluations,
+                function_case_limit_reached: &mut function_case_limit_reached,
+            },
+        );
+        let evaluation = match call {
             Ok(evaluation) => evaluation,
-            Err(CallFailure::Cancelled(cause)) => {
-                return Ok(Verdict::Stopped(Stop::Cancelled(cause)));
+            Err(CallFailure::Fault(_)) if function_case_limit_reached => {
+                return Ok((Verdict::CaseLimit, function_evaluations));
             }
+            Err(CallFailure::Fault(_)) if unavailable_imported_call => {
+                return Ok((Verdict::CallNotEvaluable, function_evaluations));
+            }
+            Err(CallFailure::Cancelled(cause)) => {
+                return Ok((
+                    Verdict::Stopped(Stop::Cancelled(cause)),
+                    function_evaluations,
+                ));
+            }
+            Err(CallFailure::Input(quire_semantic_value::call::InputRefusal::UnknownFunction(
+                _,
+            ))) => return Ok((Verdict::CallNotEvaluable, function_evaluations)),
             Err(CallFailure::Fault(fault)) => return Err(fault),
             Err(_) => {
                 return Err(InternalFault::new(
@@ -368,10 +415,50 @@ impl<'p> ValueTarget<'p> {
                 ))
             }
         };
-        if let Some(cause) = cancel.tripped() {
-            return Ok(Verdict::Stopped(Stop::Cancelled(cause)));
+        if function_case_limit_reached {
+            return Ok((Verdict::CaseLimit, function_evaluations));
         }
-        Ok(match (evaluation.outcome, self.form) {
+        if let Some(cause) = cancel.tripped() {
+            return Ok((
+                Verdict::Stopped(Stop::Cancelled(cause)),
+                function_evaluations,
+            ));
+        }
+        let target_location = self
+            .package
+            .graph()
+            .occurrence(self.claim.node().clone(), self.claim.origin());
+        let result_bound = self
+            .package
+            .graph()
+            .requirements()
+            .get(&self.claim)
+            .filter(|_| self.form == ClaimForm::ScalarOperation)
+            .map(|record| record.result_bound().value_type().clone());
+        let target_value = target_location.and_then(|target| {
+            observed
+                .iter()
+                .find(|(at, _)| at == target)
+                .map(|(_, value)| value)
+        });
+        let reached = target_value.is_some();
+        let out_of_bound = result_bound
+            .as_ref()
+            .zip(target_value)
+            .is_some_and(|(bound, value)| !bound.admits(value));
+        let scalar_result = || {
+            if out_of_bound {
+                Verdict::Violated(Violation {
+                    undefined: Some(UndefinedAt {
+                        locus: self.claim.clone(),
+                        reason: "integer-out-of-range",
+                    }),
+                })
+            } else {
+                Verdict::Holds
+            }
+        };
+        let verdict = match (evaluation.outcome, self.form) {
             (
                 FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))),
                 ClaimForm::Clause,
@@ -381,7 +468,11 @@ impl<'p> ValueTarget<'p> {
                 ClaimForm::Clause,
             ) => Verdict::Violated(Violation { undefined: None }),
             (FamilyOutcome::Evaluated(Outcome::Completed(_)), ClaimForm::ScalarOperation) => {
-                Verdict::NotDecisive
+                if reached {
+                    scalar_result()
+                } else {
+                    Verdict::NotDecisive
+                }
             }
             (FamilyOutcome::Evaluated(Outcome::Completed(_)), ClaimForm::Clause) => {
                 return Err(InternalFault::new(
@@ -410,19 +501,34 @@ impl<'p> ValueTarget<'p> {
                             }),
                         })
                     }
+                    (ClaimForm::ScalarOperation, _) if reached => scalar_result(),
                     (ClaimForm::ScalarOperation, _) => Verdict::NotDecisive,
                 }
             }
+            (FamilyOutcome::Evaluated(Outcome::Refused(_)), ClaimForm::ScalarOperation)
+                if reached =>
+            {
+                scalar_result()
+            }
             (FamilyOutcome::Evaluated(Outcome::Refused(_)), _) => Verdict::Refused,
+            (FamilyOutcome::Evaluated(Outcome::Incomplete(_)), ClaimForm::ScalarOperation)
+                if reached =>
+            {
+                scalar_result()
+            }
             (FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)), _) => {
                 Verdict::Stopped(Stop::Meter(incomplete))
+            }
+            (FamilyOutcome::FamilyEvaluated(_), ClaimForm::ScalarOperation) if reached => {
+                scalar_result()
             }
             (FamilyOutcome::FamilyEvaluated(_), _) => Verdict::Refused,
             #[cfg(seam_probe_replay_downstream)]
             (FamilyOutcome::__SeamProbe, _) => {
                 unreachable!("never constructed outside the probe build")
             }
-        })
+        };
+        Ok((verdict, function_evaluations))
     }
 
     /// Whether `assignment` is one of the target's assignments: one value
@@ -437,6 +543,23 @@ impl<'p> ValueTarget<'p> {
                     (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
                         n >= interval.lower() && n <= interval.upper()
                     }
+                    (value, ParameterDomain::Values(values)) => {
+                        values.iter().any(|candidate| same_value(candidate, value))
+                    }
+                    (Value::Union(union), ParameterDomain::Union(cases)) => cases
+                        .iter()
+                        .find(|(member, _)| {
+                            member.declaration() == union.declaration()
+                                && member.variant() == union.member().variant()
+                        })
+                        .is_some_and(|(_, domains)| {
+                            union.payload().len() == domains.len()
+                                && union
+                                    .payload()
+                                    .iter()
+                                    .zip(domains)
+                                    .all(|(value, domain)| value_in_domain(value, domain))
+                        }),
                     _ => false,
                 })
     }
@@ -455,21 +578,42 @@ impl<'p> ValueTarget<'p> {
         expected: &Violation,
         cancel: &Cancel,
     ) -> Result<Option<ReproducedViolation>, InternalFault> {
+        self.replay_with_case_budget(assignment, expected, cancel, u64::MAX)
+            .map(|(reproduced, _, _)| reproduced)
+    }
+
+    /// Replay a candidate under a remaining function-body case budget.
+    pub fn replay_with_case_budget(
+        &self,
+        assignment: &[Value],
+        expected: &Violation,
+        cancel: &Cancel,
+        function_case_limit: u64,
+    ) -> Result<(Option<ReproducedViolation>, u64, bool), InternalFault> {
         if !self.admits(assignment) {
-            return Ok(None);
+            return Ok((None, 0, false));
         }
-        Ok(match self.evaluate(assignment, cancel)? {
-            Verdict::Violated(found) if found == *expected => Some(ReproducedViolation {
-                assignment: assignment.to_vec(),
-                violation: found,
-            }),
-            Verdict::Violated(_)
-            | Verdict::Holds
-            | Verdict::NotDecisive
-            | Verdict::Stopped(_)
-            | Verdict::Refused
-            | Verdict::Unlocated => None,
-        })
+        let (verdict, function_evaluations) =
+            self.evaluate_with_case_budget(assignment, cancel, function_case_limit)?;
+        let case_limit = matches!(verdict, Verdict::CaseLimit);
+        Ok((
+            match verdict {
+                Verdict::Violated(found) if found == *expected => Some(ReproducedViolation {
+                    assignment: assignment.to_vec(),
+                    violation: found,
+                }),
+                Verdict::Violated(_)
+                | Verdict::Holds
+                | Verdict::NotDecisive
+                | Verdict::Stopped(_)
+                | Verdict::CallNotEvaluable
+                | Verdict::CaseLimit
+                | Verdict::Refused
+                | Verdict::Unlocated => None,
+            },
+            function_evaluations,
+            case_limit,
+        ))
     }
 
     /// The `{node, occurrence}` the evaluator's `location` stands for: the
@@ -495,6 +639,93 @@ impl<'p> ValueTarget<'p> {
             .map(|(node, origin, _)| OccurrenceKey::new(node.clone(), origin));
         let only = found.next()?;
         found.next().is_none().then_some(only)
+    }
+}
+
+/// The enumerable domain for a claim parameter. Primitive numeric and union
+/// payload domains stay lazy; enum domains retain their finite checked values.
+fn parameter_domain(value_type: &ValueType, types: &TypeEnvironment) -> ParameterDomain {
+    match value_type {
+        ValueType::Boolean => ParameterDomain::Boolean,
+        ValueType::Int(interval) => ParameterDomain::Integers(Some(interval.clone())),
+        ValueType::Integer => ParameterDomain::Unbounded,
+        ValueType::Enum(shape) => ParameterDomain::Values(
+            shape
+                .variants()
+                .enumerate()
+                .filter_map(|(rank, variant)| {
+                    u32::try_from(rank).ok().map(|rank| {
+                        Value::Enum(quire_exact::EnumMember::new(variant.clone(), rank))
+                    })
+                })
+                .collect(),
+        ),
+        ValueType::Composite(declaration) => types
+            .composite(declaration.clone())
+            .and_then(|declaration| match declaration.shape() {
+                CompositeShape::Union(members) => union_domains(members),
+                _ => None,
+            })
+            .map(ParameterDomain::Union)
+            .unwrap_or(ParameterDomain::Unsupported(
+                UnsupportedDomain::ParameterType,
+            )),
+        _ => ParameterDomain::Unsupported(UnsupportedDomain::ParameterType),
+    }
+}
+
+/// The lazy per-member domains of a closed union with Boolean or bounded
+/// integer payloads. Refuse a declaration with an unsupported payload
+/// instead of silently proving over a partial member domain.
+fn union_domains(
+    members: &[quire_semantic_value::declaration::UnionMemberDeclaration],
+) -> Option<Vec<(quire_exact::UnionMember, Vec<ParameterDomain>)>> {
+    let mut cases = Vec::new();
+    let mut members: Vec<_> = members.iter().collect();
+    members.sort_by(|left, right| {
+        left.identifier()
+            .as_bytes()
+            .cmp(right.identifier().as_bytes())
+    });
+    for member in members {
+        let identity = member.member()?.clone();
+        let payload_domains: Vec<ParameterDomain> = member
+            .positions()
+            .iter()
+            .map(|position| match position {
+                ValueType::Boolean => Some(ParameterDomain::Boolean),
+                ValueType::Int(interval) => Some(ParameterDomain::Integers(Some(interval.clone()))),
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        cases.push((identity, payload_domains));
+    }
+    Some(cases)
+}
+
+/// Equality for the deliberately small materialized domain used by union
+/// payloads. The kernel `Value` stays non-comparable; this identity check is
+/// used only to validate a candidate against known Boolean, integer and union
+/// values.
+fn same_value(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Boolean(left), Value::Boolean(right)) => left == right,
+        (Value::Integer(left), Value::Integer(right)) => left == right,
+        (Value::Enum(left), Value::Enum(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn value_in_domain(value: &Value, domain: &ParameterDomain) -> bool {
+    match (value, domain) {
+        (Value::Boolean(_), ParameterDomain::Boolean) => true,
+        (Value::Integer(n), ParameterDomain::Integers(Some(interval))) => {
+            n >= interval.lower() && n <= interval.upper()
+        }
+        (value, ParameterDomain::Values(values)) => {
+            values.iter().any(|candidate| same_value(candidate, value))
+        }
+        _ => false,
     }
 }
 
