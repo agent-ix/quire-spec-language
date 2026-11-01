@@ -519,6 +519,45 @@ mod tests {
         }
     }
 
+    fn scheduler_product() -> ProbProduct {
+        let key = |model| super::super::ProbKey {
+            binding: None,
+            model: vec![model],
+            monitor: None,
+            accumulator: None,
+            pending: None,
+        };
+        let target_one = key(1);
+        let target_zero = key(2);
+        ProbProduct {
+            states: vec![key(0), target_one.clone(), target_zero.clone()],
+            kind: ProductKind::Mdp,
+            edges: vec![
+                ProbEdge {
+                    from: ProbStateId(0),
+                    choice: ProductAction::PostState(Box::new(target_one)),
+                    action: None,
+                    draw: None,
+                    to: ProbStateId(1),
+                    probability: rational(1, 1),
+                    rewards: Vec::new(),
+                },
+                ProbEdge {
+                    from: ProbStateId(0),
+                    choice: ProductAction::PostState(Box::new(target_zero)),
+                    action: None,
+                    draw: None,
+                    to: ProbStateId(2),
+                    probability: rational(1, 1),
+                    rewards: Vec::new(),
+                },
+            ],
+            initial: vec![(0, None, ProbStateId(0))],
+            decided: Vec::new(),
+            labels: vec![Vec::new(); 3],
+        }
+    }
+
     /// Trace: TC-632, FR-197-AC-1
     #[trace("TC-632", "FR-197-AC-1")]
     #[test]
@@ -538,6 +577,36 @@ mod tests {
             panic!("small rational result should remain exact");
         };
         assert_eq!(values[0], rational(1, 3));
+    }
+
+    /// Trace: TC-632, FR-197-AC-1
+    #[trace("TC-632", "FR-197-AC-1")]
+    #[test]
+    fn records_the_extremal_action_in_canonical_order() {
+        let product = scheduler_product();
+        let terminal = [None, Some(rational(1, 1)), Some(rational(0, 1))];
+        let minimum = backward_induction(
+            &product,
+            &terminal,
+            FhObjective::Min,
+            &rational(1, 2),
+            128,
+            8,
+            64,
+        )
+        .expect("valid finite product");
+        let maximum = backward_induction(
+            &product,
+            &terminal,
+            FhObjective::Max,
+            &rational(1, 2),
+            128,
+            8,
+            64,
+        )
+        .expect("valid finite product");
+        assert!(matches!(minimum, FhResult::Exact { ref policy, .. } if policy[0] == Some(1)));
+        assert!(matches!(maximum, FhResult::Exact { ref policy, .. } if policy[0] == Some(0)));
     }
 
     /// Trace: TC-632, FR-197-AC-4
