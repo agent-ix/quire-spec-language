@@ -557,6 +557,7 @@ impl Selection {
 #[derive(Debug)]
 pub struct Workspace {
     members: BTreeMap<String, PathBuf>,
+    member_ids: BTreeMap<String, String>,
     defaults: BTreeSet<String>,
 }
 
@@ -593,27 +594,39 @@ impl Workspace {
             let manifest = string_field(package, "manifest_path", "packages.manifest_path")?;
             packages.insert(id, (name, manifest));
         }
-        let named =
-            |key: &'static str| -> std::result::Result<Vec<(String, PathBuf)>, ArtifactError> {
+        let named = |key: &'static str|
+         -> std::result::Result<Vec<(String, String, PathBuf)>, ArtifactError> {
                 array_field(&metadata, key)?
                     .iter()
                     .map(
-                        |id| -> std::result::Result<(String, PathBuf), ArtifactError> {
-                            let (name, manifest) = id
-                                .as_str()
-                                .and_then(|id| packages.get(id))
+                        |value| -> std::result::Result<(String, String, PathBuf), ArtifactError> {
+                            let id = value.as_str().ok_or(ArtifactError::MalformedField {
+                                field: key,
+                            })?;
+                            let (name, manifest) = packages
+                                .get(id)
                                 .ok_or(ArtifactError::MalformedField { field: key })?;
-                            Ok(((*name).to_owned(), PathBuf::from(*manifest)))
+                            Ok((
+                                (*name).to_owned(),
+                                id.to_owned(),
+                                PathBuf::from(*manifest),
+                            ))
                         },
                     )
                     .collect()
             };
+        let member_rows = named("workspace_members")?;
+        let default_rows = named("workspace_default_members")?;
         Ok(Self {
-            members: named("workspace_members")?.into_iter().collect(),
-            defaults: named("workspace_default_members")?
-                .into_iter()
-                .map(|(name, _)| name)
+            members: member_rows
+                .iter()
+                .map(|(name, _, manifest)| (name.clone(), manifest.clone()))
                 .collect(),
+            member_ids: member_rows
+                .into_iter()
+                .map(|(name, id, _)| (name, id))
+                .collect(),
+            defaults: default_rows.into_iter().map(|(name, _, _)| name).collect(),
         })
     }
 
@@ -662,10 +675,35 @@ impl Workspace {
                 .collect(),
         }
     }
+
+    /// The exact Cargo package identities selected by the test arguments.
+    /// Artifacts for dependencies are not suites of this invocation, even
+    /// when their target names match selected libraries.
+    fn select_ids(&self, packages: &Packages) -> BTreeSet<String> {
+        let selected_names: BTreeSet<String> = match packages {
+            Packages::Default => self.defaults.clone(),
+            Packages::Workspace { excluded } => self
+                .members
+                .keys()
+                .filter(|name| !excluded.contains(*name))
+                .cloned()
+                .collect(),
+            Packages::Named(names) => names
+                .iter()
+                .filter(|name| self.members.contains_key(*name))
+                .cloned()
+                .collect(),
+        };
+        self.member_ids
+            .iter()
+            .filter(|(name, _)| selected_names.contains(*name))
+            .map(|(_, id)| id.clone())
+            .collect()
+    }
 }
 
-/// The suites of one build: test executables by path and libraries by crate
-/// name.
+/// The suites of one build: test executables by path and selected libraries by
+/// normalized crate name.
 #[derive(Debug, Default)]
 pub struct Artifacts {
     executables: BTreeMap<PathBuf, SuiteId>,
@@ -685,13 +723,15 @@ pub(crate) fn field<'a>(
 impl Artifacts {
     /// Read `cargo test --no-run --message-format=json`'s stdout. A target
     /// outside `workspace_root` is a dependency, not a suite. Every
-    /// `compiler-artifact` message must carry the fields read here with their
-    /// cargo types, and one executable path or crate name must not name two
-    /// targets.
+    /// `compiler-artifact` message must carry its Cargo package id. Only
+    /// selected workspace package ids contribute suites; external or
+    /// unselected dependency artifacts are ignored. One executable path or
+    /// normalized doctest crate name must not name two selected targets.
     #[string_edge]
     pub fn from_cargo_json(
         stdout: &str,
         workspace_root: &Path,
+        selected_package_ids: &BTreeSet<String>,
     ) -> std::result::Result<Self, ArtifactError> {
         let mut artifacts = Self::default();
         for line in stdout.lines().filter(|line| line.starts_with('{')) {
@@ -700,6 +740,7 @@ impl Artifacts {
             {
                 continue;
             }
+            let package_id = string_field(&message, "package_id", "package_id")?;
             let target = field(&message, "target", "target")?;
             let source_path = field(target, "src_path", "target.src_path")?
                 .as_str()
@@ -739,6 +780,9 @@ impl Artifacts {
                     })
                 }
             };
+            if !selected_package_ids.contains(package_id) {
+                continue;
+            }
             let Ok(source) = Path::new(source_path).strip_prefix(workspace_root) else {
                 continue;
             };
@@ -1186,6 +1230,7 @@ fn read_artifacts(
     workspace_root: &Path,
     cargo_args: &[OsString],
     target_dir: Option<&Path>,
+    selected_package_ids: &BTreeSet<String>,
 ) -> Result<Artifacts> {
     let output = enumerate_command(workspace_root, cargo_args, target_dir)
         .output()
@@ -1193,8 +1238,12 @@ fn read_artifacts(
     if !output.status.success() {
         return Err(cargo_failed("cargo test --no-run", output.status));
     }
-    Artifacts::from_cargo_json(&String::from_utf8_lossy(&output.stdout), workspace_root)
-        .map_err(|source| Error::TestSuitesArtifacts { source })
+    Artifacts::from_cargo_json(
+        &String::from_utf8_lossy(&output.stdout),
+        workspace_root,
+        selected_package_ids,
+    )
+    .map_err(|source| Error::TestSuitesArtifacts { source })
 }
 
 /// The `cargo metadata --no-deps` that lists the workspace's packages. The
@@ -1472,19 +1521,19 @@ pub fn run_lane(
     echo: &mut impl Write,
 ) -> Result<String> {
     let selection = Selection::from_cargo_args(cargo_args)?;
-    let artifacts = read_artifacts(workspace_root, cargo_args, target_dir)?;
-    let left_out =
-        matches!(&selection.packages, Packages::Workspace { excluded } if !excluded.is_empty());
-    let workspace = if selection.doctests || left_out {
-        Some(read_workspace(workspace_root, cargo_args)?)
-    } else {
-        None
-    };
-    let doc_packages = match (&workspace, selection.doctests) {
-        (Some(workspace), true) => Some(workspace.select(&selection.packages)?),
-        _ => None,
-    };
-    let empty = in_scope(lane.empty, workspace.as_ref(), workspace_root, &selection);
+    let workspace = read_workspace(workspace_root, cargo_args)?;
+    let selected_package_ids = workspace.select_ids(&selection.packages);
+    let artifacts = read_artifacts(
+        workspace_root,
+        cargo_args,
+        target_dir,
+        &selected_package_ids,
+    )?;
+    let doc_packages = selection
+        .doctests
+        .then(|| workspace.select(&selection.packages))
+        .transpose()?;
+    let empty = in_scope(lane.empty, Some(&workspace), workspace_root, &selection);
     let mut parser = RunParser::new(&artifacts, workspace_root);
     run_tests(workspace_root, cargo_args, target_dir, &mut parser, echo)?;
     let (suites, findings) = parser.finish();
@@ -1615,9 +1664,22 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     const EMPTY_DOC: &str = "qsl-walk-grow/src/lib.rs (doctests)";
     const PROBE: &str = "qsl-bench/src/bin/qsl-bench-probe.rs";
 
+    fn package_id_for_manifest(manifest_path: &str) -> String {
+        let package_dir = Path::new(manifest_path)
+            .parent()
+            .expect("fixture manifest has a package directory")
+            .to_path_buf();
+        let package = package_dir
+            .file_name()
+            .expect("fixture package directory has a name")
+            .to_string_lossy();
+        format!("path+file://{}#{}@0.1.0", package_dir.display(), package)
+    }
+
     /// One `compiler-artifact` message as cargo prints it, with every field
     /// the guard reads.
-    fn artifact_json(
+    fn artifact_json_with_package_id(
+        package_id: &str,
         executable: Option<&str>,
         source_path: &str,
         name: &str,
@@ -1626,6 +1688,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     ) -> serde_json::Value {
         serde_json::json!({
             "reason": "compiler-artifact",
+            "package_id": package_id,
             "manifest_path": manifest_path,
             "target": {
                 "src_path": source_path,
@@ -1635,6 +1698,23 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             "profile": { "test": executable.is_some() },
             "executable": executable,
         })
+    }
+
+    fn artifact_json(
+        executable: Option<&str>,
+        source_path: &str,
+        name: &str,
+        doctest: bool,
+        manifest_path: &str,
+    ) -> serde_json::Value {
+        artifact_json_with_package_id(
+            &package_id_for_manifest(manifest_path),
+            executable,
+            source_path,
+            name,
+            doctest,
+            manifest_path,
+        )
     }
 
     fn workspace_artifact(
@@ -1655,7 +1735,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     fn artifacts_from(lines: &[String]) -> Artifacts {
-        Artifacts::from_cargo_json(&lines.join("\n"), Path::new(ROOT)).expect("artifact lines")
+        let selected_package_ids = selected_fixture_package_ids(lines);
+        Artifacts::from_cargo_json(&lines.join("\n"), Path::new(ROOT), &selected_package_ids)
+            .expect("artifact lines")
     }
 
     /// The build behind [`PRODUCER_LOG`], plus the targets a build also
@@ -2246,7 +2328,22 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     fn decode(lines: &[String]) -> std::result::Result<Artifacts, ArtifactError> {
-        Artifacts::from_cargo_json(&lines.join("\n"), Path::new(ROOT))
+        let selected_package_ids = selected_fixture_package_ids(lines);
+        Artifacts::from_cargo_json(&lines.join("\n"), Path::new(ROOT), &selected_package_ids)
+    }
+
+    fn selected_fixture_package_ids(lines: &[String]) -> BTreeSet<String> {
+        lines
+            .iter()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .filter_map(|message| {
+                let manifest = message.get("manifest_path")?.as_str()?;
+                if !Path::new(manifest).starts_with(ROOT) {
+                    return None;
+                }
+                message.get("package_id")?.as_str().map(ToOwned::to_owned)
+            })
+            .collect()
     }
 
     fn valid_artifact() -> serde_json::Value {
@@ -2270,7 +2367,11 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[test]
     #[trace("TC-950", "NFR-014-AC-2")]
     fn a_compiler_artifact_with_a_missing_or_mistyped_field_is_refused() {
-        let cases: [MalformedFieldCase; 9] = [
+        let cases: [MalformedFieldCase; 11] = [
+            ("package_id", |m| {
+                m.as_object_mut().expect("object").remove("package_id");
+            }),
+            ("package_id", |m| m["package_id"] = 7.into()),
             ("target", |m| {
                 m.as_object_mut().expect("object").remove("target");
             }),
@@ -2342,11 +2443,15 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         let mut hyphenated = valid_artifact();
         hyphenated["target"]["name"] = "my-lib".into();
         hyphenated["target"]["src_path"] = "/ws/one/src/lib.rs".into();
+        hyphenated["manifest_path"] = "/ws/one/Cargo.toml".into();
+        hyphenated["package_id"] = package_id_for_manifest("/ws/one/Cargo.toml").into();
         hyphenated["executable"] = serde_json::Value::Null;
         hyphenated["profile"]["test"] = false.into();
         let mut underscored = hyphenated.clone();
         underscored["target"]["name"] = "my_lib".into();
         underscored["target"]["src_path"] = "/ws/two/src/lib.rs".into();
+        underscored["manifest_path"] = "/ws/two/Cargo.toml".into();
+        underscored["package_id"] = package_id_for_manifest("/ws/two/Cargo.toml").into();
         let error = decode(&[hyphenated.to_string(), underscored.to_string()])
             .expect_err("duplicate library");
         assert!(
@@ -2367,6 +2472,47 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         let libraries: Vec<&str> = artifacts.doc_libraries.keys().map(String::as_str).collect();
         assert_eq!(libraries, ["qsl_analyze", "qsl_cst", "qsl_walk_grow"]);
         assert_eq!(artifacts.executables.len(), 3);
+    }
+
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
+    fn same_named_external_library_versions_do_not_claim_selected_workspace_doctests() {
+        let selected = workspace_artifact(None, "pkg/src/lib.rs", "pkg_lib", true, "pkg");
+        let syn_two = artifact_json_with_package_id(
+            "registry+https://github.com/rust-lang/crates.io-index#syn@2.0.119",
+            None,
+            "/registry/src/syn-2.0.119/src/lib.rs",
+            "syn",
+            true,
+            "/registry/src/syn-2.0.119/Cargo.toml",
+        )
+        .to_string();
+        let syn_three = artifact_json_with_package_id(
+            "registry+https://github.com/rust-lang/crates.io-index#syn@3.0.5",
+            None,
+            "/registry/src/syn-3.0.5/src/lib.rs",
+            "syn",
+            true,
+            "/registry/src/syn-3.0.5/Cargo.toml",
+        )
+        .to_string();
+        let selected_package_ids = BTreeSet::from([package_id_for_manifest("/ws/pkg/Cargo.toml")]);
+        let artifacts = Artifacts::from_cargo_json(
+            &[selected, syn_two, syn_three].join("\n"),
+            Path::new(ROOT),
+            &selected_package_ids,
+        )
+        .expect("external dependency libraries are excluded by Cargo package identity");
+
+        let libraries: Vec<&str> = artifacts.doc_libraries.keys().map(String::as_str).collect();
+        assert_eq!(libraries, ["pkg_lib"]);
+        let selected_manifests = BTreeSet::from([PathBuf::from("/ws/pkg/Cargo.toml")]);
+        let expected: Vec<String> = artifacts
+            .expected_suites(Some(&selected_manifests))
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(expected, ["pkg/src/lib.rs (doctests)"]);
     }
 
     fn cargo_args(arguments: &[&str]) -> Vec<OsString> {
@@ -2497,7 +2643,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     fn package_json(name: &str) -> serde_json::Value {
         serde_json::json!({
             "name": name,
-            "id": format!("path+file:///ws/{name}#0.1.0"),
+            "id": format!("path+file:///ws/{name}#{name}@0.1.0"),
             "manifest_path": format!("{ROOT}/{name}/Cargo.toml"),
         })
     }
@@ -2511,7 +2657,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             .collect();
         let ids: Vec<String> = ["a", "b", "c", "d"]
             .iter()
-            .map(|name| format!("path+file:///ws/{name}#0.1.0"))
+            .map(|name| format!("path+file:///ws/{name}#{name}@0.1.0"))
             .collect();
         let default_member = ids[0].clone();
         serde_json::json!({
@@ -2523,6 +2669,30 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
     fn workspace() -> Workspace {
         Workspace::from_cargo_metadata(&metadata_json().to_string()).expect("authored metadata")
+    }
+
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-2")]
+    fn selected_workspace_packages_keep_their_exact_cargo_ids() {
+        let workspace = workspace();
+        assert_eq!(
+            workspace.select_ids(&Packages::Default),
+            BTreeSet::from(["path+file:///ws/a#a@0.1.0".to_owned()])
+        );
+        assert_eq!(
+            workspace.select_ids(&Packages::Workspace {
+                excluded: names(&["b"]),
+            }),
+            BTreeSet::from([
+                "path+file:///ws/a#a@0.1.0".to_owned(),
+                "path+file:///ws/c#c@0.1.0".to_owned(),
+                "path+file:///ws/d#d@0.1.0".to_owned(),
+            ])
+        );
+        assert_eq!(
+            workspace.select_ids(&Packages::Named(names(&["b"]))),
+            BTreeSet::from(["path+file:///ws/b#b@0.1.0".to_owned()])
+        );
     }
 
     fn manifests(packages: &[&str]) -> BTreeSet<PathBuf> {
