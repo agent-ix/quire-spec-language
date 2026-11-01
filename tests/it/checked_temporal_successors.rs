@@ -382,6 +382,7 @@ fn checked_order_sensitive_formula_refuses_unordered_equal_coordinates() {
         );
         assert_eq!(report.usage().positions, 0, "{operator}");
 
+        let mut ordered_result = None;
         for positions in [[1, 2], [2, 1]] {
             input.positions = positions
                 .into_iter()
@@ -401,7 +402,20 @@ fn checked_order_sensitive_formula_refuses_unordered_equal_coordinates() {
                 &input,
                 temporal::Limits::default(),
             );
-            assert!(report.result().is_ok(), "{operator} with admitted order");
+            let assessed = report
+                .result()
+                .expect("one admitted authority evaluates")
+                .first()
+                .expect("one checked obligation")
+                .clone();
+            if let Some(baseline) = &ordered_result {
+                assert_eq!(
+                    baseline, &assessed,
+                    "{operator} insertion order is irrelevant"
+                );
+            } else {
+                ordered_result = Some(assessed);
+            }
         }
         input.positions[1].order.as_mut().unwrap().authority = "sequence:foreign".into();
         let report =
@@ -892,21 +906,22 @@ fn checked_past_operator_requires_authoritative_history() {
         &interior_gap,
         temporal::Limits::default(),
     );
-    assert!(
-        matches!(
-            report.result(),
-            Err(temporal::Error::Incomplete(temporal::Incomplete {
-                dimension: temporal::Dimension::Valuation,
-                subject: temporal::Subject {
-                    node: Some(node),
-                    position: Some(1),
-                    ..
-                },
-            })) if *node == nested_leaf as usize
-        ),
-        "interior checked-history gap result: {:?}",
-        report.result()
-    );
+    let temporal::Obligation::Assessed(incomplete) = &report.result().unwrap()[0] else {
+        panic!("interior checked-history gap remains an assessment");
+    };
+    assert_eq!(incomplete.truth, None);
+    assert_eq!(incomplete.basis, Some(Basis::Unavailable));
+    assert!(matches!(
+        incomplete.incomplete,
+        Some(temporal::Incomplete {
+            dimension: temporal::Dimension::Valuation,
+            subject: temporal::Subject {
+                node: Some(node),
+                position: Some(1),
+                ..
+            },
+        }) if node == nested_leaf as usize
+    ));
 }
 
 /// FR-045: the checked classifier accumulates finite-window and mixed-direction
