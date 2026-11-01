@@ -67,20 +67,21 @@ fn checked_named(identity: &str, body: &str, profile: &str) -> qsl_replay::spine
 }
 
 fn checked_timed_mapping() -> qsl_replay::spine::CheckedUnit {
-    let packages =
-        qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
-            .expect("checked model fixture");
+    let packages = qsl_semantics::model::intake::package_input([
+        crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+    ])
+    .expect("timed ConfigVersion model fixture");
     let source = r#"
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile tc = "quire.temporal.complete/v1";
 profile t = "quire.temporal.timed/v1";
-model M = "acme/orders";
+model Config = "example/config-version";
 dimension Time;
 unit s : Time = rational(1, 1);
 unit ms : Time = rational(1, 1000) * s;
-time M dense unit ms;
-temporal Due using t over (view: M::Widget) clock "model-time" on origin {
+time Config dense unit ms;
+temporal Due using t over (view: Config::ConfigVersion) clock "model-time" on origin {
     eventually[0 ms, 1 ms] true
 }
 "#;
