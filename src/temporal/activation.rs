@@ -11,6 +11,7 @@ use super::result::{
     Activation, Capture, Completeness, Dimension, Error, Incomplete, Refusal, Subject,
 };
 use super::trace::{CaptureInput, Closure, Evidence, Trace, Trigger};
+use std::collections::BTreeMap;
 
 /// One obligation instance, keyed by its semantic identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67,6 +68,7 @@ pub(super) fn resolve(
     trace: &Trace,
     declaration: usize,
     work: &mut Work,
+    mut retained: Option<&mut BTreeMap<String, Instance>>,
 ) -> Result<Outcome, Error> {
     let subject = Subject {
         declaration,
@@ -115,6 +117,50 @@ pub(super) fn resolve(
                 .into());
             }
             existing.receipts.push(trigger.receipt.clone());
+            if let Some(saved) = retained
+                .as_deref_mut()
+                .and_then(|retained| retained.get_mut(&trigger.identity))
+            {
+                saved.receipts.push(trigger.receipt.clone());
+            }
+            continue;
+        }
+
+        if let Some(existing) = retained
+            .as_deref_mut()
+            .and_then(|retained| retained.get(&trigger.identity))
+        {
+            if existing.payload != trigger.payload {
+                return Err(Refusal::Contradiction {
+                    identity: trigger.identity.clone(),
+                    subject: work.subject,
+                }
+                .into());
+            }
+            let evicted_capture = trace.evicted.iter().find_map(|evicted| match evicted {
+                super::trace::Eviction::Capture { instance, capture }
+                    if instance == &trigger.identity =>
+                {
+                    Some(*capture)
+                }
+                _ => None,
+            });
+            if let Some(capture) = evicted_capture {
+                work.subject.capture = Some(capture);
+                instances.push(Err(Failed {
+                    identity: trigger.identity.clone(),
+                    error: Incomplete {
+                        dimension: Dimension::Capture,
+                        subject: work.subject,
+                    }
+                    .into(),
+                }));
+                work.subject.capture = None;
+                continue;
+            }
+            let mut instance = existing.clone();
+            instance.receipts.push(trigger.receipt.clone());
+            instances.push(Ok(instance));
             continue;
         }
 
@@ -145,13 +191,17 @@ pub(super) fn resolve(
         match establish(shape, trigger, trace, work) {
             Ok(captures) => {
                 work.charge(Charge::Captures, captures.len())?;
-                instances.push(Ok(Instance {
+                let instance = Instance {
                     identity: trigger.identity.clone(),
                     receipts: vec![trigger.receipt.clone()],
                     captures,
                     capture_evaluations: 1,
                     payload: trigger.payload.clone(),
-                }));
+                };
+                if let Some(retained) = retained.as_deref_mut() {
+                    retained.insert(trigger.identity.clone(), instance.clone());
+                }
+                instances.push(Ok(instance));
             }
             // An exhausted ceiling stops the whole evaluation; an unestablished
             // capture stops only its own instance.

@@ -92,7 +92,14 @@ pub fn evaluate_checked(
     limits: Limits,
 ) -> Report {
     let mut work = budget::Work::new(limits);
-    let result = run_checked(package, declaration, trace, trace.watermark, &mut work);
+    let result = run_checked(
+        package,
+        declaration,
+        trace,
+        trace.watermark,
+        &mut work,
+        None,
+    );
     Report {
         result,
         limits: work.limits,
@@ -110,17 +117,29 @@ pub fn evaluate_checked_with_progress(
     ledger: &mut Ledger,
 ) -> Report {
     let mut work = budget::Work::new(limits);
-    let result = match package
+    let binding = package
         .graph()
         .temporal_clauses()
         .get(declaration)
         .map(|node| CheckedBinding::of(declaration, node.identity(), trace))
         .ok_or(Refusal::Reference {
             subject: declaration_subject(declaration),
-        })
-        .and_then(|binding| ledger.record_checked(binding, Progress::of(trace)))
-    {
-        Ok(retained) => run_checked(package, declaration, trace, retained.watermark, &mut work),
+        });
+    let result = match binding {
+        Ok(binding) => match ledger.record_checked(binding.clone(), Progress::of(trace)) {
+            Ok(retained) => {
+                let instances = ledger.checked_instances.entry(binding).or_default();
+                run_checked(
+                    package,
+                    declaration,
+                    trace,
+                    retained.watermark,
+                    &mut work,
+                    Some(instances),
+                )
+            }
+            Err(refusal) => Err(refusal.into()),
+        },
         Err(refusal) => Err(refusal.into()),
     };
     Report {
@@ -544,6 +563,7 @@ fn run(
         trace,
         watermark,
         work,
+        None,
     )
 }
 
@@ -560,6 +580,7 @@ fn run_view(
     trace: &Trace,
     watermark: i64,
     work: &mut budget::Work,
+    retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
 ) -> Result<Vec<Obligation>, Error> {
     let subject = declaration_subject(view.declaration);
     let premises = Premises {
@@ -575,7 +596,13 @@ fn run_view(
         limits: work.limits,
     };
     let ordered = trace.ordered();
-    match activation::resolve(view.shape, trace, view.declaration, work)? {
+    match activation::resolve(
+        view.shape,
+        trace,
+        view.declaration,
+        work,
+        retained_instances,
+    )? {
         Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
             subject,
             instance: None,
@@ -658,6 +685,7 @@ fn run_checked(
     trace: &Trace,
     watermark: i64,
     work: &mut budget::Work,
+    retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
 ) -> Result<Vec<Obligation>, Error> {
     let subject = declaration_subject(declaration);
     work.subject = subject;
@@ -716,6 +744,7 @@ fn run_checked(
         trace,
         watermark,
         work,
+        retained_instances,
     )
 }
 

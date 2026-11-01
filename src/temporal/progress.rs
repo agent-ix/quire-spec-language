@@ -119,6 +119,8 @@ impl Progress {
 pub struct Ledger {
     retained: BTreeMap<Binding, Progress>,
     checked: BTreeMap<CheckedBinding, Progress>,
+    pub(super) checked_instances:
+        BTreeMap<CheckedBinding, BTreeMap<String, super::activation::Instance>>,
     authenticated: BTreeMap<AuthenticatedBinding, Progress>,
 }
 

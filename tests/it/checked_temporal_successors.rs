@@ -555,6 +555,78 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
     assert_eq!(truths, [Some(Truth::True), Some(Truth::False)]);
 }
 
+/// FR-044-AC-6/9: progress-ledger re-evaluation reuses the first immutable
+/// capture, while explicit eviction makes the instance incomplete instead of
+/// evaluating a later capture input.
+#[trace("TC-123", "FR-044-AC-6", "FR-044-AC-9")]
+#[test]
+fn checked_capture_is_restored_once_and_eviction_is_incomplete() {
+    let checked = checked_activation(
+        "test:checked-temporal-capture-restore",
+        "capture saved: Integer = trigger.code; always[0,1] true",
+        "on each (trigger: M::Widget)",
+    );
+    let mut input = origin_trace();
+    input.anchor = "event-1".into();
+    input.triggers = vec![temporal::Trigger {
+        identity: "trigger:one".into(),
+        receipt: "receipt:one".into(),
+        anchor: "event-1".into(),
+        payload: "initial".into(),
+        guard: None,
+        captures: vec![temporal::CaptureInput::Value {
+            anchor: "event-1".into(),
+            value: "7".into(),
+        }],
+    }];
+    let mut ledger = temporal::Ledger::new();
+    let first = temporal::evaluate_checked_with_progress(
+        checked.package(),
+        0,
+        &input,
+        temporal::Limits::default(),
+        &mut ledger,
+    );
+    let temporal::Obligation::Assessed(first) = &first.result().unwrap()[0] else {
+        panic!("first trigger activates");
+    };
+    assert_eq!(first.captures[0].value, "7");
+    assert_eq!(first.capture_evaluations, 1);
+
+    input.triggers[0].receipt = "receipt:replay".into();
+    input.triggers[0].captures = vec![temporal::CaptureInput::WrongType];
+    let replay = temporal::evaluate_checked_with_progress(
+        checked.package(),
+        0,
+        &input,
+        temporal::Limits::default(),
+        &mut ledger,
+    );
+    let temporal::Obligation::Assessed(replayed) = &replay.result().unwrap()[0] else {
+        panic!("replay reuses the retained activation");
+    };
+    assert_eq!(replayed.captures[0].value, "7");
+    assert_eq!(replayed.capture_evaluations, 1);
+    assert_eq!(replayed.receipts, ["receipt:one", "receipt:replay"]);
+
+    input.evicted = vec![temporal::Eviction::Capture {
+        instance: "trigger:one".into(),
+        capture: 0,
+    }];
+    let restored = temporal::evaluate_checked_with_progress(
+        checked.package(),
+        0,
+        &input,
+        temporal::Limits::default(),
+        &mut ledger,
+    );
+    assert!(matches!(
+        &restored.result().unwrap()[0],
+        temporal::Obligation::Unactivated { error: temporal::Error::Incomplete(incomplete), .. }
+            if incomplete.dimension == temporal::Dimension::Capture
+    ));
+}
+
 /// FR-043: checked profile and clock identity are authenticated before any
 /// position work, and a missing required valuation is unavailable rather than
 /// a false truth.
