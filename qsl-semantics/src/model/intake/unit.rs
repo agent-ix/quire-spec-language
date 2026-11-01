@@ -513,27 +513,41 @@ fn selected_exact_rows(
     }
 
     for record in &package.records {
-        let DomainPackageRecord::FieldMember(field) = record else {
+        let DomainPackageRecord::RecordValueType(record) = record else {
             continue;
         };
-        let Some(record_key) = record_keys.get(&field.owner) else {
-            continue;
-        };
-        let Some(name) = package
-            .original(&field.key)
-            .and_then(|original| original.member_name.as_deref())
-        else {
+        let Some(record_key) = record_keys.get(&record.key) else {
             return Err(());
         };
-        let member_id =
-            MemberId::new(MemberOwner::Node(record_key.clone()), name).map_err(|_| ())?;
-        fields.push(SelectedExactFieldRow::new(
-            checked_model_node(&field.owner.package, "record_value_type", &field.owner.node),
-            selected_document,
-            field.owner.node.as_str(),
-            field.key.node.as_str(),
-            member_id,
-        ));
+        let Some(effective) = view.type_identities().get(&record.key) else {
+            return Err(());
+        };
+        for entry in view.declarations().iter().filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type.as_ref() == Some(effective)
+        }) {
+            let Some(DomainPackageRecord::FieldMember(field)) = package
+                .records
+                .iter()
+                .find(|candidate| candidate.key() == &entry.preimage.original)
+            else {
+                continue;
+            };
+            let Some(name) = package
+                .original(&field.key)
+                .and_then(|original| original.member_name.as_deref())
+            else {
+                return Err(());
+            };
+            let member_id =
+                MemberId::new(MemberOwner::Node(record_key.clone()), name).map_err(|_| ())?;
+            fields.push(SelectedExactFieldRow::new(
+                checked_model_node(&record.key.package, "record_value_type", &record.key.node),
+                selected_document,
+                record.key.node.as_str(),
+                field.key.node.as_str(),
+                member_id,
+            ));
+        }
     }
     Ok((declarations, fields))
 }
@@ -574,7 +588,9 @@ mod selected_exact_identity_tests {
     #[test]
     fn intake_mints_record_field_and_reference_supply_rows_from_the_admitted_model() {
         let record = key("ix://acme/orders/Receipt");
+        let parent = key("ix://acme/orders/Identified");
         let field = key("ix://acme/orders/Receipt/number");
+        let inherited_field = key("ix://acme/orders/Identified/id");
         let object = key("ix://acme/orders/Order");
         let mut package = DomainPackage::new(
             crate::model::domain_package::DomainPackageRef {
@@ -582,9 +598,31 @@ mod selected_exact_identity_tests {
             },
             vec![
                 DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
-                    key: record.clone(),
+                    key: parent.clone(),
                     identity_fields: Vec::new(),
                     supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::FieldMember(FieldMemberRecord {
+                    key: inherited_field.clone(),
+                    owner: parent.clone(),
+                    value_type: ValueTypeRef::Native(
+                        crate::model::domain_package::NativeValueType::Integer,
+                    ),
+                    multiplicity: Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    presence: Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                    position: 0,
+                }),
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: record.clone(),
+                    identity_fields: Vec::new(),
+                    supertypes: vec![parent.clone()],
                 }),
                 DomainPackageRecord::FieldMember(FieldMemberRecord {
                     key: field.clone(),
@@ -610,6 +648,14 @@ mod selected_exact_identity_tests {
                     supertypes: Vec::new(),
                 }),
             ],
+        );
+        package.originals.insert(
+            inherited_field.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: json!({}),
+                member_name: Some("id".into()),
+            },
         );
         package.originals.insert(
             field.clone(),
@@ -648,16 +694,23 @@ mod selected_exact_identity_tests {
                 && row.exact_identity
                     == SelectedExactIdentity::Object(view.type_identities()[&object].clone())
         }));
-        assert_eq!(fields.len(), 1);
-        assert_eq!(fields[0].record_node, record_node);
-        assert_eq!(fields[0].selected_document.as_ref(), "acme/orders");
-        assert_eq!(fields[0].record_original_identity.as_ref(), record.node);
-        assert_eq!(fields[0].field_original_identity.as_ref(), field.node);
-        assert_eq!(
-            fields[0].member_id,
-            MemberId::new(MemberOwner::Node(record_key), "number")
-                .expect("a declared field name produces a member identity")
-        );
+        assert!(fields.iter().any(|row| {
+            row.record_node == record_node
+                && row.selected_document.as_ref() == "acme/orders"
+                && row.record_original_identity.as_ref() == record.node
+                && row.field_original_identity.as_ref() == field.node
+                && row.member_id
+                    == MemberId::new(MemberOwner::Node(record_key.clone()), "number")
+                        .expect("a declared field name produces a member identity")
+        }));
+        assert!(fields.iter().any(|row| {
+            row.record_node == record_node
+                && row.record_original_identity.as_ref() == record.node
+                && row.field_original_identity.as_ref() == inherited_field.node
+                && row.member_id
+                    == MemberId::new(MemberOwner::Node(record_key.clone()), "id")
+                        .expect("an inherited field name produces a member identity")
+        }));
     }
 }
 
