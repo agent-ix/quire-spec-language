@@ -576,6 +576,7 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
+                | InconclusiveCause::KaniVacuousProof
                 | InconclusiveCause::RefutedIgnoringConstraints
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch

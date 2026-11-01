@@ -1106,13 +1106,13 @@ impl InconclusiveCause {
 }
 
 /// FR-331's `inconclusive` cause as an envelope reports it (ADR-013 O-16
-/// inconclusive row): a closed set covering both the vacuous proof and
-/// the replay causes.
+/// inconclusive row): a closed set covering Kani and ValueValidity vacuity,
+/// as well as the other typed inconclusive causes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReportedInconclusiveCause {
-    /// `kani_vacuous_proof`: a `Proved` run with zero SUCCESS checks in the
-    /// obligation, derived from the `Checks { success_checks: 0 }` basis by
-    /// [`TerminalValue::vacuous_proof_cause`].
+    /// `kani_vacuous_proof`: either a `Proved` run with zero SUCCESS checks,
+    /// derived from its `Checks { success_checks: 0 }` basis, or a
+    /// ValueValidity inconclusive result whose premises admit no assignment.
     KaniVacuousProof,
     /// The cause of a `TerminalValue::Inconclusive`.
     Cause(InconclusiveCause),
