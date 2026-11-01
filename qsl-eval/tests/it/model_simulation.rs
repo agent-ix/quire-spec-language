@@ -1210,17 +1210,21 @@ fn a_huge_candidate_product_stops_at_the_candidate_bound() {
     );
 }
 
-/// FR-120-AC-8 (TC-472): a sampled trace ends where no successor remains,
-/// records the finding, and replays; the same trace without its finding, or
-/// replayed under another budget, refuses.
-#[trace("TC-472", "FR-120-AC-8")]
+/// FR-120-AC-8 (TC-472), TC-1195: state keys, transition effects, and replay
+/// all pass through the shared typed value encoder.
+#[trace("TC-472", "TC-1195", "FR-120-AC-8")]
 #[test]
 fn a_sampled_trace_replays_and_two_equal_runs_agree() {
     let mut world = world(vec![increment()], &clauses(&[CAN_INC, INC, SMALL]));
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let system = self::system(&world, vec![s0], &["c1", "c2"], UNLIMITED);
     let sampler = sampler();
+    let initial = system.initial();
+    let (_, initial_key) = system
+        .state_key(&initial[0])
+        .expect("the state key encodes");
     let sampled = sample_model(&system, 10_000, &sampler, 424_242, 0, 4).expect("samples");
+    assert_eq!(sampled.trace.initial, initial_key);
     assert_eq!(sampled.trace.steps.len(), 2);
     assert_eq!(
         sampled.trace.provenance.as_ref().map(|p| p.stopped),
@@ -1229,6 +1233,26 @@ fn a_sampled_trace_replays_and_two_equal_runs_agree() {
     assert_eq!(sampled.trace.findings.len(), 1);
     assert_eq!(sampled.trace.findings[0].depth, 2);
     assert_eq!(sampled.effects.len(), 2);
+    let [first_change] = &sampled.effects[0].changed[..] else {
+        panic!(
+            "the first transition changes one field: {:?}",
+            sampled.effects[0]
+        );
+    };
+    assert_eq!(
+        first_change.pre.as_deref(),
+        Some(r#"{"type":"integer","value":"0"}"#)
+    );
+    assert_eq!(
+        first_change.post.as_deref(),
+        Some(r#"{"type":"integer","value":"1"}"#)
+    );
+    assert!(replay(
+        &system,
+        &sampled.trace,
+        qsl_foundation::IdentityLimits::default()
+    )
+    .is_ok());
 
     let mut missing = sampled.trace.clone();
     missing.findings.clear();

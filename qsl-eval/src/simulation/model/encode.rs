@@ -199,10 +199,13 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
 
 /// The UnitId text: the RFC 8785 text of its structural identity record.
 fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
-    let identity = unit_identity_enc(unit);
-    identity
-        .canonical_text(Limits::new(u64::MAX))
-        .map_or(Enc::Unencodable("a unit identity"), Enc::text)
+    identity_text(unit_identity_enc(unit), "a unit identity")
+}
+
+fn identity_text(value: Enc, what: &'static str) -> Enc {
+    value
+        .canonical_text(Limits::new(super::identity_limits().input_bytes))
+        .map_or(Enc::Unencodable(what), Enc::text)
 }
 
 /// FR-088's UnitId identity record: `{declared: <NodeId>}` or the ordered
@@ -245,7 +248,7 @@ fn declaration_key_for_node(key: &NodeKey) -> Option<DeclarationKey> {
 
 fn declaration_name(key: &NodeKey) -> Enc {
     declaration_key_for_node(key).map_or(Enc::Unencodable("a declaration identity"), |key| {
-        declaration_enc(&key)
+        identity_text(declaration_enc(&key), "a declaration identity")
     })
 }
 
@@ -1032,15 +1035,16 @@ mod tests {
         let uuid = Uuid::from_canonical_text("00112233-4455-6677-8899-aabbccddeeff")
             .expect("canonical UUID");
         let timestamp = Timestamp::from_canonical_text("-1").expect("canonical timestamp");
+        let typing = Typing::none();
 
         assert_eq!(
-            untyped_value_enc(&Value::Uuid(uuid))
+            value_enc(&Value::Uuid(uuid), typing)
                 .canonical_text(Limits::new(1024))
                 .expect("a UUID encodes"),
             r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#
         );
         assert_eq!(
-            untyped_value_enc(&Value::Timestamp(timestamp))
+            value_enc(&Value::Timestamp(timestamp), typing)
                 .canonical_text(Limits::new(1024))
                 .expect("a Timestamp encodes"),
             r#"{"nanoseconds":"-1","type":"timestamp"}"#
@@ -1067,15 +1071,16 @@ mod tests {
             CollectionType::new(CollectionKind::Set, ValueType::Timestamp, None),
             vec![timestamp("2"), timestamp("10")],
         );
+        let typing = Typing::none();
 
         assert_eq!(
-            untyped_value_enc(&ids)
+            value_enc(&ids, typing)
                 .canonical_text(Limits::new(1024))
                 .expect("the UUID set encodes"),
             r#"{"elements":[{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeefe"},{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}],"type":"set"}"#
         );
         assert_eq!(
-            untyped_value_enc(&times)
+            value_enc(&times, typing)
                 .canonical_text(Limits::new(1024))
                 .expect("the Timestamp set encodes"),
             r#"{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}"#
@@ -1105,7 +1110,8 @@ mod tests {
     }
 
     fn declaration_json(seed: u8) -> String {
-        format!(r#"{{"node":"[{seed}]","package":"fixture"}}"#)
+        serde_json::to_string(&format!(r#"{{"node":"[{seed}]","package":"fixture"}}"#))
+            .expect("DeclarationKey identity text is a JSON string")
     }
 
     #[test]
@@ -1328,7 +1334,7 @@ mod tests {
             Rational::new(Integer::from(3_i64), Integer::from(2_i64)).expect("nonzero"),
             unit.clone(),
         ));
-        let text = untyped_value_enc(&quantity)
+        let text = value_enc(&quantity, Typing::none())
             .canonical_text(Limits::new(1024))
             .expect("a quantity encodes");
         assert_eq!(
@@ -1353,7 +1359,8 @@ mod tests {
         use quire_exact::{Decimal, Integer};
 
         let decimal = Value::Decimal(Decimal::new(Integer::from(150_i64), 2));
-        let retained = untyped_value_enc(&decimal)
+        let typing = Typing::none();
+        let retained = value_enc(&decimal, typing)
             .canonical_text(Limits::new(1024))
             .expect("a decimal encodes");
         assert_eq!(
@@ -1376,7 +1383,7 @@ mod tests {
                 CollectionType::new(kind, decimal_type.clone(), None),
                 vec![decimal.clone()],
             );
-            let text = untyped_value_enc(&collection)
+            let text = value_enc(&collection, typing)
                 .canonical_text(Limits::new(1024))
                 .expect("a decimal collection encodes");
             let type_name = match kind {
@@ -1399,7 +1406,7 @@ mod tests {
             vec![option],
         );
         assert_eq!(
-            untyped_value_enc(&nested)
+            value_enc(&nested, typing)
                 .canonical_text(Limits::new(1024))
                 .expect("a nested decimal set encodes"),
             r#"{"elements":[{"type":"option","value":{"coefficient":"15","scale":"1","type":"decimal"}}],"type":"set"}"#
@@ -1422,7 +1429,7 @@ mod tests {
             1,
         ])));
         assert!(matches!(
-            untyped_value_enc(&value).canonical_text(Limits::new(1024)),
+            value_enc(&value, Typing::none()).canonical_text(Limits::new(1024)),
             Err(Error::Serialize(_))
         ));
     }
