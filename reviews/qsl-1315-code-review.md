@@ -4,7 +4,7 @@ title: "Code review of PR #1951 (QSL-1315): FR-322 anchor ordinal, foreign unit 
 type: SpecReview
 analysis: code-review
 date: 2026-10-31
-scope: "agent-ix/quire-spec-language; PR #1951 git diff origin/main...c93bba59f (qsl-semantics/src/check/{family.rs,lowering.rs,lowering/model.rs,assemble.rs,assemble/units.rs,mod.rs,time_units.rs,temporal_clause.rs,temporal_clause/timed.rs}, qsl-package/src/emit.rs, three new tests); ticket QSL-1315; rust-review lane folded in"
+scope: "agent-ix/quire-spec-language; PR #1951 diff (qsl-semantics/src/check/{family.rs,lowering.rs,lowering/model.rs,assemble.rs,assemble/units.rs,mod.rs,time_units.rs,temporal_clause.rs,temporal_clause/timed.rs}, qsl-package/src/emit.rs, three new tests); ticket QSL-1315; rust-review lane folded in"
 review_set: subset
 relationships:
 - target: ix://agent-ix/quire-spec-language/FR-322
@@ -16,7 +16,7 @@ relationships:
 
 Ticket: QSL-1315. The PR has three changes. (1) A dimension-equivalence `anchor` occurrence now takes the declaration's index as its ordinal, through a new `OccurrenceMap::record_at` over `Vec<Option<S>>`. (2) A dimension that an admitted domain package declares, built on the lowering path, now carries `ModelOwner {identity, node}`, no `declaration`, and a `generated` occurrence at the selecting `model` alias. (3) The timed path places a source nominal's occurrence at `TimeNominalNode::declaration_span`, which is the declared name. The rust-review lane is folded in.
 
-I checked these against QSpec FR-322 at c5deb110. Items 1 and 3 are correct. Item 2 is correct in the in-memory semantic graph, but the change never reaches the wire. The emitter still drops every nominal node that is not source-owned.
+I checked these against QSpec FR-322. Items 1 and 3 are correct. Item 2 is correct in the in-memory semantic graph, but the change never reaches the wire. The emitter still drops every nominal node that is not source-owned.
 
 ## Scope
 
@@ -61,7 +61,7 @@ Rust-review: clippy `-D warnings` over qsl-semantics and qsl-package `--all-targ
 
 ## Dispositions
 
-Round 1 was checked against head e980400b, rebased on main e26e62ea. The fix was compared by content: `eb1611e9d` reproduces the reviewed c93bba59 diff line for line, and `e980400b5` is the fix commit.
+Round 1 was checked against the PR head after the first fix round. The fix was compared by content: the rebased original commit reproduces the reviewed diff line for line, and the fix is a separate commit.
 
 | FND | outcome | reason |
 | --- | --- | --- |
@@ -72,9 +72,21 @@ Round 1 was checked against head e980400b, rebased on main e26e62ea. The fix was
 | FND-005 | fixed | A non-source key with no `ModelOwner` now refuses `KeyFault::UnheldNominal`. |
 | FND-006 | fixed | `TimeNominalOrigin::{Source{owner, qualified_declaration, name_span}, Model}` replaces the two independent options, and the doc names the declared-name span. |
 
-Round 1 gates on e980400b:
+Round 1 gates:
 - qsl-semantics lib: 719 passed. The skipped tests are the two 100,000-level depth tests, which are slow before the PR too.
 - qsl-semantics `--test it` with test-support: 1293 passed, with the #1950 red test skipped.
-- qsl-package lib: 448 passed under QSpec edccac4e. Two tests failed, `deep_bodies::every_nested_form...` and `deep_bodies::the_longest_and_chain_s1...`; both fail identically on main e26e62ea.
-- Under QSpec c5deb110, 22 checked_v2 conformance tests fail on fixture node-id parsing (`Shape`, `MalformedWire`). The cause is QSpec #546's index segments, not this PR: all 22 pass under QSpec edccac4e, which predates #546.
+- qsl-package lib: 448 passed. Two tests failed, `deep_bodies::every_nested_form...` and `deep_bodies::the_longest_and_chain_s1...`; both fail identically on main.
+- Against a QSpec checkout that includes QSpec #546, 22 checked_v2 conformance tests fail on fixture node-id parsing (`Shape`, `MalformedWire`). The cause is #546's index segments, not this PR: all 22 pass against a QSpec checkout from before #546.
 - clippy `-D warnings` and `fmt --check` are clean.
+
+## New findings (disposition pass 2)
+
+Pass 2 reviews the head after the commit that rebuilds the FR-062-AC-9 omission test, reverses the anchor test's order, rewrites TC-160 step 8, and adds the review files. The pass covers that commit's six files plus the full PR diff, and the rust-review lane (`agent-skills/rust-review`) is folded in. Every round-1 finding still holds as fixed at this head: `Spans<S>`, `record_at` → `OrdinalTaken`, `UnheldNominal`, `TimeNominalOrigin`, `NodeOwner::nominal_key`, and `owner_is_locked` over the selected models.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | `reviews/qsl-1315-spec-review-spec-integrity-analysis.md` (SR-552001) is a SpecReview of another repository's PR, agent-ix/quire-specification #552. Its scope and `relationships` target `ix://agent-ix/quire-specification/FR-322` and `TC-233`. That PR has merged, and this file exists only on this branch. Merged here, the only record of #552's review sits in the wrong repository, where nobody reviewing quire-specification would look. It also holds the deterministic slug for this ticket's own spec-integrity review of this repository. Move it to quire-specification's `reviews/` and drop it from this PR. | reviews/qsl-1315-spec-review-spec-integrity-analysis.md:1-47 |
+| FND-008 | low | Two doc comments are stale now that TC-160 step 8 names the `area`/`Shape` package. `q_and_t_package` is still documented as "TC-160 step 8's package". The second-half test still says "the same package", but it emits `q`/`t`, while the first half emits `area`/`t`. | qsl-package/src/emit/tests.rs:1853-1854; qsl-package/src/emit/tests.rs:1887-1891 |
+| FND-009 | low | The committed review files record reviewed and toolchain revisions that nothing resolves: `origin/main...c93bba59f` in both `scope` fields, "QSpec FR-322 at c5deb110", "head e980400b, rebased on main e26e62ea", "under QSpec edccac4e", and SR-552001's `quire-specification@afbe938b…`. Under the owner's no-tracking rule (reports state the app version they ran, nothing else) and CLAUDE.md's "keep prototype bookkeeping minimal", these are reviewed-revision records. Remove them; the PR and its commits already identify what was reviewed. | reviews/qsl-1315-code-review.md:7,19,64,75-79; reviews/qsl-1315-gap-analysis.md:7,61; reviews/qsl-1315-spec-review-spec-integrity-analysis.md:7,21 |
+
+Rust-review, pass 2: the new test code adds no `unwrap` on production paths, and every new assertion can fail. The anchor test fails under node-id numbering. The union test fails if omission stops closing over dependents. Clippy and fmt results are in the report.

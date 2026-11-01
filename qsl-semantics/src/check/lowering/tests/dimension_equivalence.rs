@@ -199,7 +199,7 @@ fn declared_nominal_nodes_carry_the_source_owner() {
 /// declaration's own region. The source order here is the reverse of the
 /// node-id order (`A ~ B` sorts before `B ~ C`), with a third declaration
 /// between the two.
-#[trace("FR-322-AC-287")]
+#[trace("QSpec-FR-322-AC-287")]
 #[test]
 fn equivalence_anchor_ordinal_is_the_declaration_index() {
     let first = "dimension B ~ C by 1 ub = 1000 uc;";

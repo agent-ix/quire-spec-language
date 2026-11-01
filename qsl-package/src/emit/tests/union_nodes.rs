@@ -220,43 +220,114 @@ fn a_construction_is_emitted_with_its_application_preimage_key() {
     verified_exports(&emission);
 }
 
-/// FR-062-AC-9 (TC-160 step 8, first half): the emitter is all-or-nothing
-/// over the nodes a node names. With IR unable to decode the union, `area`
-/// (whose parameter names it) and each node on its path to the omitted node
-/// are omitted with `NamesOmittedNode`; `t`, which names no omitted node, is
-/// written, and QSL's I2 read of the bytes is Verified and exports `t` and
-/// not `area`.
+/// FR-062-AC-9 (TC-160 step 8): an unlocked enum and each node that names it
+/// are omitted; the independent function is written and reads back Verified.
 #[trace("TC-160", "FR-062-AC-9")]
 #[test]
 fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
-    let functions = "function area using v(s: Shape): Integer pure \
-         { case s { Empty: 0; Circle(r): r; Rect(w, h): w * h; } }\n\
-         function t using v(): Boolean pure { true }\n";
-    let (text, package) = package_from_text(&format!("{SHAPE}{functions}"));
-    let regions = |_: &Location| {
-        Some(SourceRegion::new(package.graph().source().clone(), 0, text.len() as u64).unwrap())
-    };
-    let cannot_decode_union = |tag: CheckedNodeTag, form: &str| {
-        !(tag == CheckedNodeTag::CompositeType && form == "union")
-            && CheckedNodeKind::decode(tag, form).is_some()
-    };
-    let emission = emit_package_decoding(&package, regions, &cannot_decode_union)
-        .expect("the remaining nodes emit");
-    let exports = verified_exports(&emission);
-    assert_eq!(
-        exports.keys().collect::<Vec<_>>(),
-        ["t"],
-        "the I2 read exports t and not area"
+    let foreign = super::status_enum(
+        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model", "package_name": "example-model"}),
+        "Foreign",
     );
+    let foreign_key = foreign.declaration.key();
+    let text = b"function area(): Foreign pure { Foreign::Ready }\n\
+                 function keep(): Boolean pure { true }\n";
+    let area_text = b"function area(): Foreign pure { Foreign::Ready }";
+    let area_body_text = b"Foreign::Ready";
+    let area_body_start = text
+        .windows(area_body_text.len())
+        .position(|window| window == area_body_text)
+        .expect("area body is in source");
+    let keep_start = text
+        .windows(b"function keep".len())
+        .position(|window| window == b"function keep")
+        .expect("keep declaration is in source");
+    let keep_text = b"function keep(): Boolean pure { true }";
+    let keep_body_text = b"true";
+    let keep_body_start = text[keep_start..]
+        .windows(keep_body_text.len())
+        .position(|window| window == keep_body_text)
+        .map(|offset| keep_start + offset)
+        .expect("keep body is in source");
+    let area = FunctionDeclaration::new(
+        "area",
+        Vec::new(),
+        TypeForm::name("Foreign", qsl_foundation::Span { start: 17, end: 24 }),
+        None,
+        name("Foreign::Ready"),
+    )
+    .with_spans(DeclarationSpans {
+        declaration: qsl_foundation::Span {
+            start: 0,
+            end: area_text.len(),
+        },
+        body: ExpressionSpans::new(qsl_foundation::Span {
+            start: area_body_start,
+            end: area_body_start + area_body_text.len(),
+        })
+        .expect("area body span"),
+        measure: None,
+    })
+    .expect("area spans match its body");
+    let keep = FunctionDeclaration::new(
+        "keep",
+        Vec::new(),
+        boolean(),
+        None,
+        Expression::boolean(true),
+    )
+    .with_spans(DeclarationSpans {
+        declaration: qsl_foundation::Span {
+            start: keep_start,
+            end: keep_start + keep_text.len(),
+        },
+        body: ExpressionSpans::new(qsl_foundation::Span {
+            start: keep_body_start,
+            end: keep_body_start + keep_body_text.len(),
+        })
+        .expect("keep body span"),
+        measure: None,
+    })
+    .expect("keep spans match its body");
+    let source = qsl_semantics::check::admitted_source(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        text,
+    );
+    let graph = PackageDeclarations {
+        enums: vec![foreign],
+        functions: vec![area, keep],
+        ..PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
+    }
+    .check(CheckingLimits::default())
+    .expect("the two functions check");
+    let package = CheckedPackage::link(graph);
+    let emission = emit_checked(&package)
+        .expect("emit_checked omits the unlocked enum instead of trying to place it");
+    let exports = verified_exports(&emission);
+    assert!(exports.contains_key("keep"), "the I2 read exports keep");
+    assert!(!exports.contains_key("area"), "the I2 read omits area");
 
     let graph = package.graph().semantic_graph();
-    let functions: Vec<_> = graph
-        .nodes()
-        .filter(|node| node.semantic_form() == "pure_function")
-        .collect();
-    let [_, _] = functions[..] else {
-        panic!("two function nodes")
+    let id_for_key = |key: &NodeKey| {
+        let node = graph
+            .nodes()
+            .find(|node| node.key() == *key)
+            .expect("the package graph holds the node");
+        node_id(node.key())
     };
+    let foreign_id = id_for_key(&foreign_key);
+    let area_id = id_for_key(
+        &package
+            .graph()
+            .function_identity("area")
+            .expect("area exists"),
+    );
+    let keep_id = id_for_key(
+        &package
+            .graph()
+            .function_identity("keep")
+            .expect("keep exists"),
+    );
     let cause_of = |id: &CheckedNodeId| {
         emission
             .omitted
@@ -264,27 +335,33 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
             .find(|omission| omission.node == *id)
             .map(|omission| &omission.cause)
     };
-    for function in functions {
-        let id = node_id(function.key());
-        if function.key().to_string() == exports["t"] {
-            assert_eq!(cause_of(&id), None, "t is written");
-        } else {
-            assert!(
-                matches!(cause_of(&id), Some(OmissionCause::NamesOmittedNode(_))),
-                "area is omitted: {:?}",
-                emission.omitted
-            );
-        }
-    }
-    // Each node on the path from `area` to the union is omitted for naming
-    // an omitted node: the parameter typed at the union and the `case`.
-    for form in ["parameter", "case"] {
-        let omitted = graph
-            .nodes()
-            .filter(|node| node.semantic_form() == form)
-            .map(|node| node_id(node.key()))
-            .filter(|id| matches!(cause_of(id), Some(OmissionCause::NamesOmittedNode(_))))
-            .count();
-        assert!(omitted >= 1, "a {form} node is omitted");
-    }
+    assert!(matches!(
+        cause_of(&foreign_id),
+        Some(OmissionCause::UnlockedOwner)
+    ));
+    assert!(matches!(
+        cause_of(&area_id),
+        Some(OmissionCause::NamesOmittedNode(_))
+    ));
+    assert_eq!(cause_of(&keep_id), None, "keep is written");
+
+    // The enum value named by `area` depends on the unlocked enum and is
+    // omitted for naming an omitted node.
+    let omitted_enum_values = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "enum_value")
+        .map(|node| node_id(node.key()))
+        .filter(|id| matches!(cause_of(id), Some(OmissionCause::NamesOmittedNode(_))))
+        .count();
+    assert!(omitted_enum_values >= 1, "the enum member is omitted");
+
+    // The checked package itself is retained by the second emission path.
+    // This is the same package as the first half, but no source occurrence is
+    // placeable, so there are no bytes to return.
+    let refusal = emit_package(&package, |_| None).expect_err("the package has no placed regions");
+    assert!(
+        matches!(refusal, EmitRefusal::UnlocatedOccurrence { .. }),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), Code::UnsupportedProjection);
 }

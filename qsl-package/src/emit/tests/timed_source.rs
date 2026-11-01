@@ -164,7 +164,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
 
 /// QSpec FR-322 "Nominal nodes": a source dimension or unit a timed source
 /// names is located at its own declaration, not at the `time` declaration.
-#[trace("FR-322-AC-1")]
+#[trace("QSpec-FR-322-AC-1")]
 #[test]
 fn a_source_time_nominal_is_located_at_its_own_declaration() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
@@ -212,7 +212,7 @@ fn a_source_time_nominal_is_located_at_its_own_declaration() {
 /// with its `ModelOwner`, no `declaration`, a `generated` occurrence and the
 /// path `["scalar_type", "dimension", <FCD identity>]`; the unit over it and
 /// the function using the unit are written too, and the I2 read admits them.
-#[trace("FR-322-AC-51", "FR-322-AC-81")]
+#[trace("QSpec-FR-322-AC-51", "QSpec-FR-322-AC-81")]
 #[test]
 fn a_package_dimension_a_function_names_is_written_model_owned() {
     let document = package_units_document();

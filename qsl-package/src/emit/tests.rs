@@ -1876,15 +1876,14 @@ fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTa
     )
 }
 
-/// TC-160 step 8's package: `q(a: Length): Boolean { a * a == a * a }`
-/// over the source-owned `metre`, beside `t`.
+/// `q(a: Length): Boolean { a * a == a * a }` over the source-owned `metre`,
+/// beside `t`.
 fn q_and_t_package() -> CheckedPackage {
     let (units, metre) = source_metre_units();
     q_and_t_package_over(units, metre)
 }
 
-/// TC-160 step 8's `q` and `t`, with `Length` the quantity of `metre` in
-/// `units`.
+/// The `q` and `t` fixture, with `Length` the quantity of `metre` in `units`.
 pub(super) fn q_and_t_package_over(
     units: quire_semantic_value::quantity::UnitTable,
     metre: quire_exact::UnitId,
@@ -1909,14 +1908,10 @@ pub(super) fn q_and_t_package_over(
     )
 }
 
-/// FR-062-AC-9 (TC-160 step 8, second half): the same package with an
-/// occurrence the region conversion cannot place refuses with
-/// `EmitRefusal::UnlocatedOccurrence` and no bytes (the `Err` carries no
-/// package). Placing every occurrence emits it, so the refusal is the
-/// conversion's doing.
-#[trace("TC-160", "FR-062-AC-9")]
+/// A checked quantity package with an occurrence the region conversion
+/// cannot place refuses with `EmitRefusal::UnlocatedOccurrence` and no bytes.
 #[test]
-fn the_q_and_t_package_with_an_unplaced_occurrence_refuses() {
+fn a_package_with_an_unplaced_occurrence_refuses() {
     let package = q_and_t_package();
     assert!(emit_package(&package, whole_unit).is_ok());
     let refusal = emit_package(&package, |_| None).unwrap_err();

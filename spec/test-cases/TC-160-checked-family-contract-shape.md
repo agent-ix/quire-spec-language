@@ -67,11 +67,12 @@ FR-057-AC-10's value-function row.
    `not` applied N - 1 times to `true`). Check it with the `CheckingLimits`
    node limit configured to N - 1. Check the identical fixture again with
    the limit configured to N, one greater and nothing else changed.
-8. Check a package holding `area(s: Shape): Integer`, whose parameter names
-   the union `Shape` that the IR in use cannot decode, and `t`, which names
-   no omitted node. Emit it with `emit_checked` and read the bytes back through
-   QSL's I2 read. Emit the same package again through `emit_package` with a
-   region conversion that places no occurrence.
+8. Build a checked package holding an enum `Foreign` owned by the definition
+   `example-model`, which the package's lock does not select, and two
+   functions: `area(value: Foreign): Boolean { value = Foreign::Ready }` and
+   `keep(): Boolean { true }`. Emit it with `emit_checked` and read the bytes
+   back through QSL's I2 read. Emit the same package again through
+   `emit_package` with a region conversion that places no occurrence.
 9. Check every family's evaluation hook for display-string reads. A
    "display string" is rendered text (`Display` or `Debug` output,
    diagnostic text, source spelling); a declared name carried on a checked
@@ -133,10 +134,11 @@ FR-057-AC-10's value-function row.
   the limit at N on the identical fixture, `check` checks it. Varying only
   the limit by one flips the result, showing the limit value, not the
   fixture's depth, is the proximate cause.
-- Step 8: the `Shape` union node is omitted with `UnsupportedForm`;
-  `area`'s declaration node and every node on its path to the union are
-  omitted with `NamesOmittedNode`; `t` and its body are written; the I2
-  read is Verified and exports `t` and not `area`. The second emission returns
+- Step 8: the `Foreign` enum is omitted with `UnlockedOwner`; the enum member
+  and every node that names an omitted node, through `area`'s declaration,
+  are omitted with `NamesOmittedNode`. `keep` and its body are written; the I2
+  read is Verified and exports `keep` and not `area`. Emitting the same
+  checked package with no placeable occurrence returns
   `EmitRefusal::UnlocatedOccurrence` and no bytes.
 - Step 9: (a) the scan finds no such path or call, and flags each forbidden
   form in a synthetic violating source; (b) the outcome, loss count and
