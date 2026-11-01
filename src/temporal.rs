@@ -84,6 +84,7 @@ pub fn evaluate(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -112,6 +113,7 @@ pub fn evaluate_checked(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -131,7 +133,7 @@ pub fn evaluate_checked_v2(
     trace: &Trace,
     limits: Limits,
 ) -> Report {
-    let mut work = budget::Work::new(limits);
+    let mut work = budget::Work::checked_v2(limits);
     let mut authenticated = None;
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
         .and_then(|(binding, _)| {
@@ -150,6 +152,7 @@ pub fn evaluate_checked_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -199,6 +202,7 @@ pub fn evaluate_checked_with_progress(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -215,7 +219,7 @@ pub fn evaluate_checked_with_progress_v2(
     limits: Limits,
     ledger: &mut Ledger,
 ) -> Report {
-    let mut work = budget::Work::new(limits);
+    let mut work = budget::Work::checked_v2(limits);
     let mut authenticated = None;
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
         .and_then(|(binding, _)| {
@@ -259,6 +263,7 @@ pub fn evaluate_checked_with_progress_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -329,6 +334,7 @@ pub fn evaluate_with_progress(
         limits: work.limits,
         usage: work.usage,
         authenticated: None,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -438,6 +444,7 @@ pub fn evaluate_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -472,6 +479,7 @@ pub fn evaluate_with_progress_v2(
         limits: work.limits,
         usage: work.usage,
         authenticated,
+        settled_siblings: work.settled_siblings,
     }
 }
 
@@ -927,7 +935,16 @@ fn run_view(
                     Err(Error::Incomplete(incomplete)) => {
                         (None, Some(Basis::Unavailable), Some(incomplete))
                     }
-                    Err(error) => return Err(error),
+                    Err(error) => {
+                        work.settled_siblings
+                            .extend(assessed.iter().filter_map(|obligation| match obligation {
+                                Obligation::Assessed(assessment) if assessment.truth.is_some() => {
+                                    Some(obligation.clone())
+                                }
+                                _ => None,
+                            }));
+                        return Err(error);
+                    }
                 };
                 assessed.push(Obligation::Assessed(Box::new(Assessment {
                     subject,
@@ -958,6 +975,11 @@ fn run_checked(
 ) -> Result<Vec<Obligation>, Error> {
     let subject = declaration_subject(declaration);
     work.subject = subject;
+    if !work.legacy_depth_limit {
+        // The checked-v2 route charges the caller's explicit eviction schedule
+        // against retained-state work before it can inspect or discard records.
+        work.charge(budget::Dimension::Retention, trace.evicted.len())?;
+    }
     let node = package
         .graph()
         .temporal_clauses()

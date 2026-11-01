@@ -35,7 +35,8 @@ pub enum Dimension {
     Depth,
 }
 
-/// Caller-lowered capacities; defaults are also the unraisable hard ceilings.
+/// Caller-configured capacities; expressions may be raised to one million,
+/// while all other fields retain their published defaults as hard ceilings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
     /// Maximum inspected/copied string bytes.
@@ -76,7 +77,7 @@ impl Limits {
         Self {
             bytes: self.bytes.min(hard.bytes),
             declarations: self.declarations.min(hard.declarations),
-            expressions: self.expressions.min(hard.expressions),
+            expressions: self.expressions.min(1_000_000),
             constraints: self.constraints.min(hard.constraints),
             edges: self.edges.min(hard.edges),
             normalization: self.normalization.min(hard.normalization),

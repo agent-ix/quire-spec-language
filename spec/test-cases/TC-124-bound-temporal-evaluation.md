@@ -25,6 +25,15 @@ finite population; group 3 generates obligation and eviction schedules from a
 declared finite model. No randomized campaign, fuzzing result or mutation-adequacy
 score is claimed.
 
+The checked-package v2 successor controls execute in
+`tests/it/checked_temporal_limits_v2.rs`, nested under
+`tests/it/compiled_protocol_v2.rs`. They exercise strict v2 admission joined to
+the S3 checked clause and cover typed stops in all seven published dimensions,
+eviction, exact charges and retry, effective-limit identity, sibling preservation,
+checked overflow, and the 100,000-deep/512 KiB stack boundary. This file is the
+temporal-limit successor named for the QSL-840 and QSL-858 deletion chain; the
+legacy controls above remain until those tickets' deletion gates are satisfied.
+
 ## Test Procedure
 
 1. Enumerate the boundary population declared in NFR-008's Verification section —

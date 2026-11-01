@@ -290,6 +290,22 @@ pub fn with_binding_inputs_and_inventory<T>(
     limits: BindingLimits,
     test: impl FnOnce(&SourceInventory, &binding::Report<'_>) -> T,
 ) -> T {
+    with_binding_inputs_and_inventory_limits(
+        sources,
+        inputs,
+        limits,
+        quire_spec_language::Limits::default(),
+        test,
+    )
+}
+
+pub fn with_binding_inputs_and_inventory_limits<T>(
+    sources: &[Source],
+    inputs: &[ModelInput<'_>],
+    limits: BindingLimits,
+    parser_limits: quire_spec_language::Limits,
+    test: impl FnOnce(&SourceInventory, &binding::Report<'_>) -> T,
+) -> T {
     let selected_sources = SourceInventory {
         language: "ix:native".into(),
         edition: "1-draft".into(),
@@ -305,7 +321,7 @@ pub fn with_binding_inputs_and_inventory<T>(
         &selected_sources,
         sources,
         WorkLimits::default(),
-        Limits::default(),
+        parser_limits,
     );
     assert!(admitted.issues().is_empty(), "{:?}", admitted.issues());
     assert!(admitted.exhaustion().is_none());

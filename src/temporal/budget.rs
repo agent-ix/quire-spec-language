@@ -27,7 +27,8 @@ pub struct Limits {
     pub retention: usize,
     /// Temporal graph node visits, at most 1,000,000.
     pub visits: usize,
-    /// Temporal formula nesting depth, at most 64.
+    /// Legacy recursive-evaluator guard. Checked-v2 evaluation does not charge
+    /// formula depth; formulas are traversed on an explicit heap stack.
     pub depth: usize,
     /// Largest admitted interval bound, at most `i64::MAX as usize`.
     pub horizon: usize,
@@ -124,6 +125,11 @@ pub(super) struct Work {
     pub limits: Limits,
     pub usage: Usage,
     pub subject: Subject,
+    /// Preserve the v1 evaluator's historical depth guard. The checked-v2
+    /// route follows NFR-008's seven published dimensions and has no depth cap.
+    pub legacy_depth_limit: bool,
+    /// Independently settled siblings retained when a later obligation stops.
+    pub settled_siblings: Vec<super::result::Obligation>,
 }
 
 impl Work {
@@ -132,7 +138,18 @@ impl Work {
             limits: limits.bounded(),
             usage: Usage::default(),
             subject: Subject::default(),
+            legacy_depth_limit: true,
+            settled_siblings: Vec::new(),
         }
+    }
+
+    pub fn checked_v2(limits: Limits) -> Self {
+        let mut work = Self::new(limits);
+        work.legacy_depth_limit = false;
+        // Depth is retained in the legacy public struct for source compatibility,
+        // but it is not one of checked-v2's seven charged dimensions.
+        work.limits.depth = Limits::default().depth;
+        work
     }
 
     fn fields(&mut self, dimension: Dimension) -> (&mut usize, usize, bool) {

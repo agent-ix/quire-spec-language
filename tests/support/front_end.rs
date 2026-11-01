@@ -178,14 +178,25 @@ pub fn checked(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
 ) -> Result<CheckedUnit, Box<CompileRefusal>> {
-    checked_once(
-        &source,
+    checked_with_limits(
+        source,
         path,
         bytes,
         packages,
         dependencies,
         SpineLimits::default(),
     )
+}
+
+pub fn checked_with_limits(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+) -> Result<CheckedUnit, Box<CompileRefusal>> {
+    checked_once(&source, path, bytes, packages, dependencies, limits)
 }
 
 /// Formats every source in an actual dependency fixture, then checks each

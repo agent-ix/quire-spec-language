@@ -48,15 +48,13 @@ impl Tri {
 }
 
 /// One bounded binary temporal relation over an inclusive offset range.
+#[derive(Clone, Copy)]
 struct Relation {
     left: usize,
     right: usize,
-    lo: i64,
     hi: i64,
     /// Evaluate the Boolean dual: `release` for `until`, `triggered` for `since`.
     dual: bool,
-    /// Walk from the greatest offset toward the least, as a past operator does.
-    past: bool,
 }
 
 pub(super) struct Evaluator<'a> {
@@ -78,6 +76,68 @@ pub(super) struct Evaluator<'a> {
     pub watermark: i64,
     /// Positions consulted while establishing the reported truth.
     pub support: Support,
+}
+
+enum FrameState {
+    Enter,
+    AwaitGroup,
+    AwaitNot,
+    AwaitBinaryLeft {
+        right: usize,
+        operator: w::TemporalBinary,
+    },
+    AwaitBinaryRight {
+        left: Tri,
+        operator: w::TemporalBinary,
+    },
+    Quantify {
+        node: usize,
+        offsets: Vec<i64>,
+        next: usize,
+        value: Tri,
+        hi: i64,
+        universal: bool,
+    },
+    AwaitQuantified {
+        node: usize,
+        offsets: Vec<i64>,
+        next: usize,
+        value: Tri,
+        hi: i64,
+        universal: bool,
+    },
+    Relate {
+        relation: Relation,
+        offsets: Vec<i64>,
+        next: usize,
+        value: Tri,
+        every: Tri,
+        any: Tri,
+    },
+    AwaitRight {
+        relation: Relation,
+        offsets: Vec<i64>,
+        next: usize,
+        value: Tri,
+        every: Tri,
+        any: Tri,
+    },
+    AwaitLeft {
+        relation: Relation,
+        offsets: Vec<i64>,
+        next: usize,
+        value: Tri,
+        every: Tri,
+        any: Tri,
+        witness: Tri,
+    },
+}
+
+struct Frame {
+    node: usize,
+    offset: i64,
+    depth: usize,
+    state: FrameState,
 }
 
 impl<'a> Evaluator<'a> {
@@ -119,99 +179,320 @@ impl<'a> Evaluator<'a> {
         depth: usize,
         work: &mut Work,
     ) -> Result<Tri, Error> {
-        // Every refused charge must retain the operation that requested it,
-        // including the first visit of a nonzero declaration.
-        work.subject = self.locate(node, offset);
-        work.visit()?;
-        work.charge(Charge::Depth, depth)?;
-        let operation = self.nodes.get(node).ok_or(Refusal::Reference {
-            subject: work.subject,
-        })?;
-        match operation {
-            // A source constant keeps its authored value at every offset,
-            // including beyond a closed decision scope.
-            w::TemporalOperation::Constant { value } => {
-                Ok(if *value { Tri::True } else { Tri::False })
-            }
-            // An atomic valuation is distinct from a constant, and a grouping
-            // node preserves that distinction rather than erasing it.
-            w::TemporalOperation::Holds { .. } => self.atom(node, offset, work),
-            w::TemporalOperation::Group { value } => {
-                self.evaluate(index(value, work)?, offset, depth.saturating_add(1), work)
-            }
-            w::TemporalOperation::Unary {
-                operator,
-                interval,
-                value,
-            } => {
-                let inner = index(value, work)?;
-                let depth = depth.saturating_add(1);
-                match operator {
-                    // Pointwise temporal negation, not an untimed reading.
-                    w::TemporalUnary::Not => Ok(self.evaluate(inner, offset, depth, work)?.not()),
-                    w::TemporalUnary::Eventually | w::TemporalUnary::Always => {
-                        let (lo, hi) = self.future(offset, interval, work)?;
-                        let universal = matches!(operator, w::TemporalUnary::Always);
-                        self.quantify(inner, lo, hi, universal, depth, work)
+        let mut stack = vec![Frame {
+            node,
+            offset,
+            depth,
+            state: FrameState::Enter,
+        }];
+        let mut returned = None;
+        loop {
+            if let Some(value) = returned.take() {
+                let Some(parent) = stack.last_mut() else {
+                    return Ok(value);
+                };
+                let state = std::mem::replace(&mut parent.state, FrameState::Enter);
+                match state {
+                    FrameState::AwaitGroup => {
+                        stack.pop();
+                        returned = Some(value);
                     }
-                    w::TemporalUnary::Once | w::TemporalUnary::Historically => {
-                        let (lo, hi) = self.past(offset, interval, work)?;
-                        let universal = matches!(operator, w::TemporalUnary::Historically);
-                        self.quantify(inner, lo, hi, universal, depth, work)
+                    FrameState::AwaitNot => {
+                        stack.pop();
+                        returned = Some(value.not());
                     }
-                }
-            }
-            w::TemporalOperation::Binary {
-                operator,
-                interval,
-                left,
-                right,
-            } => {
-                let (left, right) = (index(left, work)?, index(right, work)?);
-                let depth = depth.saturating_add(1);
-                match operator {
-                    w::TemporalBinary::And => Ok(self
-                        .evaluate(left, offset, depth, work)?
-                        .and(self.evaluate(right, offset, depth, work)?)),
-                    w::TemporalBinary::Or => Ok(self
-                        .evaluate(left, offset, depth, work)?
-                        .or(self.evaluate(right, offset, depth, work)?)),
-                    w::TemporalBinary::Implies => Ok(self
-                        .evaluate(left, offset, depth, work)?
-                        .not()
-                        .or(self.evaluate(right, offset, depth, work)?)),
-                    // Release and triggered are the Boolean duals of until and
-                    // since over the same range and lower-bound convention.
-                    w::TemporalBinary::Until
-                    | w::TemporalBinary::Release
-                    | w::TemporalBinary::Since
-                    | w::TemporalBinary::Triggered => {
-                        let past = matches!(
+                    FrameState::AwaitBinaryLeft { right, operator } => {
+                        let offset = parent.offset;
+                        let depth = parent.depth.saturating_add(1);
+                        parent.state = FrameState::AwaitBinaryRight {
+                            left: value,
                             operator,
-                            w::TemporalBinary::Since | w::TemporalBinary::Triggered
-                        );
-                        let (lo, hi) = if past {
-                            self.past(offset, interval, work)?
-                        } else {
-                            self.future(offset, interval, work)?
                         };
-                        self.relation(
-                            Relation {
-                                left,
-                                right,
-                                lo,
-                                hi,
-                                dual: matches!(
-                                    operator,
-                                    w::TemporalBinary::Release | w::TemporalBinary::Triggered
-                                ),
-                                past,
-                            },
+                        stack.push(Frame {
+                            node: right,
+                            offset,
                             depth,
-                            work,
-                        )
+                            state: FrameState::Enter,
+                        });
+                    }
+                    FrameState::AwaitBinaryRight { left, operator } => {
+                        stack.pop();
+                        returned = Some(match operator {
+                            w::TemporalBinary::And => left.and(value),
+                            w::TemporalBinary::Or => left.or(value),
+                            w::TemporalBinary::Implies => left.not().or(value),
+                            _ => unreachable!("pointwise binary operator"),
+                        });
+                    }
+                    FrameState::AwaitQuantified {
+                        node,
+                        offsets,
+                        next,
+                        value: accumulated,
+                        hi,
+                        universal,
+                    } => {
+                        parent.state = FrameState::Quantify {
+                            node,
+                            offsets,
+                            next: next + 1,
+                            value: if universal {
+                                accumulated.and(value)
+                            } else {
+                                accumulated.or(value)
+                            },
+                            hi,
+                            universal,
+                        };
+                    }
+                    FrameState::AwaitRight {
+                        relation,
+                        offsets,
+                        next,
+                        value: accumulated,
+                        every,
+                        any,
+                    } => {
+                        let offset = offsets[next];
+                        let depth = parent.depth.saturating_add(1);
+                        parent.state = FrameState::AwaitLeft {
+                            relation,
+                            offsets,
+                            next,
+                            value: accumulated,
+                            every,
+                            any,
+                            witness: value,
+                        };
+                        stack.push(Frame {
+                            node: relation.left,
+                            offset,
+                            depth,
+                            state: FrameState::Enter,
+                        });
+                    }
+                    FrameState::AwaitLeft {
+                        relation,
+                        offsets,
+                        next,
+                        value: accumulated,
+                        every,
+                        any,
+                        witness,
+                    } => {
+                        let step = if relation.dual {
+                            any.or(witness)
+                        } else {
+                            every.and(witness)
+                        };
+                        parent.state = FrameState::Relate {
+                            relation,
+                            offsets,
+                            next: next + 1,
+                            value: if relation.dual {
+                                accumulated.and(step)
+                            } else {
+                                accumulated.or(step)
+                            },
+                            every: every.and(value),
+                            any: any.or(value),
+                        };
+                    }
+                    _ => unreachable!("the parent frame awaits its child"),
+                }
+                continue;
+            }
+
+            let frame = stack.last_mut().expect("an unfinished frame");
+            let node = frame.node;
+            let offset = frame.offset;
+            let depth = frame.depth;
+            let state = std::mem::replace(&mut frame.state, FrameState::Enter);
+            match state {
+                FrameState::Enter => {
+                    work.subject = self.locate(node, offset);
+                    work.visit()?;
+                    if work.legacy_depth_limit {
+                        work.charge(Charge::Depth, depth)?;
+                    }
+                    let operation = self.nodes.get(node).cloned().ok_or(Refusal::Reference {
+                        subject: work.subject,
+                    })?;
+                    match operation {
+                        w::TemporalOperation::Constant { value } => {
+                            stack.pop();
+                            returned = Some(if value { Tri::True } else { Tri::False });
+                        }
+                        w::TemporalOperation::Holds { .. } => {
+                            let value = self.atom(node, offset, work)?;
+                            stack.pop();
+                            returned = Some(value);
+                        }
+                        w::TemporalOperation::Group { value } => {
+                            let child = index(&value, work)?;
+                            stack.last_mut().unwrap().state = FrameState::AwaitGroup;
+                            stack.push(Frame {
+                                node: child,
+                                offset,
+                                depth: depth.saturating_add(1),
+                                state: FrameState::Enter,
+                            });
+                        }
+                        w::TemporalOperation::Unary {
+                            operator,
+                            interval,
+                            value,
+                        } => {
+                            let child = index(&value, work)?;
+                            if operator == w::TemporalUnary::Not {
+                                stack.last_mut().unwrap().state = FrameState::AwaitNot;
+                                stack.push(Frame {
+                                    node: child,
+                                    offset,
+                                    depth: depth.saturating_add(1),
+                                    state: FrameState::Enter,
+                                });
+                                continue;
+                            }
+                            let (lo, hi, universal) = match operator {
+                                w::TemporalUnary::Eventually | w::TemporalUnary::Always => {
+                                    let (lo, hi) = self.future(offset, &interval, work)?;
+                                    (lo, hi, operator == w::TemporalUnary::Always)
+                                }
+                                w::TemporalUnary::Once | w::TemporalUnary::Historically => {
+                                    let (lo, hi) = self.past(offset, &interval, work)?;
+                                    (lo, hi, operator == w::TemporalUnary::Historically)
+                                }
+                                w::TemporalUnary::Not => unreachable!("handled above"),
+                            };
+                            stack.last_mut().unwrap().state = FrameState::Quantify {
+                                node: child,
+                                offsets: self.offsets(lo, hi, work)?,
+                                next: 0,
+                                value: if universal { Tri::True } else { Tri::False },
+                                hi,
+                                universal,
+                            };
+                        }
+                        w::TemporalOperation::Binary {
+                            operator,
+                            interval,
+                            left,
+                            right,
+                        } => {
+                            let left = index(&left, work)?;
+                            let right = index(&right, work)?;
+                            match operator {
+                                w::TemporalBinary::And
+                                | w::TemporalBinary::Or
+                                | w::TemporalBinary::Implies => {
+                                    stack.last_mut().unwrap().state =
+                                        FrameState::AwaitBinaryLeft { right, operator };
+                                    stack.push(Frame {
+                                        node: left,
+                                        offset,
+                                        depth: depth.saturating_add(1),
+                                        state: FrameState::Enter,
+                                    });
+                                }
+                                w::TemporalBinary::Until
+                                | w::TemporalBinary::Release
+                                | w::TemporalBinary::Since
+                                | w::TemporalBinary::Triggered => {
+                                    let past = matches!(
+                                        operator,
+                                        w::TemporalBinary::Since | w::TemporalBinary::Triggered
+                                    );
+                                    let (lo, hi) = if past {
+                                        self.past(offset, &interval, work)?
+                                    } else {
+                                        self.future(offset, &interval, work)?
+                                    };
+                                    let relation = Relation {
+                                        left,
+                                        right,
+                                        hi,
+                                        dual: matches!(
+                                            operator,
+                                            w::TemporalBinary::Release
+                                                | w::TemporalBinary::Triggered
+                                        ),
+                                    };
+                                    self.admitted_order(lo, hi, work)?;
+                                    let mut offsets = self.offsets(lo, hi, work)?;
+                                    if past {
+                                        offsets.reverse();
+                                    }
+                                    stack.last_mut().unwrap().state = FrameState::Relate {
+                                        relation,
+                                        offsets,
+                                        next: 0,
+                                        value: if relation.dual { Tri::True } else { Tri::False },
+                                        every: Tri::True,
+                                        any: Tri::False,
+                                    };
+                                }
+                            }
+                        }
                     }
                 }
+                FrameState::Quantify {
+                    node,
+                    offsets,
+                    next,
+                    value,
+                    hi,
+                    universal,
+                } => {
+                    if let Some(offset) = offsets.get(next).copied() {
+                        stack.last_mut().unwrap().state = FrameState::AwaitQuantified {
+                            node,
+                            offsets,
+                            next,
+                            value,
+                            hi,
+                            universal,
+                        };
+                        stack.push(Frame {
+                            node,
+                            offset,
+                            depth: depth.saturating_add(1),
+                            state: FrameState::Enter,
+                        });
+                    } else {
+                        stack.pop();
+                        returned = Some(self.window(value, hi, universal));
+                    }
+                }
+                FrameState::Relate {
+                    relation,
+                    offsets,
+                    next,
+                    value,
+                    every,
+                    any,
+                } => {
+                    if let Some(offset) = offsets.get(next).copied() {
+                        stack.last_mut().unwrap().state = FrameState::AwaitRight {
+                            relation,
+                            offsets,
+                            next,
+                            value,
+                            every,
+                            any,
+                        };
+                        stack.push(Frame {
+                            node: relation.right,
+                            offset,
+                            depth: depth.saturating_add(1),
+                            state: FrameState::Enter,
+                        });
+                    } else {
+                        stack.pop();
+                        returned = Some(self.window(value, relation.hi, relation.dual));
+                    }
+                }
+                _ => unreachable!("awaiting frames are handled with child results"),
             }
         }
     }
@@ -292,28 +573,6 @@ impl<'a> Evaluator<'a> {
             .unwrap_or_default()
     }
 
-    fn quantify(
-        &mut self,
-        node: usize,
-        lo: i64,
-        hi: i64,
-        universal: bool,
-        depth: usize,
-        work: &mut Work,
-    ) -> Result<Tri, Error> {
-        let offsets = self.offsets(lo, hi, work)?;
-        let mut value = if universal { Tri::True } else { Tri::False };
-        for offset in offsets {
-            let step = self.evaluate(node, offset, depth, work)?;
-            value = if universal {
-                value.and(step)
-            } else {
-                value.or(step)
-            };
-        }
-        Ok(self.window(value, hi, universal))
-    }
-
     /// Whether progress establishes this clock through the inclusive upper
     /// endpoint `hi`, measured from the anchor in the profile's own clock
     /// domain, over complete valuations.
@@ -343,56 +602,6 @@ impl<'a> Evaluator<'a> {
             return value;
         }
         Tri::Unknown
-    }
-
-    /// `left until[a,b] right` and `left since[a,b] right`, together with their
-    /// Boolean duals `release` and `triggered`.
-    ///
-    /// `until` is `OR_j ( AND_{i<j} left(i) AND right(j) )`. `release` is its
-    /// Boolean dual `not((not left) until (not right))`, which expands to
-    /// `AND_j ( OR_{i<j} left(i) OR right(j) )`. Writing the dual out this way
-    /// keeps both under one lower-bound convention rather than two. For a past
-    /// operator the interval's lower bound is its greatest offset, so the walk
-    /// runs backwards and the same expansion applies unchanged.
-    fn relation(
-        &mut self,
-        relation: Relation,
-        depth: usize,
-        work: &mut Work,
-    ) -> Result<Tri, Error> {
-        let Relation {
-            left,
-            right,
-            lo,
-            hi,
-            dual,
-            past,
-        } = relation;
-        self.admitted_order(lo, hi, work)?;
-        let mut offsets = self.offsets(lo, hi, work)?;
-        if past {
-            offsets.reverse();
-        }
-        let mut result = if dual { Tri::True } else { Tri::False };
-        let mut every = Tri::True;
-        let mut any = Tri::False;
-        for offset in offsets {
-            let witness = self.evaluate(right, offset, depth, work)?;
-            let step = if dual {
-                any.or(witness)
-            } else {
-                every.and(witness)
-            };
-            result = if dual {
-                result.and(step)
-            } else {
-                result.or(step)
-            };
-            let held = self.evaluate(left, offset, depth, work)?;
-            every = every.and(held);
-            any = any.or(held);
-        }
-        Ok(self.window(result, hi, dual))
     }
 
     /// Order-sensitive operators refuse when two participating positions share
