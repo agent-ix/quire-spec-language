@@ -16,7 +16,7 @@
 //! literals.
 
 use quire_checked::key::DeclarationKey;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{ExprId, ExprNode, Expression, ExpressionSpans, StepLabelForm};
 use qsl_foundation::Span;
@@ -221,7 +221,7 @@ pub(crate) fn enclosing_reads(expression: &Expression) -> Vec<Option<ExprId>> {
 }
 
 /// The node `path` reaches from the root of `expression`.
-fn node_at(expression: &Expression, path: &[usize]) -> Option<ExprId> {
+pub(crate) fn node_at(expression: &Expression, path: &[usize]) -> Option<ExprId> {
     let mut id = expression.root_id();
     for index in path {
         id = *expression.at(id).node().children().get(*index)?;
@@ -342,12 +342,9 @@ pub(crate) fn lower_atom<'a>(
     first_trace: &dyn Fn(&str) -> Option<usize>,
     (expression, locate): (&Expression, Locate<'_>),
 ) -> Result<AtomCondition, Refused> {
-    let refused = |refusal: CheckRefusal| {
-        let span = locate(&refusal.location);
-        Refused {
-            refusal: Box::new(refusal),
-            span,
-        }
+    let refused = |refusal: CheckRefusal| Refused {
+        span: locate(&refusal.location),
+        refusal: Box::new(refusal),
     };
     let enclosing = enclosing_reads(expression);
     let respelled = expression.respell_names(|id, spellings| {
@@ -379,8 +376,23 @@ pub(crate) fn lower_atom<'a>(
         }
     });
     let bound = slots.bound();
-    let mut typer =
-        typer(typing, cx, nodes, &bound, HyperTyping::default(), location).map_err(refused)?;
+    let reserved_roots = traces
+        .iter()
+        .chain(parameters.iter())
+        .map(|name| (*name).to_owned())
+        .collect::<BTreeSet<_>>();
+    let mut typer = typer(
+        typing,
+        cx,
+        nodes,
+        &bound,
+        HyperTyping {
+            reserved_roots,
+            ..HyperTyping::default()
+        },
+        location,
+    )
+    .map_err(refused)?;
     let body = typer
         .infer(&respelled, Some(&ValueType::Boolean), location)
         .map_err(refused)?;
@@ -453,15 +465,12 @@ pub(crate) fn lower_conjunct<'a>(
     (slots, labels): (&[StepRead], BTreeMap<String, String>),
     (expression, locate): (&Expression, Locate<'_>),
 ) -> Result<ConjunctCondition, Refused> {
-    let refused = |refusal: CheckRefusal| {
-        let span = locate(&refusal.location);
-        Refused {
-            refusal: Box::new(CheckRefusal {
-                location: location.clone(),
-                cause: refusal.cause,
-            }),
-            span,
-        }
+    let refused = |refusal: CheckRefusal| Refused {
+        span: locate(&refusal.location),
+        refusal: Box::new(CheckRefusal {
+            location: location.clone(),
+            cause: refusal.cause,
+        }),
     };
     let bound: Vec<(String, ValueType)> = slots
         .iter()

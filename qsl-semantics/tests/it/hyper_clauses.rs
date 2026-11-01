@@ -1197,10 +1197,14 @@ fn numbers_of_different_kinds_do_not_compare() {
         assert_eq!(faults.len(), 1, "{body}: {faults:?}");
         assert_eq!(faults[0].code(), Code::IllTyped, "{body}");
     }
-    body_outcome(&relation_over(
+    let faults = body_outcome(&relation_over(
         "rational(1, 2) < rational(3, 4) and x.i + 1 = y.i",
     ))
-    .expect("same kinds compare");
+    .expect_err("rational literals need a declared expected range");
+    assert!(matches!(
+        faults.as_slice(),
+        [HyperCause::BodyAmbiguousLiteral { .. }]
+    ));
 }
 
 /// Whether the value typer admits `body` as the body of a Boolean function
@@ -1214,12 +1218,8 @@ fn value_typer_admits(declarations: &str, parameters: &str, body: &str) -> bool 
     package.check(CheckingLimits::default()).is_ok()
 }
 
-/// The forms a hyper body shares with the value profile are typed as the
-/// value typer types them: for each body, the relation body is admitted
-/// exactly when the same body of a Boolean function is. Where the value
-/// typer needs a proof the hyper typer does not ask for (a `Rational` result
-/// range compared with a literal), the two differ; unifying the typers is
-/// remaining work.
+/// A relation body admits the same shared value forms as a Boolean function
+/// body checked by the value typer.
 #[trace("TC-597")]
 #[test]
 fn a_shared_value_form_is_admitted_as_the_value_typer_admits_it() {
@@ -1247,6 +1247,58 @@ fn a_shared_value_form_is_admitted_as_the_value_typer_admits_it() {
         let hyper = body_outcome(&format!("{declarations}{}", relation_over(body))).is_ok();
         let value = value_typer_admits(&declarations, "", body);
         assert_eq!(hyper, value, "{body}: hyper {hyper}, value {value}");
+    }
+}
+
+/// FR-172-AC-6: relation and hyper atom bodies use the same value typer for
+/// rational obligations, contextual literals, and root shadowing.
+#[trace("TC-597", "FR-172-AC-6")]
+#[test]
+fn relation_and_hyper_atom_bodies_share_value_typer_refusals() {
+    let half = "function half using v(n: Integer): Rational[0, 1; 1, 2] pure { rational(1, 2) }\n";
+    let out_of_range = "half(x.i) < rational(3, 4)";
+    let declaration = format!("{half}{}", relation_over(out_of_range));
+    let (text, fault) = hyper_cause(&["V"], &declaration);
+    assert!(
+        matches!(
+            fault,
+            HyperCause::BodyUnproved {
+                obligation: qsl_semantics::check::Obligation::RationalRange,
+                ..
+            }
+        ),
+        "{fault:?}"
+    );
+    assert_eq!(
+        (fault.code(), fault.tag()),
+        (Code::UndefinedExpression, "unproved-range")
+    );
+    assert_eq!(fault.span(), Some(first(&text, "rational(3, 4)")));
+
+    let ambiguous = "rational(1, 2) < rational(3, 4)";
+    for declaration in [relation_over(ambiguous), atom_over(ambiguous)] {
+        let (text, fault) = hyper_cause(&["V"], &declaration);
+        assert!(
+            matches!(fault, HyperCause::BodyAmbiguousLiteral { .. }),
+            "{fault:?}"
+        );
+        assert_eq!(
+            (fault.code(), fault.tag()),
+            (Code::IllTyped, "ambiguous-literal")
+        );
+        assert_eq!(fault.span(), Some(first(&text, "rational(1, 2)")));
+    }
+
+    for (declaration, shadowed) in [
+        (atom_over("let a = 1 in a = 1"), "a"),
+        (atom_over("let v = 1 in v = 1"), "v"),
+        (relation_over("let x = 1 in x = 1"), "x"),
+    ] {
+        let faults = body_outcome(&declaration).expect_err("a local may not shadow a hyper root");
+        assert!(
+            matches!(faults.as_slice(), [HyperCause::BodyShadows { name, .. }] if name == shadowed),
+            "{faults:?}"
+        );
     }
 }
 
