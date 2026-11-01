@@ -146,7 +146,7 @@ fn no_fault_uses_exact_then_dyadic_backward_induction() {
         panic!("the published rational budget keeps NoFault exact");
     };
     let expected = ratio(9_999_999, 10_000_000)
-        .pow(&Integer::from(1000))
+        .pow(&Integer::from(1000_i64))
         .expect("positive integer exponent");
     assert_eq!(values[start.index()], expected);
 
