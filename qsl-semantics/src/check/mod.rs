@@ -7561,6 +7561,65 @@ mod tests {
 
     use super::*;
 
+    /// Population metadata added by the canonical vocabulary integration
+    /// joins the same table as other retained collections without dropping
+    /// either declaration, any key segment, or either mapped entry.
+    /// Provenance: QSL-1358, QSL-381; retained-field integration regression.
+    #[test]
+    fn protocol_population_types_debug_joins_the_shared_node_table() {
+        use quire_exact::{NodeKey, PathSegment};
+        let mut graph = depth_forms::declarations(depth_forms::Form::Add, 2)
+            .check(CheckingLimits::default())
+            .unwrap();
+        let leaf = NodeKey::new(
+            "population_scope",
+            vec![PathSegment::Text("population_leaf".into())],
+            0,
+        )
+        .unwrap();
+        let mut root = leaf.clone();
+        for ordinal in 0..1_000 {
+            root = NodeKey::new(
+                "population_scope",
+                vec![
+                    PathSegment::Text("population_operand".into()),
+                    PathSegment::Node(root),
+                ],
+                ordinal,
+            )
+            .unwrap();
+        }
+        let first = quire_checked::key::DeclarationKey::fixture("first_population");
+        let second = quire_checked::key::DeclarationKey::fixture("second_population");
+        graph
+            .protocol_population_types
+            .insert(root.clone(), (first.clone(), Vec::new()));
+        graph
+            .protocol_population_types
+            .insert(leaf.clone(), (second.clone(), Vec::new()));
+        graph.model_roots.extend([root, leaf]);
+        let text = format!("{graph:?}");
+        let field = text
+            .split("protocol_population_types: ")
+            .nth(1)
+            .unwrap()
+            .split(", model_roots: ")
+            .next()
+            .unwrap();
+        assert!(
+            field.starts_with("{#"),
+            "population keys use table references: {field}"
+        );
+        assert!(field.contains(&format!("{first:?}")));
+        assert!(field.contains(&format!("{second:?}")));
+        assert!(
+            !field.contains("NodeKey("),
+            "no nested identity is repeated in the map: {field}"
+        );
+        assert_eq!(text.matches("population_scope:[").count(), 1_001);
+        assert_eq!(text.matches("\"population_leaf\"").count(), 1);
+    }
+
     /// QSL-821: `type_admission` and `pending_refusal` keep the reached
     /// ceiling, so the refinement classifier can name it; a failure that is
     /// no ceiling keeps none.

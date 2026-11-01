@@ -150,6 +150,36 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
         .unwrap();
 }
 
+/// A real source-backed package, including spans for its later emission.
+fn source_package_for_debug(body: &str) -> CheckedPackage {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function f using v(a: Boolean, x: Integer): Integer pure {{ {body} }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the source parses");
+    assert!(parsed.is_admissible(), "the source is admissible");
+    let forms = qsl_forms::build_unit(&parsed).unwrap();
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "pkg".into(),
+        forms,
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
 /// Indexed I2 output, including the retained IR package, stays linear before
 /// the full FR-264 acceptance case is attempted.
 /// Provenance: QSL-1358, QSL-381; component scaling regression.
@@ -162,33 +192,7 @@ fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
             let sizes: Vec<(usize, usize, usize)> = [100, 200, 400]
                 .into_iter()
                 .map(|levels| {
-                    let source = format!(
-                        "language \"ix:native\" edition \"1-draft\";\n\
-                         profile v = \"quire.value.complete/v1\";\n\
-                         function f using v(a: Boolean, x: Integer): Integer pure {{ x{} }}\n",
-                        " + x".repeat(levels)
-                    );
-                    let parsed = qsl_cst::parse(
-                        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
-                        "unit.native",
-                        source.as_bytes(),
-                        qsl_cst::Limits::default(),
-                    )
-                    .expect("the sum source parses");
-                    assert!(parsed.is_admissible(), "the sum source is admissible");
-                    let forms = qsl_forms::build_unit(&parsed).unwrap();
-                    let declarations = PackageDeclarations::assemble(
-                        parsed.source().reference().clone(),
-                        "pkg".into(),
-                        forms,
-                        Vec::new(),
-                        Vec::new(),
-                    )
-                    .unwrap();
-                    let graph = declarations
-                        .check(CheckingLimits::default())
-                        .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
-                    let package = CheckedPackage::link(graph);
+                    let package = source_package_for_debug(&format!("x{}", " + x".repeat(levels)));
                     let mut before = ByteCount(0);
                     write!(&mut before, "{package:?}").unwrap();
                     let emission = emit_checked(&package).unwrap();
@@ -237,4 +241,114 @@ fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+/// Canonical NodeKind children remain arena IDs when the checked body is
+/// formatted on its own, outside the package's node-table scope.
+/// Provenance: QSL-1358, QSL-381; canonical vocabulary integration regression.
+#[test]
+fn canonical_standalone_checked_body_debug_grows_linearly_with_depth() {
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            for label in ["sum", "else if", "let"] {
+                let mut sizes = Vec::new();
+                for depth in [100, 200, 400] {
+                    let expression = match label {
+                        "sum" => format!("x{}", " + x".repeat(depth)),
+                        "else if" => format!("{}x", "if a then x else ".repeat(depth)),
+                        _ => format!(
+                            "{}x",
+                            (0..depth)
+                                .map(|at| format!("let b{at} = x in "))
+                                .collect::<String>()
+                        ),
+                    };
+                    let package = source_package_for_debug(&expression);
+                    let body = package.graph().function_state(0).unwrap().body.body();
+                    let clone = body.clone();
+                    assert_eq!(&clone, body, "{label}: the body equals its clone");
+                    let started = Instant::now();
+                    let text = format!("{clone:?}");
+                    eprintln!(
+                        "standalone {label} depth {depth}: {} bytes, {:?}",
+                        text.len(),
+                        started.elapsed()
+                    );
+                    assert!(text.starts_with("CheckedBody { nodes: ["));
+                    assert!(text.ends_with("] }"));
+                    assert_eq!(
+                        text.matches("Node { kind: ").count(),
+                        body.len(),
+                        "{label}: every arena node is complete"
+                    );
+                    sizes.push(text.len());
+                }
+                for pair in sizes.windows(2) {
+                    assert!(
+                        pair[1] < pair[0] * 5 / 2,
+                        "{label}: standalone body sizes {sizes:?}"
+                    );
+                }
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// Repeated field reads print the complete canonical declaration identity
+/// once per arena field node; the declared key itself has no expression tree.
+/// Provenance: QSL-1358, QSL-381; canonical RecordField integration regression.
+#[test]
+fn canonical_record_field_debug_keeps_complete_keys_as_the_body_grows() {
+    use qsl_semantics::check::depth_forms::{name_expr, types};
+    let mut sizes = Vec::new();
+    for depth in [100, 200, 400] {
+        let field = || Expression::field(name_expr("n"), "v".into());
+        let mut expression = field();
+        for _ in 0..depth {
+            expression = Expression::binary(BinaryOperator::And, field(), expression);
+        }
+        let span = qsl_foundation::Span { start: 0, end: 0 };
+        let graph = PackageDeclarations {
+            types: types(),
+            functions: vec![FunctionDeclaration::new(
+                "f",
+                vec![("n".into(), TypeForm::name("N", span))],
+                TypeForm::builtin(BuiltinType::Boolean, span),
+                None,
+                expression,
+            )],
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
+        let body = graph.function_state(0).unwrap().body.body();
+        let started = Instant::now();
+        let text = format!("{body:?}");
+        eprintln!(
+            "canonical field depth {depth}: {} bytes, {:?}",
+            text.len(),
+            started.elapsed()
+        );
+        assert_eq!(text.matches("Node { kind: ").count(), body.len());
+        assert_eq!(
+            text.matches("RecordField { declaration: NodeKey(fixture:[\"N\",]:0), name: \"v\" }")
+                .count(),
+            depth + 1,
+            "each field retains its complete declared identity"
+        );
+        sizes.push(text.len());
+    }
+    for pair in sizes.windows(2) {
+        assert!(
+            pair[1] < pair[0] * 5 / 2,
+            "canonical field body sizes {sizes:?}"
+        );
+    }
 }
