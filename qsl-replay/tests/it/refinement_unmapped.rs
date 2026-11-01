@@ -210,10 +210,10 @@ fn a_population_reference_row_maps_element_by_element() {
     assert_eq!(found, wanted);
 }
 
-/// FR-140-AC-11's optional-field case (TC-545): an optional abstract field
-/// maps `Some(v)` to its payload and `none` to an unset field whose key is
-/// the same as the selected model's initial state.
-#[trace("TC-545")]
+/// FR-140-AC-11 (TC-1086 step 8): the row maps `Some(self.head)` to the
+/// optional field's payload and `none` to an unset field whose key is the
+/// same as the selected model's initial state.
+#[trace("TC-545", "TC-1086", "FR-140-AC-11")]
 #[test]
 fn optional_abstract_field_rows_preserve_absence_and_unwrap_present_values() {
     let variant = Variant {
@@ -384,13 +384,12 @@ fn a_state_with_one_undefined_population_returns_that_populations_row() {
     );
 }
 
-/// FR-140 "Behavior" (TC-1086): an internal fault returns
+/// FR-140-AC-14 (TC-1086 step 9): an internal fault returns
 /// `MappingFailure::Fault`, and never the row outcome the state would
-/// otherwise give: a dangling reference faults a state whose `items` row is
-/// undefined. Every evaluator fault a state can induce is raised by the one
-/// observation of the state, before the first row is read, so a fault after
-/// an undefined row is not reachable through `map_state`'s inputs.
-#[trace("TC-1086")]
+/// otherwise give. The source's `items` row would be undefined before the
+/// malformed `s1.ring` reference is reached in object-reading order, but the
+/// complete state observation faults before any row is evaluated.
+#[trace("TC-1086", "FR-140-AC-14")]
 #[test]
 fn an_internal_fault_replaces_the_row_outcome_a_state_would_give() {
     let fault = CatalogCode::new("runtime_invariant", "established-invariant-broken");
@@ -398,9 +397,17 @@ fn an_internal_fault_replaces_the_row_outcome_a_state_would_give() {
     let world = MapWorld::new(ONLY_ROW);
     let concrete = world.concrete_system();
     let mut state = ring_state(&concrete, 1, 1, [0, 0]);
-    let MappingFailure::Undefined { .. } = map_failure(&world, &state) else {
+    let MappingFailure::Undefined { row, object, .. } = map_failure(&world, &state) else {
         panic!("the items row is undefined");
     };
+    assert_eq!(
+        row,
+        MappingRowRef::Field {
+            object_type: key(QUEUE, "Queue"),
+            field: key(QUEUE, "Queue/items"),
+        }
+    );
+    assert_eq!(object.expect("an object").key, "r");
     let ghost = Value::Reference(
         concrete
             .object_reference(&key(RING, "Ring"), "ghost")
