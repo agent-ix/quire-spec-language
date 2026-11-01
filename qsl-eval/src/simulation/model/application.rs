@@ -81,9 +81,9 @@ impl<'a> ModelSystem<'a> {
             .semantic_cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((cached_context, semantic)) = cache.as_ref() {
-            if std::sync::Weak::ptr_eq(cached_context, &context) {
-                return std::sync::Arc::clone(semantic);
+        if let Some(cached) = cache.as_ref() {
+            if std::sync::Weak::ptr_eq(&cached.context, &context) {
+                return std::sync::Arc::clone(&cached.semantic);
             }
         }
         let semantic = std::sync::Arc::new(super::encode::semantic_enc(
@@ -91,8 +91,58 @@ impl<'a> ModelSystem<'a> {
             &state.state,
             self.typing(),
         ));
-        *cache = Some((context, std::sync::Arc::clone(&semantic)));
+        *cache = Some(super::SemanticCacheEntry {
+            context,
+            semantic: std::sync::Arc::clone(&semantic),
+            canonical_model_key: None,
+        });
         semantic
+    }
+
+    /// The canonical bytes of a model-state key, shared by unchanged clones
+    /// and by the applied-at memo. The state-local cache keeps one byte vector
+    /// while all memo entries refer to it through `Arc`.
+    pub(crate) fn canonical_model_key_bytes(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<std::sync::Arc<Vec<u8>>, crate::simulation::EncodingRefusal> {
+        let identity = super::identity_limits();
+        let context = std::sync::Arc::downgrade(&self.semantic_context);
+        let mut cache = state
+            .semantic_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(cached) = cache.as_ref() {
+            if std::sync::Weak::ptr_eq(&cached.context, &context) {
+                if let Some(bytes) = &cached.canonical_model_key {
+                    return Ok(std::sync::Arc::clone(bytes));
+                }
+            }
+        }
+        let semantic = cache
+            .as_ref()
+            .filter(|cached| std::sync::Weak::ptr_eq(&cached.context, &context))
+            .map(|cached| std::sync::Arc::clone(&cached.semantic))
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(super::encode::semantic_enc(
+                    &self.model,
+                    &state.state,
+                    self.typing(),
+                ))
+            });
+        let key = super::encode::model_key_with_semantic(super::encode::Enc::Shared(
+            std::sync::Arc::clone(&semantic),
+        ));
+        let bytes = std::sync::Arc::new(
+            quire_canonical::to_vec(&key, quire_canonical::Limits::new(identity.input_bytes))
+                .map_err(|error| crate::simulation::EncodingRefusal::of(&error, identity))?,
+        );
+        *cache = Some(super::SemanticCacheEntry {
+            context,
+            semantic,
+            canonical_model_key: Some(std::sync::Arc::clone(&bytes)),
+        });
+        Ok(bytes)
     }
 
     /// Every value of `value_type` over the objects of `state`, in FR-120's
@@ -332,7 +382,7 @@ impl<'a> ModelSystem<'a> {
 /// clauses it selects are the attempt's alone) and the transition identities
 /// the caller checks.
 type AppliedAt = (
-    Vec<u8>,
+    std::sync::Arc<Vec<u8>>,
     String,
     String,
     Option<BTreeSet<ModelTransition>>,
@@ -456,14 +506,7 @@ impl ModelSystem<'_> {
         selected_transitions: Option<&BTreeSet<ModelTransition>>,
         enabled_only: bool,
     ) -> Option<AppliedAt> {
-        let key = super::encode::model_key_with_semantic(super::encode::Enc::Shared(
-            self.semantic_enc_shared(observed),
-        ));
-        let bytes = quire_canonical::to_vec(
-            &key,
-            quire_canonical::Limits::new(super::identity_limits().input_bytes),
-        )
-        .ok()?;
+        let bytes = self.canonical_model_key_bytes(observed).ok()?;
         Some((
             bytes,
             format!("{:?}", observed.anchor),

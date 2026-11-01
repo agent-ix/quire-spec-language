@@ -166,7 +166,14 @@ pub struct ModelSimState {
     reached_by: Option<StepEffect>,
     /// The typed semantic key shared with clones whose model state is
     /// unchanged. Mutations replace this cache before changing a cell.
-    semantic_cache: Arc<Mutex<Option<(Weak<()>, Arc<encode::Enc>)>>>,
+    semantic_cache: Arc<Mutex<Option<SemanticCacheEntry>>>,
+}
+
+#[derive(Debug)]
+struct SemanticCacheEntry {
+    context: Weak<()>,
+    semantic: Arc<encode::Enc>,
+    canonical_model_key: Option<Arc<Vec<u8>>>,
 }
 
 impl ModelSimState {
@@ -929,10 +936,11 @@ impl<'a> ModelSystem<'a> {
         &self,
         state: &ModelSimState,
     ) -> Result<(Vec<u8>, crate::simulation::StateKey), crate::simulation::EncodingRefusal> {
-        crate::simulation::key::state_key(
-            &encode::model_key_with_semantic(encode::Enc::Shared(self.semantic_enc_shared(state))),
-            identity_limits(),
-        )
+        let bytes = self.canonical_model_key_bytes(state)?;
+        Ok((
+            bytes.as_ref().clone(),
+            crate::simulation::StateKey::from_canonical_bytes(bytes.as_ref().clone()),
+        ))
     }
 
     /// The full canonical state key used by the FR-101 simulator.
@@ -940,10 +948,8 @@ impl<'a> ModelSystem<'a> {
         &self,
         state: &ModelSimState,
     ) -> Result<crate::simulation::StateKey, crate::simulation::EncodingRefusal> {
-        crate::simulation::key::canonical_state_key(
-            &encode::model_key_with_semantic(encode::Enc::Shared(self.semantic_enc_shared(state))),
-            identity_limits(),
-        )
+        self.canonical_model_key_bytes(state)
+            .map(|bytes| crate::simulation::StateKey::from_canonical_bytes(bytes.as_ref().clone()))
     }
 
     /// The evaluation meter limits each reading of the system starts from.
