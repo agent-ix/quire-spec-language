@@ -126,7 +126,7 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
     std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
         .spawn(|| {
-            let sizes: Vec<(usize, usize)> = [100, 200, 400]
+            let sizes: Vec<usize> = [100, 200, 400]
                 .into_iter()
                 .map(|levels| {
                     let graph = declarations(Form::Add, levels)
@@ -135,16 +135,12 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
                     let package = CheckedPackage::link(graph);
                     let mut count = ByteCount(0);
                     write!(&mut count, "{package:?}").unwrap();
-                    let emission = emit_checked(&package).unwrap();
-                    let mut after = ByteCount(0);
-                    write!(&mut after, "{package:?}").unwrap();
-                    drop(emission);
-                    (count.0, after.0)
+                    count.0
                 })
                 .collect();
             for pair in sizes.windows(2) {
                 assert!(
-                    pair[1].0 < pair[0].0 * 5 / 2 && pair[1].1 < pair[0].1 * 5 / 2,
+                    pair[1] < pair[0] * 5 / 2,
                     "each doubling of the depth at most doubles the output: {sizes:?}"
                 );
             }
@@ -159,19 +155,51 @@ fn the_checked_package_debug_output_grows_linearly_with_depth() {
 /// Provenance: QSL-1358, QSL-381; component scaling regression.
 #[test]
 fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
-    use qsl_semantics::check::depth_forms::{declarations, Form};
     use std::fmt::Write;
     std::thread::Builder::new()
         .stack_size(512 * 1024)
         .spawn(|| {
-            let sizes: Vec<usize> = [100, 200, 400]
+            let sizes: Vec<(usize, usize, usize)> = [100, 200, 400]
                 .into_iter()
                 .map(|levels| {
-                    let graph = declarations(Form::Add, levels)
+                    let source = format!(
+                        "language \"ix:native\" edition \"1-draft\";\n\
+                         profile v = \"quire.value.complete/v1\";\n\
+                         function f using v(a: Boolean, x: Integer): Integer pure {{ x{} }}\n",
+                        " + x".repeat(levels)
+                    );
+                    let parsed = qsl_cst::parse(
+                        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+                        "unit.native",
+                        source.as_bytes(),
+                        qsl_cst::Limits::default(),
+                    )
+                    .expect("the sum source parses");
+                    assert!(parsed.is_admissible(), "the sum source is admissible");
+                    let forms = qsl_forms::build_unit(&parsed).unwrap();
+                    let declarations = PackageDeclarations::assemble(
+                        parsed.source().reference().clone(),
+                        "pkg".into(),
+                        forms,
+                        Vec::new(),
+                        Vec::new(),
+                    )
+                    .unwrap();
+                    let graph = declarations
                         .check(CheckingLimits::default())
                         .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
                     let package = CheckedPackage::link(graph);
+                    let mut before = ByteCount(0);
+                    write!(&mut before, "{package:?}").unwrap();
                     let emission = emit_checked(&package).unwrap();
+                    let mut after = ByteCount(0);
+                    let started = Instant::now();
+                    write!(&mut after, "{package:?}").unwrap();
+                    let package_time = started.elapsed();
+                    assert!(
+                        after.0 > before.0,
+                        "the retained emission contributes to package Debug"
+                    );
                     let read = crate::checked_v2::read_checked_package_v2(
                         emission.package.bytes(),
                         library(),
@@ -181,14 +209,27 @@ fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
                     .unwrap_or_else(|failure| panic!("admitted: {failure:?}"))
                     .into_value();
                     let mut count = ByteCount(0);
+                    let started = Instant::now();
                     write!(&mut count, "{read:?}").unwrap();
-                    count.0
+                    eprintln!(
+                        "depth {levels}: emitted-package Debug {package_time:?}, I2 Debug {:?}",
+                        started.elapsed()
+                    );
+                    (before.0, after.0, count.0)
                 })
                 .collect();
-            eprintln!("indexed I2 Debug bytes at depths 100/200/400: {sizes:?}");
+            eprintln!("Debug bytes at depths 100/200/400 (before emit, after emit, I2): {sizes:?}");
             for pair in sizes.windows(2) {
                 assert!(
-                    pair[1] < pair[0] * 5 / 2,
+                    pair[1].0 < pair[0].0 * 5 / 2,
+                    "pre-emission Debug sizes: {sizes:?}"
+                );
+                assert!(
+                    pair[1].1 < pair[0].1 * 5 / 2,
+                    "retained-emission Debug sizes: {sizes:?}"
+                );
+                assert!(
+                    pair[1].2 < pair[0].2 * 5 / 2,
                     "indexed I2 Debug sizes: {sizes:?}"
                 );
             }
