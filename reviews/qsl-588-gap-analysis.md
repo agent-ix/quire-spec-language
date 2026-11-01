@@ -22,7 +22,7 @@ Focused gap and trace review of FR-253/254, TC-708/709, the tagged tests, and th
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No scoped gaps found (placeholder) | - |
+| FND-000 | low | No scoped FR-253/FR-254 findings identified (schema-required empty-list sentinel) | — |
 
 ## Coverage
 
