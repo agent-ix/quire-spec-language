@@ -27,6 +27,16 @@ use quire_exact::NodeKey;
 use quire_exact::Rational;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
+/// The declaration kind a resolved fairness member names on the checked
+/// package wire.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FairnessTargetKind {
+    /// A model-owned operation.
+    Operation,
+    /// A hybrid model or mode transition.
+    HybridTransition,
+}
+
 /// The accepted `ClauseBinding.execution_point` (QSpec FR-322-AC-131) as the
 /// IR's closed four-variant [`ExecutionPoint`], which the IR owns: this
 /// wrapper adds only the `Hash` the IR type lacks, over the variant and its
@@ -160,7 +170,7 @@ pub enum Member {
     /// would make every member as large.
     TimedInterval(Box<TimedMember>),
     /// One member of a clause's resolved fairness set (QSpec FR-370):
-    /// `{kind: "fairness", fairness_kind, granularity, declaration, name}`,
+    /// `{kind: "fairness", fairness_kind, granularity, target}`,
     /// always in its resolved form, so an unmarked constraint and its
     /// written `weak whole` form are one member (ADR-018 FA-6).
     Fairness {
@@ -168,7 +178,9 @@ pub enum Member {
         kind: FairnessKind,
         /// `whole` or `each`.
         granularity: FairnessGranularity,
-        /// The operation's declaring `model`/`object_type` node.
+        /// Whether the target names a model operation or hybrid transition.
+        target_kind: FairnessTargetKind,
+        /// The target's declaring model or mode node.
         declaration: NodeKey,
         /// The operation's own identifier.
         name: Identifier,
@@ -241,12 +253,14 @@ impl std::fmt::Debug for Member {
             Self::Fairness {
                 kind,
                 granularity,
+                target_kind,
                 declaration,
                 name,
             } => f
                 .debug_struct("Fairness")
                 .field("kind", &kind)
                 .field("granularity", &granularity)
+                .field("target_kind", &target_kind)
                 .field("declaration", &NodeKeyDebug(declaration))
                 .field("name", &name)
                 .finish(),

@@ -1208,13 +1208,21 @@ fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Valu
         Member::Fairness {
             kind,
             granularity,
+            target_kind,
             declaration,
             name,
         } => json!({
             "kind":"fairness",
             "fairness_kind":match kind { quire_semantic_value::fairness::FairnessKind::Weak => "weak", quire_semantic_value::fairness::FairnessKind::Strong => "strong" },
             "granularity":match granularity { quire_semantic_value::fairness::FairnessGranularity::Whole => "whole", quire_semantic_value::fairness::FairnessGranularity::Each => "each" },
-            "declaration":node_id(ids, declaration), "name":name.as_str(),
+            "target": {
+                "kind": match target_kind {
+                    qsl_semantics::value::FairnessTargetKind::Operation => "operation",
+                    qsl_semantics::value::FairnessTargetKind::HybridTransition => "hybrid_transition",
+                },
+                "declaration":node_id(ids, declaration),
+                "name":name.as_str(),
+            },
         }),
     })
 }

@@ -258,6 +258,7 @@ impl Lowering<'_> {
                         member: Some(Member::Fairness {
                             kind: constraint.kind(),
                             granularity: constraint.granularity(),
+                            target_kind: crate::value::FairnessTargetKind::Operation,
                             declaration,
                             name,
                         }),
