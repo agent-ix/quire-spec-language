@@ -75,7 +75,7 @@ admits union arguments (QSL-503).
   stored transcript on every call, so the envelope cannot disagree with its
   own backend evidence.
 - `decode` SHALL read each transcript entry as its binding's declared
-  `WitnessValueType`: `Boolean` as `0` or `1`, `I64` as a decimal `i64`,
+  `WitnessValueType`: `Boolean` as `0` or `1`, `I128` as a decimal `i128`,
   and `Canonical` as a witness value text (below). It SHALL return one
   `WitnessValue` per binding, in binding order, or one `DecodeRefusal`
   with no partial result.
@@ -133,8 +133,8 @@ admits union arguments (QSL-503).
 ## Witness value text
 
 A parameter whose declared type is `Boolean` or an integer type keeps its
-scalar entry: `0`/`1`, or a decimal `i64` that decodes to
-`WitnessValue::Integer(i64)`, as before. An integer leaf inside a witness
+scalar entry: `0`/`1`, or a decimal `i128` that decodes to
+`WitnessValue::Integer(i128)`, as before. An integer leaf inside a witness
 value text decodes to `WitnessValue::ExactInteger(Integer)` instead, so the
 form of each integer follows from where it appears. Every other parameter's entry is a witness value text: a leaf
 of any value family (enum, text, String, UUID, Timestamp, rational, decimal,
@@ -279,7 +279,7 @@ length of its escaped value text.
 | FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract, and the extension point itself is typed (a trait or generic parameter), never a `String`-keyed untyped map. | Test (TC-184) |
 | FR-070-AC-6 | **RETIRED (no digest domains).** This envelope defines no `contract_version` member of its own; version ownership is delegated to the FR-331 envelope. | Test (TC-181), retired |
 | FR-070-AC-7 | An envelope whose encoded size exceeds the configured reader bound refuses at construction, with no truncated or partially-populated envelope returned. | Test (TC-181) |
-| FR-070-AC-8 | A transcript with one `Canonical` entry and one `I64` entry decodes to two `WitnessValue`s in binding order. The `Canonical` entry is a record whose fields hold a nested record with a present field, an absent optional field and a `null` slot; a present option and a `none` option; a three-element sequence; a set and a bag in ascending JCS order (the bag with a duplicate); an ordered set; a union with a one-component member; and a union with a nullary member. Each slot state, option state, element order, member identifier and declaration node id decodes exactly as written. The `I64` entry decodes as it did before this change. | Test (TC-905) |
+| FR-070-AC-8 | A transcript with one `Canonical` entry and one `I128` entry decodes to two `WitnessValue`s in binding order. The `Canonical` entry is a record whose fields hold a nested record with a present field, an absent optional field and a `null` slot; a present option and a `none` option; a three-element sequence; a set and a bag in ascending JCS order (the bag with a duplicate); an ordered set; a union with a one-component member; and a union with a nullary member. Each slot state, option state, element order, member identifier and declaration node id decodes exactly as written. The `I128` entry decodes as it did before this change. | Test (TC-905) |
 | FR-070-AC-9 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: trailing bytes; added whitespace; record members out of JCS order; an unknown `type` tag; a record field entry with no `value` member; an integer `"007"`, and an integer as a JSON number; a rational `2`/`4`, and one with denominator `-1`; a `float64` with 15 hex digits, and one with uppercase hex; a reference `identity` of odd length; `{"type":"null"}` as a sequence element; a set with two equal elements; set elements out of order; an ordered set with two equal elements; a raw `%` not starting an escape; a lowercase escape `%3b`; and a record field name written `\u0061` where JCS writes `a`. | Test (TC-905) |
 | FR-070-AC-10 | On a thread with a 512 KiB stack, a transcript entry holding a 100,000-long recursive list (`record List { head: Int[0, 9]; tail?: List; }`) decodes, with the envelope's reader bound raised to fit it through `replay.input_bytes`. The decoded value clones, compares equal to itself, renders its redacted `Debug` and drops with no stack overflow. With the bound one byte below the envelope's size, construction refuses `BoundExceeded` naming `replay.input_bytes`. | Test (TC-736) |
 | FR-070-AC-11 | One `Canonical` entry per leaf family decodes exactly as written: an integer `-170141183460469231731687303715884105728` (outside `i64`); an enum member; the text `a;b=c<<<d>>>e%f` (its entry holds `a%3Bb=c%3C%3C%3Cd%3E%3E%3Ee%25f`, and its escaped bytes count toward `replay.input_bytes`), which parses as one block whose entry splits only at its own delimiters; the rational `-3`/`4`; the decimal with coefficient `1050` and scale `2`; a `float32` NaN with payload `7fc00001` and a `float64` negative zero `8000000000000000`; a quantity `{"type":"decimal","coefficient":"15","scale":"1","unit":"<unit>"}`; and a reference. A sequence of text values holding `;` and `>` decodes in order. | Test (TC-905) |

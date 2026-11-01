@@ -24,7 +24,7 @@ FR-070-AC-13, FR-070-AC-14, FR-070-AC-15.
 
 ## Test Procedure
 
-Use parameter node ids `P` (bound `Canonical`) and `Q` (bound `I64`), and
+Use parameter node ids `P` (bound `Canonical`) and `Q` (bound `I128`), and
 declaration node ids `INNER`, `OUTER`, `SHAPE` and `COLOR`. Each value text
 is its JCS encoding, escaped as FR-070 states, unless the step says
 otherwise.
@@ -75,8 +75,8 @@ otherwise.
    `{"ordinal":0,"package":"fixture","path":["b"]}`. Generate their
    entry names with `qsl_replay::witness_entry_name`. Construct a `Witness`
    for each two-entry assertion block and decode it with bindings
-   `[WitnessBinding { parameter: A, value_type: I64 }, WitnessBinding {
-   parameter: B, value_type: I64 }]`. Use `A`'s generated name carrying `0`
+   `[WitnessBinding { parameter: A, value_type: I128 }, WitnessBinding {
+   parameter: B, value_type: I128 }]`. Use `A`'s generated name carrying `0`
    before `B`'s generated name carrying `1`, then construct and decode the
    same entries in the other order with the same bindings.
 5. Build three value shapes at depths 5,000 and 10,000, on a thread with a
@@ -138,7 +138,7 @@ and `#[trace("TC-905", "FR-070-AC-15")]`.
   two texts, in order.
 - Step 3: each refuses `DecodeRefusal::Malformed` naming `P`, and no value is
   returned.
-- Step 4: with the explicit `A`/`B` I64 bindings, the transcript with `A`
+- Step 4: with the explicit `A`/`B` I128 bindings, the transcript with `A`
   before `B` decodes to integer values `0` and `1` in binding order. The
   other order refuses `DecodeRefusal::EntryOrder` naming `A`'s generated
   entry name, with no value; neither entry is unbound.
