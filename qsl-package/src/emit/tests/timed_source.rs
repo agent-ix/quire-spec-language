@@ -46,8 +46,12 @@ fn package_units_document() -> Vec<u8> {
 #[trace("FR-230-AC-32", "FR-230-AC-38")]
 #[test]
 fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
-    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
+    let mut document: Value =
+        serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
+            .expect("the fixture is JSON");
+    document["types"][0]["operations"] = json!([]);
+    let document = serde_json::to_vec(&document).expect("the fixture remains JSON");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = config_version_unit::unit_text().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
