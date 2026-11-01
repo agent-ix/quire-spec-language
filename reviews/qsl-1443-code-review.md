@@ -42,3 +42,28 @@ The test should apply CL-57 and CL-59 to the positive fixture, project the admit
 - Binder projection and writer in `checked_v2/timed_model.rs`.
 - Public Rust API and call sites for the added binder fields.
 - Repo conventions and applicable review gates.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit d8dab338f7a6d69896036e573236ddb831912883 asserts the exact nonempty ordered binder IDs after `from_admitted`, asserts matching ordered binder references after `write_nodes`, and compares the `from_nodes` typed round-trip for CL-57 and CL-59. Both focused vector consumers pass with QSpec #564 and IR #785. |
+
+After excerpt:
+
+```rust
+assert_eq!(
+    projected_binders, expected_binders,
+    "{id} projected binder order"
+);
+assert_eq!(
+    binder_groups(&written_clause.body),
+    vec![expected_binders.clone()],
+    "{id} writer preserves the exact ordered binders"
+);
+assert_eq!(
+    round_tripped,
+    vec![(*model).clone()],
+    "{id} typed model round-trips"
+);
+```

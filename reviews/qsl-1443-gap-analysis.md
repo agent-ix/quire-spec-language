@@ -41,3 +41,28 @@ Required oracle: replay CL-57 and CL-59 through typed admission, assert the exac
 ### FND-001 — medium
 
 CL-57/CL-59 enter the `"admitted"` branch at `qsl-package/src/checked_v2/tests.rs:2608-2610`, which only asserts `Read::Verified`. The only existing typed fixture round-trip at `qsl-package/src/checked_v2/timed_model.rs:1390-1440` uses the unquantified positive clause fixture. Therefore a regression that drops or reorders binder IDs in `project_guard` / `project_invariant`, or omits them in `write_guard` / `write_invariant`, would not be caught by these tests. Assert exact nonempty binder IDs after typed projection, then exact output binding order and typed round-trip equality for the CL-57/59 packages.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit d8dab338f7a6d69896036e573236ddb831912883 asserts the exact nonempty ordered binder IDs after `from_admitted`, asserts matching ordered binder references after `write_nodes`, and compares the `from_nodes` typed round-trip for CL-57 and CL-59. Both focused vector consumers pass with QSpec #564 and IR #785. |
+
+After excerpt:
+
+```rust
+assert_eq!(
+    projected_binders, expected_binders,
+    "{id} projected binder order"
+);
+assert_eq!(
+    binder_groups(&written_clause.body),
+    vec![expected_binders.clone()],
+    "{id} writer preserves the exact ordered binders"
+);
+assert_eq!(
+    round_tripped,
+    vec![(*model).clone()],
+    "{id} typed model round-trips"
+);
+```
