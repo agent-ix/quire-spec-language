@@ -2,6 +2,7 @@
 //! ADR-020 RC-1 and QSpec FR-379: the failure a refinement counterexample
 //! names, and the verdict of one step check (FR-141).
 
+use qsl_eval::simulation::protocol::ProtocolTransition;
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -73,8 +74,12 @@ pub enum RefinementFailure {
     /// whose loop has only `stutter` steps, the concrete terminal stutter
     /// included, and no step of it takes the constraint.
     Divergence {
-        /// The violated constraint of `F_A`.
-        constraint: FairnessConstraint,
+        /// The violated constraint of `F_A`, absent for protocol
+        /// observable-divergence checks that are independent of fairness.
+        constraint: Option<FairnessConstraint>,
+        /// The visible abstract protocol step class enabled throughout an
+        /// observable-divergence loop, when this is a protocol failure.
+        protocol_class: Option<String>,
     },
     /// An `F_A` constraint is enabled at every mapped state of a lasso whose
     /// loop takes abstract steps, and no step of it takes the constraint.
@@ -107,6 +112,8 @@ pub enum Taken {
     Stutter,
     /// Every accepted abstract transition identity, in canonical order.
     Abstract(Vec<ModelTransition>),
+    /// Abstract protocol transitions accepted by FR-148.
+    Protocol(Vec<ProtocolTransition>),
 }
 
 /// Why a step check is undetermined (ADR-020 RE-4).

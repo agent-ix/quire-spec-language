@@ -409,6 +409,7 @@ pub fn check_simulation_certificate(
     let RefinementSystems {
         concrete,
         abstract_system,
+        ..
     } = open_systems(
         request.refinement,
         &request.concrete,

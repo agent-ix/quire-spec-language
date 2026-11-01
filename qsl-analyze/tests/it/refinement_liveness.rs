@@ -61,6 +61,7 @@ fn run(
             },
             abstract_package: package,
             abstract_initial: vec![abstract_initial],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },
@@ -133,13 +134,13 @@ fn the_compare_and_set_counter_holds_and_its_divergence_is_a_peek_loop() {
         Some((0, false))
     );
     assert_eq!(operations(&counterexample), ["peek"]);
-    let Some(RefinementFailure::Divergence { constraint }) = &counterexample.refinement else {
+    let Some(RefinementFailure::Divergence { constraint, .. }) = &counterexample.refinement else {
         panic!(
             "the failure is a divergence: {:?}",
             counterexample.refinement
         );
     };
-    assert_eq!(constraint.operation().name(), "inc");
+    assert_eq!(constraint.as_ref().unwrap().operation().name(), "inc");
 
     let safety_only = check(&World::new(&without_ensure(&divergence_refinement())));
     assert!(matches!(safety_only.safety, SafetyOutcome::Holds { .. }));
@@ -187,10 +188,15 @@ fn a_concrete_halt_is_a_divergence_whatever_the_terminal_declarations() {
             Some((1, true)),
             "{terminals}"
         );
-        let Some(RefinementFailure::Divergence { constraint }) = &counterexample.refinement else {
+        let Some(RefinementFailure::Divergence { constraint, .. }) = &counterexample.refinement
+        else {
             panic!("{terminals}: a divergence: {:?}", counterexample.refinement);
         };
-        assert_eq!(constraint.operation().name(), "inc", "{terminals}");
+        assert_eq!(
+            constraint.as_ref().unwrap().operation().name(),
+            "inc",
+            "{terminals}"
+        );
 
         let safety_only = check_aux(&unit.world(&halting_refinement(false)));
         assert!(matches!(safety_only.safety, SafetyOutcome::Holds { .. }));
@@ -271,10 +277,13 @@ fn peeker() -> Unit {
 
 fn operation_of(outcome: RefinementOutcome) -> String {
     match lasso(outcome).refinement {
-        Some(
-            RefinementFailure::Divergence { constraint }
-            | RefinementFailure::AbstractUnfair { constraint },
-        ) => constraint.operation().name().to_owned(),
+        Some(RefinementFailure::Divergence {
+            constraint: Some(constraint),
+            ..
+        })
+        | Some(RefinementFailure::AbstractUnfair { constraint }) => {
+            constraint.operation().name().to_owned()
+        }
         other => panic!("a liveness failure: {other:?}"),
     }
 }
@@ -397,6 +406,7 @@ fn the_lasso_names_the_initial_state_it_starts_from() {
             },
             abstract_package: world.package(),
             abstract_initial: world.abstract_initials(),
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },
@@ -423,6 +433,7 @@ fn peeker_run(limits: ModelCheckLimits, cancel: &Cancel) -> RefinementOutcome {
             },
             abstract_package: world.package(),
             abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits,
         },
@@ -581,6 +592,7 @@ fn run_cancel(world: &AuxWorld<'_>, cancel: &Cancel) -> RefinementOutcome {
             },
             abstract_package: world.package(),
             abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },

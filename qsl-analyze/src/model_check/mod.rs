@@ -49,7 +49,7 @@ pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
     ClosureRefusal, InstanceGroup, TableForm,
 };
-pub use refine::{check_refinement, RefinementCheckRequest};
+pub use refine::{check_refinement, AbstractProtocolBinding, RefinementCheckRequest};
 pub use request::{RequestRefusal, SubjectContext};
 pub use scc::Component;
 pub use state_graph::{

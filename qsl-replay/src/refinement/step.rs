@@ -40,6 +40,7 @@ use crate::refinement::map::{
     lift_value, map_state, object_of, EvalFailure, Lifting, MappedState, MappingFailure,
     MappingRowRef, MappingUndetermined, StepArgument,
 };
+use crate::refinement::protocol_system::{AbstractProtocolSystem, ProtocolCandidate};
 
 /// A concrete state with its history values and the abstract states it
 /// stands for (FR-141 `RefinementPosition`). Without hidden fields the
@@ -53,6 +54,9 @@ pub struct RefinementPosition {
     pub history: HistoryValues,
     /// The abstract states, sorted by state key.
     pub abstract_states: Vec<ModelState>,
+    /// The protocol control states of an abstract protocol subject (FR-148).
+    /// Empty for a model subject.
+    pub abstract_protocol_states: Vec<super::protocol_system::ProtocolCandidate>,
 }
 
 /// One concrete step to decide: where it ends and what it did.
@@ -164,6 +168,7 @@ pub fn check_initial(
             concrete: concrete_initial.clone(),
             history,
             abstract_states: candidates,
+            abstract_protocol_states: Vec::new(),
         },
         taken: Taken::Stutter,
     }
@@ -180,6 +185,24 @@ pub fn check_step(
     pre: &RefinementPosition,
     step: &ConcreteStep<'_>,
 ) -> StepResult {
+    check_step_inner(
+        refinement,
+        concrete_system,
+        abstract_system,
+        pre,
+        step,
+        false,
+    )
+}
+
+fn check_step_inner(
+    refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    pre: &RefinementPosition,
+    step: &ConcreteStep<'_>,
+    allow_protocol_node: bool,
+) -> StepResult {
     let mut abstract_successors = 0;
     let verdict = decide_step(
         refinement,
@@ -188,11 +211,787 @@ pub fn check_step(
         pre,
         step,
         &mut abstract_successors,
+        allow_protocol_node,
     );
     StepResult {
         verdict,
         abstract_successors,
     }
+}
+
+/// FR-148 PR-3: map a concrete initial state to the abstract protocol's
+/// initial roots, then close those roots over its admitted internal classes.
+pub fn check_protocol_initial(
+    refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    protocol: &AbstractProtocolSystem<'_>,
+    index: usize,
+    concrete_initial: &ModelState,
+) -> StepResult {
+    let verdict = check_initial(
+        refinement,
+        concrete_system,
+        abstract_system,
+        index,
+        concrete_initial,
+    );
+    let StepVerdict::Passes { post, taken } = verdict else {
+        return StepResult {
+            verdict,
+            abstract_successors: 0,
+        };
+    };
+    let visible_key =
+        match abstract_system.state_key_of(&visible_part(refinement, &post.abstract_states[0])) {
+            Ok((key, _)) => key,
+            Err(_) => {
+                return StepResult {
+                    verdict: fault("mapped-state-encodes"),
+                    abstract_successors: 0,
+                }
+            }
+        };
+    let mut roots = Vec::new();
+    for candidate in protocol.initial() {
+        let Some(state) = protocol.model_state(&candidate) else {
+            return StepResult {
+                verdict: fault("candidate-belongs-to-admitted-system"),
+                abstract_successors: 0,
+            };
+        };
+        let Ok((key, _)) = abstract_system.state_key_of(&visible_part(refinement, state.state()))
+        else {
+            return StepResult {
+                verdict: fault("initial-state-encodes"),
+                abstract_successors: 0,
+            };
+        };
+        if key == visible_key {
+            roots.push(candidate);
+        }
+    }
+    let (candidates, abstract_successors) = match protocol_closure(refinement, protocol, roots) {
+        Ok(closure) => closure,
+        Err(verdict) => {
+            return StepResult {
+                verdict,
+                abstract_successors: 0,
+            }
+        }
+    };
+    if candidates.is_empty() {
+        return StepResult {
+            verdict: StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial: index }),
+            abstract_successors,
+        };
+    }
+    let mut model_states = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        let Some(state) = protocol.model_state(candidate) else {
+            return StepResult {
+                verdict: fault("candidate-belongs-to-admitted-system"),
+                abstract_successors,
+            };
+        };
+        model_states.push(state.state().clone());
+    }
+    let mut post = post;
+    post.abstract_states = model_states;
+    post.abstract_protocol_states = candidates;
+    StepResult {
+        verdict: StepVerdict::Passes { post, taken },
+        abstract_successors,
+    }
+}
+
+/// FR-148: decide a concrete model edge against abstract protocol states.
+/// Model operation matching reuses FR-141's argument evaluation and contract
+/// decisions; the protocol expansion then retains matching protocol steps.
+pub fn check_protocol_step(
+    refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    protocol: &AbstractProtocolSystem<'_>,
+    pre: &RefinementPosition,
+    step: &ConcreteStep<'_>,
+) -> StepResult {
+    let row = step
+        .transition
+        .and_then(|transition| step_row(refinement, transition));
+    let protocol_node = row.is_some_and(|row| matches!(&row.target, StepTarget::Node { .. }));
+    let model_result = check_step_inner(
+        refinement,
+        concrete_system,
+        abstract_system,
+        pre,
+        step,
+        protocol_node,
+    );
+    let StepVerdict::Passes { mut post, taken } = model_result.verdict else {
+        if let StepVerdict::Fails(RefinementFailure::AbstractStepRejected { .. }) =
+            model_result.verdict
+        {
+            return StepResult {
+                verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                    position: step.position,
+                }),
+                abstract_successors: model_result.abstract_successors,
+            };
+        }
+        return model_result;
+    };
+    let row = step
+        .transition
+        .and_then(|transition| step_row(refinement, transition));
+    if row.is_some_and(|row| matches!(&row.target, StepTarget::Any)) {
+        return check_protocol_any_step(
+            refinement,
+            abstract_system,
+            protocol,
+            pre,
+            step,
+            post,
+            taken,
+            model_result.abstract_successors,
+        );
+    }
+    if protocol_node {
+        return check_protocol_node_step(
+            refinement,
+            concrete_system,
+            abstract_system,
+            protocol,
+            pre,
+            step,
+            post,
+            model_result.abstract_successors,
+        );
+    }
+    if matches!(taken, Taken::Stutter) {
+        post.abstract_protocol_states = pre.abstract_protocol_states.clone();
+        return StepResult {
+            verdict: StepVerdict::Passes {
+                post,
+                taken: Taken::Stutter,
+            },
+            abstract_successors: model_result.abstract_successors,
+        };
+    }
+    let Taken::Abstract(accepted) = taken else {
+        return StepResult {
+            verdict: fault("a-model-operation-row-yields-model-transitions"),
+            abstract_successors: model_result.abstract_successors,
+        };
+    };
+    let visible_key =
+        match abstract_system.state_key_of(&visible_part(refinement, &post.abstract_states[0])) {
+            Ok((key, _)) => key,
+            Err(_) => {
+                return StepResult {
+                    verdict: fault("mapped-state-encodes"),
+                    abstract_successors: model_result.abstract_successors,
+                }
+            }
+        };
+    let mut matching = Vec::new();
+    let mut taken_protocol = Vec::new();
+    let mut count = model_result.abstract_successors;
+    for before in &pre.abstract_protocol_states {
+        let expansion = match protocol.successors(before) {
+            Ok(expansion) => expansion,
+            Err(_) => {
+                return StepResult {
+                    verdict: fault("protocol-expansion"),
+                    abstract_successors: count,
+                }
+            }
+        };
+        count = count.saturating_add(u64::try_from(expansion.successors.len()).unwrap_or(u64::MAX));
+        for (transition, candidate) in expansion.successors {
+            let Some(application) = transition.application() else {
+                continue;
+            };
+            if !accepted.contains(application) {
+                continue;
+            }
+            let Some(state) = protocol.model_state(&candidate) else {
+                return StepResult {
+                    verdict: fault("candidate-belongs-to-admitted-system"),
+                    abstract_successors: count,
+                };
+            };
+            let Ok((key, _)) =
+                abstract_system.state_key_of(&visible_part(refinement, state.state()))
+            else {
+                return StepResult {
+                    verdict: fault("protocol-model-state-encodes"),
+                    abstract_successors: count,
+                };
+            };
+            if key == visible_key {
+                matching.push(candidate);
+                taken_protocol.push(transition);
+            }
+        }
+    }
+    let (candidates, closure_count) = match protocol_closure(refinement, protocol, matching) {
+        Ok(closure) => closure,
+        Err(verdict) => {
+            return StepResult {
+                verdict,
+                abstract_successors: count,
+            }
+        }
+    };
+    count = count.saturating_add(closure_count);
+    if candidates.is_empty() {
+        return StepResult {
+            verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                position: step.position,
+            }),
+            abstract_successors: count,
+        };
+    }
+    let mut model_states = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        let Some(state) = protocol.model_state(candidate) else {
+            return StepResult {
+                verdict: fault("candidate-belongs-to-admitted-system"),
+                abstract_successors: count,
+            };
+        };
+        model_states.push(state.state().clone());
+    }
+    let mut keyed = Vec::new();
+    for transition in taken_protocol {
+        let key = match protocol.transition_key(&transition) {
+            Ok(key) => key,
+            Err(_) => continue,
+        };
+        keyed.push((key, transition));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
+    post.abstract_states = model_states;
+    post.abstract_protocol_states = candidates;
+    StepResult {
+        verdict: StepVerdict::Passes {
+            post,
+            taken: Taken::Protocol(
+                keyed
+                    .into_iter()
+                    .map(|(_, transition)| transition)
+                    .collect(),
+            ),
+        },
+        abstract_successors: count,
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "this is one FR-148 step decision over the shared protocol product context"
+)]
+fn check_protocol_any_step(
+    refinement: &CheckedRefinement,
+    abstract_system: &ModelSystem<'_>,
+    protocol: &AbstractProtocolSystem<'_>,
+    pre: &RefinementPosition,
+    step: &ConcreteStep<'_>,
+    mut post: RefinementPosition,
+    taken: Taken,
+    mut count: u64,
+) -> StepResult {
+    let mapped = match post.abstract_states.first() {
+        Some(state) => state,
+        None => {
+            return StepResult {
+                verdict: fault("a-mapped-post-state-exists"),
+                abstract_successors: count,
+            }
+        }
+    };
+    let visible = visible_part(refinement, mapped);
+    let Ok((visible_key, _)) = abstract_system.state_key_of(&visible) else {
+        return StepResult {
+            verdict: fault("mapped-state-encodes"),
+            abstract_successors: count,
+        };
+    };
+    let pre_visible = pre
+        .abstract_states
+        .first()
+        .map(|state| visible_part(refinement, state));
+    let stuttered = pre_visible
+        .and_then(|state| abstract_system.state_key_of(&state).ok())
+        .is_some_and(|(key, _)| key == visible_key);
+    let mut candidates = if stuttered {
+        pre.abstract_protocol_states.clone()
+    } else {
+        Vec::new()
+    };
+    let mut taken_protocol = Vec::new();
+    match taken {
+        Taken::Abstract(_) | Taken::Stutter => {}
+        Taken::Protocol(_) => {
+            return StepResult {
+                verdict: fault("any-row-is-decided-before-protocol-matching"),
+                abstract_successors: count,
+            }
+        }
+    }
+    let internal: std::collections::BTreeSet<&str> = refinement
+        .abstract_internal()
+        .iter()
+        .map(|class| class.spelling())
+        .collect();
+    for before in &pre.abstract_protocol_states {
+        let expansion = match protocol.successors(before) {
+            Ok(expansion) => expansion,
+            Err(_) => {
+                return StepResult {
+                    verdict: fault("protocol-expansion"),
+                    abstract_successors: count,
+                }
+            }
+        };
+        count = count.saturating_add(u64::try_from(expansion.successors.len()).unwrap_or(u64::MAX));
+        for (transition, candidate) in expansion.successors {
+            let Some(class) = protocol_class(protocol, &transition) else {
+                continue;
+            };
+            if internal.contains(class.as_str()) {
+                continue;
+            }
+            let Some(state) = protocol.model_state(&candidate) else {
+                return StepResult {
+                    verdict: fault("candidate-belongs-to-admitted-system"),
+                    abstract_successors: count,
+                };
+            };
+            let Ok((key, _)) =
+                abstract_system.state_key_of(&visible_part(refinement, state.state()))
+            else {
+                return StepResult {
+                    verdict: fault("protocol-model-state-encodes"),
+                    abstract_successors: count,
+                };
+            };
+            if key == visible_key {
+                candidates.push(candidate);
+                taken_protocol.push(transition);
+            }
+        }
+    }
+    let (candidates, closure_count) = match protocol_closure(refinement, protocol, candidates) {
+        Ok(closure) => closure,
+        Err(verdict) => {
+            return StepResult {
+                verdict,
+                abstract_successors: count,
+            }
+        }
+    };
+    count = count.saturating_add(closure_count);
+    if candidates.is_empty() {
+        return StepResult {
+            verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                position: step.position,
+            }),
+            abstract_successors: count,
+        };
+    }
+    let mut model_states = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        let Some(state) = protocol.model_state(candidate) else {
+            return StepResult {
+                verdict: fault("candidate-belongs-to-admitted-system"),
+                abstract_successors: count,
+            };
+        };
+        model_states.push(state.state().clone());
+    }
+    post.abstract_states = model_states;
+    post.abstract_protocol_states = candidates;
+    if stuttered && taken_protocol.is_empty() {
+        return StepResult {
+            verdict: StepVerdict::Passes {
+                post,
+                taken: Taken::Stutter,
+            },
+            abstract_successors: count,
+        };
+    }
+    let mut keyed = Vec::new();
+    for transition in taken_protocol {
+        if let Ok(key) = protocol.transition_key(&transition) {
+            keyed.push((key, transition));
+        }
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
+    StepResult {
+        verdict: StepVerdict::Passes {
+            post,
+            taken: Taken::Protocol(
+                keyed
+                    .into_iter()
+                    .map(|(_, transition)| transition)
+                    .collect(),
+            ),
+        },
+        abstract_successors: count,
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the node row needs both admitted systems and the concrete step context"
+)]
+fn check_protocol_node_step(
+    refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    protocol: &AbstractProtocolSystem<'_>,
+    pre: &RefinementPosition,
+    step: &ConcreteStep<'_>,
+    mut post: RefinementPosition,
+    mut count: u64,
+) -> StepResult {
+    let Some(transition) = step.transition else {
+        return StepResult {
+            verdict: fault("a-protocol-node-row-has-a-concrete-transition"),
+            abstract_successors: count,
+        };
+    };
+    let Some(row) = step_row(refinement, transition) else {
+        return StepResult {
+            verdict: fault("a-protocol-node-row-has-a-concrete-transition"),
+            abstract_successors: count,
+        };
+    };
+    let StepTarget::Node {
+        protocol: target_protocol,
+        node,
+        arguments: _,
+    } = &row.target
+    else {
+        return StepResult {
+            verdict: fault("a-protocol-node-row-names-a-node"),
+            abstract_successors: count,
+        };
+    };
+    if target_protocol.rsplit("::").next() != Some(protocol.protocol().name.as_str()) {
+        return StepResult {
+            verdict: fault("a-node-row-names-the-selected-protocol"),
+            abstract_successors: count,
+        };
+    }
+    let Ok(Some(resolved)) = concrete_system.resolve_step(&pre.concrete, transition, step.post)
+    else {
+        return StepResult {
+            verdict: fault("a-protocol-node-row-resolves-its-concrete-step"),
+            abstract_successors: count,
+        };
+    };
+    let (evaluated, soft) = match evaluate_node_arguments(
+        refinement,
+        concrete_system,
+        abstract_system,
+        pre,
+        step,
+        row,
+        &resolved,
+    ) {
+        Ok(result) => result,
+        Err(verdict) => {
+            return StepResult {
+                verdict,
+                abstract_successors: count,
+            }
+        }
+    };
+    if let Some(verdict) = soft.first() {
+        return StepResult {
+            verdict,
+            abstract_successors: count,
+        };
+    }
+    let Some(evaluated) = evaluated else {
+        return StepResult {
+            verdict: fault("a-protocol-node-row-arguments-resolve"),
+            abstract_successors: count,
+        };
+    };
+    let visible = post
+        .abstract_states
+        .first()
+        .map(|state| visible_part(refinement, state));
+    let Some(visible) = visible else {
+        return StepResult {
+            verdict: fault("a-mapped-post-state-exists"),
+            abstract_successors: count,
+        };
+    };
+    let Ok((visible_key, _)) = abstract_system.state_key_of(&visible) else {
+        return StepResult {
+            verdict: fault("mapped-state-encodes"),
+            abstract_successors: count,
+        };
+    };
+    let mut matching = Vec::new();
+    let mut taken_protocol = Vec::new();
+    for before in &pre.abstract_protocol_states {
+        let expansion = match protocol.successors(before) {
+            Ok(expansion) => expansion,
+            Err(_) => {
+                return StepResult {
+                    verdict: fault("protocol-expansion"),
+                    abstract_successors: count,
+                }
+            }
+        };
+        count = count.saturating_add(u64::try_from(expansion.successors.len()).unwrap_or(u64::MAX));
+        for (candidate_transition, candidate) in expansion.successors {
+            if candidate_transition.node().is_none_or(|candidate_node| {
+                candidate_node != node
+                    && candidate_node.rsplit('/').next() != node.rsplit('/').next()
+            }) || !protocol_node_arguments_match(
+                abstract_system,
+                &candidate_transition,
+                &evaluated,
+            ) {
+                continue;
+            }
+            let Some(state) = protocol.model_state(&candidate) else {
+                return StepResult {
+                    verdict: fault("candidate-belongs-to-admitted-system"),
+                    abstract_successors: count,
+                };
+            };
+            let Ok((key, _)) =
+                abstract_system.state_key_of(&visible_part(refinement, state.state()))
+            else {
+                return StepResult {
+                    verdict: fault("protocol-model-state-encodes"),
+                    abstract_successors: count,
+                };
+            };
+            if key == visible_key {
+                matching.push(candidate);
+                taken_protocol.push(candidate_transition);
+            }
+        }
+    }
+    let (candidates, closure_count) = match protocol_closure(refinement, protocol, matching) {
+        Ok(closure) => closure,
+        Err(verdict) => {
+            return StepResult {
+                verdict,
+                abstract_successors: count,
+            }
+        }
+    };
+    count = count.saturating_add(closure_count);
+    if candidates.is_empty() {
+        return StepResult {
+            verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                position: step.position,
+            }),
+            abstract_successors: count,
+        };
+    }
+    let mut model_states = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        let Some(state) = protocol.model_state(candidate) else {
+            return StepResult {
+                verdict: fault("candidate-belongs-to-admitted-system"),
+                abstract_successors: count,
+            };
+        };
+        model_states.push(state.state().clone());
+    }
+    let mut keyed = Vec::new();
+    for transition in taken_protocol {
+        if let Ok(key) = protocol.transition_key(&transition) {
+            keyed.push((key, transition));
+        }
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
+    post.abstract_states = model_states;
+    post.abstract_protocol_states = candidates;
+    StepResult {
+        verdict: StepVerdict::Passes {
+            post,
+            taken: Taken::Protocol(
+                keyed
+                    .into_iter()
+                    .map(|(_, transition)| transition)
+                    .collect(),
+            ),
+        },
+        abstract_successors: count,
+    }
+}
+
+fn protocol_node_arguments_match(
+    model: &ModelSystem<'_>,
+    transition: &qsl_eval::simulation::protocol::ProtocolTransition,
+    expected: &[Option<Value>],
+) -> bool {
+    if let Some(record) = transition.binder_record() {
+        let actual: Vec<Option<&Value>> = match record {
+            Value::Composite(composite) => composite
+                .slots()
+                .iter()
+                .map(|slot| match slot {
+                    quire_exact::FieldValue::Present(value) => Some(value),
+                    quire_exact::FieldValue::Absent | quire_exact::FieldValue::Null => None,
+                })
+                .collect(),
+            other => vec![Some(other)],
+        };
+        return actual.len() == expected.len()
+            && actual.iter().zip(expected).all(|(actual, expected)| {
+                expected.as_ref().is_none_or(|expected| {
+                    actual.is_some_and(|actual| {
+                        model.value_key(expected).is_ok_and(|expected| {
+                            model
+                                .value_key(actual)
+                                .is_ok_and(|actual| expected == actual)
+                        })
+                    })
+                })
+            });
+    }
+    if let Some(application) = transition.application() {
+        let (Some(receiver), arguments) = (application.receiver(), application.arguments()) else {
+            return false;
+        };
+        if expected.len() != arguments.len().saturating_add(1) {
+            return false;
+        }
+        let receiver_matches = expected[0].as_ref().is_none_or(|value| {
+            model
+                .value_key(value)
+                .is_ok_and(|key| key.as_slice() == receiver.as_bytes())
+        });
+        return receiver_matches
+            && arguments
+                .iter()
+                .zip(&expected[1..])
+                .all(|(argument, expected)| {
+                    expected.as_ref().is_none_or(|value| {
+                        model
+                            .value_key(value)
+                            .is_ok_and(|key| key.as_slice() == argument.as_bytes())
+                    })
+                });
+    }
+    expected.is_empty()
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-141 fixes StepVerdict's shape, which this closure returns directly"
+)]
+fn protocol_closure(
+    refinement: &CheckedRefinement,
+    system: &AbstractProtocolSystem<'_>,
+    seeds: Vec<ProtocolCandidate>,
+) -> Result<(Vec<ProtocolCandidate>, u64), StepVerdict> {
+    let internal: std::collections::BTreeSet<&str> = refinement
+        .abstract_internal()
+        .iter()
+        .map(|class| class.spelling())
+        .collect();
+    let mut known = std::collections::BTreeMap::<Vec<u8>, ProtocolCandidate>::new();
+    let mut queue = std::collections::VecDeque::new();
+    for state in seeds {
+        let (key, _) = system
+            .state_key(&state)
+            .map_err(|_| fault("protocol-state-encodes"))?;
+        if known.insert(key, state.clone()).is_none() {
+            if u64::try_from(known.len()).unwrap_or(u64::MAX) > system.model().max_candidates() {
+                return Err(StepVerdict::Stopped(ReachedLimit {
+                    limit: ModelCheckLimit::MaxCandidates,
+                    value: system.model().max_candidates(),
+                }));
+            }
+            queue.push_back(state);
+        }
+    }
+    let mut expanded = 0_u64;
+    while let Some(state) = queue.pop_front() {
+        let expansion = system
+            .successors(&state)
+            .map_err(|stop| stop_verdict(system.model(), stop))?;
+        if expansion
+            .findings
+            .iter()
+            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+        {
+            return Err(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor));
+        }
+        for (transition, post) in expansion.successors {
+            expanded = expanded.saturating_add(1);
+            let Some(class) = protocol_class(system, &transition) else {
+                continue;
+            };
+            if !internal.contains(class.as_str()) {
+                continue;
+            }
+            let (key, _) = system
+                .state_key(&post)
+                .map_err(|_| fault("protocol-state-encodes"))?;
+            if known.insert(key, post.clone()).is_none() {
+                if u64::try_from(known.len()).unwrap_or(u64::MAX) > system.model().max_candidates()
+                {
+                    return Err(StepVerdict::Stopped(ReachedLimit {
+                        limit: ModelCheckLimit::MaxCandidates,
+                        value: system.model().max_candidates(),
+                    }));
+                }
+                queue.push_back(post);
+            }
+        }
+    }
+    Ok((known.into_values().collect(), expanded))
+}
+
+pub(crate) fn protocol_class(
+    system: &AbstractProtocolSystem<'_>,
+    transition: &qsl_eval::simulation::protocol::ProtocolTransition,
+) -> Option<String> {
+    use qsl_eval::simulation::protocol::StepKind;
+    let protocol = &system.protocol().name;
+    let member = transition
+        .node()
+        .and_then(|node| node.rsplit('/').next())
+        .map(str::to_owned);
+    Some(match transition.kind() {
+        StepKind::Attempt
+        | StepKind::Event
+        | StepKind::Send
+        | StepKind::Receive
+        | StepKind::Timeout
+        | StepKind::Finish
+        | StepKind::Fence => {
+            format!("{protocol}::{}", member?)
+        }
+        StepKind::Fork => format!("fork {protocol}::{}", member?),
+        StepKind::Join => format!("join {protocol}::{}", member?),
+        StepKind::CAttempt => format!("{protocol}::{}", transition.template()?),
+        StepKind::CEnd => format!("cend {protocol}::{}", transition.template()?),
+        StepKind::Duplicate => format!("duplicate {protocol}::{}", transition.channel_queue()?.0),
+        StepKind::Lose => format!("lose {protocol}::{}", transition.channel_queue()?.0),
+        StepKind::Spawn => format!("spawn {protocol}::{}", transition.role_instance()?.0),
+        StepKind::Retire => format!("retire {protocol}::{}", transition.role_instance()?.0),
+        StepKind::Activate => format!("activate {protocol}"),
+        StepKind::Memory => format!("memory {}", transition.memory_step()?.step),
+    })
 }
 
 /// The first undefined and the first undetermined outcome of the step-row
@@ -258,6 +1057,7 @@ fn decide_step(
     pre: &RefinementPosition,
     step: &ConcreteStep<'_>,
     abstract_successors: &mut u64,
+    allow_protocol_node: bool,
 ) -> StepVerdict {
     let Some(before) = pre.abstract_states.first() else {
         return fault("a-position-holds-an-abstract-state");
@@ -272,7 +1072,8 @@ fn decide_step(
     let applies = matches!(
         row.map(|row| &row.target),
         Some(StepTarget::Abstract { .. })
-    );
+    ) || (allow_protocol_node
+        && matches!(row.map(|row| &row.target), Some(StepTarget::Node { .. })));
     // The step's receiver and arguments, found when a row or an update reads
     // them.
     let mut resolved = None;
@@ -294,7 +1095,10 @@ fn decide_step(
     // the first undetermined one.
     let mut soft = Soft::default();
     let mut arguments = None;
-    if let (Some(row), Some(resolved), true) = (row, resolved.as_ref(), applies) {
+    if applies && row.is_some_and(|row| matches!(&row.target, StepTarget::Abstract { .. })) {
+        let (Some(row), Some(resolved)) = (row, resolved.as_ref()) else {
+            return fault("an-abstract-row-and-resolved-step-exist");
+        };
         match evaluate_arguments(
             refinement,
             (concrete_system, abstract_system),
@@ -379,6 +1183,7 @@ fn decide_step(
             concrete: step.post.state().clone(),
             history: history.clone(),
             abstract_states: states,
+            abstract_protocol_states: Vec::new(),
         },
         taken,
     };
@@ -470,7 +1275,19 @@ fn decide_step(
                 Err(verdict) => verdict,
             }
         }
-        StepTarget::Node { .. } => fault("a-protocol-node-row-needs-a-protocol-abstract-subject"),
+        StepTarget::Node { .. } => {
+            if !allow_protocol_node {
+                return fault("a-protocol-node-row-needs-a-protocol-abstract-subject");
+            }
+            let candidates = match completions(abstract_system, &mapped) {
+                Ok(candidates) => candidates,
+                Err(verdict) => return verdict,
+            };
+            match sorted(abstract_system, candidates) {
+                Ok(candidates) => passes(Taken::Abstract(Vec::new()), candidates),
+                Err(verdict) => verdict,
+            }
+        }
         StepTarget::Abstract { operation, .. } => {
             let Some(arguments) = arguments else {
                 return fault("an-abstract-row-evaluates-its-arguments");
@@ -671,6 +1488,101 @@ fn evaluate_arguments(
     };
     Ok((evaluated, soft))
 }
+
+#[allow(clippy::result_large_err, reason = "FR-141 fixes StepVerdict's shape")]
+fn evaluate_node_arguments(
+    refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    pre: &RefinementPosition,
+    step: &ConcreteStep<'_>,
+    row: &StepRow,
+    resolved: &ResolvedStep,
+) -> Result<NodeArgumentValues, StepVerdict> {
+    let StepClass::Operation(concrete_operation) = &row.class else {
+        return Err(fault("a-protocol-node-row-is-a-concrete-operation-row"));
+    };
+    let StepTarget::Node { arguments, .. } = &row.target else {
+        return Err(fault("a-protocol-node-row-targets-a-node"));
+    };
+    let observed = pre
+        .history
+        .environment(concrete_system, &pre.concrete)
+        .map_err(|_| fault("pre-history-names-its-objects"))
+        .and_then(|history| {
+            concrete_system
+                .observe_with_history(&pre.concrete, history)
+                .map_err(|_| fault("pre-state-observes"))
+        })?;
+    let mut bindings = vec![Value::Reference(resolved.receiver.clone())];
+    bindings.extend(resolved.arguments.iter().cloned());
+    let object = object_of(concrete_system, &pre.concrete, &resolved.receiver);
+    let mut soft = Soft::default();
+    let mut values = Vec::with_capacity(arguments.len());
+    let mut complete = true;
+    for (index, expression) in arguments.iter().enumerate() {
+        let Some(expression) = expression else {
+            values.push(None);
+            continue;
+        };
+        let site = MappingRowRef::Argument {
+            operation: concrete_operation.clone(),
+            argument: StepArgument::Parameter(index),
+        };
+        let evaluated = match concrete_system.read_row(expression, &observed, bindings.clone()) {
+            Err(_) => return Err(fault("node-row-argument-evaluates")),
+            Ok(RowReading::Value(value)) => {
+                match lift_value(refinement, concrete_system, abstract_system, value) {
+                    Ok(value) => Ok(value),
+                    Err(Lifting::Unmapped(concrete_type)) => Err(StepVerdict::Undetermined(
+                        Undetermined::Mapping(Box::new(MappingUndetermined {
+                            row: site.clone(),
+                            object: object.clone(),
+                            cause: EvalFailure::UnmappedType(concrete_type),
+                        })),
+                    )),
+                    Err(Lifting::Fault) => Err(fault("node-row-argument-lifts")),
+                }
+            }
+            Ok(RowReading::Undefined(cause)) => {
+                let Ok((bytes, _)) = concrete_system.state_key_of(step.post.state()) else {
+                    return Err(fault("post-state-encodes"));
+                };
+                Err(StepVerdict::Undefined(UndefinedEvaluation {
+                    site: UndefinedSite {
+                        position: step.position,
+                        state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(bytes),
+                        locus: UndefinedLocus::Mapping(Box::new(MappingSite {
+                            row: site,
+                            object: object.clone(),
+                        })),
+                        transition: None,
+                        time: None,
+                    },
+                    cause,
+                }))
+            }
+            Ok(RowReading::Undetermined(outcome)) => Err(StepVerdict::Undetermined(
+                Undetermined::Mapping(Box::new(MappingUndetermined {
+                    row: site,
+                    object: object.clone(),
+                    cause: EvalFailure::Evaluation(Box::new(outcome)),
+                })),
+            )),
+        };
+        match evaluated {
+            Ok(value) => values.push(Some(value)),
+            Err(verdict) => {
+                complete = false;
+                soft.record(verdict)?;
+                values.push(None);
+            }
+        }
+    }
+    Ok((complete.then_some(values), soft))
+}
+
+type NodeArgumentValues = (Option<Vec<Option<Value>>>, Soft);
 
 /// The abstract states a mapped post-state stands for once its hidden fields
 /// take each value of their finite domains (AX-2): the visible state itself

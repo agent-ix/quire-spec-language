@@ -866,7 +866,13 @@ fn finish_waits_for_every_other_thread_of_its_instance() {
             .steps
             .iter()
             .find(|(transition, _)| transition.kind() == StepKind::Finish)
-            .map(|(_, next)| *next)
+            .map(|(transition, next)| {
+                assert!(matches!(
+                    transition.binder_record(),
+                    Some(quire_exact::Value::Boolean(true))
+                ));
+                *next
+            })
     };
     let mut waited = false;
     let mut finished = false;

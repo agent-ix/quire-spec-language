@@ -211,6 +211,11 @@ pub fn settle_refinement_safety(
     let mut counterexample = None;
     let mut depth = None;
     let row = match outcome {
+        SafetyOutcome::HoldsUncertified { .. } => Row::proof(
+            ProofBasis::Exhaustive,
+            Certification::Uncertified,
+            SettlementBasis::ClosedScope,
+        ),
         SafetyOutcome::Holds { certificate, .. } => {
             match check_simulation_certificate(certified, certificate, limits, cancel) {
                 Err(SimulationRefusal::Stale {

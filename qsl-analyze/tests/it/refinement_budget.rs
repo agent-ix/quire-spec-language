@@ -40,6 +40,7 @@ fn run(world: &RingWorld, work: u64) -> SafetyOutcome {
             },
             abstract_package: world.package(),
             abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },
@@ -148,6 +149,7 @@ fn put(
             concrete: pre,
             history: HistoryValues::default(),
             abstract_states: vec![mapped.visible],
+            abstract_protocol_states: Vec::new(),
         },
     )
 }

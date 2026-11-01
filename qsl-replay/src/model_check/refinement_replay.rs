@@ -43,9 +43,9 @@ use crate::model_check::replay::{
     timed_prefix, unfair_constraint, ModelTraceRefusal, Position,
 };
 use crate::refinement::{
-    abstract_classes, check_initial, check_step, initial_history, map_state, step_history,
-    stop_verdict, ConcreteStep, RefinementFailure, RefinementPosition, RefinementSystems,
-    StepVerdict, Taken,
+    abstract_classes, check_initial, check_protocol_initial, check_protocol_step, check_step,
+    initial_history, map_state, step_history, stop_verdict, ConcreteStep, RefinementFailure,
+    RefinementPosition, RefinementSystems, StepVerdict, Taken,
 };
 use crate::result::DisagreementCause;
 use crate::timed::explore::{explore, widen, Closure};
@@ -201,26 +201,55 @@ fn settle_positions(
                 let Some(taken) = payload.prefix.get(step) else {
                     return Err(fault("a-position-has-a-step"));
                 };
-                check_step(
+                let step = ConcreteStep {
+                    position: u64::try_from(index).unwrap_or(u64::MAX),
+                    transition: Some(&taken.transition),
+                    post: &position.state,
+                };
+                match systems.abstract_protocol.as_ref() {
+                    Some(protocol) => {
+                        check_protocol_step(
+                            refinement,
+                            &systems.concrete,
+                            &systems.abstract_system,
+                            protocol,
+                            pre,
+                            &step,
+                        )
+                        .verdict
+                    }
+                    None => {
+                        check_step(
+                            refinement,
+                            &systems.concrete,
+                            &systems.abstract_system,
+                            pre,
+                            &step,
+                        )
+                        .verdict
+                    }
+                }
+            }
+            _ => match systems.abstract_protocol.as_ref() {
+                Some(protocol) => {
+                    check_protocol_initial(
+                        refinement,
+                        &systems.concrete,
+                        &systems.abstract_system,
+                        protocol,
+                        payload.initial_state,
+                        position.state.state(),
+                    )
+                    .verdict
+                }
+                None => check_initial(
                     refinement,
                     &systems.concrete,
                     &systems.abstract_system,
-                    pre,
-                    &ConcreteStep {
-                        position: u64::try_from(index).unwrap_or(u64::MAX),
-                        transition: Some(&taken.transition),
-                        post: &position.state,
-                    },
-                )
-                .verdict
-            }
-            _ => check_initial(
-                refinement,
-                &systems.concrete,
-                &systems.abstract_system,
-                payload.initial_state,
-                position.state.state(),
-            ),
+                    payload.initial_state,
+                    position.state.state(),
+                ),
+            },
         };
         match verdict {
             StepVerdict::Passes { post, taken } => {
@@ -279,6 +308,15 @@ fn settle_positions(
         }
     }
     if let Some(lasso) = payload.lasso {
+        if let Some(RefinementFailure::Divergence {
+            protocol_class: Some(class),
+            ..
+        }) = payload.refinement.as_ref()
+        {
+            return replay_protocol_divergence(
+                refinement, systems, payload, lasso, positions, mapped, class,
+            );
+        }
         let walk = Walk {
             positions,
             trail,
@@ -350,7 +388,10 @@ fn replay_lasso(
         }
         Found::Stopped(reached) => return Ok(RefinementTraceSettlement::Stopped(reached)),
     }
-    let (Some(RefinementFailure::Divergence { constraint })
+    let (Some(RefinementFailure::Divergence {
+        constraint: Some(constraint),
+        protocol_class: None,
+    })
     | Some(RefinementFailure::AbstractUnfair { constraint })) = payload.refinement.as_ref()
     else {
         return Err(refused(ModelTraceRefusal::NoRefinementFailure));
@@ -450,6 +491,7 @@ fn replay_lasso(
         .chain(loop_taken.iter().flat_map(|taken| match taken {
             Taken::Abstract(transitions) => transitions.as_slice(),
             Taken::Stutter => &[],
+            Taken::Protocol(_) => &[],
         }))
         .cloned()
         .collect();
@@ -478,6 +520,172 @@ fn replay_lasso(
     })
 }
 
+/// Replay FR-148's fairness-independent observable divergence check over the
+/// same protocol candidate sets and the concrete lasso.
+fn replay_protocol_divergence(
+    _refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    payload: &TemporalCounterexample,
+    lasso: Lasso,
+    positions: &[Position],
+    mapped: Vec<ModelState>,
+    class: &str,
+) -> Result<RefinementTraceSettlement, ReplayRefusal> {
+    close_loop(&systems.concrete, positions, lasso)?;
+    let (
+        Some(protocol),
+        Some(RefinementFailure::Divergence {
+            protocol_class: Some(_),
+            ..
+        }),
+    ) = (
+        systems.abstract_protocol.as_ref(),
+        payload.refinement.as_ref(),
+    )
+    else {
+        return Err(fault("a-protocol-divergence-has-an-admitted-protocol"));
+    };
+    let start = lasso.entry;
+    let end = positions.len();
+    if start >= end {
+        return Err(fault("a-protocol-divergence-loop-has-a-step"));
+    }
+    let loop_taken = payload
+        .prefix
+        .get(start..)
+        .ok_or_else(|| fault("a-lasso-loop-is-in-the-prefix"))?;
+    let terminal = usize::from(lasso.terminal_stutter);
+    if loop_taken.len().saturating_add(terminal)
+        != end.saturating_sub(start + 1).saturating_add(terminal)
+    {
+        return Err(fault("a-protocol-divergence-loop-aligns-with-positions"));
+    }
+    // Replay has already recomputed every protocol candidate in `trail`.
+    // Reconstruct them once more from the concrete prefix for explicit class
+    // enabledness and require the loop to contain only internal stutters.
+    let mut trail = Vec::new();
+    let mut previous: Option<RefinementPosition> = None;
+    let mut taken_by = Vec::new();
+    for (index, position) in positions.iter().enumerate() {
+        let checked = if let Some(pre) = &previous {
+            let Some(step) = payload.prefix.get(index - 1) else {
+                return Err(fault("a-protocol-divergence-position-has-a-step"));
+            };
+            check_protocol_step(
+                _refinement,
+                &systems.concrete,
+                &systems.abstract_system,
+                protocol,
+                pre,
+                &ConcreteStep {
+                    position: u64::try_from(index).unwrap_or(u64::MAX),
+                    transition: Some(&step.transition),
+                    post: &position.state,
+                },
+            )
+        } else {
+            check_protocol_initial(
+                _refinement,
+                &systems.concrete,
+                &systems.abstract_system,
+                protocol,
+                payload.initial_state,
+                position.state.state(),
+            )
+        };
+        match checked.verdict {
+            StepVerdict::Passes { post, taken } => {
+                previous = Some(post.clone());
+                trail.push(post);
+                if index > 0 {
+                    taken_by.push(taken);
+                }
+            }
+            StepVerdict::Stopped(reached) => {
+                return Ok(RefinementTraceSettlement::Stopped(reached))
+            }
+            StepVerdict::Fails(_) | StepVerdict::Undefined(_) | StepVerdict::Undetermined(_) => {
+                return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+                    Category::Violation,
+                )))
+            }
+            StepVerdict::Fault(_) => return Err(fault("protocol-divergence-replay-step")),
+        }
+    }
+    if lasso.terminal_stutter {
+        let (Some(pre), Some(position)) = (trail.last(), positions.last()) else {
+            return Err(fault("a-terminal-stutter-has-a-position"));
+        };
+        let checked = check_protocol_step(
+            _refinement,
+            &systems.concrete,
+            &systems.abstract_system,
+            protocol,
+            pre,
+            &ConcreteStep {
+                position: u64::try_from(positions.len()).unwrap_or(u64::MAX),
+                transition: None,
+                post: &position.state,
+            },
+        );
+        match checked.verdict {
+            StepVerdict::Passes { post, taken } => {
+                trail.push(post);
+                taken_by.push(taken);
+            }
+            StepVerdict::Stopped(reached) => {
+                return Ok(RefinementTraceSettlement::Stopped(reached))
+            }
+            StepVerdict::Fault(_) => return Err(fault("protocol-terminal-stutter-replay")),
+            StepVerdict::Fails(_) | StepVerdict::Undefined(_) | StepVerdict::Undetermined(_) => {
+                return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+                    Category::Violation,
+                )))
+            }
+        }
+    }
+    let loop_end = start
+        .saturating_add(loop_taken.len())
+        .saturating_add(terminal);
+    let loop_positions = trail
+        .get(start..loop_end)
+        .ok_or_else(|| fault("a-protocol-divergence-loop-is-in-the-trail"))?;
+    if taken_by
+        .get(start..)
+        .is_none_or(|steps| steps.iter().any(|taken| *taken != Taken::Stutter))
+    {
+        return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+            Category::Violation,
+        )));
+    }
+    for position in loop_positions {
+        for candidate in &position.abstract_protocol_states {
+            let expansion = protocol
+                .successors(candidate)
+                .map_err(|_| fault("protocol-divergence-expansion"))?;
+            if !expansion.successors.iter().any(|(transition, _)| {
+                crate::refinement::protocol_transition_class(protocol, transition).as_deref()
+                    == Some(class)
+                    && !_refinement
+                        .abstract_internal()
+                        .iter()
+                        .any(|internal| internal.spelling() == class)
+            }) {
+                return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+                    Category::Success,
+                )));
+            }
+        }
+    }
+    Ok(RefinementTraceSettlement::Reproduced {
+        failure: payload
+            .refinement
+            .clone()
+            .ok_or_else(|| fault("a-protocol-divergence-has-a-failure"))?,
+        mapped,
+    })
+}
+
 /// Whether two refinement positions of one concrete state are one product
 /// state: equal history values and equal candidate sets.
 fn same_product_state(
@@ -498,9 +706,21 @@ fn same_product_state(
             })
             .collect::<Result<Vec<_>, _>>()
     };
+    let protocol_candidates = |position: &RefinementPosition| {
+        let Some(protocol) = &systems.abstract_protocol else {
+            return Ok(Vec::new());
+        };
+        position
+            .abstract_protocol_states
+            .iter()
+            .map(|state| protocol.state_key(state).map(|(key, _)| key))
+            .collect::<Result<Vec<_>, _>>()
+    };
     Ok(left.history.key(&systems.concrete).map_err(encodes)?
         == right.history.key(&systems.concrete).map_err(encodes)?
-        && candidates(left).map_err(encodes)? == candidates(right).map_err(encodes)?)
+        && candidates(left).map_err(encodes)? == candidates(right).map_err(encodes)?
+        && protocol_candidates(left).map_err(encodes)?
+            == protocol_candidates(right).map_err(encodes)?)
 }
 
 /// What enabledness at a refinement position is.

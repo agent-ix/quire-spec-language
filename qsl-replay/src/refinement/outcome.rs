@@ -49,6 +49,14 @@ pub enum SafetyOutcome {
         /// The run's counts.
         stats: RunStats,
     },
+    /// Every reachable product state was examined and every initial state
+    /// and step passed for a protocol refinement. The proof is deliberately
+    /// uncertified because the core simulation-certificate checker covers
+    /// model subjects only (FR-148, ADR-020 CT-4).
+    HoldsUncertified {
+        /// The run's counts.
+        stats: RunStats,
+    },
     /// The canonical counterexample, to be replayed before it counts (V-4):
     /// a failed initial state or step, or an undefined mapping.
     Violated {

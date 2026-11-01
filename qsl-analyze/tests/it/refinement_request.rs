@@ -285,6 +285,7 @@ fn settle(world: &World, initial: &DocumentRef) -> TerminalValue {
             concrete: subject(world),
             abstract_package: world.package(),
             abstract_initial: vec![initial.clone()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },

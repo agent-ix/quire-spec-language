@@ -770,7 +770,10 @@ impl Product<'_, '_> {
         let failure = if taking {
             RefinementFailure::AbstractUnfair { constraint }
         } else {
-            RefinementFailure::Divergence { constraint }
+            RefinementFailure::Divergence {
+                constraint: Some(constraint),
+                protocol_class: None,
+            }
         };
         let counterexample = |initial, prefix, lasso| TemporalCounterexample {
             initial_state: initial,

@@ -39,12 +39,13 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Vertex};
-use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    abstract_classes, check_initial, check_step, open_systems, AbstractClass, CertifiedEdge,
+    abstract_classes, check_initial, check_protocol_initial, check_protocol_step, check_step,
+    open_protocol_systems, open_systems, AbstractClass, AbstractProtocolSystem, CertifiedEdge,
     CertifiedPosition, ConcreteStep, CounterexampleKind, IncompleteCause, Lasso, LivenessHalf,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ReachedLimit,
     RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, RunStats,
@@ -73,10 +74,21 @@ pub struct RefinementCheckRequest<'a> {
     pub abstract_package: &'a CheckedPackage,
     /// The abstract subject's FR-106 initial snapshots.
     pub abstract_initial: Vec<DocumentRef>,
+    /// Bindings for an abstract protocol subject. The clause and static
+    /// roles remain owned by `abstract_package`; the request supplies only
+    /// the model instance bound to its `over` parameter.
+    pub abstract_protocol_binding: Option<AbstractProtocolBinding>,
     /// The search horizon `k`; `None` sets none.
     pub max_depth: Option<usize>,
     /// The run's caller-raisable budgets.
     pub limits: ModelCheckLimits,
+}
+
+/// Request-owned binding for the selected abstract protocol subject.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AbstractProtocolBinding {
+    /// The object bound to the protocol's checked `over` input.
+    pub over: ModelInstance,
 }
 
 /// A product state's key: the concrete state's key bytes, its history
@@ -153,16 +165,30 @@ fn check_with(
     classes_of: ClassesOf,
 ) -> Result<RefinementOutcome, ModelCheckRefusal> {
     let refinement = request.refinement;
-    let RefinementSystems {
-        concrete,
-        abstract_system,
-    } = open_systems(
-        refinement,
-        &request.concrete.simulation,
-        request.abstract_package,
-        request.abstract_initial.clone(),
-    )
-    .map_err(|refusal| match refusal {
+    let opened = match (
+        refinement.abstract_side(),
+        request.abstract_protocol_binding,
+    ) {
+        (qsl_semantics::check::AbstractSide::Model, _) => open_systems(
+            refinement,
+            &request.concrete.simulation,
+            request.abstract_package,
+            request.abstract_initial.clone(),
+        ),
+        (qsl_semantics::check::AbstractSide::Protocol { .. }, Some(binding)) => {
+            open_protocol_systems(
+                refinement,
+                &request.concrete.simulation,
+                request.abstract_package,
+                request.abstract_initial.clone(),
+                binding.over,
+            )
+        }
+        (qsl_semantics::check::AbstractSide::Protocol { .. }, None) => {
+            return Err(ModelCheckRefusal::ProtocolAbstractSide)
+        }
+    };
+    let systems = opened.map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ModelCheckRefusal::Admission(failure),
         SubjectRefusal::ProtocolSubject => ModelCheckRefusal::ProtocolRefinement,
         SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
@@ -170,6 +196,12 @@ fn check_with(
         }
         SubjectRefusal::ProtocolAbstractSide => ModelCheckRefusal::ProtocolAbstractSide,
     })?;
+    let protocol_system = systems.abstract_protocol.as_ref();
+    let RefinementSystems {
+        concrete,
+        abstract_system,
+        ..
+    } = systems;
     let simulation = &request.concrete.simulation;
     check_model_bounds(&concrete, BOUND_POSITIONS).map_err(not_simulated)?;
     check_model_bounds(&abstract_system, BOUND_POSITIONS).map_err(not_simulated)?;
@@ -177,6 +209,7 @@ fn check_with(
         refinement,
         concrete: &concrete,
         abstract_system: &abstract_system,
+        abstract_protocol: protocol_system,
         limits: request.limits,
         max_depth: request.max_depth,
         meter: simulation.meter,
@@ -201,6 +234,31 @@ fn check_with(
             Ok(()) if run.horizon_cut => SafetyOutcome::BoundReached {
                 depth: widen(run.max_depth.unwrap_or(0)),
                 stats: run.stats(),
+            },
+            Ok(()) if run.abstract_protocol.is_some() => match run.protocol_divergence() {
+                Ok(Some(counterexample)) => SafetyOutcome::Violated {
+                    counterexample: Box::new(counterexample),
+                    stats: run.stats(),
+                },
+                Ok(None) => SafetyOutcome::HoldsUncertified { stats: run.stats() },
+                Err(End::Stopped(cause, limit)) => SafetyOutcome::Stopped {
+                    cause,
+                    limit,
+                    stats: run.stats(),
+                },
+                Err(End::Fault(fault)) => SafetyOutcome::Fault {
+                    fault,
+                    stats: run.stats(),
+                },
+                Err(End::Undecided(cause)) => SafetyOutcome::Undecided {
+                    cause,
+                    stats: run.stats(),
+                },
+                Err(End::Refusal(refusal)) => return Err(refusal),
+                Err(End::Violated(failure)) => SafetyOutcome::Violated {
+                    counterexample: Box::new(run.counterexample(*failure)),
+                    stats: run.stats(),
+                },
             },
             Ok(()) => match run.certificate() {
                 Ok(certificate) => SafetyOutcome::Holds {
@@ -234,6 +292,10 @@ fn check_with(
     };
     let liveness = if refinement.abstract_operation_fairness().next().is_none() {
         None
+    } else if run.abstract_protocol.is_some() {
+        Some(LivenessHalf::Unsupported(
+            UnavailabilityCause::HiddenFieldLiveness,
+        ))
     } else if refinement
         .objects()
         .iter()
@@ -265,6 +327,7 @@ struct Run<'r, 'a> {
     refinement: &'r CheckedRefinement,
     concrete: &'r ModelSystem<'a>,
     abstract_system: &'r ModelSystem<'a>,
+    abstract_protocol: Option<&'r AbstractProtocolSystem<'a>>,
     limits: ModelCheckLimits,
     max_depth: Option<usize>,
     meter: quire_exact::ScalarLimits,
@@ -288,6 +351,188 @@ struct Run<'r, 'a> {
 }
 
 impl Run<'_, '_> {
+    /// FR-148's fairness-independent observable-divergence check over the
+    /// retained safety product.
+    fn protocol_divergence(&mut self) -> Result<Option<TemporalCounterexample>, End> {
+        let Some(protocol) = self.abstract_protocol else {
+            return Ok(None);
+        };
+        let internal: BTreeSet<&str> = self
+            .refinement
+            .abstract_internal()
+            .iter()
+            .map(|class| class.spelling())
+            .collect();
+        let mut common = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            self.poll()?;
+            let mut each = None::<BTreeSet<String>>;
+            for candidate in &node.position.abstract_protocol_states {
+                let expansion = protocol
+                    .successors(candidate)
+                    .map_err(|stop| self.expansion_stop(stop))?;
+                if expansion
+                    .findings
+                    .iter()
+                    .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+                {
+                    return Err(End::Undecided(SafetyUndecided::Undetermined(
+                        Undetermined::UndecidedSuccessor,
+                    )));
+                }
+                self.transitions = self.transitions.saturating_add(expansion.successors.len());
+                for _ in &expansion.successors {
+                    if self.transitions > self.limits.limits.max_transitions {
+                        return Err(Self::stopped(
+                            ModelCheckLimit::MaxTransitions,
+                            widen(self.limits.limits.max_transitions),
+                        ));
+                    }
+                }
+                let classes: BTreeSet<String> = expansion
+                    .successors
+                    .iter()
+                    .filter_map(|(transition, _)| {
+                        qsl_replay::protocol_transition_class(protocol, transition)
+                    })
+                    .filter(|class| !internal.contains(class.as_str()))
+                    .collect();
+                each = Some(match each {
+                    Some(previous) => previous.intersection(&classes).cloned().collect(),
+                    None => classes,
+                });
+            }
+            common.push(each.unwrap_or_default().into_iter().next());
+        }
+        for start in 0..self.nodes.len() {
+            let Some(class) = common[start].clone() else {
+                continue;
+            };
+            let mut queue = VecDeque::<(usize, Vec<(usize, usize)>)>::new();
+            let mut seen = BTreeSet::from([start]);
+            for (edge_index, edge) in self.nodes[start].edges.iter().enumerate() {
+                if edge.taken == Taken::Stutter
+                    && usize::try_from(edge.post)
+                        .is_ok_and(|target| common.get(target).is_some_and(Option::is_some))
+                {
+                    let target = usize::try_from(edge.post).map_err(|_| {
+                        End::Fault(InternalFault::new(
+                            "refinement-check",
+                            "protocol-cycle-target",
+                        ))
+                    })?;
+                    if target == start {
+                        return self.protocol_divergence_counterexample(start, class);
+                    }
+                    if seen.insert(target) {
+                        queue.push_back((target, vec![(start, edge_index)]));
+                    }
+                }
+            }
+            while let Some((at, path)) = queue.pop_front() {
+                for (edge_index, edge) in self.nodes[at].edges.iter().enumerate() {
+                    let Ok(target) = usize::try_from(edge.post) else {
+                        continue;
+                    };
+                    if edge.taken != Taken::Stutter
+                        || common.get(target).is_none_or(Option::is_none)
+                    {
+                        continue;
+                    }
+                    let mut next = path.clone();
+                    next.push((at, edge_index));
+                    if target == start {
+                        return self
+                            .protocol_divergence_counterexample_with_loop(start, class, next);
+                    }
+                    if seen.insert(target) {
+                        queue.push_back((target, next));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn protocol_divergence_counterexample(
+        &self,
+        start: usize,
+        class: String,
+    ) -> Result<Option<TemporalCounterexample>, End> {
+        let Some(edge) = self.nodes[start]
+            .edges
+            .iter()
+            .position(|edge| edge.taken == Taken::Stutter && edge.post == widen(start))
+        else {
+            return Ok(None);
+        };
+        self.protocol_divergence_counterexample_with_loop(start, class, vec![(start, edge)])
+    }
+
+    fn protocol_divergence_counterexample_with_loop(
+        &self,
+        start: usize,
+        class: String,
+        cycle: Vec<(usize, usize)>,
+    ) -> Result<Option<TemporalCounterexample>, End> {
+        let mut prefix = Vec::new();
+        let mut cursor = start;
+        while let Some((parent, step)) = &self.nodes[cursor].parent {
+            prefix.push(step.clone());
+            cursor = *parent;
+        }
+        prefix.reverse();
+        let initial_state = self.nodes[cursor].initial_index;
+        let entry = prefix.len();
+        let mut terminal_stutter = false;
+        for (from, edge_index) in cycle {
+            let edge = self.nodes[from].edges.get(edge_index).ok_or_else(|| {
+                End::Fault(InternalFault::new(
+                    "refinement-check",
+                    "protocol-cycle-edge",
+                ))
+            })?;
+            let Some(transition) = edge.transition.clone() else {
+                terminal_stutter = true;
+                continue;
+            };
+            let target = usize::try_from(edge.post).map_err(|_| {
+                End::Fault(InternalFault::new(
+                    "refinement-check",
+                    "protocol-cycle-target",
+                ))
+            })?;
+            let (post_state, _) =
+                Self::encoding(self.concrete.state_key(&self.nodes[target].state))?;
+            prefix.push(ModelStep {
+                transition,
+                post_state: qsl_eval::simulation::StateKey::from_canonical_bytes(post_state),
+                delay: None,
+            });
+        }
+        Ok(Some(TemporalCounterexample {
+            initial_state,
+            prefix,
+            over_binding: None,
+            fairness: self
+                .refinement
+                .concrete_operation_fairness()
+                .cloned()
+                .collect(),
+            kind: CounterexampleKind::Formula,
+            lasso: Some(Lasso {
+                entry,
+                terminal_stutter,
+            }),
+            refinement: Some(RefinementFailure::Divergence {
+                constraint: None,
+                protocol_class: Some(class),
+            }),
+            blocked: Vec::new(),
+            final_delay: None,
+        }))
+    }
+
     fn stats(&self) -> RunStats {
         RunStats {
             product_states: widen(self.nodes.len()),
@@ -357,13 +602,26 @@ impl Run<'_, '_> {
             ));
         }
         for (key, index, state) in initial {
-            let verdict = check_initial(
-                self.refinement,
-                self.concrete,
-                self.abstract_system,
-                index,
-                state.state(),
-            );
+            let verdict = match self.abstract_protocol {
+                Some(protocol) => {
+                    check_protocol_initial(
+                        self.refinement,
+                        self.concrete,
+                        self.abstract_system,
+                        protocol,
+                        index,
+                        state.state(),
+                    )
+                    .verdict
+                }
+                None => check_initial(
+                    self.refinement,
+                    self.concrete,
+                    self.abstract_system,
+                    index,
+                    state.state(),
+                ),
+            };
             let (position, _) = self.judge(verdict, None, None, index)?;
             let at = self.create(
                 key.clone(),
@@ -446,17 +704,31 @@ impl Run<'_, '_> {
             let StepResult {
                 verdict,
                 abstract_successors,
-            } = check_step(
-                self.refinement,
-                self.concrete,
-                self.abstract_system,
-                &self.nodes[at].position,
-                &ConcreteStep {
-                    position: widen(depth.saturating_add(1)),
-                    transition: transition.as_ref(),
-                    post: &state,
-                },
-            );
+            } = match self.abstract_protocol {
+                Some(protocol) => check_protocol_step(
+                    self.refinement,
+                    self.concrete,
+                    self.abstract_system,
+                    protocol,
+                    &self.nodes[at].position,
+                    &ConcreteStep {
+                        position: widen(depth.saturating_add(1)),
+                        transition: transition.as_ref(),
+                        post: &state,
+                    },
+                ),
+                None => check_step(
+                    self.refinement,
+                    self.concrete,
+                    self.abstract_system,
+                    &self.nodes[at].position,
+                    &ConcreteStep {
+                        position: widen(depth.saturating_add(1)),
+                        transition: transition.as_ref(),
+                        post: &state,
+                    },
+                ),
+            };
             self.transitions = self
                 .transitions
                 .saturating_add(usize::try_from(abstract_successors).unwrap_or(usize::MAX));
@@ -546,10 +818,20 @@ impl Run<'_, '_> {
     /// exists, else the new one.
     fn create(&mut self, key: Vec<u8>, node: Node) -> Result<usize, End> {
         let history = Self::encoding(node.position.history.key(self.concrete))?;
-        let mut candidates = Vec::with_capacity(node.position.abstract_states.len());
-        for candidate in &node.position.abstract_states {
-            candidates.push(Self::encoding(self.abstract_system.state_key_of(candidate))?.0);
-        }
+        let mut candidates = if let Some(protocol) = self.abstract_protocol {
+            let mut candidates = Vec::with_capacity(node.position.abstract_protocol_states.len());
+            for candidate in &node.position.abstract_protocol_states {
+                candidates.push(Self::encoding(protocol.state_key(candidate))?.0);
+            }
+            candidates
+        } else {
+            let mut candidates = Vec::with_capacity(node.position.abstract_states.len());
+            for candidate in &node.position.abstract_states {
+                candidates.push(Self::encoding(self.abstract_system.state_key_of(candidate))?.0);
+            }
+            candidates
+        };
+        candidates.sort();
         let product = (key, history, candidates);
         if let Some(&existing) = self.known.get(&product) {
             return Ok(existing);
@@ -904,7 +1186,10 @@ impl Run<'_, '_> {
         let failure = if taking {
             RefinementFailure::AbstractUnfair { constraint }
         } else {
-            RefinementFailure::Divergence { constraint }
+            RefinementFailure::Divergence {
+                constraint: Some(constraint),
+                protocol_class: None,
+            }
         };
         Ok(ModelCheckOutcome::Violated {
             counterexample: Box::new(TemporalCounterexample {
@@ -950,6 +1235,7 @@ mod tests {
             },
             abstract_package: world.package(),
             abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         }

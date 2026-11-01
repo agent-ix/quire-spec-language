@@ -611,6 +611,7 @@ pub struct ProtocolTransition {
     thread: Option<ThreadPath>,
     node: Option<String>,
     members: Members,
+    binder_record: Option<quire_exact::Value>,
     removed: Option<QueueEvent>,
     send_record: Option<SendRecord>,
     memory: Option<CarriedComponent>,
@@ -651,6 +652,7 @@ impl ProtocolTransition {
             thread: Some(thread),
             node: Some(node),
             members: Members::Control,
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -671,6 +673,7 @@ impl ProtocolTransition {
             thread: Some(thread),
             node: Some(node),
             members: Members::Fence { ordering },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -701,6 +704,7 @@ impl ProtocolTransition {
                 arguments,
                 choice: None,
             },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -787,12 +791,19 @@ impl ProtocolTransition {
 
     /// A step of `kind` by `thread` at `node` that binds `record`: an
     /// `event`, `send`, `receive` or `finish`.
-    pub(crate) fn record(kind: StepKind, thread: ThreadPath, node: String, record: Enc) -> Self {
+    pub(crate) fn record(
+        kind: StepKind,
+        thread: ThreadPath,
+        node: String,
+        record: Enc,
+        value: quire_exact::Value,
+    ) -> Self {
         Self {
             kind,
             thread: Some(thread),
             node: Some(node),
             members: Members::Record { record },
+            binder_record: Some(value),
             removed: None,
             send_record: None,
             memory: None,
@@ -818,6 +829,7 @@ impl ProtocolTransition {
                 instance,
                 entry,
             },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -854,6 +866,7 @@ impl ProtocolTransition {
                 template: registration.template.clone(),
                 registration,
             },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -877,6 +890,7 @@ impl ProtocolTransition {
                 template: registration.template.clone(),
                 registration,
             },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -895,6 +909,7 @@ impl ProtocolTransition {
             thread: None,
             node: None,
             members: Members::Memory { identity },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -915,6 +930,7 @@ impl ProtocolTransition {
             thread: None,
             node: None,
             members: Members::Record { record },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -944,6 +960,7 @@ impl ProtocolTransition {
                 object,
                 instance,
             },
+            binder_record: None,
             removed: None,
             send_record: None,
             memory: None,
@@ -1160,6 +1177,14 @@ impl ProtocolTransition {
             | Members::Role { .. }
             | Members::CEnd { .. } => None,
         }
+    }
+
+    /// FR-148 (FR-147 node rows): the typed binder record carried by an
+    /// `event`, `send`, `receive` or `finish` transition. Refinement rows
+    /// compare their expressions with these admitted binder values; they do
+    /// not infer a record from the transition's display identity.
+    pub fn binder_record(&self) -> Option<&quire_exact::Value> {
+        self.binder_record.as_ref()
     }
 
     /// For a memory step, its identity (ADR-027 SE-1 d).

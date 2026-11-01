@@ -113,7 +113,8 @@ fn a_positive_delay_loop_that_never_takes_an_enabled_abstract_class_refutes() {
     assert_eq!(
         counterexample.refinement,
         Some(RefinementFailure::Divergence {
-            constraint: constraint.clone()
+            constraint: Some(constraint.clone()),
+            protocol_class: None,
         })
     );
     assert!(matches!(

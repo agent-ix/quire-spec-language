@@ -257,6 +257,8 @@ pub struct Variant {
     /// FR-315-AC-6's `CasRefinesCounterAdd`: `Spec::Counter` gains
     /// `add(n: Bit)` and `Impl::Counter` gains `bump()` with an empty frame.
     pub add: bool,
+    /// Whether the concrete model exposes its stuttering `peek` operation.
+    pub peek: bool,
 }
 
 impl Variant {
@@ -266,6 +268,7 @@ impl Variant {
         sub_counter: false,
         concrete_value: 0,
         add: false,
+        peek: true,
     };
     /// The lost-update model.
     pub const LOST_UPDATE: Self = Self {
@@ -309,8 +312,10 @@ fn cas_document(variant: Variant) -> Vec<u8> {
         step("commitA", &["value", "busyA"]),
         step("beginB", &["tmpB", "busyB"]),
         step("commitB", &["value", "busyB"]),
-        step("peek", &[]),
     ];
+    if variant.peek {
+        operations.push(step("peek", &[]));
+    }
     if !variant.lost_update {
         operations.push(step("retryA", &["busyA"]));
         operations.push(step("retryB", &["busyB"]));
@@ -467,6 +472,15 @@ pub fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput 
 
 /// The checked graph of the unit with `refinement`, or its refusals.
 pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String> {
+    check_with_internals(variant, refinement, None)
+}
+
+/// The checked graph with the compilation's protocol refinement internals.
+pub fn check_with_internals(
+    variant: Variant,
+    refinement: &str,
+    internals: Option<serde_json::Value>,
+) -> Result<CheckedGraph, String> {
     let documents = packages(variant);
     let text = unit_text(&documents, refinement, variant);
     let parsed = qsl_cst::parse(
@@ -496,8 +510,11 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
         Vec::new(),
     )
     .expect("the unit assembles");
+    let declarations = match internals {
+        Some(internals) => declarations.with_refinement_internals(internals),
+        None => declarations.with_unwritten_refinements(),
+    };
     declarations
-        .with_unwritten_refinements()
         .check(CheckingLimits::default())
         .map_err(|refusals| format!("{refusals:?}"))
 }
@@ -561,14 +578,34 @@ impl World {
         Self::with_keys(variant, refinement, &["c"])
     }
 
+    /// The world of the compare-and-set unit with an authored refinement
+    /// internal-class binding.
+    pub fn with_internals(
+        variant: Variant,
+        refinement: &str,
+        internals: serde_json::Value,
+    ) -> Self {
+        Self::with_keys_and_internals(variant, refinement, &["c"], Some(internals))
+    }
+
     /// The world of the unit of `variant` with `refinement`, whose
     /// populations hold one counter per key of `keys` (TC-900's
     /// `CasRefinesCounter2` holds `c0` and `c1`).
     pub fn with_keys(variant: Variant, refinement: &str, keys: &[&str]) -> Self {
+        Self::with_keys_and_internals(variant, refinement, keys, None)
+    }
+
+    fn with_keys_and_internals(
+        variant: Variant,
+        refinement: &str,
+        keys: &[&str],
+        internals: Option<serde_json::Value>,
+    ) -> Self {
         let keys: Vec<String> = keys.iter().map(|key| (*key).to_owned()).collect();
-        let graph = check(variant, refinement).unwrap_or_else(|refusals| {
-            panic!("{refinement}: the unit checks: {refusals}");
-        });
+        let graph =
+            check_with_internals(variant, refinement, internals).unwrap_or_else(|refusals| {
+                panic!("{refinement}: the unit checks: {refusals}");
+            });
         let mut snapshots = BTreeMap::new();
         let spec_initial = snapshot(
             SPEC,

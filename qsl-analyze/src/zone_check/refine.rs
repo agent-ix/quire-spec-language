@@ -262,6 +262,7 @@ pub fn check_timed_refinement<S>(
     let RefinementSystems {
         concrete,
         abstract_system,
+        ..
     } = open_systems(
         refinement,
         &request.concrete,

@@ -277,12 +277,13 @@ pub use refinement_query::{
 };
 
 pub use refinement::{
-    abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
-    step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
-    LivenessHalf, MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey,
-    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome,
-    SafetyUndecided, StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken,
-    Undetermined,
+    abstract_classes, check_initial, check_protocol_initial, check_protocol_step, check_step,
+    initial_history, map_state, open_protocol_systems, open_systems, protocol_transition_class,
+    step_history, AbstractClass, AbstractProtocolSystem, ConcreteStep, EvalFailure, HiddenSlot,
+    HistoryValues, LivenessHalf, MappedState, MappingFailure, MappingRowRef, MappingUndetermined,
+    ObjectKey, ProtocolCandidate, RefinementFailure, RefinementOutcome, RefinementPosition,
+    RefinementSystems, SafetyOutcome, SafetyUndecided, StepArgument, StepRejection, StepResult,
+    StepVerdict, SubjectRefusal, Taken, Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

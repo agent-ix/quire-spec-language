@@ -781,7 +781,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: Some(value),
+                    value: Some(value.clone()),
                     enc: enc.clone(),
                 },
             );
@@ -790,7 +790,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((
-                    ProtocolTransition::record(StepKind::Event, path.clone(), text.clone(), enc),
+                    ProtocolTransition::record(
+                        StepKind::Event,
+                        path.clone(),
+                        text.clone(),
+                        enc,
+                        value,
+                    ),
                     next,
                 ));
             }
@@ -1694,6 +1700,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     path.clone(),
                     finish.text.clone(),
                     value_enc(&record, self.model.typing()),
+                    record,
                 ),
                 next,
             ));
