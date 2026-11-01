@@ -1159,6 +1159,7 @@ impl<'a> Application<'a> {
                 },
                 value_type: signature.result.clone(),
                 location: location.clone(),
+                equality_producer: None,
             }),
             Self::Imported {
                 callee,
@@ -1172,6 +1173,7 @@ impl<'a> Application<'a> {
                 },
                 value_type: signature.result.clone(),
                 location: location.clone(),
+                equality_producer: None,
             }),
             Self::Tuple { declaration, .. } => Ok(Node {
                 kind: NodeKind::Tuple {
@@ -1180,6 +1182,7 @@ impl<'a> Application<'a> {
                 },
                 value_type: ValueType::Composite(declaration),
                 location: location.clone(),
+                equality_producer: None,
             }),
             Self::IeeeSquareRoot { .. } => {
                 let [operand] = arguments.as_slice() else {
@@ -1198,6 +1201,7 @@ impl<'a> Application<'a> {
                     kind: NodeKind::IeeeSquareRoot(float.rounding(), *operand),
                     value_type: ValueType::Float(*float),
                     location: location.clone(),
+                    equality_producer: None,
                 })
             }
         }

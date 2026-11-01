@@ -395,18 +395,30 @@ enum PeerForm<'e, 'r> {
 /// compares (`stored`, which compares an already converted operand as typed).
 pub(super) struct TypedOperand {
     pub(super) node: Node,
+    /// The equality operand authored before it is rewritten for the checked
+    /// comparison. In particular, this preserves explicit conversion intent
+    /// when the checked tree has a separate conversion node.
+    pub(super) authored: EqualityOperand,
     pub(super) checked: EqualityOperand,
     pub(super) stored: EqualityOperand,
+    /// The operand's source type before an explicit equality conversion.
+    pub(super) source_type: ValueType,
+    /// The explicit conversion target, including an identity conversion.
+    pub(super) conversion_target: Option<ValueType>,
 }
 
 impl TypedOperand {
     /// An operand compared as it is typed.
     fn typed(node: Node) -> Self {
-        let operand = EqualityOperand::typed(node.value_type.clone());
+        let source_type = node.value_type.clone();
+        let operand = EqualityOperand::typed(source_type.clone());
         Self {
             node,
+            authored: operand.clone(),
             checked: operand.clone(),
             stored: operand,
+            source_type,
+            conversion_target: None,
         }
     }
 }
@@ -1885,8 +1897,20 @@ impl<'a> Typer<'a> {
                     }
                 }
                 if matches!(typed.value_type, ValueType::Float(_)) {
+                    let source = typed.value_type.clone();
                     let converted = self.convert(&target, typed, &location)?;
-                    return Ok((TypedOperand::typed(converted), target));
+                    let authored = EqualityOperand::converted(source.clone(), target.clone());
+                    return Ok((
+                        TypedOperand {
+                            node: converted,
+                            authored,
+                            checked: EqualityOperand::typed(target.clone()),
+                            stored: EqualityOperand::typed(target.clone()),
+                            source_type: source,
+                            conversion_target: Some(target.clone()),
+                        },
+                        target,
+                    ));
                 }
                 let source = typed.value_type.clone();
                 let operand = EqualityOperand::converted(source.clone(), target.clone());
@@ -1896,8 +1920,11 @@ impl<'a> Typer<'a> {
                 if source == target {
                     let part = TypedOperand {
                         node: typed,
+                        authored: operand.clone(),
                         checked: operand.clone(),
                         stored: operand,
+                        source_type: source,
+                        conversion_target: Some(target.clone()),
                     };
                     return Ok((part, target));
                 }
@@ -1910,8 +1937,11 @@ impl<'a> Typer<'a> {
                 Ok((
                     TypedOperand {
                         node,
+                        authored: operand.clone(),
                         checked: operand,
                         stored,
+                        source_type: source,
+                        conversion_target: Some(target.clone()),
                     },
                     target,
                 ))

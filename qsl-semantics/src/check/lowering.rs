@@ -49,7 +49,7 @@ use super::check::{EnumBinding, Scope};
 use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
-use super::ir::{CheckedNode, NodeId, Slot};
+use super::ir::{CheckedNode, EqualityProducerData, NodeId, Slot};
 use super::node_key::{
     AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm,
     TupleMember, TupleTerm,
@@ -598,6 +598,8 @@ pub(crate) struct Lowered {
     /// The S4 identities of each protocol's clause and emitted members,
     /// retained for FR-390's checked-body selector.
     pub(crate) protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    /// QSL equality facts retained by the checked equality application's key.
+    pub(crate) equality_producer_data: BTreeMap<NodeKey, EqualityProducerData>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -706,6 +708,8 @@ pub(crate) struct Lowering<'a> {
     /// The member keys of each keyed protocol clause, by clause name: the
     /// nodes a refinement class catalog names (FR-375).
     protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    /// QSL equality facts retained by the checked equality application's key.
+    equality_producer_data: BTreeMap<NodeKey, EqualityProducerData>,
     /// Attempts and compensation nodes retained for clauses delayed until
     /// their required temporal clause keys are available.
     protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
@@ -1689,6 +1693,7 @@ impl<'a> Lowering<'a> {
             bound_sites: BTreeSet::new(),
             protocol_keys: Vec::new(),
             protocol_members: BTreeMap::new(),
+            equality_producer_data: BTreeMap::new(),
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
             temporal_keys: BTreeMap::new(),
@@ -1772,6 +1777,7 @@ impl<'a> Lowering<'a> {
             .into_iter()
             .collect(),
             protocol_members: self.protocol_members,
+            equality_producer_data: self.equality_producer_data,
         }
     }
 
@@ -4594,12 +4600,26 @@ impl<'a> Lowering<'a> {
             node, terms, keyed, ..
         } = *frame;
         match keyed {
-            Keyed::Application(operator, operation) => self.application(
-                node,
-                operator,
-                operation,
-                terms.into_iter().map(MemberTerm::Leaf).collect(),
-            ),
+            Keyed::Application(operator, operation) => {
+                let equality_producer = node.equality_producer().cloned();
+                let location = node.location();
+                let term = self.application(
+                    node,
+                    operator,
+                    operation,
+                    terms.into_iter().map(MemberTerm::Leaf).collect(),
+                )?;
+                if let Some(data) = equality_producer {
+                    let LeafTerm::Reference {
+                        target: NodeRef::Admitted(key),
+                    } = &term
+                    else {
+                        return Err(fault(location, KeyFault::UnresolvedDraft));
+                    };
+                    self.equality_producer_data.insert(key.clone(), data);
+                }
+                Ok(term)
+            }
             Keyed::Value(form, semantic_type) => self.value_node(
                 node,
                 form,
