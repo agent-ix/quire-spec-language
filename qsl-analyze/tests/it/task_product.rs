@@ -173,6 +173,67 @@ fn edf_uses_absolute_deadline_then_task_name_and_keeps_optional_priority() {
     assert_eq!(dispatched.priority, Some(9));
 }
 
+#[trace("TC-372-RT-30", "FR-419-AC-11")]
+#[test]
+fn edf_preempts_for_earlier_deadline_and_uses_activation_identity_for_ties() {
+    let mut a = task("a", 4, 4, 1, Wcet::Single(int(1)));
+    a.priority = None;
+    let mut b = task("b", 4, 2, 1, Wcet::Single(int(1)));
+    b.priority = None;
+    let product = fixed_work_task_product(&set(vec![a, b]), SchedulingPolicy::Edf)
+        .expect("EDF fixed-work gate");
+    let operation = |name: &str| {
+        quire_semantic_value::model_transition::ModelTransition::new(
+            format!("\"{name}\""),
+            None,
+            Vec::new(),
+            quire_canonical::Limits::new(1024),
+        )
+        .expect("source transition identity")
+    };
+    let mut scheduler = TaskSchedulerState::default();
+    scheduler
+        .activate(&product, "a", operation("z_release"), int(0), int(0))
+        .expect("activate a");
+    scheduler.dispatch(&product).expect("a starts first");
+    scheduler
+        .activate(&product, "b", operation("b_release"), int(0), int(0))
+        .expect("activate earlier-deadline b");
+    assert_eq!(
+        scheduler.preempt(&product).expect("EDF preempts a").task,
+        "a"
+    );
+    assert_eq!(
+        scheduler
+            .dispatch(&product)
+            .expect("b has earlier deadline")
+            .task,
+        "b"
+    );
+
+    scheduler.complete(None).expect("b completes");
+    assert_eq!(
+        scheduler.dispatch(&product).expect("a resumes").action,
+        qsl_replay::TaskAction::Resume
+    );
+    scheduler.complete(None).expect("a completes");
+
+    let first = scheduler
+        .activate(&product, "a", operation("z_release"), int(0), int(4))
+        .expect("activate by later source identity");
+    let second = scheduler
+        .activate(&product, "a", operation("a_release"), int(0), int(4))
+        .expect("activate by earlier source identity");
+    assert_ne!(first.release, second.release);
+    assert_eq!(
+        scheduler
+            .dispatch(&product)
+            .expect("source identity breaks the tie")
+            .release,
+        second.release
+    );
+}
+
 #[trace("TC-371", "FR-418-AC-11")]
 #[test]
 fn task_certificate_gate_is_typed_and_checks_cap_and_singleton_work() {
