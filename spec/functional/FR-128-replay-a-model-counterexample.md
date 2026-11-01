@@ -31,6 +31,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-158
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-249
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-237
+    type: references
+  - target: ix://agent-ix/quire-specification/FR-364
+    type: depends_on
 ---
 # FR-128: Replay a model counterexample through ModelSystem
 
@@ -50,6 +56,14 @@ over a package that S4 does not emit (FR-185) takes the checked subject
 instead of a package: FR-193's `replay_sampled_witness` applies these same
 re-execution, fairness and evaluation steps to that subject, recompiles
 nothing.
+
+For a timed task automaton (FR-249), the same `ReplaySource::ModelTrace`
+entry SHALL rebuild the QSL task-derived timed subject, then replay source
+operations and QSpec FR-364's derived scheduler steps through the timed
+replay contract (FR-237). It SHALL keep FR-072's existing ModelTrace result
+arm and value; it defines no new replay-result sum arm or task trace wire.
+QSL owns product construction and replay execution, while QSpec FR-364 owns
+the derived-step wire identities and continuation witnesses.
 
 ## Use case
 
@@ -82,6 +96,8 @@ member of its own.
   `fairness`, `interval` and `trace_position` (ADR-018 CX-2). The envelope names the clause, or the
   deadlock-freedom item, by its clause node and occurrence key (FR-070).
 - `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5).
+- For a task-derived `model` trace, the recompiled task-set inputs and release
+  declarations; the derived-step identity shape remains QSpec FR-364's.
 
 ## Outputs
 
@@ -114,6 +130,11 @@ member of its own.
   byte provision and the request's universes, and refuse with FR-106's
   record when admission fails. An `initial_state` outside the subject's
   initial states SHALL refuse `invalid_runtime_input`/`invalid-value`.
+- When the request selects a task-derived timed subject from a recompiled
+  package with FR-249 task releases, the executor SHALL rebuild that product
+  and use FR-237 for timed source and derived-step replay while preserving the
+  existing `model` selector and FR-072 ModelTrace result arm, and SHALL NOT
+  create a parallel result type or task-trace wire.
 - The executor SHALL re-execute the prefix, then the loop,
   from the indexed initial state with FR-101 `replay`:
   - if a step's transition is not enabled at its pre-state, then the
@@ -240,6 +261,7 @@ member of its own.
 | FR-128-AC-6 | FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 mod (3 - c.value) = 0`, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 3: the letter at the terminal state 3 holds the undefined `P`. The same prefix with `kind: Deadlock` also settles `reproduced-with-evaluated-witness` with value `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`, and the item settles `refuted`. Over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2, FR-126-AC-6's empty-prefix counterexample of the authored clause `always holds(true)` at value 2, with `kind: UndefinedEvaluation{where: position 0, locus: CanInc with the inc transition, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 0: the letter is defined, and the undefined `pre CanInc` of the expansion is the position's first undefined evaluation. The same payload with `where.locus` naming the clause's atom settles `inconclusive`, `ReplayParity`. | Test (TC-539) |
 | FR-128-AC-7 | Over FR-128-AC-6's deadlock-freedom subject under `terminal when 6 mod (3 - c.value) = 0` with the added `pre CanInc { 6 mod (3 - self.value) >= 0 }` on `inc`, which has no value at value 3, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, locus: CanInc with the inc transition, cause: division-by-zero}` replays to `reproduced-with-evaluated-witness` with `trace_position` 3. The same prefix with `where.locus` naming the `terminal when` predicate settles `inconclusive`, `ReplayParity`: the contract conjunction is read first, and its undefined value leaves the expansion undetermined, so value 3 is not shown terminal and `P` is not read. | Test (TC-539) |
 | FR-128-AC-8 | Over ADR-021 §7.3's subject (FR-158) with `constraint Odd using v on M::Counter at current { 6 mod (2 - self.v) >= 0 }` selected and the claim `always holds(x.v <= 3)`, the run's `Violated` counterexample with cause `UndefinedEvaluation`, ending at the first reached state with a counter at 2, replays through a request that selects no reduction to `reproduced-with-evaluated-witness` with the `UndefinedEvaluation{where, cause: division-by-zero}` value, `where.locus` naming `Odd`. The same payload with its last step removed, and with `cause` changed to another reason, each settle `inconclusive`, `ReplayParity`. | Test (TC-539) |
+| FR-128-AC-9 | A task-automaton counterexample with QSpec FR-364 derived scheduler steps uses the same `ReplaySource::ModelTrace` request and settles on FR-072's existing ModelTrace result arm. The replay rebuilds the FR-249 task product; an accepted QSpec FR-364 witness settles reproduced, and a rejected witness does not reproduce. No new replay-result arm or QSL task-trace wire is constructed. | Test (TC-704) |
 
 ## Dependencies
 

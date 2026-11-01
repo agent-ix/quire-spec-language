@@ -23,6 +23,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-245
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-239
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-249
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
 ---
 # FR-235: Settle a timed verdict as an FR-331 terminal record
 
@@ -66,7 +72,7 @@ refuted, with its trap evidence.
 //   SufficientTestFailed, SolverInconclusive { trace: Option<HybridTrace> }, // FR-250
 //   InsufficientHorizon { horizon: ExactRational, jumps: u64,
 //                         exhaustive: BTreeSet<BoundDimension> },          // FR-250
-// UnsupportedCause gains: PunctualInterval, StopwatchRequired
+// UnsupportedCause gains: PunctualInterval
 // CounterexampleKind gains: TimeLock
 ```
 
@@ -84,14 +90,19 @@ refuted, with its trap evidence.
 | V-10 | `Violated` with `kind: TimeLock` whose replay reproduces | `refuted` | `closed-scope` | `Refuted` | violation |
 | V-6 | `Holds(certificate)` and the checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected)` | inconclusive |
 | V-6 | `Undecided(NoAdmittedBehaviour)` or `Undecided(LassoNotConcretized)`; a replay that settles `inconclusive` or refuses | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
-| V-7 | `Stopped(cause, limit)`; a certificate check a budget stopped | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, or `Incomplete(Cancelled{source})` for a cancelled run | incomplete |
-| V-8 | `PunctualInterval` or `StopwatchRequired` disposition; no candidate | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
+| V-7 | `Stopped(cause, limit)`; for task automata this is a bounded search stopped before its proof or counterexample is checked | `failed`, execution `resource-incomplete` for generic stops; `incomplete`, execution `resource-incomplete` for task-search stops | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, or `Incomplete(Cancelled{source})`; a bounded task search additionally carries QSpec FR-331 `task_search` evidence | incomplete |
+| V-8 | `PunctualInterval` disposition; no candidate | `unsupported` | `unavailable` | `Unsupported(PunctualInterval)` | unsupported |
 
 - A `Holds(certificate)` outcome SHALL settle `proved` only after
   `check_zone_certificate` accepts its certificate. The certificate SHALL
   travel with the outcome from S6c over ADR-018's E11, as a counterexample
   does.
 - A `Violated` outcome SHALL settle `refuted` only through its replay.
+- For a task-automaton `Stopped` outcome, the terminal-record writer SHALL
+  use QSpec FR-331's `incomplete` mapping and include its `task_search`
+  evidence. Generic stops continue to use FR-127's generic mapping. The
+  QSpec reader owns frontier validation; the evidence justifies the
+  incomplete status and SHALL NOT settle `proved`.
 - `TerminalValue::category` SHALL map `ZoneCertified`, `ClosedForm`,
   `BoundedSolver` and `InductiveSolver` to success, and `InsufficientHorizon`
   to inconclusive.
@@ -111,6 +122,7 @@ refuted, with its trap evidence.
 | FR-235-AC-3 | `NoLateReply` with `T = 3 ms` settles `refuted` only after FR-237's replay reproduces; with the `timeout` step's delay changed to `5/2` the replay refuses and the item settles `inconclusive`. The strict-guard variant's time-lock-freedom item settles `refuted`, basis `closed-scope`, with a counterexample whose `kind` is `TimeLock`. | Test (TC-690) |
 | FR-235-AC-4 | FR-232-AC-3's `Stall` claim settles `inconclusive`, `NoAdmittedBehaviour`; FR-234-AC-3's punctual liveness claim settles `unsupported`, `PunctualInterval`; a zone search stopped by `max_symbolic_states` settles `incomplete`, `limit-reached`, naming the limit. | Test (TC-690) |
 | FR-235-AC-5 | FR-239-AC-5's outcome settles `refuted`, `decisive-counterexample`, category violation, cause `UndefinedEvaluation{where, cause: division-by-zero}` with `where` at position 2, time stamp 2, after FR-237's replay reproduces it; the time-locked variant's `Undecided(NoAdmittedBehaviour)` settles `inconclusive`, `NoAdmittedBehaviour`. | Test (TC-710) |
+| FR-235-AC-6 | An interval-demand task product stopped at `max_symbolic_states = 2` settles `incomplete`, `LimitReached{limit: max_symbolic_states, value: 2}` and carries a `task_search` record whose product identity and effective limit match the request; removing a reachable frontier node or changing an edge makes the record fail replay and the item settle `inconclusive`, `ReplayParity`. The incomplete record never settles `proved`. | Test (TC-704) |
 
 ## Dependencies
 
