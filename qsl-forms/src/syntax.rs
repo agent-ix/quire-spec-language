@@ -17,7 +17,7 @@ use std::ops::ControlFlow;
 
 use qsl_foundation::{Span, Spanned};
 use quire_exact::{CollectionKind, Integer};
-use quire_semantic_value::absence::AbsenceMode;
+pub(super) use quire_semantic_value::absence::AbsenceMode;
 
 use super::protocol_control::{
     AwaitForm, ChannelForm, ParallelForm, ProtocolMemberForm, RepeatForm,
