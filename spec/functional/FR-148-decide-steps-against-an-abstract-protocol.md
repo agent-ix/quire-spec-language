@@ -62,8 +62,27 @@ often than the protocol allows, is refuted with a prefix that replays.
 
 - FR-141's `StepVerdict`, with `abstract_states` a set of abstract protocol
   states (model state with protocol state) sorted by ADR-027 PS-8 key.
-- The failures FR-141 names, and for QSpec FR-177's further checks the
-  `RefinementFailure` kinds QSpec gives them (ADR-020 QS-6, QS-8).
+- The failures FR-141 names and the QSpec FR-379 `RefinementFailure` kinds
+  for protocol refusal and terminal-success failures (ADR-020 QS-6, QS-8).
+- A typed product-level assumption-relation result. A satisfied relation
+  contributes no failure. A relation that cannot be established returns
+  `ProtocolAssumptionNotEstablished`, never a QSpec `RefinementFailure`.
+  When it carries a counterexample witness, the witness is a paired concrete
+  and abstract protocol prefix/lasso with the exact checked assumption
+  identities and replay data defined below.
+
+`AssumptionIdentity` is typed data, not a display label. It carries `side`
+(`implementation` or `specification`), `origin` (`authored`, `scheduler` or
+`memory`), fairness `kind` (`weak` or `strong`), `granularity` (`whole` or
+`each`), the exact source-checked target identity, and the selected
+operation/receiver/argument identity when the selected member form applies.
+`ProtocolAssumptionWitness` carries a `reason`, the exact implementation
+identity and specification identity or identities, and either (a) for
+`strengthened`, a concrete prefix and loop plus the corresponding abstract
+protocol prefix and loop, or (b) for `relation-undetermined`, those paired
+paths when a path has been evaluated. The abstract path SHALL be a member of
+the product candidate relation at every paired position; both loops SHALL
+close at their respective entry states.
 
 ## Behavior
 
@@ -111,10 +130,17 @@ often than the protocol allows, is refuted with a prefix that replays.
   with hidden abstract fields; FR-147's `unsupported` liveness half is the
   `F_A` half only.
 - **Refusal sets and terminal success.** The product SHALL apply QSpec
-  FR-177's refusal-set and terminal-success checks to the same reachable
-  product states and edges, and report a violation with the typed
-  `refinement_failure` QSpec FR-379 assigns to that check (ADR-020 QS-8), as
-  a prefix over concrete steps.
+  FR-177's refusal-set and terminal-success checks to each reachable product
+  state whose incoming step rules passed. At each state it SHALL first check
+  `RefusalNotPermitted`, then `TerminalSuccessMismatch`, before checking
+  liveness failures. A refusal-set violation SHALL report QSpec FR-379's
+  `RefusalNotPermitted{position, label}`, where `label` is the full typed
+  `ObservationLabel`; a terminal-success violation SHALL report
+  `TerminalSuccessMismatch{position, direction}`. The position, stable-state
+  predicates, canonical label selection, failure precedence and replay
+  behavior SHALL be exactly those in QSpec FR-379. Both are finite-prefix
+  safety failures over concrete steps. A model abstract subject SHALL NOT
+  report either protocol-only kind.
 - **Assumption weakening.** For each reachable product behaviour, the
   product SHALL treat the checked concrete `assume` constraints as the
   implementation environment assumption `I`, and the checked abstract
@@ -127,18 +153,43 @@ often than the protocol allows, is refuted with a prefix that replays.
   path satisfying all of `S` SHALL satisfy every constraint in `I` under
   the concrete model's own enabledness and taken-step semantics. Thus the
   implementation assumption is no stronger than the specification's.
-  The check SHALL fail when a reachable lasso satisfies every specification
-  constraint and violates at least one concrete `assume` constraint; an
-  empty `I` passes, and an empty `S` is the unconstrained assumption. It
+  An empty `I` passes, and an empty `S` is the unconstrained assumption. It
   SHALL evaluate weak and strong fairness and `each` and `whole` granularity
   by their source-side class semantics (ADR-018 FA-1 to FA-4; ADR-027 PA-1 to
-  PA-3, SE-1), without treating unlike operation, scheduler, or memory
-  target identities as equal. It SHALL report a violation with the typed
-  `refinement_failure` QSpec FR-379 assigns to assumption strengthening and
-  SHALL include a concrete prefix and lasso witness. If product exploration
-  stops at a configured limit before implication is decided, the item SHALL
-  settle incomplete and SHALL NOT settle proved. Replay (FR-145) SHALL
-  recompute both sides' assumption predicates over the same paired lasso.
+  PA-3, SE-1). It SHALL compare each constraint using that source-side
+  enabledness and taken-step semantics; it SHALL NOT equate unlike operation,
+  scheduler or memory target identities by name or spelling.
+
+  `ProtocolAssumptionNotEstablished` is a QSL product outcome, not a
+  `RefinementFailure` and not a QSpec FR-379 counterexample kind. It SHALL
+  carry a typed reason (`strengthened` or `relation-undetermined`) and the
+  involved `AssumptionIdentity` values. Each identity SHALL include its side
+  (`implementation` or `specification`), origin (`authored`, `scheduler` or
+  `memory`), fairness kind (`weak` or `strong`), granularity (`whole` or
+  `each`), exact checked target identity, and, for `each`, the selected
+  operation/receiver/argument identity when that member form applies. The
+  identity SHALL preserve the source's typed checked identity; display names
+  are not identity.
+
+  When a reachable paired lasso satisfies every constraint in `S` and
+  violates a named constraint in `I`, the result SHALL use reason
+  `strengthened` and carry that exact implementation identity plus the
+  paired concrete and abstract prefix/lasso. This witness is an explicit
+  exception to the QSpec FR-379 liveness-counterexample rule requiring a
+  lasso fair under concrete `F_C`: it necessarily violates the named member
+  of `I`. Because QSpec FR-379 expressly does not define an assumption
+  failure kind, this witness SHALL settle the QSL item `inconclusive`,
+  `unsettled`, with the typed `ProtocolAssumptionNotEstablished` cause; it
+  SHALL NOT settle `refuted` or `proved`. If incomparable source-class
+  identities prevent the implication from being established and no violating
+  paired lasso is available, the result SHALL use reason
+  `relation-undetermined` and carry both exact typed identities. A configured
+  product limit that prevents deciding the relation SHALL instead settle
+  `incomplete` with its limit cause. Neither outcome SHALL settle proved.
+  Replay (FR-145) SHALL recompile both admitted subjects, reconstruct the
+  paired prefix/lasso and recompute both sides' predicates and identities;
+  it SHALL reproduce the typed outcome only when the same reason, identities
+  and (when present) both paths agree.
 - A `proved` protocol refinement SHALL be labelled `Uncertified` (ADR-018
   PC-1, ADR-020 CT-4): FR-149's simulation-certificate checker covers the
   model-subject step relation and does not certify these protocol-subject
@@ -158,10 +209,11 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | FR-148-AC-4 | `CasTwice` against the protocol `Once` (`a1` then `finish`) settles `refuted` with `NoAbstractMatch{position: 4}`, whose step is the second commit, and the counterexample replays. | Test (TC-553) |
 | FR-148-AC-5 | `CasTwice` with `peek` kept in the concrete model and mapped `-> stutter` settles `refuted`, basis `decisive-counterexample`, by QSpec FR-177's divergence-freedom check with divergence observable, with a lasso whose loop is one `peek` step at the initial state, where the abstract `a1` is enabled. It refutes with no `assume` or `ensure` row present, because QSpec FR-177-AC-6 refutes an observable internal loop under every fairness set, including an empty one. | Test (TC-553) |
 | FR-148-AC-6 | When the abstract protocol has one thread whose only enabled node maps to concrete operation `inc`, its derived weak whole scheduler constraint implies the matching concrete weak whole `assume inc` over every reachable paired lasso; the assumption-weakening check passes. | Test (TC-553) |
-| FR-148-AC-7 | When the abstract protocol declares adversarial scheduling and has no memory or authored fairness constraint, while the concrete model declares weak whole fairness for an operation that remains enabled on an infinite stutter loop, the loop satisfies the empty `S` and violates `I`; the check refutes with the assumption-strengthening failure, and replay recomputes the same concrete loop and predicates. | Test (TC-553) |
-| FR-148-AC-8 | With concrete `assume` constraints on two distinct operation classes and an abstract protocol fairness constraint on only one class, a reachable lasso that satisfies the protocol constraint but violates the other concrete assumption refutes the implication even when the fairness classes are incomparable; when a product limit prevents that lasso relation from being decided, settlement is incomplete and never proved. | Test (TC-553) |
-| FR-148-AC-9 | For a single finite transition class, a strong each constraint on the specification side implies a weak whole constraint for the same operation on the implementation side; a weak specification constraint does not imply a strong implementation constraint on a lasso where the operation is enabled infinitely often but not continuously and is never taken. The first relation passes and the second has a replayable assumption-strengthening witness. | Test (TC-553) |
-| FR-148-AC-10 | For an abstract `tso` protocol with `scheduling adversarial`, the specification assumption set includes the derived `fair weak each flush(thread)` memory constraint. A reachable paired lasso that cycles a buffered `tick` write and its flush, never takes the continuously enabled `inc`, satisfies the memory fairness constraint but violates the concrete `assume fair weak whole inc`; the product refutes with an assumption-strengthening witness whose replay confirms the flush fairness and the violated `inc` constraint. | Test (TC-553) |
+| FR-148-AC-7 | When the abstract protocol declares adversarial scheduling and has no memory or authored fairness constraint, while the concrete model declares weak whole fairness for an operation that remains enabled on an infinite stutter loop, the loop satisfies empty `S` and violates `I`; the check returns `inconclusive`, `unsettled`, with `ProtocolAssumptionNotEstablished{reason: strengthened}` and the exact identity plus paired path, and replay reproduces the same predicates. It is not a QSpec `RefinementFailure`. | Test (TC-553) |
+| FR-148-AC-8 | With concrete `assume` constraints on two distinct operation classes and an abstract protocol fairness constraint on only one class, a reachable lasso that satisfies the protocol constraint but violates the other concrete assumption yields `ProtocolAssumptionNotEstablished{reason: strengthened}` with the involved incomparable typed identities and paired paths; when a product limit prevents deciding the relation, settlement is incomplete and never proved. | Test (TC-553) |
+| FR-148-AC-9 | For a single finite transition class, a strong each constraint on the specification side implies a weak whole constraint for the same operation on the implementation side; a weak specification constraint does not imply a strong implementation constraint on a lasso where the operation is enabled infinitely often but not continuously and is never taken. The first relation passes; the second returns the typed non-proof outcome with a replayable paired witness. | Test (TC-553) |
+| FR-148-AC-10 | For an abstract `tso` protocol with `scheduling adversarial`, the specification assumption set includes the derived `fair weak each flush(thread)` memory constraint. A reachable paired lasso that cycles a buffered `tick` write and its flush, never takes the continuously enabled `inc`, satisfies the memory fairness constraint but violates the concrete `assume fair weak whole inc`; the product returns `ProtocolAssumptionNotEstablished{reason: strengthened}` with exact identities and paired paths, and replay confirms flush fairness and the violated `inc` constraint. | Test (TC-553) |
+| FR-148-AC-11 | At each reachable product state whose incoming step rules passed, a refusal violation reports `RefusalNotPermitted{position, label}` with QSpec FR-379's canonical full `ObservationLabel`; a terminal-success mismatch reports `TerminalSuccessMismatch{position, direction}`. The first failing step rule takes precedence, then refusal precedes terminal success, and replay recomputes each recorded condition; model abstract subjects report neither kind. | Test (TC-553) |
 
 ## Dependencies
 

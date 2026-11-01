@@ -60,6 +60,9 @@ beside it as a separate item.
   returned, and for a `Violated` half the
   FR-072 result of replaying its counterexample (FR-145) or the
   `ReplayRefusal` that stopped it.
+- For a protocol refinement, FR-148's typed
+  `ProtocolAssumptionNotEstablished` outcome and, when present, the FR-145
+  `ProtocolAssumption` replay result.
 
 ## Outputs
 
@@ -74,6 +77,10 @@ beside it as a separate item.
   property form crosses the semantic-value seam.
 - `InconclusiveCause::MappingUndetermined` beside FR-127's causes, written
   on the wire as cause `mapping-undetermined` (QSpec FR-379).
+- `InconclusiveCause::ProtocolAssumptionNotEstablished{reason, identities,
+  witness}` for FR-148. It is written `protocol-assumption-not-established`
+  and carries the paired assumption witness when one exists; it is not a
+  `RefinementFailure`.
 - One FR-331 terminal record per refinement item, carrying the item's
   `TerminalValue`, each half's `TerminalValue` (none for an item settled from a
   refusal), the method
@@ -122,6 +129,14 @@ beside it as a separate item.
   `Inconclusive(MappingUndetermined)`, and an `UndefinedEvaluation`
   counterexample settling V-4 `refuted` with that cause once it replays
   (ADR-020 RE-5).
+- A protocol refinement with `ProtocolAssumptionNotEstablished` SHALL settle
+  the item `inconclusive`, basis `unsettled`, with that exact typed cause,
+  after FR-145 reproduces its assumption-relation outcome. It SHALL NOT
+  settle `refuted` or `proved`. A mismatch SHALL settle
+  `Inconclusive(ReplayParity)`; a replay refusal SHALL settle
+  `Inconclusive(ReplayRefused)`. A product limit before the relation is
+  decided SHALL settle `incomplete` with the limit cause, never
+  `ProtocolAssumptionNotEstablished` or `proved`.
 - A `Violated` half SHALL settle `refuted` only through its replay (FR-145)
   settling `reproduced-with-evaluated-witness`; a replay that settles
   `inconclusive` SHALL settle V-6 with `ReplayParity` (wire cause
@@ -163,6 +178,7 @@ beside it as a separate item.
 | FR-144-AC-6 | FR-140-AC-5's incomplete `items` row settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)` (wire cause `mapping-undetermined`), never `refuted`; FR-141-AC-7's undefined argument settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. | Test (TC-555) |
 | FR-144-AC-7 | `CasRefinesCounter` with its `ensure` row removed settles `proved`, `closed-scope`, `Certified`, after FR-149 accepts the certificate; with its `ensure` row it settles `proved`, `Uncertified`; with the certificate's `Taken` for the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter`, it settles `inconclusive`, `CertificateRejected`. | Test (TC-556) |
 | FR-144-AC-8 | `quire_canonical::to_vec` of `CasRefinesCounter`'s record property form gives the bytes `{"refinement":{"liveness":true}}`, and with its `ensure` row removed `{"refinement":{"liveness":false}}`; `PropertyForm::Liveness < Refinement{liveness: false} < Refinement{liveness: true}`. | Test (TC-1167) |
+| FR-144-AC-9 | A protocol refinement whose paired lasso satisfies all specification assumptions and violates a named implementation assumption settles `inconclusive`, `unsettled`, with `ProtocolAssumptionNotEstablished{reason: strengthened}` after FR-145's paired replay reproduces both paths and predicates; it is never settled `refuted` or `proved`. A mismatched replay settles `inconclusive`, `ReplayParity`, and a product limit settles `incomplete`. | Test (TC-553) |
 
 ## Dependencies
 
