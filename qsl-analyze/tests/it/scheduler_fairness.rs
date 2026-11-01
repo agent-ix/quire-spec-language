@@ -44,6 +44,7 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, Meter};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+use serde_json::Value;
 
 use crate::fill::{
     attempt, contracts, document, fill_unit, instance, package_with, package_with_name, protocol,
@@ -304,7 +305,7 @@ fn shape(steps: &[qsl_replay::ModelStep<ProtocolTransition>]) -> Vec<(StepKind, 
 /// accepting cycle: the lasso that starves `s` at `Done` is not fair under
 /// `s`'s scheduler constraint, so the run holds with a component certificate
 /// after exploring the whole product.
-#[trace("TC-657")]
+#[trace("TC-657", "FR-212-AC-1")]
 #[test]
 fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
     let chatter = Chatter::new("", EVENTUALLY, &IS_ONE);
@@ -353,7 +354,7 @@ fn chatter_carries_three_scheduler_constraints_and_no_fair_counterexample() {
 /// refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled
 /// at every loop state and takes no step, and so is `r`, whose constraint
 /// comes first in the set.
-#[trace("TC-657", "TC-662", "FR-217-AC-4")]
+#[trace("TC-657", "TC-662", "FR-212-AC-2", "FR-217-AC-4")]
 #[test]
 fn scheduling_adversarial_admits_the_lasso_that_starves_a_branch() {
     let adversarial = Chatter::new("scheduling adversarial;", EVENTUALLY, &IS_ONE);
@@ -729,12 +730,58 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
     );
 }
 
-/// FR-212 compensation targets resolve from the authored template, retain
-/// their emitted identity, and build both authored and default scheduler
-/// classes over actual compensation transitions.
-#[trace("TC-657")]
+/// FR-123: operation and protocol-target fairness members lower in the
+/// source order of their first occurrence when the forms are interleaved.
+#[trace("TC-657", "FR-123")]
 #[test]
-fn compensation_fairness_is_authored_and_scheduled_end_to_end() {
+fn interleaved_operation_and_protocol_fairness_preserves_source_order() {
+    let chatter = Chatter::new(
+        "",
+        &eventually_with(
+            "fair weak each Chatter::Done; fair strong each M::Cell::inc; fair weak whole Chatter::Both::s;",
+        ),
+        &IS_ONE,
+    );
+    let emitted = qsl_package::emit_checked(&chatter.checked).expect("mixed fairness emits");
+    let wire: Value = serde_json::from_slice(emitted.package().bytes()).expect("wire JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic graph nodes");
+    let clause = nodes
+        .iter()
+        .find(|node| node["semantic_form"] == "temporal_clause")
+        .expect("temporal clause");
+    let members = clause["body"]["arguments"][4]["members"]
+        .as_array()
+        .expect("fairness members");
+    let targets: Vec<_> = members
+        .iter()
+        .map(|reference| {
+            let target_id = &reference["target"];
+            let node = nodes
+                .iter()
+                .find(|node| &node["node_id"] == target_id)
+                .expect("fairness node");
+            let target = &node["body"]["operation"]["member"]["target"];
+            match target["kind"].as_str().expect("target kind") {
+                "attempt_node" => "attempt:Done".to_owned(),
+                "operation" => format!("operation:{}", target["name"].as_str().unwrap()),
+                "parallel_branch" => "parallel_branch".to_owned(),
+                other => panic!("unexpected target kind {other}"),
+            }
+        })
+        .collect();
+    assert_eq!(
+        targets,
+        ["attempt:Done", "operation:inc", "parallel_branch",]
+    );
+}
+
+/// FR-212: compensation targets resolve from the authored template, emit as
+/// a typed target, and classify actual compensation transitions.
+#[trace("TC-657", "FR-212")]
+#[test]
+fn compensation_fairness_target_emits_and_covers_transitions() {
     let template =
         crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true");
     let run = crate::protocol_compensation::pay_run("");
@@ -746,7 +793,7 @@ fn compensation_fairness_is_authored_and_scheduled_end_to_end() {
     let mut documents = Documents::new();
     let initial = vec![documents.start("s0", &[("c", 0)])];
     let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
-    let subject = subject(&checked, &documents, initial, "Pay", "c");
+    let pay_subject = subject(&checked, &documents, initial.clone(), "Pay", "c");
     let clause = checked.graph().temporal_clauses()[0].clause();
     let targets: Vec<_> = clause
         .protocol_fairness()
@@ -756,7 +803,7 @@ fn compensation_fairness_is_authored_and_scheduled_end_to_end() {
         targets.first().map(|target| &target.target),
         Some(CheckedProtocolTarget::CompensationTemplate { .. })
     ));
-    let system = sc_system(&subject);
+    let system = sc_system(&pay_subject);
     let fairness = system
         .fairness_set_with_targets(clause.fairness(), &targets)
         .expect("the compensation target resolves");
@@ -770,7 +817,19 @@ fn compensation_fairness_is_authored_and_scheduled_end_to_end() {
     ) && member.origin() == FairnessOrigin::Scheduler));
     let emission = qsl_package::emit_checked(&checked).expect("typed compensation fairness emits");
     let wire = emission.package().bytes();
-    assert!(String::from_utf8_lossy(wire).contains("compensation_template"));
+    let wire: Value = serde_json::from_slice(wire).expect("emitted checked-package JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("emitted semantic graph");
+    let fairness_node = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "fairness"
+                && node["body"]["operation"]["member"]["target"]["kind"] == "compensation_template"
+        })
+        .expect("typed compensation target in the package");
+    let target = &fairness_node["body"]["operation"]["member"]["target"];
+    assert!(nodes.iter().any(|node| node["node_id"] == target["node"]));
     let compensation = fairness
         .iter()
         .find(|member| {
@@ -793,6 +852,118 @@ fn compensation_fairness_is_authored_and_scheduled_end_to_end() {
                 && compensation.class_of(step).is_some()
                 && scheduler_compensation.class_of(step).is_some()
         })));
+}
+
+/// Exercise compensation fairness in liveness filtering and replay. The
+/// strict IR reader currently rejects this emitted target shape; enable
+/// once IR-1221 lands and QSL updates its pinned reader.
+#[trace("TC-657", "FR-212", "FR-217-AC-4")]
+#[ignore = "blocked by IR-1221 strict-reader support and QSL pin bump"]
+#[test]
+fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
+    let template =
+        crate::protocol_compensation::refund("Main::Paid", "dec", 1, "false", "never", "true");
+    let name = "counter";
+    let channel = "channel ch from w to w carries Boolean ordering unordered \
+                   delivery unknown capacity 2 overflow block;";
+    let members = format!("{channel}\n{template}\nscheduling adversarial;");
+    let run = format!(
+        "sequence Main {{ {} {} send Tx via ch as (tx: Boolean) {{ tx }}; {} }}",
+        crate::protocol_compensation::CHARGE,
+        crate::protocol_compensation::paid("Main::C"),
+        crate::protocol_compensation::FAIL
+    );
+    let liveness = "temporal Unfair using t0 over (k: M::Cell) clock \"model-steps\" \
+                    on origin { always eventually holds(k.v = 0) }\n\
+                    temporal Fair using t0 over (k: M::Cell) clock \"model-steps\" \
+                    on origin { fair weak each Pay::Refund; always eventually holds(k.v = 0) }\n";
+    let body = contracts("self.v = 0")
+        + crate::protocol_compensation::REFUND
+        + &protocol("Pay", &members, &run, "true")
+        + liveness;
+    let mut documents = Documents::new();
+    let initial = vec![documents.start("s0", &[("c", 0)])];
+    let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let clauses = checked.graph().temporal_clauses();
+    assert_eq!(clauses.len(), 2);
+    let unfair_clause = clauses[0].clause();
+    let fair_node = &clauses[1];
+    let fair_clause = fair_node.clause();
+    let letters = AtV(|value| value == 0);
+    let run_clause = |clause: &CheckedTemporalClause| {
+        check_protocol(
+            ProtocolCheckRequest {
+                subject: subject(&checked, &documents, initial.clone(), "Pay", "c"),
+                item: ModelCheckItem::Clause {
+                    clause,
+                    letters: &letters,
+                },
+                max_depth: None,
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+                limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
+            },
+            &Cancel::new(),
+        )
+    };
+    let ModelCheckOutcome::Violated {
+        counterexample: lasso,
+        ..
+    } = run_clause(unfair_clause).expect("the unauthored claim checks")
+    else {
+        panic!("an unfair compensation lasso should refute the claim");
+    };
+    assert!(lasso.lasso.is_some(), "{lasso:?}");
+    let ModelCheckOutcome::Holds { .. } = run_clause(fair_clause).expect("the fair claim checks")
+    else {
+        panic!("authored compensation fairness should filter its lasso");
+    };
+
+    let package_subject = subject(&checked, &documents, initial.clone(), "Pay", "c");
+    let replay_targets: Vec<_> = fair_clause
+        .protocol_fairness()
+        .map(|(constraint, _)| constraint.clone())
+        .collect();
+    let replay_fairness = sc_system(&package_subject)
+        .fairness_set_with_targets(fair_clause.fairness(), &replay_targets)
+        .expect("the authored target fairness set builds");
+    let mut replay_payload = lasso.as_ref().clone();
+    replay_payload.fairness = replay_fairness;
+    let occurrence = OccurrenceKey::new(fair_node.identity().clone(), fair_node.claim().clone());
+    let envelope = envelope_at(replay_payload, fair_node.identity().clone(), occurrence);
+    let unit = unit_text(&body).into_bytes();
+    let replayed = replay_protocol_trace(
+        request_named(name, &document(), documents.snapshots.iter(), &unit),
+        &ProtocolTraceSubject {
+            model: ModelTraceSubject {
+                timed: None,
+                initial,
+                universes: universe(&["c"]),
+                expansion: ExpansionLimits {
+                    max_candidates: 1_000_000,
+                },
+            },
+            protocol: "Pay".to_owned(),
+            over: instance("c"),
+            roles: package_subject.roles.clone(),
+            memory: package_subject.memory.clone(),
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        },
+        &envelope,
+        &letters,
+        ReplayLimits::default(),
+    );
+    let Err(ReplayRefusal::ModelTrace(refusal)) = replayed else {
+        panic!("the lasso is refused by authored compensation fairness: {replayed:?}");
+    };
+    assert!(matches!(
+        refusal.as_ref(),
+        ModelTraceRefusal::UnfairProtocolLasso { .. }
+    ));
 }
 
 /// FR-212 Outputs (TC-657): an authored operation constraint over a protocol

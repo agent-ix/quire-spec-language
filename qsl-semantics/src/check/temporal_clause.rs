@@ -474,9 +474,12 @@ pub struct CheckedTemporalClause {
     /// declared type (FR-337 "Captures at S3").
     captures: Vec<(String, ValueType)>,
     fairness: Vec<FairnessConstraint>,
-    /// The index among the written constraints of each fairness set
-    /// member's first occurrence, in set order.
+    /// The index among written constraints of each operation fairness
+    /// member's first occurrence, in operation-set order.
     fairness_sources: Vec<usize>,
+    /// The unified first-occurrence order of operation and protocol-target
+    /// fairness members, expressed as indices into their respective sets.
+    fairness_order: Vec<CheckedFairnessMember>,
     /// The constraints that name a protocol target, each once, in source
     /// order of first occurrence (FR-212 "Targets at S3"), each with the
     /// span of its first occurrence's name.
@@ -513,6 +516,7 @@ impl std::fmt::Debug for CheckedTemporalClause {
             captures,
             fairness,
             fairness_sources,
+            fairness_order,
             protocol_fairness,
             has_aggregate,
             property_form,
@@ -537,6 +541,7 @@ impl std::fmt::Debug for CheckedTemporalClause {
             .field("captures", &captures)
             .field("fairness", &fairness)
             .field("fairness_sources", &fairness_sources)
+            .field("fairness_order", &fairness_order)
             .field("protocol_fairness", &protocol_fairness)
             .field("has_aggregate", &has_aggregate)
             .field("property_form", &property_form)
@@ -545,6 +550,28 @@ impl std::fmt::Debug for CheckedTemporalClause {
             .field("timed", &timed)
             .finish()
     }
+}
+
+/// An entry in the clause's unified source-ordered fairness set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedFairnessMember {
+    /// An operation constraint, indexed in [`CheckedTemporalClause::fairness`].
+    Operation(usize),
+    /// A protocol target, indexed in [`CheckedTemporalClause::protocol_fairness`].
+    Protocol {
+        /// The unique protocol target's index in `protocol_fairness`.
+        member: usize,
+        /// The first written occurrence's index in the source fairness list.
+        source: usize,
+    },
+}
+
+/// The fairness sets and their unified first-occurrence order after S3.
+struct CheckedFairness {
+    operations: Vec<FairnessConstraint>,
+    operation_sources: Vec<usize>,
+    protocols: Vec<(CheckedProtocolFairness, Span)>,
+    order: Vec<CheckedFairnessMember>,
 }
 
 /// What a fairness constraint over a protocol names beside an operation
@@ -613,10 +640,15 @@ impl CheckedTemporalClause {
         &self.clock
     }
 
-    /// The index among the written fairness constraints of each fairness
-    /// set member's first occurrence, in set order.
+    /// The index among written constraints of each operation fairness
+    /// member's first occurrence, in operation-set order.
     pub(crate) fn fairness_sources(&self) -> &[usize] {
         &self.fairness_sources
+    }
+
+    /// The first-occurrence order shared by operation and protocol targets.
+    pub(crate) fn fairness_order(&self) -> &[CheckedFairnessMember] {
+        &self.fairness_order
     }
 
     /// Every operator node of the formula (connectives included), in arena
@@ -1249,8 +1281,12 @@ fn check_clause(
             }
         }
     }
-    let (fairness, fairness_sources, protocol_fairness) =
-        checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
+    let CheckedFairness {
+        operations: fairness,
+        operation_sources: fairness_sources,
+        protocols: protocol_fairness,
+        order: fairness_order,
+    } = checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
     if refusals.len() > 1
         && form
             .formula
@@ -1347,6 +1383,7 @@ fn check_clause(
         captures,
         fairness,
         fairness_sources,
+        fairness_order,
         protocol_fairness,
         has_aggregate: form
             .formula
@@ -1374,14 +1411,11 @@ fn checked_fairness(
     declarations: &TemporalDeclarations<'_>,
     over: Option<&ValueType>,
     refusals: &mut Vec<TemporalCause>,
-) -> (
-    Vec<FairnessConstraint>,
-    Vec<usize>,
-    Vec<(CheckedProtocolFairness, Span)>,
-) {
+) -> CheckedFairness {
     let mut set: Vec<FairnessConstraint> = Vec::new();
     let mut sources = Vec::new();
     let mut protocol_set: Vec<(CheckedProtocolFairness, Span)> = Vec::new();
+    let mut order = Vec::new();
     for (index, written) in form.fairness.iter().enumerate() {
         if bounded {
             refusals.push(TemporalCause::FairnessUnderBoundedProfile { span: written.span });
@@ -1399,6 +1433,10 @@ fn checked_fairness(
                             granularity: checked_granularity(written),
                         };
                         if !protocol_set.iter().any(|(known, _)| *known == constraint) {
+                            order.push(CheckedFairnessMember::Protocol {
+                                member: protocol_set.len(),
+                                source: index,
+                            });
                             protocol_set.push((constraint, span));
                         }
                     }
@@ -1418,11 +1456,17 @@ fn checked_fairness(
         };
         let constraint = checked_constraint(written, operation);
         if !set.contains(&constraint) {
+            order.push(CheckedFairnessMember::Operation(set.len()));
             set.push(constraint);
             sources.push(index);
         }
     }
-    (set, sources, protocol_set)
+    CheckedFairness {
+        operations: set,
+        operation_sources: sources,
+        protocols: protocol_set,
+        order,
+    }
 }
 
 /// What a fairness constraint's name resolves to among the unit's

@@ -37,8 +37,8 @@ use crate::check::node_key::{
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::temporal_clause::condition::TypedConditions;
 use crate::check::temporal_clause::{
-    BinaryTemporal, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode,
-    FormulaNodeId, UnaryTemporal,
+    BinaryTemporal, CheckedFairnessMember, CheckedFormula, CheckedInterval, CheckedTemporalClause,
+    FormulaNode, FormulaNodeId, UnaryTemporal,
 };
 use crate::value::member::{FairnessTarget, Member, TimedMember};
 
@@ -236,47 +236,49 @@ impl Lowering<'_> {
             &scope,
         )?;
 
-        if clause.fairness().len() != clause.fairness_sources().len() {
+        if clause.fairness().len() != clause.fairness_sources().len()
+            || clause.fairness_order().len()
+                != clause.fairness().len() + clause.protocol_fairness().count()
+        {
             return Err(stage_fault(&claim, "fairness-member-has-a-source"));
         }
         let mut fairness = Vec::with_capacity(clause.fairness().len());
-        for (constraint, source) in clause.fairness().iter().zip(clause.fairness_sources()) {
-            let location = at(TemporalSite::Fairness(*source));
-            let operation = constraint.operation();
-            let declaration = self.object_node(operation.declaring_type(), &location)?;
-            let name = Identifier::new(operation.name().to_owned())
-                .map_err(|_| stage_fault(&location, "fairness-operation-named"))?;
-            let key = self.insert(
-                &location,
-                NodeTag::Temporal,
-                "fairness",
-                Some(boolean.clone()),
-                None,
-                BodyTerm::application(
-                    Operator::TemporalFairness,
-                    Operation {
-                        member: Some(Member::Fairness {
-                            kind: constraint.kind(),
-                            granularity: constraint.granularity(),
-                            target: FairnessTarget::Operation { declaration, name },
-                        }),
-                        ..Operation::plain("quire.op.temporal.fair")
-                    },
-                    boolean.clone(),
-                    Vec::new(),
-                ),
-            )?;
-            self.record(key.clone(), OccurrenceRole::Expression, location);
-            fairness.push(key);
-        }
-
-        for (constraint, span) in clause.protocol_fairness() {
-            let location = at(TemporalSite::Fairness(0));
-            let members = self
-                .protocol_members
-                .get(&constraint.protocol)
-                .ok_or_else(|| stage_fault(&location, "protocol-fairness-target-lowered"))?;
-            let target = match &constraint.target {
+        let protocol_fairness: Vec<_> = clause.protocol_fairness().collect();
+        for member in clause.fairness_order() {
+            let (kind, granularity, target, source) = match *member {
+                CheckedFairnessMember::Operation(index) => {
+                    let constraint = clause
+                        .fairness()
+                        .get(index)
+                        .ok_or_else(|| stage_fault(&claim, "operation-fairness-index-valid"))?;
+                    let source = *clause
+                        .fairness_sources()
+                        .get(index)
+                        .ok_or_else(|| stage_fault(&claim, "operation-fairness-source-valid"))?;
+                    let location = at(TemporalSite::Fairness(source));
+                    let operation = constraint.operation();
+                    let declaration = self.object_node(operation.declaring_type(), &location)?;
+                    let name = Identifier::new(operation.name().to_owned())
+                        .map_err(|_| stage_fault(&location, "fairness-operation-named"))?;
+                    (
+                        constraint.kind(),
+                        constraint.granularity(),
+                        FairnessTarget::Operation { declaration, name },
+                        source,
+                    )
+                }
+                CheckedFairnessMember::Protocol { member, source } => {
+                    let (constraint, _span) = protocol_fairness
+                        .get(member)
+                        .ok_or_else(|| stage_fault(&claim, "protocol-fairness-index-valid"))?;
+                    let location = at(TemporalSite::Fairness(source));
+                    let members =
+                        self.protocol_members
+                            .get(&constraint.protocol)
+                            .ok_or_else(|| {
+                                stage_fault(&location, "protocol-fairness-target-lowered")
+                            })?;
+                    let target = match &constraint.target {
                 crate::check::temporal_clause::CheckedProtocolTarget::Root => {
                     FairnessTarget::ProtocolRoot {
                         node: members.clause.clone(),
@@ -308,7 +310,11 @@ impl Lowering<'_> {
                         stage_fault(&location, "compensation-fairness-node-emitted")
                     })?,
                 },
+                    };
+                    (constraint.kind, constraint.granularity, target, source)
+                }
             };
+            let location = at(TemporalSite::Fairness(source));
             let key = self.insert(
                 &location,
                 NodeTag::Temporal,
@@ -319,8 +325,8 @@ impl Lowering<'_> {
                     Operator::TemporalFairness,
                     Operation {
                         member: Some(Member::Fairness {
-                            kind: constraint.kind,
-                            granularity: constraint.granularity,
+                            kind,
+                            granularity,
                             target,
                         }),
                         ..Operation::plain("quire.op.temporal.fair")
@@ -331,7 +337,6 @@ impl Lowering<'_> {
             )?;
             self.record(key.clone(), OccurrenceRole::Expression, location);
             fairness.push(key);
-            let _ = span;
         }
 
         let law = OperationLaw {
