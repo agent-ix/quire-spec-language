@@ -3,7 +3,7 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{ApplicationObservation, CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_package::CheckedPackage;
@@ -628,6 +628,73 @@ fn p06_each_call_charges_function_call() {
             })
         )
     );
+}
+
+/// ValueValidity observes a call only after its callee body has supplied the
+/// call result; values left on the caller's stack are not call results.
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-2")]
+#[test]
+fn call_observation_is_recorded_only_after_the_callee_returns() {
+    let callee = function(
+        "double",
+        &[("x", ValueType::Integer)],
+        ValueType::Integer,
+        None,
+        binary(
+            BinaryOperator::Add,
+            Expression::name("x".to_owned()),
+            Expression::name("x".to_owned()),
+        ),
+    );
+    let caller = function(
+        "subject",
+        &[("x", ValueType::Integer)],
+        ValueType::Integer,
+        None,
+        binary(
+            BinaryOperator::Add,
+            literal(100),
+            call("double", vec![Expression::name("x".to_owned())]),
+        ),
+    );
+    let package = CheckedPackage::link(
+        declarations(TypeEnvironment::default(), vec![callee, caller])
+            .check(CheckingLimits::default())
+            .expect("the nested calls are admitted"),
+    );
+    let mut observed = Vec::new();
+    let mut unavailable_imported_call = false;
+    let mut function_evaluations = 0;
+    let mut function_case_limit_reached = false;
+    let mut meter = Meter::new(UNLIMITED);
+    let result = package
+        .call_observing_applications(
+            &QualifiedName::unqualified("subject").unwrap(),
+            vec![Value::Integer(integer(3))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+            ApplicationObservation {
+                observed: &mut observed,
+                unavailable_imported_call: &mut unavailable_imported_call,
+                function_case_limit: u64::MAX,
+                function_evaluations: &mut function_evaluations,
+                function_case_limit_reached: &mut function_case_limit_reached,
+            },
+        )
+        .expect("the call evaluates");
+
+    assert_eq!(
+        format!("{:?}", evaluated(result)),
+        format!("{:?}", Outcome::Completed(Value::Integer(integer(106))))
+    );
+    let observed_values: Vec<_> = observed
+        .iter()
+        .map(|(_, value)| match value {
+            Value::Integer(value) => value.to_string(),
+            other => panic!("an integer application result, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(observed_values, ["6", "6", "106"]);
 }
 
 #[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]

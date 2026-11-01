@@ -474,6 +474,9 @@ enum Task<'a> {
     /// the arm of its active member and evaluate only that arm's body.
     Select(CheckedNode<'a>),
     Retain(CheckedNode<'a>),
+    /// A function call's body has returned; its result now belongs to the
+    /// call application at `node`.
+    ObserveApplication(CheckedNode<'a>),
     Bind(Slot),
     ChargeElement(CheckedNode<'a>),
     Return,
@@ -1039,6 +1042,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Short(node)
                 | Task::Select(node)
                 | Task::Retain(node)
+                | Task::ObserveApplication(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
                 Task::IterateSeq(iteration) => iteration.node,
@@ -1047,7 +1051,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                     root
                 }
             };
-            let applied = matches!(&task, Task::Apply(_));
+            let applied = matches!(
+                &task,
+                Task::Apply(node)
+                    if !matches!(
+                        node.kind(),
+                        NodeKind::Call { .. }
+                            | NodeKind::ImportedCall { .. }
+                            | NodeKind::Dispatch { .. }
+                    )
+            );
             if let Err(halt) = self.step(task) {
                 let located = self.imported.first().copied().unwrap_or(located);
                 return match halt {
@@ -1597,6 +1610,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.push_value(Value::Boolean(result), false);
                 Ok(())
             }
+            Task::ObserveApplication(node) => {
+                if let Some(observed) = self.observed_applications.as_deref_mut() {
+                    let value = self
+                        .values
+                        .last()
+                        .ok_or_else(|| invariant("evaluation-call-result-missing"))?;
+                    observed.push((node.location().clone(), value.clone()));
+                }
+                Ok(())
+            }
             Task::Bind(slot) => {
                 let (value, provenance) = self.pop_forwarded()?;
                 self.bind_with_provenance(slot, value, provenance)
@@ -1617,7 +1640,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     body_function,
                     arguments,
                     failure,
-                    node: _,
+                    node,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames
@@ -1642,6 +1665,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 frame.resize(callable.slots.max(frame.len()), None);
                 let provenance = vec![false; frame.len()];
                 self.push_frame(frame, provenance);
+                self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
                 Ok(())
@@ -2328,6 +2352,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // Reset to `Post` for the callee, then restore the caller's
                 // anchor once its own `Task::Eval`/`Task::Return` complete
                 // (mirrors `NodeKind::Pre`'s own save/restore pair).
+                self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);
@@ -2370,6 +2395,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     enum_members: library.scope().enum_member_index(),
                 });
                 self.imported.push(node);
+                self.tasks.push(Task::ObserveApplication(node));
                 self.tasks.push(Task::RestorePackage(Box::new(previous)));
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
@@ -2709,6 +2735,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                         frame.resize(callable.slots.max(frame.len()), None);
                         let provenance = vec![false; frame.len()];
                         self.push_frame(frame, provenance);
+                        self.tasks.push(Task::ObserveApplication(node));
                         self.tasks.push(Task::Return);
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());

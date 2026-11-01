@@ -152,7 +152,9 @@ fn source(e: &Json) -> String {
                     let args: Vec<String> = (2..items.len()).map(arg).collect();
                     format!("{}({})", items[1].as_str().unwrap(), args.join(", "))
                 }
-                "narrow" => format!("convert<Int[{}, {}]>({})", items[1], items[2], arg(3)),
+                // The vector's `narrow` annotation supplies the function's
+                // result bound; the checked source body remains its operand.
+                "narrow" => arg(3),
                 "if" => format!("(if {} then {} else {})", arg(1), arg(2), arg(3)),
                 "@" => arg(2),
                 "/" => format!("({} div {})", arg(1), arg(2)),
@@ -283,11 +285,15 @@ fn declarations_of(model: &Json) -> String {
             source(&model["goal"])
         );
     } else {
-        let boolean = matches!(model["body"][0].as_str(), Some("and" | ">" | "<" | "="));
+        let result_type = match model["body"][0].as_str() {
+            Some("and" | ">" | "<" | "=") => "Boolean".to_owned(),
+            Some("narrow") => format!("Int[{}, {}]", model["body"][1], model["body"][2]),
+            _ => "Integer".to_owned(),
+        };
         text += &format!(
             "function subject using v({}): {} pure {{ {} }}\n",
             param_list(model),
-            if boolean { "Boolean" } else { "Integer" },
+            result_type,
             source(&model["body"])
         );
     }
@@ -306,6 +312,9 @@ fn marked_path(expression: &Json, marker: &str) -> Option<Vec<usize>> {
             && items.get(1).and_then(Json::as_str) == Some(marker)
         {
             return true;
+        }
+        if items.first().and_then(Json::as_str) == Some("narrow") {
+            return items.get(3).is_some_and(|child| visit(child, marker, path));
         }
         for (index, child) in items.iter().enumerate().skip(1) {
             path.push(index - 1);
@@ -732,15 +741,16 @@ fn the_clause_vectors_settle_as_the_vectors_state() {
 /// supplied by a direct narrowing conversion.
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-4")]
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-5")]
+#[trace("QSpec-TC-973", "QSpec-FR-484-AC-6")]
 #[trace("QSpec-TC-973", "QSpec-FR-484-AC-7")]
 #[test]
 fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
     let cases: Vec<Json> = supported()
         .into_iter()
-        .filter(|c| shape(c) == Shape::Scalar && id_of(c) != "VV-08")
+        .filter(|c| shape(c) == Shape::Scalar)
         .collect();
     let ids: Vec<&str> = cases.iter().map(id_of).collect();
-    assert_eq!(ids, ["VV-04", "VV-05", "VV-06", "VV-10"]);
+    assert_eq!(ids, ["VV-04", "VV-05", "VV-06", "VV-08", "VV-10", "VV-18"]);
     for case in cases {
         let id = id_of(&case);
         let model = &case["model"];
@@ -775,6 +785,31 @@ fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
                 assert_eq!(case["outcome"]["results"][0]["result"], "proved");
                 assert_eq!(outcome, "proved", "{id}: reached occurrences are decided");
             }
+            "VV-08" => {
+                assert_eq!(outcome, "refuted");
+                let found = record.value_check.as_ref().unwrap();
+                let at = found.reproduced.violation().undefined.as_ref().unwrap();
+                assert_eq!(at.locus, key, "the undefined modulus is the occurrence");
+                assert_eq!(at.reason, NATIVE_ZERO_DIVISOR_CAUSE);
+                let candidate = candidate_of(model, &case["candidate"]);
+                assert!(matches!(
+                    candidate.as_slice(),
+                    [Value::Integer(value)] if value.to_string() == "0"
+                ));
+                let replayed = run_in(
+                    &Engines::qsl().unwrap(),
+                    &package,
+                    &key,
+                    "subject",
+                    Ask {
+                        max_cases: None,
+                        reported: Some(candidate),
+                    },
+                );
+                assert_eq!(label(&replayed), "refuted");
+                let again = replayed.value_check.as_ref().unwrap();
+                assert_eq!(again.reproduced.violation(), found.reproduced.violation());
+            }
             "VV-10" => {
                 assert_eq!(outcome, "inconclusive");
                 assert!(
@@ -785,35 +820,13 @@ fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
                     "no assignment reaches the occurrence, so the path premises are vacuous"
                 );
             }
+            "VV-18" => {
+                assert_eq!(case["outcome"]["results"][0]["result"], "proved");
+                assert_eq!(outcome, "proved", "the target narrow's bound is retained");
+            }
             other => panic!("unexpected scalar vector {other}"),
         }
     }
-}
-
-/// This vector is retained as a regression gate for QSpec's post-STD-628
-/// replacement. Under the current QSL admission contract, `check` rejects
-/// its direct range narrowing before ValueValidity can inspect the candidate.
-#[trace("QSpec-TC-973", "QSpec-FR-484-AC-6")]
-#[test]
-#[ignore = "Blocked by STD-628: current QSpec VV-08 requires an out-of-range direct narrowing that FR-062 rejects at package admission; update this fixture when STD-628 resolves the contract."]
-fn vv08_range_narrowing_refutes_at_the_scalar_occurrence() {
-    let case = supported()
-        .into_iter()
-        .find(|case| id_of(case) == "VV-08")
-        .expect("TC-973 publishes VV-08");
-    let model = &case["model"];
-    let package = package_of(&declarations_of(model));
-    let key = marked_scalar_key(&package, model);
-    let record = run(&package, &key, "subject", None);
-    assert_eq!(label(&record), "refuted");
-    let found = record.value_check.as_ref().unwrap();
-    let at = found.reproduced.violation().undefined.as_ref().unwrap();
-    assert_eq!(at.locus, key, "the narrowing's operand is the locus");
-    assert_eq!(at.reason, "integer-out-of-range");
-    assert!(matches!(
-        found.reproduced.assignment(),
-        [Value::Integer(value)] if value.to_string() == "6"
-    ));
 }
 
 // ---- the clause semantics ----
