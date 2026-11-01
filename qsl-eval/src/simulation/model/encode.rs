@@ -27,10 +27,6 @@ use quire_checked::key::DeclarationKey;
 pub(crate) enum Enc {
     Null,
     Bool(bool),
-    /// A static string used by the fixed typed-form tags. Keeping these
-    /// borrowed avoids allocating one `String` for every tagged node in a
-    /// state key.
-    Static(&'static str),
     Str(String),
     Array(Vec<Enc>),
     /// A structural node identity, written as its `{package, path, ordinal}`
@@ -39,6 +35,12 @@ pub(crate) enum Enc {
     /// A structural effective declaration identity, written as FR-201's
     /// recursive `{owner_effective_type, original}` record.
     Effective(EffectiveId),
+    /// A tagged object, keeping its fixed `type` member out of the members
+    /// vector so each tagged node avoids growing that vector.
+    Tagged {
+        tag: &'static str,
+        members: Vec<(&'static str, Enc)>,
+    },
     /// Members in any order: the writer sorts them (RFC 8785 section 3.2.3).
     Object(Vec<(&'static str, Enc)>),
     /// A value FR-181's typed canonical form does not yet cover here; it has
@@ -51,7 +53,6 @@ impl Encode for Enc {
         match self {
             Self::Null => writer.null(),
             Self::Bool(value) => writer.bool(*value),
-            Self::Static(value) => writer.string(value),
             Self::Str(value) => writer.string(value),
             Self::Array(items) => {
                 writer.begin_array()?;
@@ -66,6 +67,16 @@ impl Encode for Enc {
                 write_json(writer, &json)
             }
             Self::Effective(id) => write_effective(writer, id),
+            Self::Tagged { tag, members } => {
+                writer.begin_object()?;
+                for (name, value) in members {
+                    writer.name(name)?;
+                    value.encode_into(writer)?;
+                }
+                writer.name("type")?;
+                writer.string(tag)?;
+                writer.end_object()
+            }
             Self::Object(members) => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -87,9 +98,8 @@ impl Enc {
     }
 
     /// `{"type": tag, ...members}`.
-    pub(crate) fn tagged(tag: &'static str, mut members: Vec<(&'static str, Enc)>) -> Self {
-        members.push(("type", Self::Static(tag)));
-        Self::Object(members)
+    pub(crate) fn tagged(tag: &'static str, members: Vec<(&'static str, Enc)>) -> Self {
+        Self::Tagged { tag, members }
     }
 
     /// This value's canonical RFC 8785 text.
