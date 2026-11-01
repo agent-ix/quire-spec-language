@@ -810,6 +810,20 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
     assert_eq!(report.usage.evaluation_admissions, 0);
     assert!(report.usage.evaluation_consumed.is_empty());
     assert!(report.witness.is_none());
+    let result = crate::spine::write_clause_run_result(&report)
+        .expect("the unsupported proof result has a typed wire disposition");
+    let wire: serde_json::Value = serde_json::from_slice(&result).unwrap();
+    assert_eq!(wire["disposition"]["category"], "unsupported");
+    assert!(wire["disposition"].get("truth").is_none());
+    assert!(wire["disposition"].get("outcome").is_none());
+    assert_eq!(
+        wire["disposition"]["refusal"]["cause"],
+        "value-representation"
+    );
+    assert_eq!(
+        wire["disposition"]["refusal"]["fields"]["query_visit"],
+        "map"
+    );
 }
 
 /// A healthy-parent (acyclic) or violating-parent (cyclic) `NoCycle`
