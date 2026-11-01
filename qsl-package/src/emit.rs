@@ -2773,11 +2773,12 @@ fn emit_package_inner(
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
-    let emitted_keys: HashSet<&NodeKey> = kept.iter().map(|candidate| candidate.key).collect();
+    let emitted_keys: HashSet<NodeKey> =
+        kept.iter().map(|candidate| candidate.key.clone()).collect();
     let selected_operation_member_rows = graph
         .semantic_graph()
         .selected_operation_members()
-        .filter(|(anchor, _)| emitted_keys.contains(anchor))
+        .filter(|(anchor, _)| emitted_keys.contains(*anchor))
         .map(
             |(anchor, member)| quire_contract_model::SelectedOperationMemberRow {
                 anchor: node_id(ids, anchor),
@@ -2798,7 +2799,7 @@ fn emit_package_inner(
     let selected_model_enum_declaration_rows = graph
         .semantic_graph()
         .selected_model_enum_declarations()
-        .filter(|(key, _)| emitted_keys.contains(key))
+        .filter(|(key, _)| emitted_keys.contains(*key))
         .map(|(key, selected)| {
             quire_contract_model::SelectedModelEnumDeclarationRow::new(
                 node_id(ids, key),
@@ -2811,7 +2812,7 @@ fn emit_package_inner(
     let selected_model_enum_member_rows = graph
         .semantic_graph()
         .selected_model_enum_members()
-        .filter(|(key, _)| emitted_keys.contains(key))
+        .filter(|(key, _)| emitted_keys.contains(*key))
         .map(|(key, selected)| {
             quire_contract_model::SelectedModelEnumMemberRow::new(
                 node_id(ids, key),
@@ -3290,13 +3291,11 @@ fn emit_package_inner(
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
-    let emitted_node_ids: HashSet<CheckedNodeId> =
-        nodes.iter().map(|node| node.node_id.clone()).collect();
     let selected_source_unit_rows = graph
         .source_unit_nodes()
         .filter_map(|unit| {
             let structural_node = node_id(ids, &unit.key);
-            if !emitted_node_ids.contains(&structural_node) {
+            if !nodes.iter().any(|node| node.node_id == structural_node) {
                 return None;
             }
             let TimeNominalOrigin::Source { owner, .. } = &unit.origin else {

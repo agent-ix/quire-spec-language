@@ -128,9 +128,8 @@ fn a_variant_type_is_one_model_owned_node_with_one_enum_value_per_case() {
     assert_eq!(odd, ODD_CASES);
 }
 
-/// FR-360-AC-8: selected model enum rows retain the selected document and the
-/// original declaration/member identities, then join to the admitted nodes.
-#[trace("FR-360-AC-8", "TC-1009")]
+/// QSL-1398 acceptance evidence. No current QSL spec criterion covers selected
+/// model enum witness row joins.
 #[test]
 fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_foreign_rows() {
     use quire_contract_model::{
@@ -163,10 +162,10 @@ fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_for
     for row in members {
         assert_eq!(row.selected_document.as_ref(), fixture::PACKAGE);
         let (owner, member) = match row.case.as_ref() {
-            "Gold" if row.enum_original_identity == fixture::id("Tier") => {
+            "Gold" if row.enum_original_identity.as_ref() == fixture::id("Tier").as_str() => {
                 ("Tier", "variant/Tier-Gold")
             }
-            "Standard" if row.enum_original_identity == fixture::id("Tier") => {
+            "Standard" if row.enum_original_identity.as_ref() == fixture::id("Tier").as_str() => {
                 ("Tier", "variant/Tier-Standard")
             }
             "2x" => ("Odd", "variant/Odd-2x"),

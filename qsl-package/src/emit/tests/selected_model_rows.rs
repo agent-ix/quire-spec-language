@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-396-AC-2 / TC-1090: selected model tuple witness rows accompany the
-//! emitted tuple declaration's admitted structural identity.
+//! QSL-1398 acceptance evidence. No current QSL spec criterion covers
+//! selected model tuple witness row production.
 
 use super::*;
 use qsl_semantics::model::intake::meaning;
@@ -58,14 +58,13 @@ fn emit_with_tuple_source(tuple_is_referenced: bool) -> Emission {
     emit_checked(&CheckedPackage::link(graph)).expect("the package emits")
 }
 
-/// FR-396-AC-2 / TC-1090: a selected tuple row names the full structural id
-/// of the emitted model tuple; an unreferenced tuple has no row or node.
-#[trace("FR-396-AC-2", "TC-1090")]
+/// A selected tuple row names the full structural id of the emitted model
+/// tuple; an unreferenced tuple has no row or node.
 #[test]
 fn selected_tuple_rows_match_emitted_model_nodes_and_skip_absent_nodes() {
     let emission = emit_with_tuple_source(true);
-    let wire = wire(&emission);
-    let tuple_nodes: Vec<&Value> = nodes(&wire)
+    let emitted_wire = wire(&emission);
+    let tuple_nodes: Vec<&Value> = nodes(&emitted_wire)
         .iter()
         .filter(|node| node["node_tag"] == "model" && node["semantic_form"] == "tuple_value_type")
         .collect();

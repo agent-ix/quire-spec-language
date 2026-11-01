@@ -71,7 +71,14 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let [unit_row] = emission.selected_source_unit_rows() else {
         panic!("one emitted source-owned unit identity row");
     };
-    assert_eq!(unit_row.qualified_declaration, ["ms"]);
+    assert_eq!(
+        unit_row
+            .qualified_declaration
+            .iter()
+            .map(|segment| segment.as_ref())
+            .collect::<Vec<_>>(),
+        ["ms"]
+    );
     assert_eq!(unit_row.source_authority.as_ref(), raw_source.authority());
     assert_eq!(unit_row.source_identity.as_ref(), raw_source.identity());
     assert_eq!(
