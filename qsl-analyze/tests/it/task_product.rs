@@ -108,6 +108,13 @@ fn exact_gate_refuses_bad_policy_premises_without_inventing_scheduler_order() {
         fixed_work_task_product(&set(vec![second]), SchedulingPolicy::Amc),
         Err(FixedWorkGateMiss::UnsupportedPolicy)
     );
+
+    let mut blocked = task("blocked", 4, 4, 1, Wcet::Single(int(1)));
+    blocked.blocking = int(1);
+    assert_eq!(
+        fixed_work_task_product(&set(vec![blocked]), SchedulingPolicy::FixedPriority),
+        Err(FixedWorkGateMiss::BoundedSearchRequired)
+    );
 }
 
 #[trace("TC-372", "FR-419-AC-11")]

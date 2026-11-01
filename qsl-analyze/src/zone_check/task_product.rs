@@ -650,6 +650,9 @@ pub enum FixedWorkGateMiss {
     InvalidTaskSet,
     /// The policy is not a fixed-work policy supported by this exact route.
     UnsupportedPolicy,
+    /// Fixed-priority blocking is not modeled by this exact task product;
+    /// the admitted task remains eligible for bounded exploration.
+    BoundedSearchRequired,
     /// A task's candidate slot count or the total cap cannot be represented
     /// by FR-418's bounded count.
     SlotCapOverflow,
@@ -690,6 +693,9 @@ pub fn fixed_work_task_product(
         }
         match policy {
             SchedulingPolicy::FixedPriority => {
+                if !task.blocking.is_zero() {
+                    return Err(FixedWorkGateMiss::BoundedSearchRequired);
+                }
                 let priority = task.priority.ok_or(FixedWorkGateMiss::MissingPriority)?;
                 if !priorities.insert(priority) {
                     return Err(FixedWorkGateMiss::PriorityClash);
