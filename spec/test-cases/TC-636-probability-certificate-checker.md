@@ -12,7 +12,7 @@ relationships:
 
 Verify acceptance and rejection of `Exact`, `LongRun`, `Lower` and fairness certificates, identity refusal, settlement through the checker, and the checker's budget.
 
-Scope: FR-201-AC-1 to FR-201-AC-5.
+Scope: FR-201-AC-1 to FR-201-AC-5 and FR-201-AC-7.
 
 ## Test Procedure
 
@@ -23,8 +23,10 @@ Fixtures: §15.4's `Exact` certificate at threshold 0.95; §15.3's `LongRun` cer
 3. Check a `Lower` certificate with no ranking; one with a foreign identity; `FairTerminates`'s certificate with and without its fairness set.
 4. Settle a proof through the checker; run the checker with `max_states` 2.
 5. Check the `Opt` certificate for `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure), then the even variant's certificate.
+6. Set the caller's `ReplayLimits.input_bytes` to one less than the measured encoded size of a `ReplayRequestWire`, then call the checker with that wire and otherwise valid inputs.
 
 Tag the tests `#[trace("TC-636", "FR-201-AC-n")]`.
+Tag the caller-configured input-limit assertion `#[trace("TC-636", "FR-201-AC-7")]`.
 
 ## Expected Results
 
@@ -33,3 +35,4 @@ Tag the tests `#[trace("TC-636", "FR-201-AC-n")]`.
 - Step 3: rejected; refused before re-enumeration; accepted, then rejected.
 - Step 4: `proved`; `Incomplete(LimitReached{…})` naming `max_states`.
 - Step 5: accepted with side `AtLeast`, only `skip` tight; rejected, naming the activated state after `go`.
+- Step 6: `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))`; byte-provision lookup and recompile are not reached. Trace this assertion as `FR-201-AC-7`.
