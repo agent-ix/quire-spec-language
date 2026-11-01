@@ -854,11 +854,12 @@ fn compensation_fairness_target_emits_and_covers_transitions() {
         })));
 }
 
-/// Exercise compensation fairness in liveness filtering and replay. The
-/// strict IR reader currently rejects this emitted target shape; enable
-/// once IR-1221 lands and QSL updates its pinned reader.
+/// Exercise compensation fairness in liveness filtering and replay. IR
+/// admission requires the fairness-bearing temporal claim in the protocol's
+/// requirements, but QSL lowering currently refuses the resulting reference
+/// cycle because that claim targets a node inside the same protocol.
 #[trace("TC-657", "FR-212", "FR-217-AC-4")]
-#[ignore = "blocked by IR-1221 strict-reader support and QSL pin bump"]
+#[ignore = "blocked by cyclic protocol requirement/fairness-target admission join"]
 #[test]
 fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
     let template =
