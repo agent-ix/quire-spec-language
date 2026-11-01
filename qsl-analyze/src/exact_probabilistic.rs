@@ -29,12 +29,19 @@ mod build;
 mod finite_horizon;
 pub(crate) mod plan;
 mod settle;
+mod unbounded;
 
 pub use build::build_product;
 pub use finite_horizon::{
     backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
 };
 pub use settle::settle_product_refusal;
+pub use unbounded::{
+    decide_always, decide_expected_reward, decide_long_run_mdp, decide_long_run_workload,
+    decide_reachability, decide_reachability_threshold, decide_until, decide_until_threshold,
+    ComponentValue, ExtRational, GainBias, LongRunResult, UnboundedError, UnboundedObjective,
+    UnboundedOutcome, UnboundedResult,
+};
 
 use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
