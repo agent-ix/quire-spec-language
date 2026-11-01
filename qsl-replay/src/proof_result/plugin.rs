@@ -285,6 +285,8 @@ impl TerminalRecord {
         match basis {
             ProofBasis::Checks { .. }
             | ProofBasis::ClosedForm { .. }
+            | ProofBasis::ExactValue { .. }
+            | ProofBasis::ValueBounds { .. }
             | ProofBasis::ZoneCertified
             | ProofBasis::Witness { .. } => {
                 return Err(PluginResultRefusal::CoreOnlyBasis);

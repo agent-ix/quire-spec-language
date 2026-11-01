@@ -477,7 +477,7 @@ impl Exploration<'_, '_, '_> {
             },
             None => match &graph.end {
                 RunEnd::Stopped { cause, limit } => ModelCheckOutcome::Stopped {
-                    cause: *cause,
+                    cause: cause.clone(),
                     limit: *limit,
                     stats,
                 },

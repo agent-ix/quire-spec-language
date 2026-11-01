@@ -434,7 +434,7 @@ fn peeker_run(limits: ModelCheckLimits, cancel: &Cancel) -> RefinementOutcome {
 fn stopped(outcome: &RefinementOutcome) -> Option<(IncompleteCause, Option<ReachedLimit>)> {
     match &outcome.liveness {
         Some(LivenessHalf::Checked(ModelCheckOutcome::Stopped { cause, limit, .. })) => {
-            Some((*cause, *limit))
+            Some((cause.clone(), *limit))
         }
         _ => None,
     }

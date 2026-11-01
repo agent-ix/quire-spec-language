@@ -95,11 +95,15 @@ impl ZoneCheckRecord {
     }
 
     fn incomplete(cause: IncompleteCause) -> Self {
-        let limit_reached = match cause {
-            IncompleteCause::LimitReached { limit, value } => Some(ReachedLimit { limit, value }),
+        let limit_reached = match &cause {
+            IncompleteCause::LimitReached { limit, value } => Some(ReachedLimit {
+                limit: *limit,
+                value: *value,
+            }),
             IncompleteCause::TimedOut
             | IncompleteCause::Cancelled { .. }
-            | IncompleteCause::ResourceExhausted => None,
+            | IncompleteCause::ResourceExhausted
+            | IncompleteCause::PrecisionBudget { .. } => None,
         };
         Self {
             limit_reached,

@@ -28,11 +28,13 @@
 mod build;
 mod finite_horizon;
 pub(crate) mod plan;
+mod settle;
 
 pub use build::build_product;
 pub use finite_horizon::{
     backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
 };
+pub use settle::settle_product_refusal;
 
 use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
@@ -42,8 +44,8 @@ use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{ExpansionStop, NotSimulated};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::Span;
+pub use qsl_replay::ExactProbLimits;
 use qsl_replay::ModelCheckLimit;
-use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Rational, Value};
@@ -477,8 +479,7 @@ pub enum ProductRefusal {
     Internal(InternalFault),
 }
 
-/// A product request (FR-196 `ExactProbRequest`, over FR-126's budgets until
-/// FR-203's `ExactProbLimits` exists).
+/// A product request (FR-196 `ExactProbRequest`).
 pub struct ProductRequest<'a> {
     /// The model subject (FR-125).
     pub subject: ModelSubject<'a>,
@@ -486,39 +487,4 @@ pub struct ProductRequest<'a> {
     pub claim: &'a CheckedProbabilisticClaim,
     /// EN-5's product and arithmetic limits (FR-203).
     pub limits: ExactProbLimits,
-}
-
-/// The caller-raisable budgets of one EN-5 run (FR-203, ADR-028 LM-1).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExactProbLimits {
-    /// Product exploration budgets; the exact engine uses its three model
-    /// limits and their FR-203 `exact_prob.*` setting names.
-    pub model: ModelCheckLimits,
-    /// Maximum interval-iteration sweeps; default 1,000,000.
-    pub max_iterations: u64,
-    /// Initial dyadic precision; default 64 bits.
-    pub precision_bits: u32,
-    /// Maximum dyadic precision; default 4,096 bits.
-    pub max_precision_bits: u32,
-    /// Maximum numerator or denominator bit length before dyadic fallback;
-    /// default 65,536 bits.
-    pub max_rational_bits: u64,
-    /// Maximum policy-iteration steps; default 10,000.
-    pub max_policy_iterations: u64,
-    /// Maximum emitted finite witness paths; default 1,024.
-    pub max_witness_paths: u64,
-}
-
-impl Default for ExactProbLimits {
-    fn default() -> Self {
-        Self {
-            model: ModelCheckLimits::default(),
-            max_iterations: 1_000_000,
-            precision_bits: 64,
-            max_precision_bits: 4_096,
-            max_rational_bits: 65_536,
-            max_policy_iterations: 10_000,
-            max_witness_paths: 1_024,
-        }
-    }
 }

@@ -32,7 +32,8 @@ pub struct Dyadic {
 }
 
 impl Dyadic {
-    fn rational(&self) -> Rational {
+    /// The exact rational denoted by this dyadic endpoint.
+    pub fn rational(&self) -> Rational {
         Rational::from_integer(Integer::from_big(self.mantissa.clone()))
             .divided_by_power_of_two(u64::from(self.exponent))
     }
@@ -173,8 +174,7 @@ pub fn backward_induction(
             let upper = intervals.upper.get(index).ok_or(FhError::InvalidState)?;
             let lower_value = lower.rational();
             let upper_value = upper.rational();
-            if lower_value <= *threshold && *threshold <= upper_value && lower_value != upper_value
-            {
+            if lower_value <= *threshold && *threshold <= upper_value {
                 ambiguous = Some((*initial, lower.clone(), upper.clone()));
                 break;
             }
@@ -670,6 +670,29 @@ mod tests {
         };
         assert!(lower.rational() <= rational(1, 3));
         assert!(rational(1, 3) <= upper.rational());
+    }
+
+    /// A collapsed outward interval still cannot decide equality after the
+    /// exact pass exceeded its rational budget.
+    #[trace("TC-632", "FR-197-AC-4")]
+    #[test]
+    fn collapsed_interval_at_threshold_remains_incomplete_after_rational_overflow() {
+        let half = rational(1, 2);
+        let result = backward_induction(
+            &product(),
+            &[None, Some(half.clone()), Some(half.clone())],
+            FhObjective::Min,
+            &half,
+            1,
+            1,
+            1,
+        )
+        .expect("valid finite product");
+        assert!(matches!(
+            result,
+            FhResult::PrecisionBudget { ref lower, ref upper, .. }
+                if lower.rational() == half && upper.rational() == half
+        ));
     }
 
     /// Trace: TC-638, FR-203-AC-2

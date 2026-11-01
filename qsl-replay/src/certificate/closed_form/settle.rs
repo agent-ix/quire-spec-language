@@ -26,7 +26,7 @@ pub fn settle(
     cancel: &Cancel,
 ) -> TerminalValue {
     let (claimed, agreed) = match outcome {
-        ClosedFormOutcome::Stopped(cause, _) => return TerminalValue::Incomplete(*cause),
+        ClosedFormOutcome::Stopped(cause, _) => return TerminalValue::Incomplete(cause.clone()),
         ClosedFormOutcome::Schedulable(_) => (
             Category::Success,
             TerminalValue::Proved {
