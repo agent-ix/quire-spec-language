@@ -66,6 +66,33 @@ fn checked_named(identity: &str, body: &str, profile: &str) -> qsl_replay::spine
     .expect("S1-S4 checked temporal package")
 }
 
+fn checked_timed_mapping() -> qsl_replay::spine::CheckedUnit {
+    let packages =
+        qsl_semantics::model::intake::package_input([tests_fixture_spine_model().as_slice()])
+            .expect("checked model fixture");
+    let source = r#"
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile t = "quire.temporal.timed/v1";
+dimension Time;
+unit s : Time = rational(1, 1);
+unit ms : Time = rational(1, 1000) * s;
+model M = "acme/orders";
+time M dense unit ms;
+temporal Due using t over (view: M::Widget) clock "model-time" on origin {
+    eventually[0 ms, 1 ms] true
+}
+"#;
+    crate::support::front_end::checked(
+        SourceIdentity::new("agent-ix", "test:checked-timed-mapping", "fixture", "1"),
+        "checked-timed-mapping.native",
+        source.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .expect("S1-S4 admits a checked timed clause")
+}
+
 fn tests_fixture_spine_model() -> Vec<u8> {
     include_bytes!("../fixtures/spine-model.semantic-ir.json").to_vec()
 }
@@ -402,13 +429,10 @@ fn checked_mapping_exercises_each_supported_row_and_past_operator() {
         }
     );
 
-    for (profile, dimension) in [
-        (
-            "quire.temporal.infinite-trace/v1",
-            temporal::Unmatched::InfiniteTrace,
-        ),
-        ("quire.temporal.timed/v1", temporal::Unmatched::TimedProfile),
-    ] {
+    for (profile, dimension) in [(
+        "quire.temporal.infinite-trace/v1",
+        temporal::Unmatched::InfiniteTrace,
+    )] {
         let checked = checked("eventually[0,1] true", profile);
         assert_eq!(
             temporal::mapping_support_checked(checked.package(), 0, Closure::Closed)
@@ -420,6 +444,15 @@ fn checked_mapping_exercises_each_supported_row_and_past_operator() {
             "{profile}"
         );
     }
+    let timed = checked_timed_mapping();
+    assert_eq!(
+        temporal::mapping_support_checked(timed.package(), 0, Closure::Closed)
+            .unwrap()
+            .support,
+        temporal::Support::Unsupported {
+            dimensions: vec![temporal::Unmatched::TimedProfile],
+        }
+    );
 }
 
 /// FR-043-AC-10: progress retained for one checked node cannot contradict an
