@@ -401,6 +401,25 @@ fn checked_mapping_exercises_each_supported_row_and_past_operator() {
             dimensions: vec![temporal::Unmatched::MixedDirection],
         }
     );
+
+    for (profile, dimension) in [
+        (
+            "quire.temporal.infinite-trace/v1",
+            temporal::Unmatched::InfiniteTrace,
+        ),
+        ("quire.temporal.timed/v1", temporal::Unmatched::TimedProfile),
+    ] {
+        let checked = checked("eventually[0,1] true", profile);
+        assert_eq!(
+            temporal::mapping_support_checked(checked.package(), 0, Closure::Closed)
+                .unwrap()
+                .support,
+            temporal::Support::Unsupported {
+                dimensions: vec![dimension],
+            },
+            "{profile}"
+        );
+    }
 }
 
 /// FR-043-AC-10: progress retained for one checked node cannot contradict an
