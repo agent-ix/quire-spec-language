@@ -317,6 +317,11 @@ pub struct Emission {
         Vec<quire_contract_model::SelectedTupleDeclarationRow>,
     /// QSL-stage source-unit identities keyed by admitted source unit nodes.
     pub(crate) selected_source_unit_rows: Vec<quire_contract_model::SelectedSourceUnitRow>,
+    /// QSL-stage identities for selected model-owned enum declarations/cases.
+    pub(crate) selected_model_enum_declaration_rows:
+        Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
+    pub(crate) selected_model_enum_member_rows:
+        Vec<quire_contract_model::SelectedModelEnumMemberRow>,
 }
 
 impl Emission {
@@ -354,6 +359,37 @@ impl Emission {
     /// Source-owned declared-unit identity rows carried by this emission.
     pub fn selected_source_unit_rows(&self) -> &[quire_contract_model::SelectedSourceUnitRow] {
         &self.selected_source_unit_rows
+    }
+
+    /// Selected model enum declaration rows carried by this emission.
+    pub fn selected_model_enum_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedModelEnumDeclarationRow] {
+        &self.selected_model_enum_declaration_rows
+    }
+
+    /// Selected model enum member rows carried by this emission.
+    pub fn selected_model_enum_member_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedModelEnumMemberRow] {
+        &self.selected_model_enum_member_rows
+    }
+
+    /// Validates the selected model enum rows against this admitted package.
+    pub fn selected_model_enums<'a>(
+        &'a self,
+        package: &'a quire_contract_model::CheckedPackageV2,
+        work_limit: u64,
+    ) -> Result<
+        quire_contract_model::SelectedModelEnums<'a>,
+        quire_contract_model::SelectedModelEnumError,
+    > {
+        quire_contract_model::SelectedModelEnums::from_stage_rows(
+            package,
+            self.selected_model_enum_declaration_rows.clone(),
+            self.selected_model_enum_member_rows.clone(),
+            work_limit,
+        )
     }
 
     /// Validates the operation-member rows against this emission's admitted IR
@@ -2404,6 +2440,8 @@ pub fn emit_timed_models(
         selected_operation_member_rows: Vec::new(),
         selected_tuple_declaration_rows: Vec::new(),
         selected_source_unit_rows: Vec::new(),
+        selected_model_enum_declaration_rows: Vec::new(),
+        selected_model_enum_member_rows: Vec::new(),
     })
 }
 
@@ -2756,6 +2794,35 @@ fn emit_package_inner(
         .iter()
         .filter(|row| emitted_keys.contains(&row.node_key))
         .cloned()
+        .collect();
+    let selected_model_enum_declaration_rows = graph
+        .semantic_graph()
+        .selected_model_enum_declarations()
+        .filter(|(key, _)| emitted_keys.contains(key))
+        .map(|(key, selected)| {
+            quire_contract_model::SelectedModelEnumDeclarationRow::new(
+                node_id(ids, key),
+                selected.selected_document.clone(),
+                selected.original_identity.clone(),
+                key.clone(),
+            )
+        })
+        .collect();
+    let selected_model_enum_member_rows = graph
+        .semantic_graph()
+        .selected_model_enum_members()
+        .filter(|(key, _)| emitted_keys.contains(key))
+        .map(|(key, selected)| {
+            quire_contract_model::SelectedModelEnumMemberRow::new(
+                node_id(ids, key),
+                node_id(ids, &selected.declaration_key),
+                selected.selected_document.clone(),
+                selected.enum_original_identity.clone(),
+                selected.member_original_identity.clone(),
+                selected.case.clone(),
+                key.clone(),
+            )
+        })
         .collect();
     let (mut source_map, mut sources) = source_map(&order, &regions)?;
     sources.insert(source_artifact(graph.source()));
@@ -3284,6 +3351,8 @@ fn emit_package_inner(
         selected_operation_member_rows,
         selected_tuple_declaration_rows,
         selected_source_unit_rows,
+        selected_model_enum_declaration_rows,
+        selected_model_enum_member_rows,
     })
 }
 

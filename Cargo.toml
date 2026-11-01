@@ -24,8 +24,8 @@ quire-checked = { git = "https://github.com/agent-ix/quire-eval", branch = "main
 # ADR-011 §6.1 layer E: the shared evaluation-core interface (FR-262, FR-401),
 # its own repository so RT and CG depend on it without the QSL repo.
 quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
-# IR-owned staged identity and operation-member witness joins.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "47deabbc10fde1a79b3599ee240cc1344d4aafca" }
+# IR-owned staged identity, operation-member, and model-enum witness joins.
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "ead9d58df0c98432c38a85fdf83e3f925a1cdfdf" }
 
 [package]
 name = "quire-spec-language"

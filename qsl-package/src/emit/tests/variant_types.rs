@@ -128,6 +128,156 @@ fn a_variant_type_is_one_model_owned_node_with_one_enum_value_per_case() {
     assert_eq!(odd, ODD_CASES);
 }
 
+/// FR-354: selected model enum rows retain the selected document and the
+/// original declaration/member identities, then join to the admitted nodes.
+#[trace("FR-354", "TC-418")]
+#[test]
+fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_foreign_rows() {
+    use quire_contract_model::{
+        SelectedModelEnumDeclarationRow, SelectedModelEnumErrorCode, SelectedModelEnumMemberRow,
+        SelectedModelEnums,
+    };
+
+    let emitted = emit_unit(UNIT);
+    let Read::Verified { admitted, .. } = emitted.read(emitted.emission.package.bytes()) else {
+        panic!("the emitted model enums are admitted")
+    };
+    let declarations = emitted.emission.selected_model_enum_declaration_rows();
+    let members = emitted.emission.selected_model_enum_member_rows();
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(members.len(), 5);
+    for row in declarations {
+        assert_eq!(row.selected_document.as_ref(), fixture::PACKAGE);
+        assert!([fixture::id("Tier"), fixture::id("Odd")]
+            .iter()
+            .any(|identity| identity == row.original_identity.as_ref()));
+        let selected = emitted
+            .emission
+            .selected_model_enums(&admitted, 128)
+            .expect("the selected enum declaration rows join");
+        assert_eq!(
+            selected.read_declaration(&admitted, &row.structural_node),
+            Ok(row)
+        );
+    }
+    for row in members {
+        assert_eq!(row.selected_document.as_ref(), fixture::PACKAGE);
+        let (owner, member) = match row.case.as_ref() {
+            "Gold" if row.enum_original_identity == fixture::id("Tier") => {
+                ("Tier", "variant/Tier-Gold")
+            }
+            "Standard" if row.enum_original_identity == fixture::id("Tier") => {
+                ("Tier", "variant/Tier-Standard")
+            }
+            "2x" => ("Odd", "variant/Odd-2x"),
+            "Café" => ("Odd", "variant/Odd-Caf"),
+            "Gold Plus" => ("Odd", "variant/Odd-Gold-Plus"),
+            other => panic!("unexpected selected model case {other:?}"),
+        };
+        assert_eq!(row.enum_original_identity.as_ref(), fixture::id(owner));
+        assert_eq!(row.member_original_identity.as_ref(), fixture::id(member));
+        let selected = emitted
+            .emission
+            .selected_model_enums(&admitted, 128)
+            .expect("the selected enum member rows join");
+        assert_eq!(
+            selected.read_member(&admitted, &row.structural_node),
+            Ok(row)
+        );
+    }
+
+    let declaration = declarations[0].clone();
+    let missing = SelectedModelEnums::from_stage_rows(
+        &admitted,
+        Vec::<SelectedModelEnumDeclarationRow>::new(),
+        Vec::<SelectedModelEnumMemberRow>::new(),
+        128,
+    )
+    .expect("an empty row index is valid until read");
+    assert_eq!(
+        missing
+            .read_declaration(&admitted, &declaration.structural_node)
+            .unwrap_err()
+            .code,
+        SelectedModelEnumErrorCode::UnavailableWitness
+    );
+
+    let mut mismatched = declaration.clone();
+    mismatched.selected_document = "foreign/document".into();
+    assert_eq!(
+        SelectedModelEnums::from_stage_rows(
+            &admitted,
+            [mismatched],
+            Vec::<SelectedModelEnumMemberRow>::new(),
+            128,
+        )
+        .unwrap_err()
+        .code,
+        SelectedModelEnumErrorCode::MismatchedWitness
+    );
+
+    assert_eq!(
+        SelectedModelEnums::from_stage_rows(
+            &admitted,
+            [declaration.clone(), declaration.clone()],
+            Vec::<SelectedModelEnumMemberRow>::new(),
+            128,
+        )
+        .unwrap_err()
+        .code,
+        SelectedModelEnumErrorCode::ConflictingWitness
+    );
+
+    let member = members[0].clone();
+    let declaration = declarations
+        .iter()
+        .find(|row| row.structural_node == member.declaration_node)
+        .expect("the selected member has its declaration row")
+        .clone();
+    let mut mismatched_member = member.clone();
+    mismatched_member.case = "unknown-case".into();
+    assert_eq!(
+        SelectedModelEnums::from_stage_rows(
+            &admitted,
+            [declaration.clone()],
+            [mismatched_member],
+            128,
+        )
+        .unwrap_err()
+        .code,
+        SelectedModelEnumErrorCode::MismatchedWitness
+    );
+    assert_eq!(
+        SelectedModelEnums::from_stage_rows(
+            &admitted,
+            [declaration],
+            [member.clone(), member],
+            128,
+        )
+        .unwrap_err()
+        .code,
+        SelectedModelEnumErrorCode::ConflictingWitness
+    );
+
+    let selected = emitted
+        .emission
+        .selected_model_enums(&admitted, 128)
+        .expect("all rows join");
+    let Read::Verified {
+        admitted: foreign, ..
+    } = emitted.read(emitted.emission.package.bytes())
+    else {
+        panic!("a second reader admits an independent package")
+    };
+    assert_eq!(
+        selected
+            .read_declaration(&foreign, &declaration.structural_node)
+            .unwrap_err()
+            .code,
+        SelectedModelEnumErrorCode::ForeignPackage
+    );
+}
+
 /// FR-360-AC-8: a call passing a variant value takes it by `ref`, no node
 /// converts it, an equality over variant values is the enumeration equality
 /// application, and `!=` negates it.

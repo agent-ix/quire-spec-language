@@ -98,7 +98,8 @@ pub(crate) use model::{
 };
 pub use model::{
     collection_kind, model_root_key, AdmittedModel, CollectionShape, ForeignView, ModelClause,
-    PlaceRow, PlaceStep, SelectedOperationMember,
+    PlaceRow, PlaceStep, SelectedModelEnumDeclaration, SelectedModelEnumMember,
+    SelectedOperationMember,
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
@@ -327,6 +328,10 @@ pub struct SemanticGraph {
     nodes: HashMap<NodeKey, SemanticNode>,
     /// Selected model operation identities keyed by their lowered anchor.
     selected_operation_members: BTreeMap<NodeKey, model::SelectedOperationMember>,
+    /// Selected model enum declarations keyed by their lowered declaration.
+    selected_model_enum_declarations: BTreeMap<NodeKey, model::SelectedModelEnumDeclaration>,
+    /// Selected model enum members keyed by their lowered member node.
+    selected_model_enum_members: BTreeMap<NodeKey, model::SelectedModelEnumMember>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -367,6 +372,37 @@ impl SemanticGraph {
         member: SelectedOperationMember,
     ) {
         self.selected_operation_members.insert(anchor, member);
+    }
+
+    /// The selected model enum declarations associated with lowered nodes.
+    pub fn selected_model_enum_declarations(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &model::SelectedModelEnumDeclaration)> {
+        self.selected_model_enum_declarations.iter()
+    }
+
+    /// The selected model enum members associated with lowered nodes.
+    pub fn selected_model_enum_members(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &model::SelectedModelEnumMember)> {
+        self.selected_model_enum_members.iter()
+    }
+
+    pub(crate) fn select_model_enum_declaration(
+        &mut self,
+        declaration: NodeKey,
+        selected: model::SelectedModelEnumDeclaration,
+    ) {
+        self.selected_model_enum_declarations
+            .insert(declaration, selected);
+    }
+
+    pub(crate) fn select_model_enum_member(
+        &mut self,
+        member: NodeKey,
+        selected: model::SelectedModelEnumMember,
+    ) {
+        self.selected_model_enum_members.insert(member, selected);
     }
 
     /// The node keyed `key`.
@@ -2736,7 +2772,7 @@ impl<'a> Lowering<'a> {
         location: &Location,
         declaration: NodeKey,
         member: &EnumValue,
-    ) -> Result<(), CheckRefusal> {
+    ) -> Result<NodeKey, CheckRefusal> {
         let key = crate::value::enumeration::enum_value_key_in(
             &self.package_name,
             &declaration,
@@ -2745,7 +2781,7 @@ impl<'a> Lowering<'a> {
         .map_err(|_| fault(location, KeyFault::InvalidMemberKey(declaration.clone())))?;
         self.insert_nominal(
             location,
-            key,
+            key.clone(),
             NodeContent {
                 owner_model: None,
                 node_tag: NodeTag::Value,
@@ -2760,7 +2796,7 @@ impl<'a> Lowering<'a> {
             },
             None,
         )?;
-        Ok(())
+        Ok(key)
     }
 
     /// Add the node `content` under its admitted structural `key` and return

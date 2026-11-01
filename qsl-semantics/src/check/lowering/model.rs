@@ -280,6 +280,30 @@ pub struct SelectedOperationMember {
     pub selected_operation_identity: SelectedOperationIdentity,
 }
 
+/// Selected model declaration facts retained for one lowered enum node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedModelEnumDeclaration {
+    /// The selected domain document identity.
+    pub selected_document: Box<str>,
+    /// The original enum declaration identity in that document.
+    pub original_identity: Box<str>,
+}
+
+/// Selected model member facts retained for one lowered enum case node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedModelEnumMember {
+    /// The enum declaration's admitted QSL node key.
+    pub declaration_key: NodeKey,
+    /// The selected domain document identity.
+    pub selected_document: Box<str>,
+    /// The original enum declaration identity in that document.
+    pub enum_original_identity: Box<str>,
+    /// The original member identity in that document.
+    pub member_original_identity: Box<str>,
+    /// The selected case label.
+    pub case: Box<str>,
+}
+
 /// One population of an admitted package as FR-391 names it
 /// ([`AdmittedModel::named_populations`]).
 pub(crate) struct NamedPopulationRecord<'m> {
@@ -370,6 +394,27 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
+    /// The original FCD identity of `case` under the selected enum record.
+    pub(crate) fn variant_member_original_identity(
+        &self,
+        declaration: &DeclarationKey,
+        case: &str,
+    ) -> Option<&str> {
+        matches!(
+            self.records.get(declaration),
+            Some(DomainPackageRecord::Enum(_))
+        )
+        .then_some(())?;
+        self.records.values().find_map(|record| match record {
+            DomainPackageRecord::Variant(variant)
+                if &variant.owner == declaration && variant.case == case =>
+            {
+                Some(variant.key.node.as_str())
+            }
+            _ => None,
+        })
+    }
+
     pub(crate) fn selected_operation_member(
         &self,
         operation: &crate::check::state_clause::ClauseOperation,
@@ -2058,8 +2103,54 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let declaration = self.model_node(variant.declaration(), location)?;
-        for member in variant.members() {
-            self.enum_member_node(location, declaration.clone(), member)?;
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.selection.identity == variant.declaration().package)
+            .ok_or_else(|| {
+                fault(
+                    location,
+                    KeyFault::UnadmittedPackage(variant.declaration().clone()),
+                )
+            })?;
+        let selected_document: Box<str> = model.selection.identity.as_str().into();
+        let enum_original_identity: Box<str> = variant.declaration().node.as_str().into();
+        let member_original_identities: Vec<Box<str>> = variant
+            .members()
+            .iter()
+            .map(|member| {
+                model
+                    .variant_member_original_identity(variant.declaration(), member.case())
+                    .map(Into::into)
+            })
+            .collect::<Option<_>>()
+            .ok_or_else(|| {
+                fault(
+                    location,
+                    KeyFault::UnadmittedPackage(variant.declaration().clone()),
+                )
+            })?;
+        self.graph.select_model_enum_declaration(
+            declaration.clone(),
+            SelectedModelEnumDeclaration {
+                selected_document: selected_document.clone(),
+                original_identity: enum_original_identity.clone(),
+            },
+        );
+        for (member, member_original_identity) in
+            variant.members().iter().zip(member_original_identities)
+        {
+            let member_key = self.enum_member_node(location, declaration.clone(), member)?;
+            self.graph.select_model_enum_member(
+                member_key,
+                SelectedModelEnumMember {
+                    declaration_key: declaration.clone(),
+                    selected_document: selected_document.clone(),
+                    enum_original_identity: enum_original_identity.clone(),
+                    member_original_identity: member_original_identity.into(),
+                    case: member.case().into(),
+                },
+            );
         }
         Ok(declaration)
     }
