@@ -919,7 +919,7 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
                 "parallel Both {{ branch left sequence Left {{ send Tx via ch as (tx: Plain) \
                  {{ true }}; receive Rx via ch of Tx as (rx: Plain) {{ true }}; }} \
                  branch right {} }} join all [left, right];",
-                pick("S", "true", "rx.ready", "not rx.ready")
+                pick("S", "true and true", "rx.ready", "not rx.ready")
             ),
         ),
         "rx",
