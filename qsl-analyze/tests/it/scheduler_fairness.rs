@@ -28,10 +28,11 @@ use qsl_foundation::MemoryModelName;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_protocol_trace, settle_protocol_check, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal, ModelTraceReplayResult,
-    ModelTraceSettlement, ModelTraceSubject, ProofCertificate, ProtocolCertificateRequest,
-    ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
+    replay_protocol_trace, settle_protocol_check, ComponentWitness, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal,
+    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ProofCertificate,
+    ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel,
+    TemporalCounterexample,
 };
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedProtocolTarget, PackageDeclarations, ProtocolAnchorCause,
@@ -854,12 +855,10 @@ fn compensation_fairness_target_emits_and_covers_transitions() {
         })));
 }
 
-/// Exercise compensation fairness in liveness filtering and replay. IR
-/// admission requires the fairness-bearing temporal claim in the protocol's
-/// requirements, but QSL lowering currently refuses the resulting reference
-/// cycle because that claim targets a node inside the same protocol.
+/// Exercise compensation fairness in liveness filtering and replay after IR
+/// admission accepts the fairness-bearing temporal claim and its protocol
+/// target together.
 #[trace("TC-657", "FR-212", "FR-217-AC-4")]
-#[ignore = "blocked by cyclic protocol requirement/fairness-target admission join"]
 #[test]
 fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
     let template =
@@ -884,7 +883,7 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
         + liveness;
     let mut documents = Documents::new();
     let initial = vec![documents.start("s0", &[("c", 0)])];
-    let checked = package_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let checked = package_with_name(name, crate::fill::PROTOCOL_PROFILE, &body);
     let clauses = checked.graph().temporal_clauses();
     assert_eq!(clauses.len(), 2);
     let unfair_clause = clauses[0].clause();
@@ -917,10 +916,17 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
         panic!("an unfair compensation lasso should refute the claim");
     };
     assert!(lasso.lasso.is_some(), "{lasso:?}");
-    let ModelCheckOutcome::Holds { .. } = run_clause(fair_clause).expect("the fair claim checks")
+    let ModelCheckOutcome::Holds {
+        certificate: ProofCertificate::Component(certificate),
+        ..
+    } = run_clause(fair_clause).expect("the fair claim checks")
     else {
         panic!("authored compensation fairness should filter its lasso");
     };
+    assert!(certificate.components.iter().any(|component| matches!(
+        component.witness,
+        ComponentWitness::UnfairWeak { constraint: 0 }
+    )));
 
     let package_subject = subject(&checked, &documents, initial.clone(), "Pay", "c");
     let replay_targets: Vec<_> = fair_clause
@@ -934,7 +940,7 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
     replay_payload.fairness = replay_fairness;
     let occurrence = OccurrenceKey::new(fair_node.identity().clone(), fair_node.claim().clone());
     let envelope = envelope_at(replay_payload, fair_node.identity().clone(), occurrence);
-    let unit = unit_text(&body).into_bytes();
+    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body).into_bytes();
     let replayed = replay_protocol_trace(
         request_named(name, &document(), documents.snapshots.iter(), &unit),
         &ProtocolTraceSubject {
@@ -961,10 +967,13 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
     let Err(ReplayRefusal::ModelTrace(refusal)) = replayed else {
         panic!("the lasso is refused by authored compensation fairness: {replayed:?}");
     };
-    assert!(matches!(
-        refusal.as_ref(),
-        ModelTraceRefusal::UnfairProtocolLasso { .. }
-    ));
+    assert!(
+        matches!(
+            refusal.as_ref(),
+            ModelTraceRefusal::UnfairProtocolLasso { .. }
+        ),
+        "{refusal:?}"
+    );
 }
 
 /// FR-212 Outputs (TC-657): an authored operation constraint over a protocol
