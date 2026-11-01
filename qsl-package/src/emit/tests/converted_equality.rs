@@ -135,6 +135,27 @@ fn nested_equalities_each_retain_producer_facts() {
     }));
 }
 
+/// QSL-1390: distinct source occurrences that lower to the same structural
+/// equality key retain their independent authored conversion decisions.
+#[ix_trace_rs::trace("QSL-1390")]
+#[test]
+fn structurally_reused_equality_keys_retain_each_occurrence() {
+    let graph = checked_graph(
+        "dimension Time; unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;\n\
+         function same using v(a: Quantity<ms>, b: Quantity<ms>): Boolean pure { a = b and convert<Quantity<ms>>(a) = b }",
+    );
+    let occurrences = graph.equality_producer_data();
+    assert_eq!(occurrences.len(), 2, "both source occurrences are retained");
+    let mut rows = occurrences.iter().collect::<Vec<_>>();
+    rows.sort_by_key(|(_, data)| data.authored_operands()[0].target().is_some());
+
+    let keys = occurrences.keys().collect::<Vec<_>>();
+    assert_eq!(keys[0].0, keys[1].0, "lowering reused one structural key");
+    assert_ne!(keys[0].1, keys[1].1, "source locations distinguish them");
+    assert_eq!(rows[0].1.authored_operands()[0].target(), None);
+    assert!(rows[1].1.authored_operands()[0].target().is_some());
+}
+
 /// The application nodes of operation `identity` in `wire`.
 fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
     nodes(wire)

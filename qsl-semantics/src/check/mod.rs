@@ -650,9 +650,16 @@ pub struct CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
-    /// QSL-owned equality producer facts retained by the keyed equality
-    /// applications. The wire encoder remains an IR-owned follow-up.
-    equality_producer_data: BTreeMap<quire_exact::NodeKey, ir::EqualityProducerData>,
+    /// QSL-owned equality producer facts retained by keyed equality
+    /// application occurrences. The wire encoder remains an IR-owned
+    /// follow-up.
+    equality_producer_data: BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::EqualityProducerData,
+    >,
     /// NFR-011: the ceilings this package was checked under.
     effective_limits: CheckingLimits,
     /// FR-096: each function's form spans, by declaration index, so a
@@ -873,7 +880,10 @@ impl fmt::Debug for CheckedGraph {
                     .field("semantic_graph", &semantic_graph)
                     .field(
                         "equality_producer_data",
-                        &NodeMap(equality_producer_data.iter()),
+                        &equality_producer_data
+                            .iter()
+                            .map(|((node, location), data)| ((NodeKeyDebug(node), location), data))
+                            .collect::<Vec<_>>(),
                     )
                     .field("effective_limits", &effective_limits)
                     .field("form_spans", &form_spans)
@@ -6567,10 +6577,18 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
-    /// QSL's typed equality facts, keyed by their lowered application nodes.
+    /// QSL's typed equality facts, keyed by their lowered application node
+    /// and source occurrence. Distinct occurrences may share a structural
+    /// node key while retaining different authored conversion decisions.
     pub fn equality_producer_data(
         &self,
-    ) -> &BTreeMap<quire_exact::NodeKey, ir::EqualityProducerData> {
+    ) -> &BTreeMap<
+        (
+            quire_exact::NodeKey,
+            quire_semantic_value::location::Location,
+        ),
+        ir::EqualityProducerData,
+    > {
         &self.equality_producer_data
     }
 

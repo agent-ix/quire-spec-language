@@ -598,8 +598,10 @@ pub(crate) struct Lowered {
     /// The S4 identities of each protocol's clause and emitted members,
     /// retained for FR-390's checked-body selector.
     pub(crate) protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
-    /// QSL equality facts retained by the checked equality application's key.
-    pub(crate) equality_producer_data: BTreeMap<NodeKey, EqualityProducerData>,
+    /// QSL equality facts retained by the checked equality application's key
+    /// and source occurrence. Structural keys can be reused by distinct
+    /// occurrences whose authored conversion decisions differ.
+    pub(crate) equality_producer_data: BTreeMap<(NodeKey, Location), EqualityProducerData>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -708,8 +710,10 @@ pub(crate) struct Lowering<'a> {
     /// The member keys of each keyed protocol clause, by clause name: the
     /// nodes a refinement class catalog names (FR-375).
     protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
-    /// QSL equality facts retained by the checked equality application's key.
-    equality_producer_data: BTreeMap<NodeKey, EqualityProducerData>,
+    /// QSL equality facts retained by the checked equality application's key
+    /// and source occurrence. Structural keys can be reused by distinct
+    /// occurrences whose authored conversion decisions differ.
+    equality_producer_data: BTreeMap<(NodeKey, Location), EqualityProducerData>,
     /// Attempts and compensation nodes retained for clauses delayed until
     /// their required temporal clause keys are available.
     protocol_attempts: Vec<Vec<protocol::AttemptNodes>>,
@@ -4616,7 +4620,8 @@ impl<'a> Lowering<'a> {
                     else {
                         return Err(fault(location, KeyFault::UnresolvedDraft));
                     };
-                    self.equality_producer_data.insert(key.clone(), data);
+                    self.equality_producer_data
+                        .insert((key.clone(), location.clone()), data);
                 }
                 Ok(term)
             }
