@@ -333,9 +333,9 @@ const NOT_LOWERED: [&str; 8] = [
 /// `positive-operation-identities.json` and
 /// `positive-control-operations.json` whose identity a row lowers, the node
 /// QSL emits for a function holding that operation equals the fixture node
-/// on the AC's members. Packages with equality sidecars remain subject to
-/// IR's typed UnsupportedConstruct refusal until IR-1209 lands; then restore
-/// the Verified assertion for equality sidecars.
+/// on the AC's members. The admitted-equality accessor materializes supported
+/// built-in Plan rows and names exact missing per-fact witnesses for other
+/// schedules or declaration-backed Plan types.
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
@@ -365,33 +365,7 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
             .and_then(Value::as_array)
             .is_some_and(|rows| !rows.is_empty());
         if has_equality_sidecar {
-            // IR-1209 follow-up: this typed UnsupportedConstruct assertion must
-            // become Verified once the IR-1209 reader lands.
-            match read_back(&emission) {
-                Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
-                    assert_eq!(
-                        refusal.code,
-                        quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct,
-                        "{}: equality sidecar remains a typed IR refusal",
-                        case.identity
-                    );
-                    assert_eq!(
-                        refusal
-                            .loci
-                            .first()
-                            .and_then(|locus| locus.path.as_ref())
-                            .map(ToString::to_string)
-                            .as_deref(),
-                        Some("/checked_term_data/equality_decisions/0"),
-                        "{}: refusal identifies the first equality decision",
-                        case.identity
-                    );
-                }
-                outcome => panic!(
-                    "{}: expected typed UnsupportedConstruct for equality sidecar, got {outcome:?}",
-                    case.identity
-                ),
-            }
+            assert_equality_reader_outcomes(&emission, read_back(&emission));
         } else {
             let read = read_back(&emission);
             assert!(

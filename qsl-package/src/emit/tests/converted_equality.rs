@@ -710,6 +710,7 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
          function text_eq using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
          function plan_eq using v(a: R, b: R): Boolean pure { a = b }",
     );
+    super::assert_equality_reader_outcomes(&emission, read_back(&emission));
     assert_eq!(emission.equality_producer_identity_rows().len(), 2);
     assert!(emission
         .equality_fact_witness_rows()
@@ -781,6 +782,7 @@ fn equality_producer_rows_are_emitted_in_checked_term_data() {
          function quantity using v(a: Quantity<ms>, b: Quantity<s>): Boolean pure { convert<Quantity<s>>(a) = b }\n\
          function plan using v(a: Point, b: Point): Boolean pure { a = b }",
     );
+    super::assert_equality_reader_outcomes(&emission, read_back(&emission));
     let wire = wire(&emission);
     let sidecar = wire
         .get("checked_term_data")
@@ -858,6 +860,7 @@ fn compound_quantity_equality_emits_exact_unit_facts() {
         "dimension Length; unit m : Length = rational(1, 1);\n\
          function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }",
     );
+    super::assert_equality_reader_outcomes(&emission, read_back(&emission));
     let wire = wire(&emission);
     let decision = &wire["checked_term_data"]["equality_decisions"][0];
     let units = decision["units"].as_array().unwrap();
@@ -958,36 +961,10 @@ fn referenced<'w>(wire: &'w Value, term: &Value) -> &'w Value {
         .expect("the referenced node")
 }
 
-/// The currently pinned IR reader refuses producer equality rows until its
-/// typed admitted-equality accessor lands. Check that typed boundary, then
-/// return the emitted graph for producer-side assertions.
+/// Read each emitted equality through IR's typed admitted-equality accessor,
+/// then return the graph for producer-side assertions.
 fn assert_reader_outcome_for_equality_sidecar(emission: &Emission) {
-    let has_equality_rows = wire(emission)["checked_term_data"]["equality_decisions"]
-        .as_array()
-        .is_some_and(|rows| !rows.is_empty());
-    if !has_equality_rows {
-        assert!(matches!(read_back(emission), Read::Verified { .. }));
-        return;
-    }
-    match read_back(emission) {
-        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
-            assert_eq!(
-                refusal.code,
-                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
-            );
-            assert_eq!(
-                refusal.loci[0]
-                    .path
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .as_deref(),
-                Some("/checked_term_data/equality_decisions/0")
-            );
-        }
-        outcome => {
-            panic!("IR's current reader must report the pending equality slice: {outcome:?}")
-        }
-    }
+    super::assert_equality_reader_outcomes(emission, read_back(emission));
 }
 
 /// `function f using v(a: {source}, b: {other}): Boolean pure { body }`

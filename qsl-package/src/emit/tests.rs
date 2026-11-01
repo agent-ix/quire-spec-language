@@ -290,6 +290,179 @@ fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
     )
 }
 
+/// Reads each emitted equality through IR's admitted-equality accessor using
+/// the exact producer application, occurrence, and stage rows retained by the
+/// emitter. Supported built-in Plan cases materialize; other schedules and
+/// declaration-backed Plan types retain a typed missing-witness result until
+/// their per-fact rows are consumed by IR.
+fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
+    let wire = wire(emission);
+    let Some(decisions) = wire["checked_term_data"]["equality_decisions"].as_array() else {
+        assert!(matches!(read, Read::Verified { .. }));
+        return;
+    };
+    if decisions.is_empty() {
+        assert!(matches!(read, Read::Verified { .. }));
+        return;
+    }
+
+    let admitted = match read {
+        Read::Verified { admitted, .. } => admitted,
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            // IR-1209 currently compares the original source type in a
+            // converted decision with the lowered convert application's
+            // result type. Preserve this exact InvalidPackage until the IR
+            // source/target join is corrected; do not turn it into admission.
+            let first_converted_source =
+                decisions.iter().enumerate().find_map(|(index, decision)| {
+                    ["left", "right"].into_iter().find_map(|side| {
+                        (!decision[side]["conversion_target"].is_null()).then(|| {
+                            format!(
+                                "/checked_term_data/equality_decisions/{index}/{side}/source_type"
+                            )
+                        })
+                    })
+                });
+            assert!(
+                first_converted_source.is_some(),
+                "unexpected non-conversion package refusal: {refusal:?}"
+            );
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::InvalidPackage
+            );
+            assert_eq!(refusal.loci.len(), 1, "{refusal:?}");
+            assert_eq!(
+                refusal.loci[0]
+                    .path
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref(),
+                first_converted_source.as_deref(),
+                "converted operand refusal must identify the first original source-type join"
+            );
+            return;
+        }
+        other => panic!("expected IR package admission for equality sidecars, got {other:?}"),
+    };
+
+    let selected_rows = emission
+        .equality_producer_identity_rows()
+        .iter()
+        .map(|row| {
+            quire_contract_model::SelectedEqualityApplicationRow::new(
+                row.checked_node().clone(),
+                row.occurrence().clone(),
+                row.source_map_entry().clone(),
+                row.application().clone(),
+                row.location().clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(selected_rows.len(), decisions.len());
+
+    for (index, decision) in decisions.iter().enumerate() {
+        let row = emission
+            .equality_producer_identity_rows()
+            .iter()
+            .find(|row| {
+                serde_json::to_value(row.checked_node()).unwrap() == decision["application"]
+                    && serde_json::to_value(row.occurrence()).unwrap() == decision["occurrence"]
+            })
+            .expect("each serialized equality joins to its exact producer occurrence");
+        match admitted.admitted_equality(
+            row.checked_node(),
+            row.occurrence(),
+            &selected_rows,
+            emission.selected_source_unit_rows(),
+            1_000_000,
+        ) {
+            Ok(equality) => {
+                assert_eq!(decision["schedule"], "plan");
+                assert!(decision["units"].as_array().unwrap().is_empty());
+                assert!(decision["enum_members"].as_array().unwrap().is_empty());
+                assert_eq!(
+                    equality.schedule(),
+                    quire_semantic_value::declaration::EqualitySchedule::Plan
+                );
+            }
+            Err(error) => {
+                assert_eq!(
+                    error.code,
+                    quire_contract_model::AdmittedEqualityReadErrorCode::UnavailableEqualityWitness,
+                    "decision {index}: {error:?}"
+                );
+                let (expected_witness, expected_at) = match decision["schedule"].as_str() {
+                    // IR currently classifies the emitted text_bounds node as
+                    // PlanType; preserve that exact result as the recorded
+                    // TextType-vs-TextBounds mismatch until IR handles it.
+                    Some("text") => {
+                        let source_type = &decision["left"]["source_type"];
+                        let text_node = wire["semantic_graph"]["nodes"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|node| &node["node_id"] == source_type)
+                            .expect("the Text source type has an emitted structural node");
+                        assert_eq!(text_node["semantic_form"], "text_bounds");
+                        (
+                            quire_contract_model::EqualityWitnessKind::PlanType,
+                            source_type.clone(),
+                        )
+                    }
+                    Some("enum") if !decision["enum_members"].as_array().unwrap().is_empty() => (
+                        quire_contract_model::EqualityWitnessKind::EnumMember,
+                        decision["enum_members"][0]["member"].clone(),
+                    ),
+                    Some("enum") => (
+                        quire_contract_model::EqualityWitnessKind::EnumDeclaration,
+                        decision["left"]["source_type"].clone(),
+                    ),
+                    Some("quantity") => {
+                        let unit = &decision["units"][0];
+                        if unit["form"]["kind"] == "declared" {
+                            (
+                                quire_contract_model::EqualityWitnessKind::DimensionDeclaration,
+                                unit["form"]["dimension_node"].clone(),
+                            )
+                        } else if !unit["form"]["dimension_terms"]
+                            .as_array()
+                            .unwrap()
+                            .is_empty()
+                        {
+                            (
+                                quire_contract_model::EqualityWitnessKind::BaseDimensionTerm,
+                                unit["form"]["dimension_terms"][0]["dimension"].clone(),
+                            )
+                        } else if !unit["form"]["terms"].as_array().unwrap().is_empty() {
+                            (
+                                quire_contract_model::EqualityWitnessKind::CompoundUnit,
+                                unit["form"]["terms"][0]["root_unit"].clone(),
+                            )
+                        } else {
+                            (
+                                quire_contract_model::EqualityWitnessKind::CompoundUnit,
+                                unit["unit"].clone(),
+                            )
+                        }
+                    }
+                    Some("plan") => (
+                        quire_contract_model::EqualityWitnessKind::PlanType,
+                        decision["left"]["source_type"].clone(),
+                    ),
+                    other => panic!("unexpected equality schedule {other:?}"),
+                };
+                assert_eq!(error.witness, Some(expected_witness), "decision {index}");
+                assert_eq!(
+                    serde_json::to_value(error.at.as_ref()).unwrap(),
+                    expected_at,
+                    "decision {index}: exact missing structural witness"
+                );
+            }
+        }
+    }
+}
+
 /// The verified package's exports: declared name to structural node identity.
 fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     match read_back(emission) {
@@ -2260,7 +2433,8 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
 /// conforming references compare by identity) and emits as
 /// `quire.op.reference.eq`. IR-285's QVC checked-operation catalog
 /// (STD-101/102) admits conforming operands for that operation, so QSL's I2
-/// read returns Verified exporting `same` once the IR-1209 equality reader lands.
+/// package read returns Verified exporting `same`; the admitted-equality
+/// accessor reports its missing declaration-backed Plan witness.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]
 fn conforming_reference_equality_is_accepted_by_the_i2_read() {
@@ -2272,24 +2446,7 @@ fn conforming_reference_equality_is_accepted_by_the_i2_read() {
             .is_some_and(|rows| !rows.is_empty()),
         "the producer must retain the checked equality row"
     );
-    // IR-1209 follow-up: switch this expectation back to Verified once its reader is on IR main.
-    match read {
-        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
-            assert_eq!(
-                refusal.code,
-                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
-            );
-            assert_eq!(
-                refusal.loci[0]
-                    .path
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .as_deref(),
-                Some("/checked_term_data/equality_decisions/0")
-            );
-        }
-        other => panic!("expected typed UnsupportedConstruct for equality sidecar, got {other:?}"),
-    }
+    assert_equality_reader_outcomes(&emission, read);
 }
 
 /// FR-056-AC-9 (TC-442 step 3): `M::Nope` names no object type of the
@@ -3519,7 +3676,8 @@ fn an_ordered_comparison_of_enum_parameters_reads_back_verified() {
 }
 
 /// QSL-349: the same enum compared with `=` places each member the same
-/// way. IR-1209 must admit the equality sidecar before the package reads back Verified.
+/// way. IR admits the carrier, while the admitted-equality accessor reports
+/// its missing enum-member witness until QSL's per-fact rows are consumed.
 #[trace("FR-093-AC-18", "TC-416")]
 #[test]
 fn enum_members_no_literal_names_are_placed_under_an_equality() {
@@ -3535,24 +3693,7 @@ fn enum_members_no_literal_names_are_placed_under_an_equality() {
             .is_some_and(|rows| !rows.is_empty()),
         "the producer must retain the checked equality row"
     );
-    // IR-1209 follow-up: switch this expectation back to Verified once its reader is on IR main.
-    match read_back(&emission) {
-        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
-            assert_eq!(
-                refusal.code,
-                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
-            );
-            assert_eq!(
-                refusal.loci[0]
-                    .path
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .as_deref(),
-                Some("/checked_term_data/equality_decisions/0")
-            );
-        }
-        other => panic!("expected typed UnsupportedConstruct for equality sidecar, got {other:?}"),
-    }
+    assert_equality_reader_outcomes(&emission, read_back(&emission));
 }
 
 /// QSL-349: an enum and a record no function names place each member, and
