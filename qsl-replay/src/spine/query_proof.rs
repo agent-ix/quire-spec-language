@@ -4,8 +4,8 @@
 //! and its result representation.
 
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedNode, NodeKind, Visit};
-use quire_exact::ValueType;
+use qsl_semantics::check::{CheckedNode, NodeId, NodeKind, Visit};
+use quire_exact::{NodeKey, ValueType};
 
 /// The typed proof-transfer outcome for a selected checked clause.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +36,10 @@ pub enum QueryProofCause {
 /// The exact checked query form and its inferred result representation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedQueryProof {
+    /// Exact S3 identity of the containing checked clause.
+    pub clause: NodeKey,
+    /// Node position of the selected query in that clause's checked body.
+    pub node: NodeId,
     /// The ordered query constructor.
     pub visit: Visit,
     /// The result type retained by the checked node.
@@ -63,7 +67,7 @@ pub fn select_query_proof(
         .graph()
         .state_clause(clause_name)
         .ok_or_else(|| QueryProofSelectionError::MissingClause(clause_name.to_owned()))?;
-    let Some(query) = unsupported_collection_query(clause.body()) else {
+    let Some(query) = unsupported_collection_query(clause.identity(), clause.body()) else {
         return Ok(QueryProofDisposition::NoCollectionQuery);
     };
     Ok(QueryProofDisposition::Unsupported(Box::new(
@@ -74,7 +78,10 @@ pub fn select_query_proof(
     )))
 }
 
-fn unsupported_collection_query(root: CheckedNode<'_>) -> Option<CheckedQueryProof> {
+fn unsupported_collection_query(
+    clause: NodeKey,
+    root: CheckedNode<'_>,
+) -> Option<CheckedQueryProof> {
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
         if let NodeKind::Query {
@@ -84,6 +91,8 @@ fn unsupported_collection_query(root: CheckedNode<'_>) -> Option<CheckedQueryPro
         {
             if matches!(node.value_type(), ValueType::Collection(_)) {
                 return Some(CheckedQueryProof {
+                    clause,
+                    node: node.id(),
                     visit: *visit,
                     result_type: node.value_type().clone(),
                 });

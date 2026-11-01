@@ -231,6 +231,8 @@ pub enum Dimension {
     OpenPrefix,
     /// Progress in the profile's clock domain, asserted by a watermark.
     Watermark,
+    /// Decision-scope closure asserted at the progress watermark.
+    DecisionScope,
     /// The input-completeness assertion, independent of both closure axes.
     Completeness,
 }

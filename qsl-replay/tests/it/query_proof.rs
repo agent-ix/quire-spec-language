@@ -9,6 +9,7 @@ use qsl_replay::spine::{
     SpineLimits,
 };
 use qsl_replay::SourceIdentity;
+use qsl_semantics::check::{NodeKind, Visit};
 use quire_exact::{Cancel, ValueType};
 
 const PACKAGE: &str = "example/config-version";
@@ -22,7 +23,8 @@ fn checked_collection_query() -> CheckedUnit {
          model Config = {PACKAGE:?};\n\
          function ints using v(xs: Sequence<Int[0, 1]>[0, 3]): Sequence<Int[0, 1]>[0, 3] pure {{ xs }}\n\
          invariant QueryCandidate using v on Config::ConfigVersion at current {{ \
-         contains(map(item in ints(sequence[0, 1]): item), 0) }}\n\
+         contains(map(item in ints(sequence[0, 1]): item), 0) or \
+         contains(map(item in ints(sequence[0, 1]): item), 1) }}\n\
          invariant FilterCandidate using v on Config::ConfigVersion at current {{ \
          contains(filter(item in ints(sequence[0, 1]): item >= 0), 0) }}\n"
     );
@@ -56,10 +58,35 @@ fn checked_collection_query() -> CheckedUnit {
     .into_value()
 }
 
-#[trace("TC-127", "FR-046-AC-5")]
+#[trace("TC-1280", "FR-046-AC-5")]
 #[test]
 fn checked_map_collection_is_explicitly_unsupported_at_proof_transfer() {
     let checked = checked_collection_query();
+    let clause = checked
+        .package()
+        .graph()
+        .state_clause("QueryCandidate")
+        .expect("the selected clause is present in the checked package");
+    let mut pending = vec![clause.body()];
+    let mut map_nodes = Vec::new();
+    while let Some(node) = pending.pop() {
+        if matches!(
+            node.kind(),
+            NodeKind::Query {
+                visit: Visit::Map,
+                ..
+            }
+        ) && matches!(node.value_type(), ValueType::Collection(_))
+        {
+            map_nodes.push(node.id());
+        }
+        pending.extend(node.children().into_iter().rev());
+    }
+    assert_eq!(
+        map_nodes.len(),
+        2,
+        "same-typed checked Map candidates exist"
+    );
     for (name, expected_visit) in [
         ("QueryCandidate", qsl_semantics::check::Visit::Map),
         ("FilterCandidate", qsl_semantics::check::Visit::Filter),
@@ -74,6 +101,16 @@ fn checked_map_collection_is_explicitly_unsupported_at_proof_transfer() {
             spine::query_proof::QueryProofCause::ValueRepresentation
         );
         assert_eq!(unsupported.query.visit, expected_visit);
+        let selected_clause = checked
+            .package()
+            .graph()
+            .state_clause(name)
+            .expect("selected checked clause")
+            .identity();
+        assert_eq!(unsupported.query.clause, selected_clause);
+        if name == "QueryCandidate" {
+            assert_eq!(unsupported.query.node, map_nodes[0]);
+        }
         assert!(matches!(
             unsupported.query.result_type,
             ValueType::Collection(_)

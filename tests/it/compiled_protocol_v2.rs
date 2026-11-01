@@ -907,7 +907,14 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
     );
 }
 
-#[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-6")]
+#[trace(
+    "TC-138",
+    "TC-1277",
+    "FR-050-AC-1",
+    "FR-050-AC-4",
+    "FR-050-AC-6",
+    "FR-043-AC-14"
+)]
 #[test]
 fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
     with_v2(|inputs, proofs, selected, temporal, emitted| {

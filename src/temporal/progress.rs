@@ -167,6 +167,13 @@ impl Ledger {
                     subject,
                 });
             }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
         }
         self.retained.insert(binding, progress);
         Ok(progress)
@@ -198,6 +205,13 @@ impl Ledger {
                     subject,
                 });
             }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
         }
         self.checked.insert(binding, progress);
         Ok(progress)
@@ -225,6 +239,13 @@ impl Ledger {
             {
                 return Err(Refusal::Progress {
                     dimension: Dimension::Completeness,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
                     clock: binding.clock,
                     subject,
                 });
