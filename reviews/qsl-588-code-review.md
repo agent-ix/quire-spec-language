@@ -1,35 +1,38 @@
 ---
-id: SR-1988003
-title: "Code review — QSL-588 statistical sample-step limit"
+id: SR-1988005
+title: "Code review — QSL-588 typed timed form refusal span"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; qsl-replay/src/model_check/limits.rs, qsl-replay/src/statistical.rs"
+scope: "agent-ix/quire-spec-language; qsl-analyze/src/exact_probabilistic.rs, qsl-analyze/src/exact_probabilistic/build.rs, qsl-analyze/src/exact_probabilistic/plan.rs, qsl-analyze/src/statistical/model.rs, qsl-semantics/src/check/probabilistic/claim.rs; FR-204-AC-4, FR-254-AC-3"
 review_set: subset
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-255
-    type: references
+  - { target: "ix://agent-ix/quire-spec-language/FR-204", type: references }
+  - { target: "ix://agent-ix/quire-spec-language/FR-254", type: references }
 ---
 
 ## Summary
 
-Reviewed the isolated QSL-588 prerequisite PR that adds the timed sample-step limit name and table row. The exhaustive mapping/test entry is correct, but the new `StatisticalLimits::value` arm returns the default for a caller-set limit.
+Reviewed the five-file Rust diff in PR #1996, including the Rust review lane and its code/test alignment. The shared elapsed variant, typed span forwarding, and compile-required statistical consumer arms stay within the authorized prerequisite scope; no code defects were found.
 
 ## Verdict
 
-**CONDITIONAL** — one medium API correctness finding remains.
+**PASS** — the changed Rust paths are narrow and preserve the source span through exact planning/build refusal mapping.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | `StatisticalLimits::value(MaxSampleSteps)` reports the fixed default instead of the caller's configured sample-step budget. | qsl-replay/src/statistical.rs:216 |
+| FND-001 | low | No findings (placeholder) | - |
 
-## Verification
+## Coverage
 
-- `cargo fmt --all -- --check`: passed.
-- `cargo check --locked -p qsl-replay --no-default-features`: passed.
-- `cargo clippy --locked -p qsl-replay --all-targets --all-features -- -D warnings`: passed.
-- The focused `every_limit_spells_its_name_in_snake_case` test passed.
-- Full `cargo test --locked -p qsl-replay --no-default-features`: 904 unit tests and 176 integration tests passed; one unrelated integration test failed. The same failure (`refinement_ring::an_exhausted_abstract_meter_stops_the_step_check`) reproduced on base `b24908841`.
-- `cargo deny check`: failed on existing `agent-ix-extraction-frontend` AGPL-3.0-or-later licensing policy; this PR changes no dependency or deny configuration.
-- Repository `quire matrix` and `quoin matrix` both exceeded 120 seconds without a result.
+- FR-204-AC-4 examined: unsupported timed form shape is represented by a typed `PlanFault`, mapped to `ProductRefusal`, and covered by a span-preservation unit test tagged `TC-639` / `FR-204-AC-4`.
+- FR-254-AC-3 context only: the statistical consumer arms compile against the new variant; timed elapsed sampling behavior is outside this prerequisite PR.
+- Changed files examined: all five Rust files listed in `scope`.
+- Changed paths: exactly `qsl-analyze/src/exact_probabilistic.rs`, `qsl-analyze/src/exact_probabilistic/build.rs`, `qsl-analyze/src/exact_probabilistic/plan.rs`, `qsl-analyze/src/statistical/model.rs`, and `qsl-semantics/src/check/probabilistic/claim.rs`.
+- Authorization check: no edits outside the five authorized plumbing/consumer paths; no unrelated exact-engine behavior or refactors, and no synthesized FR-331 locus.
+- `git diff --check`: passed. Tests were not run.
+
+## Bindings
+
+- `TC-639` → `FR-204-AC-4`: correct; the added test directly asserts that `plan_refusal` preserves the typed source span.

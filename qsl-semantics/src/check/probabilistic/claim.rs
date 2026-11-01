@@ -236,9 +236,9 @@ pub enum BoundedMeasure {
         /// The source span of the measure.
         span: Span,
         /// `A`.
-        from: CheckedPredicate,
+        from: Box<CheckedPredicate>,
         /// `B`.
-        until: CheckedPredicate,
+        until: Box<CheckedPredicate>,
         /// `h`, in the subject's declared time unit.
         within: Rational,
     },
