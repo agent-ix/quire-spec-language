@@ -350,3 +350,36 @@ fn a_literal_never_adapts_to_a_slot_of_another_type() {
         );
     }
 }
+
+/// FR-040-AC-3 and QSpec FR-140-AC-7 / TC-185 D25: decimal arithmetic keeps
+/// one exact named Decimal type across both operands and the result. A
+/// different operand type requires an explicit conversion.
+#[trace("FR-040-AC-3", "QSpec-FR-140-AC-7", "QSpec-TC-185")]
+#[test]
+fn decimal_arithmetic_rejects_mixed_types_unless_an_operand_is_converted() {
+    let refusal = refused(
+        "type P = Decimal[0, 1000; 2, 2; exact];\n\
+         type R = Decimal[0, 1000; 1, 1; exact];\n\
+         function mixed using v(p: P, r: R): P pure { p + r }",
+    );
+    assert_eq!(refusal.cause, mismatch());
+    assert_eq!(
+        (refusal.cause.code().as_str(), refusal.cause.cause()),
+        ("ill_typed", Some("type-mismatch"))
+    );
+
+    let refusal = refused(
+        "type P = Decimal[0, 1000; 2, 2; exact];\n\
+         type R = Decimal[0, 1000; 1, 1; exact];\n\
+         function wrongResult using v(p: P, q: P): R pure { p + q }",
+    );
+    assert_eq!(refusal.cause, mismatch());
+
+    check(
+        "type P = Decimal[0, 1000; 2, 2; exact];\n\
+         type R = Decimal[0, 1000; 1, 1; exact];\n\
+         function same using v(p: P, q: P): P pure { p + q }\n\
+         function converted using v(p: P, r: R): P pure { p + convert<P>(r) }",
+    )
+    .expect("same-type operands and an explicit conversion admit");
+}
