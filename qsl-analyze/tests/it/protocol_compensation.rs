@@ -1594,11 +1594,23 @@ fn a_string_attempt_field_requires_a_bound_and_an_enum_one_is_named() {
             assert_eq!(cases, ["fast", "slow"]);
             let enum_value = &members[0].1;
             assert_eq!(enum_value["type"], "enum");
-            // `name` is the variant type's structural node key (ADR-013).
-            let name = &enum_value["name"];
-            assert!(name["package"].is_string(), "{enum_value}");
-            assert!(name["path"].is_array(), "{enum_value}");
-            assert!(name["ordinal"].is_number(), "{enum_value}");
+            // FR-120 encodes an enum declaration identity as canonical text.
+            let name = enum_value["name"]
+                .as_str()
+                .expect("the enum declaration identity text");
+            let identity: Json =
+                serde_json::from_str(name).expect("the declaration identity JSON text");
+            assert_eq!(
+                identity,
+                json!({
+                    "node": "ix://test/fill/Mode",
+                    "package": "test/fill",
+                })
+            );
+            assert_eq!(
+                name,
+                serde_json::to_string(&identity).expect("the canonical declaration identity")
+            );
             assert!(enum_value.get("rank").is_none(), "{enum_value}");
         },
     );
