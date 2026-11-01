@@ -1208,11 +1208,13 @@ fn map_member(
         Member::Fairness {
             kind,
             granularity,
+            target_kind,
             declaration,
             name,
         } => Member::Fairness {
             kind,
             granularity,
+            target_kind,
             declaration: map_key(map, pending_member, declaration),
             name,
         },

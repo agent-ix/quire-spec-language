@@ -180,7 +180,7 @@ pub use layer::{HeaderLayer, LayerForm, WitnessKind, WitnessRequest};
 // `IeeeOperation` and `IEEE_DEFINITION` were already re-exported straight
 // from `quire_exact`, not duplicated). That submodule is deleted; every
 // former consumer now imports the whole set from `quire_exact` directly.
-pub use member::{AcceptedPoint, Member};
+pub use member::{AcceptedPoint, FairnessTargetKind, Member};
 // `evaluate_boolean`, `evaluate_integer_arithmetic`,
 // `evaluate_rational_arithmetic` and `order_numbers` were this module's own
 // `numeric` submodule, a byte-identical duplicate of `quire_exact`'s

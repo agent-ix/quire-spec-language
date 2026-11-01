@@ -461,8 +461,9 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
     let member = &fair["body"]["operation"]["member"];
     assert_eq!(member["fairness_kind"], "weak");
     assert_eq!(member["granularity"], "whole");
-    assert_eq!(member["declaration"], moving["node_id"]);
-    assert_eq!(member["name"], "Stopped");
+    assert_eq!(member["target"]["kind"], "hybrid_transition");
+    assert_eq!(member["target"]["declaration"], moving["node_id"]);
+    assert_eq!(member["target"]["name"], "Stopped");
     // The timed interval `[0, 21/2]` over `holds`, whose operand reads the
     // capture at level 6 typed by the `rational_range` node.
     let eventually = formula_root(&wire, slows);
@@ -585,8 +586,12 @@ fn fairness_member_preserves_the_source_mode_or_target_form() {
         let fair = node_with(&wire, target(&claim["body"]["arguments"][4]["members"][0]));
         let member = &fair["body"]["operation"]["member"];
         let expected = if declaration == "model" { model } else { mode };
-        assert_eq!(member["declaration"], expected["node_id"], "{source}");
-        assert_eq!(member["name"], name, "{source}");
+        assert_eq!(member["target"]["kind"], "hybrid_transition", "{source}");
+        assert_eq!(
+            member["target"]["declaration"], expected["node_id"],
+            "{source}"
+        );
+        assert_eq!(member["target"]["name"], name, "{source}");
     }
 }
 
@@ -960,7 +965,7 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
         panic!("one fairness node");
     };
     let (refusal, _) = refuse(&edited(&wire, &idtext(&fair["node_id"]), |node| {
-        node["body"]["operation"]["member"]["name"] = json!("Halted")
+        node["body"]["operation"]["member"]["target"]["name"] = json!("Halted")
     }));
     assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
     assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));

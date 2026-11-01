@@ -895,11 +895,16 @@ impl Reader<'_> {
         };
         let record = record(operation)?;
         let member = shape(record.get("member"))?;
+        let target = shape(member.get("target"))?;
         let field = |name: &str| shape(member.get(name).and_then(|value| value.as_str()));
+        if target.get("kind").and_then(|value| value.as_str()) != Some("hybrid_transition") {
+            return Err(HybridReadError::Fault(SHAPE));
+        }
+        let target_field = |name: &str| shape(target.get(name).and_then(|value| value.as_str()));
         let declaration: CheckedNodeId =
-            serde_json::from_value(shape(member.get("declaration"))?.clone())
+            serde_json::from_value(shape(target.get("declaration"))?.clone())
                 .map_err(|_| HybridReadError::Fault(SHAPE))?;
-        let name = field("name")?;
+        let name = target_field("name")?;
         let mode_named = |name: &str| {
             model
                 .modes

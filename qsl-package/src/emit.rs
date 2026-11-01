@@ -152,6 +152,10 @@ pub enum EmitRefusal {
         /// The first timed model's alias.
         model: String,
     },
+    /// The fairness target kind is known to the checked semantic layer but
+    /// has not yet been mapped to the checked-package/v2 wire by this emitter.
+    #[error("the fairness target kind is not supported by the current V2 emission slice")]
+    FairnessTargetNotEmitted,
     /// The typed timed models do not describe exactly the timed nodes in the
     /// already-admitted base package.
     #[error("typed timed models do not match the admitted package's timed-node set")]
@@ -217,9 +221,9 @@ impl EmitRefusal {
             Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
-            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::ProbabilisticModelNotEmitted { .. }
+            | Self::TimedModelNotEmitted { .. }
+            | Self::FairnessTargetNotEmitted => Code::UnsupportedConstruct,
             Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_) | Self::RefinementSubjectNotEmitted => {
                 Code::RuntimeInvariant
@@ -238,9 +242,9 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
-            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
-                Some("not-yet-implemented")
-            }
+            Self::ProbabilisticModelNotEmitted { .. }
+            | Self::TimedModelNotEmitted { .. }
+            | Self::FairnessTargetNotEmitted => Some("not-yet-implemented"),
             Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
@@ -1118,6 +1122,16 @@ fn operation_term(
     .map_err(encoding)
 }
 
+fn fairness_target_kind_wire(
+    kind: &qsl_semantics::value::FairnessTargetKind,
+) -> Result<&'static str, EmitRefusal> {
+    match kind {
+        qsl_semantics::value::FairnessTargetKind::Operation => Ok("operation"),
+        qsl_semantics::value::FairnessTargetKind::HybridTransition => Ok("hybrid_transition"),
+        _ => Err(EmitRefusal::FairnessTargetNotEmitted),
+    }
+}
+
 fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Value, EmitRefusal> {
     use serde_json::json;
     Ok(match member {
@@ -1208,13 +1222,18 @@ fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Valu
         Member::Fairness {
             kind,
             granularity,
+            target_kind,
             declaration,
             name,
         } => json!({
             "kind":"fairness",
             "fairness_kind":match kind { quire_semantic_value::fairness::FairnessKind::Weak => "weak", quire_semantic_value::fairness::FairnessKind::Strong => "strong" },
             "granularity":match granularity { quire_semantic_value::fairness::FairnessGranularity::Whole => "whole", quire_semantic_value::fairness::FairnessGranularity::Each => "each" },
-            "declaration":node_id(ids, declaration), "name":name.as_str(),
+            "target": {
+                "kind": fairness_target_kind_wire(target_kind)?,
+                "declaration":node_id(ids, declaration),
+                "name":name.as_str(),
+            },
         }),
     })
 }

@@ -216,8 +216,9 @@ fn reaches_two_emits_as_a_v2_temporal_clause_node_the_i2_read_admits() {
     assert_eq!(member["kind"], "fairness");
     assert_eq!(member["fairness_kind"], "weak");
     assert_eq!(member["granularity"], "each");
-    assert_eq!(member["name"], "attemptUpdate");
-    let declaring = node_with(wire, &member["declaration"]);
+    assert_eq!(member["target"]["kind"], "operation");
+    assert_eq!(member["target"]["name"], "attemptUpdate");
+    let declaring = node_with(wire, &member["target"]["declaration"]);
     assert_eq!(declaring["node_tag"], "model");
     assert_eq!(declaring["semantic_form"], "object_type");
     // formula: always(eventually(holds(...))), each interval `null`.
@@ -416,7 +417,7 @@ fn position(envelope: &Value, key: &Value) -> usize {
 /// reordered fails the schema; a `null` interval under a bounded profile
 /// refuses `invalid_package`/`operation-member-mismatch` at the formula
 /// node; a fairness member naming an absent operation refuses
-/// `missing_declaration`/`missing-name` at the member's name; and a
+/// `missing_declaration`/`missing-name` at the target's name; and a
 /// reference to a `temporal`/`fairness` node inside the formula refuses
 /// `ill_typed`/`operator-ineligible` at the referencing node.
 #[trace("TC-524", "FR-337-AC-4")]
@@ -456,7 +457,7 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     };
     let fair_key = fair["node_id"].clone();
     let envelope = edited(&compiled, &fair_key, |node| {
-        node["body"]["operation"]["member"]["name"] = json!("Absent");
+        node["body"]["operation"]["member"]["target"]["name"] = json!("Absent");
     });
     let refusal = ir_refusal(&compiled, &envelope);
     assert_eq!(
@@ -470,7 +471,7 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     let fair_at = position(&envelope, &fair_key);
     assert_eq!(
         path(&refusal),
-        format!("/semantic_graph/nodes/{fair_at}/body/operation/member/name")
+        format!("/semantic_graph/nodes/{fair_at}/body/operation/member/target/name")
     );
 
     // A reference to the fairness node as `eventually`'s operand.
