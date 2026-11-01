@@ -78,6 +78,7 @@ mod target;
 mod timed;
 pub mod value_check;
 mod witness;
+mod witness_entry_name;
 
 pub use admitted::{
     compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
@@ -393,6 +394,7 @@ pub use target::{
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
+pub use qsl_foundation::node_wire::NodeWireError;
 pub use qsl_foundation::witness::{
     InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
     ValuePathSubject,
@@ -408,6 +410,7 @@ pub use witness::{
     QuantityMagnitude, ReplaySource, ValueTextError, Witness, WitnessBinding, WitnessEnvelope,
     WitnessField, WitnessPacket, WitnessRefusal, WitnessSlot, WitnessValue, WitnessValueType,
 };
+pub use witness_entry_name::witness_entry_name;
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
 // name and build them through this crate (ADR-011 FB-05). The node and
@@ -442,21 +445,10 @@ pub(crate) fn fixture_node(fill: u8) -> NodeKey {
     .expect("a fixture node is admissible")
 }
 
-/// A parameter node's transcript name: its compact JSON object with every
-/// byte the transcript grammar reads (`%`, `=`, `;`, `|`, `<`, `>`) or that
-/// is not printable ASCII-safe percent-escaped.
+/// A parameter node's transcript name.
 #[cfg(test)]
 pub(crate) fn pn(node: &NodeKey) -> String {
-    let json = qsl_foundation::node_wire::node_key_to_text(node).expect("a node spells");
-    let mut bytes = Vec::with_capacity(json.len());
-    for byte in json.bytes() {
-        if matches!(byte, b'%' | b'=' | b';' | b'|' | b'<' | b'>') || byte < 0x20 || byte == 0x7f {
-            bytes.extend_from_slice(format!("%{byte:02X}").as_bytes());
-        } else {
-            bytes.push(byte);
-        }
-    }
-    String::from_utf8(bytes).expect("escapes are ASCII and the rest is the input's UTF-8")
+    witness_entry_name(node).expect("a node spells")
 }
 
 /// The admitted node identity of a checked node reference.
