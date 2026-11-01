@@ -145,9 +145,32 @@ pub enum TaskSchedulerError {
     ActionNotEnabled,
     /// An exact rational counter reached the representable index limit.
     IdentityOverflow,
+    /// The checked release declaration does not bind this transition to the
+    /// selected task set and task.
+    InvalidReleaseBinding,
 }
 
 impl TaskSchedulerState {
+    /// Apply one checked QSL `release` binding for the source transition.
+    /// The release is admitted only when its declaration identity resolves
+    /// to the operation identity carried by `source` in this model subject.
+    pub fn activate_release(
+        &mut self,
+        product: &FixedWorkTaskProduct,
+        release: &Release,
+        system: &ModelSystem<'_>,
+        source: ModelTransition,
+        jitter: Rational,
+        nominal_activation: Rational,
+    ) -> Result<TaskTransitionIdentity, TaskSchedulerError> {
+        let operation =
+            system.operation_text(release.operation().declaring(), release.operation().name());
+        if release.task_set() != product.task_set || operation != Some(source.operation()) {
+            return Err(TaskSchedulerError::InvalidReleaseBinding);
+        }
+        self.activate(product, release.task(), source, jitter, nominal_activation)
+    }
+
     /// Apply a source activation as one task-derived job creation. `jitter`
     /// and `nominal_activation` are exact clock values selected by the EN-6
     /// product transition; the resulting job remains pending until its
