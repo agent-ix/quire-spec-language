@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-069
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-087
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-323
     type: depends_on
 ---
@@ -111,15 +113,22 @@ admits union arguments (QSL-503).
   exceeds the configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
 - When a caller requests a name for one transcript entry from a structural
-  node identity, the `qsl_replay` root SHALL expose `witness_entry_name(&NodeKey)`.
-  Its successful result SHALL be the percent-escaped compact JSON spelling of
-  the node identity from the shared node-wire codec. It SHALL percent-escape
-  `%`, `=`, `;`, `|`, `<`, `>`, and any control byte as `%HH` with uppercase
-  hexadecimal digits, and SHALL preserve every other byte of that compact
-  spelling. The result SHALL contain no transcript separator or block-end
-  delimiter; percent-decoding it and reading it as a node-wire identity
-  recovers the same `NodeKey`. This spelling identifies a transcript
-  entry only; it grants no replay, admission or provenance authority.
+  node identity, the `qsl_replay` root SHALL expose
+  `witness_entry_name(&NodeKey)`.
+- The `qsl_replay` root SHALL derive a successful entry name from the
+  structural node identity's compact JSON spelling produced by the shared
+  node-wire codec.
+- The `qsl_replay` root SHALL percent-escape `%`, `=`, `;`, `|`, `<`, `>`,
+  and each control byte in that spelling as `%HH` with uppercase hexadecimal
+  digits.
+- The `qsl_replay` root SHALL preserve every other byte of the compact
+  spelling.
+- The `qsl_replay` root SHALL return an entry name containing no transcript
+  separator or block-end delimiter.
+- When a returned entry name is percent-decoded and read as a node-wire
+  identity, it SHALL yield the same `NodeKey` that was named.
+- The replay API SHALL NOT grant replay, admission or provenance authority
+  from an entry name alone.
 
 ## Witness value text
 
@@ -274,7 +283,7 @@ length of its escaped value text.
 | FR-070-AC-9 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: trailing bytes; added whitespace; record members out of JCS order; an unknown `type` tag; a record field entry with no `value` member; an integer `"007"`, and an integer as a JSON number; a rational `2`/`4`, and one with denominator `-1`; a `float64` with 15 hex digits, and one with uppercase hex; a reference `identity` of odd length; `{"type":"null"}` as a sequence element; a set with two equal elements; set elements out of order; an ordered set with two equal elements; a raw `%` not starting an escape; a lowercase escape `%3b`; and a record field name written `\u0061` where JCS writes `a`. | Test (TC-905) |
 | FR-070-AC-10 | On a thread with a 512 KiB stack, a transcript entry holding a 100,000-long recursive list (`record List { head: Int[0, 9]; tail?: List; }`) decodes, with the envelope's reader bound raised to fit it through `replay.input_bytes`. The decoded value clones, compares equal to itself, renders its redacted `Debug` and drops with no stack overflow. With the bound one byte below the envelope's size, construction refuses `BoundExceeded` naming `replay.input_bytes`. | Test (TC-736) |
 | FR-070-AC-11 | One `Canonical` entry per leaf family decodes exactly as written: an integer `-170141183460469231731687303715884105728` (outside `i64`); an enum member; the text `a;b=c<<<d>>>e%f` (its entry holds `a%3Bb=c%3C%3C%3Cd%3E%3E%3Ee%25f`, and its escaped bytes count toward `replay.input_bytes`), which parses as one block whose entry splits only at its own delimiters; the rational `-3`/`4`; the decimal with coefficient `1050` and scale `2`; a `float32` NaN with payload `7fc00001` and a `float64` negative zero `8000000000000000`; a quantity `{"type":"decimal","coefficient":"15","scale":"1","unit":"<unit>"}`; and a reference. A sequence of text values holding `;` and `>` decodes in order. | Test (TC-905) |
-| FR-070-AC-12 | A transcript with entries for node ids `0a…` and `0b…` in that order decodes. The same entries with `0b…` first refuse `DecodeRefusal::EntryOrder` naming the `0a…` entry, with no partial result. | Test (TC-905) |
+| FR-070-AC-12 | Let `A` be the `NodeKey` whose compact JSON spelling is `{"ordinal":0,"package":"fixture","path":["a"]}` and `B` the `NodeKey` whose compact JSON spelling is `{"ordinal":0,"package":"fixture","path":["b"]}`. A transcript with the generated entry names for `A` then `B`, carrying values `0` and `1`, decodes. The same entries with `B` first refuse `DecodeRefusal::EntryOrder` naming `A`'s generated entry name, with no partial result. | Test (TC-905) |
 | FR-070-AC-13 | Encoding a witness value does work proportional to its output at any depth. The counted work is the number of bytes the encoder's JCS writer produces plus the number of bytes compared while ordering set and bag elements; the output is the value's JCS bytes before transcript escaping. Each value's bytes are produced once and set and bag elements are ordered by comparing finished bytes in place, so for nested sets (each level a set of the next level and a text), nested options and nested sequences (each level a sequence of the next level and an integer), doubling the depth from 5,000 to 10,000 at most triples the counted work (a subtree copied into every ancestor quadruples it); at depth 5,000 the counted work is at least the output's bytes, and at depth 10,000 it is at most three times the output's bytes. The value text's length is counted from the encoder's finished bytes: for a text value of 1,000,000 `;` characters, `value_text_len` returns 3,000,026, the length of the text `to_value_text` returns, and the encoder holds that value as one finished value whose buffers together hold at least its 1,000,026 JCS bytes, each buffer's capacity smaller than 3,000,026 bytes. | Test (TC-905) |
 | FR-070-AC-14 | One `Canonical` entry per String and Text shape decodes exactly as written: the String `a;b>>>c` (its entry holds `{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}`), the empty String, the String of the scalar U+00E9, the String of the scalars U+0065 U+0301 (two unequal values), the String `say "hi"\x;` with a quote, a backslash and a semicolon (its entry holds `{"kind":"string","text":"say \"hi\"\\x%3B"}`), and the String `100%<` (its entry holds `{"kind":"string","text":"100%25%3C"}`). The Text `a;b>>>c` (its entry holds `{"type":"text","value":"a%3Bb%3E%3E%3Ec"}`) and the empty Text decode as Text values. A `string` value and a `text` value of the same scalars decode to two unequal `WitnessValue`s. A two-entry transcript `P` then `Q`, each holding the String `a;b>>>c`, parses as one assertion block and decodes both entries, so a `;` or `>` left unescaped inside either value would split or end the block. The escaped bytes of each count toward `replay.input_bytes`. | Test (TC-905) |
 | FR-070-AC-15 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` (a missing member); `{"extra":"y","kind":"string","text":"x"}` (an extra member); `{"kind":"string","text":5}` and `{"kind":"string","text":null}` (a payload that is not a JSON string); `{"kind":"String","text":"x"}` and `{"kind":"blob","text":"x"}` (a `kind` outside the three); `{"text":"x","kind":"string"}` (members out of JCS order); a String whose JSON text writes U+00E9 as the escape `\u00e9` where JCS writes the literal scalar; a String whose JSON text holds the lone surrogate escape `\ud800`; and a raw `%` that does not begin one of the four escapes inside a String. | Test (TC-905) |

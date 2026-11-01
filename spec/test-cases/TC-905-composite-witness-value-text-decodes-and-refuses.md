@@ -69,8 +69,13 @@ otherwise.
    - a raw `%` that does not begin an escape; the lowercase escape `%3b`;
    - a record field name written `a`.
 
-4. Decode a transcript with a `Q` entry for node id `0a…` followed by a `Q`
-   entry for node id `0b…`, then the same two entries in the other order.
+4. Let `A` be the `NodeKey` whose compact JSON spelling is
+   `{"ordinal":0,"package":"fixture","path":["a"]}` and `B` the
+   `NodeKey` whose compact JSON spelling is
+   `{"ordinal":0,"package":"fixture","path":["b"]}`. Generate their
+   entry names with `qsl_replay::witness_entry_name`. Decode one transcript
+   with `A`'s generated name carrying `0` before `B`'s carrying `1`, then the
+   same entries in the other order.
 5. Build three value shapes at depths 5,000 and 10,000, on a thread with a
    512 KiB stack: nested sets (each level a set of the next level and the
    text `leaf`), nested options (each level a present option of the next
@@ -130,8 +135,9 @@ and `#[trace("TC-905", "FR-070-AC-15")]`.
   two texts, in order.
 - Step 3: each refuses `DecodeRefusal::Malformed` naming `P`, and no value is
   returned.
-- Step 4: the ascending transcript decodes. The other order refuses
-  `DecodeRefusal::EntryOrder` naming the `0a…` entry, with no value.
+- Step 4: the transcript with `A` before `B` decodes. The other order
+  refuses `DecodeRefusal::EntryOrder` naming `A`'s generated entry name,
+  with no value.
 - Step 5: for each shape, the counted work at depth 5,000 is at least its
   output's bytes; the counted work at depth 10,000 is at most three times
   the counted work at depth 5,000, and at most three times its own output's
