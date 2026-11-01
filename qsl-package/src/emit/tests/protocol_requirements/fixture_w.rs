@@ -152,6 +152,352 @@ on each (opened: M::OrderStarted) {
 }
 "#;
 
+/// TC-134's checked-v2 fixture: one static charge attempt and effect live
+/// inside a bounded repeat, while two refund obligations refer to that exact
+/// successful effect.
+fn tc134_source() -> String {
+    let source = W.to_owned();
+    let source = source.replace(
+        "  terminal any;",
+        "  compensate PartialRefund for Main::Applied as (partial: M::ChargeResult)\n\
+    by Payments on M::Payment::refund using T clock \"refund-clock\" {\n\
+    capture partialSaved: Integer = partial.order;\n\
+    activate first (partialTrigger: M::RefundTrigger) when { partialTrigger.ok } { }\n\
+    within [0,5];\n\
+    attempts 1 of M::RefundAttempt;\n\
+    retry (partialOlder: M::RefundAttempt, partialNewer: M::RefundAttempt) { partialNewer.order = partialOlder.order };\n\
+    commit never;\n\
+    recover (partialRecovery: M::RefundRecovery) { partialRecovery.order = partialSaved };\n\
+  }\n  terminal any;",
+    );
+    let source = source.replace(
+        "    attempt Charged",
+        "    repeat PaymentRetries by Payments visible () max 3 while { true }\n\
+      sequence ChargeCycle {\n\
+      attempt Charged",
+    );
+    source
+        .replace("    effect Applied", "      effect Applied")
+        .replace(
+            "    parallel Shipments {",
+            "      }\n    exhausted check RetriesExhausted using v { true };\n    parallel Shipments {",
+        )
+        .replace(
+            "for Main::Applied",
+            "for Main::PaymentRetries::ChargeCycle::Applied",
+        )
+}
+
+#[trace("FR-048-AC-6", "FR-048-AC-7", "TC-134")]
+#[test]
+fn tc134_checked_v2_retains_static_refund_provenance() {
+    let lowered = lower_with(document(), PROFILES_W, &tc134_source());
+    assert!(lowered.verified, "{}", lowered.text);
+    assert!(
+        lowered.ir.is_ok(),
+        "strict checked-v2 read: {:?}",
+        lowered.ir
+    );
+
+    let nodes = lowered.wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("emitted nodes");
+    let templates: Vec<&Value> = nodes
+        .iter()
+        .filter(|node| node["semantic_form"] == "compensation")
+        .collect();
+    assert_eq!(templates.len(), 2, "both refund obligations remain static");
+    assert_ne!(templates[0]["node_id"], templates[1]["node_id"]);
+
+    let charged = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "control"
+                && node["declaration"]["qualified_name"]
+                    .as_array()
+                    .is_some_and(|name| name.last() == Some(&json!("Charged")))
+        })
+        .expect("one authored charge attempt");
+    let applied = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "control"
+                && node["declaration"]["qualified_name"]
+                    .as_array()
+                    .is_some_and(|name| name.last() == Some(&json!("Applied")))
+        })
+        .expect("one forward effect");
+    let repeat = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "control"
+                && node["declaration"]["qualified_name"]
+                    .as_array()
+                    .is_some_and(|name| name.last() == Some(&json!("PaymentRetries")))
+        })
+        .expect("bounded payment repeat");
+    assert_eq!(repeat["body"]["operation"]["member"]["operator"], "repeat");
+    assert_eq!(
+        repeat["body"]["arguments"][2]["value"]["members"][0]["value"], "3",
+        "the static repeat bound is retained"
+    );
+    let body_id = &repeat["body"]["arguments"][5]["value"]["target"];
+    let body = nodes
+        .iter()
+        .find(|node| &node["node_id"] == body_id)
+        .expect("the repeat body is an emitted sequence");
+    assert_eq!(body["body"]["operation"]["member"]["operator"], "sequence");
+    let children = body["body"]["arguments"][0]["value"]["members"]
+        .as_array()
+        .expect("sequence child references");
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0]["target"], charged["node_id"]);
+    assert_eq!(children[1]["target"], applied["node_id"]);
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| {
+                node["semantic_form"] == "control"
+                    && node["declaration"]["qualified_name"]
+                        .as_array()
+                        .is_some_and(|name| name.last() == Some(&json!("Charged")))
+            })
+            .count(),
+        1,
+        "repeat ordinals are runtime inputs and do not mint static attempts"
+    );
+    assert_eq!(
+        applied["body"]["arguments"][0]["value"]["target"],
+        charged["node_id"]
+    );
+    assert_eq!(applied["body"]["operation"]["member"]["operator"], "effect");
+
+    for template in templates {
+        let args = template["body"]["arguments"].as_array().unwrap();
+        let argument = |name: &str| {
+            args.iter()
+                .find(|argument| argument["name"] == name)
+                .unwrap_or_else(|| panic!("{name} argument in {template}"))
+        };
+        assert_eq!(argument("forward")["value"]["target"], applied["node_id"]);
+        for name in [
+            "registration_captures",
+            "trigger",
+            "activation_captures",
+            "attempts",
+            "retry",
+            "commit",
+            "recovery",
+        ] {
+            assert!(argument(name)["value"].is_object(), "{name} is present");
+        }
+        let registration = &argument("registration_captures")["value"]["members"][0]["members"];
+        let retry = &argument("retry")["value"]["members"];
+        let recovery = &argument("recovery")["value"];
+        let mut distinct_references = vec![
+            argument("forward")["value"]["target"].clone(),
+            registration[1]["value"]["target"].clone(),
+            argument("trigger")["value"]["members"][1]["value"]["target"].clone(),
+            argument("attempts")["value"]["members"][1]["value"]["target"].clone(),
+            retry[2]["value"]["target"].clone(),
+            recovery["members"][1]["value"]["target"].clone(),
+        ];
+        if let Some(commit) = argument("commit")["value"]["members"]
+            .as_array()
+            .and_then(|members| members.first())
+        {
+            distinct_references.push(commit["target"].clone());
+        }
+        let unique_references: BTreeSet<String> = distinct_references
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect();
+        assert_eq!(
+            unique_references.len(),
+            distinct_references.len(),
+            "registration, activation, attempt type, retry, forward effect, commit and recovery references stay distinct"
+        );
+    }
+
+    let relationships: Vec<_> = nodes
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "relationship")
+        .collect();
+    assert_eq!(relationships.len(), 1);
+    assert_eq!(
+        relationships[0]["owner"]["node"],
+        "ix://acme/orders/relationship/OrderShipment"
+    );
+    let clause = node_of(&lowered.wire, "protocol", "protocol_clause");
+    assert_eq!(
+        clause_argument(clause, "relationships")["members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    for attempt_name in ["East", "West"] {
+        assert!(
+            nodes.iter().any(|node| {
+                node["semantic_form"] == "control"
+                    && node["declaration"]["qualified_name"]
+                        .as_array()
+                        .is_some_and(|name| name.last() == Some(&json!(attempt_name)))
+            }),
+            "separate static shipment subject {attempt_name}"
+        );
+    }
+}
+
+#[trace("FR-048-AC-6", "FR-048-AC-7", "TC-134")]
+#[test]
+fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
+    for count in ["1", "18446744073709551615"] {
+        let source = tc134_source()
+            .replace(
+                "attempts 2 of M::RefundAttempt;",
+                &format!("attempts {count} of M::RefundAttempt;"),
+            )
+            .replace(
+                "attempts 1 of M::RefundAttempt;",
+                &format!("attempts {count} of M::RefundAttempt;"),
+            );
+        let lowered = lower_with(document(), PROFILES_W, &source);
+        assert!(lowered.verified, "attempt bound {count}: {}", lowered.text);
+        assert!(
+            lowered.ir.is_ok(),
+            "attempt bound {count}: {:?}",
+            lowered.ir
+        );
+        assert_eq!(
+            lowered.wire["semantic_graph"]["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|node| node["semantic_form"] == "compensation")
+                .count(),
+            2,
+            "attempt bound {count} preserves both obligations"
+        );
+    }
+
+    let zero = tc134_source()
+        .replace(
+            "attempts 2 of M::RefundAttempt;",
+            "attempts 0 of M::RefundAttempt;",
+        )
+        .replace(
+            "attempts 1 of M::RefundAttempt;",
+            "attempts 0 of M::RefundAttempt;",
+        );
+    let refusals = check_tc134(&zero).expect_err("zero attempt bounds refuse");
+    assert!(
+        refusals.iter().any(|refusal| {
+            refusal.cause.code() == qsl_foundation::Code::IllTyped
+                && refusal.cause.cause() == Some("type-mismatch")
+        }),
+        "typed zero-bound refusal: {refusals:?}"
+    );
+
+    let overflow = tc134_source()
+        .replace(
+            "attempts 2 of M::RefundAttempt;",
+            "attempts 18446744073709551616 of M::RefundAttempt;",
+        )
+        .replace(
+            "attempts 1 of M::RefundAttempt;",
+            "attempts 18446744073709551616 of M::RefundAttempt;",
+        );
+    let overflow_unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES_W}\
+         model M = \"acme/orders\";\n{overflow}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "tc134-overflow", "fixture", "fixture:1"),
+        "tc134.native",
+        overflow_unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the source retains its typed parser result");
+    let overflow_refusals = parsed.diagnostics();
+    assert!(
+        overflow_refusals.iter().any(|refusal| {
+            refusal.code == qsl_cst::CompleteCode::InvalidSyntax
+                && refusal.cause == qsl_cst::CompleteCause::UnexpectedToken
+        }),
+        "overflow retains a typed refusal: {overflow_refusals:?}"
+    );
+
+    let mutations = [
+        (
+            "wrong forward",
+            tc134_source().replace(
+                "for Main::PaymentRetries::ChargeCycle::Applied",
+                "for Main::PaymentRetries::ChargeCycle::Charged",
+            ),
+            qsl_foundation::Code::IllTyped,
+        ),
+        (
+            "wrong owner",
+            tc134_source().replace(
+                "by Payments on M::Payment::refund",
+                "by UnregisteredPayments on M::Payment::refund",
+            ),
+            qsl_foundation::Code::MissingDeclaration,
+        ),
+        (
+            "wrong commit anchor",
+            tc134_source().replace("commit Main::Finalized;", "commit Main::RetriesExhausted;"),
+            qsl_foundation::Code::MissingDeclaration,
+        ),
+    ];
+    for (name, source, expected_code) in mutations {
+        let refusals = match check_tc134(&source) {
+            Ok(()) => panic!("{name} mutation unexpectedly checks"),
+            Err(refusals) => refusals,
+        };
+        assert!(!refusals.is_empty(), "{name} typed refusal");
+        assert!(
+            refusals
+                .iter()
+                .any(|refusal| refusal.cause.code() == expected_code),
+            "{name} refusal has the expected typed code {expected_code:?}: {refusals:?}"
+        );
+    }
+
+    let source = tc134_source();
+    let commit = "    commit Finalized by Orders as (done: Boolean) { true };\n";
+    let before_effect = source.replace(commit, "").replace(
+        "    repeat PaymentRetries",
+        &format!("{commit}    repeat PaymentRetries"),
+    );
+    let refusals = check_tc134(&before_effect)
+        .expect_err("a commit preceding its registered forward effect refuses");
+    assert!(
+        refusals.iter().any(|refusal| {
+            refusal.cause.code() == qsl_foundation::Code::UnsupportedConstruct
+                && refusal.cause.cause() == Some("declaration-form")
+        }),
+        "typed commit/effect ordering refusal: {refusals:?}"
+    );
+}
+
+fn check_tc134(unit: &str) -> Result<(), Vec<qsl_semantics::check::CheckRefusal>> {
+    let domain = document();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.as_slice()]).expect("model intake");
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES_W}\
+         model M = \"acme/orders\";\n{unit}\n"
+    );
+    assemble_with_models(source.as_bytes(), &packages)
+        .expect("unit assembles")
+        .check(CheckingLimits::default())
+        .map(|_| ())
+}
+
 #[trace(
     "TC-1194",
     "FR-449-AC-1",
