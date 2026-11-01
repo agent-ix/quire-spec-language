@@ -245,13 +245,8 @@ ci-all-features:
 # targets implicitly, so a target whose required features are off (qsl-source's
 # `it`) is skipped as in that lane; naming `--test it` would make it an error.
 # Nothing is recompiled in a directory of its own. Each name must still select exactly one ignored test.
-# `locked-build.sh` caps a build's memory at min(20, MemAvailable - 16) GiB,
-# halved when another lane is busy, so the memory peak sets the thread count.
-# All five cases run in one invocation: three threads peaked at 10.3 GB
-# (9.6 GiB) on the five-case run, which fits a 10 GiB cap only narrowly; if it
-# exits 137 on a contended lane, drop to two threads (8.1 GiB, about 150 s
-# slower). Two threads gained nothing over the old split run on an idle lane.
-# More threads are unmeasured against the cap.
+# Run the full-depth cases with three threads to shorten this lane's wall
+# time. The bounded runner supplies the memory limit.
 test-deep-format:
 	@set -eu; \
 	for test in \

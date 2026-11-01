@@ -65,29 +65,33 @@ fn assert_format_identity(
     dependencies: &DependencyInput,
     limits: SpineLimits,
 ) {
-    let parsed = qsl_cst::parse(source.clone(), path, bytes, limits.source).unwrap();
     // AC-9 isolates semantic identity; the AC-4/5/6 tests exercise exhaustion.
     // Give a fixture with an exact original S1 byte bound enough bytes for
     // its formatted layout, retaining its model/dependency/checking authority.
     let format_limits = qsl_cst::format::FormatLimits::default().with_output_bytes(usize::MAX);
-    let formatted = qsl_cst::format::format_with_limits(&parsed, format_limits).unwrap();
+    let formatted = {
+        let parsed = qsl_cst::parse(source.clone(), path, bytes, limits.source).unwrap();
+        qsl_cst::format::format_with_limits(&parsed, format_limits).unwrap()
+    };
     let mut formatted_limits = limits;
     formatted_limits.source.source_bytes =
         formatted_limits.source.source_bytes.max(formatted.len());
     let mut formatted_source = source;
     formatted_source.revision.push_str("-formatted");
-    let reparsed = qsl_cst::parse(
-        formatted_source.clone(),
-        path,
-        formatted.as_bytes(),
-        formatted_limits.source,
-    )
-    .unwrap();
-    assert_eq!(
-        qsl_cst::format::format_with_limits(&reparsed, format_limits).unwrap(),
-        formatted,
-        "{path}: second pass"
-    );
+    {
+        let reparsed = qsl_cst::parse(
+            formatted_source.clone(),
+            path,
+            formatted.as_bytes(),
+            formatted_limits.source,
+        )
+        .unwrap();
+        assert_eq!(
+            qsl_cst::format::format_with_limits(&reparsed, format_limits).unwrap(),
+            formatted,
+            "{path}: second pass"
+        );
+    }
     let checked = emitted_once(
         formatted_source,
         path,
