@@ -132,7 +132,6 @@ fn an_unwritten_construct_refuses_a_selected_profile_and_a_reference_to_it() {
         (ProtocolConstruct::ChannelKeyNotEqualityStable, "QSL-1142"),
         (ProtocolConstruct::Control("parallel"), "QSL-1126"),
         (ProtocolConstruct::PostTestRepeat, "STD-539"),
-        (ProtocolConstruct::VisibleEntryNotAnExpression, "STD-539"),
         (ProtocolConstruct::ReferenceCycle, "QSL-844"),
     ] {
         assert_eq!(construct.tracking(), ticket, "{construct:?}");
@@ -501,7 +500,10 @@ fn a_trigger_nested_runs_roles_and_scheduling_emit_what_the_reader_admits() {
     let digests: Vec<quire_exact::NodeKey> = roles
         .iter()
         .map(|role| {
-            qsl_foundation::node_wire::node_key_from_json(&role["target"]).expect("a node id")
+            qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire)
+                .unwrap()
+                .key_of_value(&role["target"])
+                .expect("a node id")
         })
         .collect();
     assert_eq!(digests.len(), 2);

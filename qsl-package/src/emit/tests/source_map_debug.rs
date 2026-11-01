@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-1358 (QSL-381): a source map read from the wire formats for debug in
-//! time and output linear in its size. The wire writes every entry's node id
-//! as a tree of its own, so the keys a read builds from it share nothing
-//! unless the read interns them; unshared keys make every comparison and
-//! lookup walk the whole nested chain.
+//! QSL-1358 (QSL-381): a source map read from indexed wire IDs formats for
+//! debug in time and output linear in the graph. Independent wire IDs share
+//! their resolved operand keys through the authoritative document graph.
 
 use std::time::{Duration, Instant};
 
@@ -11,7 +9,8 @@ use qsl_foundation::source::provenance::{OccurrenceKey, PackageSourceMap};
 use quire_exact::Origin;
 
 use super::*;
-use crate::emit::{admitted_key, admitted_key_in, node_id, KeyInterner};
+use qsl_semantics::check::wire_id::WireGraph;
+use quire_contract_model::CheckedNodePathSegment;
 
 /// The key of the sum `x + x + ...` of `depth` additions: each key nests the
 /// previous, every nested node one shared `Arc`.
@@ -56,47 +55,49 @@ fn debug_time(map: &PackageSourceMap) -> (Duration, usize) {
     (best, bytes)
 }
 
-/// The keys of `wire` read the way the I2 read builds them, sharing through
-/// `keys`, or each from a fresh interner when `keys` is `None`.
-fn read_keys(wire: &[CheckedNodeId], mut keys: Option<&mut KeyInterner>) -> Vec<NodeKey> {
-    wire.iter()
-        .map(|id| match keys.as_deref_mut() {
-            Some(keys) => admitted_key_in(keys, id).unwrap(),
-            None => admitted_key(id).unwrap(),
-        })
-        .collect()
-}
-
-/// Entries whose node ids arrive as separate trees format in time within a
-/// small factor of the same keys built as one shared chain, and in the same
-/// output. Keys read without a shared interner are the case the comparison
-/// lookups made quadratic.
+/// Independently allocated flat IDs resolve through one graph, keeping the
+/// same output and formatting time as the original shared chain.
+/// Provenance: QSL-1358, QSL-381; component scaling regression.
 #[test]
 fn a_read_source_map_formats_in_linear_time_though_the_wire_ids_share_nothing() {
     std::thread::Builder::new()
-        .stack_size(64 * 1024 * 1024)
+        .stack_size(512 * 1024)
         .spawn(|| {
             for depth in [500, 1_000, 2_000] {
                 let shared = chain(depth);
-                let wire: Vec<CheckedNodeId> = shared.iter().map(node_id).collect();
-                let mut interner = KeyInterner::default();
-                let read = read_keys(&wire, Some(&mut interner));
+                let wire: Vec<CheckedNodeId> = shared
+                    .iter()
+                    .enumerate()
+                    .map(|(at, key)| CheckedNodeId {
+                        package: key.package().into(),
+                        path: key
+                            .path()
+                            .into_iter()
+                            .map(|segment| match segment {
+                                PathSegment::Text(text) => {
+                                    CheckedNodePathSegment::Name(text.into())
+                                }
+                                PathSegment::Node(_) => {
+                                    CheckedNodePathSegment::Index((at - 1) as u64)
+                                }
+                            })
+                            .collect(),
+                        ordinal: key.ordinal(),
+                    })
+                    .collect();
+                let graph = WireGraph::new(&wire).unwrap();
+                let read: Vec<_> = wire.iter().map(|id| graph.key(id).unwrap()).collect();
                 assert_eq!(read, shared, "the read keys are the keys the ids name");
                 let (shared_time, shared_bytes) = debug_time(&map_of(shared));
                 let (read_time, read_bytes) = debug_time(&map_of(read));
-                assert_eq!(read_bytes, shared_bytes, "depth {depth}: same output");
+                assert_eq!(
+                    read_bytes, shared_bytes,
+                    "depth {depth}: same complete output"
+                );
                 assert!(
                     read_time < shared_time * 20 + Duration::from_millis(20),
-                    "depth {depth}: read keys {read_time:?} against shared {shared_time:?}"
+                    "depth {depth}: graph-read keys {read_time:?} against shared {shared_time:?}"
                 );
-                if std::env::var_os("QSL_1358_MEASURE").is_some() {
-                    let unshared = read_keys(&wire, None);
-                    let (unshared_time, _) = debug_time(&map_of(unshared));
-                    eprintln!(
-                        "MEASURE depth {depth}: shared {shared_time:?} interned {read_time:?} \
-                         unshared {unshared_time:?} bytes {read_bytes}"
-                    );
-                }
             }
         })
         .unwrap()

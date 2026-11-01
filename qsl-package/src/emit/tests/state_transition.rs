@@ -173,6 +173,15 @@ fn compile_with(clauses: &str, protocol: bool) -> Compiled {
 }
 
 impl Compiled {
+    /// The structural key of `id`, a wire id this package holds (FR-322:
+    /// across packages only keys compare).
+    fn key(&self, id: &Value) -> NodeKey {
+        qsl_semantics::check::wire_id::WireGraph::of_package_value(&self.wire)
+            .unwrap()
+            .key_of_value(id)
+            .unwrap()
+    }
+
     /// QSL's I2 read, which runs IR's strict reader, of the emitted bytes.
     fn read(&self) -> Read {
         read_with(&self.emission, &self.evidence)
@@ -378,11 +387,13 @@ fn several_clauses_are_bound_by_an_exact_conjunction_in_clause_name_order() {
     let base = compile(&unit_13(""));
     for kind in ["precondition", "postcondition"] {
         for clause in base.clauses(kind) {
+            // Two packages: their nodes compare by structural key (FR-322).
+            let key = base.key(&clause["node_id"]);
             assert!(
                 compiled
                     .clauses(kind)
                     .iter()
-                    .any(|c| c["node_id"] == clause["node_id"]),
+                    .any(|c| compiled.key(&c["node_id"]) == key),
                 "{kind} {} stays",
                 clause["node_id"]
             );
@@ -633,9 +644,11 @@ fn a_fault_on_the_transition_or_a_derived_node_refuses_the_compile() {
         .expect("the derived postcondition")["node_id"]
         .clone();
     let (package, _) = check(&source, true);
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&compiled.wire).unwrap();
     for (label, id) in [("transition", transition), ("derived", derived)] {
         let reason = format!("fault injection (test): {label}");
-        let id: CheckedNodeId = serde_json::from_value(id).unwrap();
+        // The fault sees the emitter's structural id of the wire's node.
+        let id: CheckedNodeId = crate::emit::checked_node_id_of(&graph.key_of_value(&id).unwrap());
         let refusal = emit_package_with_fault(&package, package.graph().memoized_regions(), |at| {
             (*at == id).then(|| EmitRefusal::Encoding {
                 reason: reason.clone(),
@@ -835,26 +848,26 @@ fn authored_conditions(compiled: &Compiled) -> Vec<Value> {
 
 /// The node id the condition `body` checks to. Node identity is structural,
 /// so a unit holding only that one clause yields the id it has in any unit.
-fn condition_id(body: &str) -> Value {
+fn condition_id(body: &str) -> NodeKey {
     let alone = compile(&format!(
         "{BASE_POST}pre P1 using v on M::Switch::set {{ {body} }}\n"
     ));
     let [id] =
         <[Value; 1]>::try_from(authored_conditions(&alone)).expect("one authored precondition");
-    id
+    alone.key(&id)
 }
 
 /// The operands of a left fold of `quire.op.boolean.and` rooted at `node`,
 /// leftmost first.
-fn fold_operands(compiled: &Compiled, node: &Value) -> Vec<Value> {
+fn fold_operands(compiled: &Compiled, node: &Value) -> Vec<NodeKey> {
     if node["body"]["operation"]["identity"] != "quire.op.boolean.and" {
-        return vec![node["node_id"].clone()];
+        return vec![compiled.key(&node["node_id"])];
     }
     let mut operands = fold_operands(
         compiled,
         compiled.node(&node["body"]["arguments"][0]["target"]),
     );
-    operands.push(node["body"]["arguments"][1]["target"].clone());
+    operands.push(compiled.key(&node["body"]["arguments"][1]["target"]));
     operands
 }
 

@@ -98,20 +98,26 @@ fn admit(unit: &Unit) -> Box<CheckedPackageV2> {
         SpineLimits::default().imports,
     )
     .expect("the admission evidence assembles");
-    let CheckedPackageDispatchResult::AdmittedV2(admitted) = read_checked_package(
+    match read_checked_package(
         unit.emitted.package().bytes(),
         CheckedPackageReadLimits::bounded(),
         &evidence,
-    ) else {
-        panic!("the emitted package admits");
-    };
-    admitted
+    ) {
+        CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
+        other => panic!("the emitted package admits: {other:?}"),
+    }
+}
+
+/// `admitted`'s graph.
+fn wire_graph(admitted: &CheckedPackageV2) -> WireGraph {
+    WireGraph::new(admitted.graph().nodes.iter().map(|node| &node.node_id)).unwrap()
 }
 
 /// The binder's package inputs over `admitted`.
-fn inputs<'a>(unit: &'a Unit, admitted: &'a CheckedPackageV2) -> Package<'a> {
+fn inputs<'a>(unit: &'a Unit, admitted: &'a CheckedPackageV2, graph: &'a WireGraph) -> Package<'a> {
     Package {
         admitted,
+        graph,
         models: &unit.models,
         checked: unit.checked.package(),
     }
@@ -378,7 +384,8 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
 fn tc_1053_step_2_inline_literal_term_binds_without_a_node() {
     let unit = compile("function plus using v(a: Int[0, 9]): Int[1, 10] pure { a + 1 }");
     let admitted = admit(&unit);
-    let package = inputs(&unit, &admitted);
+    let graph = wire_graph(&admitted);
+    let package = inputs(&unit, &admitted, &graph);
     let occurrence = the_application(&unit, "plus", ScalarOperator::Add);
     let selected = select(unit.checked.package(), "plus").unwrap();
     let arguments = [Value::Integer(Integer::from(4_i64))];
@@ -387,7 +394,7 @@ fn tc_1053_step_2_inline_literal_term_binds_without_a_node() {
     let operands = [CheckedScalarOperand {
         ordinal: 0,
         child: CheckedScalarOperandChild::InlineLiteral {
-            application: super::wire_node_id(&occurrence.application),
+            application: graph.wire_id(&occurrence.application).unwrap(),
             occurrence: CheckedOccurrence {
                 role: quire_contract_model::CheckedOccurrenceRole::Expression,
                 ordinal: 0,
@@ -706,7 +713,8 @@ fn tc_1053_step_5_unbounded_and_nested_operands() {
     // An operand that is a nested application (not a literal, not a
     // parameter) refuses `OperandNotParameter` and binds no partial list.
     let admitted = admit(&unit);
-    let package = inputs(&unit, &admitted);
+    let graph = wire_graph(&admitted);
+    let package = inputs(&unit, &admitted, &graph);
     let selected = select(unit.checked.package(), "n").unwrap();
     let arguments = [Value::Integer(Integer::from(4_i64))];
     let request = call("n", vec![arg("a", 4)]);
@@ -722,7 +730,7 @@ fn tc_1053_step_5_unbounded_and_nested_operands() {
         .expect("the outer application refuses");
     let operands = [CheckedScalarOperand {
         ordinal: 0,
-        child: CheckedScalarOperandChild::GraphChild(super::wire_node_id(&nested.application)),
+        child: CheckedScalarOperandChild::GraphChild(graph.wire_id(&nested.application).unwrap()),
         range: bound_range(0, 12),
     }];
     let Err(Halt::Refused(refusal)) = resolver.bind(&operands) else {

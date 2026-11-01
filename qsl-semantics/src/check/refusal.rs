@@ -832,10 +832,6 @@ pub enum ProtocolConstruct {
     /// scope" reads them at the repeat's entry only (a `repeat` is
     /// pre-test), so they have no node form (STD-539).
     RepeatDecisionReadsBody,
-    /// A `choice` or `repeat` `visible` entry that is a literal or a bare
-    /// binder read: QSpec FR-466 "A `visible` entry is an `expression` node"
-    /// settles that neither has an encoding (STD-539).
-    VisibleEntryNotAnExpression,
     /// A `repeat` whose body steps only through a nested `repeat` whose
     /// guard cannot be false (QSL FR-218-AC-32). QSpec #481 (STD-539) now
     /// supports it (FR-464 "Nested `repeat` rule"); it is withheld until
@@ -867,9 +863,7 @@ impl ProtocolConstruct {
             Self::Relationships => "QSL-1141",
             Self::ChannelKeyNotEqualityStable => "QSL-1142",
             Self::NoOwnerModel => "QSL-1147",
-            Self::PostTestRepeat
-            | Self::RepeatDecisionReadsBody
-            | Self::VisibleEntryNotAnExpression => "STD-539",
+            Self::PostTestRepeat | Self::RepeatDecisionReadsBody => "STD-539",
             Self::RepeatStepsThroughRepeat => "IR-1100",
         }
     }
@@ -2522,6 +2516,15 @@ pub enum NavigationBound {
 pub enum CheckCause {
     /// A value operator prohibited by the declaration's selected profile.
     ProfileProhibitedOperator(qsl_forms::BinaryOperator),
+    /// A typed equality whose operand families exceed its selected layer.
+    LayerEquality {
+        /// The declaration's selected layer.
+        selected: crate::value::layer::HeaderLayer,
+        /// The first missing family in FR-110 table order.
+        required: crate::value::layer::HeaderLayer,
+        /// The operator token when the expression was read from source.
+        span: Option<Span>,
+    },
     /// FR-300: a nested model form retains StateModel ownership.
     StateModel(Box<super::state_model::StateModelRefusal>),
     /// FR-366: a refusal in a type-level invariant clause, with the clause
@@ -3135,7 +3138,9 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
-            Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
+            Self::ProfileProhibitedOperator(_) | Self::LayerEquality { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
@@ -3257,7 +3262,9 @@ impl CheckCause {
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
             Self::UnsupportedFeature { .. } => Some("unsupported-feature"),
-            Self::ProfileProhibitedOperator(_) => Some("expression-form"),
+            Self::ProfileProhibitedOperator(_) | Self::LayerEquality { .. } => {
+                Some("expression-form")
+            }
             Self::InternalFault(_) | Self::Identity(IdentityRefusal::NonCanonical) => {
                 Some("established-invariant-broken")
             }

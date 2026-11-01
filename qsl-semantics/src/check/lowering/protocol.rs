@@ -41,7 +41,7 @@ pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
 use super::{fault, refuse, Binder, Binders, Lowering, NodeContent, NodeRef};
 use crate::check::family::OccurrenceRole;
-use crate::check::ir::{CheckedBody, CheckedNode, NodeKind};
+use crate::check::ir::{CheckedBody, CheckedNode};
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LawRole, LeafTerm, MemberTerm,
     NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
@@ -118,6 +118,8 @@ pub(crate) enum ProtocolSite<'a> {
     Control(&'a [String]),
     /// The constraint or condition tree of the control at this path.
     ControlBody(&'a [String]),
+    /// One end of a control's `related` record, distinguished by its span.
+    Related(&'a [String], qsl_foundation::Span),
     /// A `visible` entry, guard, invariant or variant of the `choice` or
     /// `repeat` at this path, told apart by its source span.
     Decision(&'a [String], qsl_foundation::Span),
@@ -149,6 +151,12 @@ pub(crate) fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::ControlBody(path) => {
             format!("protocol {protocol} run {} body", path.join(" "))
         }
+        ProtocolSite::Related(path, span) => format!(
+            "protocol {protocol} run {} related {} {}",
+            path.join(" "),
+            span.start,
+            span.end
+        ),
         ProtocolSite::Decision(path, span) => format!(
             "protocol {protocol} run {} decision {}..{}",
             path.join(" "),
@@ -194,9 +202,6 @@ impl ProtocolInput<'_> {
         {
             unemitted.push(ProtocolConstruct::WholeModelRole);
         }
-        if !form.relationships.is_empty() {
-            unemitted.push(ProtocolConstruct::Relationships);
-        }
         if self
             .checked
             .channels
@@ -239,20 +244,6 @@ impl ProtocolInput<'_> {
             .any(|repeat| repeat.decisions_read_body && !repeat.post_test)
         {
             unemitted.push(ProtocolConstruct::RepeatDecisionReadsBody);
-        }
-        if slots
-            .choices
-            .iter()
-            .flat_map(|choice| &choice.visible)
-            .chain(slots.repeats.iter().flat_map(|repeat| &repeat.visible))
-            .any(|entry| {
-                matches!(
-                    entry.root().kind(),
-                    NodeKind::Literal(_) | NodeKind::Local(_)
-                )
-            })
-        {
-            unemitted.push(ProtocolConstruct::VisibleEntryNotAnExpression);
         }
         if self.repeat_steps_through_repeat() {
             unemitted.push(ProtocolConstruct::RepeatStepsThroughRepeat);
@@ -369,6 +360,12 @@ impl ProtocolInput<'_> {
         }
         let slots = &self.checked.slots;
         roots.extend(slots.bodies.iter().map(|body| body.body.root()));
+        roots.extend(
+            slots
+                .related
+                .iter()
+                .flat_map(|related| related.ends.iter().map(CheckedBody::root)),
+        );
         // The `choice` and `repeat` decision slots (FR-466 "Decision facts").
         for choice in &slots.choices {
             roots.extend(choice.visible.iter().map(CheckedBody::root));
@@ -935,6 +932,12 @@ impl Lowering<'_> {
 
         let roles_by_name =
             self.role_nodes(protocol, &operation("role")?, &readable, boolean.clone())?;
+        let relationships = protocol
+            .checked
+            .relationships
+            .iter()
+            .map(|relationship| self.model_node(&relationship.key, location))
+            .collect::<Result<Vec<_>, _>>()?;
         let (channels, queues, named_channels) = self.channel_nodes(
             protocol,
             &ChannelOperations {
@@ -1024,7 +1027,10 @@ impl Lowering<'_> {
                     MemberTerm::binding("activation", BindingValue::Group(activation)),
                     MemberTerm::binding("captures", BindingValue::Tuple(captures)),
                     MemberTerm::binding("roles", BindingValue::Group(GroupTerm::references(roles))),
-                    MemberTerm::binding("relationships", empty_group()),
+                    MemberTerm::binding(
+                        "relationships",
+                        BindingValue::Group(GroupTerm::references(sorted(relationships))),
+                    ),
                     MemberTerm::binding(
                         "channels",
                         BindingValue::Group(GroupTerm::references(channels)),

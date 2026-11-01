@@ -627,11 +627,16 @@ fn commuting_pairs<M: MemoryModel>(
                 identities.push(step);
             }
         }
+        // A footprint is read once per step, not once per pair it is in, and the
+        // state's access classification once for all of them.
+        let footprints = system
+            .footprints(&state.state, &identities)
+            .expect("footprints");
         for (index, first) in identities.iter().enumerate() {
-            for second in &identities[index + 1..] {
-                let left = system.footprint(&state.state, first).expect("a footprint");
-                let right = system.footprint(&state.state, second).expect("a footprint");
-                if !independent(&left, &right) {
+            for (offset, second) in identities[index + 1..].iter().enumerate() {
+                let left = &footprints[index];
+                let right = &footprints[index + 1 + offset];
+                if !independent(left, right) {
                     continue;
                 }
                 checked.push((first.kind(), second.kind()));

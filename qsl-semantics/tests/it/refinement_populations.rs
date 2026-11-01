@@ -216,8 +216,10 @@ fn a_seq_in_an_invariant_refuses_as_an_expression_form() {
         (Code::UnsupportedConstruct, Some("expression-form"))
     );
     assert_eq!(refusal.at, "seq(i in 0 .. 1: i)");
+    // `s.ring = self` compares references, which needs the state-graph
+    // layer that `quire.model.complete/v1` includes.
     checked(
-        "invariant Total using v on R::Ring at current { \
+        "invariant Total using m on R::Ring at current { \
          count(s in R::slots where s.ring = self) = 2 }\n\
          invariant Anything using v on R::Ring at current { true }",
     );

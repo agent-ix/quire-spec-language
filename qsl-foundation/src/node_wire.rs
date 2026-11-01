@@ -242,6 +242,7 @@ pub fn node_key_to_text(key: &NodeKey) -> Result<String, NodeWireError> {
 ///
 /// A [`NodeWireError`] for malformed text, a failed storage reservation, or the
 /// identity's own refusal ([`InvalidNodeKey`]).
+#[ix_trace_rs::string_edge]
 pub fn node_key_from_text(text: &str) -> Result<NodeKey, NodeWireError> {
     #[derive(Clone, Copy)]
     enum State {

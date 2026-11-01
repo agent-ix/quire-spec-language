@@ -262,6 +262,15 @@ holding the `AdmissionFailure`, and no record.
 - When an engine budget or an accounting limit is reached, or the `Cancel`
   handle is cancelled, `analyze` shall settle each open item `incomplete`
   with the limit or cancellation cause kept.
+- When `AnalyzeLimits.deadline_ms` is finite, the `analyze` operation shall
+  use it as a request-wide wall-clock cancellation deadline measured from
+  operation entry. When that deadline expires, `analyze` shall settle each
+  open item `incomplete` with cause `cancelled{source: deadline}` and shall
+  preserve records already settled. If caller cancellation ends the run
+  first, each open item shall carry `cancelled{source: requested}`; if an
+  engine or accounting limit stops an item first, `analyze` shall keep that
+  item's typed limit result. A binding admission failure shall still return
+  `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs.
 
 ## Acceptance Criteria
 
@@ -278,6 +287,7 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-9 | AC-3's request returns its three records in `request_index` order 0, 1, 2. The same request whose binding's `universes` name a population the package does not declare returns `StageFailure::Refused(AnalyzeRefusal::Binding)` holding FR-120's `invalid_runtime_input`/`wrong-role-mapping`, no record, and no engine runs. | Test (TC-762) |
 | FR-281-AC-10 | `Engines::with` holding `qsl.test-a`, given a second engine whose manifest's `BackendId` is `qsl.test-a`, returns `invalid_capability`/`duplicate-backend` naming `qsl.test-a`, and the set still runs the first engine for an item settled `Supported(qsl.test-a)`. With `qsl.test-a` advertising only (`value-validity`, `bounded`), a `temporal-satisfaction` item settled `Supported(qsl.test-a)` settles `invalid-request` with `invalid_capability`/`inconsistent-candidates` naming `qsl.test-a` and the item's kind and mode, and `qsl.test-a` does not run. AC-3's unsupported record carries the diagnostic naming the claim kind and no `cause` member. | Test (TC-762) |
 | FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode. | Test (TC-763) |
+| FR-281-AC-12 | The `analyze` operation measures a finite `AnalyzeLimits.deadline_ms` from entry and applies it to the whole request; when it expires, `analyze` settles each open item `incomplete` with cause `cancelled{source: deadline}` and preserves records already settled. If caller cancellation ends the run first, open items carry `cancelled{source: requested}`; if an engine or accounting limit stops an item first, `analyze` keeps that item's typed limit result. A binding admission failure still returns `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs. | Test (TC-763) |
 
 ## Dependencies
 

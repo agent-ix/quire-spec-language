@@ -160,6 +160,13 @@ impl Hasher for PassThrough {
     }
 }
 
+/// The cached hash used to order debug rows before structural collision fallback.
+pub(super) fn structural_hash(key: &NodeKey) -> u64 {
+    let mut hasher = PassThrough(0);
+    key.hash(&mut hasher);
+    hasher.finish()
+}
+
 impl NodeTable {
     /// An empty table.
     pub fn new() -> Self {
@@ -189,9 +196,7 @@ impl NodeTable {
     }
 
     fn position(&mut self, key: &NodeKey, pending: &mut Vec<usize>) -> usize {
-        let mut hasher = PassThrough(0);
-        key.hash(&mut hasher);
-        let bucket = self.by_hash.entry(hasher.finish()).or_default();
+        let bucket = self.by_hash.entry(structural_hash(key)).or_default();
         if let Some(at) = bucket.iter().copied().find(|at| self.nodes[*at] == *key) {
             return at;
         }

@@ -527,8 +527,9 @@ impl Dimension<'_> {
 /// A refusal by the frame decision, with its catalog code.
 struct FrameRefused(CatalogCode);
 
-/// A candidate's state key and its observation.
-type Evidence = (crate::simulation::StateKey, Observation);
+/// A candidate's observation. Its state key is encoded only for a finding
+/// that names it.
+type Evidence = Observation;
 
 /// The (population, object key, field) triples a frame lets an application
 /// write.
@@ -1171,13 +1172,9 @@ impl Run<'_, '_, '_> {
         }
         let system = self.walk.system;
         if evidence.is_none() {
-            let state_key = encode::model_key(&system.model, candidate, system.typing());
-            let state_key = key::canonical_state_key(&state_key, identity_limits())
-                .map_err(|_| stop(BROKEN))?;
-            let observation = self.post_observation(candidate)?;
-            *evidence = Some((state_key, observation));
+            *evidence = Some(self.post_observation(candidate)?);
         }
-        let (_, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
+        let post = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
         let check = self
             .walk
             .enforcement
@@ -1312,9 +1309,6 @@ impl Run<'_, '_, '_> {
         delta: &Delta,
         info: &ClauseInfo,
     ) -> Result<AdmittedObservations, ExpansionStop> {
-        let system = self.walk.system;
-        let state_key = encode::model_key(&system.model, candidate, system.typing());
-        let _state_key = key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
         let post = self.post_observation(candidate)?;
         let effect = self.effect_of(candidate, delta)?;
         Ok(AdmittedObservations {
@@ -1415,7 +1409,15 @@ impl Run<'_, '_, '_> {
                 }
                 Conjunction::False(_) => {}
                 Conjunction::Undecided(undecided) => {
-                    let (state_key, _) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
+                    let state_key = key::canonical_state_key(
+                        &encode::model_key(
+                            &self.walk.system.model,
+                            &candidate,
+                            self.walk.system.typing(),
+                        ),
+                        identity_limits(),
+                    )
+                    .map_err(|_| stop(BROKEN))?;
                     for (clause, evaluation) in undecided {
                         contract.push(ContractFinding {
                             transition: self.transition_bytes.to_vec(),
@@ -1463,13 +1465,18 @@ fn frame_objects(objects: &BTreeMap<String, StateObject>) -> Vec<FrameObject<'_,
 
 /// Whether every reference of `candidate` names one of `references`.
 fn is_closed(candidate: &ModelState, references: &[ObjectReference]) -> bool {
-    let present: BTreeSet<&ObjectReference> = references.iter().collect();
     let mut named = Vec::new();
     for object in candidate.populations.values().flat_map(BTreeMap::values) {
         for value in object.fields.values() {
             collect_references(value, &mut named);
         }
     }
+    // Most candidates name no object: the set of present references is built
+    // only when one does.
+    if named.is_empty() {
+        return true;
+    }
+    let present: BTreeSet<&ObjectReference> = references.iter().collect();
     named
         .into_iter()
         .all(|reference| present.contains(reference))

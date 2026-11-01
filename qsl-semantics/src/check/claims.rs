@@ -1031,7 +1031,7 @@ pub(crate) fn key_claims(
     let scalar =
         |key: NodeKey| application(key).is_some_and(|(identity, _)| is_scalar_identity(identity));
     // Keyed by hash while claims are keyed; ranked once at the end
-    // ([`super::key_order`]), so no insertion compares node keys.
+    // (`super::key_order`), so no insertion compares node keys.
     let mut records = HashMap::new();
     for claim in claims {
         let site = claim.site;

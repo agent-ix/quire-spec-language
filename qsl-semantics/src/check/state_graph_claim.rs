@@ -615,9 +615,25 @@ fn check_predicate<'a>(
         staged: declarations.staged,
     };
     let view = view_of(declaration, body);
-    let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
-        |inner| {
-            let span = span_at(operand, &inner.location)
+    let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope))
+        .and_then(|typed| {
+            match super::layer::typed_equalities(
+                &typed.body,
+                Some(&declaration.selection),
+                declarations.scope.types(),
+                Some(&operand.spans),
+            ) {
+                Some(refusal) => Err(refusal),
+                None => Ok(typed),
+            }
+        })
+        .map_err(|inner| {
+            let operator = match &inner.cause {
+                CheckCause::LayerEquality { span, .. } => *span,
+                _ => None,
+            };
+            let span = operator
+                .or_else(|| span_at(operand, &inner.location))
                 .or_else(|| operand.spans.span(operand.spans.root()))
                 .unwrap_or(declaration.form.span);
             refuse(StateGraphCause::Predicate {
@@ -625,8 +641,7 @@ fn check_predicate<'a>(
                 span,
                 cause: Box::new(inner.cause),
             })
-        },
-    )?;
+        })?;
     Ok((
         CheckedStatePredicate::Checked(CheckedPredicateBody {
             parameters: typed.parameters,

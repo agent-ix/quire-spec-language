@@ -159,6 +159,7 @@ pub(crate) fn check_operands(
 /// The equality operator `node` applies, when its body's operation is a
 /// catalog `quire.op.<family>.eq` or `quire.op.<family>.ne` (QSpec FR-149's
 /// `=` and `!=`).
+#[ix_trace_rs::string_edge]
 pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator> {
     let identity = node.body().application_term()?.operation.identity();
     let (_, suffix) = identity.strip_prefix("quire.op.")?.rsplit_once('.')?;

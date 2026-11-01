@@ -125,8 +125,11 @@ fn target(term: &Value) -> &Value {
     &term["target"]
 }
 
-fn node_key(value: &Value) -> NodeKey {
-    qsl_foundation::node_wire::node_key_from_json(value).expect("a structural node key")
+fn node_key(wire: &Value, value: &Value) -> NodeKey {
+    qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .unwrap()
+        .key_of_value(value)
+        .expect("a structural node key")
 }
 
 /// The one `temporal`/`temporal_clause` node of `wire`.
@@ -535,9 +538,12 @@ fn the_i2_lookup_returns_the_clause_triple_and_its_over_node() {
         panic!("one emitted clause");
     };
     let clause = clause_node(&compiled.wire);
-    assert_eq!(node_key(&clause["node_id"]), checked.identity());
+    assert_eq!(
+        node_key(&compiled.wire, &clause["node_id"]),
+        checked.identity()
+    );
     let over = node_with(&compiled.wire, target(&clause["body"]["arguments"][0]));
-    assert_eq!(node_key(&over["node_id"]), checked.over());
+    assert_eq!(node_key(&compiled.wire, &over["node_id"]), checked.over());
 
     let admitted = admit(&compiled);
     let [root] = clause_roots(&admitted)
@@ -797,7 +803,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let at = u64::try_from(text.find("(q:").unwrap() + 1).unwrap();
     let located = |wire_key: &Value, role: &str| -> Vec<u64> {
-        let sought = node_key(wire_key);
+        let sought = node_key(wire, wire_key);
         graph
             .occurrences()
             .filter(|(key, origin, _)| key == &sought && origin.role().as_str() == role)
@@ -835,7 +841,7 @@ fn an_on_each_clause_emits_its_trigger_and_guard() {
     let truth_graph = truth_declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
-    let guard_key = node_key(&truth_guard["node_id"]);
+    let guard_key = node_key(truth_wire, &truth_guard["node_id"]);
     let guard_at: Vec<_> = truth_graph
         .occurrences()
         .filter(|(key, origin, _)| *key == guard_key && origin.role().as_str() == "expression")
@@ -1331,7 +1337,7 @@ fn the_captures_aggregate_and_nodes_are_emitted() {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let located = |wire_key: &Value, role: &str| -> Vec<u64> {
-        let sought = node_key(wire_key);
+        let sought = node_key(wire, wire_key);
         graph
             .occurrences()
             .filter(|(key, origin, _)| key == &sought && origin.role().as_str() == role)
@@ -1402,7 +1408,7 @@ fn the_requirement_node_is_the_clause_node_and_changes_with_the_captures() {
             panic!("one emitted clause");
         };
         assert_eq!(checked.identity(), compiled.clauses[0].identity());
-        assert_eq!(checked.identity(), node_key(&key));
+        assert_eq!(checked.identity(), node_key(&compiled.wire, &key));
         clause
     };
     let captured = requirement(&activation, CAPTURES);

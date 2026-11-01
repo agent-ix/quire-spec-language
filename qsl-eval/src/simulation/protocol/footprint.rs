@@ -87,7 +87,7 @@ use qsl_semantics::check::{
 use qsl_semantics::check::footprint::FootprintRefusal;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 
-use super::access::{InstanceAccess, ThreadAttempt};
+use super::access::{InstanceAccess, StateWeakAccesses, ThreadAttempt};
 use super::identity::{PositionAnchor, ProtocolTransition, RegistrationKey, StepKind, ThreadPath};
 use super::memory::{FootprintStep, GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
@@ -462,6 +462,37 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let accesses = self
             .state_accesses(state, &mut budget)
             .map_err(ProtocolFootprintError::Expansion)?;
+        self.footprint_with(state, step, &accesses)
+    }
+
+    /// [`Self::footprint`] of each of `steps` taken from `state`, in order.
+    /// The state's access classification is the same for every step, so it
+    /// is computed once.
+    ///
+    /// # Errors
+    ///
+    /// The first error [`Self::footprint`] gives for a step.
+    pub fn footprints(
+        &self,
+        state: &ProtocolState<M>,
+        steps: &[&ProtocolTransition],
+    ) -> Result<Vec<Footprint>, ProtocolFootprintError> {
+        let mut budget: Budget = self.model.budget();
+        let accesses = self
+            .state_accesses(state, &mut budget)
+            .map_err(ProtocolFootprintError::Expansion)?;
+        steps
+            .iter()
+            .map(|step| self.footprint_with(state, step, &accesses))
+            .collect()
+    }
+
+    fn footprint_with(
+        &self,
+        state: &ProtocolState<M>,
+        step: &ProtocolTransition,
+        accesses: &StateWeakAccesses,
+    ) -> Result<Footprint, ProtocolFootprintError> {
         let unknown = || ProtocolFootprintError::UnknownStep;
         let mut built = Builder::default();
         if let Some((channel, instance)) = step.channel_queue() {
@@ -499,7 +530,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let instance = state.instances.get(&path.instance).ok_or_else(unknown)?;
         let thread = instance.threads.get(path).ok_or_else(unknown)?;
         if matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd) {
-            return self.compensation_footprint(state, instance, path, thread, step, &accesses);
+            return self.compensation_footprint(state, instance, path, thread, step, accesses);
         }
         let (node, after) = self.stepped(thread, step)?;
         let own = control(path);

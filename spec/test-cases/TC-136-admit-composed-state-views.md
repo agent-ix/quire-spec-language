@@ -42,9 +42,11 @@ A checked handle is made only by the supported source pipeline; no public
 constructor builds one from bytes or from a wire record. The procedure
 therefore has two parts. First, a compile-fail public-API fixture attempts to
 pass raw bytes, a freely constructed wire record and a hand-built
-`CheckedExpression` to `CheckedPackageEvaluation::{call, evaluate}` and to
-build a `ProtocolSlot`; each fails to compile. Second, handles that are
-well-typed but name nothing in the selected package are offered at run time:
+`CheckedExpression` to `CheckedPackageEvaluation::{call, evaluate}`; each
+fails to compile. `ProtocolSlot` is a public selector with public fields and
+is intentionally constructible by callers, so its construction is not a
+compile-fail contract. Second, selectors that are well-formed Rust values but
+name nothing in the selected package are offered at run time:
 
 | # | Entry point | Handle | Expected |
 | --- | --- | --- | --- |

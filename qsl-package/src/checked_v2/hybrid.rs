@@ -114,6 +114,7 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
         .collect();
     let reader = Reader {
         package,
+        graph: super::wire_graph(package).map_err(|_| HybridReadError::Fault(SHAPE))?,
         positions,
         functions: nodes
             .iter()
@@ -130,7 +131,7 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
         if *kind == CheckedNodeKind::Hybrid(HybridForm::Model) {
             let (model, fact) = reader.model(node)?;
             models.push(ReadHybridModel {
-                node: wire_id(&node.node_id)?,
+                node: reader.key(&node.node_id)?,
                 model,
             });
             facts.push(fact);
@@ -149,7 +150,7 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
         let fact = &facts[model_position];
         let model = &models[model_position].model;
         claims.push(ReadHybridClaim {
-            node: wire_id(&node.node_id)?,
+            node: reader.key(&node.node_id)?,
             claim: reader.claim(
                 node,
                 over,
@@ -165,13 +166,17 @@ pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead
         functions: reader
             .functions
             .iter()
-            .map(|id| wire_id(id))
+            .map(|id| reader.key(id))
             .collect::<Result<_, _>>()?,
     })
 }
 
-fn wire_id(id: &CheckedNodeId) -> Result<NodeKey, HybridReadError> {
-    crate::emit::admitted_key(id).map_err(|_| HybridReadError::Fault(SHAPE))
+impl Reader<'_> {
+    fn key(&self, id: &CheckedNodeId) -> Result<NodeKey, HybridReadError> {
+        self.graph
+            .key(id)
+            .map_err(|_| HybridReadError::Fault(SHAPE))
+    }
 }
 
 /// What a claim needs of the model it is over.
@@ -196,6 +201,8 @@ struct Scope<'s> {
 
 struct Reader<'p> {
     package: &'p CheckedPackageV2,
+    /// The package's graph, against which each id's index segments resolve.
+    graph: qsl_semantics::check::wire_id::WireGraph,
     positions: BTreeMap<&'p CheckedNodeId, usize>,
     functions: Vec<&'p CheckedNodeId>,
     limit: u64,
@@ -849,7 +856,7 @@ impl Reader<'_> {
         for (position, (name, value)) in written.into_iter().enumerate() {
             let Some(ty) = scope.captured.get(&position).cloned() else {
                 return Err(HybridReadError::CaptureTypeNotCarried {
-                    claim: wire_id(&node.node_id)?,
+                    claim: self.key(&node.node_id)?,
                     capture: name.as_str().to_owned(),
                 });
             };

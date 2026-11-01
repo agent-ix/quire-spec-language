@@ -15,7 +15,8 @@
 //!   subjects takes one component disjunct from this relation per subject.
 //! - `query` assembles a script for an item and a [`SmtQueryKind`].
 //! - `refinement` assembles a refinement's per-step simulation queries
-//!   (FR-315 "Refinement queries").
+//!   (FR-315 "Refinement queries"), whose assertions `normal` rewrites into
+//!   their normal form.
 
 mod expression;
 mod hyper;
@@ -23,6 +24,7 @@ mod kind;
 mod layout;
 mod limits;
 mod monitor;
+mod normal;
 mod query;
 mod refinement;
 mod refusal;

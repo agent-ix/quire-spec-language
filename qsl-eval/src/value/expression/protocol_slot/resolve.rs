@@ -3,8 +3,9 @@
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime, CheckedOrdering,
-    CheckedProtocol, CheckedRetry, CheckedSlots, ProtocolNodeId,
+    BindingValue, BodyTerm, CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime,
+    CheckedOrdering, CheckedProtocol, CheckedRetry, CheckedSlots, GroupMember, LeafTerm,
+    MemberTerm, ProtocolNodeId, TupleMember,
 };
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
 use quire_exact::{NodeKey, ValueType};
@@ -52,8 +53,15 @@ pub(crate) fn refused(
     admission(code, cause, locus)
 }
 
-pub(crate) fn shape_matches(value_type: &ValueType, value: &quire_exact::Value) -> bool {
+pub(crate) fn shape_matches(
+    value_type: &ValueType,
+    value: &quire_exact::Value,
+    types: &quire_semantic_value::declaration::TypeEnvironment,
+) -> bool {
     use quire_exact::{Value, ValueType};
+    if let (ValueType::Composite(expected), Value::Composite(actual)) = (value_type, value) {
+        return types.composite_conforms(actual.declaration().clone(), expected.clone());
+    }
     matches!(
         (value_type, value),
         (ValueType::Boolean, Value::Boolean(_))
@@ -265,7 +273,7 @@ fn compensation_retry(compensation: &CheckedRetry) -> Vec<(String, ValueType)> {
 /// decoded from arbitrary text.
 #[ix_trace_rs::string_edge]
 fn run_body<'a>(
-    _package: &'a CheckedPackage,
+    package: &'a CheckedPackage,
     protocol: &'a CheckedProtocol,
     node: ProtocolNodeId,
     member: &str,
@@ -277,6 +285,9 @@ fn run_body<'a>(
         .as_ref()
         .is_some_and(|(finish, _)| *finish == node)
     {
+        if member != "constraint" {
+            return None;
+        }
         return Some((
             &protocol
                 .slots
@@ -310,17 +321,19 @@ fn run_body<'a>(
             };
             Some((body, slots))
         }
-        ("choice", "cases.guard") => Some((
-            &protocol
+        ("choice", "cases.guard") => {
+            let mut cases = protocol
                 .slots
                 .choices
                 .iter()
                 .find(|choice| choice.node == node)?
                 .cases
-                .get(index?)?
-                .guard,
-            slots,
-        )),
+                .iter()
+                .collect::<Vec<_>>();
+            cases.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
+            let case = *cases.get(index?)?;
+            Some((&case.guard, slots))
+        }
         ("repeat", "guard") => Some((
             &protocol
                 .slots
@@ -348,28 +361,63 @@ fn run_body<'a>(
                 .body,
             slots,
         )),
-        ("send" | "receive" | "attempt" | "effect" | "event", "related.from") => Some((
-            protocol
+        ("send" | "receive" | "attempt" | "effect" | "event", "related.from" | "related.to") => {
+            // The emitted records are canonically sorted and deduplicated.
+            // Select their checked expression identity before locating its
+            // executable body; source declaration order is not a slot index.
+            let keys = package.graph().protocol_node_keys(&protocol.name)?;
+            let control = package
+                .graph()
+                .semantic_graph()
+                .node(keys.nodes.get(&node)?.clone())?;
+            let BodyTerm::Application(application) = control.body() else {
+                return None;
+            };
+            let records = application
+                .arguments
+                .iter()
+                .find_map(|argument| match argument {
+                    MemberTerm::Binding(binding) if binding.name == "related" => {
+                        match &binding.value {
+                            BindingValue::Tuple(records) => Some(records),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                })?;
+            let TupleMember::Group(record) = records.members.get(index?)? else {
+                return None;
+            };
+            let end = if member == "related.from" {
+                "from"
+            } else {
+                "to"
+            };
+            let target = record.members.iter().find_map(|entry| match entry {
+                GroupMember::Binding(binding) if binding.name == end => match &binding.value {
+                    LeafTerm::Reference { target } => target.admitted(),
+                    _ => None,
+                },
+                _ => None,
+            })?;
+            let body = protocol
                 .slots
                 .related
                 .iter()
                 .filter(|related| related.node == node)
-                .nth(index?)?
-                .ends
-                .first()?,
-            slots,
-        )),
-        ("send" | "receive" | "attempt" | "effect" | "event", "related.to") => Some((
-            protocol
-                .slots
-                .related
-                .iter()
-                .filter(|related| related.node == node)
-                .nth(index?)?
-                .ends
-                .get(1)?,
-            slots,
-        )),
+                .flat_map(|related| &related.ends)
+                .find(|body| {
+                    package
+                        .graph()
+                        .occurrences()
+                        .any(|(key, origin, location)| {
+                            key == *target
+                                && origin.role().as_str() == "expression"
+                                && location == body.root().location()
+                        })
+                })?;
+            Some((body, slots))
+        }
         _ => None,
     }
 }
@@ -570,7 +618,17 @@ pub(crate) fn select<'a>(
                         compensation.trigger.value_type.clone(),
                     )];
                     frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
                         capture_entries(protocol, &compensation.registration_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        protocol_input(protocol)
                             .into_iter()
                             .map(|source| (source.name, source.value_type)),
                     );
@@ -699,10 +757,23 @@ pub(crate) fn select<'a>(
             .iter()
             .find(|expression| expression.location == *location);
         for source in &mut frame {
-            source.node = expression
+            let binder = expression
                 .and_then(|expression| expression.binders.get(source.level))
-                .filter(|binder| binder.name == source.name)
-                .map(|binder| binder.node.clone());
+                .filter(|binder| binder.name == source.name);
+            source.node = binder.map(|binder| binder.node.clone());
+            if let Some(binder) = binder {
+                source.level = keys
+                    .binders
+                    .iter()
+                    .find(|keyed| keyed.node == binder.node)
+                    .map(|keyed| keyed.level)
+                    .ok_or_else(|| {
+                        CallFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
+                            "FR-390",
+                            "checked-protocol-source-has-a-canonical-binder-level",
+                        ))
+                    })?;
+            }
         }
     }
     Ok(Selected { body, frame })

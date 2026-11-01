@@ -11,6 +11,7 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::{Code, RequestIndex, SourceIdentity};
+use qsl_package::CheckedPackage;
 use qsl_route::request::{items_from_requirements, ExtentClassification, RequestWriter};
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{CandidateOutcome, Registry};
@@ -77,6 +78,113 @@ fn has_collection_bounds(graph: &CheckedGraph) -> bool {
         .semantic_graph()
         .nodes()
         .any(|node| node.semantic_form() == "collection_bounds")
+}
+
+/// The S4 document, including its structural node ids.
+fn emitted(graph: CheckedGraph) -> serde_json::Value {
+    let emission =
+        qsl_package::emit_checked(&CheckedPackage::link(graph)).expect("the checked unit emits");
+    assert!(emission.omitted().is_empty(), "every fixture node emits");
+    serde_json::from_slice(emission.package().bytes()).expect("a v2 document")
+}
+
+/// The only emitted type node with `form` in these single-parameter units.
+fn emitted_type<'a>(document: &'a serde_json::Value, form: &str) -> &'a serde_json::Value {
+    let nodes: Vec<_> = document["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("the emitted graph")
+        .iter()
+        .filter(|node| node["semantic_form"] == form)
+        .collect();
+    let [node] = nodes.as_slice() else {
+        panic!("one {form} type: {nodes:?}");
+    };
+    node
+}
+
+/// A ConfigVersion unit used by the published population type vectors.
+fn config_graph(declaration: &str) -> CheckedGraph {
+    let packages = qsl_semantics::model::intake::package_input([
+        crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes(),
+    ])
+    .expect("the ConfigVersion model package loads");
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         model Config = \"example/config-version\";\n\
+         {declaration}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new(
+            "agent-ix",
+            "test:fr334-type-vectors",
+            "fixture",
+            "fixture:1",
+        ),
+        "types.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the model type unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let raw = parsed.source().reference().clone();
+    let unit = build_unit(&parsed).expect("S2 builds the model type unit");
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("the ConfigVersion model is admitted");
+    PackageDeclarations::assemble(raw, "std610".to_string(), unit, models, Vec::new())
+        .expect("the model type unit assembles")
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{declaration}: {refusals:?}"))
+}
+
+/// Resolve the compact structural-key references published by QSpec.
+fn expand_vector_key(keys: &serde_json::Value, name: &str) -> serde_json::Value {
+    let entry = &keys[name];
+    let segments = entry["segments"].as_array().expect("vector key segments");
+    let expanded: Vec<_> = segments
+        .iter()
+        .map(|segment| {
+            if let Some(reference) = segment.get("node_key_ref").and_then(|value| value.as_str()) {
+                expand_vector_key(keys, reference)
+            } else {
+                segment.clone()
+            }
+        })
+        .collect();
+    serde_json::json!({
+        "ordinal": entry["ordinal"],
+        "package": entry["package"],
+        "path": expanded,
+    })
+}
+
+/// Compare the emitted structural identity with one expanded QSpec key.
+fn assert_emitted_vector_key(
+    document: &serde_json::Value,
+    keys: &serde_json::Value,
+    expected: &str,
+) {
+    let expected_key =
+        qsl_foundation::node_wire::node_key_from_json(&expand_vector_key(keys, expected))
+            .expect("the published vector key is a structural NodeKey");
+    let matches: Vec<_> = document["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("the emitted semantic graph")
+        .iter()
+        .filter(|node| {
+            qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+                .is_ok_and(|key| key == expected_key)
+        })
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected one emitted node for {expected_key:?}"
+    );
 }
 
 /// FR-333-AC-1: a collection type with no bound compiles through the spine
@@ -167,6 +275,39 @@ fn a_collection_bound_adds_minimum_and_maximum_to_the_type_node() {
     assert_eq!(form, "collection_bounds");
     assert!(body.contains("min") && body.contains("max"), "{body}");
     assert!(body.contains("18446744073709551615"), "{body}");
+    assert_ne!(
+        parameter_type(&unbounded_graph, "f", 0),
+        parameter_type(&bounded_graph, "f", 0),
+        "bound presence distinguishes the checked type keys"
+    );
+    let unbounded = emitted(unbounded_graph);
+    let bounded = emitted(bounded_graph);
+    let key = |node: &serde_json::Value| {
+        qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+            .expect("an emitted structural node id")
+    };
+    assert_ne!(
+        key(emitted_type(&unbounded, "set")),
+        key(emitted_type(&bounded, "collection_bounds")),
+        "S4 preserves the bound distinction in its emitted type keys"
+    );
+    let bounds: BTreeMap<&str, u64> = emitted_type(&bounded, "collection_bounds")["body"]
+        ["members"]
+        .as_array()
+        .expect("the bound's aggregate members")
+        .iter()
+        .map(|member| {
+            let name = member["name"].as_str().expect("a named bound member");
+            let value = member["value"]["value"]
+                .as_str()
+                .expect("an exact integer literal")
+                .parse()
+                .expect("the bound fits u64");
+            (name, value)
+        })
+        .collect();
+    assert_eq!(bounds, BTreeMap::from([("min", 0), ("max", u64::MAX)]));
+    assert_ne!(unbounded, bounded, "the emitted package values differ");
 }
 
 /// FR-334-AC-3: the same bounded unit compiles to the same node keys.
@@ -179,6 +320,7 @@ fn compiling_a_bounded_unit_twice_gives_the_same_identities() {
         parameter_type(&first, "f", 0),
         parameter_type(&second, "f", 0)
     );
+    assert_eq!(emitted(first), emitted(second));
 }
 
 const UNBOUNDED_CLAIM: &str =
@@ -258,7 +400,7 @@ fn a_bounded_request_is_its_own_item_distinct_per_bound() {
     let package = package(UNBOUNDED_CLAIM);
     let graph = package.graph();
     let records = graph.requirements();
-    let (registry, _) = registry(Capability::ValueValidity);
+    let (registry, kani) = registry(Capability::ValueValidity);
     let items = items_from_requirements(records, &registry, None);
     let [item] = items.as_slice() else {
         panic!("one item: {items:#?}");
@@ -302,6 +444,29 @@ fn a_bounded_request_is_its_own_item_distinct_per_bound() {
     );
     assert_ne!(eight.domains(), written[nine.get()].domains());
     assert_ne!(eight, &written[nine.get()]);
+    // Compare the claim and substituted bounds without the request index:
+    // different indices alone must not establish different obligations.
+    let identity = |index: RequestIndex| {
+        let item = &written[index.get()];
+        (
+            item.occurrence(),
+            item.kind(),
+            item.extent(),
+            item.domains(),
+        )
+    };
+    assert_ne!(identity(unbounded), identity(eight.index()));
+    assert_ne!(identity(unbounded), identity(nine));
+    assert_ne!(identity(eight.index()), identity(nine));
+    let dispositions = [
+        Disposition::RequiresBound,
+        Disposition::Supported(kani.clone()),
+        Disposition::Supported(kani.clone()),
+    ];
+    let targets = route(&dispositions);
+    assert_eq!(targets[unbounded.get()], None);
+    assert_eq!(targets[eight.index().get()], Some(&kani));
+    assert_eq!(targets[nine.get()], Some(&kani));
 }
 
 /// FR-335-AC-4: a claim with a quantity root beside the collection is
@@ -347,4 +512,104 @@ fn a_quantity_root_leaves_no_finite_bound_available() {
         }
     );
     assert_eq!(route(&[Disposition::Unsupported]), vec![None]);
+}
+
+/// FR-334 AC4: every collection and population vector is compiled and emitted
+/// by QSL, then compared directly by structural node key with QSpec's source
+/// vector. The source vectors remain in the QSpec checkout named by QSPEC_DIR.
+#[trace(
+    "TC-844",
+    "FR-334-AC-4",
+    "QSpec-FR-144-AC-9",
+    "QSpec-FR-144-AC-13",
+    "QSpec-FR-153-AC-9"
+)]
+#[test]
+fn emitted_collection_and_population_type_keys_match_qspec_vectors() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::PathBuf::from(qspec)
+        .join("proposals/checked-package-v2/collection-population-type-vectors.json");
+    let vectors: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display())),
+    )
+    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    assert_eq!(
+        vectors["version"], "quire.collection-population-type-vectors/v1",
+        "the checked vector contract is current"
+    );
+    let keys = &vectors["node_keys"];
+
+    let collections = vectors["collection_type_cases"]
+        .as_array()
+        .expect("collection type cases");
+    assert!(
+        !collections.is_empty(),
+        "collection vector coverage is nonzero"
+    );
+    let mut collection_keys = BTreeMap::new();
+    for case in collections {
+        let id = case["id"].as_str().expect("collection case id");
+        let source_type = case["source_type"]
+            .as_str()
+            .expect("collection source type");
+        let expected = case["expected_node_key"]
+            .as_str()
+            .expect("collection expected key");
+        let graph = config_graph(&format!(
+            "function f using v(x: {source_type}): Integer pure {{ 0 }}"
+        ));
+        let document = emitted(graph);
+        assert_emitted_vector_key(&document, keys, expected);
+        let expected_key =
+            qsl_foundation::node_wire::node_key_from_json(&expand_vector_key(keys, expected))
+                .expect("the collection key expands");
+        collection_keys.insert(id.to_string(), expected_key);
+    }
+    assert_ne!(
+        collection_keys["CT-01"], collection_keys["CT-02"],
+        "unbounded and bounded collection types have distinct structural keys"
+    );
+
+    let populations = vectors["population_type_cases"]
+        .as_array()
+        .expect("population type cases");
+    assert!(
+        !populations.is_empty(),
+        "population vector coverage is nonzero"
+    );
+    let mut population_keys = BTreeMap::new();
+    for case in populations {
+        let id = case["id"].as_str().expect("population case id");
+        let source_type = case["source_type"]
+            .as_str()
+            .expect("population source type");
+        let expected = case["expected_node_key"]
+            .as_str()
+            .expect("population expected key");
+        let graph = config_graph(&format!(
+            "function f using v(x: {source_type}): Integer pure {{ 0 }}"
+        ));
+        let document = emitted(graph);
+        assert_emitted_vector_key(&document, keys, expected);
+        let expected_key =
+            qsl_foundation::node_wire::node_key_from_json(&expand_vector_key(keys, expected))
+                .expect("the population key expands");
+        population_keys.insert(id.to_string(), expected_key);
+    }
+    assert_ne!(
+        population_keys["PT-01"], population_keys["PT-02"],
+        "unbounded and zero-bounded population types have distinct structural keys"
+    );
+    assert_ne!(
+        population_keys["PT-02"], population_keys["PT-03"],
+        "different population maxima have distinct structural keys"
+    );
+    println!(
+        "conformance: {} collection and {} population type vector keys emitted and matched",
+        collections.len(),
+        populations.len()
+    );
 }

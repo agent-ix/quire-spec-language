@@ -27,6 +27,96 @@ use qsl_foundation::Span;
 
 use super::assemble::{AssemblyCause, AssemblyError};
 use crate::value::layer::{HeaderLayer, LayerForm};
+use quire_exact::ValueType;
+use quire_semantic_value::declaration::{CompositeShape, FieldDeclaration, TypeEnvironment};
+
+/// Check each equality's typed operands against the declaration's selected
+/// layer. References are leaves: their target's fields are not contained values.
+pub(super) fn typed_equalities(
+    body: &super::ir::CheckedBody,
+    selection: Option<&qsl_foundation::selection::ProfileSelection>,
+    types: &TypeEnvironment,
+    spans: Option<&ExpressionSpans>,
+) -> Option<super::CheckRefusal> {
+    let selected = HeaderLayer::from_identity(&selection?.identity)?;
+    let admitted = HeaderLayer::closure(&[selected]);
+    for node in body.root().descendants() {
+        let super::ir::NodeKind::Equality(_, _, left, right) = node.kind() else {
+            continue;
+        };
+        let mut reference = false;
+        let mut whole_value = false;
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![node.at(*left).value_type(), node.at(*right).value_type()];
+        while let Some(value_type) = pending.pop() {
+            match value_type {
+                ValueType::Reference(_) => reference = true,
+                ValueType::Option(payload) => {
+                    whole_value = true;
+                    pending.push(payload);
+                }
+                ValueType::Collection(collection) => {
+                    whole_value = true;
+                    pending.push(collection.element());
+                }
+                ValueType::Composite(key) => {
+                    whole_value = true;
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    match types
+                        .composite(key.clone())
+                        .map(|declaration| declaration.shape())
+                    {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(FieldDeclaration::value_type));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        Some(CompositeShape::Union(members)) => {
+                            pending.extend(members.iter().flat_map(|member| member.positions()));
+                        }
+                        None => {}
+                    }
+                }
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Float(_)
+                | ValueType::Quantity(_)
+                | ValueType::BoundedQuantity(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Map(_)
+                | ValueType::Population(_) => {}
+            }
+        }
+        let required = [
+            (reference, HeaderLayer::StateGraph),
+            (whole_value, HeaderLayer::ValueComplete),
+        ]
+        .into_iter()
+        .find_map(|(present, required)| {
+            (present && !admitted.contains(&required)).then_some(required)
+        });
+        if let Some(required) = required {
+            return Some(super::CheckRefusal {
+                location: node.location().clone(),
+                cause: super::CheckCause::LayerEquality {
+                    selected,
+                    required,
+                    span: spans
+                        .and_then(|spans| super::region::operator_span_at(spans, node.location())),
+                },
+            });
+        }
+    }
+    None
+}
 
 /// The admitted-form set one `using` alias selects, with the names of the
 /// unit's own predicates, which tell a named predicate call from any other

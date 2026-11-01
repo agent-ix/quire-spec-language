@@ -38,7 +38,7 @@ use qsl_forms::{
     RoleLifetime, TerminalForm,
 };
 use qsl_foundation::{diagnostic::Locus, Span};
-use quire_exact::ValueType;
+use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::check::Scope;
@@ -434,10 +434,13 @@ impl Checker<'_, '_> {
                                 ProtocolSite::Decision(&path, span),
                             )
                         }),
-                        SlotKind::Finish
-                        | SlotKind::Terminal
-                        | SlotKind::RelatedEnd
-                        | SlotKind::Lifetime => None,
+                        SlotKind::RelatedEnd => decision_span(slot.form).map(|span| {
+                            protocol_location(
+                                &self.protocol.name.name,
+                                ProtocolSite::Related(&path, span),
+                            )
+                        }),
+                        SlotKind::Finish | SlotKind::Terminal | SlotKind::Lifetime => None,
                     }
                 }),
             SlotOwner::Role(role) => self.protocol.roles.get(role).map(|role| {
@@ -576,6 +579,43 @@ impl Checker<'_, '_> {
                 }
             }
         })
+    }
+
+    /// FR-218-AC-34: a visible entry is itself an expression, not a literal
+    /// or a protocol capture read. The S3 checked terms are the source of
+    /// truth for this distinction: a literal has a literal root, while a
+    /// capture read is a local whose binder origin is `Capture`.
+    fn expression_entries(
+        &mut self,
+        node: usize,
+        authored: &[ExpressionForm],
+        checked: &[Option<CheckedBody>],
+    ) -> bool {
+        let before = self.refusals.len();
+        for (form, body) in authored.iter().zip(checked) {
+            let Some(body) = body else {
+                continue;
+            };
+            let is_bare_literal = matches!(body.root().kind(), NodeKind::Literal(_));
+            let is_bare_capture = matches!(
+                body.root().kind(),
+                NodeKind::Local(local)
+                    if self
+                        .binders
+                        .get(*local)
+                        .is_some_and(|binder| binder.origin == BinderOrigin::Capture)
+            );
+            if is_bare_literal || is_bare_capture {
+                let span = span_of(form, &Location::root(Origin::Expression));
+                self.refuse(ProtocolAnchorCause::SlotClause {
+                    node: self.name(node),
+                    slot: SlotKind::Visible,
+                    cause: Box::new(CheckCause::IllTyped(IllTypedCause::OperatorIneligible)),
+                    span,
+                });
+            }
+        }
+        self.refusals.len() == before
     }
 
     /// FR-218 "Choice and repeat decisions": every binder read of a
@@ -1155,6 +1195,7 @@ pub(crate) fn check(
                 )
             })
             .collect();
+        let visible_are_expressions = checker.expression_entries(node, &choice.visible, &visible);
         let cases: Vec<Option<CheckedCase>> = choice
             .cases
             .iter()
@@ -1177,7 +1218,7 @@ pub(crate) fn check(
                     })
             })
             .collect();
-        if checker.refusals.len() != before {
+        if checker.refusals.len() != before || !visible_are_expressions {
             continue;
         }
         let guards: Vec<&ExpressionForm> = choice.cases.iter().map(|case| &case.guard).collect();
@@ -1249,6 +1290,7 @@ pub(crate) fn check(
             .iter()
             .map(|entry| decision(&mut checker, entry, SlotKind::Visible, Goal::Infer, true))
             .collect();
+        let visible_are_expressions = checker.expression_entries(node, &repeat.visible, &visible);
         let guard = decision(
             &mut checker,
             &repeat.guard,
@@ -1287,6 +1329,7 @@ pub(crate) fn check(
             )
         });
         if checker.refusals.len() != before
+            || !visible_are_expressions
             || !checker.facts(node, &repeat.owner.name, &repeat.visible, &[&repeat.guard])
         {
             continue;

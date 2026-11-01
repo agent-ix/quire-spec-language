@@ -294,7 +294,7 @@ impl Fixture {
             });
         let text = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
              profile t = \"quire.temporal.infinite-trace/v1\";\n\
              model M = \"{PACKAGE}\";\n\
              function Noop using v(): Boolean pure {{ true }}\n{}\n{declared}",

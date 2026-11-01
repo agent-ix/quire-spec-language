@@ -630,6 +630,7 @@ pub fn check_state_graph(
         seed,
         cancel,
         budgets,
+        walks: qsl_eval::simulation::model::WalkMemo::new(),
     };
     let sampled = match phase_zero.run(&possible)? {
         Ok(sampled) => sampled,

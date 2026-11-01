@@ -9,6 +9,7 @@
 
 use std::collections::BTreeSet;
 
+use qsl_semantics::check::wire_id::WireGraph;
 use quire_contract_model::{
     CheckedNodeKind, CheckedNodeTag, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm,
     LiteralKind, TemporalForm,
@@ -52,8 +53,11 @@ fn is_terminal(node: &CheckedSemanticNodeV2) -> bool {
         == Some(CheckedNodeKind::Temporal(TemporalForm::Terminal))
 }
 
-fn key(id: &quire_contract_model::CheckedNodeId) -> Result<NodeKey, InternalFault> {
-    crate::emit::admitted_key(id).map_err(|_| SHAPE)
+fn key(
+    graph: &WireGraph,
+    id: &quire_contract_model::CheckedNodeId,
+) -> Result<NodeKey, InternalFault> {
+    graph.key(id).map_err(|_| SHAPE)
 }
 
 fn reference(term: &CheckedTerm) -> Option<&quire_contract_model::CheckedNodeId> {
@@ -81,7 +85,11 @@ fn bindings(node: &CheckedSemanticNodeV2) -> Option<[&CheckedTerm; 4]> {
     values.next().is_none().then_some(found)
 }
 
-fn read_node(node: &CheckedSemanticNodeV2) -> Result<ReadTerminal, InternalFault> {
+fn read_node(
+    graph: &WireGraph,
+    node: &CheckedSemanticNodeV2,
+) -> Result<ReadTerminal, InternalFault> {
+    let key = |id: &quire_contract_model::CheckedNodeId| key(graph, id);
     let [model, mode, parameters, condition] = bindings(node).ok_or(SHAPE)?;
     let model = key(reference(model).ok_or(SHAPE)?)?;
     let CheckedTerm::Literal {
@@ -100,7 +108,7 @@ fn read_node(node: &CheckedSemanticNodeV2) -> Result<ReadTerminal, InternalFault
         Some("when") => ReadTerminalDeclaration::When {
             parameter: members
                 .first()
-                .map(|member| reference(member).ok_or(SHAPE).and_then(key))
+                .map(|member| reference(member).ok_or(SHAPE).and_then(&key))
                 .transpose()?,
             condition: key(reference(condition).ok_or(SHAPE)?)?,
         },
@@ -123,14 +131,15 @@ pub fn read_terminals(package: &CheckedPackageV2) -> Result<Vec<ReadTerminal>, I
     read_nodes(&package.graph().nodes)
 }
 
-/// Every `terminal` node among `nodes`, in order.
+/// Every `terminal` node among `nodes`, a whole graph, in order.
 pub(crate) fn read_nodes(
     nodes: &[CheckedSemanticNodeV2],
 ) -> Result<Vec<ReadTerminal>, InternalFault> {
+    let graph = WireGraph::new(nodes.iter().map(|node| &node.node_id)).map_err(|_| SHAPE)?;
     nodes
         .iter()
         .filter(|node| is_terminal(node))
-        .map(read_node)
+        .map(|node| read_node(&graph, node))
         .collect()
 }
 

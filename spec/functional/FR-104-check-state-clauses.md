@@ -19,7 +19,7 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-103
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-016
+  - target: ix://agent-ix/quire-spec-language/FR-105
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-380
     type: depends_on
@@ -61,8 +61,9 @@ and per frame (ADR-012 §2, §15.7; FR-057).
   `ClauseBinding.execution_point`; FR-105 defines their existing V2 carrier.
   The ordinary `spine::check` entry point supplies an empty map.
 - The native route using `CheckBindings` and `ClauseBinding` in
-  `src/checking.rs` remains a complete, no-extra-entry mapping as FR-016 and
-  TC-049 specify. After that route validates its `Vec<ClauseBinding>`, the
+  `src/checking.rs` remains a complete, no-extra-entry mapping. FR-105 owns
+  the accepted `ClauseBinding.execution_point` carrier and TC-049 exercises
+  the native mapping. After that route validates its `Vec<ClauseBinding>`, the
   adapter selects the binding whose exact `name`
   matches each QSL `StateClauseForm.name` and projects its
   `execution_point` into `StateClauseExecutionPoints`; it does not weaken or

@@ -713,6 +713,29 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         );
     }
     match &first.cause {
+        CheckCause::StateGraph(cause) => {
+            if let qsl_semantics::check::StateGraphCause::Predicate { cause, .. } = &**cause {
+                if let CheckCause::LayerEquality {
+                    selected, required, ..
+                } = &**cause
+                {
+                    message = format!(
+                        "{message}: equality under `{}` requires `{}`",
+                        selected.identity(),
+                        required.identity()
+                    );
+                }
+            }
+        }
+        CheckCause::LayerEquality {
+            selected, required, ..
+        } => {
+            message = format!(
+                "{message}: equality under `{}` requires `{}`",
+                selected.identity(),
+                required.identity()
+            );
+        }
         CheckCause::MissingName(name)
         | CheckCause::AmbiguousName { name, .. }
         | CheckCause::ClockReadingCall(name) => {
@@ -1516,7 +1539,7 @@ fn display_path(path: &[LibraryName]) -> String {
 
 /// One supplied library as its supplier names it (ADR-015 D-1; QSpec
 /// FR-307): its identity and its source unit. A library is identified by
-/// its [`LibraryName`](qsl_semantics::library::LibraryName).
+/// its [`qsl_semantics::library::LibraryName`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SuppliedLibrary {
     /// The library identity, a non-empty string (ADR-015 D-3).

@@ -103,7 +103,7 @@ fn rows_without_a_node_form_refuse_the_refinement_at_its_declaration() {
 fn a_refinement_over_an_unwritten_clause_refuses_naming_the_construct() {
     let event =
         |name: &str, binder: &str| format!("event {name} by w as ({binder}: Boolean) {{ true }};");
-    let cases: [(ProtocolConstruct, String, Vec<&str>); 4] = [
+    let cases: [(ProtocolConstruct, String, Vec<&str>); 3] = [
         (
             ProtocolConstruct::RepeatDecisionReadsBody,
             "sequence Main { repeat Again by w visible (e.ok) while { true } \
@@ -117,16 +117,6 @@ fn a_refinement_over_an_unwritten_clause_refuses_naming_the_construct() {
              sequence Body { event E by w as (e: Ack) { true }; } }"
                 .to_owned(),
             vec!["step C::Impl::E -> stutter;"],
-        ),
-        (
-            ProtocolConstruct::VisibleEntryNotAnExpression,
-            format!(
-                "sequence Main {{ {} repeat Loop by w visible (e) while {{ e }} \
-                 sequence Body {{ {} }} }}",
-                event("E", "e"),
-                event("T", "t")
-            ),
-            vec!["step C::Impl::E -> stutter;", "step C::Impl::T -> stutter;"],
         ),
         (
             ProtocolConstruct::RepeatStepsThroughRepeat,

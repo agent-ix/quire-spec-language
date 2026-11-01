@@ -3,7 +3,7 @@
 //! claims emit as `hybrid` nodes and `temporal_clause` nodes, and QSL's I2
 //! read admits them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{CheckedHybridClaim, CheckedHybridModel, HybridHorizon};
 use quire_contract_model::{
@@ -510,42 +510,51 @@ fn braking2_restored_nodes_match_qspec_vectors() {
         .expect("QSpec restored nodes");
     let (emission, wire) = compile(BRAKING2);
     admitted(&emission);
+    // FR-322: QSpec's vectors and the emitted package are two documents, so
+    // their nodes compare by structural key, never by graph index.
+    use qsl_semantics::check::wire_id::WireGraph;
+    let base = fixture["nodes"].as_array().expect("QSpec base nodes");
+    let vector_nodes: Vec<Value> = base.iter().chain(expected).cloned().collect();
+    let vectors = WireGraph::of_node_values(&vector_nodes).expect("the vectors are one graph");
+    let emitted = WireGraph::of_package_value(&wire).expect("the emitted graph");
+    let key_text = |graph: &WireGraph, id: &Value| graph.key_of_value(id).unwrap().to_string();
     let expected_ids: BTreeSet<String> = expected
         .iter()
-        .map(|node| idtext(&node["node_id"]))
+        .map(|node| key_text(&vectors, &node["node_id"]))
         .collect();
-    let base_ids: BTreeSet<String> = fixture["nodes"]
-        .as_array()
-        .expect("QSpec base nodes")
+    let base_ids: BTreeSet<String> = base
         .iter()
-        .map(|node| idtext(&node["node_id"]))
+        .map(|node| key_text(&vectors, &node["node_id"]))
         .collect();
     let model = declared(&wire, "hybrid_model", &["Braking2"]);
-    let mut pending: Vec<String> = std::iter::once(model)
+    let mut pending: Vec<Value> = std::iter::once(model)
         .chain(of_form(&wire, "temporal_clause"))
-        .map(|node| idtext(&node["node_id"]))
+        .map(|node| node["node_id"].clone())
         .collect();
     let mut reached = BTreeSet::new();
+    let mut by_key = BTreeMap::new();
     while let Some(id) = pending.pop() {
-        if !reached.insert(id.clone()) {
+        let key = key_text(&emitted, &id);
+        if !reached.insert(key.clone()) {
             continue;
         }
-        let node = node_with(&wire, &id);
+        let node = node_with(&wire, idtext(&id));
+        by_key.insert(key, node);
         pending.extend(
             node["dependencies"]
                 .as_array()
                 .expect("node dependencies")
                 .iter()
-                .map(idtext),
+                .cloned(),
         );
-        pending.push(idtext(&node["semantic_type"]));
+        pending.push(node["semantic_type"].clone());
     }
     let actual_ids: BTreeSet<String> = reached.difference(&base_ids).cloned().collect();
     assert_eq!(actual_ids, expected_ids, "complete restored node set");
     for node in expected {
-        let id = idtext(&node["node_id"]);
-        let mut actual = node_with(&wire, &id).clone();
-        let mut expected = node.clone();
+        let id = key_text(&vectors, &node["node_id"]);
+        let mut actual = emitted.structural_value(by_key[&id]).unwrap();
+        let mut expected = vectors.structural_value(node).unwrap();
         // A package's source map may attach more occurrences to a shared
         // semantic node; it does not change the node's semantic content.
         actual.as_object_mut().unwrap().remove("occurrences");

@@ -1,101 +1,60 @@
 ---
 id: FR-053
-title: "Preserve opaque semantic-trigger identity across native temporal evaluation"
+title: "Preserve opaque semantic-trigger identity on the checked-package route"
 type: FR
 relationships:
-  - { target: ix://agent-ix/quire-spec-language/FR-052, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-044, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-449, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-390, type: references }
   - { target: ix://agent-ix/quire-specification/FR-093, type: references }
   - { target: ix://agent-ix/quire-specification/FR-230, type: references }
   - { target: ix://agent-ix/quire-specification/FR-479, type: references }
-  - { target: ix://agent-ix/quire-spec-language/FR-449, type: references }
 ---
-# FR-053: Preserve opaque semantic-trigger identity across native temporal evaluation
+# FR-053: Preserve opaque semantic-trigger identity on the checked-package route
 
 ## Description
 
-**RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs`.**
-
-On the spine, the opaque semantic-trigger identity is the `trigger_event`
-origin identity of QSpec FR-479's protocol-obligation activation binding.
-The protocol consumer (QProtocol) constructs that binding from one FR-449
-activation map row of the checked package and the admitted trigger
-observation it holds. QSL supplies the row and carries no observation, no
-trigger bytes and no obligation identity. The binding's refusals are QSpec
-FR-479's.
-
-When a downstream integration submits an event-triggered native-temporal
-evaluation, the compiler SHALL retain the semantic trigger-event identity as
-exact opaque bytes through the canonical request, evaluation, result and strict
-reader surfaces.
-
-The identity is selected by the observation owner. This compiler validates its
-presence, bounded representation and request/result equality; it SHALL NOT
-interpret it as UTF-8, synthesize it from a timestamp, receipt, display text,
-payload, capture, static binding coordinate or table position, or claim to
-authenticate the observation owner.
-
-## Inputs
-
-One FR-051 checked temporal subject; a bounded nonempty opaque semantic-trigger
-identity; the existing finite native-temporal inputs and exact selected
-definition/profile/clock authority of FR-052. Whole-execution origin remains a
-separate selected origin identity and is never encoded as an empty trigger.
-
-## Outputs
-
-One versioned native-temporal request/result pair and constructor-private views
-whose trigger accessor returns the byte-exact selected identity and whose
-activation accessors retain the checked activation state, selected trigger
-captures, exact evaluation anchor, admitted progress and closure axes,
-execution state, and completeness evidence. The views return one typed refusal
-without a partial request/result or a string fallback.
+When the Layer-4 checked-package route evaluates a temporal obligation
+activated by a semantic trigger, the evaluator SHALL preserve the exact opaque
+trigger identity selected by the observation owner as the identity of that
+activation, in accordance with FR-044 and the FR-449 activation mapping.
 
 ## Behavior
 
-The public native-temporal API SHALL replace the caller-authored textual
-`instance` field with an opaque byte identity type. The canonical v2 request and
-result contracts SHALL encode that type reversibly with a declared binary
-encoding, retain it in their identity preimages, and reject missing, empty,
-noncanonical, malformed, stale, cross-request or result-substituted values.
-The v1 request/result reader remains version-specific and SHALL NOT decode a v2
-document as v1 or translate a v1 textual instance into a v2 trigger identity.
+The semantic-trigger identity SHALL remain distinct from timestamps, receipt
+identities, display text, payloads, capture values, static binding coordinates,
+declaration positions and table order. The route SHALL NOT derive or substitute
+the trigger identity from any of those values. It SHALL preserve distinct
+identities as distinct instances even when their other values are equal, and
+the evaluator SHALL associate a repeated delivery of the same identity with the existing
+instance, subject to FR-044's contradiction rule.
 
-For one checked subject and exact request, strict result reading SHALL compare
-the complete opaque trigger identity byte-for-byte before it evaluates temporal
-truth. A correction preserves its predecessor's immutable trigger bytes; a
-changed trigger is a different request/result rather than a correction of the
-same obligation.
+The observation owner selects the identity. QSL SHALL treat it as opaque and
+preserve it byte-for-byte wherever the checked-package route carries it; QSL
+does not authenticate observation-owner evidence or construct a QProtocol
+obligation binding. An absent, empty, malformed, stale, mismatched or
+cross-version identity representation SHALL produce the route's typed
+refusal/incomplete outcome without an aliased instance or temporal truth.
+Version-specific checked-package readers SHALL NOT translate an identity from
+another contract version into the selected version.
 
-This requirement publishes only the native-temporal owner side of QSpec
-FR-479. QProtocol compares the retained bytes to QObs's authority-qualified
-subject and binds the selected activation site; this compiler does not import
-QObs Rust types or reconstruct a protocol obligation.
-
-The version-two request view SHALL expose the selected trigger's immutable
-captures, exact evaluation anchor, both progress and closure axes, execution
-state, and completeness authority, state, and fact population already admitted
-into the canonical request. Evidence-bearing accessors SHALL borrow the exact
-retained evidence rather than parse or reconstruct it. The version-two result
-view SHALL expose only the checked activation state already admitted by strict
-result reading. Those accessors carry no QProtocol control handle, QObs subject,
-obligation identity, or construction operation; QProtocol alone joins the owner
-facts into the FR-479 binding.
+These obligations apply when the replacement route accepts semantic-trigger
+identity. They do not add a trigger representation to routes that do not carry
+one and do not prescribe a concrete API or encoding. FR-449 supplies the
+checked-package activation-map row; QProtocol joins that row to its admitted
+observation evidence under QSpec FR-479.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-053-AC-1 | **RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs`.** A non-UTF-8 semantic trigger identity round-tripped byte-for-byte through v2 request production, evaluation and strict result reading. This criterion was satisfied while the module existed; with the spine `ProtocolClause` frame slices landed, the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted module's own tests called it. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
-| FR-053-AC-2 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: replacing the trigger bytes changed request and result identities; a result carrying bytes from another request or a correction with changed trigger bytes refused. | Retired |
-| FR-053-AC-3 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: empty, malformed, noncanonical or cross-version trigger encodings refused with no partial view, Boolean truth or textual fallback. | Retired |
-| FR-053-AC-4 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: a timestamp, receipt, display name, payload, capture, static binding coordinate or declaration-table position could not substitute for the supplied trigger bytes. | Retired |
-| FR-053-AC-5 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: the v1 reader rejected v2 contracts and v2 rejected v1 textual-instance documents without translation. | Retired |
-| FR-053-AC-6 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: a strictly read v2 request exposed its admitted trigger captures, evaluation anchor, both progress and closure axes, execution state, and completeness evidence as exact typed views, and its corresponding strictly read v2 result exposed the checked activation state; neither view could expose a caller-authored obligation or QObs subject. | Retired |
+| FR-053-AC-7 | Distinct opaque trigger identities remain distinct through checked-package activation and evaluation, including identities with equal timestamps, receipts, payloads or captures; repeated delivery of one identity does not create a second instance. | Test |
+| FR-053-AC-8 | Changing any trigger identity byte changes the selected activation/instance identity or is refused; no timestamp, receipt, display text, payload, capture, static coordinate or declaration position can stand in for the trigger identity. | Test |
+| FR-053-AC-9 | An absent, empty, malformed, stale, mismatched or cross-version trigger identity is rejected with a typed non-truth outcome and no substituted or partial activation; a version-specific reader performs no cross-version translation. | Test |
 
 ## Dependencies
 
-- [FR-052](FR-052-publish-native-temporal-evaluation-owner.md) owns the
-  canonical request/result evaluation and strict-reader boundary extended here.
-- QSpec FR-093 and FR-230 establish semantic-trigger and obligation identity.
-- QSpec FR-479 establishes the activation-binding contract that QProtocol
-  constructs from an FR-449 activation map row.
+- [FR-044](./FR-044-activate-temporal-obligations.md) owns trigger-keyed activation identity and duplicate-delivery behavior.
+- [FR-449](./FR-449-derive-the-control-to-temporal-activation-map-from-the-protocol-nodes.md) owns the checked-package control-to-temporal activation map.
+- [FR-390](./FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md) owns checked-package protocol evaluation.
+- QSpec FR-093 and FR-230 establish semantic-trigger and obligation identity; QSpec FR-479 owns the QProtocol binding and its cross-owner checks.

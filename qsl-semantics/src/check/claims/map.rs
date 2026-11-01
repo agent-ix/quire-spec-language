@@ -8,7 +8,7 @@
 //! 100,000-term sum) compares neighbouring chain keys on every build, which
 //! costs the body's length times its depth (QSL-381: depth is unbounded).
 //! This map is ranked instead: once by origin, then stably by node through
-//! [`super::super::key_order`], whose ranking costs each key's own width,
+//! `super::super::key_order`, whose ranking costs each key's own width,
 //! never its depth. Lookups go through a hash index.
 
 use std::collections::HashMap;

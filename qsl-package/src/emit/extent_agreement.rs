@@ -195,9 +195,20 @@ fn declared(wire: &Value, name: &str) -> (CheckedNodeId, NodeKey) {
         .iter()
         .find(|node| node["declaration"]["qualified_name"] == json!([name]))
         .unwrap_or_else(|| panic!("{name} is written"));
-    let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
-        .expect("a structural node id");
-    (super::checked_node_id_of(&key), key)
+    (wire_id(&node["node_id"]), wire_key(wire, &node["node_id"]))
+}
+
+/// The wire id `id` as IR's node id.
+fn wire_id(id: &Value) -> CheckedNodeId {
+    serde_json::from_str(&id.to_string()).expect("a wire node id")
+}
+
+/// The structural key of `id`, a wire id `wire` holds.
+fn wire_key(wire: &Value, id: &Value) -> NodeKey {
+    qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .unwrap()
+        .key_of_value(id)
+        .expect("a structural node id")
 }
 
 /// The written node with id `id`.
@@ -310,7 +321,10 @@ fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
 
 /// The written node whose wire id is `node`.
 fn wire_node<'w>(wire: &'w Value, node: &NodeKey) -> &'w Value {
-    let wanted = node_ref(node);
+    let wanted = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .unwrap()
+        .wire_value(node)
+        .unwrap_or_else(|_| panic!("{node} is written"));
     nodes(wire)
         .iter()
         .find(|written| written["node_id"] == wanted)
@@ -594,8 +608,7 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
 
 /// The written node whose id is `node`, as IR's node id.
 fn written(wire: &Value, node: &NodeKey) -> CheckedNodeId {
-    let _ = wire_node(wire, node);
-    super::checked_node_id_of(node)
+    wire_id(&wire_node(wire, node)["node_id"])
 }
 
 /// Each requirement record of `package` whose application applies

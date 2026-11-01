@@ -17,8 +17,10 @@
 
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
+
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::fmt;
+use hashbrown::HashMap;
 
 use quire_exact::{Location, NodeKey, Origin, Role};
 
@@ -232,12 +234,6 @@ impl OccurrenceKey {
     pub fn origin(&self) -> &Origin {
         &self.origin
     }
-
-    /// The first key of `node` in key order: the empty role sorts before
-    /// every role, and ordinal zero before every ordinal.
-    fn first_of(node: NodeKey) -> Self {
-        Self::new(node, Origin::new(Role::new(""), 0))
-    }
 }
 
 /// A checked location's admitted structural node and occurrence.
@@ -274,9 +270,13 @@ pub enum UnresolvedOccurrence {
 
 /// ADR-013 O-12: one package's source map, keyed by the O-07 occurrence
 /// key, each key mapping to its ordered, non-empty regions.
+///
+/// Entries are grouped by node under a hash of the node's key, so building
+/// and looking up the map never orders two node keys: ordering keys that
+/// share a deep chain of nested operands costs that chain's depth.
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct PackageSourceMap {
-    entries: BTreeMap<OccurrenceKey, Box<[SourceRegion]>>,
+    entries: HashMap<NodeKey, NodeOccurrences>,
 }
 
 /// Debug writes each entry as (node, role, ordinal) with its regions. The
@@ -289,13 +289,21 @@ impl fmt::Debug for PackageSourceMap {
         impl fmt::Debug for Entries<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut map = f.debug_map();
-                for (key, regions) in &self.0.entries {
-                    let at = (
-                        NodeKeyDebug(&key.node),
-                        key.origin.role(),
-                        key.origin.ordinal(),
-                    );
-                    map.entry(&at, regions);
+                let mut nodes: Vec<_> = self.0.entries.iter().collect();
+                nodes.sort_unstable_by(|(left, _), (right, _)| {
+                    super::node_table::structural_hash(left)
+                        .cmp(&super::node_table::structural_hash(right))
+                        .then_with(|| left.cmp(right))
+                });
+                for (_, occurrences) in nodes {
+                    for (key, regions) in occurrences.values() {
+                        let at = (
+                            NodeKeyDebug(&key.node),
+                            key.origin.role(),
+                            key.origin.ordinal(),
+                        );
+                        map.entry(&at, regions);
+                    }
                 }
                 map.finish()
             }
@@ -311,6 +319,9 @@ impl fmt::Debug for PackageSourceMap {
         scoped(f, &Body(self))
     }
 }
+/// One node's mapped occurrences, in (role, ordinal) order, each with its
+/// full key and its regions.
+type NodeOccurrences = BTreeMap<Origin, (OccurrenceKey, Box<[SourceRegion]>)>;
 
 impl PackageSourceMap {
     /// The map of `entries`, each an occurrence key and its regions in
@@ -318,19 +329,19 @@ impl PackageSourceMap {
     pub fn from_entries(
         entries: impl IntoIterator<Item = (OccurrenceKey, Vec<SourceRegion>)>,
     ) -> Result<Self, InvalidProvenance> {
-        let mut map = BTreeMap::new();
+        let mut map: HashMap<NodeKey, NodeOccurrences> = HashMap::new();
         for (key, regions) in entries {
             if regions.is_empty() {
                 return Err(InvalidProvenance::NoRegion(key));
             }
-            match map.entry(key) {
-                Entry::Occupied(occupied) => {
-                    return Err(InvalidProvenance::DuplicateOccurrence(
-                        occupied.key().clone(),
-                    ))
-                }
+            match map
+                .entry(key.node.clone())
+                .or_default()
+                .entry(key.origin.clone())
+            {
+                Entry::Occupied(_) => return Err(InvalidProvenance::DuplicateOccurrence(key)),
                 Entry::Vacant(vacant) => {
-                    vacant.insert(regions.into_boxed_slice());
+                    vacant.insert((key, regions.into_boxed_slice()));
                 }
             }
         }
@@ -340,7 +351,10 @@ impl PackageSourceMap {
     /// ADR-013 C-14: the regions of one occurrence, in wire order, or
     /// `None` when the package maps no such occurrence.
     pub fn regions(&self, key: &OccurrenceKey) -> Option<&[SourceRegion]> {
-        self.entries.get(key).map(|regions| &**regions)
+        self.entries
+            .get(&key.node)?
+            .get(&key.origin)
+            .map(|(_, regions)| &**regions)
     }
 
     /// ADR-013 O-07: every occurrence of `node`, in (role, ordinal) order,
@@ -349,10 +363,10 @@ impl PackageSourceMap {
         &self,
         node: &NodeKey,
     ) -> impl Iterator<Item = (&OccurrenceKey, &[SourceRegion])> {
-        let node = node.clone();
         self.entries
-            .range(OccurrenceKey::first_of(node.clone())..)
-            .take_while(move |(key, _)| key.node == node)
+            .get(node)
+            .into_iter()
+            .flat_map(BTreeMap::values)
             .map(|(key, regions)| (key, &**regions))
     }
 
@@ -374,6 +388,7 @@ impl PackageSourceMap {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use alloc::{vec, vec::Vec};
     use ix_trace_rs::trace;
     use quire_exact::PathSegment;
