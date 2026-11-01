@@ -46,3 +46,10 @@ Ticket: QSL-1443. Plan completion: not assessed. The manual check confirms the r
 | --- | --- | --- | --- |
 | FND-001 | high | The QSpec adverse unknown-profile mutation in `conformance_i2_read_over_qspec_checked_package_v2_fixtures` leaves the new temporal sidecar inconsistent with the altered clause, so it now refuses with `TimedNodeReference` instead of exercising the expected `UnknownProfile`. Correct the mutation or justify an expectation change against the spec in #1443. | qsl-package/src/checked_v2/tests.rs:2956 |
 | FND-002 | medium | Six timed writer/read-back tests fail because `temporal_bindings` is still `None`. The typed per-declaration binding producer belongs to explicitly sequenced QSL-1384; these tests are genuine remaining successor scope and must not be skipped or weakened. | qsl-package/src/emit.rs:4678 |
+
+
+## Follow-up verification at 0f2c41443
+
+Reviewed PR #2045 head `0f2c41443a75fb63eef365c89dfe7b58737dca1c`. The root integration helper now constructs `CheckedPackageSidecarsRef { checked_term_data: None, temporal_bindings: None }` at `tests/it/emit_checked_v2.rs:427`; all 11 tests in the `emit_checked_v2` integration module pass. No new finding was identified. The prior unknown-profile mutation finding remains fixed at `5114fb983`; its focused fixture test passes, as do C14 and both CL-57..62 vector tests.
+
+Prior FND-002 remains deferred to linked QSL-1384: all six temporal producer/read-back failures stay enabled, not waived. The equality-identity failure remains the clean-main baseline established in round 1. The full package suite and aggregate gate were not rerun in this follow-up; the lead will run the aggregate gate after disk cleanup.

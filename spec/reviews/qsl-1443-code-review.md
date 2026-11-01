@@ -65,3 +65,10 @@ Failure classification for `cargo test --locked --offline -p qsl-package --lib` 
 | FND-002 | deferred | Linked QSL-1384 owns the six still-failing producer/read-back cases. They remain enabled; the seventh suite failure reproduces on clean main as an equality-identity baseline. |
 
 Round 1 verification at `5114fb98342baf1b51cd1284c5964396a53cac8f`: the adverse-mutation fixture test, C14 test, and both CL-57..62 reader/emitter vector tests pass. Full `qsl-package --lib`: 480 passed, 7 failed, 2 ignored; six temporal binding failures are tracked by QSL-1384 and `union_nodes::a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written` reproduces on clean main. The QSL-1443 → QSL-1384 blocker relation exists, and QSL-1384 records the six tests as retained successor scope.
+
+
+## Follow-up verification at 0f2c41443
+
+Reviewed PR #2045 head `0f2c41443a75fb63eef365c89dfe7b58737dca1c`. The root integration helper now constructs `CheckedPackageSidecarsRef { checked_term_data: None, temporal_bindings: None }` at `tests/it/emit_checked_v2.rs:427`; all 11 tests in the `emit_checked_v2` integration module pass. No new finding was identified. The prior unknown-profile mutation finding remains fixed at `5114fb983`; its focused fixture test passes, as do C14 and both CL-57..62 vector tests.
+
+Prior FND-002 remains deferred to linked QSL-1384: all six temporal producer/read-back failures stay enabled, not waived. The equality-identity failure remains the clean-main baseline established in round 1. The full package suite and aggregate gate were not rerun in this follow-up; the lead will run the aggregate gate after disk cleanup.
