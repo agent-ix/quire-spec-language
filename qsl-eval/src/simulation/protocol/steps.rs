@@ -401,16 +401,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     else {
                         continue;
                     };
+                    // Every attempt at this observation path starts with
+                    // the same memory view. Build it once, then borrow it
+                    // for each attempt instead of cloning the full model
+                    // state into each attempt's probe list.
+                    let probe = self
+                        .memory
+                        .observe(&state.memory, &observation_path, &state.model);
                     for node in attempt_nodes.iter().copied() {
                         let Some(attempt) = self.program.attempts.get(&node) else {
                             continue;
                         };
                         let operation = self.operation(node)?;
                         let select = |clause| attempt.contracts.contains(&clause);
-                        let probe =
-                            self.memory
-                                .observe(&state.memory, &observation_path, &state.model);
-                        let mut observations = vec![(probe.clone(), None)];
+                        let mut observations: Vec<(Option<ModelSimState>, Option<Location>)> =
+                            vec![(None, None)];
                         let mut read_locations = BTreeSet::new();
                         let load_candidates = self.potential.load_candidates(node);
                         if let Some(candidates) = load_candidates {
@@ -430,16 +435,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                     &shared,
                                 );
                                 if !reads.is_empty() {
-                                    observations.extend(
-                                        reads
-                                            .into_iter()
-                                            .map(|read| (read.observed, Some(location.clone()))),
-                                    );
+                                    observations.extend(reads.into_iter().map(|read| {
+                                        (Some(read.observed.into_owned()), Some(location.clone()))
+                                    }));
                                     read_locations.insert(location.clone());
                                 }
                             }
                         }
                         for (observed, read_location) in observations {
+                            let observed = observed.as_ref().unwrap_or(&probe);
                             let selected_transitions = read_location.as_ref().map(|location| {
                                 load_candidates
                                     .and_then(|candidates| candidates.get(location))
