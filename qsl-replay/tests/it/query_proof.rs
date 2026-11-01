@@ -5,7 +5,8 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::spine::{
-    self, query_proof::QueryProofDisposition, CheckedUnit, DependencyInput, ParseRequest, SpineLimits,
+    self, query_proof::QueryProofDisposition, CheckedUnit, DependencyInput, ParseRequest,
+    SpineLimits,
 };
 use qsl_replay::SourceIdentity;
 use quire_exact::{Cancel, ValueType};

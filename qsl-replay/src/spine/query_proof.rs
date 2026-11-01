@@ -14,7 +14,7 @@ pub enum QueryProofDisposition {
     NoCollectionQuery,
     /// The checked collection representation has no supported proof-value
     /// transfer. No value or evaluation charge is produced by this boundary.
-    Unsupported(UnsupportedQueryProof),
+    Unsupported(Box<UnsupportedQueryProof>),
 }
 
 /// A checked query representation the proof route cannot transfer.
@@ -66,10 +66,12 @@ pub fn select_query_proof(
     let Some(query) = unsupported_collection_query(clause.body()) else {
         return Ok(QueryProofDisposition::NoCollectionQuery);
     };
-    Ok(QueryProofDisposition::Unsupported(UnsupportedQueryProof {
-        cause: QueryProofCause::ValueRepresentation,
-        query,
-    }))
+    Ok(QueryProofDisposition::Unsupported(Box::new(
+        UnsupportedQueryProof {
+            cause: QueryProofCause::ValueRepresentation,
+            query,
+        },
+    )))
 }
 
 fn unsupported_collection_query(root: CheckedNode<'_>) -> Option<CheckedQueryProof> {
