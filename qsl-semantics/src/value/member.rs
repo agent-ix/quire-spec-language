@@ -178,10 +178,15 @@ pub enum Member {
 impl std::fmt::Debug for Member {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Field { declaration, name } => f
+            Self::Field {
+                declaration,
+                name,
+                explicit_deref,
+            } => f
                 .debug_struct("Field")
                 .field("declaration", &NodeKeyDebug(declaration))
                 .field("name", &name)
+                .field("explicit_deref", &explicit_deref)
                 .finish(),
             Self::Position {
                 declaration,
@@ -354,5 +359,16 @@ mod tests {
             name: Identifier::new("same").unwrap(),
         };
         assert_ne!(field, operation);
+    }
+
+    #[test]
+    fn field_debug_reports_explicit_deref() {
+        let field = Member::Field {
+            declaration: node(7),
+            name: Identifier::new("same").unwrap(),
+            explicit_deref: Some(true),
+        };
+
+        assert!(format!("{field:?}").contains("explicit_deref: Some(true)"));
     }
 }
