@@ -1112,6 +1112,13 @@ struct PolyRelations {
 }
 
 #[derive(Debug)]
+struct ReadClause {
+    literals: Vec<Rc<Term>>,
+    oriented: Oriented,
+    poly_relations: Option<PolyRelations>,
+}
+
+#[derive(Debug)]
 struct Subproof {
     discharged: Vec<Rc<Term>>,
     discharges_exactly: bool,
@@ -1202,25 +1209,6 @@ fn anchor_arguments(value: Option<&Sexpr>, names: &mut Names) -> Option<Vec<Entr
             }
         })
         .collect()
-}
-
-/// The single literal of `(cl l)` as written, when it is an equality.
-/// `#[string_edge]`: reads a clause's single equality as written in the proof text.
-#[ix_trace_rs::string_edge]
-fn oriented_literal(clause: &Sexpr, names: &mut Names) -> Oriented {
-    let Sexpr::List(items) = clause else {
-        return None;
-    };
-    let [_, Sexpr::List(literal)] = items.as_slice() else {
-        return None;
-    };
-    let [Sexpr::Atom(head), left, right] = literal.as_slice() else {
-        return None;
-    };
-    if &**head != "=" {
-        return None;
-    }
-    Some((names.term(left)?, names.term(right)?))
 }
 
 /// Read `bytes` as an Alethe proof of `query`, numbering its commands.
@@ -1344,9 +1332,12 @@ pub(crate) fn read_proof(
                 let Some(attrs) = attributes(3) else {
                     return Reading::Malformed;
                 };
-                let oriented = oriented_literal(clause, &mut names);
-                let poly_relations = ordered_poly_relations(clause, &mut names);
-                let Some(clause) = read_clause(clause, &mut names) else {
+                let Some(ReadClause {
+                    literals,
+                    oriented,
+                    poly_relations,
+                }) = read_clause(clause, &mut names)
+                else {
                     return Reading::Malformed;
                 };
                 let Some(Sexpr::Atom(rule)) = attrs.get(":rule") else {
@@ -1394,7 +1385,7 @@ pub(crate) fn read_proof(
                         found
                     })
                     .unzip();
-                let clause: Rc<[Rc<Term>]> = Rc::from(clause);
+                let clause: Rc<[Rc<Term>]> = Rc::from(literals);
                 let closes = if frames.last().is_some_and(|frame| frame.closing == *id) {
                     let Some(frame) = frames.pop() else {
                         return Reading::Malformed;
@@ -1528,10 +1519,10 @@ fn id_list(value: Option<&Sexpr>) -> Option<Vec<Rc<str>>> {
     }
 }
 
-/// A step's `(cl l1 … ln)`.
+/// Read a step's clause and its equality metadata in one alias-expansion pass.
 /// `#[string_edge]`: reads a `(cl ...)` clause from the proof text.
 #[ix_trace_rs::string_edge]
-fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<Vec<Rc<Term>>> {
+fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<ReadClause> {
     let Sexpr::List(items) = sexpr else {
         return None;
     };
@@ -1541,15 +1532,47 @@ fn read_clause(sexpr: &Sexpr, names: &mut Names) -> Option<Vec<Rc<Term>>> {
     if &**head != "cl" {
         return None;
     }
-    literals.iter().map(|literal| names.term(literal)).collect()
+    let mut parsed = Vec::with_capacity(literals.len());
+    let mut oriented = None;
+    let mut poly_relations = None;
+    if let [literal] = literals {
+        let term = if let Sexpr::List(equality) = literal {
+            if let [Sexpr::Atom(operator), left, right] = equality.as_slice() {
+                if &**operator == "=" {
+                    let left = names.term(left)?;
+                    let right = names.term(right)?;
+                    oriented = Some((left.clone(), right.clone()));
+                    Term::app("=", vec![left, right])
+                } else {
+                    names.term(literal)?
+                }
+            } else {
+                names.term(literal)?
+            }
+        } else {
+            names.term(literal)?
+        };
+        poly_relations = ordered_poly_relations(&term);
+        parsed.push(term);
+    } else {
+        for literal in literals {
+            parsed.push(names.term(literal)?);
+        }
+    }
+    Some(ReadClause {
+        literals: parsed,
+        oriented,
+        poly_relations,
+    })
 }
 
-/// The two relation atoms of a `poly_simp_rel` conclusion, retaining the
-/// source orientation that `Term::app` intentionally canonicalizes away.
-fn ordered_poly_relations(sexpr: &Sexpr, names: &mut Names) -> Option<PolyRelations> {
-    fn relation(sexpr: &Sexpr, names: &mut Names) -> Option<(Rc<str>, (Rc<Term>, Rc<Term>))> {
-        let term = names.term(sexpr)?;
-        let Term::App(operator, arguments) = term.as_ref() else {
+/// Recover the two relation atoms from an already expanded equality term.
+/// Its operands are stable and are in the canonical term representation;
+/// equality symmetry makes their pair order immaterial, while each relation
+/// term retains its own operand order.
+fn ordered_poly_relations(term: &Term) -> Option<PolyRelations> {
+    fn relation(term: &Term) -> Option<(Rc<str>, (Rc<Term>, Rc<Term>))> {
+        let Term::App(operator, arguments) = term else {
             return None;
         };
         let [left, right] = arguments.as_slice() else {
@@ -1558,26 +1581,9 @@ fn ordered_poly_relations(sexpr: &Sexpr, names: &mut Names) -> Option<PolyRelati
         matches!(&**operator, "=" | "<" | "<=" | ">" | ">=").then_some(())?;
         Some((operator.clone(), (left.clone(), right.clone())))
     }
-    let Sexpr::List(parts) = sexpr else {
-        return None;
-    };
-    let [Sexpr::Atom(cl), literal] = parts.as_slice() else {
-        return None;
-    };
-    if &**cl != "cl" {
-        return None;
-    }
-    let Sexpr::List(equality) = literal else {
-        return None;
-    };
-    let [Sexpr::Atom(operator), left, right] = equality.as_slice() else {
-        return None;
-    };
-    if &**operator != "=" {
-        return None;
-    }
-    let (left_operator, left) = relation(left, names)?;
-    let (right_operator, right) = relation(right, names)?;
+    let [left, right] = term.args_of("=").and_then(two)?;
+    let (left_operator, left) = relation(left)?;
+    let (right_operator, right) = relation(right)?;
     Some(PolyRelations {
         left_operator,
         left,
@@ -3534,6 +3540,49 @@ mod tests {
         assert_eq!(
             proof.invalid_step(&qsl_1306_alias_query, &mut |_| true),
             Ok(None)
+        );
+
+        let qsl_1306_outer_alias_query = read_query(
+            b"(set-logic QF_LIA)\n\
+              (declare-const x Int)\n\
+              (declare-const y Int)\n\
+              (assert (! (= (< x y) (< x y)) :named @p_70))\n\
+              (check-sat)\n",
+        )
+        .expect("QSL-1306 outer relation alias reads");
+        let qsl_1306_outer_alias_steps = "(step t29 (cl (= (- x y) (- x y))) :rule poly_simp)\
+             (step t30 (cl @p_70) :rule poly_simp_rel :premises (t29))";
+        let Reading::Read(proof) = read_proof(
+            qsl_1306_outer_alias_steps.as_bytes(),
+            &qsl_1306_outer_alias_query,
+            &mut |_| true,
+        ) else {
+            panic!("QSL-1306 outer-alias t29/t30 steps read");
+        };
+        assert_eq!(
+            proof.invalid_step(&qsl_1306_outer_alias_query, &mut |_| true),
+            Ok(None)
+        );
+
+        let changing_named_alias_query = read_query(
+            b"(set-logic QF_LIA)\n\
+              (assert (! (- 3) :named @n))\n\
+              (check-sat)\n",
+        )
+        .expect("changing named-alias query reads");
+        let mutating_relation =
+            "(step p0 (cl (= 1 1)) :rule poly_simp)\
+             (step p1 (cl (= (< 0 @n) (< 0 (let ((v (! (- 10 (* @n @n)) :named @n))) v)))) :rule poly_simp_rel :premises (p0))";
+        let Reading::Read(proof) = read_proof(
+            mutating_relation.as_bytes(),
+            &changing_named_alias_query,
+            &mut |_| true,
+        ) else {
+            panic!("changing named-alias relation steps read");
+        };
+        assert_eq!(
+            proof.invalid_step(&changing_named_alias_query, &mut |_| true),
+            Ok(Some(1))
         );
 
         let ordered_alias_query = read_query(
