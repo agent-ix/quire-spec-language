@@ -81,6 +81,9 @@ pub struct Variant {
     /// The abstract `Queue` has an optional `head: Digit?` field
     /// (FR-140-AC-11).
     pub optional_head: bool,
+    /// The abstract `Queue` has a required `head: Option<Digit>` field
+    /// (FR-140-AC-11).
+    pub explicit_option_head: bool,
     /// `rings` admits the subtype `SubRing` of `Ring` (FR-140-AC-9).
     pub sub_ring: bool,
     /// The abstract `Queue` also has `x: Int[0, 1]` and `y: Int[0, 1]`
@@ -135,12 +138,23 @@ fn queue_document(variant: Variant) -> Vec<u8> {
         &["Queue/items"],
         &[],
     );
+    let mut types = vec![ring_queue::bounded(QUEUE, "Digit", 1)];
+    if variant.explicit_option_head {
+        types.push(ring_queue::option(
+            QUEUE,
+            "OptionDigit",
+            &node(QUEUE, "Digit"),
+        ));
+    }
+    types.push(ring_queue::object_type(
+        QUEUE,
+        "Queue",
+        queue_fields(variant),
+        vec![enq, deq],
+    ));
     ring_queue::document(
         QUEUE,
-        vec![
-            ring_queue::bounded(QUEUE, "Digit", 1),
-            ring_queue::object_type(QUEUE, "Queue", queue_fields(variant), vec![enq, deq]),
-        ],
+        types,
         vec![ring_queue::population(QUEUE, "queues", "Queue")],
     )
 }
@@ -167,6 +181,14 @@ fn queue_fields(variant: Variant) -> Vec<Json> {
         let mut head = ring_queue::single(QUEUE, "Queue", "head", &digit);
         head["presence"] = json!("optional");
         fields.push(head);
+    }
+    if variant.explicit_option_head {
+        fields.push(ring_queue::single(
+            QUEUE,
+            "Queue",
+            "head",
+            &node(QUEUE, "OptionDigit"),
+        ));
     }
     if variant.xy {
         fields.push(ring_queue::single(QUEUE, "Queue", "x", &digit));
@@ -410,6 +432,9 @@ impl RingWorld {
         let mut snapshots = BTreeMap::new();
         let mut queue_fields = json!({"items": {"sequence": []}});
         if variant.optional_head {
+            queue_fields["head"] = json!({"absent": {}});
+        }
+        if variant.explicit_option_head {
             queue_fields["head"] = json!({"absent": {}});
         }
         if variant.next {

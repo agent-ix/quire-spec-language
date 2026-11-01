@@ -1075,6 +1075,10 @@ fn object_field_kind_matches(
                 quire_exact::ValueType::Composite(_)
             )
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
+            | (
+                RawForm::Absent | RawForm::Present(_),
+                quire_exact::ValueType::Option(_)
+            )
     )
 }
 

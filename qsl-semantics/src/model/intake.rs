@@ -5416,7 +5416,7 @@ pub fn read_domain_package(
                                     .clone(),
                             )
                         }
-                        Some(kind) if kind.as_str() == Some("sequence") => None,
+                        Some(kind) if matches!(kind.as_str(), Some("option" | "sequence")) => None,
                         Some(kind) if kind.as_str() == Some("alias") => {
                             // The FCD core aliases (the native Timestamp, a
                             // clock, a unit) have a reader admission but no

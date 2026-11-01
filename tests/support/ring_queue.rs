@@ -106,6 +106,17 @@ pub fn ranged(package: &str, name: &str, lower: u32, upper: u32) -> Value {
     )
 }
 
+/// An `Option<T>` value type used as a required object field.
+pub fn option(package: &str, name: &str, inner: &str) -> Value {
+    let identity = node(package, name);
+    json!({
+        "identity": identity, "displayName": identity,
+        "kind": "option", "roles": [], "origin": origin(package, name),
+        "constraints": [], "extensions": [], "unknownPolicy": "reject",
+        "inner": inner,
+    })
+}
+
 /// A field with the multiplicity `lower..upper`: `(1, 1, false)` is a single
 /// value, `(0, n, true)` a sequence and `(0, n, false)` a set.
 pub fn field(
