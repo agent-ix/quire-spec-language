@@ -4,8 +4,8 @@
 //! model-owned `variant_type` node, each case as a `value`/`enum_value` node
 //! of it (any non-empty case name, kept exactly), passes a variant value by
 //! `ref` with no conversion node, and reads back `Verified` through IR's
-//! checked-package/v2 reader. A case that is not the owner's, or an owner that
-//! is not the declaring variant type, is refused by the same reader.
+//! checked-package/v2 reader. The admitted-equality accessor returns the exact
+//! missing enum-member witness until QSL's per-fact rows are consumed.
 
 use super::owners::node_where;
 use super::*;
@@ -100,26 +100,26 @@ impl Emitted {
     }
 }
 
-/// The pinned IR reader has carrier types for equality sidecars but does not
-/// yet admit their equality decision rows.
-fn assert_equality_sidecar_reader_refusal(emitted: &Emitted) {
-    match emitted.read(emitted.emission.package.bytes()) {
-        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
-            assert_eq!(
-                refusal.code,
-                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
-            );
-            assert_eq!(
-                refusal.loci[0]
-                    .path
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .as_deref(),
-                Some("/checked_term_data/equality_decisions/0")
-            );
-        }
-        outcome => panic!("expected the pending equality-sidecar refusal, got {outcome:?}"),
-    }
+/// Checks emitted enum producer rows and the exact IR accessor refusal for
+/// each decision, using this fixture's selected domain-package evidence.
+fn assert_enum_equality_reader_outcomes(emitted: &Emitted) {
+    let decisions = emitted.wire["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .expect("the package emits equality decisions");
+    assert!(!decisions.is_empty());
+    assert_eq!(
+        emitted.emission.equality_producer_identity_rows().len(),
+        decisions.len(),
+        "each serialized decision retains its producer application row"
+    );
+    assert!(decisions
+        .iter()
+        .filter(|decision| decision["schedule"] == "enum")
+        .all(|decision| !decision["enum_members"].as_array().unwrap().is_empty()));
+    super::assert_equality_reader_outcomes(
+        &emitted.emission,
+        emitted.read(emitted.emission.package.bytes()),
+    );
 }
 
 /// FR-360-AC-8 item 12: each variant type the unit names is one
@@ -377,27 +377,28 @@ fn model_enum_equality_emits_exact_member_identities() {
 }
 
 /// FR-360-AC-8: a unit naming only a variant type with identifier cases emits
-/// its model enum while the pinned reader refuses the pending equality row.
+/// its model enum; IR admits the carrier and the accessor reports the exact
+/// enum-member witness it still needs.
 #[trace("FR-360-AC-8", "TC-1009")]
 #[test]
-fn an_identifier_cased_variant_type_emits_and_refuses_pending_equality_sidecar() {
+fn an_identifier_cased_variant_type_emits_and_reports_enum_member_witness() {
     let emitted = emit_unit(TIER_UNIT);
     assert_eq!(
         node_where(&emitted.wire, "model", "variant_type").len(),
         1,
         "Tier is the one variant type the unit names"
     );
-    assert_equality_sidecar_reader_refusal(&emitted);
+    assert_enum_equality_reader_outcomes(&emitted);
 }
 
 /// FR-360-AC-8, FR-360-AC-4: the package of a unit with a variant-typed
-/// parameter, result, field read and clause retains its equality facts; the
-/// pinned reader reports its typed equality-sidecar refusal.
+/// parameter, result, field read and clause retains its equality facts; IR
+/// admits the carrier and the accessor reports the exact enum-member witness.
 #[trace("FR-360-AC-8", "FR-360-AC-4", "TC-1009", "TC-1007")]
 #[test]
-fn a_package_naming_variant_types_refuses_pending_equality_sidecar() {
+fn a_package_naming_variant_types_reports_enum_member_witness() {
     let emitted = emit_unit(UNIT);
-    assert_equality_sidecar_reader_refusal(&emitted);
+    assert_enum_equality_reader_outcomes(&emitted);
 }
 
 /// The package with `edit` applied to the wire of the first `Odd` case node
