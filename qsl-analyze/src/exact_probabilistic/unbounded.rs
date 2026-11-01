@@ -1820,6 +1820,14 @@ fn optimize_mec_fraction(
         for (local, state) in component.iter().copied().enumerate() {
             policy[state] = Some(internal[local][indices[local]]);
         }
+        // FR-199 assigns one extremal rho to a communicating MEC. A policy
+        // with one bottom class and transient states realizes that scalar
+        // from every starting state: the MEC's internal choices can route
+        // each state almost surely to the selected recurrent sub-MEC. A
+        // policy with multiple bottom classes instead has state-dependent
+        // values, so it is not itself a candidate scalar; the enumeration
+        // also considers the policies that route all states to either
+        // extremal class.
         let bottom_components = policy_bottom_components(graph, component, &policy)?;
         if bottom_components.len() == 1 {
             let recurrent = &bottom_components[0];
@@ -2968,6 +2976,73 @@ mod tests {
         assert_eq!(
             maximum.gain_bias[0].bias,
             vec![(ProbStateId(0), zero()), (ProbStateId(1), ratio(-1, 1))]
+        );
+    }
+
+    /// A stochastic transient action at S reaches A or B; B then reaches A.
+    /// The policy can reach the optimal proper end component {A} almost
+    /// surely even though the first step branches probabilistically.
+    #[trace("TC-634", "FR-199-AC-2")]
+    #[test]
+    fn mdp_long_run_routes_probabilistic_transient_successors_to_a_sub_mec() {
+        let product = graph(
+            ProductKind::Mdp,
+            vec![
+                choice_edge(0, 1, ratio(1, 2), 1),
+                choice_edge(0, 2, ratio(1, 2), 1),
+                choice_edge(1, 1, one(), 2),
+                choice_edge(1, 0, one(), 3),
+                choice_edge(2, 1, one(), 4),
+            ],
+        );
+        let predicate = [false, true, false];
+        let maximum = decide_long_run_mdp(
+            &product,
+            &predicate,
+            None,
+            UnboundedObjective::Max,
+            &ExactProbLimits::default(),
+        )
+        .expect("both probabilistic route branches reach the optimal sub-MEC");
+        assert_eq!(maximum.components.len(), 1);
+        assert_eq!(maximum.components[0].states.len(), 3);
+        assert_eq!(maximum.components[0].rho, one());
+        assert_eq!(maximum.values, vec![ExtRational::Finite(one()); 3]);
+        assert_eq!(
+            maximum.policy.as_ref().and_then(|policy| policy[0]),
+            Some(0)
+        );
+        assert_eq!(
+            maximum.policy.as_ref().and_then(|policy| policy[1]),
+            Some(0)
+        );
+        assert_eq!(
+            maximum.policy.as_ref().and_then(|policy| policy[2]),
+            Some(0)
+        );
+
+        let minimum = decide_long_run_mdp(
+            &product,
+            &predicate,
+            None,
+            UnboundedObjective::Min,
+            &ExactProbLimits::default(),
+        )
+        .expect("the minimum can use a recurrent policy that includes the route");
+        assert_eq!(minimum.components.len(), 1);
+        assert_eq!(minimum.components[0].rho, ratio(2, 5));
+        assert_eq!(minimum.values, vec![ExtRational::Finite(ratio(2, 5)); 3]);
+        assert_eq!(
+            minimum.policy.as_ref().and_then(|policy| policy[0]),
+            Some(0)
+        );
+        assert_eq!(
+            minimum.policy.as_ref().and_then(|policy| policy[1]),
+            Some(1)
+        );
+        assert_eq!(
+            minimum.policy.as_ref().and_then(|policy| policy[2]),
+            Some(0)
         );
     }
 }
