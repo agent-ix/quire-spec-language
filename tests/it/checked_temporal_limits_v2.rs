@@ -396,6 +396,73 @@ fn checked_v2_irrelevant_evictions_do_not_consume_retention() {
     });
 }
 
+/// AC-2: scanning eviction records for valuation lookups consumes bounded
+/// evaluator work and stops before an unaffordable scan entry.
+#[trace("TC-124", "NFR-008-AC-2")]
+#[test]
+fn checked_v2_eviction_scan_work_is_bounded_for_formula_lookups() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on origin { eventually[0,0] holds(view.code > 0) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let mut trace = event_trace(atom);
+        trace
+            .evicted
+            .extend((1..=128).map(|coordinate| temporal::Eviction::Valuation {
+                node: atom.saturating_add(100),
+                coordinate,
+            }));
+        let report = checked_report(
+            checked,
+            admitted,
+            &trace,
+            temporal::Limits {
+                visits: 2,
+                ..temporal::Limits::default()
+            },
+        );
+        let Err(temporal::Error::Exhausted(exhaustion)) = report.result() else {
+            panic!("eviction lookup scanning is bounded: {:?}", report.result());
+        };
+        assert_eq!(exhaustion.dimension, temporal::LimitDimension::Visits);
+        assert_eq!(exhaustion.used, 2);
+        assert_eq!(report.usage().visits, 2);
+    });
+}
+
+/// AC-2: capture activation uses the same bounded accounting while checking
+/// explicit eviction records for a restored capture.
+#[trace("TC-124", "NFR-008-AC-2")]
+#[test]
+fn checked_v2_eviction_scan_work_is_bounded_for_capture_lookups() {
+    let body = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) { capture saved: M::Widget = trigger; always[0,0] holds(view.code > 0) }";
+    checked_v2_case(body, |checked, admitted, atom| {
+        let mut trace = activated_trace(atom);
+        trace
+            .evicted
+            .extend((1..=128).map(|coordinate| temporal::Eviction::Valuation {
+                node: atom.saturating_add(100),
+                coordinate,
+            }));
+        let report = checked_report(
+            checked,
+            admitted,
+            &trace,
+            temporal::Limits {
+                visits: 2,
+                ..temporal::Limits::default()
+            },
+        );
+        let Err(temporal::Error::Exhausted(exhaustion)) = report.result() else {
+            panic!(
+                "capture eviction lookup scanning is bounded: {:?}",
+                report.result()
+            );
+        };
+        assert_eq!(exhaustion.dimension, temporal::LimitDimension::Visits);
+        assert_eq!(exhaustion.used, 2);
+        assert_eq!(report.usage().visits, 2);
+    });
+}
+
 /// AC-5: exact ceilings permit the full result, one-short ceilings refuse the
 /// first unpaid charge, and retries reproduce the result from unchanged input.
 #[trace("TC-124", "NFR-008-AC-5")]

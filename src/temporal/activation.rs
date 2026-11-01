@@ -138,14 +138,16 @@ pub(super) fn resolve(
                 .into());
             }
             existing.receipts.push(trigger.receipt.clone());
-            let evicted_capture = trace.evicted.iter().find_map(|evicted| match evicted {
-                super::trace::Eviction::Capture { instance, capture }
-                    if instance == &trigger.identity =>
-                {
-                    Some(*capture)
+            let mut evicted_capture = None;
+            for evicted in &trace.evicted {
+                work.visit()?;
+                if let super::trace::Eviction::Capture { instance, capture } = evicted {
+                    if instance == &trigger.identity {
+                        evicted_capture = Some(*capture);
+                        break;
+                    }
                 }
-                _ => None,
-            });
+            }
             if let Some(capture) = evicted_capture {
                 work.subject.capture = Some(capture);
                 instances.push(Err(Failed {
@@ -261,13 +263,19 @@ fn establish(
         work.visit()?;
         // Name which capture, not only that one failed.
         work.subject.capture = Some(declared);
-        if trace.evicted.iter().any(|evicted| {
-            matches!(
-                evicted,
+        let mut evicted = false;
+        for record in &trace.evicted {
+            work.visit()?;
+            if matches!(
+                record,
                 super::trace::Eviction::Capture { instance, capture }
                     if *instance == trigger.identity && *capture == declared
-            )
-        }) {
+            ) {
+                evicted = true;
+                break;
+            }
+        }
+        if evicted {
             return Err(Incomplete {
                 dimension: Dimension::Capture,
                 subject: work.subject,

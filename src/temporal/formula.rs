@@ -659,22 +659,26 @@ impl<'a> Evaluator<'a> {
         let Some(position_index) = self.position_at(offset) else {
             return Ok(self.outside(offset));
         };
-        if self.retained_valuations.insert((leaf, position_index)) {
-            work.charge(Charge::Retention, self.retained_valuations.len())?;
+        let valuation_record = (leaf, position_index);
+        if !self.retained_valuations.contains(&valuation_record) {
+            let demand = self.retained_valuations.len().saturating_add(1);
+            work.charge(Charge::Retention, demand)?;
+            self.retained_valuations.insert(valuation_record);
         }
-        if self.trace.evicted.iter().any(|evicted| {
-            matches!(
+        let coordinate = self.trace.positions[position_index].coordinate;
+        for evicted in &self.trace.evicted {
+            work.visit()?;
+            if matches!(
                 evicted,
-                Eviction::Valuation { node, coordinate }
-                    if *node == leaf
-                        && *coordinate == self.trace.positions[position_index].coordinate
-            )
-        }) {
-            return Err(Incomplete {
-                dimension: Dimension::Valuation,
-                subject,
+                Eviction::Valuation { node, coordinate: evicted_coordinate }
+                    if *node == leaf && *evicted_coordinate == coordinate
+            ) {
+                return Err(Incomplete {
+                    dimension: Dimension::Valuation,
+                    subject,
+                }
+                .into());
             }
-            .into());
         }
         let position = &self.trace.positions[position_index];
         let instance_value = position
@@ -811,7 +815,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::temporal::{ClockBinding, Evidence, Execution, Limits};
+    use crate::temporal::{ClockBinding, Evidence, Execution, Limits, Position};
 
     /// TC-124 / NFR-008-AC-2: the first unaffordable visit identifies the
     /// declaration and node that requested it, rather than a prior subject.
@@ -861,5 +865,76 @@ mod tests {
         assert_eq!(exhaustion.subject.declaration, 37);
         assert_eq!(exhaustion.subject.instance, 11);
         assert_eq!(exhaustion.subject.node, Some(0));
+    }
+
+    /// A failed peak-retention charge does not insert the new demand, while a
+    /// repeated successful demand for the same record is charged only once.
+    #[test]
+    fn retention_demand_is_charged_before_insert_and_deduplicated() {
+        let trace = Trace {
+            clock: ClockBinding {
+                name: "orders".into(),
+                profile_identity: Profile::EventPosition.identity().into(),
+                parameters: BTreeMap::new(),
+            },
+            positions: vec![Position {
+                coordinate: 0,
+                order: None,
+                valuations: BTreeMap::from([(0, true)]),
+                instance_valuations: BTreeMap::new(),
+            }],
+            anchor: "origin".into(),
+            triggers: Vec::new(),
+            trigger_evidence: Evidence::Admitted,
+            trigger_scope: Closure::Closed,
+            decision_scope: Closure::Closed,
+            surrounding_execution: Closure::Open,
+            execution: Execution::Completed,
+            completeness: Completeness::Complete,
+            authoritative_origin: true,
+            watermark: 0,
+            evicted: Vec::new(),
+        };
+        let instance_bound_atoms = BTreeSet::new();
+        fn make_evaluator<'a>(
+            trace: &'a Trace,
+            instance_bound_atoms: &'a BTreeSet<u32>,
+        ) -> Evaluator<'a> {
+            Evaluator {
+                profile: Profile::EventPosition,
+                trace,
+                ordered: vec![0],
+                nodes: &[],
+                declaration: 0,
+                instance: 0,
+                instance_identity: "execution:fixture",
+                instance_bound_atoms,
+                watermark: 0,
+                support: Support::default(),
+                retained_valuations: BTreeSet::new(),
+            }
+        }
+
+        let mut stopped = make_evaluator(&trace, &instance_bound_atoms);
+        let mut no_retention = Work::new(Limits {
+            retention: 0,
+            ..Limits::default()
+        });
+        assert!(matches!(
+            stopped.atom(0, 0, &mut no_retention),
+            Err(Error::Exhausted(exhaustion)) if exhaustion.dimension == Charge::Retention
+        ));
+        assert!(stopped.retained_valuations.is_empty());
+        assert_eq!(no_retention.usage.retention, 0);
+
+        let mut repeated = make_evaluator(&trace, &instance_bound_atoms);
+        let mut one_retained = Work::new(Limits {
+            retention: 1,
+            ..Limits::default()
+        });
+        assert_eq!(repeated.atom(0, 0, &mut one_retained), Ok(Tri::True));
+        assert_eq!(repeated.atom(0, 0, &mut one_retained), Ok(Tri::True));
+        assert_eq!(repeated.retained_valuations.len(), 1);
+        assert_eq!(one_retained.usage.retention, 1);
     }
 }

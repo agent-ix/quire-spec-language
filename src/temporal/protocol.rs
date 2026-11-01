@@ -444,6 +444,15 @@ fn preflight_input(
         }
     }
 
+    preflight_work = preflight_work.saturating_add(trace.evicted.len());
+    if preflight_work > limits.visits {
+        return Some(preflight_exhaustion(
+            Dimension::Visits,
+            limits.visits,
+            subject,
+        ));
+    }
+
     let evicted_captures: BTreeSet<(&str, usize)> = trace
         .evicted
         .iter()
