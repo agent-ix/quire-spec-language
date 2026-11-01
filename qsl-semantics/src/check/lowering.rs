@@ -554,12 +554,7 @@ impl std::fmt::Debug for NodeContent {
             .field("semantic_type", &semantic_type)
             .field("declaration", &declaration)
             .field("owner", &owner)
-            .field(
-                "owner_model",
-                &owner_model
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("owner_model", &owner_model.as_ref().map(NodeKeyDebug))
             .field("body", &body)
             .finish()
     }

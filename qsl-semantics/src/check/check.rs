@@ -44,6 +44,7 @@
 //! this ticket. The denial is pointed at the one seam the review actually
 //! flagged.
 
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -213,10 +214,7 @@ impl std::fmt::Debug for VariantTypeDeclaration {
             .field("key", &key)
             .field("name", &name)
             .field("declaration", &declaration)
-            .field(
-                "node",
-                &qsl_foundation::source::node_table::NodeKeyDebug(node),
-            )
+            .field("node", &NodeKeyDebug(node))
             .field("cases", &cases)
             .field("members", &members)
             .finish()
@@ -811,21 +809,10 @@ impl std::fmt::Debug for ModelRecords {
                 "renamed",
                 &renamed
                     .iter()
-                    .map(|(key, value)| {
-                        (
-                            (
-                                qsl_foundation::source::node_table::NodeKeyDebug(&key.0),
-                                qsl_foundation::source::node_table::NodeKeyDebug(&key.1),
-                            ),
-                            value,
-                        )
-                    })
+                    .map(|(key, value)| ((NodeKeyDebug(&key.0), NodeKeyDebug(&key.1)), value))
                     .collect::<Vec<_>>(),
             )
-            .field(
-                "events",
-                &qsl_foundation::source::node_table::NodeList(events.iter()),
-            )
+            .field("events", &NodeList(events.iter()))
             .finish()
     }
 }

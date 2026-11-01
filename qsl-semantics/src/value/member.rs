@@ -20,6 +20,7 @@
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::TemporalInterval;
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_contract_model::ExecutionPoint;
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
@@ -175,10 +176,7 @@ impl std::fmt::Debug for Member {
         match self {
             Self::Field { declaration, name } => f
                 .debug_struct("Field")
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .field("name", &name)
                 .finish(),
             Self::Position {
@@ -186,18 +184,12 @@ impl std::fmt::Debug for Member {
                 position,
             } => f
                 .debug_struct("Position")
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .field("position", &position)
                 .finish(),
             Self::Element { declaration } => f
                 .debug_struct("Element")
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .finish(),
             Self::RelationshipEnd {
                 declaration,
@@ -206,36 +198,19 @@ impl std::fmt::Debug for Member {
                 population,
             } => f
                 .debug_struct("RelationshipEnd")
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .field("name", &name)
-                .field(
-                    "destination_type",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(destination_type),
-                )
-                .field(
-                    "population",
-                    &population
-                        .as_ref()
-                        .map(qsl_foundation::source::node_table::NodeKeyDebug),
-                )
+                .field("destination_type", &NodeKeyDebug(destination_type))
+                .field("population", &population.as_ref().map(NodeKeyDebug))
                 .finish(),
             Self::Operation { declaration, name } => f
                 .debug_struct("Operation")
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .field("name", &name)
                 .finish(),
             Self::TypeArgument { declaration } => f
                 .debug_struct("TypeArgument")
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .finish(),
             Self::ProfileOperator { operator } => f
                 .debug_struct("ProfileOperator")
@@ -263,10 +238,7 @@ impl std::fmt::Debug for Member {
                 .debug_struct("Fairness")
                 .field("kind", &kind)
                 .field("granularity", &granularity)
-                .field(
-                    "declaration",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-                )
+                .field("declaration", &NodeKeyDebug(declaration))
                 .field("name", &name)
                 .finish(),
         }

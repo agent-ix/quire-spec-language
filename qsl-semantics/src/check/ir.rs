@@ -5,6 +5,7 @@
 use super::lowering::AuthoredBound;
 use super::navigation::EndSide;
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_checked::key::DeclarationKey;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -40,10 +41,7 @@ impl std::fmt::Debug for RecordField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self { declaration, name } = self;
         f.debug_struct("RecordField")
-            .field(
-                "declaration",
-                &qsl_foundation::source::node_table::NodeKeyDebug(declaration),
-            )
+            .field("declaration", &NodeKeyDebug(declaration))
             .field("name", &name)
             .finish()
     }

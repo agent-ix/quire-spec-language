@@ -5,6 +5,7 @@
 use crate::check::protocol_controls::CheckedChannel;
 use crate::check::protocol_obligation::CheckedObligations;
 use crate::check::state_clause::{ClauseOperation, PopulationDomain};
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 
 /// The identity of one static protocol node: its index into the
 /// declaration's own [`ProtocolDeclarationForm::declarations`](qsl_forms::ProtocolDeclarationForm::declarations) (FR-113
@@ -53,49 +54,30 @@ impl std::fmt::Debug for CheckedProtocolNodeKeys {
             expressions,
         } = self;
         f.debug_struct("CheckedProtocolNodeKeys")
-            .field(
-                "clause",
-                &clause
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("clause", &clause.as_ref().map(NodeKeyDebug))
             .field(
                 "nodes",
                 &nodes
                     .iter()
-                    .map(|(key, value)| {
-                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
-                    })
+                    .map(|(key, value)| (key, NodeKeyDebug(value)))
                     .collect::<Vec<_>>(),
             )
             .field(
                 "channels",
                 &channels
                     .iter()
-                    .map(|(key, value)| {
-                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
-                    })
+                    .map(|(key, value)| (key, NodeKeyDebug(value)))
                     .collect::<Vec<_>>(),
             )
             .field(
                 "roles",
                 &roles
                     .iter()
-                    .map(|(key, value)| {
-                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
-                    })
+                    .map(|(key, value)| (key, NodeKeyDebug(value)))
                     .collect::<Vec<_>>(),
             )
-            .field(
-                "compensations",
-                &qsl_foundation::source::node_table::NodeList(compensations.iter()),
-            )
-            .field(
-                "terminal",
-                &terminal
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("compensations", &NodeList(compensations.iter()))
+            .field("terminal", &terminal.as_ref().map(NodeKeyDebug))
             .field("binders", &binders)
             .field("expressions", &expressions)
             .finish()
@@ -134,14 +116,8 @@ impl std::fmt::Debug for CheckedProtocolBinderKey {
             .field("name", &name)
             .field("level", &level)
             .field("introducing", &introducing)
-            .field(
-                "node",
-                &qsl_foundation::source::node_table::NodeKeyDebug(node),
-            )
-            .field(
-                "semantic_type",
-                &qsl_foundation::source::node_table::NodeKeyDebug(semantic_type),
-            )
+            .field("node", &NodeKeyDebug(node))
+            .field("semantic_type", &NodeKeyDebug(semantic_type))
             .finish()
     }
 }
@@ -223,18 +199,9 @@ impl std::fmt::Debug for CheckedAttempt {
             .field("declaration", &declaration)
             .field("operation", &operation)
             .field("receiver", &receiver)
-            .field(
-                "anchor",
-                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
-            )
-            .field(
-                "frame",
-                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
-            )
-            .field(
-                "contracts",
-                &qsl_foundation::source::node_table::NodeList(contracts.iter()),
-            )
+            .field("anchor", &NodeKeyDebug(anchor))
+            .field("frame", &NodeKeyDebug(frame))
+            .field("contracts", &NodeList(contracts.iter()))
             .finish()
     }
 }
@@ -356,12 +323,7 @@ impl std::fmt::Debug for CheckedProtocol {
             .field("roles", &roles)
             .field("parallels", &parallels)
             .field("pending_predicate_joins", &pending_predicate_joins)
-            .field(
-                "node",
-                &node
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("node", &node.as_ref().map(NodeKeyDebug))
             .field("finish", &finish)
             .field("vias", &vias)
             .field("owners", &owners)
@@ -464,10 +426,7 @@ impl std::fmt::Debug for CheckedJoinPolicy {
             Self::Quorum(value0) => f.debug_tuple("Quorum").field(&value0).finish(),
             Self::Predicate { function } => f
                 .debug_struct("Predicate")
-                .field(
-                    "function",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(function),
-                )
+                .field("function", &NodeKeyDebug(function))
                 .finish(),
         }
     }
@@ -681,14 +640,8 @@ impl std::fmt::Debug for CheckedOperationNodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self { anchor, frame } = self;
         f.debug_struct("CheckedOperationNodes")
-            .field(
-                "anchor",
-                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
-            )
-            .field(
-                "frame",
-                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
-            )
+            .field("anchor", &NodeKeyDebug(anchor))
+            .field("frame", &NodeKeyDebug(frame))
             .finish()
     }
 }

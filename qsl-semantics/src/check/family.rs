@@ -43,11 +43,12 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::{CollectionKind, NodeKey, Origin, Role};
+use NodeKeyDebug;
 
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, Expression, FieldInitializer,

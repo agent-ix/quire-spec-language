@@ -23,6 +23,7 @@
 //! its bound to the time dimension's root unit, and the claim is never
 //! observable because the set is refused.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::BTreeMap;
 
 use qsl_forms::{
@@ -165,14 +166,8 @@ impl std::fmt::Debug for TaskSetUnit {
         } = self;
         f.debug_struct("TaskSetUnit")
             .field("name", &name)
-            .field(
-                "node",
-                &qsl_foundation::source::node_table::NodeKeyDebug(node),
-            )
-            .field(
-                "dimension",
-                &qsl_foundation::source::node_table::NodeKeyDebug(dimension),
-            )
+            .field("node", &NodeKeyDebug(node))
+            .field("dimension", &NodeKeyDebug(dimension))
             .finish()
     }
 }

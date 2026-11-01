@@ -5,6 +5,7 @@
 //! (FR-322 "Nominal nodes"). Plain data with borrowed accessors; a node key
 //! cannot stand in for these facts.
 
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use quire_exact::{Integer, NodeKey, Rational};
 
 use super::enumeration::EnumDeclarationPreimage;
@@ -94,12 +95,7 @@ impl std::fmt::Debug for DimensionPayload {
                 "terms",
                 &terms
                     .iter()
-                    .map(|value| {
-                        (
-                            qsl_foundation::source::node_table::NodeKeyDebug(&value.0),
-                            &value.1,
-                        )
-                    })
+                    .map(|value| (NodeKeyDebug(&value.0), &value.1))
                     .collect::<Vec<_>>(),
             )
             .field("owner", &owner)
@@ -157,16 +153,8 @@ impl std::fmt::Debug for UnitPayload {
             owner,
         } = self;
         f.debug_struct("UnitPayload")
-            .field(
-                "dimension",
-                &qsl_foundation::source::node_table::NodeKeyDebug(dimension),
-            )
-            .field(
-                "target",
-                &target
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("dimension", &NodeKeyDebug(dimension))
+            .field("target", &target.as_ref().map(NodeKeyDebug))
             .field("factor", &factor)
             .field("offset", &offset)
             .field("owner", &owner)
@@ -245,10 +233,7 @@ impl std::fmt::Debug for DimensionEquivalencePayload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self { dimensions, scale } = self;
         f.debug_struct("DimensionEquivalencePayload")
-            .field(
-                "dimensions",
-                &qsl_foundation::source::node_table::NodeList(dimensions.iter()),
-            )
+            .field("dimensions", &NodeList(dimensions.iter()))
             .field("scale", &scale)
             .finish()
     }

@@ -11,6 +11,7 @@
 //! then its composed offset is zero. FR-233 reads an interval bound through
 //! it; the `time` member's own reading waits on FR-230's facet gate.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
@@ -48,18 +49,8 @@ impl std::fmt::Debug for DeclaredUnit {
             offset,
         } = self;
         f.debug_struct("DeclaredUnit")
-            .field(
-                "node",
-                &node
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
-            .field(
-                "dimension",
-                &dimension
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("node", &node.as_ref().map(NodeKeyDebug))
+            .field("dimension", &dimension.as_ref().map(NodeKeyDebug))
             .field("scale", &scale)
             .field("offset", &offset)
             .finish()
@@ -92,19 +83,12 @@ impl std::fmt::Debug for TimeUnits {
             classes,
         } = self;
         f.debug_struct("TimeUnits")
-            .field(
-                "time",
-                &time
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("time", &time.as_ref().map(NodeKeyDebug))
             .field(
                 "time_dimensions",
                 &time_dimensions
                     .iter()
-                    .map(|(key, value)| {
-                        (key, qsl_foundation::source::node_table::NodeKeyDebug(value))
-                    })
+                    .map(|(key, value)| (key, NodeKeyDebug(value)))
                     .collect::<Vec<_>>(),
             )
             .field("units", &units)
@@ -112,9 +96,7 @@ impl std::fmt::Debug for TimeUnits {
                 "nominal_nodes",
                 &nominal_nodes
                     .iter()
-                    .map(|(key, value)| {
-                        (qsl_foundation::source::node_table::NodeKeyDebug(key), value)
-                    })
+                    .map(|(key, value)| (NodeKeyDebug(key), value))
                     .collect::<Vec<_>>(),
             )
             .field("classes", &classes)

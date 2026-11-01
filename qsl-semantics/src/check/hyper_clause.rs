@@ -17,6 +17,7 @@
 //! A clause that checks is refused as not emitted until S4 writes its node,
 //! as a `temporal` clause is (`temporal_clause::not_emitted`).
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_forms::{
@@ -696,12 +697,7 @@ impl std::fmt::Debug for CheckedModelRelation {
             .field("body_parameters", &body_parameters)
             .field("claim", &claim)
             .field("code_domains", &code_domains)
-            .field(
-                "identity",
-                &identity
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("identity", &identity.as_ref().map(NodeKeyDebug))
             .field("occurrence", &occurrence)
             .finish()
     }

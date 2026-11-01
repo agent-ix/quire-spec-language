@@ -16,6 +16,7 @@
 //! [`SelectedModel::type_invariants`]: crate::model::intake::SelectedModel::type_invariants
 
 use qsl_forms::StateClauseKind;
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -43,7 +44,7 @@ impl std::fmt::Debug for TypeSlot {
         match self {
             Self::Composite(value0) => f
                 .debug_tuple("Composite")
-                .field(&qsl_foundation::source::node_table::NodeKeyDebug(value0))
+                .field(&NodeKeyDebug(value0))
                 .finish(),
             Self::Object(value0) => f.debug_tuple("Object").field(&value0).finish(),
         }

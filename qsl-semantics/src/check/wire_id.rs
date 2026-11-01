@@ -16,6 +16,7 @@
 //! Every walk uses an explicit stack, so the depth of an operand chain never
 //! consumes the call stack.
 
+use qsl_foundation::source::node_table::NodeList;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -318,10 +319,7 @@ impl std::fmt::Debug for WireGraph {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("WireGraph")
-            .field(
-                "keys",
-                &qsl_foundation::source::node_table::NodeList(self.keys.iter()),
-            )
+            .field("keys", &NodeList(self.keys.iter()))
             .finish_non_exhaustive()
     }
 }

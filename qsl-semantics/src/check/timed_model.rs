@@ -26,6 +26,7 @@
 //! state object as `self`, as a `terminal when` predicate does (FR-124): the
 //! one object type the model's populations range over.
 
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
@@ -917,12 +918,7 @@ impl std::fmt::Debug for UrgencyPredicate {
         let Self { sites, node } = self;
         f.debug_struct("UrgencyPredicate")
             .field("sites", &sites)
-            .field(
-                "node",
-                &node
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("node", &node.as_ref().map(NodeKeyDebug))
             .finish()
     }
 }
@@ -970,10 +966,7 @@ impl std::fmt::Debug for GuardNodes {
             parts,
         } = self;
         f.debug_struct("GuardNodes")
-            .field(
-                "operation",
-                &qsl_foundation::source::node_table::NodeKeyDebug(operation),
-            )
+            .field("operation", &NodeKeyDebug(operation))
             .field("span", &span)
             .field("parts", &parts)
             .finish()
@@ -996,10 +989,7 @@ impl std::fmt::Debug for PartNodes {
             constraints,
         } = self;
         f.debug_struct("PartNodes")
-            .field(
-                "predicate",
-                &qsl_foundation::source::node_table::NodeKeyDebug(predicate),
-            )
+            .field("predicate", &NodeKeyDebug(predicate))
             .field("constraints", &constraints)
             .finish()
     }
@@ -1049,24 +1039,15 @@ impl std::fmt::Debug for ConstraintTargetNodes {
             } => f
                 .debug_struct("Place")
                 .field("clock", &clock)
-                .field(
-                    "owner",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(owner),
-                )
-                .field(
-                    "slots",
-                    &qsl_foundation::source::node_table::NodeList(slots.iter()),
-                )
+                .field("owner", &NodeKeyDebug(owner))
+                .field("slots", &NodeList(slots.iter()))
                 .finish(),
             Self::Parameter {
                 operation,
                 parameter,
             } => f
                 .debug_struct("Parameter")
-                .field(
-                    "operation",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(operation),
-                )
+                .field("operation", &NodeKeyDebug(operation))
                 .field("parameter", &parameter)
                 .finish(),
         }
@@ -1095,10 +1076,7 @@ impl std::fmt::Debug for ResetNodes {
             span,
         } = self;
         f.debug_struct("ResetNodes")
-            .field(
-                "operation",
-                &qsl_foundation::source::node_table::NodeKeyDebug(operation),
-            )
+            .field("operation", &NodeKeyDebug(operation))
             .field("target", &target)
             .field("value", &value)
             .field("span", &span)
@@ -1142,22 +1120,10 @@ impl std::fmt::Debug for ResetTargetNodes {
             } => f
                 .debug_struct("Place")
                 .field("clock", &clock)
-                .field(
-                    "owner",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(owner),
-                )
-                .field(
-                    "slots",
-                    &qsl_foundation::source::node_table::NodeList(slots.iter()),
-                )
-                .field(
-                    "binders",
-                    &qsl_foundation::source::node_table::NodeList(binders.iter()),
-                )
-                .field(
-                    "condition",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(condition),
-                )
+                .field("owner", &NodeKeyDebug(owner))
+                .field("slots", &NodeList(slots.iter()))
+                .field("binders", &NodeList(binders.iter()))
+                .field("condition", &NodeKeyDebug(condition))
                 .finish(),
             Self::Parameter { parameter } => f
                 .debug_struct("Parameter")
@@ -1186,10 +1152,7 @@ impl std::fmt::Debug for InvariantNodes {
             span,
         } = self;
         f.debug_struct("InvariantNodes")
-            .field(
-                "predicate",
-                &qsl_foundation::source::node_table::NodeKeyDebug(predicate),
-            )
+            .field("predicate", &NodeKeyDebug(predicate))
             .field("bounds", &bounds)
             .field("span", &span)
             .finish()
@@ -1277,10 +1240,7 @@ impl std::fmt::Debug for TimedModel {
             .field("urgency_predicates", &urgency_predicates)
             .field("sites", &sites)
             .field("clause_nodes", &clause_nodes)
-            .field(
-                "place_nodes",
-                &qsl_foundation::source::node_table::NodeList(place_nodes.iter()),
-            )
+            .field("place_nodes", &NodeList(place_nodes.iter()))
             .finish()
     }
 }

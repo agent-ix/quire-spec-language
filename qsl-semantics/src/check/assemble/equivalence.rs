@@ -7,6 +7,7 @@
 //! derives the classes and each member's root ratio to its class root, which
 //! the checker converts time quantities through (FR-230).
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_forms::{DimensionEquivalenceForm, NameForm, RatioNumberForm, RatioNumberKind};
@@ -79,11 +80,7 @@ impl std::fmt::Debug for EquivalenceRetained {
             Self::Dimension { name, key } => f
                 .debug_struct("Dimension")
                 .field("name", &name)
-                .field(
-                    "key",
-                    &key.as_ref()
-                        .map(qsl_foundation::source::node_table::NodeKeyDebug),
-                )
+                .field("key", &key.as_ref().map(NodeKeyDebug))
                 .finish(),
             Self::Unit { name } => f.debug_struct("Unit").field("name", &name).finish(),
             Self::Value(value0) => f.debug_tuple("Value").field(&value0).finish(),
@@ -134,15 +131,7 @@ impl std::fmt::Debug for EquivalenceClasses {
                 "members",
                 &members
                     .iter()
-                    .map(|(key, value)| {
-                        (
-                            qsl_foundation::source::node_table::NodeKeyDebug(key),
-                            (
-                                qsl_foundation::source::node_table::NodeKeyDebug(&value.0),
-                                &value.1,
-                            ),
-                        )
-                    })
+                    .map(|(key, value)| (NodeKeyDebug(key), (NodeKeyDebug(&value.0), &value.1)))
                     .collect::<Vec<_>>(),
             )
             .finish()

@@ -655,4 +655,22 @@ mod tests {
             )
         );
     }
+
+    /// Debug order is independent of hash-map insertion and allocation order.
+    /// Provenance: QSL-1358, QSL-381; component determinism regression.
+    #[test]
+    fn map_debug_is_independent_of_entry_insertion_order() {
+        let (first, _) = chain_debug(20);
+        let entries: Vec<_> = first
+            .entries
+            .values()
+            .flat_map(|occurrences| {
+                occurrences
+                    .values()
+                    .map(|(key, regions)| (key.clone(), regions.to_vec()))
+            })
+            .collect();
+        let second = PackageSourceMap::from_entries(entries.into_iter().rev()).unwrap();
+        assert_eq!(alloc::format!("{first:?}"), alloc::format!("{second:?}"));
+    }
 }

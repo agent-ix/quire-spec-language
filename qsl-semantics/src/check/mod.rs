@@ -498,10 +498,7 @@ impl std::fmt::Debug for CheckedFunction {
             slots,
         } = self;
         f.debug_struct("CheckedFunction")
-            .field(
-                "identity",
-                &qsl_foundation::source::node_table::NodeKeyDebug(identity),
-            )
+            .field("identity", &NodeKeyDebug(identity))
             .field("body", &body)
             .field("slots", &slots)
             .finish()
@@ -534,9 +531,7 @@ impl std::fmt::Debug for CheckedFunctions {
                 "by_identity",
                 &by_identity
                     .iter()
-                    .map(|(key, value)| {
-                        (qsl_foundation::source::node_table::NodeKeyDebug(key), value)
-                    })
+                    .map(|(key, value)| (NodeKeyDebug(key), value))
                     .collect::<Vec<_>>(),
             )
             .finish()
@@ -946,15 +941,9 @@ impl std::fmt::Debug for TemporalClauseNode {
         } = self;
         f.debug_struct("TemporalClauseNode")
             .field("clause", &clause)
-            .field(
-                "identity",
-                &qsl_foundation::source::node_table::NodeKeyDebug(identity),
-            )
+            .field("identity", &NodeKeyDebug(identity))
             .field("claim", &claim)
-            .field(
-                "over",
-                &qsl_foundation::source::node_table::NodeKeyDebug(over),
-            )
+            .field("over", &NodeKeyDebug(over))
             .field("conditions", &conditions)
             .field("guard", &guard)
             .field("captures", &captures)

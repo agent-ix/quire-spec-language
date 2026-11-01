@@ -18,6 +18,7 @@
 //! [`StateClauseForm`]: qsl_forms::StateClauseForm
 //! [`PackageDeclarations::check`]: super::PackageDeclarations::check
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{ClauseKind, DeclarationSpans, Expression, StateClauseKind};
@@ -127,14 +128,8 @@ impl std::fmt::Debug for CheckedOperationFrame {
         } = self;
         f.debug_struct("CheckedOperationFrame")
             .field("operation", &operation)
-            .field(
-                "anchor",
-                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
-            )
-            .field(
-                "frame",
-                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
-            )
+            .field("anchor", &NodeKeyDebug(anchor))
+            .field("frame", &NodeKeyDebug(frame))
             .field("frame_origin", &frame_origin)
             .finish()
     }
@@ -1097,10 +1092,7 @@ impl std::fmt::Debug for CheckedStateClause {
             .field("body", &body)
             .field("slots", &slots)
             .field("observations", &observations)
-            .field(
-                "identity",
-                &qsl_foundation::source::node_table::NodeKeyDebug(identity),
-            )
+            .field("identity", &NodeKeyDebug(identity))
             .field("claim", &claim)
             .field("spans", &spans)
             .field("has_result", &has_result)

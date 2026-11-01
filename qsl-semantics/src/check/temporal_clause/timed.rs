@@ -25,6 +25,7 @@
 use qsl_forms::{QuantityForm, TimedIntervalForm, TimedUpper};
 use qsl_foundation::bound::TimedInterval;
 use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, Rational, ValueType};
 
@@ -105,28 +106,17 @@ impl std::fmt::Debug for ModelTimeSource {
         f.debug_struct("ModelTimeSource")
             .field("model", &model)
             .field("span", &span)
-            .field(
-                "model_node",
-                &qsl_foundation::source::node_table::NodeKeyDebug(model_node),
-            )
+            .field("model_node", &NodeKeyDebug(model_node))
             .field("tick_operation_key", &tick_operation_key)
             .field("tick_operation_span", &tick_operation_span)
             .field(
                 "tick_operation_anchor",
-                &tick_operation_anchor
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+                &tick_operation_anchor.as_ref().map(NodeKeyDebug),
             )
             .field("source", &source)
             .field("unit", &unit)
-            .field(
-                "unit_node",
-                &qsl_foundation::source::node_table::NodeKeyDebug(unit_node),
-            )
-            .field(
-                "time_dimension",
-                &qsl_foundation::source::node_table::NodeKeyDebug(time_dimension),
-            )
+            .field("unit_node", &NodeKeyDebug(unit_node))
+            .field("time_dimension", &NodeKeyDebug(time_dimension))
             .field("nominal_nodes", &nominal_nodes)
             .finish()
     }
@@ -170,17 +160,11 @@ impl std::fmt::Debug for TimeNominalNode {
             nominal,
         } = self;
         f.debug_struct("TimeNominalNode")
-            .field(
-                "key",
-                &qsl_foundation::source::node_table::NodeKeyDebug(key),
-            )
+            .field("key", &NodeKeyDebug(key))
             .field("form", &form)
             .field("qualified_declaration", &qualified_declaration)
             .field("owner", &owner)
-            .field(
-                "dependencies",
-                &qsl_foundation::source::node_table::NodeList(dependencies.iter()),
-            )
+            .field("dependencies", &NodeList(dependencies.iter()))
             .field("nominal", &nominal)
             .finish()
     }

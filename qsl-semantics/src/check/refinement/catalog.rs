@@ -5,6 +5,7 @@
 //! from the refinement's authored step rows. Its node association remains an
 //! S3 identity until S4 lowers the corresponding declaration to a node key.
 
+use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
 use std::collections::BTreeMap;
 
 use qsl_foundation::MemoryModelName;
@@ -193,14 +194,8 @@ impl std::fmt::Debug for KeyedCatalogClass {
             } => f
                 .debug_struct("Declared")
                 .field("class", &class)
-                .field(
-                    "node",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(node),
-                )
-                .field(
-                    "binder_types",
-                    &qsl_foundation::source::node_table::NodeList(binder_types.iter()),
-                )
+                .field("node", &NodeKeyDebug(node))
+                .field("binder_types", &NodeList(binder_types.iter()))
                 .finish(),
             Self::Memory(value0) => f.debug_tuple("Memory").field(&value0).finish(),
         }

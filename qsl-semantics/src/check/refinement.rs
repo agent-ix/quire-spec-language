@@ -33,6 +33,7 @@ mod protocol;
 mod rows;
 mod step_label;
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::check::wire_id::structural_id;
@@ -1142,10 +1143,7 @@ impl std::fmt::Debug for PopulationRow {
         } = self;
         f.debug_struct("PopulationRow")
             .field("abstract_population", &abstract_population)
-            .field(
-                "order_key",
-                &qsl_foundation::source::node_table::NodeKeyDebug(order_key),
-            )
+            .field("order_key", &NodeKeyDebug(order_key))
             .field("concrete_population", &concrete_population)
             .finish()
     }
@@ -1552,27 +1550,19 @@ impl std::fmt::Debug for CheckedRefinement {
             .field("row_keys", &row_keys)
             .field(
                 "concrete_protocol",
-                &concrete_protocol
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+                &concrete_protocol.as_ref().map(NodeKeyDebug),
             )
             .field(
                 "abstract_protocol",
-                &abstract_protocol
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+                &abstract_protocol.as_ref().map(NodeKeyDebug),
             )
             .field(
                 "abstract_subject_node",
-                &abstract_subject_node
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+                &abstract_subject_node.as_ref().map(NodeKeyDebug),
             )
             .field(
                 "concrete_subject_node",
-                &concrete_subject_node
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
+                &concrete_subject_node.as_ref().map(NodeKeyDebug),
             )
             .field("package_name", &package_name)
             .field("declaration_span", &declaration_span)

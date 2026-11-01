@@ -6,6 +6,7 @@
 //! placeholders before admission. Body terms retain typed semantic content;
 //! they no longer derive identities from canonical preimages or digests.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_canonical::FixedShape;
 use serde::Serialize;
 
@@ -17,8 +18,8 @@ use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Time
 
 use crate::value::definition::DefinitionReference;
 use crate::value::member::{AcceptedPoint, Member};
-use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::NodeKey;
+use NodeKeyDebug;
 
 /// The owner of a declared node (ADR-013 O-04): the declaring source unit's
 /// `SourceOwner{kind: "source", authority, identity}`, a required E3 input

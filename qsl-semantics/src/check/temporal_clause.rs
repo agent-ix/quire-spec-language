@@ -48,6 +48,7 @@
 //! package's signatures are known, and the clause is emitted as FR-337's
 //! v2 temporal clause node.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
@@ -525,10 +526,7 @@ impl std::fmt::Debug for CheckedTemporalClause {
             .field("profile_ref", &profile_ref)
             .field("over", &over)
             .field("clock", &clock)
-            .field(
-                "clock_binding",
-                &qsl_foundation::source::node_table::NodeKeyDebug(clock_binding),
-            )
+            .field("clock_binding", &NodeKeyDebug(clock_binding))
             .field("operators", &operators)
             .field("horizon", &horizon)
             .field("claim", &claim)

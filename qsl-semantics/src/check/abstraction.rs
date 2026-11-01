@@ -18,6 +18,7 @@
 //! (`qsl_forms::AbstractionDeclarationForm`) carries each spelling as
 //! written.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -187,14 +188,8 @@ impl std::fmt::Debug for FrameNodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self { frame, anchor } = self;
         f.debug_struct("FrameNodes")
-            .field(
-                "frame",
-                &qsl_foundation::source::node_table::NodeKeyDebug(frame),
-            )
-            .field(
-                "anchor",
-                &qsl_foundation::source::node_table::NodeKeyDebug(anchor),
-            )
+            .field("frame", &NodeKeyDebug(frame))
+            .field("anchor", &NodeKeyDebug(anchor))
             .finish()
     }
 }

@@ -8,6 +8,7 @@
 //! as its node key. [`super::CheckedRefinement::v2_emission`] orders them
 //! canonically and writes them.
 
+use qsl_foundation::source::node_table::NodeKeyDebug;
 use quire_exact::NodeKey;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
@@ -27,14 +28,8 @@ impl std::fmt::Debug for KeyedPopulationRow {
             concrete_population,
         } = self;
         f.debug_struct("KeyedPopulationRow")
-            .field(
-                "abstract_population",
-                &qsl_foundation::source::node_table::NodeKeyDebug(abstract_population),
-            )
-            .field(
-                "concrete_population",
-                &qsl_foundation::source::node_table::NodeKeyDebug(concrete_population),
-            )
+            .field("abstract_population", &NodeKeyDebug(abstract_population))
+            .field("concrete_population", &NodeKeyDebug(concrete_population))
             .finish()
     }
 }
@@ -56,14 +51,8 @@ impl std::fmt::Debug for KeyedObjectRow {
             fields,
         } = self;
         f.debug_struct("KeyedObjectRow")
-            .field(
-                "abstract_type",
-                &qsl_foundation::source::node_table::NodeKeyDebug(abstract_type),
-            )
-            .field(
-                "concrete_type",
-                &qsl_foundation::source::node_table::NodeKeyDebug(concrete_type),
-            )
+            .field("abstract_type", &NodeKeyDebug(abstract_type))
+            .field("concrete_type", &NodeKeyDebug(concrete_type))
             .field("fields", &fields)
             .finish()
     }
@@ -90,12 +79,7 @@ impl std::fmt::Debug for KeyedStepRow {
         } = self;
         f.debug_struct("KeyedStepRow")
             .field("source_class", &source_class)
-            .field(
-                "source_node",
-                &source_node
-                    .as_ref()
-                    .map(qsl_foundation::source::node_table::NodeKeyDebug),
-            )
+            .field("source_node", &source_node.as_ref().map(NodeKeyDebug))
             .field("target", &target)
             .field("source", &source)
             .finish()
@@ -134,10 +118,7 @@ impl std::fmt::Debug for KeyedStepTarget {
                 arguments,
             } => f
                 .debug_struct("Operation")
-                .field(
-                    "operation",
-                    &qsl_foundation::source::node_table::NodeKeyDebug(operation),
-                )
+                .field("operation", &NodeKeyDebug(operation))
                 .field("receiver", &receiver)
                 .field("arguments", &arguments)
                 .finish(),
@@ -148,12 +129,7 @@ impl std::fmt::Debug for KeyedStepTarget {
             } => f
                 .debug_struct("ProtocolStep")
                 .field("class", &class)
-                .field(
-                    "node",
-                    &node
-                        .as_ref()
-                        .map(qsl_foundation::source::node_table::NodeKeyDebug),
-                )
+                .field("node", &node.as_ref().map(NodeKeyDebug))
                 .field("arguments", &arguments)
                 .finish(),
             Self::Stutter => f.write_str("Stutter"),
@@ -179,10 +155,7 @@ impl std::fmt::Debug for KeyedFairnessRow {
             granularity,
         } = self;
         f.debug_struct("KeyedFairnessRow")
-            .field(
-                "operation",
-                &qsl_foundation::source::node_table::NodeKeyDebug(operation),
-            )
+            .field("operation", &NodeKeyDebug(operation))
             .field("kind", &kind)
             .field("granularity", &granularity)
             .finish()
