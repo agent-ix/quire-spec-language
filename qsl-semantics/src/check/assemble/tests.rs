@@ -14,17 +14,18 @@ use quire_exact::{
 };
 
 use super::{
-    admit_types_with, model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault,
-    Unmapped,
+    admit_types_with, model_field, model_operation, model_value_type, AssemblyCause, AssemblyError,
+    AssemblyRefusal, TopologyFault, Unmapped,
 };
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
-    ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
-    Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
-    StateMachineStateRecord, StateMachineTransitionRecord, TuplePositionRecord,
-    TupleValueTypeRecord, ValueTypeRef,
+    AliasTypeRecord, ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
+    EnumRecord, FieldMemberRecord, MapTypeRecord, Multiplicity, NamespaceRecord, NativeValueType,
+    OperationEffect, OperationMemberRecord, OperationParameterRecord, OperationResult,
+    OptionTypeRecord, RecordValueTypeRecord, ScalarTypeRecord, ScalarValueDomain,
+    SequenceTypeRecord, StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord,
+    TuplePositionRecord, TupleValueTypeRecord, ValueTypeRef, VariantRecord,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::normalize::{normalize, NormalizeOutcome};
@@ -1633,6 +1634,358 @@ fn optional_presence_over_one_one_is_optional_not_multiplicity_driven() {
     let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Optional).unwrap();
     assert_eq!(declaration.value_type(), &ValueType::Integer);
     assert_eq!(declaration.presence(), Presence::Optional);
+}
+
+/// An option value type's type-level wrapper is projected independently of
+/// the field Presence property (QSpec FR-154-AC-39 / FR-322-AC-298).
+#[trace("QSpec-FR-154-AC-39", "QSpec-FR-322-AC-298")]
+#[test]
+fn option_value_type_projects_option_and_preserves_field_presence() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    let option = DomainPackageRecord::OptionType(OptionTypeRecord {
+        key: option_key.clone(),
+        inner: ValueTypeRef::Native(NativeValueType::Integer),
+    });
+    let records = BTreeMap::from([(&option_key, &option)]);
+    let identities = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+    let variants = BTreeMap::new();
+    let units = BTreeMap::new();
+    let field = FieldMemberRecord {
+        key: DeclarationKey::fixture("model.Holder/a"),
+        owner: DeclarationKey::fixture("model.Holder"),
+        value_type: ValueTypeRef::Package(option_key.clone()),
+        multiplicity: mult(1, Some(1), false, true),
+        presence: Presence::Required,
+        subsets: Vec::new(),
+        redefines: None,
+        position: 0,
+    };
+
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &variants,
+        &units,
+    )
+    .unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &ValueType::option(ValueType::Integer)
+    );
+    assert_eq!(declaration.presence(), Presence::Required);
+
+    let mut optional_native_field =
+        presence_field(mult(1, Some(1), false, true), Presence::Optional);
+    optional_native_field.value_type = ValueTypeRef::Native(NativeValueType::Integer);
+    let no_records = BTreeMap::new();
+    let optional_native = model_field(
+        &optional_native_field,
+        &no_records,
+        &identities,
+        &meaning_handles,
+        &variants,
+        &units,
+    )
+    .unwrap();
+    assert_eq!(optional_native.value_type(), &ValueType::Integer);
+    assert_eq!(optional_native.presence(), Presence::Optional);
+}
+
+/// Multiplicity wraps the option element itself (FR-154-AC-39 / FR-322-AC-298).
+#[trace("QSpec-FR-154-AC-39", "QSpec-FR-322-AC-298")]
+#[test]
+fn option_field_multiplicity_wraps_the_option_element() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    let option = DomainPackageRecord::OptionType(OptionTypeRecord {
+        key: option_key.clone(),
+        inner: ValueTypeRef::Native(NativeValueType::Integer),
+    });
+    let records = BTreeMap::from([(&option_key, &option)]);
+    let identities = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+    let variants = BTreeMap::new();
+    let units = BTreeMap::new();
+    let field = FieldMemberRecord {
+        key: DeclarationKey::fixture("model.Holder/d"),
+        owner: DeclarationKey::fixture("model.Holder"),
+        value_type: ValueTypeRef::Package(option_key.clone()),
+        multiplicity: mult(0, Some(3), true, false),
+        presence: Presence::Required,
+        subsets: Vec::new(),
+        redefines: None,
+        position: 0,
+    };
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &variants,
+        &units,
+    )
+    .unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &ValueType::collection(CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::option(ValueType::Integer),
+            Some(CardinalityBound::new(0, 3).unwrap()),
+        ))
+    );
+    assert_eq!(declaration.presence(), Presence::Required);
+}
+
+/// QSpec FR-154 admits Option<T> at the same declared value-type positions
+/// as T, and each existing projection path must retain the Option wrapper.
+#[trace("QSpec-FR-154-AC-39", "QSpec-FR-322-AC-298")]
+#[test]
+fn option_type_projects_through_signature_alias_sequence_map_tuple_variant_unit_and_record() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    let alias_key = DeclarationKey::fixture("model.OptAlias");
+    let sequence_key = DeclarationKey::fixture("model.OptSequence");
+    let map_key = DeclarationKey::fixture("model.OptMap");
+    let tuple_key = DeclarationKey::fixture("model.Pair");
+    let tuple_option_key = DeclarationKey::fixture("model.OptPair");
+    let variant_key = DeclarationKey::fixture("model.Result");
+    let variant_option_key = DeclarationKey::fixture("model.OptResult");
+    let record_key = DeclarationKey::fixture("model.Row");
+    let record_option_key = DeclarationKey::fixture("model.OptRow");
+    let unit_option_key = DeclarationKey::fixture("model.OptMs");
+    let operation_key = DeclarationKey::fixture("model.Holder/read");
+    let parameter_key = DeclarationKey::fixture("model.Holder/read/value");
+
+    let records = vec![
+        DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: option_key.clone(),
+            inner: ValueTypeRef::Native(NativeValueType::Integer),
+        }),
+        DomainPackageRecord::AliasType(AliasTypeRecord {
+            key: alias_key.clone(),
+            target: ValueTypeRef::Package(option_key.clone()),
+        }),
+        DomainPackageRecord::SequenceType(SequenceTypeRecord {
+            key: sequence_key.clone(),
+            items: ValueTypeRef::Package(option_key.clone()),
+        }),
+        DomainPackageRecord::MapType(MapTypeRecord {
+            key: map_key.clone(),
+            values: ValueTypeRef::Package(option_key.clone()),
+        }),
+        DomainPackageRecord::TupleValueType(TupleValueTypeRecord {
+            key: tuple_key.clone(),
+        }),
+        DomainPackageRecord::TuplePosition(TuplePositionRecord {
+            key: DeclarationKey::fixture("model.Pair/p0"),
+            owner: tuple_key.clone(),
+            ordinal: 0,
+            value_type: ValueTypeRef::Package(option_key.clone()),
+        }),
+        DomainPackageRecord::Enum(EnumRecord {
+            key: variant_key.clone(),
+            name: "Result".to_owned(),
+            members: vec!["Ok".to_owned(), "Error".to_owned()],
+        }),
+        DomainPackageRecord::Variant(VariantRecord {
+            key: DeclarationKey::fixture("model.Result-Ok"),
+            owner: variant_key.clone(),
+            case: "Ok".to_owned(),
+            payload_type: Some(ValueTypeRef::Package(option_key.clone())),
+        }),
+        DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+            key: record_key.clone(),
+            identity_fields: Vec::new(),
+            supertypes: Vec::new(),
+        }),
+        DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: tuple_option_key.clone(),
+            inner: ValueTypeRef::Package(tuple_key.clone()),
+        }),
+        DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: variant_option_key.clone(),
+            inner: ValueTypeRef::Package(variant_key.clone()),
+        }),
+        DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: record_option_key.clone(),
+            inner: ValueTypeRef::Package(record_key.clone()),
+        }),
+        DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: unit_option_key.clone(),
+            inner: ValueTypeRef::Unit("ms".to_owned()),
+        }),
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: operation_key.clone(),
+            owner: DeclarationKey::fixture("model.Holder"),
+            parameters: vec![OperationParameterRecord {
+                key: parameter_key,
+                value_type: ValueTypeRef::Package(option_key.clone()),
+                multiplicity: mult(1, Some(1), false, true),
+            }],
+            result: Some(OperationResult {
+                value_type: ValueTypeRef::Package(option_key.clone()),
+                multiplicity: mult(1, Some(1), false, true),
+            }),
+            effect: OperationEffect::default(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
+            has_body: false,
+            redefines: None,
+        }),
+    ];
+    let by_key: BTreeMap<_, _> = records
+        .iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let node_key = |name: &str| {
+        quire_exact::NodeKey::new(
+            "test",
+            vec![quire_exact::PathSegment::Text(name.to_owned())],
+            0,
+        )
+        .expect("fixture node key")
+    };
+    let tuple_handle = node_key("tuple");
+    let variant_handle = node_key("variant");
+    let record_handle = node_key("record");
+    let handles = BTreeMap::from([
+        (tuple_key.clone(), tuple_handle.clone()),
+        (variant_key.clone(), variant_handle.clone()),
+        (record_key.clone(), record_handle.clone()),
+    ]);
+    let unit_key = node_key("milliseconds");
+    let units = BTreeMap::from([("ms".to_owned(), quire_exact::UnitId::declared(unit_key))]);
+    let identities = BTreeMap::new();
+    let variants = BTreeMap::new();
+    let single = mult(1, Some(1), false, true);
+    let project = |value_type: &ValueTypeRef| {
+        model_value_type(
+            value_type,
+            single,
+            &by_key,
+            &identities,
+            &handles,
+            &variants,
+            &units,
+        )
+    };
+
+    assert_eq!(
+        project(&ValueTypeRef::Package(alias_key)).unwrap(),
+        ValueType::option(ValueType::Integer)
+    );
+    assert_eq!(
+        project(&ValueTypeRef::Package(sequence_key)).unwrap(),
+        ValueType::collection(CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::option(ValueType::Integer),
+            None,
+        ))
+    );
+    assert_eq!(
+        project(&ValueTypeRef::Package(map_key)).unwrap(),
+        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            ValueType::option(ValueType::Integer),
+            None,
+        )))
+    );
+    assert_eq!(
+        project(&ValueTypeRef::Package(tuple_option_key)).unwrap(),
+        ValueType::option(ValueType::Composite(tuple_handle))
+    );
+    assert_eq!(
+        project(&ValueTypeRef::Package(variant_option_key)).unwrap(),
+        ValueType::option(ValueType::Composite(variant_handle))
+    );
+    assert_eq!(
+        project(&ValueTypeRef::Package(record_option_key)).unwrap(),
+        ValueType::option(ValueType::Composite(record_handle))
+    );
+    assert_eq!(
+        project(&ValueTypeRef::Package(unit_option_key)).unwrap(),
+        ValueType::option(ValueType::Quantity(quire_exact::UnitId::declared(
+            node_key("milliseconds")
+        )))
+    );
+
+    let tuple_position = by_key
+        .values()
+        .find_map(|record| match record {
+            DomainPackageRecord::TuplePosition(position) => Some(position),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        project(&tuple_position.value_type).unwrap(),
+        ValueType::option(ValueType::Integer)
+    );
+    let variant_payload = by_key
+        .values()
+        .find_map(|record| match record {
+            DomainPackageRecord::Variant(variant) => variant.payload_type.as_ref(),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        project(variant_payload).unwrap(),
+        ValueType::option(ValueType::Integer)
+    );
+
+    let operation = by_key
+        .values()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation) => Some(operation),
+            _ => None,
+        })
+        .unwrap();
+    let declaration =
+        model_operation(operation, &by_key, &identities, &handles, &variants, &units).unwrap();
+    assert_eq!(
+        declaration.parameters(),
+        &[("value".to_owned(), ValueType::option(ValueType::Integer))]
+    );
+    assert_eq!(
+        declaration.result(),
+        Some(&ValueType::option(ValueType::Integer))
+    );
+}
+
+/// Projection refuses values that would produce an unsupported nested option
+/// or optional clock place (FR-154-AC-40).
+#[trace("QSpec-FR-154-AC-40")]
+#[test]
+fn option_projection_rejects_nested_option_and_clock_inner_types() {
+    let option_key = DeclarationKey::fixture("model.OptInt");
+    for inner in [
+        ValueTypeRef::Package(option_key.clone()),
+        ValueTypeRef::Clock,
+    ] {
+        let option = DomainPackageRecord::OptionType(OptionTypeRecord {
+            key: option_key.clone(),
+            inner,
+        });
+        let records = BTreeMap::from([(&option_key, &option)]);
+        let field = FieldMemberRecord {
+            key: DeclarationKey::fixture("model.Holder/a"),
+            owner: DeclarationKey::fixture("model.Holder"),
+            value_type: ValueTypeRef::Package(option_key.clone()),
+            multiplicity: mult(1, Some(1), false, true),
+            presence: Presence::Required,
+            subsets: Vec::new(),
+            redefines: None,
+            position: 0,
+        };
+        let outcome = model_field(
+            &field,
+            &records,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        assert!(matches!(outcome, Err(Unmapped::Unsupported)), "{outcome:?}");
+    }
 }
 
 /// Optional presence composes with a bounded collection exactly the same

@@ -185,6 +185,12 @@ pub(super) fn exports<'a>(
             }
             DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::SequenceType(_)
+            // These declarations name value constructors, not standalone
+            // protocol artifact exports. Their owning domain type and
+            // members remain exported above; the constructor is carried by
+            // the owner's admitted type/field reference.
+            | DomainPackageRecord::OptionType(_)
+            | DomainPackageRecord::MapType(_)
             | DomainPackageRecord::AliasType(_)
             | DomainPackageRecord::ValueBound(_)
             | DomainPackageRecord::EventType(_)
@@ -515,5 +521,103 @@ mod tests {
         );
         assert!(matches!(found[0].target, DomainTarget::Enum));
         assert!(matches!(found[1].target, DomainTarget::Variant));
+    }
+
+    /// QSpec FR-154 AC-39: option and map constructors are represented by
+    /// their owning domain type and field exports, not as standalone exports.
+    #[trace("QSpec-FR-154-AC-39")]
+    #[test]
+    fn option_and_map_value_types_preserve_their_owning_record_exports() {
+        use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
+        use qsl_semantics::model::domain_package::{
+            DomainPackage, FieldMemberRecord, MapTypeRecord, Multiplicity, OptionTypeRecord,
+            RecordValueTypeRecord,
+        };
+        use quire_exact::Presence;
+
+        let key = |node: &str| DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: format!("ix://acme/orders/{node}"),
+        };
+        let option = key("MaybeInteger");
+        let map = key("IntegerMap");
+        let optional_record = key("OptionalRecord");
+        let map_record = key("MapRecord");
+        let records = vec![
+            DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: option.clone(),
+                inner: ValueTypeRef::Native(
+                    qsl_semantics::model::domain_package::NativeValueType::Integer,
+                ),
+            }),
+            DomainPackageRecord::MapType(MapTypeRecord {
+                key: map.clone(),
+                values: ValueTypeRef::Native(
+                    qsl_semantics::model::domain_package::NativeValueType::Integer,
+                ),
+            }),
+            DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                key: optional_record.clone(),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                key: map_record.clone(),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: key("OptionalRecord/maybe"),
+                owner: optional_record.clone(),
+                value_type: ValueTypeRef::Package(option),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: false,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+                position: 0,
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: key("MapRecord/values"),
+                owner: map_record.clone(),
+                value_type: ValueTypeRef::Package(map),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: false,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+                position: 0,
+            }),
+        ];
+        let package = AdmittedPackage::admit(
+            DomainPackage::new(selection(), records),
+            &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
+        )
+        .expect("option and map declarations are retained in the admitted package");
+
+        let found = exports(&package, &mut Work::new(Limits::default())).expect("exports");
+        let shape: Vec<_> = found
+            .iter()
+            .map(|export| (export.kind, export.owner, export.member))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (w::ExportKind::Field, "MapRecord", Some("values")),
+                (w::ExportKind::Field, "OptionalRecord", Some("maybe")),
+                (w::ExportKind::Record, "MapRecord", None),
+                (w::ExportKind::Record, "OptionalRecord", None),
+            ]
+        );
+        assert!(package.declaration_by_key(&key("MaybeInteger")).is_some());
+        assert!(package.declaration_by_key(&key("IntegerMap")).is_some());
     }
 }

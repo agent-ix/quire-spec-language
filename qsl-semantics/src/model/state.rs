@@ -257,6 +257,8 @@ impl Walk<'_> {
                     &alias.target
                 }
                 Some(DomainPackageRecord::SequenceType(sequence)) => &sequence.items,
+                Some(DomainPackageRecord::OptionType(option)) => &option.inner,
+                Some(DomainPackageRecord::MapType(map)) => &map.values,
                 Some(DomainPackageRecord::RecordValueType(_))
                     if path.len() < self.records.len() =>
                 {
