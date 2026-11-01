@@ -74,10 +74,10 @@ fn checked_timed_mapping() -> qsl_replay::spine::CheckedUnit {
 language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile t = "quire.temporal.timed/v1";
+model M = "acme/orders";
 dimension Time;
 unit s : Time = rational(1, 1);
 unit ms : Time = rational(1, 1000) * s;
-model M = "acme/orders";
 time M dense unit ms;
 temporal Due using t over (view: M::Widget) clock "model-time" on origin {
     eventually[0 ms, 1 ms] true
