@@ -7,7 +7,9 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
@@ -140,6 +142,275 @@ const ALL_EDGES: [&str; 6] = ["E1", "E2", "E3", "E4", "E5", "E6"];
 /// (FR-230), and its request is `operation-contract`/`bounded`
 /// (FR-345-AC-6).
 const LAYERS: [HeaderLayer; 6] = HeaderLayer::ALL;
+
+/// FR-345-AC-10: a subprocess with libtest capture disabled proves both direct
+/// comparison calls leave stdout and stderr empty.
+#[trace("TC-868", "FR-345-AC-10")]
+#[test]
+fn production_comparison_matches_cli_and_negotiates_each_witness() {
+    let corpus = real_corpus();
+
+    let probe = run_capture_child("probe", corpus.path());
+    assert!(probe.status.success(), "capture probe failed: {:?}", probe);
+    assert_eq!(
+        stream_region(&probe.stdout, "probe", "stdout"),
+        b"probe stdout"
+    );
+    assert_eq!(
+        stream_region(&probe.stderr, "probe", "stderr"),
+        b"probe stderr"
+    );
+
+    let comparison = run_capture_child("compare", corpus.path());
+    assert!(
+        comparison.status.success(),
+        "comparison subprocess failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&comparison.stdout),
+        String::from_utf8_lossy(&comparison.stderr)
+    );
+    for label in ["no-negotiation", "negotiated"] {
+        assert!(
+            stream_region(&comparison.stdout, label, "stdout").is_empty(),
+            "direct compare wrote to stdout for {label}"
+        );
+        assert!(
+            stream_region(&comparison.stderr, label, "stderr").is_empty(),
+            "direct compare wrote to stderr for {label}"
+        );
+    }
+}
+
+/// A subprocess target used to observe writes that libtest normally captures.
+#[test]
+fn compare_capture_child() {
+    match std::env::var("QSL_518_CAPTURE_MODE").as_deref() {
+        Ok("probe") => mark_streams("probe", || {
+            print!("probe stdout");
+            eprint!("probe stderr");
+        }),
+        Ok("compare") => {
+            let corpus = PathBuf::from(
+                std::env::var_os("QSL_518_CAPTURE_CORPUS")
+                    .expect("the parent supplies the generated corpus path"),
+            );
+            assert_ac10_behavior(&corpus);
+        }
+        Ok(mode) => panic!("unknown capture mode {mode}"),
+        Err(_) => {}
+    }
+}
+
+fn run_capture_child(mode: &str, corpus: &Path) -> Output {
+    Command::new(std::env::current_exe().expect("the test binary path is available"))
+        .args(["--exact", "compare_capture_child", "--nocapture"])
+        .env("QSL_518_CAPTURE_MODE", mode)
+        .env("QSL_518_CAPTURE_CORPUS", corpus)
+        .output()
+        .expect("the capture child starts")
+}
+
+fn stream_region<'a>(output: &'a [u8], label: &str, stream: &str) -> &'a [u8] {
+    let begin = format!("QSL-CAPTURE-BEGIN:{stream}:{label}\n");
+    let end = format!("QSL-CAPTURE-END:{stream}:{label}\n");
+    let start = output
+        .windows(begin.len())
+        .position(|window| window == begin.as_bytes())
+        .unwrap_or_else(|| panic!("missing capture marker {begin:?} in {output:?}"))
+        + begin.len();
+    let finish = output[start..]
+        .windows(end.len())
+        .position(|window| window == end.as_bytes())
+        .unwrap_or_else(|| panic!("missing capture marker {end:?} in {output:?}"))
+        + start;
+    &output[start..finish]
+}
+
+fn mark_streams<T>(label: &str, call: impl FnOnce() -> T) -> T {
+    println!("QSL-CAPTURE-BEGIN:stdout:{label}");
+    eprintln!("QSL-CAPTURE-BEGIN:stderr:{label}");
+    std::io::stdout().flush().expect("stdout marker flushes");
+    std::io::stderr().flush().expect("stderr marker flushes");
+    let result = call();
+    std::io::stdout().flush().expect("stdout call flushes");
+    std::io::stderr().flush().expect("stderr call flushes");
+    println!("QSL-CAPTURE-END:stdout:{label}");
+    eprintln!("QSL-CAPTURE-END:stderr:{label}");
+    std::io::stdout()
+        .flush()
+        .expect("stdout end marker flushes");
+    std::io::stderr()
+        .flush()
+        .expect("stderr end marker flushes");
+    result
+}
+
+fn assert_ac10_behavior(corpus: &Path) {
+    let registry = RegistrySnapshot::production().expect("QSL's production registry builds");
+    let candidates = |kind| match registry.candidates(kind) {
+        qsl_route::CandidateOutcome::Candidates(candidates) => candidates,
+        qsl_route::CandidateOutcome::UnknownBackend(backend) => {
+            panic!("production candidate lookup for {backend:?} is named")
+        }
+    };
+
+    let cli = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .args(["refinement", "layering"])
+        .arg(corpus)
+        .output()
+        .expect("the no-negotiation CLI runs");
+    assert_eq!(cli.status.code(), Some(21), "the CLI reports unsupported");
+    assert!(
+        cli.stderr.is_empty(),
+        "the CLI writes no diagnostic: {:?}",
+        cli.stderr
+    );
+    let cli_report = String::from_utf8(cli.stdout).expect("CLI report is UTF-8");
+
+    let no_negotiation = mark_streams("no-negotiation", || {
+        compare(corpus, compile_unit, &registry, None)
+    });
+    assert_eq!(no_negotiation.verdict, Verdict::Unsupported);
+    assert_eq!(no_negotiation.exit, 21);
+    assert_eq!(
+        no_negotiation.to_json().expect("report serializes"),
+        cli_report,
+        "the no-negotiation core report is byte-equal to the CLI report"
+    );
+    assert_eq!(cases(&no_negotiation.results), expected_cases());
+    for each_layer in LAYERS {
+        let EntryResult::Layer {
+            result, witnesses, ..
+        } = layer(&no_negotiation.results, each_layer.identity())
+        else {
+            unreachable!("layer lookup returns a layer")
+        };
+        assert_eq!(
+            *result,
+            CaseResult::UnresolvedUnsupported,
+            "{}",
+            each_layer.identity()
+        );
+        assert_eq!(
+            witnesses.len(),
+            1,
+            "{} has one witness",
+            each_layer.identity()
+        );
+        assert_eq!(witnesses[0].result, CaseResult::UnresolvedUnsupported);
+        assert_eq!(witnesses[0].reason.as_deref(), Some("not-negotiated"));
+        assert!(!witnesses[0].candidates.is_empty());
+        assert!(witnesses[0]
+            .candidates
+            .iter()
+            .all(|candidate| candidate.disposition == "not-negotiated"));
+    }
+
+    let mut requests = Vec::new();
+    let negotiated = {
+        let mut negotiate =
+            |request: WitnessRequest, candidate: &Candidate, _: &CheckedStateClause| {
+                requests.push((request.kind, candidate.id().as_str().to_owned()));
+                Disposition::Supported(candidate.clone())
+            };
+        mark_streams("negotiated", || {
+            compare(corpus, compile_unit, &registry, Some(&mut negotiate))
+        })
+    };
+    assert_eq!(negotiated.verdict, Verdict::Success);
+    assert_eq!(negotiated.exit, 0);
+    let non_layer_results = |results: &[EntryResult]| {
+        results
+            .iter()
+            .filter(|result| !matches!(result, EntryResult::Layer { .. }))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        non_layer_results(&negotiated.results),
+        non_layer_results(&no_negotiation.results),
+        "case and edge results are unchanged by negotiation"
+    );
+    assert_eq!(
+        edges(&negotiated.results),
+        ALL_EDGES.map(|edge| (edge.to_owned(), CaseResult::Holds))
+    );
+    for each_layer in LAYERS {
+        let EntryResult::Layer {
+            result: negotiated_result,
+            witnesses: negotiated_witnesses,
+            ..
+        } = layer(&negotiated.results, each_layer.identity())
+        else {
+            unreachable!("layer lookup returns a layer")
+        };
+        let EntryResult::Layer {
+            result: no_negotiation_result,
+            witnesses: no_negotiation_witnesses,
+            ..
+        } = layer(&no_negotiation.results, each_layer.identity())
+        else {
+            unreachable!("layer lookup returns a layer")
+        };
+        assert_eq!(
+            *negotiated_result,
+            CaseResult::Holds,
+            "{}",
+            each_layer.identity()
+        );
+        assert_eq!(*no_negotiation_result, CaseResult::UnresolvedUnsupported);
+        assert_eq!(
+            negotiated_witnesses.len(),
+            1,
+            "{} has one witness",
+            each_layer.identity()
+        );
+        let negotiated_witness = &negotiated_witnesses[0];
+        let no_negotiation_witness = &no_negotiation_witnesses[0];
+        assert_eq!(negotiated_witness.result, CaseResult::Holds);
+        assert_eq!(negotiated_witness.class, no_negotiation_witness.class);
+        assert_eq!(negotiated_witness.codes, no_negotiation_witness.codes);
+        assert_eq!(negotiated_witness.reason, None);
+        assert_eq!(
+            negotiated_witness
+                .candidates
+                .iter()
+                .map(|candidate| candidate.backend.as_str())
+                .collect::<Vec<_>>(),
+            no_negotiation_witness
+                .candidates
+                .iter()
+                .map(|candidate| candidate.backend.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(negotiated_witness
+            .candidates
+            .iter()
+            .all(|candidate| candidate.disposition == "supported"));
+    }
+
+    let mut expected_requests = Vec::new();
+    for each_layer in LAYERS {
+        let request = each_layer.witness_request();
+        let kind = match request.kind {
+            WitnessKind::OperationContract => Capability::OperationContract,
+            WitnessKind::ValueValidity => Capability::ValueValidity,
+        };
+        expected_requests.extend(
+            candidates(kind)
+                .candidates()
+                .iter()
+                .map(|candidate| (request.kind, candidate.id().as_str().to_owned())),
+        );
+    }
+    assert_eq!(requests.len(), expected_requests.len());
+    let order = |request: &(WitnessKind, String)| (format!("{:?}", request.0), request.1.clone());
+    requests.sort_by_key(order);
+    expected_requests.sort_by_key(order);
+    assert_eq!(
+        requests, expected_requests,
+        "one request per candidate per layer"
+    );
+}
 
 /// FR-345-AC-4 and AC-7 over the real corpus, with no negotiation function:
 /// on each of E1 to E6 the both-refuse case holds reporting both sides'
