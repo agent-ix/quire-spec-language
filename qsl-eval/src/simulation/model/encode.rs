@@ -27,6 +27,10 @@ use quire_checked::key::DeclarationKey;
 pub(crate) enum Enc {
     Null,
     Bool(bool),
+    /// A static string used by the fixed typed-form tags. Keeping these
+    /// borrowed avoids allocating one `String` for every tagged node in a
+    /// state key.
+    Static(&'static str),
     Str(String),
     Array(Vec<Enc>),
     /// A structural node identity, written as its `{package, path, ordinal}`
@@ -47,6 +51,7 @@ impl Encode for Enc {
         match self {
             Self::Null => writer.null(),
             Self::Bool(value) => writer.bool(*value),
+            Self::Static(value) => writer.string(value),
             Self::Str(value) => writer.string(value),
             Self::Array(items) => {
                 writer.begin_array()?;
@@ -82,8 +87,8 @@ impl Enc {
     }
 
     /// `{"type": tag, ...members}`.
-    pub(crate) fn tagged(tag: &str, mut members: Vec<(&'static str, Enc)>) -> Self {
-        members.push(("type", Self::text(tag)));
+    pub(crate) fn tagged(tag: &'static str, mut members: Vec<(&'static str, Enc)>) -> Self {
+        members.push(("type", Self::Static(tag)));
         Self::Object(members)
     }
 
