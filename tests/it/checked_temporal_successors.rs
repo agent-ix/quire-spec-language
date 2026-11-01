@@ -609,6 +609,22 @@ fn checked_capture_is_restored_once_and_eviction_is_incomplete() {
     assert_eq!(replayed.capture_evaluations, 1);
     assert_eq!(replayed.receipts, ["receipt:one", "receipt:replay"]);
 
+    input.triggers[0].payload = "conflicting".into();
+    let conflict = temporal::evaluate_checked_with_progress(
+        checked.package(),
+        0,
+        &input,
+        temporal::Limits::default(),
+        &mut ledger,
+    );
+    assert!(matches!(
+        conflict.result(),
+        Err(temporal::Error::Refused(
+            temporal::Refusal::Contradiction { .. }
+        ))
+    ));
+
+    input.triggers[0].payload = "initial".into();
     input.evicted = vec![temporal::Eviction::Capture {
         instance: "trigger:one".into(),
         capture: 0,
