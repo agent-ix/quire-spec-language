@@ -749,21 +749,17 @@ fn checked_mapping_exercises_each_supported_row_and_past_operator() {
         }
     );
 
-    for (profile, dimension) in [(
-        "quire.temporal.infinite-trace/v1",
-        temporal::Unmatched::InfiniteTrace,
-    )] {
-        let checked = checked("eventually[0,1] true", profile);
-        assert_eq!(
-            temporal::mapping_support_checked(checked.package(), 0, Closure::Closed)
-                .unwrap()
-                .support,
-            temporal::Support::Unsupported {
-                dimensions: vec![dimension],
-            },
-            "{profile}"
-        );
-    }
+    let profile = "quire.temporal.infinite-trace/v1";
+    let checked = checked("eventually[0,1] true", profile);
+    assert_eq!(
+        temporal::mapping_support_checked(checked.package(), 0, Closure::Closed)
+            .unwrap()
+            .support,
+        temporal::Support::Unsupported {
+            dimensions: vec![temporal::Unmatched::InfiniteTrace],
+        },
+        "{profile}"
+    );
     let timed = checked_timed_mapping();
     assert_eq!(
         temporal::mapping_support_checked(timed.package(), 0, Closure::Closed)
