@@ -43,7 +43,7 @@ fn key(name: &str) -> DeclarationKey {
     DeclarationKey::fixture(name)
 }
 
-fn model_document() -> Vec<u8> {
+pub(crate) fn model_document() -> Vec<u8> {
     model_document_over(false)
 }
 

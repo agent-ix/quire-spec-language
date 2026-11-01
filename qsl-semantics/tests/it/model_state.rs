@@ -177,7 +177,7 @@ fn admit(
 
 fn refused(failure: Option<AdmissionFailure>) -> AdmissionRecord {
     match failure {
-        Some(AdmissionFailure::Refused(record)) => record,
+        Some(AdmissionFailure::Refused(record)) => *record,
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
@@ -246,8 +246,8 @@ fn an_initial_snapshot_that_is_not_a_current_initialization_refuses() {
     let fixture = fixture();
     let record = refused(admit(&fixture, "pre", initial_anchor(), true, two_objects()).err());
     assert_eq!(
-        (record.code, record.cause),
-        (Code::WrongSnapshot, "wrong-observation")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::WrongSnapshot.as_str(), "wrong-observation")
     );
 
     let record = refused(
@@ -261,8 +261,8 @@ fn an_initial_snapshot_that_is_not_a_current_initialization_refuses() {
         .err(),
     );
     assert_eq!(
-        (record.code, record.cause),
-        (Code::WrongSnapshot, "wrong-anchor")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::WrongSnapshot.as_str(), "wrong-anchor")
     );
 
     let record = refused(
@@ -276,8 +276,8 @@ fn an_initial_snapshot_that_is_not_a_current_initialization_refuses() {
         .err(),
     );
     assert_eq!(
-        (record.code, record.cause),
-        (Code::InvalidRuntimeInput, "wrong-value-kind")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::InvalidRuntimeInput.as_str(), "wrong-value-kind")
     );
     assert_eq!(
         record.fields.get("field").map(String::as_str),
@@ -292,9 +292,9 @@ fn an_initial_snapshot_with_a_wrong_model_a_dangling_reference_or_an_incomplete_
     let dangling = vec![object("b", "2", parent_of("zzz"))];
     let record = refused(admit(&fixture, "current", initial_anchor(), true, dangling).err());
     assert_eq!(
-        (record.code, record.cause),
+        (record.catalog.code(), record.catalog.cause()),
         (
-            Code::DanglingReference,
+            Code::DanglingReference.as_str(),
             "absent-target-in-complete-population"
         )
     );
@@ -305,15 +305,15 @@ fn an_initial_snapshot_with_a_wrong_model_a_dangling_reference_or_an_incomplete_
         panic!("an incomplete listed population is Incomplete")
     };
     assert_eq!(
-        (record.code, record.cause),
-        (Code::IncompletePopulation, "incomplete-scope")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::IncompletePopulation.as_str(), "incomplete-scope")
     );
 
     fixture.header["identity"] = json!("example/other-package");
     let record = refused(admit(&fixture, "current", initial_anchor(), true, two_objects()).err());
     assert_eq!(
-        (record.code, record.cause),
-        (Code::InvalidModelBinding, "wrong-model-selection")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::InvalidModelBinding.as_str(), "wrong-model-selection")
     );
 }
 

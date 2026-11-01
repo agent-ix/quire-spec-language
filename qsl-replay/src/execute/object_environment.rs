@@ -53,7 +53,7 @@ impl ObjectEnvironmentFailure {
         match self {
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => record.code,
+            ) => Code::from_code(record.catalog.code()).unwrap_or(Code::RuntimeInvariant),
             Self::Admission(AdmissionFailure::Fault(_)) => Code::RuntimeInvariant,
             Self::Reference {
                 resolution: Unresolved::Dangling,
@@ -71,7 +71,7 @@ impl ObjectEnvironmentFailure {
         match self {
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => Some(record.cause),
+            ) => Some(record.catalog.cause()),
             Self::Admission(AdmissionFailure::Fault(_)) => None,
             Self::Reference {
                 resolution: Unresolved::Dangling,

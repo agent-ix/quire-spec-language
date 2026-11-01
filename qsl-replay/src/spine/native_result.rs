@@ -2050,7 +2050,7 @@ impl Disposition {
                 qsl_semantics::model::observation::AdmissionFailure::Refused(record)
                 | qsl_semantics::model::observation::AdmissionFailure::Incomplete(record) => {
                     result.refusal = Some(
-                        RefusalWire::new(record.code.as_str(), Some(record.cause))
+                        RefusalWire::new(record.catalog.code(), Some(record.catalog.cause()))
                             .fields(record.fields.clone()),
                     );
                 }

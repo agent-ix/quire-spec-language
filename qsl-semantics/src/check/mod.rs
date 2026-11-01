@@ -636,6 +636,15 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// FR-390: each checked population's exact declaration and effective
+    /// member types, indexed by its canonical checked node.
+    protocol_population_types: BTreeMap<
+        quire_exact::NodeKey,
+        (
+            quire_checked::key::DeclarationKey,
+            Vec<quire_exact::EffectiveId>,
+        ),
+    >,
     /// QSpec FR-322: the `model_root` key of each selection, in the same order.
     model_roots: Vec<quire_exact::NodeKey>,
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -1967,6 +1976,14 @@ impl PackageDeclarations {
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
         let population_keys = population_key_table(&models);
+        let protocol_population_types = models
+            .iter()
+            .flat_map(AdmittedModel::named_populations)
+            .filter_map(|population| {
+                let node = crate::model::key::population_node_key(population.key).ok()?;
+                Some((node, (population.key.clone(), population.members)))
+            })
+            .collect();
         let declaration_keys = models
             .iter()
             .flat_map(AdmittedModel::record_keys)
@@ -5805,6 +5822,7 @@ impl PackageDeclarations {
             synthesized_spans,
             embedding,
             model_selections,
+            protocol_population_types,
             model_roots,
             header_layers,
             time_sources: self.time_sources,
@@ -6344,6 +6362,20 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The checked declaration and effective member types for a population
+    /// node, when it is one of this package's selected model declarations.
+    pub fn protocol_population_types(
+        &self,
+        node: &quire_exact::NodeKey,
+    ) -> Option<(
+        &quire_checked::key::DeclarationKey,
+        &[quire_exact::EffectiveId],
+    )> {
+        self.protocol_population_types
+            .get(node)
+            .map(|(declaration, members)| (declaration, members.as_slice()))
     }
 
     /// The identity of the domain package the model `model` selects, where

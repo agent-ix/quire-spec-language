@@ -251,6 +251,6 @@ fn an_invocation_carrying_a_replacement_frame_is_refused_not_obeyed() {
             replacement.disposition
         );
     };
-    assert_eq!(record.code.as_str(), "invalid_runtime_input");
-    assert_eq!(record.cause, "unknown-member");
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "unknown-member");
 }

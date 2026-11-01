@@ -752,8 +752,8 @@ fn a_frame_violating_invocation_refuses_with_the_admission_record() {
     let ReplayRefusal::Admission(AdmissionFailure::Refused(record)) = &refusal else {
         panic!("expected a refused admission, got {refusal:?}");
     };
-    assert_eq!(record.code.as_str(), "frame_violation");
-    assert_eq!(record.cause, "unauthorized-change");
+    assert_eq!(record.catalog.code(), "frame_violation");
+    assert_eq!(record.catalog.cause(), "unauthorized-change");
     assert_eq!(
         record.fields.get("object").map(String::as_str),
         Some("child")
@@ -783,9 +783,9 @@ fn an_absent_pre_snapshot_refuses_with_the_admission_record() {
     let ReplayRefusal::Admission(AdmissionFailure::Incomplete(record)) = &refusal else {
         panic!("expected an incomplete admission, got {refusal:?}");
     };
-    assert_eq!(record.code.as_str(), "unavailable_observation");
-    assert_eq!(record.cause, "missing-required-artifact");
-    assert_eq!(refusal.code(), record.code);
+    assert_eq!(record.catalog.code(), "unavailable_observation");
+    assert_eq!(record.catalog.cause(), "missing-required-artifact");
+    assert_eq!(refusal.code().as_str(), record.catalog.code());
 }
 
 /// TC-517 step 5 (FR-122-AC-5): `ParentOrder` over incomplete-population's
@@ -803,8 +803,8 @@ fn an_incomplete_population_refuses_with_the_incomplete_record() {
     let ReplayRefusal::Admission(AdmissionFailure::Incomplete(record)) = &refusal else {
         panic!("expected an incomplete admission, got {refusal:?}");
     };
-    assert_eq!(record.code.as_str(), "incomplete_population");
-    assert_eq!(record.cause, "incomplete-scope");
+    assert_eq!(record.catalog.code(), "incomplete_population");
+    assert_eq!(record.catalog.cause(), "incomplete-scope");
 }
 
 /// TC-517 step 6 (FR-122-AC-6): replaying step 1's `VersionUnchanged`
@@ -1084,8 +1084,8 @@ fn an_out_of_range_pre_state_value_still_refuses() {
     let ReplayRefusal::Admission(AdmissionFailure::Refused(record)) = &refusal else {
         panic!("expected a refused admission, got {refusal:?}");
     };
-    assert_eq!(record.code.as_str(), "invalid_runtime_input");
-    assert_eq!(record.cause, "invalid-value");
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "invalid-value");
     assert_eq!(
         record.fields.get("object").map(String::as_str),
         Some("child")

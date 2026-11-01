@@ -309,7 +309,7 @@ fn assert_incomplete(admitted: Result<AdmittedObservations, AdmissionFailure>) {
         panic!("an incomplete admission: {admitted:?}");
     };
     assert_eq!(
-        (record.code.as_str(), record.cause),
+        (record.catalog.code(), record.catalog.cause()),
         ("incomplete_population", "incomplete-scope")
     );
 }
@@ -544,7 +544,7 @@ fn a_population_domain_evaluates_as_its_all_instances_spelling() {
         panic!("the trace over an incomplete counters is Incomplete");
     };
     assert_eq!(
-        (record.code.as_str(), record.cause),
+        (record.catalog.code(), record.catalog.cause()),
         ("incomplete_population", "incomplete-scope")
     );
     // An environment admitted without that requirement (a clause that
@@ -670,7 +670,7 @@ fn a_named_population_requires_the_populations_its_objects_reference() {
     else {
         panic!("a link to an absent object of a complete population dangles");
     };
-    assert_eq!(record.code.as_str(), "dangling_reference");
+    assert_eq!(record.catalog.code(), "dangling_reference");
 }
 
 /// FR-391 "Typing" and "Evaluation" over `lookup<T>(M::P, r)`: a present
