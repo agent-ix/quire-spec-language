@@ -51,7 +51,9 @@ pub struct ProbabilityCertificate {
 }
 
 pub fn check_probability_certificate(
-    request: &ReplayRequest,                    // FR-098
+    wire: ReplayRequestWire,                    // FR-098
+    subject: &ModelTraceSubject,                // FR-128
+    replay_limits: ReplayLimits,                 // FR-098 replay.input_bytes bound
     item: &ObligationIdentity,
     certificate: &ProbabilityCertificate,
     limits: &ExactProbLimits,
@@ -129,11 +131,15 @@ product state form `{product_key}` and the second as `{member}`.
 
 - The checker SHALL refuse a certificate whose identity differs from the
   item's.
-- It SHALL recompile the package (FR-098), re-admit the subject, and
-  re-enumerate the product through `ModelSystem` and the monitor, using
+- It SHALL decode `wire` through FR-098's canonical `ByteProvision` and
+  recompile path, passing `replay_limits` to `ReplayRequest::decode` so the
+  encoded request is bounded by `replay.input_bytes` before provision access;
+  it SHALL re-admit `subject` and re-enumerate the product through
+  `ModelSystem` and the monitor, using
   `qsl-eval`'s property-automaton translation and enabledness (ADR-018
   LA-5) and its own product enumeration and graph algorithms, and no
-  `qsl-analyze` code: every
+  `qsl-analyze` code. It SHALL NOT accept or reuse an EN-5 solver product as
+  trusted replay data: every
   reachable product state for an `Upper`, `Exact` or `LongRun` certificate,
   and the states the certificate names and their successors for a `Lower`
   one, an unexplored successor counting as value 0.
@@ -176,6 +182,7 @@ product state form `{product_key}` and the second as `{member}`.
 | FR-201-AC-3 | A `Lower` certificate for §15.4 with its ranking omitted is rejected; one whose identity names a different claim is refused before any re-enumeration; §15.6's `FairTerminates` `Exact` certificate is accepted only after the checker recomputes that no fair end component exists, and the same certificate with its fairness set removed is rejected. With no authored fairness, FR-196's geometric timed policy is checked for derived TS-5 progress and its exact values5/4/3; rank3/2/1 has a positive-probability goal edge to rank0. Missing observation progress, an Observe-as-Delay policy, a finite maximum3 or a fabricated infinite-wait infinity witness is rejected. | Test (TC-636) |
 | FR-201-AC-4 | A proof whose certificate the checker accepts settles `proved`; with a checker `max_states` of 2 the check stops and the item settles `Incomplete(LimitReached{…})` naming `max_states`. The same applies while rederiving R/waiting components or checking randomized observation evidence, with the actual consumed value/setting retained. | Test (TC-636) |
 | FR-201-AC-5 | An `Opt` model whose initial state has the actions `go`, which activates and then sets `M` to 1 with probability `1/4` and to 3 with `3/4`, and `skip`, which never activates. For `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) over every scheduler, the `Upper` certificate with `y = 0` at the initial state and `−1/4` after `go` is accepted with side `AtLeast`: only `skip` is tight, and no activated state is reachable through it. The same claim over a variant whose `go` sets `M` to 1 and 3 with `1/2` each, with `y = 0` at both states, is rejected, naming the activated state after `go`, since `go` is tight. | Test (TC-636) |
+| FR-201-AC-7 | Given a `ReplayRequestWire` whose measured encoded size is `B`, when the checker receives caller-configured `ReplayLimits` with `input_bytes = B - 1`, it returns `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))` before byte-provision lookup or recompile. | Test |
 | FR-201-AC-6 | Rejection rules and loci: AC-1's certificate with `4/5` replaced by `9/10` is rejected `InequalityFails` at the `ProbabilisticProductState` of that first state; AC-2's `LongRun` certificate with the changed bias, `InequalityFails` at the `down` state; AC-3's `Lower` certificate with its ranking omitted, `Malformed` at `CertificateMember("ranking")` before any re-enumeration; AC-2's `Lower` certificate with one named non-target state's rank removed, `RankMissing` at it, and with that rank raised to the rank of its only positive successor, `RankBroken` at it; AC-1's accepted certificate offered for a `>=` threshold above its initial state's value, `ThresholdMissed` at the initial state; AC-5's rejected variant, `InequalityFails` at the activated state after `go`. Each rejection is written with QSpec FR-331's rule spelling at its `{product_key}` or `{member}` form. | Test (TC-1197) |
 
 ## Dependencies
