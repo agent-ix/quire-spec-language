@@ -7,10 +7,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    build_product, decide_bounded_event, Accumulator, Amount, ExactProbLimits, FhResult,
-    FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole, ProbBuild, ProbEdge,
-    ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductStop,
-    UndefinedRead,
+    backward_induction, build_product, decide_bounded_event, Accumulator, Amount, ExactProbLimits,
+    FhObjective, FhResult, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
+    ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction, ProductKind,
+    ProductRefusal, ProductStop, UndefinedRead,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -107,6 +107,75 @@ fn is_decided(product: &ProbProduct, state: ProbStateId) -> bool {
     product.states[state.index()]
         .monitor
         .is_some_and(MonitorState::is_decided)
+}
+
+fn measure_event_terminals(product: &ProbProduct, threshold: &Rational) -> Vec<Option<Rational>> {
+    product
+        .states
+        .iter()
+        .map(|key| match (key.monitor, key.accumulator.as_ref()) {
+            (
+                Some(MonitorState::Measure {
+                    phase:
+                        MeasurePhase::Complete | MeasurePhase::Censored | MeasurePhase::Unactivated,
+                    ..
+                }),
+                Some(Accumulator::Reward { activated, amount })
+                | Some(Accumulator::Steps { activated, amount }),
+            ) => {
+                let holds =
+                    *activated && matches!(amount, Amount::Exact(value) if value <= threshold);
+                Some(if holds { ratio(1, 1) } else { ratio(0, 1) })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn quantile_margin_terminals(
+    product: &ProbProduct,
+    threshold: &Rational,
+    level: &Rational,
+) -> Vec<Option<Rational>> {
+    product
+        .states
+        .iter()
+        .map(|key| match (key.monitor, key.accumulator.as_ref()) {
+            (
+                Some(MonitorState::Measure {
+                    phase:
+                        MeasurePhase::Complete | MeasurePhase::Censored | MeasurePhase::Unactivated,
+                    ..
+                }),
+                Some(Accumulator::Reward { activated, amount })
+                | Some(Accumulator::Steps { activated, amount }),
+            ) => {
+                let contribution = if *activated {
+                    let event = matches!(amount, Amount::Exact(value) if value <= threshold);
+                    if event { ratio(1, 1) } else { ratio(0, 1) }.sub(level)
+                } else {
+                    ratio(0, 1)
+                };
+                Some(contribution)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn selected_operation(product: &ProbProduct, state: ProbStateId, choice: usize) -> String {
+    let mut identities = Vec::new();
+    for edge in product.outgoing(state) {
+        let identity = edge.action.as_ref().expect("a model action");
+        if !identities.iter().any(|seen| seen == identity) {
+            identities.push(identity.clone());
+        }
+    }
+    identities
+        .get(choice)
+        .expect("the policy selects an enabled action")
+        .operation
+        .clone()
 }
 
 const NO_FAULT: &str = "probabilistic NoFault using ev on M over (n: M::Node) under Steady \
@@ -243,7 +312,16 @@ fn the_no_fault_product_is_a_layered_dtmc_with_two_decided_states() {
 
 const P95: &str = "probabilistic P95 using ev on M over (s: M::Server) under Steady on origin \
      { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) \
-     within 10) <= 5 }";
+     within 10) <= 5 }\n\
+     probabilistic P95Two using ev on M over (s: M::Server) under Steady on origin \
+     { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) \
+     within 10) <= 2 }\n\
+     probabilistic P95Every using ev on M over (s: M::Server) under every scheduler on origin \
+     { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) \
+     within 10) <= 5 }\n\
+     probabilistic P95EveryTwo using ev on M over (s: M::Server) under every scheduler on origin \
+     { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) \
+     within 10) <= 2 }";
 
 /// Checks FR-196-AC-2 (TC-631 step 2): §15.2's product for `P95` at 5 carries the
 /// `duration` accumulator, which takes the values 0, 1, 2, 3, 4 and the one
@@ -349,6 +427,71 @@ fn the_p95_product_accumulates_duration_and_saturates_above_the_threshold() {
     );
 }
 
+/// Checks FR-197-AC-2 (TC-632 step 2): exact §15.2 probabilities and the
+/// XF-2 transformation agree under `Steady` and every scheduler.
+#[trace("TC-632", "FR-197-AC-2")]
+#[test]
+fn p95_probabilities_match_the_exact_scheduler_transform() {
+    let world = World::new(&prob_world::service(P95));
+    let limits = ExactProbLimits::default();
+    let quantile = ratio(19, 20);
+    for (workload_name, every_name, threshold, expected) in [
+        ("P95", "P95Every", ratio(5, 1), ratio(24_233, 25_000)),
+        ("P95Two", "P95EveryTwo", ratio(2, 1), ratio(4_491, 5_000)),
+    ] {
+        let workload_product = built(&world, workload_name);
+        let every_product = built(&world, every_name);
+        assert_eq!(workload_product.kind, ProductKind::Dtmc);
+        assert_eq!(every_product.kind, ProductKind::Mdp);
+
+        let workload_result = backward_induction(
+            &workload_product,
+            &measure_event_terminals(&workload_product, &threshold),
+            FhObjective::Min,
+            &quantile,
+            limits.max_rational_bits,
+            limits.precision_bits,
+            limits.max_precision_bits,
+        )
+        .expect("the bounded workload measure is acyclic");
+        let FhResult::Exact {
+            values: workload_values,
+            ..
+        } = workload_result
+        else {
+            panic!("the §15.2 workload probability remains exact");
+        };
+        let workload_initial = start(&workload_product);
+        let probability = &workload_values[workload_initial.index()];
+        assert_eq!(probability, &expected, "{workload_name}");
+
+        let every_result = backward_induction(
+            &every_product,
+            &quantile_margin_terminals(&every_product, &threshold, &quantile),
+            FhObjective::Min,
+            &ratio(0, 1),
+            limits.max_rational_bits,
+            limits.precision_bits,
+            limits.max_precision_bits,
+        )
+        .expect("the XF-2 bounded scheduler product is acyclic");
+        let FhResult::Exact {
+            values: every_values,
+            ..
+        } = every_result
+        else {
+            panic!("the §15.2 scheduler transform remains exact");
+        };
+        let every_initial = start(&every_product);
+        let transformed = &every_values[every_initial.index()];
+        assert_eq!(transformed, &expected.sub(&quantile), "{every_name}");
+
+        let workload_holds = probability >= &quantile;
+        let every_holds = transformed >= &ratio(0, 1);
+        assert_eq!(every_holds, workload_holds, "{every_name}");
+    }
+}
+
 const THRESHOLDS: &str = "probabilistic Four using ev on M over (s: M::Server) under Steady \
      on origin { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
      until holds(s.phase = 2) within 10) <= 4 }\n\
@@ -406,6 +549,8 @@ fn an_amount_equal_to_the_threshold_stays_exact() {
 
 const DELIVER: &str = "probabilistic Deliver using ev on M over (m: M::Msg) under every scheduler \
      on origin { probability >= 0.97 [ eventually[0,2] holds(m.delivered) ] }\n\
+     probabilistic DeliverMax using ev on M over (m: M::Msg) under every scheduler \
+     on origin { probability <= 0.97 [ eventually[0,2] holds(m.delivered) ] }\n\
      probabilistic DeliverEven using ev on M over (m: M::Msg) under Even \
      on origin { probability >= 0.97 [ eventually[0,2] holds(m.delivered) ] }";
 
@@ -424,6 +569,86 @@ fn sends(edges: &[ProbEdge], operation: &str) -> BTreeMap<bool, Rational> {
             (boolean_of(&draw[0]), edge.probability.clone())
         })
         .collect()
+}
+
+/// Checks FR-197-AC-1 (TC-632 step 1): §15.4's `Deliver` scheduler extrema,
+/// selected actions and workload values match the published exact vectors.
+#[trace("TC-632", "FR-197-AC-1")]
+#[test]
+fn deliver_backward_induction_matches_the_published_scheduler_vectors() {
+    let world = World::new(&prob_world::link(DELIVER));
+    let limits = ExactProbLimits::default();
+    let minimum_product = built(&world, "Deliver");
+    let maximum_product = built(&world, "DeliverMax");
+    let workload_product = built(&world, "DeliverEven");
+    let initial = start(&minimum_product);
+    let lost = minimum_product
+        .outgoing(initial)
+        .iter()
+        .find(|edge| edge.draw.as_ref().is_some_and(|draw| boolean_of(&draw[0])))
+        .expect("the first send can be lost")
+        .to;
+
+    let FhResult::Exact {
+        values: minimum,
+        policy: minimum_policy,
+    } = decide_bounded_event(
+        &minimum_product,
+        &qsl_semantics::check::Bound::AtLeast(ratio(97, 100)),
+        &limits,
+    )
+    .expect("the bounded scheduler product is acyclic")
+    else {
+        panic!("the §15.4 minimum remains exact");
+    };
+    assert_eq!(minimum[initial.index()], ratio(24, 25));
+    assert_eq!(minimum[lost.index()], ratio(4, 5));
+    assert!(selected_operation(
+        &minimum_product,
+        initial,
+        minimum_policy[initial.index()].expect("the initial state has actions"),
+    )
+    .contains("send_b"));
+    assert!(selected_operation(
+        &minimum_product,
+        lost,
+        minimum_policy[lost.index()].expect("the post-loss state has actions"),
+    )
+    .contains("send_b"));
+
+    let FhResult::Exact {
+        values: maximum, ..
+    } = decide_bounded_event(
+        &maximum_product,
+        &qsl_semantics::check::Bound::AtMost(ratio(97, 100)),
+        &limits,
+    )
+    .expect("the bounded scheduler product is acyclic")
+    else {
+        panic!("the §15.4 maximum remains exact");
+    };
+    assert_eq!(maximum[initial.index()], ratio(99, 100));
+
+    let FhResult::Exact {
+        values: workload, ..
+    } = decide_bounded_event(
+        &workload_product,
+        &qsl_semantics::check::Bound::AtLeast(ratio(97, 100)),
+        &limits,
+    )
+    .expect("the workload product is acyclic")
+    else {
+        panic!("the §15.4 workload values remain exact");
+    };
+    let workload_initial = start(&workload_product);
+    let workload_lost = workload_product
+        .outgoing(workload_initial)
+        .iter()
+        .find(|edge| edge.draw.as_ref().is_some_and(|draw| boolean_of(&draw[0])))
+        .expect("the first workload send can be lost")
+        .to;
+    assert_eq!(workload[workload_initial.index()], ratio(391, 400));
+    assert_eq!(workload[workload_lost.index()], ratio(17, 20));
 }
 
 /// Checks FR-196-AC-3 (TC-631 step 3): §15.4's `Deliver` over every scheduler is an

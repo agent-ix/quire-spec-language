@@ -599,8 +599,8 @@ mod tests {
         }
     }
 
-    /// Trace: TC-632, FR-197-AC-1
-    #[trace("TC-632", "FR-197-AC-1")]
+    /// Trace: TC-632
+    #[trace("TC-632")]
     #[test]
     fn computes_the_exact_weighted_value() {
         let result = backward_induction(
@@ -620,8 +620,8 @@ mod tests {
         assert_eq!(values[0], rational(1, 3));
     }
 
-    /// Trace: TC-632, FR-197-AC-1
-    #[trace("TC-632", "FR-197-AC-1")]
+    /// Trace: TC-632
+    #[trace("TC-632")]
     #[test]
     fn records_the_extremal_action_in_canonical_order() {
         let product = scheduler_product();
