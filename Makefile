@@ -245,8 +245,8 @@ ci-all-features:
 # targets implicitly, so a target whose required features are off (qsl-source's
 # `it`) is skipped as in that lane; naming `--test it` would make it an error.
 # Nothing is recompiled in a directory of its own. Each name must still select exactly one ignored test.
-# Run the five cases serially so their deep-input allocations do not overlap
-# within the bounded build lane. Keep their full inputs and exact selection.
+# Run the full-depth cases with three threads to shorten this lane's wall
+# time. The bounded runner supplies the memory limit.
 test-deep-format:
 	@set -eu; \
 	for test in \
@@ -262,7 +262,7 @@ test-deep-format:
 			exit 1; \
 		fi; \
 	done; \
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1 \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=3 \
 		formatter_identity::deep_sum_source_generator_keeps_format_identity \
 		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
 		formatter_identity::deep_let_source_generator_keeps_format_identity \
