@@ -19,6 +19,9 @@ pub fn settle_product_refusal(
         request @ ProductRefusal::NotSimulated(NotSimulated::RequiresBound(_)) => {
             return Err(request)
         }
+        // Timed-form support is decided at the plan boundary; the FR-203
+        // product-build settlement map does not own that unsupported result.
+        request @ ProductRefusal::TimedFormShape { .. } => return Err(request),
         ProductRefusal::NotSimulated(
             refusal @ (NotSimulated::Extent(_)
             | NotSimulated::GeneratorMismatch { .. }
