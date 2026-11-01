@@ -66,6 +66,8 @@ pub(super) struct Evaluator<'a> {
     pub nodes: &'a [w::TemporalOperation],
     pub declaration: usize,
     pub instance: usize,
+    /// Semantic trigger/origin identity for instance-specific valuations.
+    pub instance_identity: &'a str,
     /// Progress in force for this binding, in the profile's clock domain. It is
     /// the trace's own assertion, or the progress a ledger retains for the
     /// binding; progress asserted under any other binding never reaches here.
@@ -456,7 +458,13 @@ impl<'a> Evaluator<'a> {
             }
             .into());
         }
-        match self.trace.positions[position].valuations.get(&leaf) {
+        let position = &self.trace.positions[position];
+        let value = position
+            .instance_valuations
+            .get(self.instance_identity)
+            .and_then(|valuations| valuations.get(&leaf))
+            .or_else(|| position.valuations.get(&leaf));
+        match value {
             Some(true) => {
                 self.support.push(position);
                 Ok(Tri::True)
@@ -613,6 +621,7 @@ mod tests {
             nodes: &[],
             declaration: 37,
             instance: 11,
+            instance_identity: "execution:fixture",
             watermark: 0,
             support: Support::default(),
         };

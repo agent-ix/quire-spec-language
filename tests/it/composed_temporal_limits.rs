@@ -273,6 +273,7 @@ fn an_evicted_required_record_is_named_not_narrowed() {
                 coordinate: 1,
                 order: None,
                 valuations: [(leaf, true)].into_iter().collect(),
+                instance_valuations: Default::default(),
             },
         ];
         supplied.decision_scope = temporal::Closure::Open;

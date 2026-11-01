@@ -118,6 +118,7 @@ fn origin_trace() -> temporal::Trace {
             coordinate: 0,
             order: None,
             valuations: BTreeMap::new(),
+            instance_valuations: BTreeMap::new(),
         }],
         anchor: "origin".into(),
         triggers: vec![temporal::Trigger {
@@ -438,6 +439,74 @@ fn checked_activation_dispositions_never_become_temporal_truth() {
     assert_eq!(inactive.activation, temporal::Activation::Inactive);
     assert_eq!((inactive.truth, inactive.basis), (None, None));
     assert_eq!(report.usage().positions, 0);
+}
+
+/// FR-044-AC-1/3: valuations for a capture-bound proposition are keyed by the
+/// semantic trigger identity, so equal formula nodes do not let one instance's
+/// captured predicate result settle a sibling.
+#[trace("TC-123", "FR-044-AC-1", "FR-044-AC-3")]
+#[test]
+fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
+    let checked = checked_activation(
+        "test:checked-temporal-instance-values",
+        "capture saved: Integer = trigger.code; always[0,0] holds(view.code >= saved)",
+        "on each (trigger: M::Widget)",
+    );
+    let clause = checked
+        .package()
+        .graph()
+        .temporal_clauses()
+        .first()
+        .expect("one checked temporal clause")
+        .clause();
+    let leaf = clause
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .and_then(|index| u32::try_from(index).ok())
+        .expect("one holds leaf has a wire-sized index");
+
+    let mut input = origin_trace();
+    input.anchor = "event-1".into();
+    input.positions = vec![Position {
+        coordinate: 0,
+        order: None,
+        valuations: BTreeMap::new(),
+        instance_valuations: BTreeMap::from([
+            ("trigger:low".into(), BTreeMap::from([(leaf, true)])),
+            ("trigger:high".into(), BTreeMap::from([(leaf, false)])),
+        ]),
+    }];
+    input.triggers = [
+        ("trigger:low", "1", "receipt:low"),
+        ("trigger:high", "9", "receipt:high"),
+    ]
+    .into_iter()
+    .map(|(identity, value, receipt)| temporal::Trigger {
+        identity: identity.into(),
+        receipt: receipt.into(),
+        anchor: "event-1".into(),
+        payload: value.into(),
+        guard: None,
+        captures: vec![temporal::CaptureInput::Value {
+            anchor: "event-1".into(),
+            value: value.into(),
+        }],
+    })
+    .collect();
+
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    let obligations = report.result().expect("both instances assessed");
+    let truths: Vec<_> = obligations
+        .iter()
+        .map(|obligation| match obligation {
+            temporal::Obligation::Assessed(assessment) => assessment.truth,
+            other => panic!("expected active instance, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(truths, [Some(Truth::True), Some(Truth::False)]);
 }
 
 /// FR-043: checked profile and clock identity are authenticated before any

@@ -615,6 +615,7 @@ fn run_view(
                     nodes: &view.operations,
                     declaration: view.declaration,
                     instance: ordinal,
+                    instance_identity: &instance.identity,
                     watermark,
                     support: Vec::new(),
                 };
