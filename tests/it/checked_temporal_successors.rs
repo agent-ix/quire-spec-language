@@ -466,6 +466,94 @@ fn checked_open_incomplete_and_empty_window_outcomes_stay_distinct() {
     }
 }
 
+/// FR-043-AC-11: fixed-sample progress settles silence at the inclusive
+/// deadline, includes an instant exactly there and excludes later instants;
+/// event-position progress alone does not advance during silence.
+#[trace("TC-122", "FR-043-AC-11")]
+#[test]
+fn checked_watermark_deadline_and_silent_clock_semantics() {
+    let fixed = checked(
+        "eventually[0,2] holds(view.code > 0)",
+        temporal::FIXED_SAMPLE,
+    );
+    let leaf = fixed.package().graph().temporal_clauses()[0]
+        .clause()
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .and_then(|index| u32::try_from(index).ok())
+        .unwrap();
+    let mut silent = origin_trace();
+    silent.clock.profile_identity = temporal::FIXED_SAMPLE.into();
+    silent.decision_scope = Closure::Open;
+    silent.positions.clear();
+    silent.watermark = 2;
+    let report =
+        temporal::evaluate_checked(fixed.package(), 0, &silent, temporal::Limits::default());
+    let temporal::Obligation::Assessed(silent) = &report.result().unwrap()[0] else {
+        panic!("sample watermark settles a silent bounded obligation");
+    };
+    assert_eq!(silent.truth, Some(Truth::False));
+    assert_eq!(silent.basis, Some(Basis::DecisiveCounterexample));
+
+    let mut at_deadline = origin_trace();
+    at_deadline.clock.profile_identity = temporal::FIXED_SAMPLE.into();
+    at_deadline.decision_scope = Closure::Open;
+    at_deadline.watermark = 1;
+    at_deadline.positions = vec![
+        Position {
+            coordinate: 0,
+            order: None,
+            valuations: BTreeMap::from([(leaf, false)]),
+            instance_valuations: BTreeMap::new(),
+        },
+        Position {
+            coordinate: 1,
+            order: None,
+            valuations: BTreeMap::from([(leaf, true)]),
+            instance_valuations: BTreeMap::new(),
+        },
+        Position {
+            coordinate: 2,
+            order: None,
+            valuations: BTreeMap::from([(leaf, false)]),
+            instance_valuations: BTreeMap::new(),
+        },
+    ];
+    let report = temporal::evaluate_checked(
+        fixed.package(),
+        0,
+        &at_deadline,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(at_deadline) = &report.result().unwrap()[0] else {
+        panic!("the inclusive deadline position participates");
+    };
+    assert_eq!(at_deadline.truth, Some(Truth::True));
+    assert_eq!(at_deadline.basis, Some(Basis::DecisiveWitness));
+
+    let event = checked(
+        "eventually[0,2] holds(view.code > 0)",
+        temporal::EVENT_POSITION,
+    );
+    let mut event_silence = origin_trace();
+    event_silence.decision_scope = Closure::Open;
+    event_silence.positions.clear();
+    event_silence.watermark = 2;
+    let report = temporal::evaluate_checked(
+        event.package(),
+        0,
+        &event_silence,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(event_silence) = &report.result().unwrap()[0] else {
+        panic!("event-position silence remains assessed");
+    };
+    assert_eq!(event_silence.truth, Some(Truth::Pending));
+    assert_eq!(event_silence.basis, Some(Basis::Unsettled));
+}
+
 /// FR-045: the checked classifier accumulates finite-window and mixed-direction
 /// limitations and retains the exact profile selection.
 #[trace("TC-125", "FR-045-AC-2", "FR-045-AC-3")]
