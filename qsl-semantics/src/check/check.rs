@@ -358,6 +358,8 @@ pub struct PackageDeclarations {
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
         Vec<quire_contract_model::SelectedExactFieldRow>,
     ),
+    /// Selected tuple declaration rows retained from model intake.
+    pub selected_tuple_declaration_rows: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
@@ -656,7 +658,8 @@ impl PackageDeclarations {
         identity: qsl_foundation::IdentityLimits,
         selected: crate::model::intake::SelectedModels,
     ) -> Self {
-        let (entries, meter, exact_declarations, exact_fields) = selected.into_parts();
+        let (entries, meter, exact_declarations, exact_fields, tuple_declarations) =
+            selected.into_parts();
         let mut declarations = Self::new(source, package_name, identity);
         declarations.models = entries
             .iter()
@@ -664,6 +667,7 @@ impl PackageDeclarations {
             .collect();
         declarations.model_inputs = Some((entries, meter));
         declarations.selected_exact_identity_rows = (exact_declarations, exact_fields);
+        declarations.selected_tuple_declaration_rows = tuple_declarations;
         declarations
     }
 
@@ -678,6 +682,7 @@ impl PackageDeclarations {
         Self {
             model_inputs: None,
             selected_exact_identity_rows: (Vec::new(), Vec::new()),
+            selected_tuple_declaration_rows: Vec::new(),
             pending_types: None,
             source,
             package_name: package_name.into(),

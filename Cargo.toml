@@ -24,8 +24,8 @@ quire-checked = { git = "https://github.com/agent-ix/quire-eval", branch = "main
 # ADR-011 §6.1 layer E: the shared evaluation-core interface (FR-262, FR-401),
 # its own repository so RT and CG depend on it without the QSL repo.
 quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
-# QSL-1377 uses the IR-owned SelectedExactIdentities admission API.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "154227dcbcda09f3abf635375777893132fc7686" }
+# IR-owned staged identity, operation-member, and model-enum witness joins.
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "d5c3e5faa8f9afe7651dbf6aa8d7ddd294c9ba11" }
 
 [package]
 name = "quire-spec-language"

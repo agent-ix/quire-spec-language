@@ -35,6 +35,7 @@ use crate::value::nominal_payload::{
 };
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
+use quire_contract_model::{ModelForm, SelectedOperationIdentity};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
@@ -264,6 +265,45 @@ pub struct AdmittedModel {
     references: Vec<(EffectiveId, String, EffectiveId)>,
 }
 
+/// The selected model facts needed to join one lowered operation anchor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedOperationMember {
+    /// The selected domain document identity.
+    pub selected_document: Box<str>,
+    /// The closed form of the declaring model declaration.
+    pub declaring_form: ModelForm,
+    /// The original IR identity of the declaring model node.
+    pub original_model_identity: Box<str>,
+    /// The original IR identity of the operation member.
+    pub original_operation_identity: Box<str>,
+    /// The structured identity selected by QSL's model stage.
+    pub selected_operation_identity: SelectedOperationIdentity,
+}
+
+/// Selected model declaration facts retained for one lowered enum node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedModelEnumDeclaration {
+    /// The selected domain document identity.
+    pub selected_document: Box<str>,
+    /// The original enum declaration identity in that document.
+    pub original_identity: Box<str>,
+}
+
+/// Selected model member facts retained for one lowered enum case node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedModelEnumMember {
+    /// The enum declaration's admitted QSL node key.
+    pub declaration_key: NodeKey,
+    /// The selected domain document identity.
+    pub selected_document: Box<str>,
+    /// The original enum declaration identity in that document.
+    pub enum_original_identity: Box<str>,
+    /// The original member identity in that document.
+    pub member_original_identity: Box<str>,
+    /// The selected case label.
+    pub case: Box<str>,
+}
+
 /// One population of an admitted package as FR-391 names it
 /// ([`AdmittedModel::named_populations`]).
 pub(crate) struct NamedPopulationRecord<'m> {
@@ -354,6 +394,57 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
+    /// The original FCD identity of `case` under the selected enum record.
+    pub(crate) fn variant_member_original_identity(
+        &self,
+        declaration: &DeclarationKey,
+        case: &str,
+    ) -> Option<&str> {
+        matches!(
+            self.records.get(declaration),
+            Some(DomainPackageRecord::Enum(_))
+        )
+        .then_some(())?;
+        self.records.values().find_map(|record| match record {
+            DomainPackageRecord::Variant(variant)
+                if &variant.owner == declaration && variant.case == case =>
+            {
+                Some(variant.key.node.as_str())
+            }
+            _ => None,
+        })
+    }
+
+    pub(crate) fn selected_operation_member(
+        &self,
+        operation: &crate::check::state_clause::ClauseOperation,
+    ) -> Option<SelectedOperationMember> {
+        let operation_key = self.operation_key(operation)?;
+        let DomainPackageRecord::OperationMember(_) = self.records.get(operation_key)? else {
+            return None;
+        };
+        let declaring_key = self.types.get(&operation.declaring)?;
+        let declaring_form = match self.records.get(declaring_key)? {
+            DomainPackageRecord::ObjectType(object) if object.interface_features.is_some() => {
+                ModelForm::SystemsInterface
+            }
+            DomainPackageRecord::ObjectType(_) => ModelForm::ObjectType,
+            DomainPackageRecord::StateMachine(_) => ModelForm::StateMachine,
+            DomainPackageRecord::Process(_) => ModelForm::Process,
+            _ => return None,
+        };
+        Some(SelectedOperationMember {
+            selected_document: self.selection.identity.as_str().into(),
+            declaring_form,
+            original_model_identity: declaring_key.node.as_str().into(),
+            original_operation_identity: operation_key.node.as_str().into(),
+            selected_operation_identity: SelectedOperationIdentity::new(
+                operation.declaring.clone(),
+                operation.declaration.name(),
+            ),
+        })
+    }
+
     pub(crate) fn model_index(&self) -> &crate::model::index::ModelIndex {
         &self.index
     }
@@ -1903,10 +1994,8 @@ impl<'a> Lowering<'a> {
         Ok((owner, model))
     }
 
-    /// The model record value type or event type whose model node key is
-    /// `handle`, the declaration key a model record carries in the type
-    /// environment (FR-359 item 9); `None` when `handle` is a source
-    /// composite.
+    /// The selected model record, tuple value type or event type whose model
+    /// node key is `handle`; `None` when `handle` is a source composite.
     pub(super) fn model_record_declaration(
         &mut self,
         handle: NodeKey,
@@ -1919,7 +2008,9 @@ impl<'a> Lowering<'a> {
                 };
                 if !matches!(
                     record,
-                    DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                    DomainPackageRecord::RecordValueType(_)
+                        | DomainPackageRecord::TupleValueType(_)
+                        | DomainPackageRecord::EventType(_)
                 ) {
                     continue;
                 }
@@ -2014,8 +2105,54 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let declaration = self.model_node(variant.declaration(), location)?;
-        for member in variant.members() {
-            self.enum_member_node(location, declaration.clone(), member)?;
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.selection.identity == variant.declaration().package)
+            .ok_or_else(|| {
+                fault(
+                    location,
+                    KeyFault::UnadmittedPackage(variant.declaration().clone()),
+                )
+            })?;
+        let selected_document: Box<str> = model.selection.identity.as_str().into();
+        let enum_original_identity: Box<str> = variant.declaration().node.as_str().into();
+        let member_original_identities: Vec<Box<str>> = variant
+            .members()
+            .iter()
+            .map(|member| {
+                model
+                    .variant_member_original_identity(variant.declaration(), member.case())
+                    .map(Into::into)
+            })
+            .collect::<Option<_>>()
+            .ok_or_else(|| {
+                fault(
+                    location,
+                    KeyFault::UnadmittedPackage(variant.declaration().clone()),
+                )
+            })?;
+        self.graph.select_model_enum_declaration(
+            declaration.clone(),
+            SelectedModelEnumDeclaration {
+                selected_document: selected_document.clone(),
+                original_identity: enum_original_identity.clone(),
+            },
+        );
+        for (member, member_original_identity) in
+            variant.members().iter().zip(member_original_identities)
+        {
+            let member_key = self.enum_member_node(location, declaration.clone(), member)?;
+            self.graph.select_model_enum_member(
+                member_key,
+                SelectedModelEnumMember {
+                    declaration_key: declaration.clone(),
+                    selected_document: selected_document.clone(),
+                    enum_original_identity: enum_original_identity.clone(),
+                    member_original_identity,
+                    case: member.case().into(),
+                },
+            );
         }
         Ok(declaration)
     }

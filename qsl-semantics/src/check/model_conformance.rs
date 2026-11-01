@@ -321,7 +321,7 @@ mod tests {
             limits,
         )
         .expect("the real structural producer admits both member pairs");
-        let (selected, meter, _, _) = group.into_parts();
+        let (selected, meter, _, _, _) = group.into_parts();
         let models = selected
             .iter()
             .map(|selection| AdmittedModel::from_view(&selection.view))

@@ -778,7 +778,27 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
     use quire_contract_model::{AnchorName, ExecutionPoint};
 
     let clauses = unit_13("");
-    assert_eq!(compile(&clauses).transitions().len(), 1, "control");
+    let control = compile(&clauses);
+    assert_eq!(control.transitions().len(), 1, "control");
+    control.verified();
+    let control_rows = control.emission.selected_operation_member_rows();
+    assert!(
+        !control_rows.is_empty(),
+        "the control package has operation rows"
+    );
+    let control_read = control.read();
+    let Read::Verified { admitted, .. } = control_read else {
+        panic!("the control package is admitted: {control_read:?}");
+    };
+    let selected = control
+        .emission
+        .selected_operation_members(&admitted, 32)
+        .expect("the rows join the admitted control package");
+    for row in control_rows {
+        assert_eq!(selected.read(&admitted, &row.anchor), Ok(row));
+    }
+    // Point-specific emissions exercise the no-transition behavior; the
+    // valid control emission above exercises the typed row join.
     for (clause, point) in [
         (
             "P1",
@@ -825,6 +845,33 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{clause}: the package checks: {refusals:?}"));
         let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+        let rows = emission.selected_operation_member_rows();
+        let [first, second] = rows else {
+            panic!("both distinct model-owned operation anchors have rows")
+        };
+        assert_ne!(
+            first.anchor, second.anchor,
+            "each clause has a full distinct anchor"
+        );
+        assert_eq!(
+            first.selected_operation_identity, second.selected_operation_identity,
+            "both anchors share the same structured selected operation identity"
+        );
+        for row in rows {
+            assert_eq!(row.selected_document.as_ref(), base::PACKAGE);
+            assert_eq!(
+                row.declaring_form,
+                quire_contract_model::ModelForm::ObjectType
+            );
+            assert_eq!(
+                row.original_model_identity.as_ref(),
+                base::id("Switch").as_str()
+            );
+            assert_eq!(
+                row.original_operation_identity.as_ref(),
+                base::id("Switch/set").as_str()
+            );
+        }
         assert_eq!(
             super::owners::node_where(&wire(&emission), "state", "transition").len(),
             0,

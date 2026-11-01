@@ -105,6 +105,13 @@ impl std::fmt::Debug for TimeUnits {
 }
 
 impl TimeUnits {
+    /// The source-owned declared units retained by this checked unit.
+    pub(crate) fn source_units(&self) -> impl Iterator<Item = &TimeNominalNode> {
+        self.nominal_nodes.values().filter(|node| {
+            node.form == "unit" && matches!(&node.origin, TimeNominalOrigin::Source { .. })
+        })
+    }
+
     /// The time units of `graph`, whose dimension and unit node keys are
     /// those of `spans` (the assembler's `nominal_spans`, each node's own
     /// declaration span). The one place a

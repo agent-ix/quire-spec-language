@@ -685,6 +685,8 @@ pub struct CheckedGraph {
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
         Vec<quire_contract_model::SelectedExactFieldRow>,
     ),
+    /// Selected tuple declaration rows retained from model intake.
+    selected_tuple_declaration_rows: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
     /// FR-390: each checked population's exact declaration and effective
     /// member types, indexed by its canonical checked node.
     protocol_population_types: BTreeMap<
@@ -824,6 +826,7 @@ impl fmt::Debug for CheckedGraph {
                     embedding,
                     model_selections,
                     selected_exact_identity_rows,
+                    selected_tuple_declaration_rows,
                     protocol_population_types,
                     model_roots,
                     header_layers,
@@ -895,6 +898,10 @@ impl fmt::Debug for CheckedGraph {
                     .field(
                         "selected_exact_identity_rows",
                         &selected_exact_identity_rows,
+                    )
+                    .field(
+                        "selected_tuple_declaration_rows",
+                        &selected_tuple_declaration_rows,
                     )
                     .field(
                         "protocol_population_types",
@@ -6057,6 +6064,7 @@ impl PackageDeclarations {
             embedding,
             model_selections,
             selected_exact_identity_rows: self.selected_exact_identity_rows,
+            selected_tuple_declaration_rows: self.selected_tuple_declaration_rows,
             protocol_population_types,
             model_roots,
             header_layers,
@@ -6640,6 +6648,19 @@ impl CheckedGraph {
     /// The QSL model-intake record-field rows carried by this checked graph.
     pub fn selected_exact_field_rows(&self) -> &[quire_contract_model::SelectedExactFieldRow] {
         &self.selected_exact_identity_rows.1
+    }
+
+    /// The selected tuple identities minted from the admitted domain packages.
+    pub fn selected_tuple_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedTupleDeclarationRow] {
+        &self.selected_tuple_declaration_rows
+    }
+
+    /// Source-owned units whose declaration owner and Exact identity were
+    /// retained during checking.
+    pub fn source_unit_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
+        self.time_units.source_units()
     }
 
     /// The checked declaration and effective member types for a population

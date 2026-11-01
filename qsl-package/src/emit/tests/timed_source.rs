@@ -63,12 +63,35 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
     };
+    let raw_source = graph.source().clone();
     let model_node = checked_source.model_node.clone();
     let unit_node = checked_source.unit_node.clone();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
+    let [unit_row] = emission.selected_source_unit_rows() else {
+        panic!("one emitted source-owned unit identity row");
+    };
+    assert_eq!(
+        unit_row
+            .qualified_declaration
+            .iter()
+            .map(|segment| segment.as_ref())
+            .collect::<Vec<_>>(),
+        ["ms"]
+    );
+    assert_eq!(unit_row.source_authority.as_ref(), raw_source.authority());
+    assert_eq!(unit_row.source_identity.as_ref(), raw_source.identity());
+    assert_eq!(
+        unit_row.unit_id,
+        quire_exact::UnitId::declared(unit_node.clone())
+    );
 
     let wire = wire(&emission);
+    let unit_structural_node = serde_json::to_value(&unit_row.structural_node)
+        .expect("the selected unit row has a wire structural id");
+    assert!(nodes(&wire)
+        .iter()
+        .any(|node| node["node_id"] == unit_structural_node));
     assert!(
         nodes(&wire)
             .iter()

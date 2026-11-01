@@ -308,6 +308,20 @@ pub struct Emission {
     pub(crate) capability_report: Vec<CheckedCapability>,
     /// The exact source correspondence emitted with these package bytes.
     pub(crate) source_map: PackageSourceMap,
+    /// QSL's selected model-operation witnesses, keyed by the admitted anchor
+    /// identities written in these bytes.
+    pub(crate) selected_operation_member_rows:
+        Vec<quire_contract_model::SelectedOperationMemberRow>,
+    /// QSL-stage tuple identities keyed by admitted model tuple nodes.
+    pub(crate) selected_tuple_declaration_rows:
+        Vec<quire_contract_model::SelectedTupleDeclarationRow>,
+    /// QSL-stage source-unit identities keyed by admitted source unit nodes.
+    pub(crate) selected_source_unit_rows: Vec<quire_contract_model::SelectedSourceUnitRow>,
+    /// QSL-stage identities for selected model-owned enum declarations/cases.
+    pub(crate) selected_model_enum_declaration_rows:
+        Vec<quire_contract_model::SelectedModelEnumDeclarationRow>,
+    pub(crate) selected_model_enum_member_rows:
+        Vec<quire_contract_model::SelectedModelEnumMemberRow>,
 }
 
 impl Emission {
@@ -326,6 +340,73 @@ impl Emission {
     /// reads the bytes itself adds the domain package documents.
     pub fn evidence(&self) -> &CheckedPackageEvidence {
         &self.evidence
+    }
+
+    /// QSL-stage rows for model-owned operation anchors in this package.
+    pub fn selected_operation_member_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedOperationMemberRow] {
+        &self.selected_operation_member_rows
+    }
+
+    /// Selected model tuple identity rows carried by this emission.
+    pub fn selected_tuple_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedTupleDeclarationRow] {
+        &self.selected_tuple_declaration_rows
+    }
+
+    /// Source-owned declared-unit identity rows carried by this emission.
+    pub fn selected_source_unit_rows(&self) -> &[quire_contract_model::SelectedSourceUnitRow] {
+        &self.selected_source_unit_rows
+    }
+
+    /// Selected model enum declaration rows carried by this emission.
+    pub fn selected_model_enum_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedModelEnumDeclarationRow] {
+        &self.selected_model_enum_declaration_rows
+    }
+
+    /// Selected model enum member rows carried by this emission.
+    pub fn selected_model_enum_member_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedModelEnumMemberRow] {
+        &self.selected_model_enum_member_rows
+    }
+
+    /// Validates the selected model enum rows against this admitted package.
+    pub fn selected_model_enums<'a>(
+        &'a self,
+        package: &'a quire_contract_model::CheckedPackageV2,
+        work_limit: u64,
+    ) -> Result<
+        quire_contract_model::SelectedModelEnums<'a>,
+        quire_contract_model::SelectedModelEnumError,
+    > {
+        quire_contract_model::SelectedModelEnums::from_stage_rows(
+            package,
+            self.selected_model_enum_declaration_rows.clone(),
+            self.selected_model_enum_member_rows.clone(),
+            work_limit,
+        )
+    }
+
+    /// Validates the operation-member rows against this emission's admitted IR
+    /// package, returning a typed refusal for any absent or mismatched row.
+    pub fn selected_operation_members<'a>(
+        &'a self,
+        package: &'a quire_contract_model::CheckedPackageV2,
+        work_limit: u64,
+    ) -> Result<
+        quire_contract_model::SelectedOperationMembers<'a>,
+        quire_contract_model::SelectedOperationMemberError,
+    > {
+        quire_contract_model::SelectedOperationMembers::from_stage_rows(
+            package,
+            self.selected_operation_member_rows.clone(),
+            work_limit,
+        )
     }
 
     /// The FR-322 feature-level capability report, in the emitted order.
@@ -2356,6 +2437,11 @@ pub fn emit_timed_models(
         evidence: own_evidence(&lock),
         capability_report,
         source_map: inspection_source_map,
+        selected_operation_member_rows: Vec::new(),
+        selected_tuple_declaration_rows: Vec::new(),
+        selected_source_unit_rows: Vec::new(),
+        selected_model_enum_declaration_rows: Vec::new(),
+        selected_model_enum_member_rows: Vec::new(),
     })
 }
 
@@ -2687,6 +2773,75 @@ fn emit_package_inner(
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
+    let emitted_keys: HashSet<NodeKey> =
+        kept.iter().map(|candidate| candidate.key.clone()).collect();
+    let selected_operation_member_rows: Vec<(
+        NodeKey,
+        quire_contract_model::SelectedOperationMemberRow,
+    )> = graph
+        .semantic_graph()
+        .selected_operation_members()
+        .filter(|(anchor, _)| emitted_keys.contains(*anchor))
+        .map(|(anchor, member)| {
+            (
+                anchor.clone(),
+                quire_contract_model::SelectedOperationMemberRow {
+                    anchor: node_id(ids, anchor),
+                    selected_document: member.selected_document.clone(),
+                    declaring_form: member.declaring_form,
+                    original_model_identity: member.original_model_identity.clone(),
+                    original_operation_identity: member.original_operation_identity.clone(),
+                    selected_operation_identity: member.selected_operation_identity.clone(),
+                },
+            )
+        })
+        .collect();
+    let selected_tuple_declaration_rows: Vec<quire_contract_model::SelectedTupleDeclarationRow> =
+        graph
+            .selected_tuple_declaration_rows()
+            .iter()
+            .filter(|row| emitted_keys.contains(&row.node_key))
+            .cloned()
+            .collect();
+    let selected_model_enum_declaration_rows: Vec<
+        quire_contract_model::SelectedModelEnumDeclarationRow,
+    > = graph
+        .semantic_graph()
+        .selected_model_enum_declarations()
+        .filter(|(key, _)| emitted_keys.contains(*key))
+        .map(|(key, selected)| {
+            quire_contract_model::SelectedModelEnumDeclarationRow::new(
+                node_id(ids, key),
+                selected.selected_document.clone(),
+                selected.original_identity.clone(),
+                key.clone(),
+            )
+        })
+        .collect();
+    let selected_model_enum_member_rows: Vec<(
+        NodeKey,
+        NodeKey,
+        quire_contract_model::SelectedModelEnumMemberRow,
+    )> = graph
+        .semantic_graph()
+        .selected_model_enum_members()
+        .filter(|(key, _)| emitted_keys.contains(*key))
+        .map(|(key, selected)| {
+            (
+                key.clone(),
+                selected.declaration_key.clone(),
+                quire_contract_model::SelectedModelEnumMemberRow::new(
+                    node_id(ids, key),
+                    node_id(ids, &selected.declaration_key),
+                    selected.selected_document.clone(),
+                    selected.enum_original_identity.clone(),
+                    selected.member_original_identity.clone(),
+                    selected.case.clone(),
+                    key.clone(),
+                ),
+            )
+        })
+        .collect();
     let (mut source_map, mut sources) = source_map(&order, &regions)?;
     sources.insert(source_artifact(graph.source()));
     let wire_nodes = order
@@ -3152,7 +3307,70 @@ fn emit_package_inner(
         refinement_internals: None,
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
-    write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
+    let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
+    let selected_operation_member_rows = selected_operation_member_rows
+        .into_iter()
+        .map(|(key, mut row)| {
+            row.anchor = emitted_node_ids
+                .get(&key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            Ok(row)
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let selected_tuple_declaration_rows = selected_tuple_declaration_rows
+        .into_iter()
+        .map(|mut row| {
+            row.structural_node = emitted_node_ids
+                .get(&row.node_key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            Ok(row)
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let selected_model_enum_declaration_rows = selected_model_enum_declaration_rows
+        .into_iter()
+        .map(|mut row| {
+            row.structural_node = emitted_node_ids
+                .get(&row.node_key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            Ok(row)
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let selected_model_enum_member_rows = selected_model_enum_member_rows
+        .into_iter()
+        .map(|(key, declaration_key, mut row)| {
+            row.structural_node = emitted_node_ids
+                .get(&key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            row.declaration_node = emitted_node_ids
+                .get(&declaration_key)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            Ok(row)
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    let selected_source_unit_rows = graph
+        .source_unit_nodes()
+        .filter_map(|unit| {
+            let structural_node = emitted_node_ids.get(&unit.key)?.clone();
+            let TimeNominalOrigin::Source { owner, .. } = &unit.origin else {
+                return None;
+            };
+            Some(quire_contract_model::SelectedSourceUnitRow::new(
+                structural_node,
+                owner.authority.as_str(),
+                owner.identity.as_str(),
+                unit.declaration()?
+                    .iter()
+                    .map(|segment| segment.as_str().into())
+                    .collect(),
+                quire_exact::UnitId::declared(unit.key.clone()),
+            ))
+        })
+        .collect();
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -3187,6 +3405,11 @@ fn emit_package_inner(
         evidence,
         capability_report: capability_report.to_vec(),
         source_map: inspection_source_map,
+        selected_operation_member_rows,
+        selected_tuple_declaration_rows,
+        selected_source_unit_rows,
+        selected_model_enum_declaration_rows,
+        selected_model_enum_member_rows,
     })
 }
 
@@ -3248,6 +3471,8 @@ fn holds_segment(
 /// FR-322 "Operand index segments": rewrite every structural id the package
 /// holds into its wire form, each operand node written as the index segment
 /// `{"node": i}` of that node in `nodes`, whose order is now final.
+/// Returns each emitted node's final wire id, keyed by its original structural
+/// key, for producer rows that must name those same admitted nodes.
 ///
 /// Linear in the package: each node's key is rebuilt once, sharing the key
 /// of every operand allocation ([`StructuralKeys`]), and each id a node
@@ -3260,7 +3485,7 @@ fn write_index_segments(
     nodes: &mut [CheckedSemanticNodeV2],
     source_map: &mut [CheckedSourceMapEntry],
     step_rows: &mut [quire_contract_model::CheckedRefinementStepRowRegion],
-) -> Result<(), EmitRefusal> {
+) -> Result<HashMap<NodeKey, CheckedNodeId>, EmitRefusal> {
     use quire_contract_model::CheckedNodePathSegment as Segment;
     let is_operand = |segment: &Segment| matches!(segment, Segment::Node(_));
     let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
@@ -3303,7 +3528,7 @@ fn write_index_segments(
     };
     // The memo holds every operand allocation it keyed, so rewriting ids in
     // place never reuses an address it has seen.
-    let mut graph_wire: HashMap<&NodeKey, CheckedNodeId> = HashMap::with_capacity(nodes.len());
+    let mut graph_wire: HashMap<NodeKey, CheckedNodeId> = HashMap::with_capacity(nodes.len());
     for (node, key) in nodes.iter_mut().zip(&graph_keys) {
         let holder = node.node_id.clone();
         let mut seen: HashSet<NodeKey> = HashSet::new();
@@ -3324,7 +3549,7 @@ fn write_index_segments(
         for (old, new) in &changes {
             node.replace_node_id(old, new);
         }
-        graph_wire.insert(key, node.node_id.clone());
+        graph_wire.insert(key.clone(), node.node_id.clone());
     }
     let mut sidecar = |id: &mut CheckedNodeId| -> Result<(), EmitRefusal> {
         if holds_segment(id, is_operand) {
@@ -3342,7 +3567,7 @@ fn write_index_segments(
     for row in step_rows.iter_mut() {
         sidecar(&mut row.node_id)?;
     }
-    Ok(())
+    Ok(graph_wire)
 }
 
 /// The inverse of [`write_index_segments`] over an admitted package's nodes:

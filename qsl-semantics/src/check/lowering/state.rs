@@ -28,7 +28,7 @@ use crate::check::node_key::{
     LeafTerm, MemberTerm, NodeRef, NodeTag, Operation, Operator,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, ExecutionPointRefusal, KeyFault};
-use crate::check::state_clause::PopulationDomain;
+use crate::check::state_clause::{ClauseOperation, PopulationDomain};
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::operation::OperationDeclaration;
@@ -482,6 +482,10 @@ impl Lowering<'_> {
                 BindingValue::ExecutionPoint(point.clone()),
             ));
         }
+        let selected_operation = ClauseOperation {
+            declaring: anchor.declaring.clone(),
+            declaration: anchor.operation.clone(),
+        };
         let anchor = self.insert(
             location,
             NodeTag::State,
@@ -490,6 +494,13 @@ impl Lowering<'_> {
             None,
             BodyTerm::aggregate(members),
         )?;
+        if let Some(member) = self
+            .models
+            .iter()
+            .find_map(|model| model.selected_operation_member(&selected_operation))
+        {
+            self.graph.select_operation_member(anchor.clone(), member);
+        }
         Ok(OperationBinding {
             anchor,
             frame,

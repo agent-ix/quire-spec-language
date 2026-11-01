@@ -98,7 +98,8 @@ pub(crate) use model::{
 };
 pub use model::{
     collection_kind, model_root_key, AdmittedModel, CollectionShape, ForeignView, ModelClause,
-    PlaceRow, PlaceStep,
+    PlaceRow, PlaceStep, SelectedModelEnumDeclaration, SelectedModelEnumMember,
+    SelectedOperationMember,
 };
 pub(crate) use model::{model_node_content, population_node_content};
 pub(crate) use protocol::{
@@ -325,6 +326,12 @@ const FUNCTION_PARAMETERS: &str = "parameters";
 #[derive(Clone, Default)]
 pub struct SemanticGraph {
     nodes: HashMap<NodeKey, SemanticNode>,
+    /// Selected model operation identities keyed by their lowered anchor.
+    selected_operation_members: BTreeMap<NodeKey, model::SelectedOperationMember>,
+    /// Selected model enum declarations keyed by their lowered declaration.
+    selected_model_enum_declarations: BTreeMap<NodeKey, SelectedModelEnumDeclaration>,
+    /// Selected model enum members keyed by their lowered member node.
+    selected_model_enum_members: BTreeMap<NodeKey, SelectedModelEnumMember>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -352,6 +359,52 @@ impl fmt::Debug for SemanticGraph {
 }
 
 impl SemanticGraph {
+    /// The selected model operation rows associated with lowered anchors.
+    pub fn selected_operation_members(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &SelectedOperationMember)> {
+        self.selected_operation_members.iter()
+    }
+
+    pub(crate) fn select_operation_member(
+        &mut self,
+        anchor: NodeKey,
+        member: SelectedOperationMember,
+    ) {
+        self.selected_operation_members.insert(anchor, member);
+    }
+
+    /// The selected model enum declarations associated with lowered nodes.
+    pub fn selected_model_enum_declarations(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &SelectedModelEnumDeclaration)> {
+        self.selected_model_enum_declarations.iter()
+    }
+
+    /// The selected model enum members associated with lowered nodes.
+    pub fn selected_model_enum_members(
+        &self,
+    ) -> impl Iterator<Item = (&NodeKey, &SelectedModelEnumMember)> {
+        self.selected_model_enum_members.iter()
+    }
+
+    pub(crate) fn select_model_enum_declaration(
+        &mut self,
+        declaration: NodeKey,
+        selected: SelectedModelEnumDeclaration,
+    ) {
+        self.selected_model_enum_declarations
+            .insert(declaration, selected);
+    }
+
+    pub(crate) fn select_model_enum_member(
+        &mut self,
+        member: NodeKey,
+        selected: SelectedModelEnumMember,
+    ) {
+        self.selected_model_enum_members.insert(member, selected);
+    }
+
     /// The node keyed `key`.
     pub fn node(&self, key: NodeKey) -> Option<&SemanticNode> {
         self.nodes.get(&key)
@@ -2467,8 +2520,8 @@ impl<'a> Lowering<'a> {
         if let Some(key) = self.composites.get(&declaration) {
             return Ok(OpenComposite::Built(key.clone()));
         }
-        // FR-359 item 3: a model record value type or event type is a
-        // model-owned node, never a `composite_type`.
+        // Selected model record, tuple value type and event declarations use
+        // their model-owned node identity, never a source `composite_type`.
         if let Some(model_record) = self.model_record_declaration(declaration.clone(), location)? {
             let key = self.model_node(&model_record, location)?;
             // The record has no checked occurrence of its own: root it at the
@@ -2719,7 +2772,7 @@ impl<'a> Lowering<'a> {
         location: &Location,
         declaration: NodeKey,
         member: &EnumValue,
-    ) -> Result<(), CheckRefusal> {
+    ) -> Result<NodeKey, CheckRefusal> {
         let key = crate::value::enumeration::enum_value_key_in(
             &self.package_name,
             &declaration,
@@ -2728,7 +2781,7 @@ impl<'a> Lowering<'a> {
         .map_err(|_| fault(location, KeyFault::InvalidMemberKey(declaration.clone())))?;
         self.insert_nominal(
             location,
-            key,
+            key.clone(),
             NodeContent {
                 owner_model: None,
                 node_tag: NodeTag::Value,
@@ -2743,7 +2796,7 @@ impl<'a> Lowering<'a> {
             },
             None,
         )?;
-        Ok(())
+        Ok(key)
     }
 
     /// Add the node `content` under its admitted structural `key` and return

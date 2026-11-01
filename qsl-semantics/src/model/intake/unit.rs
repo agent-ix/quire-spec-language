@@ -61,6 +61,7 @@ pub struct SelectedModels {
     meter: Meter,
     exact_declarations: Vec<SelectedExactDeclarationRow>,
     exact_fields: Vec<SelectedExactFieldRow>,
+    tuple_declarations: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
 }
 
 impl Default for SelectedModels {
@@ -70,6 +71,7 @@ impl Default for SelectedModels {
             meter: Meter::new(ModelNormalizationLimits::default()),
             exact_declarations: Vec::new(),
             exact_fields: Vec::new(),
+            tuple_declarations: Vec::new(),
         }
     }
 }
@@ -98,12 +100,14 @@ impl SelectedModels {
         Meter,
         Vec<SelectedExactDeclarationRow>,
         Vec<SelectedExactFieldRow>,
+        Vec<quire_contract_model::SelectedTupleDeclarationRow>,
     ) {
         (
             self.entries,
             self.meter,
             self.exact_declarations,
             self.exact_fields,
+            self.tuple_declarations,
         )
     }
 
@@ -132,6 +136,11 @@ impl SelectedModels {
         &self.exact_fields
     }
 
+    /// The selected tuple declaration identities minted during model intake.
+    pub fn tuple_declaration_rows(&self) -> &[quire_contract_model::SelectedTupleDeclarationRow] {
+        &self.tuple_declarations
+    }
+
     /// Each selected model parsed by `parse` (see
     /// [`SelectedModel::with_parsed_operation_clauses`]); the meter is kept.
     pub fn with_parsed_operation_clauses<E>(
@@ -143,6 +152,7 @@ impl SelectedModels {
             meter,
             exact_declarations,
             exact_fields,
+            tuple_declarations,
         } = self;
         let entries = entries
             .into_iter()
@@ -153,6 +163,7 @@ impl SelectedModels {
             meter,
             exact_declarations,
             exact_fields,
+            tuple_declarations,
         })
     }
 
@@ -167,6 +178,7 @@ impl SelectedModels {
             meter,
             exact_declarations,
             exact_fields,
+            tuple_declarations,
         } = self;
         let entries = entries
             .into_iter()
@@ -177,6 +189,7 @@ impl SelectedModels {
             meter,
             exact_declarations,
             exact_fields,
+            tuple_declarations,
         })
     }
 
@@ -193,6 +206,7 @@ impl SelectedModels {
             meter: Meter::new(ModelNormalizationLimits::UNLIMITED),
             exact_declarations: Vec::new(),
             exact_fields: Vec::new(),
+            tuple_declarations: Vec::new(),
         }
     }
 
@@ -234,6 +248,7 @@ impl SelectedModels {
             meter,
             exact_declarations: Vec::new(),
             exact_fields: Vec::new(),
+            tuple_declarations: Vec::new(),
         })
     }
 }
@@ -431,13 +446,20 @@ pub struct UnitIntakeRefusal {
 /// Produce IR's selected-identity rows from the exact admitted document and
 /// normalization that `SelectedModel` retains. The row payloads are minted
 /// here; consumers only validate and carry these rows with the package.
+struct SelectedExactRows {
+    declarations: Vec<SelectedExactDeclarationRow>,
+    fields: Vec<SelectedExactFieldRow>,
+    tuples: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
+}
+
 fn selected_exact_rows(
     package: &DomainPackage,
     view: &EffectiveView,
-) -> Result<(Vec<SelectedExactDeclarationRow>, Vec<SelectedExactFieldRow>), ()> {
+) -> Result<SelectedExactRows, ()> {
     let selected_document = package.model_selection.identity.as_str();
     let mut declarations = Vec::new();
     let mut fields = Vec::new();
+    let mut tuples = Vec::new();
     let mut record_keys = BTreeMap::new();
 
     for record in &package.records {
@@ -472,6 +494,21 @@ fn selected_exact_rows(
                     SelectedExactDeclarationForm::ObjectType,
                     record.key.node.as_str(),
                     SelectedExactIdentity::Object(effective.clone()),
+                ));
+            }
+            DomainPackageRecord::TupleValueType(record) => {
+                let node_key = crate::model::key::model_node_key(
+                    &record.key.package,
+                    "model",
+                    "tuple_value_type",
+                    &record.key.node,
+                )
+                .map_err(|_| ())?;
+                tuples.push(quire_contract_model::SelectedTupleDeclarationRow::new(
+                    checked_model_node(&record.key.package, "tuple_value_type", &record.key.node),
+                    selected_document,
+                    record.key.node.as_str(),
+                    node_key,
                 ));
             }
             _ => {}
@@ -539,7 +576,11 @@ fn selected_exact_rows(
             ));
         }
     }
-    Ok((declarations, fields))
+    Ok(SelectedExactRows {
+        declarations,
+        fields,
+        tuples,
+    })
 }
 
 /// Structural IR node recipe for one selected model declaration. The path
@@ -602,6 +643,7 @@ pub fn admit_unit_with_cancel(
     let mut entries = Vec::with_capacity(admitted.len());
     let mut exact_declarations = Vec::new();
     let mut exact_fields = Vec::new();
+    let mut tuple_declarations = Vec::new();
     for (selection, package_ref, document) in admitted {
         let package = read_domain_package(package_ref, &document).map_err(|refusals| {
             let cause = Refusals::try_from(refusals)
@@ -617,10 +659,15 @@ pub fn admit_unit_with_cancel(
                 return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
             }
         };
-        let (declarations, fields) = selected_exact_rows(&package, &view)
+        let SelectedExactRows {
+            declarations,
+            fields,
+            tuples,
+        } = selected_exact_rows(&package, &view)
             .map_err(|()| refuse(selection, UnitIntakeCause::Invariant))?;
         exact_declarations.extend(declarations);
         exact_fields.extend(fields);
+        tuple_declarations.extend(tuples);
         entries.push(SelectedModel {
             alias: selection.alias.clone(),
             span: selection.span,
@@ -634,6 +681,7 @@ pub fn admit_unit_with_cancel(
         meter,
         exact_declarations,
         exact_fields,
+        tuple_declarations,
     })
 }
 
@@ -642,7 +690,7 @@ mod selected_exact_identity_tests {
     use super::*;
     use crate::model::domain_package::{
         FieldMemberRecord, Multiplicity, ObjectTypeRecord, OriginalDeclaration,
-        RecordValueTypeRecord, ValueTypeRef,
+        RecordValueTypeRecord, TuplePositionRecord, TupleValueTypeRecord, ValueTypeRef,
     };
     use crate::model::normalize::{normalize_on, NormalizeOutcome};
     use quire_exact::Presence;
@@ -752,7 +800,11 @@ mod selected_exact_identity_tests {
             other => panic!("the fixture model normalizes: {other:?}"),
         };
 
-        let (declarations, fields) = selected_exact_rows(&package, &view)
+        let SelectedExactRows {
+            declarations,
+            fields,
+            tuples,
+        } = selected_exact_rows(&package, &view)
             .expect("the admitted model produces typed identity rows");
         let record_node = checked_model_node(&record.package, "record_value_type", &record.node);
         let record_key = crate::model::key::model_node_key(
@@ -796,6 +848,7 @@ mod selected_exact_identity_tests {
                     == MemberId::new(MemberOwner::Node(record_key.clone()), "number")
                         .expect("a declared field name produces a member identity")
         }));
+        assert!(tuples.is_empty());
         assert!(fields.iter().any(|row| {
             row.record_node == record_node
                 && row.record_original_identity.as_ref() == record.node
@@ -804,5 +857,56 @@ mod selected_exact_identity_tests {
                     == MemberId::new(MemberOwner::Node(record_key.clone()), "id")
                         .expect("an inherited field name produces a member identity")
         }));
+    }
+
+    /// QSL-1398 ticket-level acceptance evidence: intake retains a selected
+    /// tuple's original identity and the Exact key for its checked declaration.
+    #[test]
+    fn intake_mints_a_tuple_row_from_the_selected_model_record() {
+        let tuple = key("ix://acme/orders/Pair");
+        let package = DomainPackage::new(
+            crate::model::domain_package::DomainPackageRef {
+                identity: "acme/orders".into(),
+            },
+            vec![
+                DomainPackageRecord::TupleValueType(TupleValueTypeRecord { key: tuple.clone() }),
+                DomainPackageRecord::TuplePosition(TuplePositionRecord {
+                    key: key("ix://acme/orders/Pair/p0"),
+                    owner: tuple.clone(),
+                    ordinal: 0,
+                    value_type: ValueTypeRef::Native(
+                        crate::model::domain_package::NativeValueType::Boolean,
+                    ),
+                }),
+            ],
+        );
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        let NormalizeOutcome::Completed(view) = normalize_on(&package, &mut meter) else {
+            panic!("the tuple model normalizes")
+        };
+
+        let SelectedExactRows {
+            declarations,
+            fields,
+            tuples,
+        } = selected_exact_rows(&package, &view).expect("tuple identity is valid");
+        let row = tuples.first().expect("one selected tuple row");
+        let exact = crate::model::key::model_node_key(
+            &tuple.package,
+            "model",
+            "tuple_value_type",
+            &tuple.node,
+        )
+        .expect("the tuple key is valid");
+        assert_eq!(tuples.len(), 1);
+        assert_eq!(
+            row.structural_node,
+            checked_model_node(&tuple.package, "tuple_value_type", &tuple.node)
+        );
+        assert_eq!(row.selected_document.as_ref(), "acme/orders");
+        assert_eq!(row.original_identity.as_ref(), tuple.node);
+        assert_eq!(row.node_key, exact);
+        assert!(declarations.is_empty());
+        assert!(fields.is_empty());
     }
 }
