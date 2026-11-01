@@ -6576,45 +6576,10 @@ impl CheckedGraph {
         quire_contract_model::SelectedExactIdentities,
         quire_contract_model::ExactTypeProjectionError,
     > {
-        quire_contract_model::SelectedExactIdentities::from_stage_rows(
+        crate::model::intake::selected_exact_identities_from_rows(
             package,
-            self.selected_exact_identity_rows
-                .0
-                .iter()
-                .filter(|row| {
-                    package.graph().nodes.iter().any(|node| {
-                        node.node_id == row.structural_node && match row.form {
-                            quire_contract_model::SelectedExactDeclarationForm::RecordValueType => {
-                                node.node_tag.as_ref() == "model"
-                                    && node.semantic_form.as_ref() == "record_value_type"
-                            }
-                            quire_contract_model::SelectedExactDeclarationForm::ObjectType => {
-                                node.node_tag.as_ref() == "model"
-                                    && node.semantic_form.as_ref() == "object_type"
-                            }
-                            quire_contract_model::SelectedExactDeclarationForm::Union => {
-                                node.node_tag.as_ref() == "composite_type"
-                                    && node.semantic_form.as_ref() == "union"
-                            }
-                            quire_contract_model::SelectedExactDeclarationForm::DeclaredUnit => {
-                                node.node_tag.as_ref() == "scalar_type"
-                                    && node.semantic_form.as_ref() == "unit"
-                            }
-                        }
-                    })
-                })
-                .cloned(),
-            self.selected_exact_identity_rows
-                .1
-                .iter()
-                .filter(|row| {
-                    package.graph().nodes.iter().any(|node| {
-                        node.node_id == row.record_node
-                            && node.node_tag.as_ref() == "model"
-                            && node.semantic_form.as_ref() == "record_value_type"
-                    })
-                })
-                .cloned(),
+            &self.selected_exact_identity_rows.0,
+            &self.selected_exact_identity_rows.1,
         )
     }
 

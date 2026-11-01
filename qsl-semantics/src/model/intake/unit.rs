@@ -113,44 +113,10 @@ impl SelectedModels {
         &self,
         package: &quire_contract_model::CheckedPackageV2,
     ) -> Result<SelectedExactIdentities, quire_contract_model::ExactTypeProjectionError> {
-        SelectedExactIdentities::from_stage_rows(
+        super::selected_exact_identities_from_rows(
             package,
-            self.exact_declarations
-                .iter()
-                .filter(|row| {
-                    package.graph().nodes.iter().any(|node| {
-                        node.node_id == row.structural_node
-                            && match row.form {
-                                SelectedExactDeclarationForm::RecordValueType => {
-                                    node.node_tag.as_ref() == "model"
-                                        && node.semantic_form.as_ref() == "record_value_type"
-                                }
-                                SelectedExactDeclarationForm::ObjectType => {
-                                    node.node_tag.as_ref() == "model"
-                                        && node.semantic_form.as_ref() == "object_type"
-                                }
-                                SelectedExactDeclarationForm::Union => {
-                                    node.node_tag.as_ref() == "composite_type"
-                                        && node.semantic_form.as_ref() == "union"
-                                }
-                                SelectedExactDeclarationForm::DeclaredUnit => {
-                                    node.node_tag.as_ref() == "scalar_type"
-                                        && node.semantic_form.as_ref() == "unit"
-                                }
-                            }
-                    })
-                })
-                .cloned(),
-            self.exact_fields
-                .iter()
-                .filter(|row| {
-                    package.graph().nodes.iter().any(|node| {
-                        node.node_id == row.record_node
-                            && node.node_tag.as_ref() == "model"
-                            && node.semantic_form.as_ref() == "record_value_type"
-                    })
-                })
-                .cloned(),
+            &self.exact_declarations,
+            &self.exact_fields,
         )
     }
 
