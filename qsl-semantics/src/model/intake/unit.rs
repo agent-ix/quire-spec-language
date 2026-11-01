@@ -11,15 +11,18 @@ use qsl_foundation::selection::ModelSelection;
 use std::collections::BTreeMap;
 
 use qsl_foundation::{Code, Span};
-use quire_exact::Cancel;
+use quire_contract_model::{
+    CheckedNodeId, CheckedNodePathSegment, SelectedExactDeclarationForm,
+    SelectedExactDeclarationRow, SelectedExactFieldRow, SelectedExactIdentities,
+    SelectedExactIdentity,
+};
+use quire_exact::{Cancel, MemberId, MemberOwner};
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::{admit_located, read_domain_package, PackageInput};
 use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
-#[cfg(any(test, feature = "test-support"))]
-use crate::model::domain_package::DomainPackage;
 use crate::model::domain_package::{
-    DomainPackageRecord, ParsedOperationClause, ParsedTypeInvariant,
+    DomainPackage, DomainPackageRecord, ParsedOperationClause, ParsedTypeInvariant,
 };
 use crate::model::normalize::{normalize_on, EffectiveView, NormalizeOutcome, Refusals};
 use crate::model::refusal::{MemberPath, MemberRoot};
@@ -56,6 +59,8 @@ pub struct SelectedModel {
 pub struct SelectedModels {
     entries: Vec<SelectedModel>,
     meter: Meter,
+    exact_declarations: Vec<SelectedExactDeclarationRow>,
+    exact_fields: Vec<SelectedExactFieldRow>,
 }
 
 impl Default for SelectedModels {
@@ -63,6 +68,8 @@ impl Default for SelectedModels {
         Self {
             entries: Vec::new(),
             meter: Meter::new(ModelNormalizationLimits::default()),
+            exact_declarations: Vec::new(),
+            exact_fields: Vec::new(),
         }
     }
 }
@@ -84,8 +91,45 @@ impl From<Vec<SelectedModel>> for SelectedModels {
 }
 
 impl SelectedModels {
-    pub(crate) fn into_parts(self) -> (Vec<SelectedModel>, Meter) {
-        (self.entries, self.meter)
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Vec<SelectedModel>,
+        Meter,
+        Vec<SelectedExactDeclarationRow>,
+        Vec<SelectedExactFieldRow>,
+    ) {
+        (
+            self.entries,
+            self.meter,
+            self.exact_declarations,
+            self.exact_fields,
+        )
+    }
+
+    /// The selected model stage's rows, validated against the package IR
+    /// admission that retained the same selected declarations.
+    pub fn exact_identities(
+        &self,
+        package: &quire_contract_model::CheckedPackageV2,
+    ) -> Result<SelectedExactIdentities, quire_contract_model::ExactTypeProjectionError> {
+        super::selected_exact_identities_from_rows(
+            package,
+            &self.exact_declarations,
+            &self.exact_fields,
+        )
+    }
+
+    /// The declaration identity rows minted while the selected domain
+    /// documents were admitted and normalized.
+    pub fn exact_declaration_rows(&self) -> &[SelectedExactDeclarationRow] {
+        &self.exact_declarations
+    }
+
+    /// The field identity rows minted while the selected domain documents
+    /// were admitted and normalized.
+    pub fn exact_field_rows(&self) -> &[SelectedExactFieldRow] {
+        &self.exact_fields
     }
 
     /// Each selected model parsed by `parse` (see
@@ -94,12 +138,22 @@ impl SelectedModels {
         self,
         mut parse: impl FnMut(&str) -> Result<Expression, E>,
     ) -> Result<Self, OperationClauseFailure<E>> {
-        let Self { entries, meter } = self;
+        let Self {
+            entries,
+            meter,
+            exact_declarations,
+            exact_fields,
+        } = self;
         let entries = entries
             .into_iter()
             .map(|entry| entry.with_parsed_operation_clauses(&mut parse))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { entries, meter })
+        Ok(Self {
+            entries,
+            meter,
+            exact_declarations,
+            exact_fields,
+        })
     }
 
     /// Each selected model parsed by `parse` (see
@@ -108,12 +162,22 @@ impl SelectedModels {
         self,
         mut parse: impl FnMut(&str) -> Result<Expression, E>,
     ) -> Result<Self, TypeInvariantFailure<E>> {
-        let Self { entries, meter } = self;
+        let Self {
+            entries,
+            meter,
+            exact_declarations,
+            exact_fields,
+        } = self;
         let entries = entries
             .into_iter()
             .map(|entry| entry.with_parsed_type_invariants(&mut parse))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { entries, meter })
+        Ok(Self {
+            entries,
+            meter,
+            exact_declarations,
+            exact_fields,
+        })
     }
 
     /// The work the operation has consumed so far, for one limit kind.
@@ -127,6 +191,8 @@ impl SelectedModels {
         Self {
             entries,
             meter: Meter::new(ModelNormalizationLimits::UNLIMITED),
+            exact_declarations: Vec::new(),
+            exact_fields: Vec::new(),
         }
     }
 
@@ -166,6 +232,8 @@ impl SelectedModels {
                 type_invariants: Vec::new(),
             }],
             meter,
+            exact_declarations: Vec::new(),
+            exact_fields: Vec::new(),
         })
     }
 }
@@ -360,6 +428,135 @@ pub struct UnitIntakeRefusal {
     pub cause: UnitIntakeCause,
 }
 
+/// Produce IR's selected-identity rows from the exact admitted document and
+/// normalization that `SelectedModel` retains. The row payloads are minted
+/// here; consumers only validate and carry these rows with the package.
+fn selected_exact_rows(
+    package: &DomainPackage,
+    view: &EffectiveView,
+) -> Result<(Vec<SelectedExactDeclarationRow>, Vec<SelectedExactFieldRow>), ()> {
+    let selected_document = package.model_selection.identity.as_str();
+    let mut declarations = Vec::new();
+    let mut fields = Vec::new();
+    let mut record_keys = BTreeMap::new();
+
+    for record in &package.records {
+        match record {
+            DomainPackageRecord::RecordValueType(record) => {
+                let exact = crate::model::key::model_node_key(
+                    &record.key.package,
+                    "model",
+                    "record_value_type",
+                    &record.key.node,
+                )
+                .map_err(|_| ())?;
+                let structural =
+                    checked_model_node(&record.key.package, "record_value_type", &record.key.node);
+                record_keys.insert(record.key.clone(), exact.clone());
+                declarations.push(SelectedExactDeclarationRow::new(
+                    structural,
+                    selected_document,
+                    SelectedExactDeclarationForm::RecordValueType,
+                    record.key.node.as_str(),
+                    SelectedExactIdentity::Record(exact),
+                ));
+            }
+            DomainPackageRecord::ObjectType(record) => {
+                let Some(effective) = view.type_identities().get(&record.key) else {
+                    return Err(());
+                };
+                crate::model::key::object_type_node_key(&record.key).map_err(|_| ())?;
+                declarations.push(SelectedExactDeclarationRow::new(
+                    checked_model_node(&record.key.package, "object_type", &record.key.node),
+                    selected_document,
+                    SelectedExactDeclarationForm::ObjectType,
+                    record.key.node.as_str(),
+                    SelectedExactIdentity::Object(effective.clone()),
+                ));
+            }
+            _ => {}
+        }
+    }
+    for unit in &package.units {
+        let exact = crate::model::key::model_node_key(
+            &unit.key.package,
+            "scalar_type",
+            "unit",
+            &unit.key.node,
+        )
+        .map_err(|_| ())?;
+        declarations.push(SelectedExactDeclarationRow::new(
+            CheckedNodeId {
+                package: unit.key.package.as_str().into(),
+                path: vec![
+                    CheckedNodePathSegment::Name("scalar_type".into()),
+                    CheckedNodePathSegment::Name("unit".into()),
+                    CheckedNodePathSegment::Name(unit.key.node.as_str().into()),
+                ],
+                ordinal: 0,
+            },
+            selected_document,
+            SelectedExactDeclarationForm::DeclaredUnit,
+            unit.key.node.as_str(),
+            SelectedExactIdentity::DeclaredUnit(quire_exact::UnitId::declared(exact)),
+        ));
+    }
+
+    for record in &package.records {
+        let DomainPackageRecord::RecordValueType(record) = record else {
+            continue;
+        };
+        let Some(record_key) = record_keys.get(&record.key) else {
+            return Err(());
+        };
+        let Some(effective) = view.type_identities().get(&record.key) else {
+            return Err(());
+        };
+        for entry in view.declarations().iter().filter(|entry| {
+            entry.visible && entry.preimage.owner_effective_type.as_ref() == Some(effective)
+        }) {
+            let Some(DomainPackageRecord::FieldMember(field)) = package
+                .records
+                .iter()
+                .find(|candidate| candidate.key() == &entry.preimage.original)
+            else {
+                continue;
+            };
+            let Some(name) = package
+                .original(&field.key)
+                .and_then(|original| original.member_name.as_deref())
+            else {
+                return Err(());
+            };
+            let member_id =
+                MemberId::new(MemberOwner::Node(record_key.clone()), name).map_err(|_| ())?;
+            fields.push(SelectedExactFieldRow::new(
+                checked_model_node(&record.key.package, "record_value_type", &record.key.node),
+                selected_document,
+                record.key.node.as_str(),
+                field.key.node.as_str(),
+                member_id,
+            ));
+        }
+    }
+    Ok((declarations, fields))
+}
+
+/// Structural IR node recipe for one selected model declaration. The path
+/// is exactly the `model/<form>/<original-node>` declaration key recipe used
+/// by `model_node_key` above.
+fn checked_model_node(package: &str, form: &str, node: &str) -> CheckedNodeId {
+    CheckedNodeId {
+        package: package.into(),
+        path: vec![
+            CheckedNodePathSegment::Name("model".into()),
+            CheckedNodePathSegment::Name(form.into()),
+            CheckedNodePathSegment::Name(node.into()),
+        ],
+        ordinal: 0,
+    }
+}
+
 /// Admit each of a unit's `model` declarations, in source order, against
 /// `packages` (a [`PackageInput`]): FR-154 admission (one version of
 /// each identity), [`crate::model::intake::read_records`], then normalization under `limits`. It
@@ -403,6 +600,8 @@ pub fn admit_unit_with_cancel(
     })?;
     let mut meter = Meter::new(limits).with_cancel(cancel.clone());
     let mut entries = Vec::with_capacity(admitted.len());
+    let mut exact_declarations = Vec::new();
+    let mut exact_fields = Vec::new();
     for (selection, package_ref, document) in admitted {
         let package = read_domain_package(package_ref, &document).map_err(|refusals| {
             let cause = Refusals::try_from(refusals)
@@ -418,6 +617,10 @@ pub fn admit_unit_with_cancel(
                 return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))
             }
         };
+        let (declarations, fields) = selected_exact_rows(&package, &view)
+            .map_err(|()| refuse(selection, UnitIntakeCause::Invariant))?;
+        exact_declarations.extend(declarations);
+        exact_fields.extend(fields);
         entries.push(SelectedModel {
             alias: selection.alias.clone(),
             span: selection.span,
@@ -426,5 +629,180 @@ pub fn admit_unit_with_cancel(
             type_invariants: Vec::new(),
         });
     }
-    Ok(SelectedModels { entries, meter })
+    Ok(SelectedModels {
+        entries,
+        meter,
+        exact_declarations,
+        exact_fields,
+    })
+}
+
+#[cfg(test)]
+mod selected_exact_identity_tests {
+    use super::*;
+    use crate::model::domain_package::{
+        FieldMemberRecord, Multiplicity, ObjectTypeRecord, OriginalDeclaration,
+        RecordValueTypeRecord, ValueTypeRef,
+    };
+    use crate::model::normalize::{normalize_on, NormalizeOutcome};
+    use quire_exact::Presence;
+    use serde_json::json;
+
+    fn key(node: &str) -> DeclarationKey {
+        DeclarationKey {
+            package: "acme/orders".into(),
+            node: node.into(),
+        }
+    }
+
+    #[test]
+    fn intake_mints_record_field_and_reference_supply_rows_from_the_admitted_model() {
+        let record = key("ix://acme/orders/Receipt");
+        let parent = key("ix://acme/orders/Identified");
+        let field = key("ix://acme/orders/Receipt/number");
+        let inherited_field = key("ix://acme/orders/Identified/id");
+        let unit = key("ix://acme/orders/unit/second");
+        let object = key("ix://acme/orders/Order");
+        let mut package = DomainPackage::new(
+            crate::model::domain_package::DomainPackageRef {
+                identity: "acme/orders".into(),
+            },
+            vec![
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: parent.clone(),
+                    identity_fields: Vec::new(),
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::FieldMember(FieldMemberRecord {
+                    key: inherited_field.clone(),
+                    owner: parent.clone(),
+                    value_type: ValueTypeRef::Native(
+                        crate::model::domain_package::NativeValueType::Integer,
+                    ),
+                    multiplicity: Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    presence: Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                    position: 0,
+                }),
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: record.clone(),
+                    identity_fields: Vec::new(),
+                    supertypes: vec![parent.clone()],
+                }),
+                DomainPackageRecord::FieldMember(FieldMemberRecord {
+                    key: field.clone(),
+                    owner: record.clone(),
+                    value_type: ValueTypeRef::Native(
+                        crate::model::domain_package::NativeValueType::Integer,
+                    ),
+                    multiplicity: Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: true,
+                    },
+                    presence: Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                    position: 0,
+                }),
+                DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                    key: object.clone(),
+                    interface_features: None,
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+            ],
+        );
+        package
+            .units
+            .push(crate::model::domain_package::PackageUnitRecord {
+                key: unit.clone(),
+                name: "second".into(),
+                dimension: key("ix://acme/orders/dimension/Time"),
+                target: None,
+                scale: "1".into(),
+                offset: "0".into(),
+            });
+        package.originals.insert(
+            inherited_field.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: json!({}),
+                member_name: Some("id".into()),
+            },
+        );
+        package.originals.insert(
+            field.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: json!({}),
+                member_name: Some("number".into()),
+            },
+        );
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        let view = match normalize_on(&package, &mut meter) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("the fixture model normalizes: {other:?}"),
+        };
+
+        let (declarations, fields) = selected_exact_rows(&package, &view)
+            .expect("the admitted model produces typed identity rows");
+        let record_node = checked_model_node(&record.package, "record_value_type", &record.node);
+        let record_key = crate::model::key::model_node_key(
+            &record.package,
+            "model",
+            "record_value_type",
+            &record.node,
+        )
+        .expect("the record declaration key is valid");
+        assert!(declarations.iter().any(|row| {
+            row.structural_node == record_node
+                && row.selected_document.as_ref() == "acme/orders"
+                && row.original_identity.as_ref() == record.node
+                && row.form == SelectedExactDeclarationForm::RecordValueType
+                && row.exact_identity == SelectedExactIdentity::Record(record_key.clone())
+        }));
+        assert!(declarations.iter().any(|row| {
+            row.original_identity.as_ref() == object.node
+                && row.form == SelectedExactDeclarationForm::ObjectType
+                && row.exact_identity
+                    == SelectedExactIdentity::Object(view.type_identities()[&object].clone())
+        }));
+        let unit_key =
+            crate::model::key::model_node_key(&unit.package, "scalar_type", "unit", &unit.node)
+                .expect("the declared unit key is valid");
+        assert!(declarations.iter().any(|row| {
+            row.structural_node.package.as_ref() == unit.package
+                && row.original_identity.as_ref() == unit.node
+                && row.form == SelectedExactDeclarationForm::DeclaredUnit
+                && row.exact_identity
+                    == SelectedExactIdentity::DeclaredUnit(quire_exact::UnitId::declared(
+                        unit_key.clone(),
+                    ))
+        }));
+        assert!(fields.iter().any(|row| {
+            row.record_node == record_node
+                && row.selected_document.as_ref() == "acme/orders"
+                && row.record_original_identity.as_ref() == record.node
+                && row.field_original_identity.as_ref() == field.node
+                && row.member_id
+                    == MemberId::new(MemberOwner::Node(record_key.clone()), "number")
+                        .expect("a declared field name produces a member identity")
+        }));
+        assert!(fields.iter().any(|row| {
+            row.record_node == record_node
+                && row.record_original_identity.as_ref() == record.node
+                && row.field_original_identity.as_ref() == inherited_field.node
+                && row.member_id
+                    == MemberId::new(MemberOwner::Node(record_key.clone()), "id")
+                        .expect("an inherited field name produces a member identity")
+        }));
+    }
 }
