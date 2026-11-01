@@ -846,6 +846,13 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     /// The model governing each `parallel`: its outermost `parallel`'s
     /// resolved model (FR-219, ADR-025 MM-3).
     governing: BTreeMap<qsl_semantics::check::ProtocolNodeId, qsl_foundation::MemoryModelName>,
+    /// Static weak-parallel ancestors of each protocol control, inner first.
+    weak_ancestors: BTreeMap<qsl_semantics::check::ProtocolNodeId, Vec<access::WeakAncestor>>,
+    /// Static paths of weak parallel controls, for filtering branch steps.
+    weak_parallel_paths: BTreeSet<String>,
+    /// Attempts grouped by their exact outer-to-inner weak branch context.
+    attempts_by_weak_context:
+        BTreeMap<Vec<(String, String)>, Vec<qsl_semantics::check::ProtocolNodeId>>,
     /// EN-1's initial enabled-footprint classification of the attempts of
     /// every weak `parallel` (FR-220).
     initial_enabled: WeakAccesses,
@@ -966,6 +973,33 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             &over,
             access::ClassificationMode::Potential,
         )?;
+        let weak_ancestors = access::weak_ancestors(&program, &governing)?;
+        let mut weak_parallel_paths = BTreeSet::new();
+        for (node, model) in &governing {
+            if model.is_weak()
+                && program.control(*node)?.step == qsl_semantics::check::ControlStep::Parallel
+            {
+                weak_parallel_paths.insert(program.text(*node)?.to_owned());
+            }
+        }
+        let mut attempts_by_weak_context = BTreeMap::new();
+        for node in program.attempts.keys() {
+            let Some(ancestors) = weak_ancestors.get(node) else {
+                return Err(ProtocolRefusal::fault("an-attempt-has-weak-ancestors"));
+            };
+            let context = ancestors
+                .iter()
+                .rev()
+                .filter(|ancestor| ancestor.is_branch_context)
+                .map(|ancestor| (ancestor.path.clone(), ancestor.branch.clone()))
+                .collect::<Vec<_>>();
+            if !context.is_empty() {
+                attempts_by_weak_context
+                    .entry(context)
+                    .or_insert_with(Vec::new)
+                    .push(*node);
+            }
+        }
         let mut system = Self {
             model,
             package,
@@ -973,6 +1007,9 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             program,
             memory,
             governing,
+            weak_ancestors,
+            weak_parallel_paths,
+            attempts_by_weak_context,
             non_atomic: weak.non_atomic(),
             potential: weak,
             initial_enabled: enabled,
