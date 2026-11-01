@@ -63,6 +63,7 @@ pub enum FhResult {
         /// The lower endpoint.
         lower: Dyadic,
         /// The upper endpoint.
+        upper: Dyadic,
     },
 }
 
@@ -114,7 +115,11 @@ pub fn backward_induction(
     }
     let order = topological_order(product)?;
     let exact = exact_pass(product, terminal, objective, &order)?;
-    if exact.values.iter().all(|value| rational_fits(value, max_rational_bits)) {
+    if exact
+        .values
+        .iter()
+        .all(|value| rational_fits(value, max_rational_bits))
+    {
         return Ok(FhResult::Exact {
             values: exact.values,
             policy: exact.policy,
@@ -187,10 +192,12 @@ fn exact_pass(
         let mut selected: Option<(usize, Rational)> = None;
         for (choice_index, edges) in choices.iter().enumerate() {
             let value = weighted_value(edges, &values)?;
-            let replace = selected.as_ref().is_none_or(|(_, current)| match objective {
-                FhObjective::Min => value < *current,
-                FhObjective::Max => value > *current,
-            });
+            let replace = selected
+                .as_ref()
+                .is_none_or(|(_, current)| match objective {
+                    FhObjective::Min => value < *current,
+                    FhObjective::Max => value > *current,
+                });
             if replace {
                 selected = Some((choice_index, value));
             }
@@ -296,7 +303,9 @@ fn topological_order(product: &ProbProduct) -> Result<Vec<ProbStateId>, FhError>
     while let Some(state) = ready.pop_front() {
         order.push(state);
         for edge in product.outgoing(state) {
-            let degree = indegree.get_mut(edge.to.index()).ok_or(FhError::InvalidState)?;
+            let degree = indegree
+                .get_mut(edge.to.index())
+                .ok_or(FhError::InvalidState)?;
             *degree = degree.checked_sub(1).ok_or(FhError::InvalidState)?;
             if *degree == 0 {
                 ready.push_back(edge.to);
@@ -334,7 +343,10 @@ fn action_groups<'a>(
         if edge.probability < rational_zero() {
             return Err(FhError::InvalidProbability);
         }
-        match groups.iter_mut().find(|(action, _)| action_equal(action, &edge.choice)) {
+        match groups
+            .iter_mut()
+            .find(|(action, _)| action_equal(action, &edge.choice))
+        {
             Some((_, group)) => group.push(edge),
             None => groups.push((edge.choice.clone(), vec![edge])),
         }
@@ -383,7 +395,10 @@ fn weighted_interval(
     )?;
     let lower_scaled = lower_sum.mul(&scale);
     let upper_scaled = upper_sum.mul(&scale);
-    Ok((round_scaled(&lower_scaled, bits, false)?, round_scaled(&upper_scaled, bits, true)?))
+    Ok((
+        round_scaled(&lower_scaled, bits, false)?,
+        round_scaled(&upper_scaled, bits, true)?,
+    ))
 }
 
 fn validate_probability_mass(edges: &[&ProbEdge]) -> Result<(), FhError> {
@@ -409,7 +424,10 @@ fn round(value: &Rational, bits: u32, upward: bool) -> Result<Dyadic, FhError> {
     } else {
         numerator.div_floor(denominator)
     };
-    Ok(Dyadic { mantissa, exponent: bits })
+    Ok(Dyadic {
+        mantissa,
+        exponent: bits,
+    })
 }
 
 fn round_scaled(value: &Rational, bits: u32, upward: bool) -> Result<Dyadic, FhError> {
@@ -420,12 +438,14 @@ fn round_scaled(value: &Rational, bits: u32, upward: bool) -> Result<Dyadic, FhE
     } else {
         numerator.div_floor(denominator)
     };
-    Ok(Dyadic { mantissa, exponent: bits })
+    Ok(Dyadic {
+        mantissa,
+        exponent: bits,
+    })
 }
 
 fn rational_fits(value: &Rational, max_bits: u64) -> bool {
-    value.numerator().as_big().bits() <= max_bits
-        && value.denominator().as_big().bits() <= max_bits
+    value.numerator().as_big().bits() <= max_bits && value.denominator().as_big().bits() <= max_bits
 }
 
 fn rational_zero() -> Rational {
