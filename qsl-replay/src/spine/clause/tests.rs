@@ -794,7 +794,7 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
         unit = unit.replace(
             "invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }",
             &format!(
-                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] pure {{ xs }}\n\
+                "function ints using v(xs: Sequence<Int[0, 1]>[0, 3]): Sequence<Int[0, 1]>[0, 3] pure {{ xs }}\n\
                  type CountBound = Int[0, 3];\n\
                  type Total = Int[0, 3];\n\
                  invariant {name} using v on M::Node at current {{ {expression} }}"
