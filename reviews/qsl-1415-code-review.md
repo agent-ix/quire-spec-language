@@ -83,6 +83,15 @@ Reviewed PR #2007 at head `20ed8801881d3ca9f6477bda7e22bac5cb864281` against bas
 | FND-006 | fixed | - |
 | FND-007 | fixed | - |
 | FND-008 | still-open | Full retained instance cloning remains before the formula root's visit charge; defer it until formula work has returned. |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | Retained-instance and new retained-ledger instance clone costs are charged before cloning. |
+| FND-009 | still-open | Clone byte estimates are charged to `Visits`, whose published unit is temporal graph-node visits; this changes usage and can refuse an evaluation before the node-visit ceiling is reached. |
 
 ## Disposition evidence
 
@@ -153,3 +162,20 @@ The retained-state branch now validates the payload and charges the complete evi
 - FND-001 through FND-006 remain fixed on head `3d0015d388665d1516bebcadebbca94b17777e88`; caller limits pass through, retention charges demanded state, eviction scans charge visits, new retained demands are charged before insertion, scan refusal does not commit receipts, and payload validation plus scan precede retained-state cloning.
 - FND-007 is fixed: `run_view` now returns immediately on `Error::Exhausted` before ledger receipt commit; the new `checked_v2_formula_refusal_retries_without_duplicate_receipt` regression forces formula-root visit exhaustion after a successful scan and confirms the retry reports one receipt and the retained capture.
 - FND-008 remains open: the successful-scan clone at `src/temporal/activation.rs:158-163` still copies the retained `Instance` before the formula root's next visit can refuse. This is distinct from FND-007's corrected receipt mutation: the ledger remains unchanged, but potentially large state is still copied before an unaffordable visit.
+
+
+## New findings (disposition pass 6)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | Clone byte estimates are charged to the `Visits` counter, although NFR-008 and the public `Limits`/`Usage` API define visits as temporal graph-node visits; result usage and visit ceilings now mix incompatible units. | src/temporal/activation.rs:161 |
+
+### FND-009 — copy-byte charge changes the published Visits unit
+
+The helper `instance_clone_work` returns an estimated byte count, then callers add that value to `Charge::Visits`. The NFR-008 counter contract defines `visits` as temporal graph-node visits, and the public `Limits` and `Usage` docs repeat that unit. This change can spend most or all of a caller's visit ceiling copying a receipt-heavy instance before evaluating any graph node, and reported `Usage.visits` no longer means graph visits. Either keep cloning after formula work has succeeded, or define and version a counter model whose units accurately include this work without conflating it with graph visits.
+
+## Disposition pass 6 evidence
+
+- FND-001 through FND-007 remain fixed on head `7f3862a821192d2dc464f6a7414dcd5421c52e46`: caller ceilings, retention demand, scan accounting, charge-before-insert, retry-safe receipts, pre-scan validation, and post-formula receipt commit remain in place.
+- FND-008 is fixed: `instance_clone_work` is charged before cloning both restored instances and instances copied into the retained ledger. The updated formula-refusal regression probes successful visit usage, sets a one-short ceiling, confirms refusal is at a formula node, and retries with the default ceiling while asserting one receipt and preserved capture.
+- FND-009 remains open: the precharge reuses a counter whose published unit is graph-node visits, so cost accounting changes API semantics and result usage.

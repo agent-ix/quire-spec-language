@@ -894,15 +894,14 @@ fn run_view(
         }))]),
         Outcome::Instances(instances) => {
             let mut assessed = Vec::with_capacity(instances.len());
-            for (ordinal, instance) in instances.into_iter().enumerate() {
+            for (ordinal, resolved) in instances.into_iter().enumerate() {
                 let subject = Subject {
                     instance: ordinal,
                     ..subject
                 };
                 work.subject = subject;
-                let instance = match instance {
-                    Ok(instance) => instance,
-                    Err(failed) => {
+                let resolved = match resolved {
+                    activation::Resolved::Failed(failed) => {
                         assessed.push(Obligation::Unactivated {
                             subject,
                             instance: failed.identity,
@@ -910,6 +909,12 @@ fn run_view(
                         });
                         continue;
                     }
+                    resolved => resolved,
+                };
+                let instance_identity = match &resolved {
+                    activation::Resolved::Owned(instance) => instance.identity.as_str(),
+                    activation::Resolved::Retained { identity, .. } => identity,
+                    activation::Resolved::Failed(_) => unreachable!("failed activation handled"),
                 };
                 let mut evaluator = Evaluator {
                     profile: view.profile,
@@ -918,7 +923,7 @@ fn run_view(
                     nodes: &view.operations,
                     declaration: view.declaration,
                     instance: ordinal,
-                    instance_identity: &instance.identity,
+                    instance_identity,
                     instance_bound_atoms: &view.instance_bound_atoms,
                     watermark,
                     support: Vec::new(),
@@ -946,17 +951,23 @@ fn run_view(
                         return Err(error);
                     }
                 };
-                if let Some(saved) = retained_instances
-                    .as_deref_mut()
-                    .and_then(|retained| retained.get_mut(&instance.identity))
-                {
-                    let prior_receipts = saved.receipts.len();
-                    if prior_receipts < instance.receipts.len() {
-                        saved
-                            .receipts
-                            .extend(instance.receipts[prior_receipts..].iter().cloned());
+                let instance = match resolved {
+                    activation::Resolved::Owned(instance) => {
+                        if let Some(retained) = retained_instances.as_deref_mut() {
+                            retained.insert(instance.identity.clone(), instance.clone());
+                        }
+                        instance
                     }
-                }
+                    activation::Resolved::Retained { identity, receipts } => {
+                        let saved = retained_instances
+                            .as_deref_mut()
+                            .and_then(|retained| retained.get_mut(&identity))
+                            .expect("the retained instance remains in the ledger");
+                        saved.receipts.extend(receipts);
+                        saved.clone()
+                    }
+                    activation::Resolved::Failed(_) => unreachable!("failed activation handled"),
+                };
                 assessed.push(Obligation::Assessed(Box::new(Assessment {
                     subject,
                     instance: Some(instance.identity),

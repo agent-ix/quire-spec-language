@@ -555,6 +555,7 @@ fn checked_v2_formula_refusal_retries_without_duplicate_receipt() {
         );
         let required_visits = sufficient.usage().visits;
         assert!(sufficient.result().is_ok());
+        assert_eq!(required_visits, 3, "instance copy cost is not a visit");
         let stopped = temporal::evaluate_checked_with_progress_v2(
             checked.package(),
             admitted,

@@ -36,8 +36,21 @@ pub(super) struct Failed {
     pub error: Error,
 }
 
-/// One admitted trigger's resolution.
-pub(super) type Resolved = Result<Instance, Failed>;
+/// One admitted trigger's resolution. A retained instance is represented by
+/// identity and newly received receipts so activation does not deep-clone its
+/// history before formula evaluation settles.
+pub(super) enum Resolved {
+    /// Newly established instance, held locally until its formula settles.
+    Owned(Instance),
+    /// Existing instance kept in the ledger; only new delivery receipts are
+    /// held locally while formula evaluation is pending.
+    Retained {
+        identity: String,
+        receipts: Vec<String>,
+    },
+    /// An activation that could not be established for this trigger.
+    Failed(Failed),
+}
 
 /// What activation produced: either instances to assess, or one disposition
 /// that carries no obligation.
@@ -101,11 +114,10 @@ pub(super) fn resolve(
             ..subject
         };
 
-        if let Some(existing) = instances
-            .iter_mut()
-            .filter_map(|instance| instance.as_mut().ok())
-            .find(|instance| instance.identity == trigger.identity)
-        {
+        if let Some(existing) = instances.iter_mut().find_map(|resolved| match resolved {
+            Resolved::Owned(instance) if instance.identity == trigger.identity => Some(instance),
+            _ => None,
+        }) {
             // A repeated delivery of one semantic trigger creates no second
             // instance. Conflicting payloads under one identity are a typed
             // contradiction rather than a silent alias.
@@ -117,6 +129,27 @@ pub(super) fn resolve(
                 .into());
             }
             existing.receipts.push(trigger.receipt.clone());
+            continue;
+        }
+
+        if let Some(receipts) = instances.iter_mut().find_map(|resolved| match resolved {
+            Resolved::Retained { identity, receipts } if identity == &trigger.identity => {
+                Some(receipts)
+            }
+            _ => None,
+        }) {
+            let existing = retained
+                .as_deref()
+                .and_then(|retained| retained.get(&trigger.identity))
+                .expect("a retained resolution has a ledger instance");
+            if existing.payload != trigger.payload {
+                return Err(Refusal::Contradiction {
+                    identity: trigger.identity.clone(),
+                    subject: work.subject,
+                }
+                .into());
+            }
+            receipts.push(trigger.receipt.clone());
             continue;
         }
 
@@ -144,7 +177,7 @@ pub(super) fn resolve(
                     if let Some(saved) = retained_instances.get_mut(&trigger.identity) {
                         saved.receipts.push(trigger.receipt.clone());
                     }
-                    instances.push(Err(Failed {
+                    instances.push(Resolved::Failed(Failed {
                         identity: trigger.identity.clone(),
                         error: Incomplete {
                             dimension: Dimension::Capture,
@@ -155,13 +188,10 @@ pub(super) fn resolve(
                     work.subject.capture = None;
                     continue;
                 }
-                let saved = retained_instances
-                    .get(&trigger.identity)
-                    .expect("the retained instance validated before scanning");
-                work.charge(Charge::Visits, instance_clone_work(saved))?;
-                let mut restored = saved.clone();
-                restored.receipts.push(trigger.receipt.clone());
-                instances.push(Ok(restored));
+                instances.push(Resolved::Retained {
+                    identity: trigger.identity.clone(),
+                    receipts: vec![trigger.receipt.clone()],
+                });
                 continue;
             }
         }
@@ -175,7 +205,7 @@ pub(super) fn resolve(
                     // An unestablished guard is not a false guard. It is
                     // reported against its own trigger, so a healthy sibling
                     // instance neither erases it nor is erased by it.
-                    instances.push(Err(Failed {
+                    instances.push(Resolved::Failed(Failed {
                         identity: trigger.identity.clone(),
                         error: Incomplete {
                             dimension: Dimension::Guard,
@@ -200,16 +230,12 @@ pub(super) fn resolve(
                     capture_evaluations: 1,
                     payload: trigger.payload.clone(),
                 };
-                if let Some(retained) = retained.as_deref_mut() {
-                    work.charge(Charge::Visits, instance_clone_work(&instance))?;
-                    retained.insert(trigger.identity.clone(), instance.clone());
-                }
-                instances.push(Ok(instance));
+                instances.push(Resolved::Owned(instance));
             }
             // An exhausted ceiling stops the whole evaluation; an unestablished
             // capture stops only its own instance.
             Err(Error::Exhausted(exhaustion)) => return Err(Error::Exhausted(exhaustion)),
-            Err(error) => instances.push(Err(Failed {
+            Err(error) => instances.push(Resolved::Failed(Failed {
                 identity: trigger.identity.clone(),
                 error,
             })),
@@ -220,36 +246,6 @@ pub(super) fn resolve(
         return Ok(Outcome::Disposition(disposition(trace)));
     }
     Ok(Outcome::Instances(instances))
-}
-
-/// Approximate the bytes and collection slots copied by cloning a retained
-/// instance. This cost is charged before cloning so receipt and capture history
-/// cannot grow outside the evaluator's configured work budget.
-fn instance_clone_work(instance: &Instance) -> usize {
-    let mut work = std::mem::size_of::<Instance>()
-        .saturating_add(instance.identity.len())
-        .saturating_add(instance.payload.len())
-        .saturating_add(
-            instance
-                .receipts
-                .len()
-                .saturating_mul(std::mem::size_of::<String>()),
-        )
-        .saturating_add(
-            instance
-                .captures
-                .len()
-                .saturating_mul(std::mem::size_of::<Capture>()),
-        );
-    for receipt in &instance.receipts {
-        work = work.saturating_add(receipt.len());
-    }
-    for capture in &instance.captures {
-        work = work
-            .saturating_add(capture.anchor.len())
-            .saturating_add(capture.value.len());
-    }
-    work
 }
 
 /// The disposition of a scope that created no instance.

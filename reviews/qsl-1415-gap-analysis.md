@@ -57,6 +57,9 @@ A focused manual traceability pass checked NFR-008-AC-1..5 against PR #2007's ch
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
 
 ## Disposition evidence
 
@@ -102,3 +105,9 @@ The new regression asserts a visit limit of 2 with eight eviction records, so it
 
 - FND-001 and FND-002 remain fixed: checked-v2 result identity covers retained restoration state and the scan-refusal retry regression tests the mutable ledger path.
 - FND-003 is fixed: `checked_v2_formula_refusal_retries_without_duplicate_receipt` uses visits=2, enough to complete the one-entry eviction scan after trigger admission, then exhausts at formula evaluation. It retries the same ledger with visits=16 and asserts the receipt occurs exactly once and capture value `17` survives.
+
+
+### Disposition pass 6 evidence
+
+- FND-001 and FND-002 remain fixed: retained restoration identity and the scan-refusal retry remain covered.
+- FND-003 remains fixed: the test first probes the sufficient visit usage, then refuses at a formula node under a one-short ceiling, retries under the default ceiling, and checks the receipt list and capture.
