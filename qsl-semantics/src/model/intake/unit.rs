@@ -8,7 +8,7 @@
 
 use qsl_foundation::diagnostic::BudgetDenial;
 use qsl_foundation::selection::ModelSelection;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use qsl_foundation::{Code, Span};
 use quire_contract_model::{
@@ -20,7 +20,7 @@ use quire_exact::{Cancel, MemberId, MemberOwner};
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::{admit_located, read_domain_package, PackageInput};
-use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
+use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, ParsedOperationClause, ParsedTypeInvariant,
 };
@@ -452,26 +452,60 @@ struct SelectedExactRows {
     tuples: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SelectedExactRowsError {
+    Limit(Incomplete),
+    Invariant,
+}
+
+fn charge_selected_row_inspection(meter: &mut Meter) -> Result<(), SelectedExactRowsError> {
+    meter
+        .charge(Charge::new(ChargePoint::NormalizeDeclaration))
+        .map_err(SelectedExactRowsError::Limit)
+}
+
 fn selected_exact_rows(
     package: &DomainPackage,
     view: &EffectiveView,
-) -> Result<SelectedExactRows, ()> {
+    meter: &mut Meter,
+) -> Result<SelectedExactRows, SelectedExactRowsError> {
     let selected_document = package.model_selection.identity.as_str();
     let mut declarations = Vec::new();
     let mut fields = Vec::new();
     let mut tuples = Vec::new();
-    let mut record_keys = BTreeMap::new();
+    let mut record_keys = HashMap::new();
+    let mut field_records = HashMap::new();
+    let mut record_value_types = Vec::new();
+    let mut declarations_by_owner = HashMap::new();
+    let mut type_identities = HashMap::new();
+
+    for entry in view.declarations() {
+        charge_selected_row_inspection(meter)?;
+        if !entry.visible {
+            continue;
+        }
+        if let Some(owner) = &entry.preimage.owner_effective_type {
+            declarations_by_owner
+                .entry(owner.clone())
+                .or_insert_with(Vec::new)
+                .push(entry);
+        } else {
+            type_identities.insert(entry.preimage.original.clone(), entry.preimage.identity());
+        }
+    }
 
     for record in &package.records {
+        charge_selected_row_inspection(meter)?;
         match record {
             DomainPackageRecord::RecordValueType(record) => {
+                record_value_types.push(record);
                 let exact = crate::model::key::model_node_key(
                     &record.key.package,
                     "model",
                     "record_value_type",
                     &record.key.node,
                 )
-                .map_err(|_| ())?;
+                .map_err(|_| SelectedExactRowsError::Invariant)?;
                 let structural =
                     checked_model_node(&record.key.package, "record_value_type", &record.key.node);
                 record_keys.insert(record.key.clone(), exact.clone());
@@ -484,10 +518,11 @@ fn selected_exact_rows(
                 ));
             }
             DomainPackageRecord::ObjectType(record) => {
-                let Some(effective) = view.type_identities().get(&record.key) else {
-                    return Err(());
+                let Some(effective) = type_identities.get(&record.key) else {
+                    return Err(SelectedExactRowsError::Invariant);
                 };
-                crate::model::key::object_type_node_key(&record.key).map_err(|_| ())?;
+                crate::model::key::object_type_node_key(&record.key)
+                    .map_err(|_| SelectedExactRowsError::Invariant)?;
                 declarations.push(SelectedExactDeclarationRow::new(
                     checked_model_node(&record.key.package, "object_type", &record.key.node),
                     selected_document,
@@ -503,7 +538,7 @@ fn selected_exact_rows(
                     "tuple_value_type",
                     &record.key.node,
                 )
-                .map_err(|_| ())?;
+                .map_err(|_| SelectedExactRowsError::Invariant)?;
                 tuples.push(quire_contract_model::SelectedTupleDeclarationRow::new(
                     checked_model_node(&record.key.package, "tuple_value_type", &record.key.node),
                     selected_document,
@@ -511,17 +546,21 @@ fn selected_exact_rows(
                     node_key,
                 ));
             }
+            DomainPackageRecord::FieldMember(field) => {
+                field_records.insert(field.key.clone(), field);
+            }
             _ => {}
         }
     }
     for unit in &package.units {
+        charge_selected_row_inspection(meter)?;
         let exact = crate::model::key::model_node_key(
             &unit.key.package,
             "scalar_type",
             "unit",
             &unit.key.node,
         )
-        .map_err(|_| ())?;
+        .map_err(|_| SelectedExactRowsError::Invariant)?;
         declarations.push(SelectedExactDeclarationRow::new(
             CheckedNodeId {
                 package: unit.key.package.as_str().into(),
@@ -539,34 +578,35 @@ fn selected_exact_rows(
         ));
     }
 
-    for record in &package.records {
-        let DomainPackageRecord::RecordValueType(record) = record else {
+    let mut originals = HashMap::with_capacity(package.originals.len());
+    for (key, original) in &package.originals {
+        charge_selected_row_inspection(meter)?;
+        originals.insert(key, original);
+    }
+
+    for record in record_value_types {
+        charge_selected_row_inspection(meter)?;
+        let Some(record_key) = record_keys.get(&record.key) else {
+            return Err(SelectedExactRowsError::Invariant);
+        };
+        let Some(effective) = type_identities.get(&record.key) else {
+            return Err(SelectedExactRowsError::Invariant);
+        };
+        let Some(owner_declarations) = declarations_by_owner.get(effective) else {
             continue;
         };
-        let Some(record_key) = record_keys.get(&record.key) else {
-            return Err(());
-        };
-        let Some(effective) = view.type_identities().get(&record.key) else {
-            return Err(());
-        };
-        for entry in view.declarations().iter().filter(|entry| {
-            entry.visible && entry.preimage.owner_effective_type.as_ref() == Some(effective)
-        }) {
-            let Some(DomainPackageRecord::FieldMember(field)) = package
-                .records
-                .iter()
-                .find(|candidate| candidate.key() == &entry.preimage.original)
-            else {
+        for entry in owner_declarations {
+            let Some(field) = field_records.get(&entry.preimage.original) else {
                 continue;
             };
-            let Some(name) = package
-                .original(&field.key)
+            let Some(name) = originals
+                .get(&field.key)
                 .and_then(|original| original.member_name.as_deref())
             else {
-                return Err(());
+                return Err(SelectedExactRowsError::Invariant);
             };
-            let member_id =
-                MemberId::new(MemberOwner::Node(record_key.clone()), name).map_err(|_| ())?;
+            let member_id = MemberId::new(MemberOwner::Node(record_key.clone()), name)
+                .map_err(|_| SelectedExactRowsError::Invariant)?;
             fields.push(SelectedExactFieldRow::new(
                 checked_model_node(&record.key.package, "record_value_type", &record.key.node),
                 selected_document,
@@ -663,8 +703,13 @@ pub fn admit_unit_with_cancel(
             declarations,
             fields,
             tuples,
-        } = selected_exact_rows(&package, &view)
-            .map_err(|()| refuse(selection, UnitIntakeCause::Invariant))?;
+        } = selected_exact_rows(&package, &view, &mut meter).map_err(|error| {
+            let cause = match error {
+                SelectedExactRowsError::Limit(incomplete) => UnitIntakeCause::Limit(incomplete),
+                SelectedExactRowsError::Invariant => UnitIntakeCause::Invariant,
+            };
+            refuse(selection, cause)
+        })?;
         exact_declarations.extend(declarations);
         exact_fields.extend(fields);
         tuple_declarations.extend(tuples);
@@ -701,6 +746,79 @@ mod selected_exact_identity_tests {
             package: "acme/orders".into(),
             node: node.into(),
         }
+    }
+
+    fn flat_record_package(count: usize) -> DomainPackage {
+        let mut records = Vec::with_capacity(count * 2);
+        let mut fields = Vec::with_capacity(count);
+        let mut originals = BTreeMap::new();
+        for index in 0..count {
+            let record = key(&format!("ix://acme/orders/R{index:05}"));
+            records.push(DomainPackageRecord::RecordValueType(
+                RecordValueTypeRecord {
+                    key: record.clone(),
+                    identity_fields: Vec::new(),
+                    supertypes: Vec::new(),
+                },
+            ));
+            let field = key(&format!("{}/f", record.node));
+            fields.push(DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: field.clone(),
+                owner: record,
+                value_type: ValueTypeRef::Native(
+                    crate::model::domain_package::NativeValueType::Integer,
+                ),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+                position: 0,
+            }));
+            originals.insert(
+                field,
+                OriginalDeclaration {
+                    meaning: None,
+                    origin: json!({}),
+                    member_name: Some("f".into()),
+                },
+            );
+        }
+        records.extend(fields);
+        let mut package = DomainPackage::new(
+            crate::model::domain_package::DomainPackageRef {
+                identity: "acme/orders".into(),
+            },
+            records,
+        );
+        package.originals = originals;
+        package
+    }
+
+    #[test]
+    fn flat_selected_rows_scale_for_declarations_followed_by_fields() {
+        let mut work_units = Vec::new();
+        for count in [1_000, 4_000, 16_000] {
+            let package = flat_record_package(count);
+            let mut meter = Meter::new(ModelNormalizationLimits::default());
+            let view = match normalize_on(&package, &mut meter) {
+                NormalizeOutcome::Completed(view) => view,
+                other => panic!("{count} flat declarations and fields normalize: {other:?}"),
+            };
+            let rows = selected_exact_rows(&package, &view, &mut meter)
+                .unwrap_or_else(|error| panic!("{count} flat declarations project: {error:?}"));
+            assert_eq!(rows.declarations.len(), count);
+            assert_eq!(rows.fields.len(), count);
+            let consumed = meter.consumed(crate::model::accounting::LimitKind::WorkUnits);
+            eprintln!("flat-projection-scale N={count} WorkUnits={consumed}");
+            work_units.push(consumed);
+        }
+        assert!(work_units[1] <= 5 * work_units[0]);
+        assert!(work_units[2] <= 5 * work_units[1]);
     }
 
     #[test]
@@ -804,7 +922,7 @@ mod selected_exact_identity_tests {
             declarations,
             fields,
             tuples,
-        } = selected_exact_rows(&package, &view)
+        } = selected_exact_rows(&package, &view, &mut meter)
             .expect("the admitted model produces typed identity rows");
         let record_node = checked_model_node(&record.package, "record_value_type", &record.node);
         let record_key = crate::model::key::model_node_key(
@@ -889,7 +1007,7 @@ mod selected_exact_identity_tests {
             declarations,
             fields,
             tuples,
-        } = selected_exact_rows(&package, &view).expect("tuple identity is valid");
+        } = selected_exact_rows(&package, &view, &mut meter).expect("tuple identity is valid");
         let row = tuples.first().expect("one selected tuple row");
         let exact = crate::model::key::model_node_key(
             &tuple.package,

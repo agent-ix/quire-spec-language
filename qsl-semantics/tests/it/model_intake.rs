@@ -44,13 +44,16 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
+use qsl_foundation::selection::ModelSelection;
+use qsl_foundation::Span;
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{
-    admit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
+    admit, admit_unit, lift_document, meaning, read_domain_package, read_records, PackageDocument,
+    PackageInput,
 };
-use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+use qsl_semantics::model::normalize::{normalize, normalize_with_meter, NormalizeOutcome};
 use qsl_semantics::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
     ConnectionOutcome,
@@ -686,6 +689,117 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
             }
         },
     })
+}
+
+fn unit_intake_scale_document(package_identity: &str, count: usize) -> Vec<u8> {
+    let mut types = String::from("[");
+    for index in 0..count {
+        if index > 0 {
+            types.push(',');
+        }
+        let identity = format!("ix://{package_identity}/R{index:05}");
+        let field = wire_field(&format!("{identity}/f"), "f", "ix://quire/native/Boolean");
+        let value_type = wire_type(
+            &identity,
+            serde_json::json!({
+                "module": package_identity,
+                "name": "record_value_type",
+            }),
+            serde_json::json!({
+                "supertypes": [],
+                "fields": [field],
+            }),
+        );
+        types.push_str(&value_type.to_string());
+    }
+    types.push(']');
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([wire_construct(
+            package_identity,
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
+            serde_json::json!({}),
+        )]),
+        serde_json::json!([]),
+    )
+    .to_string()
+    .replace("\"types\":[]", &format!("\"types\":{types}"));
+    document.into_bytes()
+}
+
+fn unit_selection(package_identity: &str) -> ModelSelection {
+    ModelSelection {
+        alias: "M".to_owned(),
+        identity: package_identity.to_owned(),
+        span: Span { start: 0, end: 0 },
+        identity_span: Span { start: 0, end: 0 },
+    }
+}
+
+#[trace("NFR-012", "TC-434")]
+#[test]
+fn unit_intake_projection_work_scales_linearly_for_flat_record_fields() {
+    let package_identity = "test/unit-intake-scaling";
+    let mut work_units = Vec::new();
+    for count in [1_000, 4_000, 16_000] {
+        let document = unit_intake_scale_document(package_identity, count);
+        let packages = PackageInput::from([(package_identity.to_owned(), document)]);
+        let selected = admit_unit(
+            &[unit_selection(package_identity)],
+            &packages,
+            ModelNormalizationLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{count} record fields admit: {refusal:?}"));
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected.exact_field_rows().len(), count);
+        let consumed = selected.consumed(LimitKind::WorkUnits);
+        eprintln!("unit-intake-scale N={count} WorkUnits={consumed}");
+        work_units.push(consumed);
+    }
+    let ratio_1 = work_units[1] as f64 / work_units[0] as f64;
+    let ratio_2 = work_units[2] as f64 / work_units[1] as f64;
+    eprintln!("unit-intake-scale ratios={ratio_1:.4},{ratio_2:.4}");
+    assert!(work_units[1] <= 5 * work_units[0], "4x ratio={ratio_1:.4}");
+    assert!(work_units[2] <= 5 * work_units[1], "4x ratio={ratio_2:.4}");
+}
+
+#[trace("NFR-012", "TC-434")]
+#[test]
+fn unit_intake_projection_charge_denial_returns_no_selected_models() {
+    let package_identity = "test/unit-intake-denial";
+    let document = unit_intake_scale_document(package_identity, 1);
+    let parsed = PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
+        .expect("the one-field package parses");
+    let package = read_domain_package(
+        DomainPackageRef {
+            identity: package_identity.to_owned(),
+        },
+        &parsed,
+    )
+    .expect("the one-field package reads");
+    let (outcome, meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    let normalization_work = meter.consumed(LimitKind::WorkUnits);
+    let limits = ModelNormalizationLimits {
+        work_units: normalization_work,
+        ..ModelNormalizationLimits::default()
+    };
+    let packages = PackageInput::from([(package_identity.to_owned(), document)]);
+
+    let refusal = admit_unit(&[unit_selection(package_identity)], &packages, limits)
+        .expect_err("projection charge denial returns an incomplete refusal");
+    let qsl_semantics::model::intake::UnitIntakeCause::Limit(incomplete) = refusal.cause else {
+        panic!("expected a work limit denial, got {refusal:?}");
+    };
+    assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+    assert_eq!(incomplete.limit, normalization_work);
+    assert_eq!(incomplete.consumed, normalization_work);
+    assert_eq!(incomplete.next_charge, 1);
+    assert_eq!(
+        incomplete.charge_point,
+        qsl_semantics::model::accounting::ChargePoint::NormalizeDeclaration
+    );
 }
 
 fn original_document() -> (Value, Value, Value) {
