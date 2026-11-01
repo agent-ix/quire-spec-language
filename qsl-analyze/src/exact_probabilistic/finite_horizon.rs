@@ -500,7 +500,7 @@ mod tests {
                     action: None,
                     draw: None,
                     to: ProbStateId(1),
-                    probability: rational(1, 4),
+                    probability: rational(1, 3),
                     rewards: Vec::new(),
                 },
                 ProbEdge {
@@ -509,7 +509,7 @@ mod tests {
                     action: None,
                     draw: None,
                     to: ProbStateId(2),
-                    probability: rational(3, 4),
+                    probability: rational(2, 3),
                     rewards: Vec::new(),
                 },
             ],
@@ -527,7 +527,7 @@ mod tests {
             &product(),
             &[None, Some(rational(1, 1)), Some(rational(0, 1))],
             FhObjective::Min,
-            &rational(1, 4),
+            &rational(1, 3),
             128,
             8,
             64,
@@ -537,7 +537,7 @@ mod tests {
         let FhResult::Exact { values, .. } = result else {
             panic!("small rational result should remain exact");
         };
-        assert_eq!(values[0], rational(1, 4));
+        assert_eq!(values[0], rational(1, 3));
     }
 
     /// Trace: TC-632, FR-197-AC-4
@@ -548,7 +548,7 @@ mod tests {
             &product(),
             &[None, Some(rational(1, 1)), Some(rational(0, 1))],
             FhObjective::Min,
-            &rational(1, 4),
+            &rational(1, 3),
             0,
             4,
             8,
@@ -558,8 +558,8 @@ mod tests {
         let FhResult::PrecisionBudget { lower, upper, .. } = result else {
             panic!("exact threshold remains inside every outward interval");
         };
-        assert!(lower.rational() <= rational(1, 4));
-        assert!(rational(1, 4) <= upper.rational());
+        assert!(lower.rational() <= rational(1, 3));
+        assert!(rational(1, 3) <= upper.rational());
     }
 
     /// Trace: TC-638, FR-203-AC-2
