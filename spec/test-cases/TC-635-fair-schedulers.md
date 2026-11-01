@@ -34,6 +34,6 @@ Tag the tests `#[trace("TC-635", "FR-200-AC-n")]`.
 - Step 2: `{stuck}`; infimum 0; the witness takes `stall` and its bottom component is fair.
 - Step 3: `1000/1001`; a witness with `k = 1` and induced value `1400/1401`.
 - Step 4: `24/25`, with the fairness set recorded.
-- Step 5: `{stopped}` is a fair end component in `U` by terminal stuttering; the minimum reachability probability is 0, and the `abandon` witness replays `refuted` with a fair bottom component.
+- Step 5: `{stopped}` is a fair end component in `U` by terminal stuttering; the minimum reachability probability is 0, and the returned fair witness selects `abandon` and establishes minimum 0.
 - Step 6: `fair weak each Pair::tick` expands to distinct scheduled identities `tick(a)` and `tick(b)`; both appear in the fair end component's action set.
 - Step 7: the returned witness refutes the claim and is accepted as fair after validation checks both reachable bottom SCCs, `{left}` and `{right}`.
