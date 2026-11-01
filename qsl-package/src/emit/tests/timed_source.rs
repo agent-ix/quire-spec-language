@@ -46,15 +46,22 @@ fn package_units_document() -> Vec<u8> {
 #[trace("FR-230-AC-32", "FR-230-AC-38")]
 #[test]
 fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
-    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
-    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    let unit = config_version_unit::unit_text().replace(
-        "profile v = \"quire.model.complete/v1\";\n",
-        "profile v = \"quire.model.complete/v1\";\n\
-         profile t = \"quire.temporal.complete/v1\";\n",
-    );
+    let mut document: Value =
+        serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
+            .expect("the fixture is JSON");
+    document["types"][1]["operations"] = json!([]);
+    let document = serde_json::to_vec(&document).expect("the fixture remains JSON");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
-        "{unit}dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n"
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile t = \"quire.temporal.complete/v1\";\n\
+         model Config = {:?};\n\
+         invariant ParentOrder using v on Config::ConfigVersion at current {{ \
+         present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
+         dimension Time;\nunit ms : Time = rational(1, 1);\n\
+         time Config dense unit ms;\n",
+        config_version_unit::PACKAGE_IDENTITY,
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -66,7 +73,8 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let raw_source = graph.source().clone();
     let model_node = checked_source.model_node.clone();
     let unit_node = checked_source.unit_node.clone();
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let checked = CheckedPackage::link(graph);
+    let emission = emit_checked(&checked).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let [unit_row] = emission.selected_source_unit_rows() else {
         panic!("one emitted source-owned unit identity row");
@@ -155,7 +163,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(package_identity(document), document.to_vec())
+        .insert_domain_package_document(package_identity(&document), document.to_vec())
         .expect("a fresh evidence key");
     let read = read_checked_package_v2(
         emission.package.bytes(),
@@ -164,8 +172,43 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the emitted timed model: {failure:?}"));
-    let typed = CheckedTimedModel::from_admitted(&read.into_value().admitted)
-        .expect("I2 reconstructs the typed timed model");
+    let admitted = read.into_value().admitted;
+    let identities = checked
+        .graph()
+        .selected_exact_identities(&admitted)
+        .expect("the model declaration and field rows join admission");
+    let projected = admitted
+        .project_selected_type_declarations(
+            &identities,
+            emission.selected_tuple_declaration_rows(),
+            emission.selected_source_unit_rows(),
+            10_000,
+        )
+        .expect("the source-owned unit row joins the admitted type view");
+    assert_eq!(projected.units().len(), 1);
+    assert_eq!(projected.units()[0].unit_id, unit_row.unit_id);
+    assert_eq!(
+        projected.units()[0].source_authority.as_ref(),
+        raw_source.authority()
+    );
+    assert_eq!(
+        projected.units()[0].source_identity.as_ref(),
+        raw_source.identity()
+    );
+    assert_eq!(
+        admitted
+            .project_selected_type_declarations(
+                &identities,
+                emission.selected_tuple_declaration_rows(),
+                &[],
+                10_000,
+            )
+            .expect_err("a missing source-unit row refuses the whole projection")
+            .code,
+        quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
+    );
+    let typed =
+        CheckedTimedModel::from_admitted(&admitted).expect("I2 reconstructs the typed timed model");
     let [timed] = typed.as_slice() else {
         panic!("one timed model reads back");
     };
