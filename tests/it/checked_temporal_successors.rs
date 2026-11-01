@@ -892,17 +892,21 @@ fn checked_past_operator_requires_authoritative_history() {
         &interior_gap,
         temporal::Limits::default(),
     );
-    assert!(matches!(
-        report.result(),
-        Err(temporal::Error::Incomplete(temporal::Incomplete {
-            dimension: temporal::Dimension::Valuation,
-            subject: temporal::Subject {
-                node: Some(node),
-                position: Some(1),
-                ..
-            },
-        })) if *node == nested_leaf as usize
-    ));
+    assert!(
+        matches!(
+            report.result(),
+            Err(temporal::Error::Incomplete(temporal::Incomplete {
+                dimension: temporal::Dimension::Valuation,
+                subject: temporal::Subject {
+                    node: Some(node),
+                    position: Some(1),
+                    ..
+                },
+            })) if *node == nested_leaf as usize
+        ),
+        "interior checked-history gap result: {:?}",
+        report.result()
+    );
 }
 
 /// FR-045: the checked classifier accumulates finite-window and mixed-direction
