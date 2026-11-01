@@ -117,6 +117,17 @@ fn exact_gate_refuses_bad_policy_premises_without_inventing_scheduler_order() {
     );
 }
 
+#[trace("TC-372", "FR-419-AC-6")]
+#[test]
+fn fixed_priority_jitter_stays_admitted_when_the_exact_edge_is_not_symbolic() {
+    let mut jittered = task("jittered", 4, 4, 1, Wcet::Single(int(1)));
+    jittered.jitter = int(1);
+    assert_eq!(
+        fixed_work_task_product(&set(vec![jittered]), SchedulingPolicy::FixedPriority,),
+        Err(FixedWorkGateMiss::BoundedSearchRequired)
+    );
+}
+
 #[trace("TC-372", "FR-419-AC-11")]
 #[test]
 fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation() {
@@ -148,6 +159,39 @@ fn fixed_priority_jobs_release_dispatch_complete_and_reuse_slots_by_generation()
         .expect("slot is reused after completion");
     assert_eq!(second.slot, first.slot);
     assert_eq!(second.generation, first.generation + 1);
+}
+
+#[trace("TC-372", "FR-419-AC-6")]
+#[test]
+fn activations_share_arrival_phase_and_occurrence_across_release_bindings() {
+    let mut spec = task("a", 4, 4, 1, Wcet::Single(int(1)));
+    spec.arrival = Arrival::Sporadic {
+        min_interarrival: int(4),
+    };
+    let product = fixed_work_task_product(&set(vec![spec]), SchedulingPolicy::FixedPriority)
+        .expect("sporadic fixed-work task");
+    let operation = |name: &str| {
+        quire_semantic_value::model_transition::ModelTransition::new(
+            format!("\"{name}\""),
+            None,
+            Vec::new(),
+            quire_canonical::Limits::new(1024),
+        )
+        .expect("source transition identity")
+    };
+    let mut scheduler = TaskSchedulerState::default();
+    let first = scheduler
+        .activate(&product, "a", operation("start"), int(0), int(0))
+        .expect("first activation establishes phase");
+    assert_eq!(first.job, 0);
+    assert_eq!(
+        scheduler.activate(&product, "a", operation("alternate"), int(0), int(3)),
+        Err(qsl_analyze::zone_check::TaskSchedulerError::ArrivalSpacing)
+    );
+    let second = scheduler
+        .activate(&product, "a", operation("alternate"), int(0), int(4))
+        .expect("a distinct operation shares the task's arrival phase");
+    assert_eq!(second.job, 1);
 }
 
 #[trace("TC-372", "FR-419-AC-11")]
@@ -226,20 +270,11 @@ fn edf_preempts_for_earlier_deadline_and_uses_activation_identity_for_ties() {
     );
     scheduler.complete(None).expect("a completes");
 
-    let first = scheduler
-        .activate(&product, "a", operation("z_release"), int(0), int(4))
-        .expect("activate by later source identity");
-    let second = scheduler
+    let next = scheduler
         .activate(&product, "a", operation("a_release"), int(0), int(4))
-        .expect("activate by earlier source identity");
-    assert_ne!(first.release, second.release);
-    assert_eq!(
-        scheduler
-            .dispatch(&product)
-            .expect("source identity breaks the tie")
-            .release,
-        second.release
-    );
+        .expect("the next periodic activation uses a different release binding");
+    assert_eq!(next.job, 1);
+    assert_eq!(next.release, operation("a_release"));
 }
 
 #[trace("TC-371", "FR-418-AC-11")]

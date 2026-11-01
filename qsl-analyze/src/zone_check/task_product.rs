@@ -133,14 +133,20 @@ pub enum TaskCompletionError {
     EmptySuccessor,
 }
 
-/// Per-source-transition occurrence counter, retained in the scheduler
-/// state so repeated activations never reuse a job identity.
+/// Per-task occurrence counter shared by every checked release binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActivationCounter {
     task_set: String,
     task: String,
-    source: ModelTransition,
     next: u64,
+}
+
+/// Last nominal activation time shared by every checked release binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LastActivation {
+    task_set: String,
+    task: String,
+    at: Rational,
 }
 
 /// A bounded slot's generation counter. Reusing a finished slot does not
@@ -161,6 +167,7 @@ pub struct TaskSchedulerState {
     /// Which job is currently running, by its stable typed identity.
     pub running: Option<TaskTransitionIdentity>,
     activations: Vec<ActivationCounter>,
+    last_activations: Vec<LastActivation>,
     generations: Vec<SlotGeneration>,
 }
 
@@ -289,6 +296,8 @@ pub enum TaskSchedulerError {
     /// The checked release declaration does not bind this transition to the
     /// selected task set and task.
     InvalidReleaseBinding,
+    /// An activation violates its task's shared periodic or sporadic spacing.
+    ArrivalSpacing,
 }
 
 impl TaskSchedulerState {
@@ -338,6 +347,20 @@ impl TaskSchedulerState {
         if jitter < Rational::from_integer(Integer::zero()) || jitter > task.max_jitter {
             return Err(TaskSchedulerError::InvalidJitter);
         }
+        if let Some(previous) = self
+            .last_activations
+            .iter()
+            .find(|row| row.task_set == task.task_set && row.task == task.task)
+        {
+            let elapsed = nominal_activation.sub(&previous.at);
+            let valid = match task.arrival {
+                FixedWorkArrival::Periodic => elapsed == task.interarrival,
+                FixedWorkArrival::Sporadic => elapsed >= task.interarrival,
+            };
+            if !valid {
+                return Err(TaskSchedulerError::ArrivalSpacing);
+            }
+        }
         let live_count = self
             .jobs
             .iter()
@@ -362,11 +385,11 @@ impl TaskSchedulerState {
                 Some(row) => row.next,
                 None => 0,
             };
-        let activation = match self.activations.iter().find(|row| {
-            row.task_set == task.task_set
-                && row.task == task.task
-                && same_transition(&row.source, &source)
-        }) {
+        let activation = match self
+            .activations
+            .iter()
+            .find(|row| row.task_set == task.task_set && row.task == task.task)
+        {
             Some(row) => row.next,
             None => 0,
         };
@@ -385,11 +408,11 @@ impl TaskSchedulerState {
             priority: task.priority,
             budget_delta: None,
         };
-        if let Some(row) = self.activations.iter_mut().find(|row| {
-            row.task_set == task.task_set
-                && row.task == task.task
-                && same_transition(&row.source, &source)
-        }) {
+        if let Some(row) = self
+            .activations
+            .iter_mut()
+            .find(|row| row.task_set == task.task_set && row.task == task.task)
+        {
             row.next = row
                 .next
                 .checked_add(1)
@@ -398,8 +421,20 @@ impl TaskSchedulerState {
             self.activations.push(ActivationCounter {
                 task_set: task.task_set.clone(),
                 task: task.task.clone(),
-                source,
                 next: 1,
+            });
+        }
+        if let Some(row) = self
+            .last_activations
+            .iter_mut()
+            .find(|row| row.task_set == task.task_set && row.task == task.task)
+        {
+            row.at = nominal_activation.clone();
+        } else {
+            self.last_activations.push(LastActivation {
+                task_set: task.task_set.clone(),
+                task: task.task.clone(),
+                at: nominal_activation.clone(),
             });
         }
         self.jobs.push(TaskJob {
@@ -715,6 +750,13 @@ pub fn fixed_work_task_product(
         }
         match policy {
             SchedulingPolicy::FixedPriority => {
+                // Fixed-priority jitter is admitted by FR-419, but the
+                // current typed certificate edge identifies its selected
+                // jitter by a concrete Rational. Keep this valid behavior on
+                // bounded search until closure has a symbolic region label.
+                if !task.jitter.is_zero() {
+                    return Err(FixedWorkGateMiss::BoundedSearchRequired);
+                }
                 if !task.blocking.is_zero() {
                     return Err(FixedWorkGateMiss::BoundedSearchRequired);
                 }
@@ -723,7 +765,8 @@ pub fn fixed_work_task_product(
                     return Err(FixedWorkGateMiss::PriorityClash);
                 }
             }
-            SchedulingPolicy::Edf if !task.jitter.is_zero() || !task.blocking.is_zero() => {
+            // FR-419-AC-10: EDF task sets with jitter or blocking are invalid.
+            SchedulingPolicy::Edf if !task.blocking.is_zero() || !task.jitter.is_zero() => {
                 return Err(FixedWorkGateMiss::InvalidTaskSet);
             }
             SchedulingPolicy::Edf => {}
