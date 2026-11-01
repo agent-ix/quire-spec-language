@@ -1684,11 +1684,16 @@ impl AdmittedModel {
                 bears
             }
             Some(
-                record @ (DomainPackageRecord::SequenceType(_) | DomainPackageRecord::AliasType(_)),
+                record @ (DomainPackageRecord::SequenceType(_)
+                | DomainPackageRecord::OptionType(_)
+                | DomainPackageRecord::MapType(_)
+                | DomainPackageRecord::AliasType(_)),
             ) if !visiting.contains(&key) => {
                 visiting.push(key);
                 let named = match record {
                     DomainPackageRecord::SequenceType(sequence) => &sequence.items,
+                    DomainPackageRecord::OptionType(option) => &option.inner,
+                    DomainPackageRecord::MapType(map) => &map.values,
                     DomainPackageRecord::AliasType(alias) => &alias.target,
                     _ => return false,
                 };
@@ -1967,6 +1972,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::OptionType(_)
+        | DomainPackageRecord::MapType(_)
         | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)

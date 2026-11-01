@@ -478,14 +478,24 @@ pub struct OptionTypeRecord {
     pub inner: ValueTypeRef,
 }
 
-/// A package `alias` of a clock or a unit (FCD's core kind `alias`, FCD
-/// #315): the type its `target` names, under its own name (QSL FR-230
-/// "Clocks and resets", FR-230-AC-17).
+/// A package map type (QSpec FR-154): string keys and values of one declared
+/// value type. The key type is fixed by the kernel `Map<Text, T>` algebra.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MapTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// The value type held by each map entry.
+    pub values: ValueTypeRef,
+}
+
+/// A package `alias` of a clock, a unit, or an Option<T> value type (FCD's
+/// core kind `alias`, FCD #315 / #333): the type its `target` names, under its
+/// own name (QSL FR-230 "Clocks and resets", FR-230-AC-17; QSpec FR-154).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AliasTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
-    /// The aliased type: `Clock` or a unit.
+    /// The aliased type: `Clock`, a unit, or an option value type.
     pub target: ValueTypeRef,
 }
 
@@ -961,6 +971,8 @@ pub enum DomainPackageRecord {
     SequenceType(SequenceTypeRecord),
     /// A package option value type (QSpec FR-154).
     OptionType(OptionTypeRecord),
+    /// A package map value type (QSpec FR-154).
+    MapType(MapTypeRecord),
     /// A package alias of a clock or a unit (FCD #315).
     AliasType(AliasTypeRecord),
     /// A `min` or `max` constraint on clocks (FCD #315).
@@ -1000,6 +1012,7 @@ impl DomainPackageRecord {
             Self::ScalarType(record) => &record.key,
             Self::SequenceType(record) => &record.key,
             Self::OptionType(record) => &record.key,
+            Self::MapType(record) => &record.key,
             Self::AliasType(record) => &record.key,
             Self::ValueBound(record) => &record.key,
             Self::OperationMember(record) => &record.key,

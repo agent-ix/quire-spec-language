@@ -1540,7 +1540,7 @@ fn validate_option_types(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
                 let resolved = crate::model::domain_package::unaliased(&option.inner, |key| {
                     records.get(key).copied()
                 });
-                let invalid = resolved.map_or(true, |(inner, sequences)| {
+                let invalid = resolved.is_none_or(|(inner, sequences)| {
                     sequences == 0
                         && (matches!(inner, ValueTypeRef::Clock)
                             || matches!(inner, ValueTypeRef::Package(key)
@@ -2222,6 +2222,7 @@ fn check_node<'a>(
         DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::OptionType(_)
+        | DomainPackageRecord::MapType(_)
         | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::ValueBound(_) => {}
         DomainPackageRecord::OperationMember(op) => {
@@ -4383,8 +4384,8 @@ mod tests {
     use ix_trace_rs::trace;
 
     use crate::model::domain_package::{
-        ClauseRecord, FieldMemberRecord, Multiplicity, NamespaceRecord, NativeValueType,
-        OptionTypeRecord, ValueTypeRef,
+        AliasTypeRecord, ClauseRecord, FieldMemberRecord, Multiplicity, NamespaceRecord,
+        NativeValueType, OptionTypeRecord, ValueTypeRef,
     };
 
     use super::*;
@@ -4394,6 +4395,10 @@ mod tests {
     fn option_validation_refuses_double_wrapping_and_optional_presence() {
         let option_key = DeclarationKey::fixture("model.OptInt");
         let nested_key = DeclarationKey::fixture("model.OptOptInt");
+        let alias_key = DeclarationKey::fixture("model.AliasOptInt");
+        let nested_alias_key = DeclarationKey::fixture("model.OptAliasOptInt");
+        let self_key = DeclarationKey::fixture("model.OptSelf");
+        let clock_key = DeclarationKey::fixture("model.OptClock");
         let field_key = DeclarationKey::fixture("model.Holder/value");
         let records = vec![
             DomainPackageRecord::OptionType(OptionTypeRecord {
@@ -4403,6 +4408,22 @@ mod tests {
             DomainPackageRecord::OptionType(OptionTypeRecord {
                 key: nested_key.clone(),
                 inner: ValueTypeRef::Package(option_key.clone()),
+            }),
+            DomainPackageRecord::AliasType(AliasTypeRecord {
+                key: alias_key.clone(),
+                target: ValueTypeRef::Package(option_key.clone()),
+            }),
+            DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: nested_alias_key.clone(),
+                inner: ValueTypeRef::Package(alias_key),
+            }),
+            DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: self_key.clone(),
+                inner: ValueTypeRef::Package(self_key.clone()),
+            }),
+            DomainPackageRecord::OptionType(OptionTypeRecord {
+                key: clock_key.clone(),
+                inner: ValueTypeRef::Clock,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: field_key.clone(),
@@ -4422,13 +4443,21 @@ mod tests {
         ];
         let package = DomainPackage::new(DomainPackageRef::fixture("model"), records);
         let refusals = validate_option_types(&package);
-        assert_eq!(refusals.len(), 2);
+        assert_eq!(refusals.len(), 5);
         assert!(refusals.iter().any(|refusal| matches!(
             &refusal.cause,
             ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
                 if node == &nested_key.node
                     && *member == MemberPath::type_definition().name("inner")
         )));
+        for invalid_key in [&nested_alias_key, &self_key, &clock_key] {
+            assert!(refusals.iter().any(|refusal| matches!(
+                &refusal.cause,
+                ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                    if node == &invalid_key.node
+                        && *member == MemberPath::type_definition().name("inner")
+            )));
+        }
         assert!(refusals.iter().any(|refusal| matches!(
             &refusal.cause,
             ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }

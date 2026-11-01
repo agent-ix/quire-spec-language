@@ -222,6 +222,7 @@ pub fn classify(
             }
             DomainPackageRecord::TupleValueType(_) | DomainPackageRecord::TuplePosition(_) => {}
             DomainPackageRecord::OptionType(_) => {}
+            DomainPackageRecord::MapType(_) => {}
             DomainPackageRecord::EventType(_) => {}
             DomainPackageRecord::Enum(_) | DomainPackageRecord::Variant(_) => {}
             DomainPackageRecord::StateMachine(_) => {}

@@ -50,7 +50,7 @@ use serde_json::Value;
 use crate::model::domain_package::{
     AliasTypeRecord, AllocationRecord, ClauseRecord, ComponentRecord, DeclaredSlot, DomainPackage,
     DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
-    Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
+    MapTypeRecord, Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
     OperationContractClause, OperationEffect, OperationMemberRecord, OperationParameterRecord,
     OperationResult, OptionTypeRecord, OriginalDeclaration, PackageDimensionRecord,
     PackageUnitRecord, PersistenceInterfaceRecord, PopulationRecord, PortDirection,
@@ -1323,6 +1323,12 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
             if let Some(refusal) = clock_variant_payload_refusal(document, located) {
                 return Some(refusal);
             }
+            if let Some(refusal) = missing_option_inner_schema_refusal(document, located) {
+                return Some(refusal);
+            }
+            if let Some(refusal) = option_presence_refusal(document, located) {
+                return Some(refusal);
+            }
             if let Some(refusal) = duplicate_member_identity_refusal(document, located) {
                 return Some(refusal);
             }
@@ -1412,6 +1418,94 @@ fn clock_variant_payload_refusal(
         &format!("$.types[{type_index}].variants[{variant_index}]"),
         MemberPath::new(MemberRoot::Variant).name("payloadType"),
         format!("{}:payloadType", meaning::VARIANT_TYPE),
+    ))
+}
+
+/// The semantic-IR schema reports a missing required Option `inner` at the
+/// enclosing type pointer. FR-154-AC-41 owns the more precise member path.
+fn missing_option_inner_schema_refusal(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    if located.code != agent_ix_semantic_ir::schema::SCHEMA_VIOLATION {
+        return None;
+    }
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let mut segments = pointer.strip_prefix('/')?.split('/');
+    if segments.next()? != "types" {
+        return None;
+    }
+    let type_index = segments.next()?.parse::<usize>().ok()?;
+    if segments.next().is_some() {
+        return None;
+    }
+    let option = document.tree.get("types")?.as_array()?.get(type_index)?;
+    if option.get("kind")?.as_str()? != "option" || option.get("inner").is_some() {
+        return None;
+    }
+    let node = option.get("identity")?.as_str()?.to_owned();
+    let (artifact, span) = located_span(located);
+    Some(malformed_declaration(
+        node,
+        artifact,
+        span,
+        MemberPath::type_definition().name("inner"),
+        format!(
+            "TypeDefinition.inner ({}) on {located_node}: missing required option inner",
+            located.pointer,
+            located_node = option
+                .get("identity")
+                .and_then(Value::as_str)
+                .unwrap_or("<unknown>")
+        ),
+    ))
+}
+
+/// QSpec locates duplicate Option<Option<T>> spelling on the field itself,
+/// with the field's own `Field.presence` path.
+fn option_presence_refusal(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    if located.code != agent_ix_semantic_ir::rules::INVALID_OPTION_PRESENCE {
+        return None;
+    }
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let mut segments = pointer.strip_prefix('/')?.split('/');
+    if segments.next()? != "types" {
+        return None;
+    }
+    let type_index = segments.next()?.parse::<usize>().ok()?;
+    if segments.next()? != "fields" {
+        return None;
+    }
+    let field_index = segments.next()?.parse::<usize>().ok()?;
+    if segments.next()? != "presence" || segments.next().is_some() {
+        return None;
+    }
+    let field = document
+        .tree
+        .get("types")?
+        .as_array()?
+        .get(type_index)?
+        .get("fields")?
+        .as_array()?
+        .get(field_index)?;
+    let node = field.get("identity")?.as_str()?.to_owned();
+    let (artifact, span) = located_span(located);
+    Some(malformed_declaration(
+        node,
+        artifact,
+        span,
+        MemberPath::new(MemberRoot::Field).name("presence"),
+        format!(
+            "Field.presence ({}) on {located_node}: optional presence on an Option<T> field at [1,1] is Option<Option<T>>",
+            located.pointer,
+            located_node = field
+                .get("identity")
+                .and_then(Value::as_str)
+                .unwrap_or("<unknown>")
+        ),
     ))
 }
 
@@ -1725,6 +1819,7 @@ fn missing_reader_reference(
         && !occurrence_reference
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
         && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
+        && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_OPTION_INNER
     {
         return None;
     }
@@ -1732,6 +1827,14 @@ fn missing_reader_reference(
     // An occurrence field that is declared, but is a field of no ancestor, is
     // a malformed binding (TC-235 M18 run 3), not a missing name.
     if transition_member == "occurrenceField" && document_declares(&document.tree, reference) {
+        return None;
+    }
+    // FCD reuses UNRESOLVED_TYPE_REF for references to an existing node of
+    // the wrong value kind (for example, `reference` targeting Option<T>).
+    // Such a target is malformed, not a missing declaration.
+    if located.code == agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
+        && document_declares(&document.tree, reference)
+    {
         return None;
     }
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
@@ -4471,18 +4574,36 @@ fn shape_index(document: &Value) -> HashMap<(String, String), String> {
 /// order: the node's own identity form first (the object-id check), then
 /// its `kind`/meaning, then the meaning-specific shape.
 #[ix_trace_rs::string_edge]
+struct TypeNodeReader<'a> {
+    package: &'a str,
+    meanings: &'a HashMap<(String, String), String>,
+    shapes: &'a HashMap<(String, String), String>,
+    type_meanings: &'a HashMap<&'a str, &'a str>,
+    semantic: Option<&'a agent_ix_semantic_ir::rules::Document<'a>>,
+    semantic_members: &'a HashMap<&'a str, &'a agent_ix_semantic_ir::json::Json>,
+}
+
+#[ix_trace_rs::string_edge]
 fn read_type_node(
-    package: &str,
-    meanings: &HashMap<(String, String), String>,
-    shapes: &HashMap<(String, String), String>,
-    type_meanings: &HashMap<&str, &str>,
+    reader: &TypeNodeReader<'_>,
     type_value: &Value,
     at: &str,
     pending: &mut Vec<PendingFrame>,
 ) -> Result<Vec<DomainPackageRecord>, Refusals> {
+    let TypeNodeReader {
+        package,
+        meanings,
+        shapes,
+        type_meanings,
+        semantic,
+        semantic_members,
+    } = reader;
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
+    if let Some(semantic) = semantic {
+        validate_semantic_option_members(semantic, Some(semantic_members), type_value, at)?;
+    }
     if type_value.get("kind").and_then(Value::as_str) == Some("alias")
         && type_value.get("target").and_then(Value::as_str) == Some("ix://quire/native/Timestamp")
     {
@@ -4516,6 +4637,13 @@ fn read_type_node(
             ValueTypeRef::Clock
         } else if target.starts_with("ix://quire/unit/") {
             read_value_type_ref(package, &ctx, target, false)?
+        } else if type_identity_segment(package, target).is_some()
+            && semantic.is_some_and(|document| document.option_inner(target).is_some())
+        {
+            // QSpec FR-154 permits a value alias of an Option<T>. Keep the
+            // alias as a distinct source declaration; projection follows its
+            // target through `unaliased`.
+            ValueTypeRef::Package(declaration_key(package, target))
         } else if type_identity_segment(package, target).is_some() {
             // An alias of an alias: resolved once every node is read
             // ([`check_alias_chains`]).
@@ -4589,7 +4717,10 @@ fn read_type_node(
                 )
                 .into());
         }
-        let Some(inner) = type_value.get("inner").and_then(Value::as_str) else {
+        let inner = semantic
+            .and_then(|document| document.option_inner(node))
+            .or_else(|| type_value.get("inner").and_then(Value::as_str));
+        let Some(inner) = inner else {
             return Err(ctx.malformed_in("inner", "missing or not a string").into());
         };
         let inner = read_value_type_ref(package, &ctx, inner, false).map_err(|mut refusal| {
@@ -4604,6 +4735,28 @@ fn read_type_node(
         return Ok(vec![DomainPackageRecord::OptionType(OptionTypeRecord {
             key,
             inner,
+        })]);
+    }
+    if type_value.get("kind").and_then(Value::as_str) == Some("map") {
+        if !ctx.array_field("fields")?.is_empty()
+            || !ctx.array_field("operations")?.is_empty()
+            || !ctx.array_field("relationships")?.is_empty()
+            || !ctx.array_field("supertypes")?.is_empty()
+            || !ctx.array_field("constraints")?.is_empty()
+        {
+            return Err(ctx
+                .malformed(
+                    "a map type declares no fields, operations, relationships, supertypes, or constraints",
+                )
+                .into());
+        }
+        let Some(values) = type_value.get("values").and_then(Value::as_str) else {
+            return Err(ctx.malformed_in("values", "missing or not a string").into());
+        };
+        let values = read_value_type_ref(package, &ctx, values, false)?;
+        return Ok(vec![DomainPackageRecord::MapType(MapTypeRecord {
+            key,
+            values,
         })]);
     }
     if !type_value.get("kind").is_some_and(Value::is_object) {
@@ -4727,6 +4880,66 @@ fn read_type_node(
     Ok(records)
 }
 
+/// Uses FCD's option spelling accessors while the real document reader still
+/// has the original Semantic IR member. The resulting `FieldMemberRecord`
+/// keeps `typeRef` and `presence` independently; this check confirms that the
+/// IR projection and the source members name the same Option<T> spelling.
+fn validate_semantic_option_members(
+    document: &agent_ix_semantic_ir::rules::Document<'_>,
+    members: Option<&HashMap<&str, &agent_ix_semantic_ir::json::Json>>,
+    type_value: &Value,
+    at: &str,
+) -> Result<(), ModelRefusal> {
+    let validate = |member: &Value, member_at: String| -> Result<(), ModelRefusal> {
+        let identity = member.get("identity").and_then(Value::as_str);
+        let Some(identity) = identity else {
+            return Ok(());
+        };
+        let Some(ir_member) = members.and_then(|members| members.get(identity).copied()) else {
+            return Ok(());
+        };
+        let Some(option) = document.member_option(ir_member) else {
+            return Ok(());
+        };
+        let type_ref = member.get("typeRef").and_then(Value::as_str);
+        let same_option = match option.spelling {
+            agent_ix_semantic_ir::rules::OptionSpelling::Type => {
+                type_ref.and_then(|type_ref| document.option_inner(type_ref)) == Some(option.inner)
+            }
+            agent_ix_semantic_ir::rules::OptionSpelling::Presence => type_ref == Some(option.inner),
+        };
+        if same_option {
+            Ok(())
+        } else {
+            Err(NodeCtx::new(member, member_at).malformed_in(
+                "typeRef",
+                "the semantic-IR option spelling disagrees with the member typeRef",
+            ))
+        }
+    };
+
+    if let Some(fields) = type_value.get("fields").and_then(Value::as_array) {
+        for (position, field) in fields.iter().enumerate() {
+            validate(field, format!("{at}.fields[{position}]"))?;
+        }
+    }
+    if let Some(operations) = type_value.get("operations").and_then(Value::as_array) {
+        for (operation_position, operation) in operations.iter().enumerate() {
+            if let Some(parameters) = operation.get("params").and_then(Value::as_array) {
+                for (parameter_position, parameter) in parameters.iter().enumerate() {
+                    validate(
+                        parameter,
+                        format!(
+                            "{at}.operations[{operation_position}].params[{parameter_position}]"
+                        ),
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// What a domain package record names, for FR-103's frame-entry
 /// classification.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -4764,6 +4977,7 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::SequenceType(_)
         | DomainPackageRecord::OptionType(_)
+        | DomainPackageRecord::MapType(_)
         | DomainPackageRecord::AliasType(_)
         | DomainPackageRecord::ValueBound(_)
         | DomainPackageRecord::OperationMember(_)
@@ -5083,7 +5297,14 @@ pub fn read_records(
     document: &PackageDocument,
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
     validate_with_semantic_ir(document)?;
-    read_nodes(package_identity, &document.tree)
+    let semantic =
+        agent_ix_semantic_ir::rules::Document::read(&document.bundle).ok_or_else(|| {
+            vec![NodeCtx::new(&document.tree, "$").malformed_in(
+                "types",
+                "accepted semantic-IR document has no readable type array",
+            )]
+        })?;
+    read_nodes_with_semantic(package_identity, &document.tree, Some(&semantic))
 }
 
 /// Read an admitted document with every declaration's original construct
@@ -5114,9 +5335,11 @@ pub fn read_domain_package(
         .filter_map(refusal_node)
         .map(str::to_owned)
         .collect();
+    let semantic = agent_ix_semantic_ir::rules::Document::read(&document.bundle);
     let (records, reader_refusals) = read_nodes_partial(
         &selection.identity,
         &document.tree,
+        semantic.as_ref(),
         intake_refusals.is_empty(),
     );
     for refusal in reader_refusals {
@@ -5398,11 +5621,20 @@ fn source_record_count(document: &Value) -> usize {
 /// [`validate_with_semantic_ir`] has already accepted. Every shape the
 /// validator guarantees is still checked, so a dependency pin that stops
 /// guaranteeing one degrades to a refusal rather than a panic.
+#[cfg(test)]
 fn read_nodes(
     package_identity: &str,
     document: &Value,
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
-    let (records, refusals) = read_nodes_partial(package_identity, document, true);
+    read_nodes_with_semantic(package_identity, document, None)
+}
+
+fn read_nodes_with_semantic(
+    package_identity: &str,
+    document: &Value,
+    semantic: Option<&agent_ix_semantic_ir::rules::Document<'_>>,
+) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
+    let (records, refusals) = read_nodes_partial(package_identity, document, semantic, true);
     if refusals.is_empty() {
         Ok(records)
     } else {
@@ -5413,6 +5645,7 @@ fn read_nodes(
 fn read_nodes_partial(
     package_identity: &str,
     document: &Value,
+    semantic: Option<&agent_ix_semantic_ir::rules::Document<'_>>,
     resolve_frames: bool,
 ) -> (Vec<DomainPackageRecord>, Vec<ModelRefusal>) {
     let meanings = match meaning_index(document) {
@@ -5420,6 +5653,39 @@ fn read_nodes_partial(
         Err(refusal) => return (Vec::new(), vec![refusal]),
     };
     let shapes = shape_index(document);
+    let semantic_members: HashMap<&str, &agent_ix_semantic_ir::json::Json> = semantic
+        .into_iter()
+        .flat_map(|semantic| semantic.types.iter())
+        .flat_map(|definition| {
+            definition
+                .get("fields")
+                .and_then(agent_ix_semantic_ir::json::Json::as_array)
+                .into_iter()
+                .flatten()
+                .chain(
+                    definition
+                        .get("operations")
+                        .and_then(agent_ix_semantic_ir::json::Json::as_array)
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|operation| {
+                            operation
+                                .get("params")
+                                .and_then(agent_ix_semantic_ir::json::Json::as_array)
+                                .into_iter()
+                                .flatten()
+                        }),
+                )
+        })
+        .filter_map(|member| {
+            Some((
+                member
+                    .get("identity")
+                    .and_then(agent_ix_semantic_ir::json::Json::as_str)?,
+                member,
+            ))
+        })
+        .collect();
     // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
     // `expect_array` guarantees it is an array; `populations` is optional
     // but array-shaped when present.
@@ -5478,10 +5744,14 @@ fn read_nodes_partial(
             DocumentNode::Type(type_value, position, _) => {
                 let at = format!("$.types[{position}]");
                 match read_type_node(
-                    package_identity,
-                    &meanings,
-                    &shapes,
-                    &type_meanings,
+                    &TypeNodeReader {
+                        package: package_identity,
+                        meanings: &meanings,
+                        shapes: &shapes,
+                        type_meanings: &type_meanings,
+                        semantic,
+                        semantic_members: &semantic_members,
+                    },
                     type_value,
                     &at,
                     &mut pending,
@@ -5558,7 +5828,7 @@ fn read_nodes_partial(
 /// refuses at the later constraint, in reading order.
 ///
 /// Each refusal is `malformed-declaration`: at `TypeDefinition.target` for
-/// an alias whose chain ends at no clock or unit, or returns to an alias it
+/// an alias whose chain ends at no clock, unit, or Option<T> value type, or returns to an alias it
 /// passed; at `Constraint.operands` for a negative clock bound and for the
 /// later of a crossed pair.
 fn check_alias_chains(
@@ -5581,6 +5851,20 @@ fn check_alias_chains(
             })?;
         }
         None
+    };
+    let alias_target_resolves = |records: &[DomainPackageRecord], target: &ValueTypeRef| {
+        let mut target = target.clone();
+        for _ in 0..=records.len() {
+            let ValueTypeRef::Package(key) = &target else {
+                return matches!(target, ValueTypeRef::Clock | ValueTypeRef::Unit(_));
+            };
+            match records.iter().find(|record| record.key() == key) {
+                Some(DomainPackageRecord::AliasType(alias)) => target = alias.target.clone(),
+                Some(DomainPackageRecord::OptionType(_)) => return true,
+                _ => return false,
+            }
+        }
+        false
     };
     let node_of = |node: &DeclarationKey| {
         types.iter().enumerate().find(|(_, value)| {
@@ -5607,12 +5891,12 @@ fn check_alias_chains(
         match record {
             DomainPackageRecord::AliasType(alias) => {
                 if let ValueTypeRef::Package(_) = alias.target {
-                    if resolved(&snapshot, &alias.target).is_none() {
+                    if !alias_target_resolves(&snapshot, &alias.target) {
                         if let Some((position, node)) = node_of(&alias.key) {
                             refusals.push(
                                 NodeCtx::new(node, format!("$.types[{position}]")).malformed_in(
                                     "target",
-                                    "an alias's chain ends at a clock or a unit",
+                                    "an alias's chain ends at a clock, a unit, or an Option<T> value type",
                                 ),
                             );
                         }
@@ -5724,17 +6008,16 @@ mod tests {
         let meanings = HashMap::new();
         let shapes = HashMap::new();
         let type_meanings = HashMap::new();
-        let read = |value: Value| {
-            read_type_node(
-                "acme/orders",
-                &meanings,
-                &shapes,
-                &type_meanings,
-                &value,
-                "$.types[0]",
-                &mut Vec::new(),
-            )
+        let semantic_members = HashMap::new();
+        let reader = TypeNodeReader {
+            package: "acme/orders",
+            meanings: &meanings,
+            shapes: &shapes,
+            type_meanings: &type_meanings,
+            semantic: None,
+            semantic_members: &semantic_members,
         };
+        let read = |value: Value| read_type_node(&reader, &value, "$.types[0]", &mut Vec::new());
         let records = read(serde_json::json!({
             "identity": "ix://acme/orders/OptInt",
             "kind": "option",
@@ -5770,6 +6053,271 @@ mod tests {
         ] {
             assert!(read(malformed).is_err());
         }
+    }
+
+    fn option_wire_document(inner: Option<Value>) -> Value {
+        let mut option_definition = serde_json::json!({});
+        if let Some(inner) = inner {
+            option_definition["inner"] = inner;
+        }
+        let mut required_option = wire_field(
+            "ix://acme/optionals/Holder/a",
+            "a",
+            "ix://acme/optionals/OptInt",
+        );
+        required_option["presence"] = serde_json::json!("required");
+        required_option["multiplicity"] = serde_json::json!({
+            "lower": 1, "upper": 1, "ordered": false, "unique": true
+        });
+        let mut optional_integer = wire_field(
+            "ix://acme/optionals/Holder/b",
+            "b",
+            "ix://quire/native/Integer",
+        );
+        optional_integer["multiplicity"] = serde_json::json!({
+            "lower": 1, "upper": 1, "ordered": false, "unique": true
+        });
+        let mut operation_parameter = wire_field(
+            "ix://acme/optionals/Holder/read/value",
+            "value",
+            "ix://acme/optionals/OptInt",
+        );
+        operation_parameter["presence"] = serde_json::json!("required");
+        operation_parameter["multiplicity"] = serde_json::json!({
+            "lower": 1, "upper": 1, "ordered": false, "unique": true
+        });
+        wire_envelope(
+            "acme/optionals",
+            serde_json::json!([wire_construct(
+                "acme/optionals",
+                "holder",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([
+                wire_type(
+                    "ix://acme/optionals/OptInt",
+                    serde_json::json!("option"),
+                    option_definition,
+                ),
+                wire_type(
+                    "ix://acme/optionals/Holder",
+                    serde_json::json!({"module": "acme/optionals", "name": "holder"}),
+                    serde_json::json!({
+                        "supertypes": [],
+                        "fields": [required_option, optional_integer],
+                        "operations": [{
+                            "identity": "ix://acme/optionals/Holder/read",
+                            "name": "read",
+                            "params": [operation_parameter],
+                            "returns": {
+                                "typeRef": "ix://acme/optionals/OptInt",
+                                "nullable": false,
+                                "multiplicity": {
+                                    "lower": 1, "upper": 1,
+                                    "ordered": false, "unique": true
+                                }
+                            },
+                            "pre": [], "post": [],
+                            "origin": {
+                                "generated": {
+                                    "generatorIdentity": "ix://acme/optionals/Holder/read",
+                                    "generatorVersion": "1.0.0",
+                                    "inputIdentities": ["ix://acme/optionals/Holder/read"],
+                                }
+                            },
+                        }],
+                    }),
+                ),
+                wire_type(
+                    "ix://acme/optionals/AliasOpt",
+                    serde_json::json!("alias"),
+                    serde_json::json!({"target": "ix://acme/optionals/OptInt"}),
+                ),
+                wire_type(
+                    "ix://acme/optionals/SequenceOpt",
+                    serde_json::json!("sequence"),
+                    serde_json::json!({"items": "ix://acme/optionals/OptInt"}),
+                ),
+                wire_type(
+                    "ix://acme/optionals/MapOpt",
+                    serde_json::json!("map"),
+                    serde_json::json!({"values": "ix://acme/optionals/OptInt"}),
+                ),
+                wire_type(
+                    "ix://acme/optionals/OptMs",
+                    serde_json::json!("option"),
+                    serde_json::json!({"inner": "ix://quire/unit/ms"}),
+                ),
+            ]),
+        )
+    }
+
+    #[trace("QSpec-FR-154-AC-39", "QSpec-FR-322-AC-298")]
+    #[test]
+    fn reads_option_and_presence_spellings_through_read_records() {
+        let document = parse_document(
+            option_wire_document(Some(serde_json::json!("ix://quire/native/Integer")))
+                .to_string()
+                .as_bytes(),
+        );
+        let records = read_records("acme/optionals", &document)
+            .expect("the production reader admits the option type through the FCD document");
+        assert!(records.iter().any(|record| matches!(
+            record,
+            DomainPackageRecord::OptionType(option)
+                if option.inner == ValueTypeRef::Native(NativeValueType::Integer)
+        )));
+        let fields: Vec<_> = records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) => Some(field),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(
+            fields[0].value_type,
+            ValueTypeRef::Package(declaration_key(
+                "acme/optionals",
+                "ix://acme/optionals/OptInt",
+            ))
+        );
+        assert_eq!(fields[0].presence, Presence::Required);
+        assert_eq!(
+            fields[1].value_type,
+            ValueTypeRef::Native(NativeValueType::Integer)
+        );
+        assert_eq!(fields[1].presence, Presence::Optional);
+        assert!(records.iter().any(|record| matches!(
+            record,
+            DomainPackageRecord::AliasType(alias)
+                if alias.target == ValueTypeRef::Package(declaration_key(
+                    "acme/optionals",
+                    "ix://acme/optionals/OptInt",
+                ))
+        )));
+        assert!(records.iter().any(|record| matches!(
+            record,
+            DomainPackageRecord::SequenceType(sequence)
+                if sequence.items == ValueTypeRef::Package(declaration_key(
+                    "acme/optionals",
+                    "ix://acme/optionals/OptInt",
+                ))
+        )));
+        assert!(records.iter().any(|record| matches!(
+            record,
+            DomainPackageRecord::MapType(map)
+                if map.values == ValueTypeRef::Package(declaration_key(
+                    "acme/optionals",
+                    "ix://acme/optionals/OptInt",
+                ))
+        )));
+        assert!(records.iter().any(|record| matches!(
+            record,
+            DomainPackageRecord::OptionType(option)
+                if option.inner == ValueTypeRef::Unit("ms".to_owned())
+        )));
+        let operation = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation) => Some(operation),
+                _ => None,
+            })
+            .expect("the option-typed operation is read");
+        assert_eq!(operation.parameters.len(), 1);
+        assert_eq!(
+            operation.parameters[0].value_type,
+            ValueTypeRef::Package(declaration_key(
+                "acme/optionals",
+                "ix://acme/optionals/OptInt",
+            ))
+        );
+        assert_eq!(
+            operation.result.as_ref().map(|result| &result.value_type),
+            Some(&ValueTypeRef::Package(declaration_key(
+                "acme/optionals",
+                "ix://acme/optionals/OptInt",
+            )))
+        );
+    }
+
+    #[trace("QSpec-FR-154-AC-41")]
+    #[test]
+    fn option_inner_failures_keep_typed_malformed_and_missing_name_results() {
+        for inner in [
+            None,
+            Some(Value::Null),
+            Some(serde_json::json!(7)),
+            Some(serde_json::json!({"ref": "x"})),
+            Some(serde_json::json!("")),
+            Some(serde_json::json!(["ix://quire/native/Integer"])),
+            Some(serde_json::json!([
+                "ix://quire/native/Integer",
+                "ix://quire/native/Boolean"
+            ])),
+            Some(serde_json::json!([])),
+            Some(serde_json::json!("Integer")),
+            Some(serde_json::json!("ix://quire/native/Int")),
+            Some(serde_json::json!("ix://quire/native/Clock")),
+            Some(serde_json::json!("ix://acme/optionals/OptInt")),
+        ] {
+            let document = parse_document(option_wire_document(inner).to_string().as_bytes());
+            let refusals = read_records("acme/optionals", &document)
+                .expect_err("a malformed option inner must refuse");
+            assert!(
+                refusals.iter().any(|refusal| {
+                    refusal.code == Code::InvalidModelBinding
+                        && matches!(
+                            &refusal.cause,
+                            ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                                if node == "ix://acme/optionals/OptInt"
+                                    && *member == MemberPath::type_definition().name("inner")
+                        )
+                }),
+                "{refusals:?}"
+            );
+        }
+
+        let document = parse_document(
+            option_wire_document(Some(serde_json::json!("ix://acme/optionals/Missing")))
+                .to_string()
+                .as_bytes(),
+        );
+        let refusals = read_records("acme/optionals", &document)
+            .expect_err("an unresolved package inner is a missing declaration");
+        assert!(
+            refusals.iter().any(|refusal| {
+                refusal.code == Code::MissingDeclaration
+                    && matches!(
+                        &refusal.cause,
+                        ModelRefusalCause::IntakeMissingDeclaration { node, reference, member, .. }
+                            if node == "ix://acme/optionals/OptInt"
+                                && reference == "ix://acme/optionals/Missing"
+                                && *member == MemberPath::type_definition().name("inner")
+                    )
+            }),
+            "{refusals:?}"
+        );
+
+        let mut invalid_presence =
+            option_wire_document(Some(serde_json::json!("ix://quire/native/Integer")));
+        invalid_presence["types"][1]["fields"][0]["presence"] = serde_json::json!("optional");
+        let document = parse_document(invalid_presence.to_string().as_bytes());
+        let refusals = read_records("acme/optionals", &document)
+            .expect_err("a field cannot spell Option<Option<T>> through presence");
+        assert!(
+            refusals.iter().any(|refusal| {
+                refusal.code == Code::InvalidModelBinding
+                    && matches!(
+                        &refusal.cause,
+                        ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                            if node == "ix://acme/optionals/Holder/a"
+                                && *member == MemberPath::new(MemberRoot::Field).name("presence")
+                    )
+            }),
+            "{refusals:?}"
+        );
     }
 
     /// QSpec FR-154-AC-33: package intake retains a tuple declaration and

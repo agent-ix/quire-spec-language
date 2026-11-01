@@ -304,6 +304,9 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::OptionType(option) => std::iter::once(&option.key)
             .chain(option.inner.as_package())
             .collect(),
+        DomainPackageRecord::MapType(map) => std::iter::once(&map.key)
+            .chain(map.values.as_package())
+            .collect(),
         DomainPackageRecord::AliasType(alias) => std::iter::once(&alias.key)
             .chain(alias.target.as_package())
             .collect(),
@@ -736,6 +739,7 @@ impl RecordIndex {
                 }
                 DomainPackageRecord::SequenceType(_)
                 | DomainPackageRecord::OptionType(_)
+                | DomainPackageRecord::MapType(_)
                 | DomainPackageRecord::AliasType(_) => {
                     index.flags[own.0].core_type = true;
                 }

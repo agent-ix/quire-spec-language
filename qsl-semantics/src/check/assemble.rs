@@ -82,8 +82,8 @@ use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
 use crate::model::domain_package::{
     unaliased, AliasTypeRecord, DomainPackage, DomainPackageRecord, FieldMemberRecord,
-    Multiplicity, NativeValueType, OperationMemberRecord, RelationshipEnd, ScalarValueDomain,
-    SequenceTypeRecord, ValueTypeRef,
+    MapTypeRecord, Multiplicity, NativeValueType, OperationMemberRecord, OptionTypeRecord,
+    RelationshipEnd, ScalarValueDomain, SequenceTypeRecord, ValueTypeRef,
 };
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
@@ -1367,6 +1367,14 @@ fn model_object_types(
                 key,
                 items: ValueTypeRef::Unit(name),
             })
+            | DomainPackageRecord::OptionType(OptionTypeRecord {
+                key,
+                inner: ValueTypeRef::Unit(name),
+            })
+            | DomainPackageRecord::MapType(MapTypeRecord {
+                key,
+                values: ValueTypeRef::Unit(name),
+            })
             | DomainPackageRecord::AliasType(AliasTypeRecord {
                 key,
                 target: ValueTypeRef::Unit(name),
@@ -1376,6 +1384,8 @@ fn model_object_types(
                     member_identity: key.node.clone(),
                     member_path: match record {
                         DomainPackageRecord::SequenceType(_) => "TypeDefinition.items",
+                        DomainPackageRecord::OptionType(_) => "TypeDefinition.inner",
+                        DomainPackageRecord::MapType(_) => "TypeDefinition.values",
                         _ => "TypeDefinition.target",
                     }
                     .to_owned(),
@@ -1384,6 +1394,7 @@ fn model_object_types(
             }),
             DomainPackageRecord::SequenceType(_)
             | DomainPackageRecord::OptionType(_)
+            | DomainPackageRecord::MapType(_)
             | DomainPackageRecord::AliasType(_) => {}
         }
     }
@@ -2047,6 +2058,25 @@ fn model_value_type(
                     variant_shapes,
                     units,
                 )?)
+            }
+            Some(DomainPackageRecord::MapType(map)) => {
+                ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+                    model_value_type(
+                        &map.values,
+                        Multiplicity {
+                            lower: 1,
+                            upper: Some(1),
+                            ordered: false,
+                            unique: true,
+                        },
+                        records,
+                        identities,
+                        meaning_handles,
+                        variant_shapes,
+                        units,
+                    )?,
+                    None,
+                )))
             }
             // FR-360 item 3: a payload-free variant type is its enum type,
             // never a `Reference`. Payload-bearing variants use their union
