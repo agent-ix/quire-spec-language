@@ -93,7 +93,7 @@ fn exact_request_over_strict_guard_timed_rpc_is_refused() {
                 proof_bounds: Vec::new(),
             },
             claim,
-            limits: ModelCheckLimits::default(),
+            limits: ExactProbLimits::default(),
         },
         &Cancel::new(),
     )
