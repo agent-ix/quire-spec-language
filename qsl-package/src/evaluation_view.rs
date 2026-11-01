@@ -49,7 +49,7 @@ impl<'package> AdmittedEvaluationView<'package> {
         }
 
         match admit_current_snapshot(
-            std::slice::from_ref(model),
+            core::slice::from_ref(model),
             self.package.graph().scope().types(),
             packages,
             model_limits,
