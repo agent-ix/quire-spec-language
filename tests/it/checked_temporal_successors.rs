@@ -893,7 +893,13 @@ fn checked_capture_initializer_cannot_read_a_later_capture() {
         "on each (trigger: M::Widget)",
     )
     .expect_err("S3 refuses a later capture name");
-    assert!(format!("{refusal:?}").contains("later"));
+    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("forward capture is a checked-name refusal: {refusal:?}");
+    };
+    assert!(refusals.iter().any(|refusal| matches!(
+        &refusal.cause,
+        qsl_semantics::check::CheckCause::MissingName(name) if name == "later"
+    )));
 }
 
 /// FR-044-AC-5/7: empty admitted closed scopes and guard-false scopes are
