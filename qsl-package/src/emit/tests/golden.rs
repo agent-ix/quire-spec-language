@@ -334,7 +334,8 @@ const NOT_LOWERED: [&str; 8] = [
 /// `positive-control-operations.json` whose identity a row lowers, the node
 /// QSL emits for a function holding that operation equals the fixture node
 /// on the AC's members. Packages with equality sidecars remain subject to
-/// IR's typed UnsupportedConstruct refusal until its reader follow-up lands.
+/// IR's typed UnsupportedConstruct refusal until IR-1209 lands; then restore
+/// the Verified assertion for equality sidecars.
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it.
@@ -364,8 +365,8 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
             .and_then(Value::as_array)
             .is_some_and(|rows| !rows.is_empty());
         if has_equality_sidecar {
-            // IR follow-up: PR #778 admits primitive Plan only; Text, Enum,
-            // and Quantity equality decisions remain unsupported by the reader.
+            // IR-1209 follow-up: this typed UnsupportedConstruct assertion must
+            // become Verified once the IR-1209 reader lands.
             match read_back(&emission) {
                 Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
                     assert_eq!(
