@@ -310,6 +310,56 @@ fn checked_order_sensitive_formula_refuses_unordered_equal_coordinates() {
         };
         assert_eq!(assessment.truth, Some(Truth::True));
     }
+    input.positions[1].order.as_mut().unwrap().authority = "sequence:foreign".into();
+    let report =
+        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+    assert!(matches!(
+        report.result(),
+        Err(temporal::Error::Refused(temporal::Refusal::Order { .. }))
+    ));
+}
+
+/// FR-043-AC-4/5: until evaluates the left operand only inside its selected
+/// range before a witness; release is its Boolean dual over the same offsets.
+#[trace("TC-122", "FR-043-AC-4", "FR-043-AC-5")]
+#[test]
+fn checked_until_and_release_share_the_inclusive_lower_bound_convention() {
+    for (operator, expected) in [("until", Truth::True), ("release", Truth::False)] {
+        let checked = checked(
+            &format!("holds(view.code > 0) {operator}[1,2] holds(view.code = 2)"),
+            temporal::EVENT_POSITION,
+        );
+        let clause = &checked.package().graph().temporal_clauses()[0];
+        let leaves: Vec<_> = clause
+            .clause()
+            .formula()
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| {
+                matches!(node, qsl_semantics::check::FormulaNode::Holds { .. })
+                    .then(|| u32::try_from(index).ok())
+                    .flatten()
+            })
+            .collect();
+        assert_eq!(leaves.len(), 2);
+        let mut input = origin_trace();
+        input.positions = [(0, false, false), (1, false, true), (2, false, false)]
+            .into_iter()
+            .map(|(coordinate, left, right)| Position {
+                coordinate,
+                order: None,
+                valuations: BTreeMap::from([(leaves[0], left), (leaves[1], right)]),
+                instance_valuations: BTreeMap::new(),
+            })
+            .collect();
+        let report =
+            temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+            panic!("relation assessed");
+        };
+        assert_eq!(assessment.truth, Some(expected), "{operator}");
+    }
 }
 
 /// FR-045: TC-125 retains the selected checked clause and classifies from its
