@@ -1930,14 +1930,14 @@ fn unfair_member<M: MemoryModel>(
     lasso: Lasso,
     fairness: &[ProtocolFairness],
 ) -> Result<Option<ProtocolFairness>, ReplayRefusal> {
-    let mut numbered: BTreeMap<Vec<u8>, Identity> = BTreeMap::new();
+    let mut numbered: BTreeMap<Vec<u8>, (Identity, ProtocolTransition)> = BTreeMap::new();
     for state in states {
         for transition in state.enabled.iter().chain(std::iter::once(&state.taken)) {
             let key = system
                 .transition_key(transition)
                 .map_err(|_| fault("every-loop-transition-encodes"))?;
             let next = Identity::new(u64::try_from(numbered.len()).unwrap_or(u64::MAX));
-            numbered.entry(key).or_insert(next);
+            numbered.entry(key).or_insert((next, transition.clone()));
         }
     }
     let identity = |transition: &ProtocolTransition| {
@@ -1946,7 +1946,7 @@ fn unfair_member<M: MemoryModel>(
             .map_err(|_| fault("every-loop-transition-encodes"))?;
         numbered
             .get(&key)
-            .copied()
+            .map(|(identity, _)| *identity)
             .ok_or_else(|| fault("every-loop-transition-is-numbered"))
     };
     let mut steps = Vec::new();
@@ -1964,7 +1964,10 @@ fn unfair_member<M: MemoryModel>(
             EdgeLabel::Transition(identity(&state.taken)?),
         ));
     }
-    let transitions: Vec<ProtocolTransition> = numbered.keys().map(|t| (*t).clone()).collect();
+    let transitions: Vec<ProtocolTransition> = numbered
+        .values()
+        .map(|(_, transition)| transition.clone())
+        .collect();
     let (members, constraints): (Vec<usize>, Vec<Constraint>) =
         protocol_constraints(fairness, &transitions, identity)?
             .into_iter()
