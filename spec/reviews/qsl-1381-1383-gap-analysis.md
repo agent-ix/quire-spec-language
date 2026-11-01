@@ -3,7 +3,7 @@ id: SR-13628
 title: "Gap analysis — QSL-1381/1382/1383 checked successors"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; QSL-1381 FR-043/044, QSL-1382 FR-045, QSL-1383 FR-046-AC-5; all 16 changed Rust files"
+scope: "agent-ix/quire-spec-language; QSL-1381 FR-043/044, QSL-1382 FR-045, QSL-1383 FR-046-AC-5; full origin/main...HEAD diff at 57497065073dade8d1715a7b698f5a377d8c8b71, including all changed Rust, FR, TC and review artifacts"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-043
@@ -40,3 +40,34 @@ Manually checked the retained ticket acceptance criteria against the checked-pac
 | FND-001 | high | [QSL-1381] The checked successor suite does not map all retained FR-043/044 obligations to named checked-route tests. FR-043-AC-10/12/13/14 and FR-044-AC-4 lack trace tags; FR-043-AC-4's single normalization loop does not test the criterion's boundary/duality cases, and FR-044-AC-8 does not exercise distinct whole-execution origin identities. The new cases are tagged to TC-122/123 whose published procedures remain legacy emitted-artifact tests, with no checked-route successor procedure added. | tests/it/checked_temporal_successors.rs:143 |
 | FND-002 | high | [QSL-1382] FR-045-AC-4 has no checked-route trace tag, while the only multiple-dimension assertion is tagged AC-2/3. FR-045-AC-6's checked test proves only that an invalid index is refused; it does not assert retained selection identity/profile/activation or distinguish the supported and unsupported classification evidence required by the ticket. | tests/it/checked_temporal_successors.rs:361 |
 | FND-003 | medium | [QSL-1383] TC-127 proves a typed unsupported result for Map and Filter collection types, but neither the test nor result carries/asserts the selected checked node identity. Two same-typed query nodes therefore leave the representation-selection obligation unobservable. | qsl-replay/tests/it/query_proof.rs:59 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Added distinct checked-route successor cases TC-1277/1278 and preserved TC-122/123 as legacy emitted-artifact controls. |
+| FND-002 | fixed | Added checked-route AC-4 dimension accumulation and retained identity/profile/activation assertions. |
+| FND-003 | fixed | Added clause NodeKey and exact query NodeId to the unsupported result and tested same-typed Map candidates. |
+| FND-004 | still-open | TC-1277 maps these ACs, but its executable tests do not exercise the named subcases and the procedure overstates its executable evidence. |
+| FND-005 | still-open | The AC-1 checked test uses unequal capture amounts and does not assert a mismatch diagnostic naming both instance identities. |
+
+## Disposition pass 1
+
+The three original gap-analysis findings are fixed in the named fix commit. Two additional checked-route oracle gaps remain and keep the PR non-mergeable.
+
+### Fix evidence
+
+- FND-001: TC-1277/1278 explicitly describe S1-S4 CheckedPackage execution and state that TC-122/123 remain legacy emitted-artifact procedures. Every retained FR-043/044 AC is now trace-tagged to a named checked successor.
+- FND-002: TC-1279 and its tests now trace FR-045-AC-4 and assert both unmatched dimensions, checked declaration identity, profile, and activation.
+- FND-003: TC-1280 exercises two same-typed Map nodes and asserts both the containing clause NodeKey and selected query NodeId.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | [QSL-1381] TC-1277 maps retained ACs but its executable checked-route tests do not cover required subcases: order refusal for release/since/triggered (AC-5), the specified temporal negation examples (AC-6), an omitted interior history interval (AC-9), a conflicting completeness revision (AC-12), and result identity changes for clock/parameter premises (AC-13). TC-1277's procedure claims the interior-gap case, but no checked test removes an interior position. | tests/it/checked_temporal_successors.rs:257, tests/it/checked_temporal_successors.rs:744, spec/test-cases/TC-1277-evaluate-checked-package-temporal-obligations.md:28 |
+| FND-005 | medium | [QSL-1381] The checked FR-044-AC-1 test supplies capture values 1, 9 and 5 and asserts different truths; it does not use equal captured amounts or assert the required mismatch report naming both instance identities, so equal-value identity confusion could pass. | tests/it/checked_temporal_successors.rs:1328 |
+
+### New finding dispositions
+
+Both findings remain open pending checked-route vectors and oracles for the listed obligations.

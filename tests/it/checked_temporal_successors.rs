@@ -204,7 +204,7 @@ fn checked_profiles_keep_distinct_closed_boundary_results() {
 }
 
 /// FR-043-AC-13: identical checked inputs reproduce one assessment, while
-/// changed profile and ceiling premises remain distinct on the result.
+/// changed profile, clock, clock-parameter and ceiling premises stay distinct.
 #[trace("TC-1277", "FR-043-AC-13")]
 #[test]
 fn checked_repeated_results_retain_identity_inputs() {
@@ -235,6 +235,46 @@ fn checked_repeated_results_retain_identity_inputs() {
         panic!("the changed ceiling leaves the result assessable");
     };
     assert_ne!(original.premises.limits, changed_ceiling.premises.limits);
+
+    let mut changed_clock = input.clone();
+    changed_clock.clock.name = "other-orders".into();
+    let changed_clock = temporal::evaluate_checked(
+        checked_unit.package(),
+        0,
+        &changed_clock,
+        temporal::Limits::default(),
+    );
+    assert!(matches!(
+        changed_clock.result(),
+        Err(temporal::Error::Refused(temporal::Refusal::Binding {
+            dimension: temporal::Dimension::Clock,
+            ..
+        }))
+    ));
+    assert_ne!(first.result(), changed_clock.result());
+
+    let mut changed_parameters = input.clone();
+    changed_parameters.clock.parameters =
+        BTreeMap::from([("sequence_authority".into(), "orders-v2".into())]);
+    let changed_parameters = temporal::evaluate_checked(
+        checked_unit.package(),
+        0,
+        &changed_parameters,
+        temporal::Limits::default(),
+    );
+    let temporal::Obligation::Assessed(changed_parameters) =
+        &changed_parameters.result().unwrap()[0]
+    else {
+        panic!("changed clock parameters remain retained premises");
+    };
+    assert_ne!(
+        original.premises.clock_parameters,
+        changed_parameters.premises.clock_parameters
+    );
+    assert_eq!(
+        changed_parameters.premises.clock_parameters,
+        BTreeMap::from([("sequence_authority".into(), "orders-v2".into())])
+    );
 
     let other_profile = checked("always[0,1] true", temporal::TIMESTAMPED_WINDOW);
     let mut other_input = input;
@@ -283,57 +323,97 @@ fn checked_formula_normalization_preserves_all_operator_families() {
     }
 }
 
+/// FR-043-AC-6: pointwise negation remains inside each temporal quantifier.
+#[trace("TC-1277", "FR-043-AC-6")]
+#[test]
+fn checked_temporal_negation_is_pointwise_under_quantifiers() {
+    for (body, expected) in [
+        ("always[0,1] not holds(view.code > 0)", Truth::False),
+        ("eventually[0,1] not holds(view.code > 0)", Truth::True),
+    ] {
+        let checked = checked(body, temporal::EVENT_POSITION);
+        let leaf = checked.package().graph().temporal_clauses()[0]
+            .clause()
+            .formula()
+            .nodes()
+            .iter()
+            .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+            .and_then(|index| u32::try_from(index).ok())
+            .expect("checked hold atom");
+        let mut input = origin_trace();
+        input.positions[0].valuations.insert(leaf, true);
+        let report =
+            temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
+            panic!("quantified pointwise negation is assessed: {body}");
+        };
+        assert_eq!(assessment.truth, Some(expected), "{body}");
+    }
+}
+
 /// FR-043-AC-5: equal-coordinate participants require one admitted order
 /// authority; insertion order is never accepted as the ordering premise.
 #[trace("TC-1277", "FR-043-AC-5")]
 #[test]
 fn checked_order_sensitive_formula_refuses_unordered_equal_coordinates() {
-    let checked = checked("true until[0,1] true", temporal::EVENT_POSITION);
-    let mut input = origin_trace();
-    input.positions = [0, 1]
-        .into_iter()
-        .map(|_| Position {
-            coordinate: 1,
-            order: None,
-            valuations: BTreeMap::new(),
-            instance_valuations: BTreeMap::new(),
-        })
-        .collect();
-    let report =
-        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
-    assert!(matches!(
-        report.result(),
-        Err(temporal::Error::Refused(temporal::Refusal::Order { .. }))
-    ));
-    assert_eq!(report.usage().positions, 0);
-
-    for positions in [[1, 2], [2, 1]] {
-        input.positions = positions
+    for operator in ["until", "release", "since", "triggered"] {
+        let checked = checked(
+            &format!("true {operator}[0,1] true"),
+            temporal::EVENT_POSITION,
+        );
+        let mut input = origin_trace();
+        input.positions = [0, 1]
             .into_iter()
-            .map(|key| Position {
+            .map(|_| Position {
                 coordinate: 1,
-                order: Some(temporal::OrderKey {
-                    authority: "sequence:orders".into(),
-                    key,
-                }),
+                order: None,
                 valuations: BTreeMap::new(),
                 instance_valuations: BTreeMap::new(),
             })
             .collect();
         let report =
             temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
-        let temporal::Obligation::Assessed(assessment) = &report.result().unwrap()[0] else {
-            panic!("admitted order evaluates");
-        };
-        assert_eq!(assessment.truth, Some(Truth::True));
+        assert!(
+            matches!(
+                report.result(),
+                Err(temporal::Error::Refused(temporal::Refusal::Order { .. }))
+            ),
+            "{operator} refuses equal coordinates without admitted order"
+        );
+        assert_eq!(report.usage().positions, 0, "{operator}");
+
+        for positions in [[1, 2], [2, 1]] {
+            input.positions = positions
+                .into_iter()
+                .map(|key| Position {
+                    coordinate: 1,
+                    order: Some(temporal::OrderKey {
+                        authority: "sequence:orders".into(),
+                        key,
+                    }),
+                    valuations: BTreeMap::new(),
+                    instance_valuations: BTreeMap::new(),
+                })
+                .collect();
+            let report = temporal::evaluate_checked(
+                checked.package(),
+                0,
+                &input,
+                temporal::Limits::default(),
+            );
+            assert!(report.result().is_ok(), "{operator} with admitted order");
+        }
+        input.positions[1].order.as_mut().unwrap().authority = "sequence:foreign".into();
+        let report =
+            temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
+        assert!(
+            matches!(
+                report.result(),
+                Err(temporal::Error::Refused(temporal::Refusal::Order { .. }))
+            ),
+            "{operator} refuses foreign order authorities"
+        );
     }
-    input.positions[1].order.as_mut().unwrap().authority = "sequence:foreign".into();
-    let report =
-        temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
-    assert!(matches!(
-        report.result(),
-        Err(temporal::Error::Refused(temporal::Refusal::Order { .. }))
-    ));
 }
 
 /// FR-043-AC-4/5: until evaluates the left operand only inside its selected
@@ -779,6 +859,49 @@ fn checked_past_operator_requires_authoritative_history() {
             .map(|incomplete| incomplete.dimension),
         Some(temporal::Dimension::History)
     );
+
+    let nested = checked(
+        "eventually[3,3] once[1,2] holds(view.code > 0)",
+        temporal::EVENT_POSITION,
+    );
+    let nested_clause = &nested.package().graph().temporal_clauses()[0];
+    let nested_leaf = nested_clause
+        .clause()
+        .formula()
+        .nodes()
+        .iter()
+        .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+        .and_then(|index| u32::try_from(index).ok())
+        .expect("nested checked hold atom");
+    let mut interior_gap = origin_trace();
+    interior_gap.positions = [(0, true), (1, false), (2, false), (3, false)]
+        .into_iter()
+        .map(|(coordinate, holds)| Position {
+            coordinate,
+            order: None,
+            valuations: (coordinate != 1)
+                .then(|| BTreeMap::from([(nested_leaf, holds)]))
+                .unwrap_or_default(),
+            instance_valuations: BTreeMap::new(),
+        })
+        .collect();
+    let report = temporal::evaluate_checked(
+        nested.package(),
+        0,
+        &interior_gap,
+        temporal::Limits::default(),
+    );
+    assert!(matches!(
+        report.result(),
+        Err(temporal::Error::Incomplete(temporal::Incomplete {
+            dimension: temporal::Dimension::Valuation,
+            subject: temporal::Subject {
+                node: Some(node),
+                position: Some(1),
+                ..
+            },
+        })) if *node == nested_leaf as usize
+    ));
 }
 
 /// FR-045: the checked classifier accumulates finite-window and mixed-direction
@@ -947,6 +1070,23 @@ fn checked_progress_is_keyed_by_checked_clause_identity() {
         refused.result(),
         Err(temporal::Error::Refused(temporal::Refusal::Progress {
             dimension: temporal::Dimension::DecisionScope,
+            ..
+        }))
+    ));
+    let mut completeness_conflict = earlier.clone();
+    completeness_conflict.watermark = 6;
+    completeness_conflict.completeness = Completeness::Incomplete;
+    let refused = temporal::evaluate_checked_with_progress(
+        first.package(),
+        0,
+        &completeness_conflict,
+        temporal::Limits::default(),
+        &mut ledger,
+    );
+    assert!(matches!(
+        refused.result(),
+        Err(temporal::Error::Refused(temporal::Refusal::Progress {
+            dimension: temporal::Dimension::Completeness,
             ..
         }))
     ));
@@ -1360,9 +1500,9 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
         ]),
     }];
     input.triggers = [
-        ("trigger:low", "1", "receipt:low"),
-        ("trigger:high", "9", "receipt:high"),
-        ("trigger:missing", "5", "receipt:missing"),
+        ("trigger:low", "7", "receipt:low"),
+        ("trigger:high", "7", "receipt:high"),
+        ("trigger:missing", "7", "receipt:missing"),
     ]
     .into_iter()
     .map(|(identity, value, receipt)| temporal::Trigger {
@@ -1381,14 +1521,25 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
     let report =
         temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
     let obligations = report.result().expect("both instances assessed");
-    let truths: Vec<_> = obligations[..2]
+    let reported_instances: Vec<_> = obligations[..2]
         .iter()
         .map(|obligation| match obligation {
-            temporal::Obligation::Assessed(assessment) => assessment.truth,
+            temporal::Obligation::Assessed(assessment) => (
+                assessment.instance.as_deref(),
+                assessment.captures[0].value.as_str(),
+                assessment.truth,
+            ),
             other => panic!("expected active instance, got {other:?}"),
         })
         .collect();
-    assert_eq!(truths, [Some(Truth::True), Some(Truth::False)]);
+    assert_eq!(
+        reported_instances,
+        [
+            (Some("trigger:low"), "7", Some(Truth::True)),
+            (Some("trigger:high"), "7", Some(Truth::False)),
+        ],
+        "mismatched outcomes identify both semantic instances even with equal captures"
+    );
     assert!(matches!(
         &obligations[2],
         temporal::Obligation::Assessed(assessment)

@@ -42,31 +42,37 @@ independently of the evaluator's output.
    `until[1,2]` witness at offset one, and release/triggered agreement with
    their Boolean duals on the same checked traces.
 4. Run `checked_order_sensitive_formula_refuses_unordered_equal_coordinates`.
-   Require refusal for equal coordinates with missing or foreign order
-   authority, evaluation with one admitted order, and invariance under reversed
-   input order.
-5. Run `checked_atom_has_exact_decision_support_and_false_extension` and the
+   For each of `until`, `release`, `since` and `triggered`, require refusal for
+   equal coordinates with missing or foreign order authority and successful
+   evaluation with one admitted authority under both insertion orders.
+5. Run `checked_atom_has_exact_decision_support_and_false_extension`,
+   `checked_temporal_negation_is_pointwise_under_quantifiers` and the other
    pointwise-connective cases in
    `checked_formula_normalization_preserves_all_operator_families`. Require
-   exact support and pointwise temporal Boolean connectives.
+   exact support, `always[0,1] not holds(p)` false and
+   `eventually[0,1] not holds(p)` true when `p` is true at the single
+   closed-complete position, and pointwise Boolean connectives.
 6. Run `checked_open_incomplete_and_empty_window_outcomes_stay_distinct`.
    Require closed, open decisive, open pending, unavailable, incomplete and
    finite-empty-window outcomes to remain distinct. Inspect the result premises
    and require decision closure, surrounding closure, assessment execution and
    input completeness to retain their independent supplied values.
 7. Run `checked_past_operator_requires_authoritative_history`. Compare an
-   authoritative origin with the identical history cutoff and omit an interior
-   history interval; require the exact incomplete/refusal outcome.
+   authoritative origin with the identical history cutoff, then evaluate a
+   nested past query whose required interior history valuation at position 1
+   is omitted; require a typed incomplete outcome naming that exact position,
+   never false padding.
 8. Run `checked_watermark_deadline_and_silent_clock_semantics`. Require
    fixed-sample and timestamped watermarks to settle inclusive deadlines,
    deadline instants to participate, later instants to be excluded, and
    event-position silence not to advance the clock.
 9. Run `checked_progress_is_keyed_by_checked_clause_identity` and
    `checked_repeated_results_retain_identity_inputs`. Require progress to be
-   isolated by checked clause identity, changed decision-scope assertions to
-   return a typed contradiction without replacing retained progress, identical
-   inputs to reproduce an equal assessment, and changed profile or ceiling
-   premises to remain distinguishable.
+   isolated by checked clause identity; changed decision-scope and
+   complete-to-incomplete assertions to return typed contradictions without
+   replacing retained progress; identical inputs to reproduce an equal
+   assessment; a changed clock name to refuse as a distinct result; and changed
+   profile, clock-parameter and ceiling premises to remain distinguishable.
 10. Run
     `native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter`
     from `tests/it/compiled_protocol_v2.rs`. Require the exact profile, clock
