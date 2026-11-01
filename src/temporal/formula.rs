@@ -13,6 +13,7 @@ use super::budget::{Dimension as Charge, Work};
 use super::profile::Profile;
 use super::result::{Completeness, Dimension, Error, Incomplete, Refusal, Subject, Support};
 use super::trace::{Closure, Eviction, Trace};
+use std::collections::BTreeSet;
 
 /// Kleene three-valued truth over the observed prefix.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +69,9 @@ pub(super) struct Evaluator<'a> {
     pub instance: usize,
     /// Semantic trigger/origin identity for instance-specific valuations.
     pub instance_identity: &'a str,
+    /// Checked atoms whose authored expression reads an immutable capture.
+    /// Their valuation must be supplied under this instance identity.
+    pub instance_bound_atoms: &'a BTreeSet<u32>,
     /// Progress in force for this binding, in the profile's clock domain. It is
     /// the trace's own assertion, or the progress a ledger retains for the
     /// binding; progress asserted under any other binding never reaches here.
@@ -459,11 +463,15 @@ impl<'a> Evaluator<'a> {
             .into());
         }
         let position = &self.trace.positions[position_index];
-        let value = position
+        let instance_value = position
             .instance_valuations
             .get(self.instance_identity)
-            .and_then(|valuations| valuations.get(&leaf))
-            .or_else(|| position.valuations.get(&leaf));
+            .and_then(|valuations| valuations.get(&leaf));
+        let value = if self.instance_bound_atoms.contains(&leaf) {
+            instance_value
+        } else {
+            instance_value.or_else(|| position.valuations.get(&leaf))
+        };
         match value {
             Some(true) => {
                 self.support.push(position_index);
@@ -622,6 +630,7 @@ mod tests {
             declaration: 37,
             instance: 11,
             instance_identity: "execution:fixture",
+            instance_bound_atoms: &BTreeSet::new(),
             watermark: 0,
             support: Support::default(),
         };

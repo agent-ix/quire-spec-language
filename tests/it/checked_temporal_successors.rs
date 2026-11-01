@@ -969,7 +969,7 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
     input.positions = vec![Position {
         coordinate: 0,
         order: None,
-        valuations: BTreeMap::new(),
+        valuations: BTreeMap::from([(leaf, true)]),
         instance_valuations: BTreeMap::from([
             ("trigger:low".into(), BTreeMap::from([(leaf, true)])),
             ("trigger:high".into(), BTreeMap::from([(leaf, false)])),
@@ -978,6 +978,7 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
     input.triggers = [
         ("trigger:low", "1", "receipt:low"),
         ("trigger:high", "9", "receipt:high"),
+        ("trigger:missing", "5", "receipt:missing"),
     ]
     .into_iter()
     .map(|(identity, value, receipt)| temporal::Trigger {
@@ -996,7 +997,7 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
     let report =
         temporal::evaluate_checked(checked.package(), 0, &input, temporal::Limits::default());
     let obligations = report.result().expect("both instances assessed");
-    let truths: Vec<_> = obligations
+    let truths: Vec<_> = obligations[..2]
         .iter()
         .map(|obligation| match obligation {
             temporal::Obligation::Assessed(assessment) => assessment.truth,
@@ -1004,6 +1005,13 @@ fn checked_capture_bound_valuations_are_isolated_by_instance_identity() {
         })
         .collect();
     assert_eq!(truths, [Some(Truth::True), Some(Truth::False)]);
+    assert!(matches!(
+        &obligations[2],
+        temporal::Obligation::Unactivated {
+            error: temporal::Error::Incomplete(incomplete),
+            ..
+        } if incomplete.dimension == temporal::Dimension::Valuation
+    ));
 }
 
 /// FR-044-AC-6/9: progress-ledger re-evaluation reuses the first immutable

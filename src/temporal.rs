@@ -24,7 +24,7 @@ mod progress;
 mod result;
 mod trace;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol_artifact::{v2, wire as w, AdmittedPackage, ClockNames};
 use qsl_package::CheckedPackage;
@@ -559,6 +559,7 @@ fn run(
             shape,
             root,
             operations,
+            instance_bound_atoms: BTreeSet::new(),
         },
         trace,
         watermark,
@@ -573,6 +574,7 @@ struct EvaluationView {
     shape: Shape,
     root: usize,
     operations: Vec<w::TemporalOperation>,
+    instance_bound_atoms: BTreeSet<u32>,
 }
 
 fn run_view(
@@ -643,6 +645,7 @@ fn run_view(
                     declaration: view.declaration,
                     instance: ordinal,
                     instance_identity: &instance.identity,
+                    instance_bound_atoms: &view.instance_bound_atoms,
                     watermark,
                     support: Vec::new(),
                 };
@@ -708,6 +711,7 @@ fn run_checked(
     }
     check_clock_name(Some(clause.clock()), &trace.clock.name, subject)?;
     let operations = checked_operations(clause.formula(), subject)?;
+    let instance_bound_atoms = checked_instance_bound_atoms(clause, node);
     let root = clause.formula().root().index();
     let activation = clause.activation();
     let shape = Shape {
@@ -740,6 +744,7 @@ fn run_checked(
             shape,
             root,
             operations,
+            instance_bound_atoms,
         },
         trace,
         watermark,
@@ -888,6 +893,46 @@ fn checked_operations(
         operations.push(operation);
     }
     Ok(operations)
+}
+
+/// Find checked temporal atoms whose expression reads a capture slot.
+///
+/// These observations are instance-specific: one trigger's capture-bound
+/// predicate result cannot satisfy another trigger's proposition.
+fn checked_instance_bound_atoms(
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    node: &qsl_semantics::check::TemporalClauseNode,
+) -> BTreeSet<u32> {
+    let first_capture_slot = match clause.activation() {
+        CheckedActivation::Origin => 1,
+        CheckedActivation::Each { .. } => 2,
+    };
+    let mut result = BTreeSet::new();
+    for (index, formula) in clause.formula().nodes().iter().enumerate() {
+        if !matches!(formula, FormulaNode::Holds { .. }) {
+            continue;
+        }
+        let Some(atom) = clause.formula().node_id(index) else {
+            continue;
+        };
+        let Some((root, _)) = node.condition(atom) else {
+            continue;
+        };
+        let mut pending = vec![root];
+        while let Some(expression) = pending.pop() {
+            if matches!(
+                expression.kind(),
+                qsl_semantics::check::NodeKind::Local(slot) if *slot >= first_capture_slot
+            ) {
+                if let Ok(atom) = u32::try_from(index) {
+                    result.insert(atom);
+                }
+                break;
+            }
+            pending.extend(expression.children());
+        }
+    }
+    result
 }
 
 fn checked_interval(
