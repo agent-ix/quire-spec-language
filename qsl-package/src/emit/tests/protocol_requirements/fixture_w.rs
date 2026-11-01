@@ -2,6 +2,8 @@
 //! The complete TC-1061 W choreography used by TC-1194's activation cases.
 
 use super::*;
+use crate::checked_v2::V2ReadRefusal;
+use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
 
 const PROFILES_W: &str = "profile P = \"quire.protocol.finite-global/v1\";\n\
                          profile T = \"quire.temporal.infinite-trace/v1\";\n";
@@ -466,6 +468,85 @@ fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
         );
     }
 
+    let lowered = lower_with(document(), PROFILES_W, &tc134_source());
+    let mut wire = lowered.wire.clone();
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire)
+        .expect("emitted graph has structural keys");
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let template_index = nodes
+        .iter()
+        .position(|node| {
+            node["semantic_form"] == "compensation"
+                && node["declaration"]["qualified_name"][2] == "Refund"
+        })
+        .expect("the Refund template");
+    let effect = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "control"
+                && node["declaration"]["qualified_name"]
+                    .as_array()
+                    .is_some_and(|name| name.last() == Some(&json!("Applied")))
+        })
+        .expect("the forward effect")["node_id"]
+        .clone();
+    let attempt = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "control"
+                && node["declaration"]["qualified_name"]
+                    .as_array()
+                    .is_some_and(|name| name.last() == Some(&json!("Charged")))
+        })
+        .expect("the payment attempt")["node_id"]
+        .clone();
+    let template = &mut wire["semantic_graph"]["nodes"][template_index];
+    let forward_target = &mut template["body"]["arguments"][0]["value"]["target"];
+    assert_eq!(*forward_target, effect, "positive control names the effect");
+    *forward_target = attempt.clone();
+    let dependencies = template["dependencies"].as_array_mut().unwrap();
+    dependencies.retain(|dependency| dependency != &effect);
+    dependencies.push(attempt);
+    dependencies.sort_by_key(|dependency| {
+        graph
+            .key_of_value(dependency)
+            .expect("structural dependency key")
+    });
+
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in lowered.wire["lock"]["required_features"]
+        .as_array()
+        .unwrap()
+    {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let domain = document();
+    evidence
+        .insert_domain_package_document(package_identity(&domain), domain.as_slice())
+        .expect("fresh domain evidence");
+    let refused = read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence);
+    let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = refused else {
+        panic!("a forward reference to an attempt instead of an effect must refuse");
+    };
+    assert_eq!(
+        refusal.code,
+        CheckedPackageRefusalCode::InvalidModelBinding,
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.cause,
+        Some(CheckedPackageRefusalCause::MalformedDeclaration),
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.loci[0].path.as_ref().map(|path| path.as_str()),
+        Some(
+            format!("/semantic_graph/nodes/{template_index}/body/arguments/0/value/target")
+                .as_str()
+        ),
+        "{refusal:?}"
+    );
+
     let source = tc134_source();
     let commit = "    commit Finalized by Orders as (done: Boolean) { true };\n";
     let before_effect = source.replace(commit, "").replace(
@@ -481,6 +562,30 @@ fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
         }),
         "typed commit/effect ordering refusal: {refusals:?}"
     );
+
+    // This is separate from commit-before-effect: a recovery predicate cannot
+    // treat a value produced by the protocol commit as an available prerequisite.
+    let commit_supplied_recovery = tc134_source().replace(
+        "recover (recovery: M::RefundRecovery) { recovery.order = saved };",
+        "recover (recovery: M::RefundRecovery) { recovery.ok = done };",
+    );
+    let refusals = check_tc134(&commit_supplied_recovery)
+        .expect_err("recovery cannot use a value produced by the protocol commit");
+    assert!(
+        refusals.iter().any(|refusal| {
+            refusal.cause.code() == qsl_foundation::Code::MissingDeclaration
+                && refusal.cause.cause() == Some("missing-name")
+        }),
+        "typed refusal when recovery depends on a later commit result: {refusals:?}"
+    );
+}
+
+fn jcs(value: &Value) -> Vec<u8> {
+    serde_json::to_vec(value).expect("wire fixture serializes")
+}
+
+fn library() -> qsl_semantics::library::LibraryName {
+    qsl_semantics::library::LibraryName::new("pkg").expect("fixture library name")
 }
 
 fn check_tc134(unit: &str) -> Result<(), Vec<qsl_semantics::check::CheckRefusal>> {
