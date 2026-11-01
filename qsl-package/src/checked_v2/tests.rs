@@ -2949,6 +2949,28 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
     let mut package = base.clone();
     package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]
         ["identity"] = json!("quire.fixture.temporal-profile/v1");
+    let declaration = package["semantic_graph"]["nodes"][clause]["node_id"].clone();
+    let bindings_empty = {
+        let bindings = package["temporal_bindings"]
+            .as_array_mut()
+            .expect("all-families fixture has temporal bindings");
+        assert_eq!(
+            bindings
+                .iter()
+                .filter(|binding| binding["declaration"] == declaration)
+                .count(),
+            1,
+            "fixture has one clock binding for the temporal clause"
+        );
+        bindings.retain(|binding| binding["declaration"] != declaration);
+        bindings.is_empty()
+    };
+    if bindings_empty {
+        package
+            .as_object_mut()
+            .expect("checked package is an object")
+            .remove("temporal_bindings");
+    }
     let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &package);
     let Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
         panic!("expected an unknown_profile refusal, got {outcome:?}");
