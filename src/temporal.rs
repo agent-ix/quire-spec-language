@@ -21,23 +21,35 @@ mod formula;
 mod mapping;
 mod profile;
 mod progress;
+mod protocol;
 mod result;
 mod trace;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol_artifact::{v2, wire as w, AdmittedPackage, ClockNames};
+use qsl_package::CheckedPackage;
+use qsl_semantics::check::{
+    Activation as CheckedActivation, CheckedFormula, CheckedInterval, FormulaNode, TemporalProfile,
+};
+use quire_checked::node::NodeKind;
 
 use activation::{Outcome, Shape};
 use formula::{Evaluator, Tri};
 
 pub use budget::{Dimension as LimitDimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 pub use mapping::{
-    classify, AuthenticatedSelection, Classification, Operators, Retained, Support, Target,
-    Unmatched, OUTSTANDING_PREMISES,
+    classify, AuthenticatedSelection, CheckedClassification, CheckedClassificationV2,
+    CheckedRetained, Classification, Operators, Retained, Support, Target, Unmatched,
+    OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
+use progress::{CheckedAuthenticatedBinding, CheckedBinding};
+pub use protocol::{
+    ProtocolEvaluation, ProtocolEvaluationId, ProtocolEvaluationInput, ProtocolLedger,
+    ProtocolRefusal, ProtocolSelection, SemanticTriggerIdentity,
+};
 pub use result::{
     Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
     Incomplete, Obligation, Premises, Refusal, Report, Subject, Support as DecisionSupport, Truth,
@@ -73,6 +85,213 @@ pub fn evaluate(
         usage: work.usage,
         authenticated: None,
     }
+}
+
+/// Evaluate a temporal clause directly from its checked package graph.
+///
+/// The formula, profile, activation shape and clock binding are read from S3's
+/// checked nodes. The checked graph is the authority; this path does not emit,
+/// serialize, or reconstruct a protocol artifact.
+pub fn evaluate_checked(
+    package: &CheckedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let result = run_checked(
+        package,
+        declaration,
+        trace,
+        trace.watermark,
+        &mut work,
+        None,
+    );
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated: None,
+    }
+}
+
+/// Evaluate an S3 checked temporal clause after joining it to one strict `/2`
+/// admitted temporal selection.
+///
+/// The join requires the checked source identity, declaration name and source
+/// span to match the independently admitted artifact. The selected profile
+/// and clock name must also match before the v2 clock fields are authenticated.
+/// All checks happen before temporal positions are visited. The formula and
+/// activation are evaluated from `checked`, never reconstructed from the v2
+/// artifact.
+pub fn evaluate_checked_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let mut authenticated = None;
+    let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
+        .and_then(|(binding, _)| {
+            authenticated = Some(binding);
+            run_checked(
+                checked,
+                declaration,
+                trace,
+                trace.watermark,
+                &mut work,
+                None,
+            )
+        });
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated,
+    }
+}
+
+/// Checked-package counterpart of [`evaluate_with_progress`].
+pub fn evaluate_checked_with_progress(
+    package: &CheckedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+    ledger: &mut Ledger,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let binding = package
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .map(|node| {
+            CheckedBinding::of(
+                declaration,
+                node.identity(),
+                package.graph().source().clone(),
+                trace,
+            )
+        })
+        .ok_or(Refusal::Reference {
+            subject: declaration_subject(declaration),
+        });
+    let result = match binding {
+        Ok(binding) => match ledger.record_checked(binding.clone(), Progress::of(trace)) {
+            Ok(retained) => {
+                let instances = ledger.checked_instances.entry(binding).or_default();
+                run_checked(
+                    package,
+                    declaration,
+                    trace,
+                    retained.watermark,
+                    &mut work,
+                    Some(instances),
+                )
+            }
+            Err(refusal) => Err(refusal.into()),
+        },
+        Err(refusal) => Err(refusal.into()),
+    };
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated: None,
+    }
+}
+
+/// Checked-package counterpart of [`evaluate_with_progress_v2`].
+///
+/// Progress is retained under the strict artifact declaration, selected
+/// definition identity/revision and exact authenticated clock configuration.
+/// A different admitted selection cannot settle this checked clause.
+pub fn evaluate_checked_with_progress_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+    ledger: &mut Ledger,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let mut authenticated = None;
+    let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
+        .and_then(|(binding, _)| {
+            authenticated = Some(binding.clone());
+            let checked_binding = checked
+                .graph()
+                .temporal_clauses()
+                .get(declaration)
+                .map(|node| {
+                    CheckedBinding::of(
+                        declaration,
+                        node.identity(),
+                        checked.graph().source().clone(),
+                        trace,
+                    )
+                })
+                .ok_or(Refusal::Reference {
+                    subject: declaration_subject(declaration),
+                })?;
+            let ledger_binding = CheckedAuthenticatedBinding::of(checked_binding, binding);
+            ledger
+                .record_checked_authenticated(ledger_binding.clone(), Progress::of(trace))
+                .map_err(Error::from)
+                .and_then(|retained| {
+                    let instances = ledger
+                        .checked_authenticated_instances
+                        .entry(ledger_binding)
+                        .or_default();
+                    run_checked(
+                        checked,
+                        declaration,
+                        trace,
+                        retained.watermark,
+                        &mut work,
+                        Some(instances),
+                    )
+                })
+        });
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+        authenticated,
+    }
+}
+
+/// Classify the checked clause only after matching its exact S3 source locus
+/// and profile to a strict `/2` admitted selection.
+///
+/// No trace is supplied, so this operation authenticates no parameter map.
+pub fn mapping_support_checked_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    surrounding_execution: Closure,
+) -> Result<CheckedClassificationV2, Error> {
+    let subject = declaration_subject(declaration);
+    let (artifact_declaration, selected) =
+        checked_v2_selection(checked, admitted, declaration, subject)?;
+    let (binding, authenticated) = authenticated_selection(
+        admitted,
+        artifact_declaration,
+        &selected,
+        Subject {
+            declaration: artifact_declaration,
+            ..Subject::default()
+        },
+    )?;
+    let classification = mapping_support_checked(checked, declaration, surrounding_execution)?;
+    Ok(CheckedClassificationV2 {
+        support: classification.support,
+        retained: classification.retained,
+        authenticated,
+        clock_name: binding.clock_name.clone(),
+        clock: binding.clock.clone(),
+    })
 }
 
 /// Evaluate against a trace whose progress is retained across evaluations under
@@ -131,6 +350,60 @@ pub fn mapping_support(
         surrounding_execution,
         None,
     ))
+}
+
+/// Classify FR-045 directly from an S3 checked temporal-clause node.
+pub fn mapping_support_checked(
+    package: &CheckedPackage,
+    declaration: usize,
+    surrounding_execution: Closure,
+) -> Result<CheckedClassification, Error> {
+    let subject = declaration_subject(declaration);
+    let node = package
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let clause = node.clause();
+    let operators = checked_operators(clause.formula());
+    let support = match clause.profile() {
+        TemporalProfile::EventPositionFalseExtension => {
+            classify(Profile::EventPosition, operators, surrounding_execution)
+        }
+        TemporalProfile::FixedSampleFalseExtension => {
+            classify(Profile::FixedSample, operators, surrounding_execution)
+        }
+        TemporalProfile::TimestampedEventFiniteWindow => {
+            let mut dimensions = vec![Unmatched::FiniteWindow];
+            if operators.past && operators.future {
+                dimensions.push(Unmatched::MixedDirection);
+            }
+            Support::Unsupported { dimensions }
+        }
+        TemporalProfile::InfiniteTrace => {
+            let mut dimensions = vec![Unmatched::InfiniteTrace];
+            if operators.past && operators.future {
+                dimensions.push(Unmatched::MixedDirection);
+            }
+            Support::Unsupported { dimensions }
+        }
+        TemporalProfile::Timed => {
+            let mut dimensions = vec![Unmatched::TimedProfile];
+            if operators.past && operators.future {
+                dimensions.push(Unmatched::MixedDirection);
+            }
+            Support::Unsupported { dimensions }
+        }
+    };
+    Ok(CheckedClassification {
+        support,
+        retained: CheckedRetained {
+            identity: node.identity(),
+            name: clause.name().to_owned(),
+            profile: clause.profile(),
+            activation: clause.activation(),
+        },
+    })
 }
 
 /// Evaluate one strict version-2 declaration after authenticating its exact clock.
@@ -235,6 +508,128 @@ fn declaration_subject(declaration: usize) -> Subject {
         declaration,
         ..Subject::default()
     }
+}
+
+/// Find the admitted declaration whose exact source, name and byte span name
+/// the selected checked temporal node. The v2 declaration index is returned
+/// separately because it indexes the artifact binding table, not S3 nodes.
+fn checked_v2_selection<'a>(
+    checked: &CheckedPackage,
+    admitted: &'a v2::AdmittedPackage,
+    declaration: usize,
+    subject: Subject,
+) -> Result<(usize, Selected<'a>), Error> {
+    let node = checked
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let clause = node.clause();
+    let source = checked.graph().source();
+    let span = clause.span();
+    let start = u32::try_from(span.start).map_err(|_| Refusal::Reference { subject })?;
+    let end = u32::try_from(span.end).map_err(|_| Refusal::Reference { subject })?;
+    let package = admitted.inherited();
+    let matches = package
+        .declarations
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| {
+            candidate.name == clause.name()
+                && candidate.locus.span.start == start
+                && candidate.locus.span.end == end
+                && package
+                    .sources
+                    .get(usize::try_from(candidate.locus.source).unwrap_or(usize::MAX))
+                    .is_some_and(|origin| {
+                        origin.artifact.authority == source.authority()
+                            && origin.artifact.identity == source.identity()
+                    })
+        });
+    let mut matches = matches;
+    let (artifact_declaration, _) = matches.next().ok_or(Refusal::Reference { subject })?;
+    if matches.next().is_some() {
+        return Err(Refusal::Reference { subject }.into());
+    }
+    let selected = select(package, artifact_declaration, subject)?;
+    if selected.profile.identity() != clause.profile().identity() {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    let artifact_declaration_index =
+        u32::try_from(artifact_declaration).map_err(|_| Refusal::Reference { subject })?;
+    let temporal_binding = admitted
+        .package()
+        .temporal_bindings
+        .binary_search_by_key(&artifact_declaration_index, |binding| binding.declaration)
+        .ok()
+        .and_then(|index| admitted.package().temporal_bindings.get(index))
+        .ok_or(Refusal::Reference { subject })?;
+    if clause.clock() != temporal_binding.clock_name {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Clock,
+            subject,
+        }
+        .into());
+    }
+    Ok((artifact_declaration, selected))
+}
+
+/// Authenticate the strict artifact's exact clock inputs against the checked
+/// clause before evaluation begins, then return evidence identifying the same
+/// selected definition and configuration.
+fn authenticate_checked_v2(
+    checked: &CheckedPackage,
+    admitted: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    work: &mut budget::Work,
+) -> Result<(progress::AuthenticatedBinding, usize), Error> {
+    let subject = declaration_subject(declaration);
+    work.subject = subject;
+    let (artifact_declaration, selected) =
+        checked_v2_selection(checked, admitted, declaration, subject)?;
+    if trace.clock.profile_identity != selected.profile.identity() {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    let clock_name = admitted
+        .clock_names()
+        .get(artifact_declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    if trace.clock.name != clock_name {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Clock,
+            subject,
+        }
+        .into());
+    }
+    let (binding, selection) =
+        authenticated_selection(admitted, artifact_declaration, &selected, subject)?;
+    let expected = expected_parameters(&binding.clock, subject)?;
+    if trace.clock.parameters != expected {
+        return Err(Refusal::Binding {
+            dimension: parameter_dimension(&binding.clock, trace, &expected),
+            subject,
+        }
+        .into());
+    }
+    Ok((
+        progress::AuthenticatedBinding {
+            declaration: selection.declaration(),
+            definition_identity: selection.definition_identity().into(),
+            definition_revision: selection.definition_revision().value.clone(),
+            clock: clock_name.into(),
+            parameters: expected,
+        },
+        artifact_declaration,
+    ))
 }
 
 fn classify_selected(
@@ -416,8 +811,48 @@ fn run(
         guarded: matches!(activation, w::Activation::Each { guard, .. } if guard.0.is_some()),
         captures: captures.len(),
     };
+    let root = usize::try_from(root.index).map_err(|_| Refusal::Reference { subject })?;
+    let operations: Vec<_> = selected
+        .declaration
+        .temporal
+        .iter()
+        .map(|node| node.operation.clone())
+        .collect();
+    run_view(
+        EvaluationView {
+            declaration,
+            profile: selected.profile,
+            shape,
+            root,
+            operations,
+            instance_bound_atoms: BTreeSet::new(),
+        },
+        trace,
+        watermark,
+        work,
+        None,
+    )
+}
+
+struct EvaluationView {
+    declaration: usize,
+    profile: Profile,
+    shape: Shape,
+    root: usize,
+    operations: Vec<w::TemporalOperation>,
+    instance_bound_atoms: BTreeSet<u32>,
+}
+
+fn run_view(
+    view: EvaluationView,
+    trace: &Trace,
+    watermark: i64,
+    work: &mut budget::Work,
+    retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
+) -> Result<Vec<Obligation>, Error> {
+    let subject = declaration_subject(view.declaration);
     let premises = Premises {
-        profile: selected.profile,
+        profile: view.profile,
         clock: trace.clock.name.clone(),
         clock_parameters: trace.clock.parameters.clone(),
         watermark,
@@ -428,11 +863,14 @@ fn run(
         authoritative_origin: trace.authoritative_origin,
         limits: work.limits,
     };
-
-    let root = usize::try_from(root.index).map_err(|_| Refusal::Reference { subject })?;
     let ordered = trace.ordered();
-
-    match activation::resolve(shape, trace, declaration, work)? {
+    match activation::resolve(
+        view.shape,
+        trace,
+        view.declaration,
+        work,
+        retained_instances,
+    )? {
         Outcome::Disposition(disposition) => Ok(vec![Obligation::Assessed(Box::new(Assessment {
             subject,
             instance: None,
@@ -466,24 +904,26 @@ fn run(
                     }
                 };
                 let mut evaluator = Evaluator {
-                    profile: selected.profile,
+                    profile: view.profile,
                     trace,
                     ordered: ordered.clone(),
-                    nodes: &selected.declaration.temporal,
-                    declaration,
+                    nodes: &view.operations,
+                    declaration: view.declaration,
                     instance: ordinal,
+                    instance_identity: &instance.identity,
+                    instance_bound_atoms: &view.instance_bound_atoms,
                     watermark,
                     support: Vec::new(),
                 };
-                let outcome = evaluator.root(root, work);
+                let outcome = evaluator.root(view.root, work);
                 work.charge(LimitDimension::Retention, evaluator.support.len())?;
+                let support = std::mem::take(&mut evaluator.support);
+                drop(evaluator);
                 let (truth, basis, incomplete) = match outcome {
                     Ok(value) => {
                         let (truth, basis) = settle(value, trace);
                         (Some(truth), Some(basis), None)
                     }
-                    // A required fact inside the decision support is missing, so
-                    // the truth is unavailable. It is not false and not pending.
                     Err(Error::Incomplete(incomplete)) => {
                         (None, Some(Basis::Unavailable), Some(incomplete))
                     }
@@ -499,12 +939,298 @@ fn run(
                     truth,
                     basis,
                     incomplete,
-                    support: evaluator.support,
+                    support,
                     premises: premises.clone(),
                 })));
             }
             Ok(assessed)
         }
+    }
+}
+
+fn run_checked(
+    package: &CheckedPackage,
+    declaration: usize,
+    trace: &Trace,
+    watermark: i64,
+    work: &mut budget::Work,
+    retained_instances: Option<&mut BTreeMap<String, activation::Instance>>,
+) -> Result<Vec<Obligation>, Error> {
+    let subject = declaration_subject(declaration);
+    work.subject = subject;
+    let node = package
+        .graph()
+        .temporal_clauses()
+        .get(declaration)
+        .ok_or(Refusal::Reference { subject })?;
+    let clause = node.clause();
+    let profile = checked_profile(clause.profile()).ok_or(Refusal::Binding {
+        dimension: Dimension::Profile,
+        subject,
+    })?;
+    if trace.clock.profile_identity != clause.profile().identity() {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    check_clock_name(Some(clause.clock()), &trace.clock.name, subject)?;
+    let operations = checked_operations(clause.formula(), subject)?;
+    let instance_bound_atoms = checked_instance_bound_atoms(clause, node);
+    let root = clause.formula().root().index();
+    let activation = clause.activation();
+    let shape = Shape {
+        origin: matches!(activation, CheckedActivation::Origin),
+        guarded: matches!(activation, CheckedActivation::Each { guarded: true }),
+        captures: clause.captures().len(),
+    };
+    if shape.guarded != node.guard().is_some()
+        || (0..shape.captures).any(|capture| node.capture(capture).is_none())
+        || clause
+            .formula()
+            .nodes()
+            .iter()
+            .enumerate()
+            .any(|(index, formula)| {
+                matches!(formula, FormulaNode::Holds { .. })
+                    && clause
+                        .formula()
+                        .node_id(index)
+                        .and_then(|atom| node.condition(atom))
+                        .is_none()
+            })
+    {
+        return Err(Refusal::Reference { subject }.into());
+    }
+    run_view(
+        EvaluationView {
+            declaration,
+            profile,
+            shape,
+            root,
+            operations,
+            instance_bound_atoms,
+        },
+        trace,
+        watermark,
+        work,
+        retained_instances,
+    )
+}
+
+fn checked_profile(profile: TemporalProfile) -> Option<Profile> {
+    match profile {
+        TemporalProfile::EventPositionFalseExtension => Some(Profile::EventPosition),
+        TemporalProfile::FixedSampleFalseExtension => Some(Profile::FixedSample),
+        TemporalProfile::TimestampedEventFiniteWindow => Some(Profile::TimestampedWindow),
+        TemporalProfile::InfiniteTrace | TemporalProfile::Timed => None,
+    }
+}
+
+fn checked_operators(formula: &CheckedFormula) -> Operators {
+    let mut result = Operators::default();
+    let mut seen = vec![false; formula.nodes().len()];
+    let mut pending = vec![formula.root().index()];
+    while let Some(index) = pending.pop() {
+        let Some(node) = formula.nodes().get(index) else {
+            continue;
+        };
+        if std::mem::replace(&mut seen[index], true) {
+            continue;
+        }
+        match node {
+            FormulaNode::Unary {
+                operator, operand, ..
+            } => {
+                match operator {
+                    qsl_semantics::check::UnaryTemporal::Eventually
+                    | qsl_semantics::check::UnaryTemporal::Always => result.future = true,
+                    qsl_semantics::check::UnaryTemporal::Once
+                    | qsl_semantics::check::UnaryTemporal::Historically => result.past = true,
+                }
+                pending.push(operand.index());
+            }
+            FormulaNode::Binary {
+                operator,
+                left,
+                right,
+                ..
+            } => {
+                match operator {
+                    qsl_semantics::check::BinaryTemporal::Until
+                    | qsl_semantics::check::BinaryTemporal::Release => result.future = true,
+                    qsl_semantics::check::BinaryTemporal::Since
+                    | qsl_semantics::check::BinaryTemporal::Triggered => result.past = true,
+                }
+                pending.extend([left.index(), right.index()]);
+            }
+            FormulaNode::Not(value) => pending.push(value.index()),
+            FormulaNode::And(left, right)
+            | FormulaNode::Or(left, right)
+            | FormulaNode::Implies(left, right) => {
+                pending.extend([left.index(), right.index()]);
+            }
+            FormulaNode::Constant(_)
+            | FormulaNode::Holds { .. }
+            | FormulaNode::Aggregate { .. } => {}
+        }
+    }
+    result
+}
+
+fn checked_operations(
+    formula: &CheckedFormula,
+    subject: Subject,
+) -> Result<Vec<w::TemporalOperation>, Error> {
+    let mut operations = Vec::with_capacity(formula.nodes().len());
+    for (index, node) in formula.nodes().iter().enumerate() {
+        let atom_index = u32::try_from(index).map_err(|_| Refusal::Reference { subject })?;
+        let handle = |id: qsl_semantics::check::FormulaNodeId| w::Handle {
+            declaration: 0,
+            index: u32::try_from(id.index()).unwrap_or(u32::MAX),
+        };
+        let operation = match node {
+            FormulaNode::Constant(value) => w::TemporalOperation::Constant { value: *value },
+            FormulaNode::Holds { .. } => w::TemporalOperation::Holds {
+                value: w::Handle {
+                    declaration: 0,
+                    index: atom_index,
+                },
+            },
+            FormulaNode::Aggregate { .. } => {
+                return Err(Error::Unsupported(
+                    crate::checking::composed::proofs::Unsupported::ValueRepresentation,
+                ))
+            }
+            FormulaNode::Not(inner) => w::TemporalOperation::Unary {
+                operator: w::TemporalUnary::Not,
+                interval: w::Nullable(None),
+                value: handle(*inner),
+            },
+            FormulaNode::And(left, right)
+            | FormulaNode::Or(left, right)
+            | FormulaNode::Implies(left, right) => {
+                let operator = match node {
+                    FormulaNode::And(..) => w::TemporalBinary::And,
+                    FormulaNode::Or(..) => w::TemporalBinary::Or,
+                    _ => w::TemporalBinary::Implies,
+                };
+                w::TemporalOperation::Binary {
+                    operator,
+                    interval: w::Nullable(None),
+                    left: handle(*left),
+                    right: handle(*right),
+                }
+            }
+            FormulaNode::Unary {
+                operator,
+                interval,
+                operand,
+            } => w::TemporalOperation::Unary {
+                operator: match operator {
+                    qsl_semantics::check::UnaryTemporal::Eventually => w::TemporalUnary::Eventually,
+                    qsl_semantics::check::UnaryTemporal::Always => w::TemporalUnary::Always,
+                    qsl_semantics::check::UnaryTemporal::Once => w::TemporalUnary::Once,
+                    qsl_semantics::check::UnaryTemporal::Historically => {
+                        w::TemporalUnary::Historically
+                    }
+                },
+                interval: checked_interval(interval.as_ref(), subject)?,
+                value: handle(*operand),
+            },
+            FormulaNode::Binary {
+                operator,
+                interval,
+                left,
+                right,
+            } => w::TemporalOperation::Binary {
+                operator: match operator {
+                    qsl_semantics::check::BinaryTemporal::Until => w::TemporalBinary::Until,
+                    qsl_semantics::check::BinaryTemporal::Release => w::TemporalBinary::Release,
+                    qsl_semantics::check::BinaryTemporal::Since => w::TemporalBinary::Since,
+                    qsl_semantics::check::BinaryTemporal::Triggered => w::TemporalBinary::Triggered,
+                },
+                interval: checked_interval(interval.as_ref(), subject)?,
+                left: handle(*left),
+                right: handle(*right),
+            },
+        };
+        operations.push(operation);
+    }
+    Ok(operations)
+}
+
+/// Find checked temporal atoms whose expression reads a capture slot.
+///
+/// These observations are instance-specific: one trigger's capture-bound
+/// predicate result cannot satisfy another trigger's proposition.
+fn checked_instance_bound_atoms(
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    node: &qsl_semantics::check::TemporalClauseNode,
+) -> BTreeSet<u32> {
+    let first_capture_slot = match clause.activation() {
+        CheckedActivation::Origin => 1,
+        CheckedActivation::Each { .. } => 2,
+    };
+    let mut result = BTreeSet::new();
+    for (index, formula) in clause.formula().nodes().iter().enumerate() {
+        if !matches!(formula, FormulaNode::Holds { .. }) {
+            continue;
+        }
+        let Some(atom) = clause.formula().node_id(index) else {
+            continue;
+        };
+        let Some((root, _)) = node.condition(atom) else {
+            continue;
+        };
+        let mut pending = vec![root];
+        while let Some(expression) = pending.pop() {
+            if matches!(
+                expression.kind(),
+                NodeKind::Local(slot) if *slot >= first_capture_slot
+            ) {
+                if let Ok(atom) = u32::try_from(index) {
+                    result.insert(atom);
+                }
+                break;
+            }
+            pending.extend(expression.children());
+        }
+    }
+    result
+}
+
+fn checked_interval(
+    interval: Option<&CheckedInterval>,
+    subject: Subject,
+) -> Result<w::Nullable<w::Interval>, Error> {
+    match interval {
+        None => Ok(w::Nullable(None)),
+        Some(CheckedInterval::Steps(interval)) => {
+            let upper = match interval.upper() {
+                qsl_foundation::bound::TemporalUpper::Finite(value) => value,
+                qsl_foundation::bound::TemporalUpper::Open => {
+                    return Err(Refusal::Binding {
+                        dimension: Dimension::Interval,
+                        subject,
+                    }
+                    .into())
+                }
+            };
+            let lower = w::Integer(crate::protocol_artifact::NumberWire::Integer {
+                decimal: interval.lower().to_string(),
+            });
+            let upper = w::Integer(crate::protocol_artifact::NumberWire::Integer {
+                decimal: upper.to_string(),
+            });
+            Ok(w::Nullable(Some(w::Interval { lower, upper })))
+        }
+        Some(CheckedInterval::Timed(_)) => Err(Refusal::Binding {
+            dimension: Dimension::Interval,
+            subject,
+        }
+        .into()),
     }
 }
 

@@ -18,6 +18,8 @@ use std::collections::BTreeMap;
 
 use super::result::{Closure, Completeness, Dimension, Refusal, Subject};
 use super::trace::Trace;
+use qsl_foundation::source::provenance::RawSourceRef;
+use quire_exact::NodeKey;
 
 /// The exact clock identity a strict version-2 evaluation authenticated before
 /// it ran any evaluation work.
@@ -50,6 +52,49 @@ pub struct Binding {
     pub clock: String,
     /// Asserted registered temporal profile identity.
     pub profile_identity: String,
+}
+
+/// Progress key for an S3 checked clause. The exact checked node identity is
+/// package authority and prevents equal declaration indexes in unrelated
+/// checked packages from sharing retained progress.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct CheckedBinding {
+    declaration: usize,
+    identity: NodeKey,
+    source: RawSourceRef,
+    clock: String,
+    profile_identity: String,
+}
+
+impl CheckedBinding {
+    pub(super) fn of(
+        declaration: usize,
+        identity: NodeKey,
+        source: RawSourceRef,
+        trace: &Trace,
+    ) -> Self {
+        Self {
+            declaration,
+            identity,
+            source,
+            clock: trace.clock.name.clone(),
+            profile_identity: trace.clock.profile_identity.clone(),
+        }
+    }
+}
+
+/// Checked activation/progress state under both the exact checked clause and
+/// the `/2` definition and clock evidence authenticated for it.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct CheckedAuthenticatedBinding {
+    checked: CheckedBinding,
+    admitted: AuthenticatedBinding,
+}
+
+impl CheckedAuthenticatedBinding {
+    pub(super) fn of(checked: CheckedBinding, admitted: AuthenticatedBinding) -> Self {
+        Self { checked, admitted }
+    }
 }
 
 impl Binding {
@@ -95,6 +140,12 @@ impl Progress {
 #[derive(Clone, Debug, Default)]
 pub struct Ledger {
     retained: BTreeMap<Binding, Progress>,
+    checked: BTreeMap<CheckedBinding, Progress>,
+    pub(super) checked_instances:
+        BTreeMap<CheckedBinding, BTreeMap<String, super::activation::Instance>>,
+    checked_authenticated: BTreeMap<CheckedAuthenticatedBinding, Progress>,
+    pub(super) checked_authenticated_instances:
+        BTreeMap<CheckedAuthenticatedBinding, BTreeMap<String, super::activation::Instance>>,
     authenticated: BTreeMap<AuthenticatedBinding, Progress>,
 }
 
@@ -141,8 +192,53 @@ impl Ledger {
                     subject,
                 });
             }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
         }
         self.retained.insert(binding, progress);
+        Ok(progress)
+    }
+
+    pub(super) fn record_checked(
+        &mut self,
+        binding: CheckedBinding,
+        progress: Progress,
+    ) -> Result<Progress, Refusal> {
+        let subject = Subject {
+            declaration: binding.declaration,
+            ..Subject::default()
+        };
+        if let Some(retained) = self.checked.get(&binding) {
+            if progress.watermark < retained.watermark {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Watermark,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+            if retained.completeness == Completeness::Complete
+                && progress.completeness == Completeness::Incomplete
+            {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Completeness,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+        }
+        self.checked.insert(binding, progress);
         Ok(progress)
     }
 
@@ -172,8 +268,54 @@ impl Ledger {
                     subject,
                 });
             }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
         }
         self.authenticated.insert(binding, progress);
+        Ok(progress)
+    }
+
+    pub(super) fn record_checked_authenticated(
+        &mut self,
+        binding: CheckedAuthenticatedBinding,
+        progress: Progress,
+    ) -> Result<Progress, Refusal> {
+        let subject = Subject {
+            declaration: binding.checked.declaration,
+            ..Subject::default()
+        };
+        let clock = binding.checked.clock.clone();
+        if let Some(retained) = self.checked_authenticated.get(&binding) {
+            if progress.watermark < retained.watermark {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Watermark,
+                    clock,
+                    subject,
+                });
+            }
+            if retained.completeness == Completeness::Complete
+                && progress.completeness == Completeness::Incomplete
+            {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Completeness,
+                    clock,
+                    subject,
+                });
+            }
+            if progress.decision_scope != retained.decision_scope {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::DecisionScope,
+                    clock,
+                    subject,
+                });
+            }
+        }
+        self.checked_authenticated.insert(binding, progress);
         Ok(progress)
     }
 }

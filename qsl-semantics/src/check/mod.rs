@@ -68,6 +68,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+use quire_checked::node::NodeKind;
 mod abstraction;
 mod assemble;
 mod call_target;
@@ -179,7 +180,8 @@ pub use refinement::{
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
-    TerminalDeclaration, TerminalMode, TerminalNode, TerminalRefusal,
+    TerminalDeclaration, TerminalKeys, TerminalMismatch, TerminalMode, TerminalNode,
+    TerminalRefusal,
 };
 mod type_form;
 mod type_invariant;
@@ -220,8 +222,7 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    model_root_key, AdmittedModel, AuthoredBound, ForeignView, ModelClause, SemanticGraph,
-    SemanticNode,
+    model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
 };
 pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use node_key::{
@@ -347,11 +348,7 @@ pub use family::fixtures::{
     empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
-pub use ir::{
-    Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
-    IntegerDivisionOperator, Node, NodeId, NodeKind, OrderedKind, RecordField, RecordSlot, Slot,
-    Visit,
-};
+pub use ir::{CheckedBody, CheckedNode, Node, NodeId, Slot};
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
@@ -417,7 +414,7 @@ pub use identity::{
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
-pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
+pub use navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
@@ -672,6 +669,15 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// FR-390: each checked population's exact declaration and effective
+    /// member types, indexed by its canonical checked node.
+    protocol_population_types: BTreeMap<
+        quire_exact::NodeKey,
+        (
+            quire_checked::key::DeclarationKey,
+            Vec<quire_exact::EffectiveId>,
+        ),
+    >,
     /// QSpec FR-322: the `model_root` key of each selection, in the same order.
     model_roots: Vec<quire_exact::NodeKey>,
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -800,6 +806,7 @@ impl fmt::Debug for CheckedGraph {
                     synthesized_spans,
                     embedding,
                     model_selections,
+                    protocol_population_types,
                     model_roots,
                     header_layers,
                     time_sources,
@@ -860,6 +867,10 @@ impl fmt::Debug for CheckedGraph {
                     .field("synthesized_spans", &synthesized_spans)
                     .field("embedding", &embedding)
                     .field("model_selections", &model_selections)
+                    .field(
+                        "protocol_population_types",
+                        &NodeMap(protocol_population_types.iter()),
+                    )
                     .field("model_roots", &NodeList(model_roots.iter()))
                     .field("header_layers", &header_layers)
                     .field("time_sources", &time_sources)
@@ -2161,6 +2172,14 @@ impl PackageDeclarations {
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
         let population_keys = population_key_table(&models);
+        let protocol_population_types = models
+            .iter()
+            .flat_map(AdmittedModel::named_populations)
+            .filter_map(|population| {
+                let node = crate::model::key::population_node_key(population.key).ok()?;
+                Some((node, (population.key.clone(), population.members)))
+            })
+            .collect();
         let declaration_keys = models
             .iter()
             .flat_map(AdmittedModel::record_keys)
@@ -5999,6 +6018,7 @@ impl PackageDeclarations {
             synthesized_spans,
             embedding,
             model_selections,
+            protocol_population_types,
             model_roots,
             header_layers,
             time_sources: self.time_sources,
@@ -6538,6 +6558,20 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// The checked declaration and effective member types for a population
+    /// node, when it is one of this package's selected model declarations.
+    pub fn protocol_population_types(
+        &self,
+        node: &quire_exact::NodeKey,
+    ) -> Option<(
+        &quire_checked::key::DeclarationKey,
+        &[quire_exact::EffectiveId],
+    )> {
+        self.protocol_population_types
+            .get(node)
+            .map(|(declaration, members)| (declaration, members.as_slice()))
     }
 
     /// The identity of the domain package the model `model` selects, where
@@ -7527,6 +7561,65 @@ mod tests {
     use quire_exact::{Origin, Role};
 
     use super::*;
+
+    /// Population metadata added by the canonical vocabulary integration
+    /// joins the same table as other retained collections without dropping
+    /// either declaration, any key segment, or either mapped entry.
+    /// Provenance: QSL-1358, QSL-381; retained-field integration regression.
+    #[test]
+    fn protocol_population_types_debug_joins_the_shared_node_table() {
+        use quire_exact::{NodeKey, PathSegment};
+        let mut graph = depth_forms::declarations(depth_forms::Form::Add, 2)
+            .check(CheckingLimits::default())
+            .unwrap();
+        let leaf = NodeKey::new(
+            "population_scope",
+            vec![PathSegment::Text("population_leaf".into())],
+            0,
+        )
+        .unwrap();
+        let mut root = leaf.clone();
+        for ordinal in 0..1_000 {
+            root = NodeKey::new(
+                "population_scope",
+                vec![
+                    PathSegment::Text("population_operand".into()),
+                    PathSegment::Node(root),
+                ],
+                ordinal,
+            )
+            .unwrap();
+        }
+        let first = quire_checked::key::DeclarationKey::fixture("first_population");
+        let second = quire_checked::key::DeclarationKey::fixture("second_population");
+        graph
+            .protocol_population_types
+            .insert(root.clone(), (first.clone(), Vec::new()));
+        graph
+            .protocol_population_types
+            .insert(leaf.clone(), (second.clone(), Vec::new()));
+        graph.model_roots.extend([root, leaf]);
+        let text = format!("{graph:?}");
+        let field = text
+            .split("protocol_population_types: ")
+            .nth(1)
+            .unwrap()
+            .split(", model_roots: ")
+            .next()
+            .unwrap();
+        assert!(
+            field.starts_with("{#"),
+            "population keys use table references: {field}"
+        );
+        assert!(field.contains(&format!("{first:?}")));
+        assert!(field.contains(&format!("{second:?}")));
+        assert!(
+            !field.contains("NodeKey("),
+            "no nested identity is repeated in the map: {field}"
+        );
+        assert_eq!(text.matches("population_scope:[").count(), 1_001);
+        assert_eq!(text.matches("\"population_leaf\"").count(), 1);
+    }
 
     /// QSL-821: `type_admission` and `pending_refusal` keep the reached
     /// ceiling, so the refinement classifier can name it; a failure that is

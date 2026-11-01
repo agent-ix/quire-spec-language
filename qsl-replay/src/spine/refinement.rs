@@ -532,10 +532,16 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
             one(Refused, Code::IllTyped, Some("type-mismatch"))
         }
         ClauseDisposition::Admit(failure) => match failure {
-            AdmissionFailure::Refused(record) => one(Refused, record.code, Some(record.cause)),
-            AdmissionFailure::Incomplete(record) => {
-                one(Incomplete, record.code, Some(record.cause))
-            }
+            AdmissionFailure::Refused(record) => one(
+                Refused,
+                Code::from_code(record.catalog.code()).unwrap_or(Code::RuntimeInvariant),
+                Some(record.catalog.cause()),
+            ),
+            AdmissionFailure::Incomplete(record) => one(
+                Incomplete,
+                Code::from_code(record.catalog.code()).unwrap_or(Code::RuntimeInvariant),
+                Some(record.catalog.cause()),
+            ),
             AdmissionFailure::Fault(_) => one(ToolFailure, Code::RuntimeInvariant, None),
         },
         ClauseDisposition::ArgumentRefusal(refusal) => one(Refused, refusal.code(), None),

@@ -248,7 +248,16 @@ impl<S: Clone + Eq> ModelRequest<S> {
                     ),
                     &selected,
                 );
-                writer.derived_item(claim, kind, property_form, candidates, limits.clone());
+                let terminals =
+                    matches!(derived, Derived::Deadlock).then(|| reading.terminals().clone());
+                writer.derived_item(
+                    claim,
+                    kind,
+                    property_form,
+                    candidates,
+                    limits.clone(),
+                    terminals,
+                );
                 obligations.push(
                     ItemObligation {
                         subject: subject.clone(),

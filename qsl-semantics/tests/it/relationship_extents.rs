@@ -216,7 +216,7 @@ impl PopulationEnumerator<DeclarationKey> for Rows {
 
 fn refused(failure: AdmissionFailure) -> AdmissionRecord {
     match failure {
-        AdmissionFailure::Refused(record) => record,
+        AdmissionFailure::Refused(record) => *record,
         other => panic!("a refusal, not {other:?}"),
     }
 }
@@ -309,8 +309,8 @@ fn an_extent_of_a_non_navigation_relationship_is_refused_wrong_role_mapping() {
             admit(&orders, (true, true), vec![extent(key(name), true, vec![])])
                 .expect_err("step 2 refuses"),
         );
-        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-        assert_eq!(refusal.cause, "wrong-role-mapping");
+        assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+        assert_eq!(refusal.catalog.cause(), "wrong-role-mapping");
         assert_eq!(refusal.fields.get("relationship"), Some(&key(name).node));
     }
 }
@@ -331,8 +331,8 @@ fn a_second_extent_of_one_relationship_is_refused_conflicting_identity() {
         )
         .expect_err("step 3 refuses"),
     );
-    assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-    assert_eq!(refusal.cause, "conflicting-identity");
+    assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(refusal.catalog.cause(), "conflicting-identity");
     assert_eq!(
         refusal.fields.get("relationship"),
         Some(&composition().node)
@@ -361,8 +361,8 @@ fn an_end_object_of_a_type_that_does_not_conform_is_refused_wrong_value_kind() {
             )
             .expect_err("step 4 refuses"),
         );
-        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+        assert_eq!(refusal.catalog.cause(), "wrong-value-kind");
         assert_eq!(refusal.fields.get("end").map(String::as_str), Some(end));
         assert_eq!(
             refusal.fields.get("instance").map(String::as_str),
@@ -409,8 +409,8 @@ fn a_repeated_instance_admits_only_when_both_ends_are_not_unique() {
     };
     for unique in [(true, true), (true, false)] {
         let refusal = refused(admit(&orders, unique, repeated()).expect_err("step 5 refuses"));
-        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-        assert_eq!(refusal.cause, "conflicting-identity");
+        assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+        assert_eq!(refusal.catalog.cause(), "conflicting-identity");
         assert_eq!(
             refusal.fields.get("instance").map(String::as_str),
             Some("1")
@@ -965,8 +965,8 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
     };
     // t9 is not held and is a Tank at the Pump end.
     let refusal = refused(wrong(orders.at("Tank", "t9")).expect_err("a wrong type, absent"));
-    assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-    assert_eq!(refusal.cause, "wrong-value-kind");
+    assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(refusal.catalog.cause(), "wrong-value-kind");
     assert_eq!(
         refusal.fields.get("end").map(String::as_str),
         Some("target")
@@ -975,7 +975,7 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
     wrong(orders.at("Pump", "p9")).expect("a conforming absent end admits");
     // t1 is held and still a Tank at the Pump end.
     let refusal = refused(wrong(orders.at("Tank", "t1")).expect_err("a wrong type, held"));
-    assert_eq!(refusal.cause, "wrong-value-kind");
+    assert_eq!(refusal.catalog.cause(), "wrong-value-kind");
     // A reference whose type is no object type of the model.
     let unknown = EffectiveId::new(None, OriginalDeclarationKey::new("fixture", "unknown"));
     let stranger = ObjectReference::new(
@@ -984,7 +984,7 @@ fn condition_three_checks_the_type_of_an_end_whose_object_is_absent() {
         ObjectId::new("x".to_owned()).expect("an id"),
     );
     let refusal = refused(wrong(stranger).expect_err("an unknown type"));
-    assert_eq!(refusal.cause, "wrong-value-kind");
+    assert_eq!(refusal.catalog.cause(), "wrong-value-kind");
 }
 
 fn bundle_key(label: &str) -> BundleKey {
@@ -1044,8 +1044,8 @@ fn a_part_with_another_key_is_refused_before_it_can_classify_anything() {
     assert_eq!(refusal.selected, selected);
     assert_eq!(refusal.differing, other_source);
     let record = refusal.record();
-    assert_eq!(record.code, Code::InvalidRuntimeInput);
-    assert_eq!(record.cause, "conflicting-identity");
+    assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(record.catalog.cause(), "conflicting-identity");
     assert_eq!(record.fields.get("part").map(String::as_str), Some("types"));
 
     // Another selected clause.

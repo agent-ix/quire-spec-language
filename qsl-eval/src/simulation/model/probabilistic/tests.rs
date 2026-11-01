@@ -299,8 +299,8 @@ fn a_negative_reward_refuses_admission() {
         panic!("admission refuses");
     };
     assert_eq!(
-        (record.code, record.cause),
-        (Code::InvalidProbabilisticModel, "negative-reward")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::InvalidProbabilisticModel.as_str(), "negative-reward")
     );
     assert_eq!(
         record.fields.get("reward").map(String::as_str),

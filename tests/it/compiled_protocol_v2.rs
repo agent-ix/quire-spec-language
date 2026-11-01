@@ -6,6 +6,7 @@ use crate::support::native_protocol as setup;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Source, SourceIdentity};
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
@@ -22,7 +23,7 @@ const DECLARATIONS: [(&str, R); 3] = [
 ];
 
 #[cfg(feature = "handoff-writer")]
-#[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
+#[trace("TC-138", "TC-150", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-7")]
 #[test]
 fn written_handoff_interchange_records_are_complete() {
     use artifact::handoff::{
@@ -395,6 +396,771 @@ fn trace_input(name: &str, profile_identity: &str, parameters: &[(&str, &str)]) 
     }
 }
 
+fn checked_fr050_inputs() -> Inputs {
+    checked_fr050_inputs_with_event_body(
+        "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on origin { eventually[0,0] holds(view.code > 0) }",
+    )
+}
+
+fn checked_fr050_inputs_with_event_body(event_body: &str) -> Inputs {
+    let units = [
+        Unit {
+            name: "event-time",
+            body: event_body,
+            declarations: &["ByEvent"],
+        },
+        Unit {
+            name: "sample-time",
+            body: "temporal BySample using F over (view: M::Widget) clock \"sample-clock\" on origin { eventually[0,0] holds(view.code > 0) }",
+            declarations: &["BySample"],
+        },
+        Unit {
+            name: "timestamp-time",
+            body: "temporal ByTimestamp using W over (view: M::Widget) clock \"timestamp-clock\" on origin { eventually[0,0] holds(view.code > 0) }",
+            declarations: &["ByTimestamp"],
+        },
+        Unit {
+            name: "consumer",
+            body: "protocol Flow using P over (view: M::Plain) on origin { role Service on M::Node; requires temporal ByEvent; requires temporal BySample; requires temporal ByTimestamp; run sequence Main { event Happened by Service as (happened: M::Plain) { happened.ready }; } finish Closed as (closed: M::Plain) { closed.ready }; }",
+            declarations: &["Flow"],
+        },
+    ];
+    let mut model: serde_json::Value =
+        serde_json::from_str(crate::support::native_rule_model::fixture())
+            .expect("native model fixture JSON");
+    model["package"] = serde_json::json!("acme/orders");
+    model["records"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name": "Widget",
+            "fields": [{"name": "code", "type": {"kind": "scalar", "name": "Version"}}]
+        }));
+    model["records"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name": "Plain",
+            "fields": [{"name": "ready", "type": {"kind": "boolean"}}]
+        }));
+    let model = crate::support::native_rule_model::from_text(
+        &serde_json::to_string(&model).expect("serialize test model"),
+        "fr050-native-model.json",
+        "1",
+    )
+    .expect("native model fixture with the same checked model identity")
+    .model();
+    let mut inputs = Inputs::with_model(&units, model);
+    for (index, retained) in ["T", "F", "W"].into_iter().enumerate() {
+        let source = &inputs.sources[index];
+        let text = source
+            .text()
+            .split_inclusive('\n')
+            .map(|line| {
+                let unused_temporal_profile = ["T", "F", "W"].into_iter().any(|alias| {
+                    alias != retained && line.starts_with(&format!("profile {alias} ="))
+                });
+                if unused_temporal_profile {
+                    let content_len = line.strip_suffix('\n').unwrap_or(line).len();
+                    format!(
+                        "{}{}",
+                        " ".repeat(content_len),
+                        if line.ends_with('\n') { "\n" } else { "" }
+                    )
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<String>();
+        let replaced = Source::read(
+            source.identity().clone(),
+            source.path(),
+            text.as_bytes(),
+            quire_spec_language::Limits::default().source_bytes,
+        )
+        .expect("one checked temporal profile remains in each source");
+        inputs.sources[index] = replaced.clone();
+        inputs.formal[index] = quire_spec_language::formal_source::FormalSource::new(
+            replaced,
+            inputs.formal[index].identity().clone(),
+        );
+        inputs.mappings[index].source = inputs.formal[index].clone();
+    }
+    // The checked graph's RawSourceRef uses the source identity's authority;
+    // the admitted artifact selection must retain that exact pair too.
+    for source in &mut inputs.source_references {
+        source.authority = "test".into();
+    }
+    inputs
+}
+
+fn checked_fr050_inputs_with_second_event(event_body: &str) -> Inputs {
+    let mut inputs = checked_fr050_inputs_with_event_body(event_body);
+    let index = 3;
+    let source = inputs.sources[index].clone();
+    let original = "event Happened by Service as (happened: M::Plain) { happened.ready };";
+    let replacement = format!(
+        "{original} event HappenedAgain by Service as (happenedAgain: M::Plain) {{ happenedAgain.ready }};"
+    );
+    let text = source.text().replace(original, &replacement);
+    assert_ne!(text, source.text(), "fixture gains a second event control");
+    let source = Source::read(
+        source.identity().clone(),
+        source.path(),
+        text.as_bytes(),
+        quire_spec_language::Limits::default().source_bytes,
+    )
+    .expect("source with second checked event control");
+    inputs.sources[index] = source.clone();
+    inputs.formal[index] = quire_spec_language::formal_source::FormalSource::new(
+        source,
+        inputs.formal[index].identity().clone(),
+    );
+    inputs.mappings[index].source = inputs.formal[index].clone();
+    inputs
+}
+
+fn checked_fr050_unit(inputs: &Inputs, index: usize) -> qsl_replay::spine::CheckedUnit {
+    checked_fr050_unit_with_identity(
+        inputs,
+        index,
+        SourceIdentity::new(
+            inputs.sources[index].identity().authority.clone(),
+            inputs.sources[index].identity().identity.clone(),
+            inputs.sources[index].identity().revision_namespace.clone(),
+            inputs.sources[index].identity().revision.clone(),
+        ),
+    )
+}
+
+fn checked_fr050_unit_with_identity(
+    inputs: &Inputs,
+    index: usize,
+    identity: SourceIdentity,
+) -> qsl_replay::spine::CheckedUnit {
+    checked_fr050_unit_with_text(identity, inputs.sources[index].text())
+}
+
+fn checked_fr050_unit_with_text(
+    identity: SourceIdentity,
+    text: &str,
+) -> qsl_replay::spine::CheckedUnit {
+    let model = include_bytes!("../fixtures/spine-model.semantic-ir.json");
+    let packages = qsl_semantics::model::intake::package_input([model.as_slice()])
+        .expect("admit the checked package model fixture");
+    crate::support::front_end::checked(
+        identity,
+        "fr050-checked-successor.native",
+        text.as_bytes(),
+        &packages,
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("checked route admits the emitted native source")
+}
+
+#[trace("TC-150", "FR-044-AC-6", "FR-044-AC-9", "FR-050-AC-6")]
+#[test]
+fn checked_progress_v2_restores_captures_under_clause_and_binding_identity() {
+    const FIRST_BODY: &str = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) { capture saved: M::Widget = trigger; eventually[0,0] holds(view.code > 0) }";
+    const SECOND_BODY: &str = "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) { capture fresh: M::Widget = trigger; eventually[0,0] holds(view.code > 0) }";
+
+    with_v2_inputs(
+        checked_fr050_inputs_with_event_body(FIRST_BODY),
+        |inputs, proofs, _, temporal, emitted| {
+            let admitted = inputs
+                .read_v2(proofs, emitted, &temporal.expected)
+                .into_result()
+                .expect("strict reader admits the capture artifact");
+            let first_checked = checked_fr050_unit(inputs, 0);
+            let second_inputs = checked_fr050_inputs_with_event_body(SECOND_BODY);
+            let second_checked = checked_fr050_unit(&second_inputs, 0);
+            let first_node = &first_checked.package().graph().temporal_clauses()[0];
+            let second_node = &second_checked.package().graph().temporal_clauses()[0];
+            assert_ne!(first_node.identity(), second_node.identity());
+            assert_eq!(
+                first_checked.package().graph().source(),
+                second_checked.package().graph().source(),
+                "same source authority and identity still need distinct checked node keys"
+            );
+            assert_eq!(
+                first_node.clause().span(),
+                second_node.clause().span(),
+                "same span keeps both clauses on the same admitted definition/clock selection"
+            );
+
+            let hold = first_node
+                .clause()
+                .formula()
+                .nodes()
+                .iter()
+                .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+                .and_then(|index| u32::try_from(index).ok())
+                .expect("checked hold atom index");
+            let mut trace = trace_input(
+                "event-clock",
+                temporal::EVENT_POSITION,
+                &[("sequence_authority", "orders")],
+            );
+            trace.anchor = "event-1".into();
+            trace.triggers = vec![temporal::Trigger {
+                identity: "trigger:one".into(),
+                receipt: "receipt:one".into(),
+                anchor: "event-1".into(),
+                payload: "initial".into(),
+                guard: None,
+                captures: vec![temporal::CaptureInput::Value {
+                    anchor: "event-1".into(),
+                    value: "7".into(),
+                }],
+            }];
+            trace.positions.push(temporal::Position {
+                coordinate: 0,
+                order: None,
+                valuations: BTreeMap::from([(hold, true)]),
+                instance_valuations: BTreeMap::new(),
+            });
+
+            let mut ledger = temporal::Ledger::new();
+            trace.watermark = 1;
+            let first = temporal::evaluate_checked_with_progress_v2(
+                first_checked.package(),
+                &admitted,
+                0,
+                &trace,
+                temporal::Limits::default(),
+                &mut ledger,
+            );
+            let temporal::Obligation::Assessed(first_assessment) = &first.result().unwrap()[0]
+            else {
+                panic!("first admitted trigger is assessed");
+            };
+            assert_eq!(first_assessment.capture_evaluations, 1);
+            assert_eq!(first_assessment.captures[0].value, "7");
+
+            let mut refused_trace = trace.clone();
+            refused_trace.watermark = 100;
+            refused_trace.clock.profile_identity = "quire.temporal.other/v1".into();
+            let refused = temporal::evaluate_checked_with_progress_v2(
+                first_checked.package(),
+                &admitted,
+                0,
+                &refused_trace,
+                temporal::Limits::default(),
+                &mut ledger,
+            );
+            assert!(matches!(
+                refused.result(),
+                Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                    dimension: temporal::Dimension::Profile,
+                    ..
+                }))
+            ));
+            assert!(refused.authenticated().is_none());
+            assert_eq!(refused.usage().positions, 0);
+
+            let mut replay_trace = trace.clone();
+            replay_trace.watermark = 2;
+            replay_trace.triggers[0].receipt = "receipt:replay".into();
+            replay_trace.triggers[0].captures = vec![temporal::CaptureInput::WrongType];
+            let replayed = temporal::evaluate_checked_with_progress_v2(
+                first_checked.package(),
+                &admitted,
+                0,
+                &replay_trace,
+                temporal::Limits::default(),
+                &mut ledger,
+            );
+            let temporal::Obligation::Assessed(replayed_assessment) =
+                &replayed.result().unwrap()[0]
+            else {
+                panic!("matching admitted progress restores its activation");
+            };
+            assert_eq!(replayed_assessment.capture_evaluations, 1);
+            assert_eq!(replayed_assessment.captures[0].value, "7");
+            assert_eq!(
+                replayed_assessment.receipts,
+                ["receipt:one", "receipt:replay"]
+            );
+
+            let mut distinct_trace = trace;
+            distinct_trace.watermark = 1;
+            distinct_trace.triggers[0].receipt = "receipt:distinct-package".into();
+            distinct_trace.triggers[0].captures = vec![temporal::CaptureInput::Value {
+                anchor: "event-1".into(),
+                value: "9".into(),
+            }];
+            let distinct = temporal::evaluate_checked_with_progress_v2(
+                second_checked.package(),
+                &admitted,
+                0,
+                &distinct_trace,
+                temporal::Limits::default(),
+                &mut ledger,
+            );
+            let temporal::Obligation::Assessed(distinct_assessment) =
+                &distinct.result().unwrap()[0]
+            else {
+                panic!("different checked clause has independent progress and activation state");
+            };
+            assert_eq!(distinct_assessment.capture_evaluations, 1);
+            assert_eq!(distinct_assessment.captures[0].value, "9");
+
+            let mut first_again = replay_trace;
+            first_again.triggers[0].captures = vec![temporal::CaptureInput::WrongType];
+            let restored = temporal::evaluate_checked_with_progress_v2(
+                first_checked.package(),
+                &admitted,
+                0,
+                &first_again,
+                temporal::Limits::default(),
+                &mut ledger,
+            );
+            let temporal::Obligation::Assessed(restored_assessment) =
+                &restored.result().unwrap()[0]
+            else {
+                panic!("first checked clause restores its own capture state");
+            };
+            assert_eq!(restored_assessment.capture_evaluations, 1);
+            assert_eq!(restored_assessment.captures[0].value, "7");
+            let mut evicted_trace = first_again;
+            evicted_trace.watermark = 3;
+            evicted_trace.evicted = vec![temporal::Eviction::Capture {
+                instance: "trigger:one".into(),
+                capture: 0,
+            }];
+            let evicted = temporal::evaluate_checked_with_progress_v2(
+                first_checked.package(),
+                &admitted,
+                0,
+                &evicted_trace,
+                temporal::Limits::default(),
+                &mut ledger,
+            );
+            assert!(matches!(
+                &evicted.result().unwrap()[0],
+                temporal::Obligation::Unactivated {
+                    error: temporal::Error::Incomplete(incomplete),
+                    ..
+                } if incomplete.dimension == temporal::Dimension::Capture
+            ));
+            assert_eq!(
+                first.authenticated(),
+                distinct.authenticated(),
+                "both clauses use the same admitted definition and clock"
+            );
+        },
+    );
+}
+
+#[trace("TC-150", "FR-050-AC-1", "FR-050-AC-6")]
+#[test]
+fn checked_successor_authenticates_each_emitted_profile_and_clock_before_evaluation() {
+    with_v2_inputs(
+        checked_fr050_inputs(),
+        |inputs, proofs, _, tables, emitted| {
+            let expected = inputs.read_v2(proofs, emitted, &tables.expected);
+            let admitted = expected
+                .into_result()
+                .expect("strict reader admits the emitted v2 bytes");
+            for (index, (clock_name, profile, parameters)) in [
+                (
+                    "event-clock",
+                    temporal::EVENT_POSITION,
+                    vec![("sequence_authority", "orders")],
+                ),
+                (
+                    "sample-clock",
+                    temporal::FIXED_SAMPLE,
+                    vec![
+                        ("epoch", "{\"kind\":\"integer\",\"decimal\":\"0\"}"),
+                        (
+                            "period",
+                            "{\"kind\":\"rational\",\"numerator\":\"1\",\"denominator\":\"2\"}",
+                        ),
+                        ("unit", "second"),
+                    ],
+                ),
+                (
+                    "timestamp-clock",
+                    temporal::TIMESTAMPED_WINDOW,
+                    vec![("timestamp_unit", "millisecond")],
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let checked = checked_fr050_unit(inputs, index);
+                let mut trace = trace_input(clock_name, profile, &parameters);
+                let clause = checked.package().graph().temporal_clauses()[0].clause();
+                let hold = clause
+                    .formula()
+                    .nodes()
+                    .iter()
+                    .position(|node| {
+                        matches!(node, qsl_semantics::check::FormulaNode::Holds { .. })
+                    })
+                    .and_then(|index| u32::try_from(index).ok())
+                    .expect("checked hold atom index");
+                trace.positions.push(temporal::Position {
+                    coordinate: 0,
+                    order: None,
+                    valuations: BTreeMap::from([(hold, true)]),
+                    instance_valuations: BTreeMap::new(),
+                });
+                let raw = temporal::evaluate_checked(
+                    checked.package(),
+                    0,
+                    &trace,
+                    temporal::Limits::default(),
+                );
+                assert!(
+                    raw.result().is_ok(),
+                    "raw checked evaluation: {:?}",
+                    raw.result()
+                );
+                let report = temporal::evaluate_checked_v2(
+                    checked.package(),
+                    &admitted,
+                    0,
+                    &trace,
+                    temporal::Limits::default(),
+                );
+                assert!(
+                    report.result().is_ok(),
+                    "matching checked selection evaluates: {:?}",
+                    report.result()
+                );
+                let binding = report.authenticated().expect("selection is retained");
+                assert_eq!(
+                    binding.declaration,
+                    declaration(&admitted, DECLARATIONS[index].0)
+                );
+                assert_eq!(binding.clock, clock_name);
+                assert_eq!(
+                    binding.parameters,
+                    parameters
+                        .iter()
+                        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                        .collect()
+                );
+                assert_eq!(
+                    binding.definition_identity,
+                    [R::EventPosition, R::FixedSample, R::TimestampedWindow][index].identity()
+                );
+                assert_eq!(
+                    binding.definition_revision,
+                    tables.expected[index].definition.revision.value
+                );
+                let binding_row = &admitted.package().temporal_bindings[index];
+                let definition = &admitted.inherited().definitions
+                    [usize::try_from(binding_row.definition).unwrap()];
+                let definition_artifact = &admitted.inherited().dependencies
+                    [usize::try_from(definition.artifact).unwrap()]
+                .artifact;
+                assert_eq!(
+                    definition_artifact,
+                    &tables.expected[index].definition.artifact
+                );
+                assert!(
+                    report.usage().positions > 0,
+                    "matching path evaluates formula positions"
+                );
+                let classification = temporal::mapping_support_checked_v2(
+                    checked.package(),
+                    &admitted,
+                    0,
+                    temporal::Closure::Open,
+                )
+                .expect("checked mapping retains the admitted selection");
+                assert_eq!(
+                    classification.authenticated.definition_identity(),
+                    tables.expected[index].definition.identity
+                );
+                assert_eq!(
+                    classification.authenticated.definition_revision(),
+                    &tables.expected[index].definition.revision
+                );
+                assert_eq!(classification.clock_name, clock_name);
+                assert_eq!(
+                    classification.clock,
+                    tables.expected[index].definition.clock
+                );
+                let mut ledger = temporal::Ledger::default();
+                let mut established_trace = trace.clone();
+                established_trace.watermark = 2;
+                let progress_report = temporal::evaluate_checked_with_progress_v2(
+                    checked.package(),
+                    &admitted,
+                    0,
+                    &established_trace,
+                    temporal::Limits::default(),
+                    &mut ledger,
+                );
+                assert!(
+                    progress_report.result().is_ok(),
+                    "checked progress route evaluates with authenticated selection"
+                );
+                assert_eq!(progress_report.authenticated(), Some(binding));
+
+                let mut wrong_profile = trace.clone();
+                wrong_profile.clock.profile_identity = "quire.temporal.other/v1".into();
+                let mut wrong_clock = trace.clone();
+                wrong_clock.clock.name = "other-clock".into();
+                let mut missing_parameter = trace.clone();
+                missing_parameter.clock.parameters.remove(parameters[0].0);
+                let mut extra_parameter = trace.clone();
+                extra_parameter
+                    .clock
+                    .parameters
+                    .insert("extra".into(), "unexpected".into());
+                let substitutions: Vec<(&str, temporal::Trace, temporal::Dimension)> = match index {
+                    0 => vec![(
+                        "sequence authority",
+                        {
+                            let mut changed = trace.clone();
+                            changed
+                                .clock
+                                .parameters
+                                .insert("sequence_authority".into(), "other-orders".into());
+                            changed
+                        },
+                        temporal::Dimension::SequenceAuthority,
+                    )],
+                    1 => vec![
+                        (
+                            "epoch",
+                            {
+                                let mut changed = trace.clone();
+                                changed.clock.parameters.insert(
+                                    "epoch".into(),
+                                    "{\"kind\":\"integer\",\"decimal\":\"1\"}".into(),
+                                );
+                                changed
+                            },
+                            temporal::Dimension::Epoch,
+                        ),
+                        (
+                            "period",
+                            {
+                                let mut changed = trace.clone();
+                                changed.clock.parameters.insert(
+                                        "period".into(),
+                                        "{\"kind\":\"rational\",\"numerator\":\"1\",\"denominator\":\"3\"}".into(),
+                                    );
+                                changed
+                            },
+                            temporal::Dimension::SamplePeriod,
+                        ),
+                        (
+                            "unit",
+                            {
+                                let mut changed = trace.clone();
+                                changed
+                                    .clock
+                                    .parameters
+                                    .insert("unit".into(), "minute".into());
+                                changed
+                            },
+                            temporal::Dimension::ClockUnit,
+                        ),
+                    ],
+                    2 => vec![(
+                        "timestamp unit",
+                        {
+                            let mut changed = trace.clone();
+                            changed
+                                .clock
+                                .parameters
+                                .insert("timestamp_unit".into(), "nanosecond".into());
+                            changed
+                        },
+                        temporal::Dimension::TimestampUnit,
+                    )],
+                    _ => unreachable!("three selected temporal profiles"),
+                };
+                let mut refusals = vec![
+                    ("profile", wrong_profile, temporal::Dimension::Profile),
+                    ("clock", wrong_clock, temporal::Dimension::Clock),
+                    (
+                        "missing parameter",
+                        missing_parameter,
+                        temporal::Dimension::ClockParameters,
+                    ),
+                    (
+                        "extra parameter",
+                        extra_parameter,
+                        temporal::Dimension::ClockParameters,
+                    ),
+                ];
+                refusals.extend(substitutions);
+                for (axis, changed, expected_dimension) in refusals {
+                    let refused = temporal::evaluate_checked_v2(
+                        checked.package(),
+                        &admitted,
+                        0,
+                        &changed,
+                        temporal::Limits::default(),
+                    );
+                    assert!(
+                        matches!(
+                            refused.result(),
+                            Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                                dimension,
+                                ..
+                            })) if *dimension == expected_dimension
+                        ),
+                        "{axis} mismatch has its exact typed refusal: {:?}",
+                        refused.result()
+                    );
+                    assert_eq!(refused.usage().positions, 0, "{axis} refusal precedes work");
+                    assert!(refused.authenticated().is_none(), "{axis} is not retained");
+
+                    let mut changed_progress = changed.clone();
+                    changed_progress.watermark = 3;
+                    let progress_refused = temporal::evaluate_checked_with_progress_v2(
+                        checked.package(),
+                        &admitted,
+                        0,
+                        &changed_progress,
+                        temporal::Limits::default(),
+                        &mut ledger,
+                    );
+                    assert!(matches!(
+                        progress_refused.result(),
+                        Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                            dimension,
+                            ..
+                        })) if *dimension == expected_dimension
+                    ));
+                    assert_eq!(progress_refused.usage().positions, 0);
+                    assert!(progress_refused.authenticated().is_none());
+
+                    let mut regressed = established_trace.clone();
+                    regressed.watermark = 1;
+                    let retained = temporal::evaluate_checked_with_progress_v2(
+                        checked.package(),
+                        &admitted,
+                        0,
+                        &regressed,
+                        temporal::Limits::default(),
+                        &mut ledger,
+                    );
+                    assert!(matches!(
+                        retained.result(),
+                        Err(temporal::Error::Refused(temporal::Refusal::Progress {
+                            dimension: temporal::Dimension::Watermark,
+                            ..
+                        }))
+                    ));
+                }
+            }
+
+            let source_identity = SourceIdentity::new(
+                inputs.sources[0].identity().authority.clone(),
+                inputs.sources[0].identity().identity.clone(),
+                inputs.sources[0].identity().revision_namespace.clone(),
+                inputs.sources[0].identity().revision.clone(),
+            );
+            let exact_checked = checked_fr050_unit(inputs, 0);
+            let wrong_authority = checked_fr050_unit_with_identity(
+                inputs,
+                0,
+                SourceIdentity::new(
+                    "other-authority",
+                    source_identity.identity.clone(),
+                    source_identity.revision_namespace.clone(),
+                    source_identity.revision.clone(),
+                ),
+            );
+            let wrong_identity = checked_fr050_unit_with_identity(
+                inputs,
+                0,
+                SourceIdentity::new(
+                    source_identity.authority.clone(),
+                    "other:event-time",
+                    source_identity.revision_namespace.clone(),
+                    source_identity.revision.clone(),
+                ),
+            );
+            assert_eq!(
+                exact_checked.package().graph().source().authority(),
+                wrong_identity.package().graph().source().authority()
+            );
+            assert_ne!(
+                exact_checked.package().graph().source().identity(),
+                wrong_identity.package().graph().source().identity()
+            );
+
+            let original_text = inputs.sources[0].text();
+            let renamed_text = original_text.replace("ByEvent", "ByOther");
+            assert_eq!(renamed_text.len(), original_text.len());
+            let wrong_name = checked_fr050_unit_with_text(source_identity.clone(), &renamed_text);
+            assert_eq!(
+                exact_checked.package().graph().temporal_clauses()[0]
+                    .clause()
+                    .span(),
+                wrong_name.package().graph().temporal_clauses()[0]
+                    .clause()
+                    .span(),
+                "declaration-name mutation leaves the checked byte span unchanged"
+            );
+
+            let shifted_text = format!("\n{original_text}");
+            let wrong_span = checked_fr050_unit_with_text(source_identity, &shifted_text);
+            assert_ne!(
+                exact_checked.package().graph().temporal_clauses()[0]
+                    .clause()
+                    .span(),
+                wrong_span.package().graph().temporal_clauses()[0]
+                    .clause()
+                    .span(),
+                "leading whitespace changes only the source byte span"
+            );
+
+            let mut wrong_trace = trace_input(
+                "event-clock",
+                temporal::EVENT_POSITION,
+                &[("sequence_authority", "orders")],
+            );
+            wrong_trace.positions.push(temporal::Position {
+                coordinate: 0,
+                order: None,
+                valuations: BTreeMap::new(),
+                instance_valuations: BTreeMap::new(),
+            });
+            for (axis, package) in [
+                ("source authority", &wrong_authority),
+                ("source identity", &wrong_identity),
+                ("declaration name", &wrong_name),
+                ("declaration byte span", &wrong_span),
+            ] {
+                let refused = temporal::evaluate_checked_v2(
+                    package.package(),
+                    &admitted,
+                    0,
+                    &wrong_trace,
+                    temporal::Limits::default(),
+                );
+                assert!(
+                    matches!(
+                        refused.result(),
+                        Err(temporal::Error::Refused(
+                            temporal::Refusal::Reference { .. }
+                        ))
+                    ),
+                    "{axis} mismatch has typed reference refusal: {:?}",
+                    refused.result()
+                );
+                assert_eq!(refused.usage().positions, 0, "{axis} refusal precedes work");
+                assert!(
+                    refused.authenticated().is_none(),
+                    "{axis} is unauthenticated"
+                );
+            }
+        },
+    );
+}
+
 fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
     package
         .inherited()
@@ -732,6 +1498,944 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
     });
 }
 
+/// TC-144/TC-149: checked protocol temporal evaluation consumes the admitted
+/// control mapping and the observation owner's exact trigger identities.
+#[trace(
+    "TC-144",
+    "TC-149",
+    "FR-052-AC-9",
+    "FR-052-AC-10",
+    "FR-052-AC-11",
+    "FR-052-AC-12",
+    "FR-053-AC-7",
+    "FR-053-AC-8",
+    "FR-053-AC-9"
+)]
+#[test]
+fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
+    let inputs = checked_fr050_inputs_with_second_event(
+        "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) when (trigger.code > 0) { capture saved: M::Widget = trigger; always[0,0] not holds(view.code > 0) }",
+    );
+    with_v2_inputs(inputs, |inputs, _, _, _, emitted| {
+        let checked = checked_fr050_unit(inputs, 0);
+        let flow = u32::try_from(declaration(emitted.admitted(), "Flow")).expect("flow index");
+        let temporal_declaration =
+            u32::try_from(declaration(emitted.admitted(), "ByEvent")).expect("temporal index");
+        let inherited = emitted.admitted().package().inherited.clone();
+        let controls = match &inherited.declarations[flow as usize].body {
+            w::Body::Protocol { controls, .. } => controls,
+            _ => panic!("Flow is a protocol declaration"),
+        };
+        let event_indices: Vec<_> = controls
+            .iter()
+            .enumerate()
+            .filter_map(|(index, control)| {
+                matches!(control.operation, w::ControlOperation::Event { .. }).then_some(index)
+            })
+            .collect();
+        assert_eq!(event_indices.len(), 2, "Flow has two event controls");
+        let control = |position: usize| w::Handle {
+            declaration: flow,
+            index: u32::try_from(event_indices[position]).expect("control index"),
+        };
+        let selected_control = control(0);
+        let second_control = control(1);
+        let activation = v3::ExpectedActivation {
+            control: selected_control.clone(),
+            temporal_declaration,
+        };
+        let second_activation = v3::ExpectedActivation {
+            control: second_control.clone(),
+            temporal_declaration,
+        };
+        let admitted = native::admit_v3(
+            emitted,
+            &[
+                native::ActivationSelection {
+                    control: &activation.control,
+                    temporal_declaration: activation.temporal_declaration,
+                },
+                native::ActivationSelection {
+                    control: &second_activation.control,
+                    temporal_declaration: second_activation.temporal_declaration,
+                },
+            ],
+            Limits::default(),
+        )
+        .into_result()
+        .expect("strict admitted v3 activation map");
+
+        let clause = checked
+            .package()
+            .graph()
+            .temporal_clauses()
+            .first()
+            .expect("checked temporal declaration")
+            .clause();
+        let leaf = clause
+            .formula()
+            .nodes()
+            .iter()
+            .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+            .and_then(|index| u32::try_from(index).ok())
+            .expect("checked formula has a holds leaf");
+        let mut trace = trace_input(
+            "event-clock",
+            temporal::EVENT_POSITION,
+            &[("sequence_authority", "orders")],
+        );
+        trace.anchor = "event-9".into();
+        trace.positions = vec![temporal::Position {
+            coordinate: 9,
+            order: None,
+            valuations: BTreeMap::from([(leaf, false)]),
+            instance_valuations: BTreeMap::new(),
+        }];
+        trace.triggers = vec![temporal::Trigger {
+            identity: "caller-substitute-must-not-win".into(),
+            receipt: "same-receipt".into(),
+            anchor: "event-9".into(),
+            payload: "same-payload".into(),
+            guard: Some(true),
+            captures: vec![temporal::CaptureInput::Value {
+                anchor: "event-9".into(),
+                value: "same-captured-object".into(),
+            }],
+        }];
+
+        let selection = temporal::ProtocolSelection {
+            control: selected_control,
+            temporal_declaration,
+        };
+        let identity = temporal::SemanticTriggerIdentity::new("owner/é/event-9")
+            .expect("nonempty owner identity");
+        let mut ledger = temporal::ProtocolLedger::new();
+        assert!(matches!(
+            ledger.evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: temporal::ProtocolSelection {
+                        control: w::Handle {
+                            declaration: flow,
+                            index: u32::MAX,
+                        },
+                        temporal_declaration,
+                    },
+                    trace: trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            ),
+            Err(temporal::ProtocolRefusal::MissingActivationMapping)
+        ));
+        assert!(matches!(
+            ledger.evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: temporal::ProtocolSelection {
+                        control: selection.control.clone(),
+                        temporal_declaration: temporal_declaration.saturating_add(1),
+                    },
+                    trace: trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            ),
+            Err(temporal::ProtocolRefusal::ActivationMappingMismatch)
+        ));
+        let first = ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("checked protocol temporal evaluation");
+        let first_id = first.id();
+        assert_eq!(first.selection(), &selection);
+        assert_eq!(first.anchor(), "event-9");
+        let temporal::Obligation::Assessed(first_assessment) =
+            &first.report().result().expect("formula result")[0]
+        else {
+            panic!("active semantic trigger is assessed")
+        };
+        assert_eq!(
+            first_assessment.instance.as_deref(),
+            Some(identity.as_str())
+        );
+        assert_eq!(first_assessment.truth, Some(temporal::Truth::True));
+        assert_eq!(first_assessment.support, [0]);
+        assert_eq!(first_assessment.activation, temporal::Activation::Active);
+        assert_eq!(first_assessment.receipts, ["same-receipt"]);
+        assert_eq!(first_assessment.captures.len(), 1);
+        assert_eq!(first_assessment.captures[0].anchor, "event-9");
+        assert_eq!(first_assessment.captures[0].value, "same-captured-object");
+        assert_eq!(first_assessment.premises.clock, "event-clock");
+        assert_eq!(
+            first_assessment.premises.profile,
+            temporal::Profile::EventPosition
+        );
+        assert_eq!(first_assessment.premises.watermark, 0);
+        assert_eq!(
+            first_assessment.premises.decision_scope,
+            temporal::Closure::Closed
+        );
+        assert_eq!(
+            first_assessment.premises.surrounding_execution,
+            temporal::Closure::Open
+        );
+        assert_eq!(
+            first_assessment.premises.execution,
+            temporal::Execution::Completed
+        );
+        assert_eq!(
+            first_assessment.premises.completeness,
+            temporal::Completeness::Complete
+        );
+        assert!(first_assessment.premises.authoritative_origin);
+        assert_eq!(
+            first_assessment.premises.clock_parameters,
+            BTreeMap::from([("sequence_authority".into(), "orders".into())])
+        );
+
+        let second_identity = temporal::SemanticTriggerIdentity::new("owner/é/event-8")
+            .expect("nonempty second identity");
+        let mut sibling_trace = trace.clone();
+        sibling_trace.triggers.push(temporal::Trigger {
+            identity: "another-caller-substitute".into(),
+            receipt: "same-receipt".into(),
+            anchor: "event-9".into(),
+            payload: "same-payload".into(),
+            guard: Some(true),
+            captures: vec![temporal::CaptureInput::Value {
+                anchor: "event-9".into(),
+                value: "same-captured-object".into(),
+            }],
+        });
+        let mut sibling_ledger = temporal::ProtocolLedger::new();
+        let siblings = sibling_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("distinct owner identities stay separate");
+        let sibling_outcomes = siblings.report().result().expect("both settled");
+        let sibling_identities: Vec<_> = sibling_outcomes
+            .iter()
+            .map(|outcome| match outcome {
+                temporal::Obligation::Assessed(assessment) => {
+                    assessment.instance.as_deref().expect("active identity")
+                }
+                other => panic!("both triggers are assessed: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            sibling_identities,
+            [identity.as_str(), second_identity.as_str()]
+        );
+        let sibling_ordinals: Vec<_> = sibling_outcomes
+            .iter()
+            .map(|outcome| match outcome {
+                temporal::Obligation::Assessed(assessment) => assessment.subject.instance,
+                other => panic!("both triggers are assessed: {other:?}"),
+            })
+            .collect();
+        assert_eq!(sibling_ordinals, [0, 1]);
+
+        let mut guard_filtered = sibling_trace.clone();
+        guard_filtered.triggers[0].guard = Some(false);
+        let mut guard_ledger = temporal::ProtocolLedger::new();
+        let guard_report = guard_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: guard_filtered,
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("false guard creates no instance");
+        let guard_outcomes = guard_report
+            .report()
+            .result()
+            .expect("guarded sibling remains settled");
+        assert_eq!(guard_outcomes.len(), 1);
+        assert!(matches!(
+            &guard_outcomes[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.instance.as_deref() == Some(second_identity.as_str())
+                    && assessment.truth == Some(temporal::Truth::True)
+        ));
+
+        let duplicate_identity = temporal::SemanticTriggerIdentity::new("owner/replayed/event")
+            .expect("nonempty duplicate identity");
+        let mut duplicate_trace = sibling_trace.clone();
+        duplicate_trace.triggers[1].receipt = "replayed-receipt".into();
+        let duplicate = sibling_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: duplicate_trace.clone(),
+                    trigger_identities: vec![
+                        duplicate_identity.clone(),
+                        duplicate_identity.clone(),
+                    ],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("same owner identity deduplicates");
+        let [temporal::Obligation::Assessed(duplicate)] =
+            duplicate.report().result().expect("duplicate settled")
+        else {
+            panic!("same semantic identity produces one obligation")
+        };
+        assert_eq!(
+            duplicate.instance.as_deref(),
+            Some(duplicate_identity.as_str())
+        );
+        assert_eq!(duplicate.receipts, ["same-receipt", "replayed-receipt"]);
+
+        let mut duplicate_limited_ledger = temporal::ProtocolLedger::new();
+        let duplicate_with_one_instance_budget = duplicate_limited_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: duplicate_trace.clone(),
+                    trigger_identities: vec![
+                        duplicate_identity.clone(),
+                        duplicate_identity.clone(),
+                    ],
+                    correction: None,
+                },
+                temporal::Limits {
+                    instances: 1,
+                    captures: 1,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("duplicate delivery uses one retained instance and capture budget");
+        assert!(matches!(
+            duplicate_with_one_instance_budget.report().result(),
+            Ok([temporal::Obligation::Assessed(assessment)])
+                if assessment.instance.as_deref() == Some(duplicate_identity.as_str())
+                    && assessment.captures.len() == 1
+                    && assessment.receipts.len() == 2
+        ));
+
+        let mut conflicting_delivery = duplicate_trace;
+        conflicting_delivery.triggers[1].payload = "contradictory-payload".into();
+        let conflict = sibling_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: conflicting_delivery.clone(),
+                    trigger_identities: vec![
+                        duplicate_identity.clone(),
+                        duplicate_identity.clone(),
+                    ],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("contradictory delivery is a typed temporal outcome");
+        assert!(matches!(
+            conflict.report().result(),
+            Err(temporal::Error::Refused(
+                temporal::Refusal::Contradiction { .. }
+            ))
+        ));
+
+        let mut conflicting_limited_ledger = temporal::ProtocolLedger::new();
+        let conflicting_limited = conflicting_limited_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: conflicting_delivery,
+                    trigger_identities: vec![
+                        duplicate_identity.clone(),
+                        duplicate_identity.clone(),
+                    ],
+                    correction: None,
+                },
+                temporal::Limits {
+                    instances: 1,
+                    captures: 1,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("contradiction remains a typed temporal outcome");
+        assert!(matches!(
+            conflicting_limited.report().result(),
+            Err(temporal::Error::Refused(
+                temporal::Refusal::Contradiction { .. }
+            ))
+        ));
+
+        assert!(matches!(
+            temporal::SemanticTriggerIdentity::new(""),
+            Err(temporal::ProtocolRefusal::EmptyTriggerIdentity)
+        ));
+        assert!(matches!(
+            sibling_ledger.evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            ),
+            Err(temporal::ProtocolRefusal::TriggerIdentityCount)
+        ));
+
+        let mut missing_evidence = trace.clone();
+        missing_evidence.trigger_evidence = temporal::Evidence::Missing;
+        let unknown = sibling_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_evidence,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing evidence is a typed temporal result");
+        assert!(matches!(
+            unknown.report().result().expect("unknown is not a refusal")[0],
+            temporal::Obligation::Assessed(ref assessment)
+                if assessment.truth.is_none()
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Incomplete,
+                        execution: temporal::Execution::Completed,
+                    }
+        ));
+
+        let mut wrong_profile = trace.clone();
+        wrong_profile.clock.profile_identity = temporal::TIMESTAMPED_WINDOW.into();
+        let refused = sibling_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: wrong_profile,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("profile mismatch is a typed checked evaluation result");
+        assert!(matches!(
+            refused.report().result(),
+            Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                dimension: temporal::Dimension::Profile,
+                ..
+            }))
+        ));
+
+        let mut evidence_ledger = temporal::ProtocolLedger::new();
+        let mut missing_clock_parameters = trace.clone();
+        missing_clock_parameters.clock.parameters.clear();
+        let missing_clock = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_clock_parameters,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing clock parameters are a typed non-truth result");
+        assert!(matches!(
+            missing_clock.report().result(),
+            Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                dimension: temporal::Dimension::ClockParameters,
+                ..
+            }))
+        ));
+
+        let mut missing_capture = trace.clone();
+        missing_capture.triggers[0].captures[0] = temporal::CaptureInput::Missing;
+        let capture = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_capture,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing capture is a typed non-truth result");
+        assert!(matches!(
+            capture.report().result().expect("activation disposition")[0],
+            temporal::Obligation::Unactivated {
+                error: temporal::Error::Incomplete(temporal::Incomplete {
+                    dimension: temporal::Dimension::Capture,
+                    ..
+                }),
+                ..
+            }
+        ));
+
+        let mut missing_anchor = trace.clone();
+        missing_anchor.anchor.clear();
+        let anchor = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_anchor,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("missing anchor is a typed non-truth result");
+        assert!(matches!(
+            anchor.report().result().expect("activation disposition")[0],
+            temporal::Obligation::Unactivated {
+                error: temporal::Error::Refused(temporal::Refusal::Capture {
+                    dimension: temporal::Dimension::Anchor,
+                    ..
+                }),
+                ..
+            }
+        ));
+
+        let mut missing_progress = trace.clone();
+        missing_progress.positions[0].valuations.clear();
+        let progress = evidence_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: missing_progress,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("unavailable progressed valuation is typed");
+        assert!(matches!(
+            &progress.report().result().expect("assessment disposition")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.incomplete.as_ref().is_some_and(|incomplete|
+                        incomplete.dimension == temporal::Dimension::Valuation)
+        ));
+
+        let mut open_closure = trace.clone();
+        open_closure.decision_scope = temporal::Closure::Open;
+        open_closure.positions[0].valuations.clear();
+        let mut closure_ledger = temporal::ProtocolLedger::new();
+        let closure = closure_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: open_closure,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("open closure cannot be defaulted to closed truth");
+        assert!(matches!(
+            &closure.report().result().expect("assessment disposition")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.premises.decision_scope == temporal::Closure::Open
+                    && assessment.incomplete.as_ref().is_some_and(|incomplete|
+                        incomplete.dimension == temporal::Dimension::Valuation)
+        ));
+
+        let mut open_trigger_scope = trace.clone();
+        open_trigger_scope.triggers.clear();
+        open_trigger_scope.trigger_scope = temporal::Closure::Open;
+        let mut trigger_scope_ledger = temporal::ProtocolLedger::new();
+        let trigger_scope = trigger_scope_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: open_trigger_scope,
+                    trigger_identities: Vec::new(),
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("open trigger closure is not defaulted to inactive");
+        assert!(matches!(
+            &trigger_scope.report().result().expect("scope disposition")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Complete,
+                        execution: temporal::Execution::Completed,
+                    }
+        ));
+
+        let mut failed_execution = trace.clone();
+        failed_execution.execution = temporal::Execution::Failed;
+        failed_execution.trigger_evidence = temporal::Evidence::Missing;
+        let mut execution_ledger = temporal::ProtocolLedger::new();
+        let execution = execution_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: failed_execution,
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("failed execution is retained as non-truth");
+        assert!(matches!(
+            &execution.report().result().expect("unknown activation")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Incomplete,
+                        execution: temporal::Execution::Failed,
+                    }
+        ));
+
+        let mut incomplete_input = trace.clone();
+        incomplete_input.completeness = temporal::Completeness::Incomplete;
+        incomplete_input.trigger_evidence = temporal::Evidence::Admitted;
+        incomplete_input.trigger_scope = temporal::Closure::Open;
+        incomplete_input.triggers.clear();
+        let mut incomplete_ledger = temporal::ProtocolLedger::new();
+        let incomplete = incomplete_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: incomplete_input,
+                    trigger_identities: Vec::new(),
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("incomplete input is retained as non-truth");
+        assert!(matches!(
+            &incomplete.report().result().expect("unknown activation")[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.truth.is_none()
+                    && assessment.premises.completeness == temporal::Completeness::Incomplete
+                    && assessment.activation == temporal::Activation::Unknown {
+                        completeness: temporal::Completeness::Incomplete,
+                        execution: temporal::Execution::Completed,
+                    }
+        ));
+
+        let mut budget_ledger = temporal::ProtocolLedger::new();
+        let budgeted = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits {
+                    positions: 1,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("budget stop retains the checked evaluation");
+        assert!(matches!(
+            budgeted.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Positions
+                    && exhaustion.subject.instance == 1
+        ));
+        assert_eq!(budgeted.settled_siblings().len(), 1);
+        assert!(matches!(
+            &budgeted.settled_siblings()[0],
+            temporal::Obligation::Assessed(assessment)
+                if assessment.instance.as_deref() == Some(identity.as_str())
+                    && assessment.truth == Some(temporal::Truth::True)
+        ));
+
+        let oversized = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits {
+                    positions: 0,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("oversized input returns a retained typed limit result");
+        assert!(matches!(
+            oversized.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Positions
+                    && exhaustion.requested == 1
+        ));
+        assert!(oversized.settled_siblings().is_empty());
+
+        let delivery_over_budget = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits {
+                    visits: 2,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("oversized delivery scan returns typed exhaustion");
+        assert!(matches!(
+            delivery_over_budget.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Visits
+                    && exhaustion.requested == 3
+                    && exhaustion.limit == 2
+        ));
+
+        let mut empty_instance_rows = trace.clone();
+        empty_instance_rows.triggers.clear();
+        empty_instance_rows.positions[0].instance_valuations = (0..10)
+            .map(|index| (format!("empty-owner-{index}"), BTreeMap::new()))
+            .collect();
+        let empty_rows_over_budget = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: empty_instance_rows,
+                    trigger_identities: Vec::new(),
+                    correction: None,
+                },
+                temporal::Limits {
+                    visits: 1,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("empty per-instance valuation rows consume bounded scan work");
+        assert!(matches!(
+            empty_rows_over_budget.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Visits
+                    && exhaustion.requested == 2
+                    && exhaustion.limit == 1
+        ));
+
+        // A correction changes an admitted leaf valuation and names exactly
+        // the prior result. The earlier result remains immutable.
+        let mut corrected_trace = trace.clone();
+        corrected_trace.positions[0].valuations.insert(leaf, true);
+        corrected_trace.triggers[0].captures[0] = temporal::CaptureInput::Value {
+            anchor: "event-9".into(),
+            value: "caller-revised-capture-must-not-win".into(),
+        };
+
+        // A different admitted package can reuse every local coordinate, but
+        // cannot consume the first package's result as its predecessor.
+        let other_admitted = native::admit_v3(
+            emitted,
+            &[native::ActivationSelection {
+                control: &activation.control,
+                temporal_declaration: activation.temporal_declaration,
+            }],
+            Limits::default(),
+        )
+        .into_result()
+        .expect("strict admitted package with a distinct activation table");
+        let mut cross_package_ledger = temporal::ProtocolLedger::new();
+        let package_a_result = cross_package_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits::default(),
+            )
+            .expect("first package evaluation");
+        let package_a_id = package_a_result.id();
+        assert!(matches!(
+            cross_package_ledger.evaluate(
+                checked.package(),
+                other_admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: corrected_trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: Some(package_a_id),
+                },
+                temporal::Limits::default(),
+            ),
+            Err(temporal::ProtocolRefusal::CorrectionPredecessor)
+        ));
+
+        let corrected = ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: corrected_trace.clone(),
+                    trigger_identities: vec![identity.clone()],
+                    correction: Some(first_id),
+                },
+                temporal::Limits::default(),
+            )
+            .expect("direct correction with changed input");
+        let corrected_id = corrected.id();
+        assert_eq!(corrected.predecessor(), Some(first_id));
+        assert!(matches!(
+            corrected.report().result().expect("corrected formula")[0],
+            temporal::Obligation::Assessed(ref assessment)
+                if assessment.truth == Some(temporal::Truth::False)
+                    && assessment.captures[0].value == "same-captured-object"
+        ));
+        assert!(matches!(
+            ledger.get(first_id).expect("retained predecessor").report().result().unwrap()[0],
+            temporal::Obligation::Assessed(ref assessment)
+                if assessment.truth == Some(temporal::Truth::True)
+        ));
+
+        assert!(
+            matches!(
+                ledger.evaluate(
+                    checked.package(),
+                    admitted.admitted(),
+                    temporal::ProtocolEvaluationInput {
+                        selection: selection.clone(),
+                        trace: corrected_trace.clone(),
+                        trigger_identities: vec![second_identity],
+                        correction: Some(corrected_id),
+                    },
+                    temporal::Limits::default(),
+                ),
+                Err(temporal::ProtocolRefusal::CorrectionIdentity)
+            ),
+            "a correction cannot substitute an owner's selected identity"
+        );
+
+        assert!(
+            matches!(
+                ledger.evaluate(
+                    checked.package(),
+                    admitted.admitted(),
+                    temporal::ProtocolEvaluationInput {
+                        selection: selection.clone(),
+                        trace: trace.clone(),
+                        trigger_identities: vec![identity.clone()],
+                        correction: Some(first_id),
+                    },
+                    temporal::Limits::default(),
+                ),
+                Err(temporal::ProtocolRefusal::CorrectionPredecessor)
+            ),
+            "a non-direct predecessor is refused"
+        );
+        assert!(
+            matches!(
+                ledger.evaluate(
+                    checked.package(),
+                    admitted.admitted(),
+                    temporal::ProtocolEvaluationInput {
+                        selection: selection.clone(),
+                        trace: corrected_trace.clone(),
+                        trigger_identities: vec![identity.clone()],
+                        correction: Some(corrected_id),
+                    },
+                    temporal::Limits::default(),
+                ),
+                Err(temporal::ProtocolRefusal::UnchangedCorrection)
+            ),
+            "a correction must change evaluation input"
+        );
+        assert!(
+            matches!(
+                ledger.evaluate(
+                    checked.package(),
+                    admitted.admitted(),
+                    temporal::ProtocolEvaluationInput {
+                        selection: temporal::ProtocolSelection {
+                            control: second_control,
+                            temporal_declaration,
+                        },
+                        trace: trace.clone(),
+                        trigger_identities: vec![identity],
+                        correction: Some(corrected_id),
+                    },
+                    temporal::Limits::default(),
+                ),
+                Err(temporal::ProtocolRefusal::CorrectionPredecessor)
+            ),
+            "a predecessor from another control obligation is refused"
+        );
+    });
+}
+
 fn v2_refusal(refusal: v2::Refusal) -> Error {
     Error::V2(refusal)
 }
@@ -907,7 +2611,15 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
     );
 }
 
-#[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-6")]
+#[trace(
+    "TC-138",
+    "TC-150",
+    "TC-1277",
+    "FR-050-AC-1",
+    "FR-050-AC-4",
+    "FR-050-AC-6",
+    "FR-043-AC-14"
+)]
 #[test]
 fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
     with_v2(|inputs, proofs, selected, temporal, emitted| {
@@ -1016,7 +2728,7 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3")]
 #[test]
 fn producer_requires_one_exact_source_definition_and_clock_selection() {
     with_v2(|inputs, proofs, selected, temporal, _| {
@@ -1141,7 +2853,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3")]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
 #[test]
 fn strict_reader_rejects_structural_and_identity_substitutions() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
@@ -1345,7 +3057,7 @@ fn strict_reader_rejects_structural_and_identity_substitutions() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
+#[trace("TC-138", "TC-150", "FR-050-AC-2", "FR-050-AC-3", "FR-050-AC-4")]
 #[test]
 fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
@@ -1497,76 +3209,197 @@ fn malformed_clock_objects_refuse() {
     });
 }
 
-#[trace("TC-138", "FR-050-AC-5")]
+#[trace("TC-138", "TC-150", "FR-050-AC-5")]
 #[test]
 fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
-    with_v2(|inputs, proofs, _, temporal, emitted| {
-        let temporal = &temporal.expected;
-        let complete = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());
-        let usage = complete.usage();
-        assert!(
-            usage.byte_work >= emitted.bytes().len(),
-            "byte work charges at least the emitted bytes"
-        );
-        for (dimension, amount) in [
-            (WorkDimension::Entries, usage.entries),
-            (WorkDimension::References, usage.references),
-            (WorkDimension::ByteWork, usage.byte_work),
-            (WorkDimension::OutputBytes, usage.output_bytes),
-        ] {
-            assert!(amount > 0);
-            let mut limits = Limits::default();
-            match dimension {
-                WorkDimension::Entries => limits.entries = amount - 1,
-                WorkDimension::References => limits.references = amount - 1,
-                WorkDimension::ByteWork => limits.byte_work = amount - 1,
-                WorkDimension::OutputBytes => limits.output_bytes = amount - 1,
-                _ => unreachable!(),
-            }
-            let report = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, limits);
-            let Error::Incomplete(exhaustion) = report.result().unwrap_err() else {
-                panic!("{dimension:?}: expected typed exhaustion")
-            };
-            assert_eq!(exhaustion.dimension, dimension);
+    with_v2_inputs(
+        checked_fr050_inputs(),
+        |inputs, proofs, selected, temporal, emitted| {
+            let tables = temporal;
+            let temporal = &tables.expected;
+            let complete =
+                inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());
+            let usage = complete.usage();
+            assert!(
+                usage.byte_work >= emitted.bytes().len(),
+                "byte work charges at least the emitted bytes"
+            );
+            for (dimension, amount) in [
+                (WorkDimension::Entries, usage.entries),
+                (WorkDimension::References, usage.references),
+                (WorkDimension::ByteWork, usage.byte_work),
+                (WorkDimension::OutputBytes, usage.output_bytes),
+            ] {
+                assert!(amount > 0);
+                let mut limits = Limits::default();
+                match dimension {
+                    WorkDimension::Entries => limits.entries = amount - 1,
+                    WorkDimension::References => limits.references = amount - 1,
+                    WorkDimension::ByteWork => limits.byte_work = amount - 1,
+                    WorkDimension::OutputBytes => limits.output_bytes = amount - 1,
+                    _ => unreachable!(),
+                }
+                let report = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, limits);
+                let Error::Incomplete(exhaustion) = report.result().unwrap_err() else {
+                    panic!("{dimension:?}: expected typed exhaustion")
+                };
+                assert_eq!(exhaustion.dimension, dimension);
 
-            let mut exact = Limits::default();
-            match dimension {
-                WorkDimension::Entries => exact.entries = amount,
-                WorkDimension::References => exact.references = amount,
-                WorkDimension::ByteWork => exact.byte_work = amount,
-                WorkDimension::OutputBytes => exact.output_bytes = amount,
-                _ => unreachable!(),
+                let mut exact = Limits::default();
+                match dimension {
+                    WorkDimension::Entries => exact.entries = amount,
+                    WorkDimension::References => exact.references = amount,
+                    WorkDimension::ByteWork => exact.byte_work = amount,
+                    WorkDimension::OutputBytes => exact.output_bytes = amount,
+                    _ => unreachable!(),
+                }
+                assert!(inputs
+                    .read_v2_bytes(proofs, emitted.bytes(), temporal, exact)
+                    .result()
+                    .is_ok());
             }
-            assert!(inputs
-                .read_v2_bytes(proofs, emitted.bytes(), temporal, exact)
+            let producer = native::admit_v2(proofs, selected, &tables.producer, Limits::default());
+            let producer_usage = producer.usage();
+            let producer_admitted = producer
                 .result()
-                .is_ok());
-        }
-        let above_hard = Limits {
-            payload_bytes: usize::MAX,
-            output_bytes: usize::MAX,
-            source_bytes: usize::MAX,
-            content_bytes: usize::MAX,
-            sources: usize::MAX,
-            dependencies: usize::MAX,
-            definitions: usize::MAX,
-            models: usize::MAX,
-            declarations: usize::MAX,
-            entries: usize::MAX,
-            references: usize::MAX,
-            byte_work: usize::MAX,
-            depth: usize::MAX,
-            ..Limits::default()
-        };
-        let clamped = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, above_hard);
-        assert_eq!(clamped.limits(), Limits::default());
-        assert!(clamped.result().is_ok());
-        let retry = inputs
-            .read_v2(proofs, emitted, temporal)
-            .into_result()
-            .expect("fresh sufficient retry");
-        assert_eq!(retry.package(), emitted.admitted().package());
-    });
+                .expect("producer path admits the exact selected artifact");
+            let producer_dimensions = [
+                (WorkDimension::PayloadBytes, producer_usage.payload_bytes),
+                (WorkDimension::OutputBytes, producer_usage.output_bytes),
+                (WorkDimension::SourceBytes, producer_usage.source_bytes),
+                (WorkDimension::ContentBytes, producer_usage.content_bytes),
+                (WorkDimension::Sources, producer_usage.sources),
+                (WorkDimension::Dependencies, producer_usage.dependencies),
+                (WorkDimension::Definitions, producer_usage.definitions),
+                (WorkDimension::Models, producer_usage.models),
+                (WorkDimension::Declarations, producer_usage.declarations),
+                (WorkDimension::Entries, producer_usage.entries),
+                (WorkDimension::References, producer_usage.references),
+                (WorkDimension::ByteWork, producer_usage.byte_work),
+                (WorkDimension::Depth, producer_usage.depth),
+            ];
+            for (dimension, amount) in producer_dimensions {
+                if amount == 0 {
+                    continue;
+                }
+                let set_limit = |limits: &mut Limits, value| match dimension {
+                    WorkDimension::PayloadBytes => limits.payload_bytes = value,
+                    WorkDimension::OutputBytes => limits.output_bytes = value,
+                    WorkDimension::SourceBytes => limits.source_bytes = value,
+                    WorkDimension::ContentBytes => limits.content_bytes = value,
+                    WorkDimension::Sources => limits.sources = value,
+                    WorkDimension::Dependencies => limits.dependencies = value,
+                    WorkDimension::Definitions => limits.definitions = value,
+                    WorkDimension::Models => limits.models = value,
+                    WorkDimension::Declarations => limits.declarations = value,
+                    WorkDimension::Entries => limits.entries = value,
+                    WorkDimension::References => limits.references = value,
+                    WorkDimension::ByteWork => limits.byte_work = value,
+                    WorkDimension::Depth => limits.depth = value,
+                };
+                let mut one_short = Limits::default();
+                set_limit(&mut one_short, amount - 1);
+                let refused = native::admit_v2(proofs, selected, &tables.producer, one_short);
+                let Error::Incomplete(exhaustion) = refused.result().unwrap_err() else {
+                    panic!("producer {dimension:?}: expected typed exhaustion")
+                };
+                assert_eq!(exhaustion.dimension, dimension);
+
+                let mut exact = Limits::default();
+                set_limit(&mut exact, amount);
+                assert!(
+                    native::admit_v2(proofs, selected, &tables.producer, exact)
+                        .result()
+                        .is_ok(),
+                    "producer {dimension:?} succeeds at its measured limit"
+                );
+            }
+            assert!(
+                producer_usage.content_bytes > 0,
+                "producer charges strings/numbers"
+            );
+            assert_eq!(producer_usage.output_bytes, producer_admitted.bytes().len());
+            assert!(producer_usage.byte_work >= producer_admitted.bytes().len());
+            let producer_retry =
+                native::admit_v2(proofs, selected, &tables.producer, Limits::default())
+                    .into_result()
+                    .expect("fresh producer retry");
+            assert_eq!(producer_retry.bytes(), producer_admitted.bytes());
+            assert_eq!(
+                producer_retry.admitted().package(),
+                producer_admitted.admitted().package()
+            );
+            assert_eq!(
+                native::admit_v2(proofs, selected, &tables.producer, Limits::default()).usage(),
+                producer_usage,
+                "fresh producer retries start with reproducible usage"
+            );
+
+            let above_hard = Limits {
+                payload_bytes: usize::MAX,
+                output_bytes: usize::MAX,
+                source_bytes: usize::MAX,
+                content_bytes: usize::MAX,
+                sources: usize::MAX,
+                dependencies: usize::MAX,
+                definitions: usize::MAX,
+                models: usize::MAX,
+                declarations: usize::MAX,
+                entries: usize::MAX,
+                references: usize::MAX,
+                byte_work: usize::MAX,
+                depth: usize::MAX,
+                ..Limits::default()
+            };
+            let clamped = inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, above_hard);
+            assert_eq!(clamped.limits(), Limits::default());
+            assert!(clamped.result().is_ok());
+            let reader_retry =
+                inputs.read_v2_bytes(proofs, emitted.bytes(), temporal, Limits::default());
+            assert_eq!(reader_retry.usage(), usage);
+            assert_eq!(
+                reader_retry.result().unwrap().package(),
+                emitted.admitted().package()
+            );
+            let retry = inputs
+                .read_v2(proofs, emitted, temporal)
+                .into_result()
+                .expect("fresh sufficient retry");
+            assert_eq!(retry.package(), emitted.admitted().package());
+            let checked = checked_fr050_unit(inputs, 0);
+            let mut trace = trace_input(
+                "event-clock",
+                temporal::EVENT_POSITION,
+                &[("sequence_authority", "orders")],
+            );
+            let clause = checked.package().graph().temporal_clauses()[0].clause();
+            let hold = clause
+                .formula()
+                .nodes()
+                .iter()
+                .position(|node| matches!(node, qsl_semantics::check::FormulaNode::Holds { .. }))
+                .and_then(|index| u32::try_from(index).ok())
+                .expect("checked hold atom index");
+            trace.positions.push(temporal::Position {
+                coordinate: 0,
+                order: None,
+                valuations: BTreeMap::from([(hold, true)]),
+                instance_valuations: BTreeMap::new(),
+            });
+            let checked_result = temporal::evaluate_checked_v2(
+                checked.package(),
+                &retry,
+                0,
+                &trace,
+                temporal::Limits::default(),
+            );
+            assert!(
+                checked_result.result().is_ok(),
+                "fresh strict-read retry reaches its checked successor"
+            );
+            assert_eq!(checked_result.authenticated().unwrap().clock, "event-clock");
+        },
+    );
 }
 
 #[trace("TC-138", "FR-050-AC-6")]

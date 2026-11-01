@@ -43,6 +43,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{
     CheckedGraph, CheckedProtocol, CheckedRefinement, CheckedTerminalMember, TerminalDeclaration,
+    TerminalKeys,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::NodeKey;
@@ -210,6 +211,11 @@ pub struct SubjectReading {
     roots: BTreeSet<NodeKey>,
     opted_out: bool,
     timed: bool,
+    /// The package's terminal node key per model alias, which a model
+    /// subject's deadlock-freedom verdict is joined on (FR-411
+    /// "Deadlock-freedom verdict join"). Every model's counts, since the
+    /// deadlock classifier reads every declaration of the package.
+    terminals: TerminalKeys,
     /// For a protocol subject, what its clause gives the derivation.
     protocol: Option<ProtocolReading>,
 }
@@ -248,8 +254,16 @@ impl SubjectReading {
                 .time_sources()
                 .iter()
                 .any(|source| own(&source.model)),
+            terminals: package.terminal_keys(),
             protocol: None,
         }
+    }
+
+    /// The terminal node keys of the subject's package (FR-411
+    /// "Deadlock-freedom verdict join"): those of the first caller item
+    /// over the subject.
+    pub fn terminals(&self) -> &TerminalKeys {
+        &self.terminals
     }
 
     /// Whether a model the subject reads declares `terminal any`, which
@@ -266,7 +280,9 @@ impl SubjectReading {
     }
 
     /// The reading of a subject that two caller items read: the union of
-    /// their rows and marks.
+    /// their rows and marks. The terminal keys stay the first item's, so a
+    /// later item over a package with another declaration is joined to the
+    /// first item's declaration.
     fn merge(&mut self, other: &Self) {
         self.roots.extend(other.roots.iter().cloned());
         self.opted_out |= other.opted_out;
@@ -432,6 +448,7 @@ impl<S: Clone> ProtocolTemporalItem<'_, S> {
             roots: BTreeSet::new(),
             opted_out: matches!(self.protocol.slots.terminal, CheckedTerminalMember::Any),
             timed: false,
+            terminals: TerminalKeys::default(),
             protocol: Some(ProtocolReading {
                 node: self.protocol.node(),
                 models: self.models.to_vec(),

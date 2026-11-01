@@ -232,12 +232,16 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
                 system.meter_limits(),
                 &qsl_eval::simulation::Limits::default(),
             )
-            .map(|(settlement, hints)| ModelTraceReplayResult { settlement, hints })
+            .map(|(settlement, hints)| ModelTraceReplayResult {
+                settlement,
+                hints,
+                terminals: world.package.graph().terminal_keys(),
+            })
         }),
     };
     let mut records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),
-        vec![zone_item(qsl_foundation::RequestIndex::new(0), item)],
+        vec![zone_item(qsl_foundation::RequestIndex::new(0), item).expect("a clause run")],
         &quire_exact::Cancel::new(),
     );
     assert_eq!(records.len(), 1);

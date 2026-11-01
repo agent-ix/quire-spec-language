@@ -289,7 +289,8 @@ pub fn encode_smt_query(
     // Only a TP-2 item is read past the end of a finite behaviour.
     let infinite = bounded.is_none();
     // Rows 4 to 8: the subject.
-    let system = ModelSystem::new(subject.simulation.clone()).map_err(Refusal::SubjectAdmission)?;
+    let system = ModelSystem::new(subject.simulation.clone())
+        .map_err(|failure| Refusal::SubjectAdmission(Box::new(failure)))?;
     let symbolic = system.symbolic()?;
     let layout = StateLayout::of(&symbolic)?;
     // Row 9: parameter-domain.

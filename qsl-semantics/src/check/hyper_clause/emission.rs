@@ -9,13 +9,14 @@
 //! under a bounded profile, a constraint declared by a systems interface, and
 //! a model read with no encodable component.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use qsl_foundation::Span;
 use quire_semantic_value::location::Location;
 
 use super::{CheckedHyperClause, TemporalCause};
-use crate::check::ir::{CheckedNode, NodeKind, Slot};
+use crate::check::ir::{CheckedNode, Slot};
 use crate::check::profile::TemporalProfile;
 use crate::check::refusal::{CheckCause, CheckRefusal};
 use crate::check::AdmittedModel;

@@ -17,6 +17,8 @@
 //! version-1 package retains none, so the two are never mistaken for each other.
 
 use crate::protocol_artifact::wire as w;
+use qsl_semantics::check::{Activation as CheckedActivation, TemporalProfile};
+use quire_exact::NodeKey;
 
 use super::profile::Profile;
 use super::result::Subject;
@@ -54,6 +56,10 @@ pub enum Unmatched {
     /// A bounded past and a bounded future operator both reachable; no TL
     /// profile evaluates both directions in one formula.
     MixedDirection,
+    /// The infinite-trace profile has no finite-trace TL target.
+    InfiniteTrace,
+    /// Exact rational-time semantics have no target in the selected TL table.
+    TimedProfile,
 }
 
 /// Premises a supported mapping would still have to discharge. Naming them is
@@ -174,6 +180,45 @@ pub struct Classification {
     authenticated: Option<AuthenticatedSelection>,
 }
 
+/// Mapping classification whose retained selection is sourced from S3's
+/// checked clause node rather than a protocol artifact declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedClassification {
+    /// The FR-045 disposition.
+    pub support: Support,
+    /// Exact checked declaration selection retained by the classification.
+    pub retained: CheckedRetained,
+}
+
+/// FR-045 classification made from checked nodes after authenticating the
+/// matching strict `/2` source selection and its definition/clock binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedClassificationV2 {
+    /// The FR-045 disposition derived from checked operators.
+    pub support: Support,
+    /// Exact checked declaration retained by the classification.
+    pub retained: CheckedRetained,
+    /// The admitted definition selection that was authenticated.
+    pub authenticated: AuthenticatedSelection,
+    /// Exact clock name selected by the admitted package.
+    pub clock_name: String,
+    /// Exact clock configuration selected by the admitted package.
+    pub clock: crate::protocol_artifact::v2::wire::ClockConfiguration,
+}
+
+/// Checked declaration facts retained by FR-045.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedRetained {
+    /// The declaration's temporal-clause node identity.
+    pub identity: NodeKey,
+    /// The checked source name.
+    pub name: String,
+    /// The exact profile selected by checking.
+    pub profile: TemporalProfile,
+    /// The checked activation shape.
+    pub activation: CheckedActivation,
+}
+
 impl Classification {
     pub(super) fn new(
         support: Support,
@@ -211,6 +256,12 @@ impl Operators {
     /// node is inspected at most once, so a shared subformula costs one visit.
     /// An index outside the arena reaches nothing; admission already refuses one.
     pub fn of(nodes: &[w::Temporal], root: usize) -> Self {
+        let operations: Vec<_> = nodes.iter().map(|node| node.operation.clone()).collect();
+        Self::of_operations(&operations, root)
+    }
+
+    /// Walk normalized operations derived directly from a checked formula.
+    pub fn of_operations(nodes: &[w::TemporalOperation], root: usize) -> Self {
         let mut result = Self::default();
         let mut seen = vec![false; nodes.len()];
         let mut pending = vec![root];
@@ -226,7 +277,7 @@ impl Operators {
                     pending.push(next);
                 }
             };
-            match &node.operation {
+            match node {
                 w::TemporalOperation::Unary {
                     operator, value, ..
                 } => {
