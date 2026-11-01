@@ -310,7 +310,7 @@ mod tests {
         };
         let limits = SelectedArtifactLimits::try_new(raised).expect("bounded limits fit u64");
         assert_eq!(limits.accounting_version, ACCOUNTING_VERSION);
-        assert_eq!(limits.payload_bytes, 8 * 1_048_576);
+        assert_eq!(limits.payload_bytes, 64 * 1_048_576);
 
         let mut encoded = serde_json::to_value(&limits).expect("serialize published limits");
         encoded
