@@ -867,7 +867,10 @@ fn an_unsatisfiable_domain_is_inconclusive_with_the_value_check_vacuity_cause() 
     // This is an inconclusive ValueValidity result, not a Kani proof with
     // zero SUCCESS checks.
     assert!(
-        matches!(terminal(&record), TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof)),
+        matches!(
+            terminal(&record),
+            TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof)
+        ),
         "{:?}",
         record.settlement
     );
