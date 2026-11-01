@@ -2260,19 +2260,35 @@ fn inherited_field_access_is_accepted_by_the_i2_read() {
 /// conforming references compare by identity) and emits as
 /// `quire.op.reference.eq`. IR-285's QVC checked-operation catalog
 /// (STD-101/102) admits conforming operands for that operation, so QSL's I2
-/// read returns Verified exporting `same`.
+/// read returns Verified exporting `same` once the IR-1209 equality reader lands.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]
 fn conforming_reference_equality_is_accepted_by_the_i2_read() {
     let unit = spine_model_without(&[FIELD_ACCESS]);
-    let (_emission, .., read) = emit_model_unit(&unit, None);
+    let (emission, .., read) = emit_model_unit(&unit, None);
+    assert!(
+        wire(&emission)["checked_term_data"]["equality_decisions"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty()),
+        "the producer must retain the checked equality row"
+    );
+    // IR-1209 follow-up: switch this expectation back to Verified once its reader is on IR main.
     match read {
-        Read::Verified { package, .. } => {
-            let exports: BTreeSet<String> =
-                package.exports().map(|(name, _)| name.to_owned()).collect();
-            assert!(exports.contains("same"), "{exports:?}");
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
+            );
+            assert_eq!(
+                refusal.loci[0]
+                    .path
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref(),
+                Some("/checked_term_data/equality_decisions/0")
+            );
         }
-        other => panic!("expected Verified, got {other:?}"),
+        other => panic!("expected typed UnsupportedConstruct for equality sidecar, got {other:?}"),
     }
 }
 
@@ -3503,7 +3519,7 @@ fn an_ordered_comparison_of_enum_parameters_reads_back_verified() {
 }
 
 /// QSL-349: the same enum compared with `=` places each member the same
-/// way, and the package reads back Verified.
+/// way. IR-1209 must admit the equality sidecar before the package reads back Verified.
 #[trace("FR-093-AC-18", "TC-416")]
 #[test]
 fn enum_members_no_literal_names_are_placed_under_an_equality() {
@@ -3512,8 +3528,31 @@ fn enum_members_no_literal_names_are_placed_under_an_equality() {
          function same using v(a: Status, b: Status): Boolean pure { a = b }\n",
         "a = b",
     );
-    let read = read_back(&emission);
-    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    let wire = wire(&emission);
+    assert!(
+        wire["checked_term_data"]["equality_decisions"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty()),
+        "the producer must retain the checked equality row"
+    );
+    // IR-1209 follow-up: switch this expectation back to Verified once its reader is on IR main.
+    match read_back(&emission) {
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
+            );
+            assert_eq!(
+                refusal.loci[0]
+                    .path
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref(),
+                Some("/checked_term_data/equality_decisions/0")
+            );
+        }
+        other => panic!("expected typed UnsupportedConstruct for equality sidecar, got {other:?}"),
+    }
 }
 
 /// QSL-349: an enum and a record no function names place each member, and
