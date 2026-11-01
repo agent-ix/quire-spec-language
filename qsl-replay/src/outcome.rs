@@ -1832,6 +1832,25 @@ mod tests {
         );
     }
 
+    /// QSpec FR-483: ValueValidity's no-assignment outcome is an
+    /// `Inconclusive` terminal result carrying the same wire cause as a
+    /// zero-check Kani proof, while remaining distinct in the typed record.
+    #[trace("QSpec-TC-972", "QSpec-FR-483-AC-2")]
+    #[test]
+    fn value_validity_vacuity_is_an_inconclusive_terminal_value() {
+        let value = TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof);
+        let item = serde_json::to_value(record(5, value)).expect("serializes");
+        assert_eq!(
+            item,
+            json!({
+                "request_index": 5,
+                "result": "inconclusive",
+                "cause": {"kind": "kani-vacuous-proof"},
+                "category": "inconclusive",
+            })
+        );
+    }
+
     #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
     #[test]
     fn proof_wire_keeps_exact_basis_and_certification_only_on_proved() {

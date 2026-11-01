@@ -13,8 +13,9 @@ relationships:
 Verify that the typed proof-result envelope's reader maps each of the seven
 ADR-013 O-16 outcome categories the proof column produces from its FR-331
 terminal record, with no collapsing; that a vacuous `Proved` (a Kani run
-with zero SUCCESS checks) maps to `inconclusive`/`kani_vacuous_proof`
-rather than `success`; and that a `tested` backend result maps to category
+with zero SUCCESS checks) and a value-validity `Inconclusive` whose premises
+admit no assignment both map to `inconclusive`/`kani_vacuous_proof` without
+being encoded as the same terminal value; and that a `tested` backend result maps to category
 `success` (the same category as `proved`) while remaining a distinct,
 recorded value that is never promoted to `proved`. `undefined` is not
 exercised here: ADR-013's O-16 category table marks it "not produced" for
@@ -38,7 +39,9 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
    typed unavailability cause), `incomplete` (timeout cause), `incomplete`
    (cancellation cause), `inconclusive` with cause `replay_parity` (carrying
    a `DisagreementCause`), `inconclusive` with cause `replay_refused`
-   (carrying a catalog code), and `failed`. (Twelve records total: two
+   (carrying a catalog code), `inconclusive` with cause
+   `kani_vacuous_proof` (from a ValueValidity domain admitting no assignment),
+   and `failed`. (Thirteen records total: two
    distinct `incomplete` causes and two distinct `success`-category values,
    `proved` and `tested`, are each constructed once. Each record is built
    with its own typed `request_index`.)
@@ -70,8 +73,10 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
   value.
 - An `Inconclusive` record maps to `inconclusive` and its envelope carries
   that record's own cause, `replay_parity` with its `DisagreementCause` or
-  `replay_refused` with its code; a vacuous `proved` is not an
-  `Inconclusive` record and keeps `Proved { basis: Checks { success_checks: 0 }, certification: Certified }`.
+  `replay_refused` with its code, or `kani_vacuous_proof` for ValueValidity
+  vacuity. A vacuous Kani `proved` keeps
+  `Proved { basis: Checks { success_checks: 0 }, certification: Certified }`,
+  distinct from ValueValidity's `Inconclusive` record.
 - A `declined` record with a QSL catalog code and one with a STD-001 registry
   code (including an unregistered one) both map to `refusal`, keep their own
   code, and compare unequal: no code is remapped across registries.

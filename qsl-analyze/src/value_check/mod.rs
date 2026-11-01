@@ -431,8 +431,13 @@ pub(crate) fn settle(
             ),
             None,
         ),
-        // A zero-check proof is the vacuity cause `kani_vacuous_proof`.
-        ValueOutcome::Vacuous => (TerminalRecord::proved(index, backend, 0), None),
+        // QSpec FR-483 gives a no-assignment run an inconclusive result with
+        // the shared vacuity cause; it is distinct from a Kani proof with
+        // zero SUCCESS checks.
+        ValueOutcome::Vacuous => (
+            TerminalRecord::inconclusive(index, backend, InconclusiveCause::KaniVacuousProof),
+            None,
+        ),
         ValueOutcome::Undecided => (
             TerminalRecord::inconclusive(
                 index,

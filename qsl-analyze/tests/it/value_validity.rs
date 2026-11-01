@@ -836,7 +836,7 @@ fn an_undefinedness_inside_a_callee_is_located_in_the_callees_body() {
 
 #[trace("QSpec-TC-972", "QSpec-FR-483-AC-2")]
 #[test]
-fn an_unsatisfiable_domain_proves_no_case_and_is_vacuous_not_proved() {
+fn an_unsatisfiable_domain_is_inconclusive_with_the_value_check_vacuity_cause() {
     let package = package_of("function subject using v(x: Int[0, 3]): Boolean pure { x >= 0 }");
     let key = key_of(
         &package,
@@ -864,15 +864,10 @@ fn an_unsatisfiable_domain_proves_no_case_and_is_vacuous_not_proved() {
         &guarded(),
     )
     .remove(0);
-    // Zero cases examined: not an exhaustive proof, the vacuous one.
+    // This is an inconclusive ValueValidity result, not a Kani proof with
+    // zero SUCCESS checks.
     assert!(
-        matches!(
-            terminal(&record),
-            TerminalValue::Proved {
-                basis: ProofBasis::Checks { success_checks: 0 },
-                ..
-            }
-        ),
+        matches!(terminal(&record), TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof)),
         "{:?}",
         record.settlement
     );
