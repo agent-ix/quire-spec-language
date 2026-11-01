@@ -39,8 +39,18 @@ No applicable AssuranceProfile was found in `spec/`; the `spec/assurance` files 
 | FND-001 | fixed | The regression test now asserts `Code::UndefinedExpression`/`unproved-range` and the `rational(3, 4)` span, plus `Code::IllTyped`/`ambiguous-literal` and the ambiguous literal span for relation and atom cases. |
 | FND-002 | fixed | The comment now describes relation/value-typer parity without claiming unification remains unfinished. |
 | FND-003 | fixed | The production import is unconditional, so default-feature compilation resolves `Scope` for the body refusal helpers. |
+| FND-004 | fixed | `Found::Raw` now passes `CheckCause::ResourceExhausted` through without hyper-body translation, retaining the node-limit cause. |
 
 ## New findings (disposition pass 2)
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-003 | medium | The prior fix round left `Scope` imported only under `cfg(test)`/`test-support`, but the new production `body_refusal` helpers use `Scope`; a default-feature `cargo check -p qsl-semantics` therefore failed to compile at those helpers. Make the import available in the production module. | qsl-semantics/src/check/hyper_clause.rs:49 |
+
+
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | `body_refusal_at` translated every `CheckRefusal` into a hyper-body diagnostic; a `CheckCause::ResourceExhausted` therefore became `BodyIllTyped`, hiding the node ceiling and returning a type-error cause instead of the original limit cause. Preserve resource-exhaustion refusals through the hyper adapter. | qsl-semantics/src/check/hyper_clause.rs:1850 |
