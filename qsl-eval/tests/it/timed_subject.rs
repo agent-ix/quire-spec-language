@@ -454,10 +454,10 @@ fn rpc_delays_and_steps_read_exact_clock_values() {
     );
 }
 
-/// FR-253-AC-1 (TC-708): after `send`, the concrete guard windows preserve
-/// their exact rational endpoints, and the checked delay declaration stays
-/// attached to its operation.
-#[trace("TC-708", "FR-253-AC-1")]
+/// FR-253-AC-1/2 (TC-708): after `send`, the concrete guard windows preserve
+/// their exact rational endpoints and the race's tie probabilities match the
+/// declared distributions and workload.
+#[trace("TC-708", "FR-253-AC-1", "FR-253-AC-2")]
 #[test]
 fn stochastic_rpc_exposes_checked_delay_windows() {
     let declarations = "delay M::Call::send ~ exponential(rational(1, 1000));\n\
@@ -537,15 +537,24 @@ fn stochastic_rpc_exposes_checked_delay_windows() {
                 } else {
                     panic!("unexpected tied operation {transition}")
                 };
-                (operation, step.delay.clone())
+                (operation.to_owned(), step.delay.to_string())
             })
             .collect();
         seen.insert(path, race.probability);
     }
-    assert_eq!(seen.get(&vec![("reply", exact(1, 1))]), Some(&exact(9, 10)));
-    assert_eq!(seen.get(&vec![("reply", exact(3, 1))]), Some(&exact(1, 20)));
     assert_eq!(
-        seen.get(&vec![("timeout", exact(3, 1)), ("reply", exact(0, 1))]),
+        seen.get(&vec![("reply".to_owned(), exact(1, 1).to_string())]),
+        Some(&exact(9, 10))
+    );
+    assert_eq!(
+        seen.get(&vec![("reply".to_owned(), exact(3, 1).to_string())]),
+        Some(&exact(1, 20))
+    );
+    assert_eq!(
+        seen.get(&vec![
+            ("timeout".to_owned(), exact(3, 1).to_string()),
+            ("reply".to_owned(), exact(0, 1).to_string()),
+        ]),
         Some(&exact(1, 20))
     );
 
@@ -689,10 +698,10 @@ fn timed_sample_stops_at_its_transition_budget() {
     ));
 }
 
-/// FR-254 Behavior (TC-709): a free-delay identity that races makes timed
-/// statistical sampling unsupported at the first timed state where it is
-/// scheduled.
-#[trace("TC-709", "FR-254-AC-3")]
+/// FR-253-AC-4/FR-254-AC-3 (TC-708, TC-709): the race exposes a free-delay
+/// identity as a scheduler choice after sampling the stochastic reply delay;
+/// statistical sampling then refuses that MDP state as NotStochastic.
+#[trace("TC-708", "FR-253-AC-4", "TC-709", "FR-254-AC-3")]
 #[test]
 fn timed_sampling_refuses_a_free_delay_race() {
     let declarations = "delay M::Call::send ~ exponential(rational(1, 1000));\n\
@@ -716,8 +725,43 @@ fn timed_sampling_refuses_a_free_delay_race() {
         .probabilistic_model()
         .workload("Even")
         .expect("Even workload");
+    let scheduler_choice = (0..512)
+        .find_map(|seed| {
+            let race = qsl_eval::simulation::model::sample_timed_race(
+                &timed,
+                behaviour.last().state(),
+                workload,
+                qsl_eval::simulation::ChoicePoint {
+                    seed,
+                    trace: 0,
+                    step: 0,
+                    choice: 0,
+                },
+                8,
+            )
+            .expect("a free-delay race is represented as a scheduler choice");
+            let choice = race.scheduler_choice?;
+            choice
+                .draws
+                .iter()
+                .any(|draw| {
+                    draw.transition.operation().contains("Call/reply") && draw.delay == exact(3, 1)
+                })
+                .then_some(choice)
+        })
+        .expect("a reply draw at 3 exposes the timeout scheduler choice");
+    assert_eq!(scheduler_choice.draws.len(), 1);
+    assert_eq!(scheduler_choice.draws[0].delay, exact(3, 1));
+    assert_eq!(scheduler_choice.free_delays.len(), 1);
+    let timeout = &scheduler_choice.free_delays[0];
+    assert!(timeout.transition.operation().contains("Call/timeout"));
+    assert!(timeout.distribution.is_none());
+    assert_eq!(timeout.intervals.len(), 1);
+    assert_eq!(timeout.intervals[0].lower(), (&exact(3, 1), true));
+    assert_eq!(timeout.intervals[0].upper(), Some((&exact(3, 1), true)));
+
     assert!(matches!(
-        qsl_eval::simulation::model::sample_timed_race(
+        qsl_eval::simulation::model::sample_timed(
             &timed,
             behaviour.last().state(),
             workload,
@@ -728,9 +772,12 @@ fn timed_sampling_refuses_a_free_delay_race() {
                 choice: 0,
             },
             8,
+            &exact(4, 1),
+            100,
         ),
-        Err(qsl_eval::simulation::model::TimedRaceStop::NotStochastic { identity, .. })
-            if identity.operation().contains("Call/timeout")
+        Err(qsl_eval::simulation::model::TimedSampleStop::Race(
+            qsl_eval::simulation::model::TimedRaceStop::NotStochastic { identity, .. }
+        )) if identity.operation().contains("Call/timeout")
     ));
 }
 

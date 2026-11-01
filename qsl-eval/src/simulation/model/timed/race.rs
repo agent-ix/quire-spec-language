@@ -40,6 +40,36 @@ pub struct TimedRace {
     /// Whether the state had no racing identity and therefore takes the idle
     /// tail.
     pub idle: bool,
+    /// The race contains scheduler-owned free delays, so it is a Markov
+    /// decision outcome rather than a sampled successor. The recorded draws
+    /// show stochastic delay choices made before that scheduler decision.
+    pub scheduler_choice: Option<TimedSchedulerChoice>,
+}
+
+/// A Markov decision race at a state with one or more free-delay identities.
+#[derive(Clone, Debug)]
+pub struct TimedSchedulerChoice {
+    /// The timed state where the scheduler chooses the free delay.
+    pub state: StateKey,
+    /// Stochastic identities' exact draws at this state.
+    pub draws: Vec<TimedRaceDraw>,
+    /// Enabled free-delay identities and their admissible windows.
+    pub free_delays: Vec<super::ScheduledWindow>,
+    /// The joint probability of the draws in `draws`.
+    pub probability: Rational,
+}
+
+/// One stochastic delay draw made before a scheduler-owned free delay.
+#[derive(Clone, Debug)]
+pub struct TimedRaceDraw {
+    /// The operation whose delay was sampled.
+    pub transition: ModelTransition,
+    /// The exact sampled delay.
+    pub delay: Rational,
+    /// The probability of that delay draw.
+    pub probability: Rational,
+    /// The choice index used to make the draw, if it consumed one.
+    pub choices: Vec<u32>,
 }
 
 /// Why a timed race has no sampled successor.
@@ -174,6 +204,20 @@ pub fn sample_timed(
             ..at
         };
         let race = sample_timed_race(system, &state, workload, point, q)?;
+        if let Some(choice) = &race.scheduler_choice {
+            let identity = choice
+                .free_delays
+                .first()
+                .ok_or(TimedRaceStop::StateKey)?
+                .transition
+                .transition()
+                .clone();
+            return Err(TimedRaceStop::NotStochastic {
+                state: choice.state.clone(),
+                identity,
+            }
+            .into());
+        }
         if race.idle || race.steps.is_empty() {
             let remaining = horizon.sub(&stamp);
             if let Some((upper, true)) = system
@@ -331,6 +375,7 @@ pub fn sample_timed_race(
             state: state.clone(),
             probability: one(),
             idle: true,
+            scheduler_choice: None,
         });
     }
     let key = system
@@ -338,12 +383,12 @@ pub fn sample_timed_race(
         .map_err(|_| TimedRaceStop::StateKey)?;
     let mut choice = at.choice;
     let mut candidates = Vec::new();
+    let mut stochastic_draws = Vec::new();
+    let mut free_delays = Vec::new();
     for window in windows {
         let Some(distribution) = &window.distribution else {
-            return Err(TimedRaceStop::NotStochastic {
-                state: key,
-                identity: window.transition.transition().clone(),
-            });
+            free_delays.push(window);
+            continue;
         };
         if matches!(distribution, DelayDistribution::Uniform)
             && window
@@ -376,11 +421,35 @@ pub fn sample_timed_race(
         } else {
             Vec::new()
         };
-        candidates.push(Candidate {
+        let candidate = Candidate {
             step: window.transition,
+            delay: delay.clone(),
+            delay_probability: probability.clone(),
+            choices: choices.clone(),
+        };
+        stochastic_draws.push(TimedRaceDraw {
+            transition: candidate.step.transition().clone(),
             delay,
-            delay_probability: probability,
+            probability,
             choices,
+        });
+        candidates.push(candidate);
+    }
+    if !free_delays.is_empty() {
+        let probability = stochastic_draws
+            .iter()
+            .fold(one(), |product, draw| product.mul(&draw.probability));
+        return Ok(TimedRace {
+            steps: Vec::new(),
+            state: state.clone(),
+            probability: probability.clone(),
+            idle: false,
+            scheduler_choice: Some(TimedSchedulerChoice {
+                state: key,
+                draws: stochastic_draws,
+                free_delays,
+                probability,
+            }),
         });
     }
     if candidates.is_empty() {
@@ -389,6 +458,7 @@ pub fn sample_timed_race(
             state: state.clone(),
             probability: one(),
             idle: true,
+            scheduler_choice: None,
         });
     }
     let delay_mass = candidates_probability(&candidates);
@@ -508,6 +578,7 @@ pub fn sample_timed_race(
         state: current,
         probability,
         idle: false,
+        scheduler_choice: None,
     })
 }
 
