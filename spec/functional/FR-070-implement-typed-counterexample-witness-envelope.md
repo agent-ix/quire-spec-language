@@ -110,6 +110,16 @@ admits union arguments (QSL-503).
 - Envelope construction SHALL refuse when the envelope's encoded size
   exceeds the configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
+- When a caller requests a name for one transcript entry from a structural
+  node identity, the `qsl_replay` root SHALL expose `witness_entry_name(&NodeKey)`.
+  Its successful result SHALL be the percent-escaped compact JSON spelling of
+  the node identity from the shared node-wire codec. It SHALL percent-escape
+  `%`, `=`, `;`, `|`, `<`, `>`, and any control byte as `%HH` with uppercase
+  hexadecimal digits, and SHALL preserve every other byte of that compact
+  spelling. The result SHALL contain no transcript separator or block-end
+  delimiter; percent-decoding it and reading it as a node-wire identity
+  recovers the same `NodeKey`. This spelling identifies a transcript
+  entry only; it grants no replay, admission or provenance authority.
 
 ## Witness value text
 
@@ -132,7 +142,10 @@ then writes the value text below. QSL owns this form and its decode
 (QSL-640).
 
 **Transcript entry.** The entry is `<parameter node id>=<escaped value
-text>`, joined by node id like every other entry. The value text is the RFC
+text>`, joined by node id like every other entry. A parameter node id is the
+percent-escaped compact JSON spelling produced from its structural `NodeKey`
+by the shared node-wire codec, as specified above; it is not a fixed-width
+hex digest. The value text is the RFC
 8785 (JCS) encoding of the value in QSpec FR-181's typed canonical form,
 limited to the shapes below. The table lists each object's members in
 reading order. The value text writes them in JCS order, the ascending UTF-16
@@ -221,8 +234,9 @@ by numeric value, so `1.0` and `1.00` (coefficients `10` and `100`, scales
 `ordered-set` holding two elements that relation equates.
 
 **Entry order.** Every transcript's entries SHALL be in strictly ascending
-order of parameter node id, comparing the 64-hex spellings bytewise (the
-order CG FR-025 already gives its arguments). Together with the one value
+order of parameter `NodeKey` identity as compared by the key's structural
+ordering (the order CG FR-025 already gives its arguments), not by comparing
+the escaped display names. Together with the one value
 text per value, this means two equal witnesses always have identical
 transcripts (ADR-014 TR-1). `decode` SHALL refuse
 `DecodeRefusal::EntryOrder`, naming the first entry out of order, for a
@@ -267,6 +281,7 @@ length of its escaped value text.
 | FR-070-AC-16 | A `Canonical` entry holding the reference `{"identity":"61","object_type":"<64 hex>","type":"reference","universe":"<64 hex>"}` decodes to one `WitnessValue::Reference` carrying the universe, the object type and the identity bytes `61`; the same entry with the empty `identity` `""` decodes too (FR-098 refuses it at conversion, not decode). | Test (TC-1042) |
 | FR-070-AC-17 | Each of these reference entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: a `universe` of 63 hex digits; an `object_type` written with an uppercase hex digit; an `identity` of odd length; an entry written `{"type":"reference","universe":...,"object_type":...,"identity":...}` (members in the table's reading order, not JCS order); a missing `identity`; an extra member; and a `universe` that is a JSON number. | Test (TC-1042) |
 | FR-070-AC-18 | A function packet carrying `function`, a frame packet carrying `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and a state-clause packet carrying `state_clause` (`VersionUnchanged`) each reconstruct, and the envelope returns that one target unchanged through a construct → serialize → read round trip. The same packets with the target removed refuse `WitnessRefusal::MissingMember("replay_target")`; a packet carrying `function` and `frame_operation` refuses `WitnessRefusal::ConflictingTarget` naming those two, and one carrying `function` and `state_clause` naming those two; the two refusals are distinct variants and neither builds an envelope, though every other member is present. The envelope type has no `selected_function` member. | Test (TC-183) |
+| FR-070-AC-19 | For a structural node identity whose compact JSON spelling contains `%`, `=`, `;`, `|`, `<`, `>` and a DEL byte, `qsl_replay::witness_entry_name` returns that compact spelling with each listed byte percent-escaped using uppercase two-digit hex (`%25`, `%3D`, `%3B`, `%7C`, `%3C`, `%3E`, `%7F`), while retaining all other bytes, including non-ASCII UTF-8. The name contains no transcript separator or block-end delimiter and round-trips through the witness entry parser to the original `NodeKey`; two distinct identities, including one whose source text resembles another identity's escape, produce distinct names. Transcript entries remain ordered by structural `NodeKey` comparison even where their escaped display names would sort differently as text. | Test (TC-1281) |
 
 ## Dependencies
 
