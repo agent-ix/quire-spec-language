@@ -582,11 +582,12 @@ pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<R
                      reached: &mut Vec<Reached<M>>,
                      queue: &mut std::collections::VecDeque<usize>|
      -> usize {
-        let (bytes, key) = SubjectSystem::state_key(system, &state).expect("a key");
+        let key = SubjectSystem::canonical_state_key(system, &state).expect("a key");
         if let Some(index) = known.get(&key) {
             return *index;
         }
         let index = reached.len();
+        let bytes = key.as_bytes().to_vec();
         known.insert(key, index);
         reached.push(Reached {
             state,
