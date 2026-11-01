@@ -29,6 +29,7 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 /// The declaration kind a resolved fairness member names on the checked
 /// package wire.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FairnessTargetKind {
     /// A model-owned operation.
