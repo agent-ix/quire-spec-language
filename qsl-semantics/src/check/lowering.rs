@@ -4803,6 +4803,95 @@ impl<'a> Lowering<'a> {
         } else {
             Vec::new()
         };
+        let mut enum_member_facts = Vec::new();
+        if data.schedule() == quire_semantic_value::declaration::EqualitySchedule::Enum {
+            for child in node.children() {
+                let ValueType::Enum(shape) = child.value_type() else {
+                    continue;
+                };
+                for (position, variant) in shape.variants().enumerate() {
+                    let owner_path = variant.owner().path();
+                    let original_identity = match owner_path.as_slice() {
+                        [quire_exact::PathSegment::Text(kind), quire_exact::PathSegment::Text(form), quire_exact::PathSegment::Text(identity)]
+                            if kind == "model" && form == "variant_type" =>
+                        {
+                            Some(identity)
+                        }
+                        _ => None,
+                    };
+                    let (source_declaration, declaration, member_key, case, ordinal, ordered) =
+                        if let Some(original_identity) = original_identity {
+                            let declarations = self
+                                .graph
+                                .selected_model_enum_declarations()
+                                .filter(|(_, declaration)| {
+                                    declaration.selected_document.as_ref()
+                                        == variant.owner().package()
+                                        && declaration.original_identity.as_ref()
+                                            == original_identity
+                                })
+                                .collect::<Vec<_>>();
+                            if declarations.len() != 1 {
+                                return Err(fault(
+                                    &location,
+                                    KeyFault::MissingEnumMember(variant.owner().clone()),
+                                ));
+                            }
+                            let declaration = declarations[0].0.clone();
+                            let selected = self
+                                .graph
+                                .selected_model_enum_members()
+                                .filter(|(_, member)| {
+                                    member.declaration_key == declaration
+                                        && member.case.as_ref() == variant.case()
+                                })
+                                .collect::<Vec<_>>();
+                            if selected.len() != 1 {
+                                return Err(fault(
+                                    &location,
+                                    KeyFault::MissingEnumMember(variant.owner().clone()),
+                                ));
+                            }
+                            (
+                                variant.owner().clone(),
+                                declaration,
+                                selected[0].0.clone(),
+                                variant.case().into(),
+                                position,
+                                shape.is_ordered(),
+                            )
+                        } else if let Some(member) = data.enum_members().resolve(variant.clone()) {
+                            (
+                                member.declaration(),
+                                member.declaration(),
+                                member.member(),
+                                member.case().into(),
+                                member.position(),
+                                member.is_ordered(),
+                            )
+                        } else {
+                            return Err(fault(
+                                &location,
+                                KeyFault::MissingEnumMember(variant.owner().clone()),
+                            ));
+                        };
+                    if enum_member_facts
+                        .iter()
+                        .any(|(_, _, existing, _, _, _)| *existing == member_key)
+                    {
+                        continue;
+                    }
+                    enum_member_facts.push((
+                        source_declaration,
+                        declaration,
+                        member_key,
+                        case,
+                        ordinal,
+                        ordered,
+                    ));
+                }
+            }
+        }
 
         Ok(super::ir::EqualityProducerIdentity::new(
             application,
@@ -4811,7 +4900,7 @@ impl<'a> Lowering<'a> {
             dimension_declarations,
             dimension_terms,
             conversion_edge_targets,
-            text_plan_type_nodes,
+            super::ir::EqualityTypeIdentityFacts::new(text_plan_type_nodes, enum_member_facts),
         ))
     }
 

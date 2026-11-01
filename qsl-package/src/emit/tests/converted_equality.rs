@@ -268,6 +268,180 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
     }
 }
 
+/// QSL-1390: every equality schedule is emitted to the IR carrier with its
+/// exact application occurrence and schedule-specific identity facts.
+#[ix_trace_rs::trace("QSpec-FR-322-AC-288", "QSL-1390")]
+#[test]
+fn equality_producer_rows_are_emitted_in_checked_term_data() {
+    let emission = emitted(
+        "dimension Time; unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;\n\
+         enum Color { Blue, Green }\n\
+         record Point { x: Integer; }\n\
+         function text using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
+         function enumeration using v(a: Color, b: Color): Boolean pure { a != b }\n\
+         function quantity using v(a: Quantity<ms>, b: Quantity<s>): Boolean pure { convert<Quantity<s>>(a) = b }\n\
+         function plan using v(a: Point, b: Point): Boolean pure { a = b }",
+    );
+    let wire = wire(&emission);
+    let sidecar = wire
+        .get("checked_term_data")
+        .and_then(Value::as_object)
+        .expect("equalities produce checked_term_data");
+    assert_eq!(
+        sidecar.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "dispatch_tables",
+            "equality_decisions",
+            "protocol_locations"
+        ]
+    );
+    assert_eq!(sidecar["dispatch_tables"], json!([]));
+    assert_eq!(sidecar["protocol_locations"], json!([]));
+    let decisions = sidecar["equality_decisions"]
+        .as_array()
+        .expect("equality rows are an array");
+    assert_eq!(decisions.len(), 4);
+    for decision in decisions {
+        assert_eq!(decision["term_path"], json!([]));
+        assert!(decision["application"].is_object());
+        assert!(decision["occurrence"].is_object());
+        assert_eq!(decision["left"]["operand"], json!(0));
+        assert_eq!(decision["right"]["operand"], json!(1));
+    }
+    let by_schedule = decisions
+        .iter()
+        .map(|decision| (decision["schedule"].as_str().unwrap(), decision))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(by_schedule.len(), 4);
+    assert_eq!(by_schedule["text"]["units"], json!([]));
+    assert_eq!(by_schedule["plan"]["units"], json!([]));
+    assert_eq!(
+        by_schedule["enum"]["enum_members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let enum_members = by_schedule["enum"]["enum_members"].as_array().unwrap();
+    assert_eq!(enum_members[0]["case"], json!("Blue"));
+    assert_eq!(enum_members[0]["ordinal"], json!(0));
+    assert_eq!(enum_members[1]["case"], json!("Green"));
+    assert_eq!(enum_members[1]["ordinal"], json!(1));
+    assert_eq!(enum_members[0]["ordered"], json!(false));
+    let quantity = by_schedule["quantity"];
+    let units = quantity["units"].as_array().unwrap();
+    assert_eq!(units.len(), 2);
+    assert_ne!(
+        quantity["left"]["source_type"],
+        quantity["left"]["conversion_target"]
+    );
+    assert_eq!(units[0]["form"]["kind"], json!("declared"));
+    assert_eq!(units[0]["form"]["path"].as_array().unwrap().len(), 1);
+    assert_eq!(units[0]["form"]["path"][0]["target"], units[1]["unit"]);
+    assert_eq!(
+        units[0]["form"]["path"][0]["scale"]["numerator"],
+        json!("1")
+    );
+    assert_eq!(
+        units[0]["form"]["path"][0]["scale"]["denominator"],
+        json!("1000")
+    );
+    assert_eq!(by_schedule["enum"]["units"], json!([]));
+    assert_eq!(by_schedule["quantity"]["enum_members"], json!([]));
+}
+
+/// QSL-1390: a compound quantity carries only its exact normalized dimension
+/// and root-unit powers in the sidecar.
+#[ix_trace_rs::trace("QSpec-FR-322-AC-288", "QSL-1390")]
+#[test]
+fn compound_quantity_equality_emits_exact_unit_facts() {
+    let emission = emitted(
+        "dimension Length; unit m : Length = rational(1, 1);\n\
+         function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }",
+    );
+    let wire = wire(&emission);
+    let decision = &wire["checked_term_data"]["equality_decisions"][0];
+    let units = decision["units"].as_array().unwrap();
+    assert_eq!(units.len(), 1);
+    assert_eq!(units[0]["form"]["kind"], json!("compound"));
+    assert_eq!(
+        units[0]["form"]["dimension_terms"][0]["dimension"],
+        wire["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["semantic_form"] == "dimension")
+            .map(|node| node["node_id"].clone())
+            .unwrap()
+    );
+    assert_eq!(
+        units[0]["form"]["dimension_terms"][0]["exponent"],
+        json!("2")
+    );
+    assert_eq!(units[0]["form"]["terms"].as_array().unwrap().len(), 1);
+    assert_eq!(units[0]["form"]["terms"][0]["exponent"], json!("2"));
+}
+
+/// Missing and duplicate structural/source witnesses fail with the emitter's
+/// typed refusal instead of constructing a sidecar row by inference.
+#[ix_trace_rs::trace("QSL-1390")]
+#[test]
+fn equality_emission_refuses_missing_or_duplicate_witnesses() {
+    let declarations =
+        "function text using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }";
+    let graph = checked_graph(declarations);
+    let emission =
+        emit_checked(&CheckedPackage::link(checked_graph(declarations))).expect("emission");
+    let rows = emission.equality_producer_identity_rows();
+    let mut ids = rows
+        .iter()
+        .map(|row| (row.application().clone(), row.checked_node().clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let source_map = rows
+        .iter()
+        .map(|row| row.source_map_entry().clone())
+        .collect::<Vec<_>>();
+    ids.remove(rows[0].application());
+    assert!(matches!(
+        equality_producer_emission_rows(&graph, &ids, &source_map),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+
+    let ids = rows
+        .iter()
+        .map(|row| (row.application().clone(), row.checked_node().clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut duplicate_sources = source_map;
+    duplicate_sources.push(rows[0].source_map_entry().clone());
+    assert!(matches!(
+        equality_producer_emission_rows(&graph, &ids, &duplicate_sources),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+
+    let mut wrong_document = rows
+        .iter()
+        .map(|row| row.source_map_entry().clone())
+        .collect::<Vec<_>>();
+    wrong_document[0].regions[0].source = quire_contract_model::CheckedSourceRef {
+        authority: "test".into(),
+        identity: "different-document".into(),
+    };
+    assert!(matches!(
+        equality_producer_emission_rows(&graph, &ids, &wrong_document),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+
+    let mut mismatched_ordinal = rows
+        .iter()
+        .map(|row| row.source_map_entry().clone())
+        .collect::<Vec<_>>();
+    mismatched_ordinal[0].ordinal = mismatched_ordinal[0].ordinal.saturating_add(1);
+    assert!(matches!(
+        equality_producer_emission_rows(&graph, &ids, &mismatched_ordinal),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+}
+
 /// The application nodes of operation `identity` in `wire`.
 fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
     nodes(wire)
@@ -285,17 +459,45 @@ fn referenced<'w>(wire: &'w Value, term: &Value) -> &'w Value {
         .expect("the referenced node")
 }
 
+/// The currently pinned IR reader refuses producer equality rows until its
+/// typed admitted-equality accessor lands. Check that typed boundary, then
+/// return the emitted graph for producer-side assertions.
+fn assert_reader_outcome_for_equality_sidecar(emission: &Emission) {
+    let has_equality_rows = wire(emission)["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .is_some_and(|rows| !rows.is_empty());
+    if !has_equality_rows {
+        assert!(matches!(read_back(emission), Read::Verified { .. }));
+        return;
+    }
+    match read_back(emission) {
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::UnsupportedConstruct
+            );
+            assert_eq!(
+                refusal.loci[0]
+                    .path
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref(),
+                Some("/checked_term_data/equality_decisions/0")
+            );
+        }
+        outcome => {
+            panic!("IR's current reader must report the pending equality slice: {outcome:?}")
+        }
+    }
+}
+
 /// `function f using v(a: {source}, b: {other}): Boolean pure { body }`
-/// emitted and read back by IR's strict reader, which must admit it. Returns
-/// the wire.
+/// emitted with its equality sidecar. Returns the wire.
 fn admitted(source: &str, other: &str, body: &str) -> Value {
     let emission = emitted(&format!(
         "function f using v(a: {source}, b: {other}): Boolean pure {{ {body} }}"
     ));
-    match read_back(&emission) {
-        Read::Verified { .. } => {}
-        refused => panic!("{body}: the strict reader must admit it: {refused:?}"),
-    }
+    assert_reader_outcome_for_equality_sidecar(&emission);
     wire(&emission)
 }
 
@@ -501,7 +703,7 @@ fn an_equality_with_both_operands_converted_converts_each() {
     let emission = emitted(&format!(
         "function f using v(a: {INT}, c: Int[-50,50]): Boolean pure {{ convert<{DEC}>(a) = convert<{DEC}>(c) }}"
     ));
-    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    assert_reader_outcome_for_equality_sidecar(&emission);
     let wire = wire(&emission);
     let converts = applications(&wire, "quire.op.numeric.convert");
     assert_eq!(converts.len(), 2);
@@ -619,10 +821,7 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
         .check(CheckingLimits::default())
         .expect("the package checks");
         let emission = emit(&CheckedPackage::link(graph));
-        assert!(
-            matches!(read_back(&emission), Read::Verified { .. }),
-            "{suffix}: the strict reader admits it"
-        );
+        assert_reader_outcome_for_equality_sidecar(&emission);
         let wire = wire(&emission);
         let converts = applications(&wire, "quire.op.quantity.convert");
         assert_eq!(converts.len(), 1, "{suffix}: one convert node");
@@ -661,10 +860,7 @@ fn a_guard_over_an_integer_conversion_bounds_the_converted_operand() {
         let emission = emitted(&format!(
             "function g using v(x: Int[-5,5]): Int[0,3] pure {{ {body} }}"
         ));
-        assert!(
-            matches!(read_back(&emission), Read::Verified { .. }),
-            "{body}"
-        );
+        assert_reader_outcome_for_equality_sidecar(&emission);
     }
 }
 

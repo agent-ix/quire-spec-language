@@ -104,6 +104,29 @@ pub struct EqualityProducerIdentity {
     dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
     conversion_edge_targets: BTreeSet<NodeKey>,
     text_plan_type_nodes: Vec<(usize, NodeKey)>,
+    enum_member_facts: Vec<EqualityEnumMemberFact>,
+}
+
+/// Exact selected enum identities: source declaration, lowered declaration,
+/// lowered member, case, ordinal, and ordering flag.
+pub type EqualityEnumMemberFact = (NodeKey, NodeKey, NodeKey, Box<str>, usize, bool);
+
+/// Type-related identity facts retained for an equality occurrence.
+pub struct EqualityTypeIdentityFacts {
+    text_plan_type_nodes: Vec<(usize, NodeKey)>,
+    enum_member_facts: Vec<EqualityEnumMemberFact>,
+}
+
+impl EqualityTypeIdentityFacts {
+    pub(crate) fn new(
+        text_plan_type_nodes: Vec<(usize, NodeKey)>,
+        enum_member_facts: Vec<EqualityEnumMemberFact>,
+    ) -> Self {
+        Self {
+            text_plan_type_nodes,
+            enum_member_facts,
+        }
+    }
 }
 
 impl EqualityProducerIdentity {
@@ -114,8 +137,12 @@ impl EqualityProducerIdentity {
         dimension_declarations: BTreeSet<NodeKey>,
         dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
         conversion_edge_targets: BTreeSet<NodeKey>,
-        text_plan_type_nodes: Vec<(usize, NodeKey)>,
+        type_identity_facts: EqualityTypeIdentityFacts,
     ) -> Self {
+        let EqualityTypeIdentityFacts {
+            text_plan_type_nodes,
+            enum_member_facts,
+        } = type_identity_facts;
         Self {
             application,
             location,
@@ -124,6 +151,7 @@ impl EqualityProducerIdentity {
             dimension_terms,
             conversion_edge_targets,
             text_plan_type_nodes,
+            enum_member_facts,
         }
     }
 
@@ -160,6 +188,11 @@ impl EqualityProducerIdentity {
     /// Exact Text/Plan comparison type keys by authored operand position.
     pub fn text_plan_type_nodes(&self) -> &[(usize, NodeKey)] {
         &self.text_plan_type_nodes
+    }
+
+    /// Exact filtered enum declaration/member facts used by this equality.
+    pub fn enum_member_facts(&self) -> &[EqualityEnumMemberFact] {
+        &self.enum_member_facts
     }
 }
 
