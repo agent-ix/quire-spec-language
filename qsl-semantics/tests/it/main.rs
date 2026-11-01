@@ -38,6 +38,8 @@ mod model_conformance_boundary;
 #[cfg(feature = "test-support")]
 mod model_dispatch;
 #[cfg(feature = "test-support")]
+mod model_identity_contracts;
+#[cfg(feature = "test-support")]
 mod model_identity_cost;
 #[cfg(feature = "test-support")]
 mod model_identity_full_size;
@@ -106,6 +108,9 @@ mod task_set_releases;
 mod task_sets;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
+#[cfg(feature = "test-support")]
+#[path = "../support/tc235_k2.rs"]
+mod tc235_k2;
 #[cfg(feature = "test-support")]
 mod temporal_fairness;
 #[cfg(feature = "test-support")]

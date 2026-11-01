@@ -89,12 +89,13 @@ fabricated effective entry or fact. Every effective entry and fact input SHALL
 refer to a key from this inventory. Retention introduces no additional
 effective-declaration charge and no effective preimage member.
 
-Each effective declaration's identity is the structural key
-`{version, owner_effective_type, original, derivation}` of the
-`quire.model.effective-declaration/v2` domain, compared by equality of that
-tuple; no hash of it is computed or compared. The model binder SHALL NOT
-read a `title`, `displayName` or any other presentation field when computing
-an identity, a key, an ordering or a resolution decision. Two
+Each effective declaration's identity is the structural pair
+`{owner_effective_type, original}` of the `quire.model.effective-declaration/v2`
+domain, compared by equality of that pair; no hash of it is computed or
+compared. Its derivation facts are carried separately and are not identity
+components. The model binder SHALL NOT read a `title`, `displayName` or any
+other presentation field when computing an identity, a key, an ordering or a
+resolution decision. Two
 admitted declarations for which the selected normalization rules derive
 effective entries, with equal declared shape but distinct original declaration
 keys, SHALL yield distinct effective declarations; the binder SHALL NOT
@@ -108,16 +109,24 @@ it, each with one `qualify` fact `[declaration]` and no other (FR-056
 declaration key, so its identity does not depend on the order of the
 `variants` list.
 
-### An identity chains through its parents' identities
+### An identity uses its owner and original declaration key
 
-An effective declaration's key SHALL bind exactly two things: its own
-content, and the effective identity of each of its direct parents. A direct
-parent of an effective type is each of its direct supertypes. A direct parent
-of an effective member `(T, m)` is the effective member `(P, m)` of each direct
-supertype `P` of `T` that has one. The key SHALL NOT contain an ancestor
-path of more than one edge. A parent identity is a reference to the parent's
-key (its domain and original declaration key), never a nested copy of it, so
-it adds a constant number of parts however deep its ancestry is.
+An effective declaration's identity SHALL be the structural pair
+`{owner_effective_type, original}` defined by quire-specification FR-150.
+`owner_effective_type` is `null` for an effective type and the effective
+identity of the owning type for an effective member. `original` is the
+original declaration key admitted by FR-056. The identity SHALL NOT include
+supertype paths, inheritance facts, subset or redefine facts, or their
+expanded paths. It SHALL NOT depend on presentation fields.
+
+The effective declaration's derivation facts SHALL retain its provenance
+separately from its identity. An `inherit/v2` fact SHALL carry the effective
+identity of exactly one direct parent: for an effective type, a direct
+supertype; for an effective member `(T, m)`, the effective member `(P, m)` of
+each direct supertype `P` of `T` that has one. The phase-4 subset and redefine
+facts SHALL retain the declaration-key inputs and rule that produced them.
+No fact SHALL contain an expanded ancestor path. A diamond stores one inherit
+fact per direct parent edge.
 
 A derivation fact is `{ordinal, rule, inputs, parent}`. `parent` is `null`, or
 `{domain, original}` naming one effective declaration by its domain and
@@ -135,7 +144,7 @@ ones; hiding is not part of any key.
 The full path-form derivation, every distinct inheritance path included, is
 the deterministic expansion of the retained facts through the parent
 identities the view holds. A reader expands it on demand under its own limits;
-the binder SHALL NOT encode an expanded path into a key. The expansion of a
+the binder SHALL NOT encode an expanded path into an identity. The expansion of a
 declaration equals the path-form facts in phase, input and rule order, with
 multiplicity retained, where a fact's path is as follows. An inherit fact
 expands to one fact per distinct path from the declaration's type to the
@@ -146,14 +155,15 @@ or several paths reach the owner; a subset fact on `(T, s)` expands to one
 fact per subsets target, carrying the least path from `T` to `s`'s owner. So
 the expansion reproduces the path-form fact array exactly where one path
 reaches each owner, and for a diamond it lists every path in the inherit facts
-and the least path in the phase-4 facts. Because each key binds its parents' identities,
-equal keys have equal expansions, so two effective declarations that
-differ in owner, original key or expanded facts have different keys; and
-one effective declaration has exactly one key.
+and the least path in the phase-4 facts. The effective view retains these
+facts alongside each `{owner_effective_type, original}` identity, so a change
+to a parent edge or phase-4 derivation changes the recorded provenance and
+view even when the structural declaration identity is unchanged. Distinct
+effective declarations in one view SHALL have distinct identities.
 
 The binder SHALL compute every effective identity eagerly, hidden declarations
 included, then every universe identity and the complete key-ordered view
-identity, building parents before children. A parent link of the wrong kind, or
+identity. A parent link of the wrong kind, or
 naming a declaration whose original or owner does not match the fact's inputs,
 SHALL be refused by the strict reader. Every published identity vector is
 replaced; a `/v1` identity is not an identity of the replacement, and the binder SHALL NOT
@@ -249,9 +259,10 @@ one `normalize.cycle-check` unit, however many paths reach its target; the
 binder SHALL NOT charge an ancestor path's length for an acyclic package.
 `derivation_facts` counts the retained facts, not the path-form facts of their
 expansion. An effective type's identity is built in phase 3, before
-phase 4, because phase 4's charge order uses it. That key holds only the type's own key and its direct edges,
-each already admitted by a `normalize.fact` and a `normalize.cycle-check`
-charge. QSL meters no hash: the QSpec limit name `hashed_bytes` is QSpec's.
+phase 4, because phase 4's charge order uses it. That identity holds the
+type's own original key with a null owner; its direct edges are retained in
+the charged `inherit/v2` facts. QSL meters no hash: the QSpec limit name
+`hashed_bytes` is QSpec's.
 
 The phase-4 charges are unchanged in kind and count a type's derivation facts
 as its retained facts, its qualify fact and one inherit fact per direct
@@ -282,7 +293,7 @@ of `m + r` work units, and each (effective type, redefined member) reached by
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
 | FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration charge. | Test |
 | FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1022) |
-| FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1023) |
+| FR-081-AC-10 | Given two normalized views that differ by a source declaration key, parent edge or phase-4 derivation fact, each affected structural identity changes only when its `owner_effective_type` or `original` component changes, while the changed parent or phase-4 derivation is retained in the corresponding facts and changes the effective view; no two distinct effective declarations in either view share an identity. | Test (TC-1023) |
 | FR-081-AC-11 | **RETIRED (QSL computes no hash).** The closed formulas of this criterion metered the bytes of every identity, universe and view preimage; QSL meters none. | Test (TC-1024), retired |
 | FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types) run on a thread with a 524,288-byte (512 KiB) stack, normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts. | Test (TC-1025) |
 | FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1025) |

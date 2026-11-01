@@ -136,6 +136,24 @@ fn four_type_chain() -> Fixture {
     }
 }
 
+fn five_type_chain_with_phase_four_facts() -> Fixture {
+    Fixture {
+        types: vec![
+            ty("T0", &[]),
+            ty("T1", &["T0"]),
+            ty("T2", &["T1"]),
+            ty("T3", &["T2"]),
+            ty("T4", &["T3"]),
+        ],
+        fields: vec![
+            fld("T0/f", "T0", None, &[]),
+            fld("T0/k", "T0", None, &[]),
+            fld("T1/s", "T1", None, &["T0/k"]),
+            fld("T4/g", "T4", Some("T0/f"), &[]),
+        ],
+    }
+}
+
 fn diamond() -> Fixture {
     Fixture {
         types: vec![
@@ -391,7 +409,7 @@ fn check_against_enumeration(fixture: &Fixture) {
     }
 }
 
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn links_expand_to_independent_enumeration() {
     check_against_enumeration(&four_type_chain());
@@ -400,7 +418,7 @@ fn links_expand_to_independent_enumeration() {
 }
 
 /// TC-1022 step 4: the diamond stores one inherit fact per direct edge.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn the_diamond_holds_two_inherit_facts_not_three() {
     let view = diamond().view();
@@ -440,7 +458,7 @@ fn the_diamond_holds_two_inherit_facts_not_three() {
 }
 
 /// The reader's own ceiling: an expansion past `max_facts` is refused.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn an_expansion_past_the_readers_ceiling_is_refused() {
     let view = diamond().view();
@@ -483,6 +501,32 @@ fn position(entries: &[ViewEntry], owner: Option<&str>, name: &str) -> usize {
         .unwrap_or_else(|| panic!("declaration {name}"))
 }
 
+fn type_entry<'a>(view: &'a EffectiveView, name: &str) -> &'a ViewEntry {
+    view.declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.is_none() && entry.preimage.original == key(name)
+        })
+        .unwrap_or_else(|| panic!("type {name} is present"))
+}
+
+fn member_entry<'a>(view: &'a EffectiveView, owner: &str, name: &str) -> &'a ViewEntry {
+    let at = position(view.declarations(), Some(owner), name);
+    &view.declarations()[at]
+}
+
+fn assert_unique_effective_ids(view: &EffectiveView) {
+    let declarations = view.declarations();
+    for (position, entry) in declarations.iter().enumerate() {
+        for other in &declarations[position + 1..] {
+            assert_ne!(
+                entry.effective_id, other.effective_id,
+                "distinct effective declarations have distinct structural identities"
+            );
+        }
+    }
+}
+
 fn refusal_cause(entries: &[ViewEntry]) -> ModelRefusalCause {
     match Links::new(entries) {
         Ok(_) => panic!("the mutation is accepted"),
@@ -492,7 +536,7 @@ fn refusal_cause(entries: &[ViewEntry]) -> ModelRefusalCause {
 
 /// TC-1022 step 5 and TC-195 N10: every mutation of a link is refused by the
 /// strict reader.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn the_strict_reader_refuses_every_mis_wired_link() {
     let view = diamond().view();
@@ -568,7 +612,7 @@ fn the_strict_reader_refuses_every_mis_wired_link() {
 }
 
 /// N10: facts out of order, and a repeated rule over equal inputs.
-#[trace("QSpec-TC-195", "QSpec-FR-081-AC-9")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
 #[test]
 fn n10_unsorted_derivation_is_refused() {
     let view = diamond().view();
@@ -589,4 +633,96 @@ fn n10_unsorted_derivation_is_refused() {
         cause,
         ModelRefusalCause::UnsortedDerivation { .. }
     ));
+}
+
+#[trace("TC-1023", "FR-081-AC-10")]
+#[test]
+fn identity_uses_owner_and_original_while_facts_retain_ancestry() {
+    let baseline_fixture = five_type_chain_with_phase_four_facts();
+    let baseline = baseline_fixture.view();
+    baseline.links().expect("baseline parent links are valid");
+    assert_unique_effective_ids(&baseline);
+
+    let mut source_key_changed = baseline_fixture.clone();
+    source_key_changed.types[0].name = "T0-renamed";
+    for declaration in &mut source_key_changed.types {
+        for parent in &mut declaration.parents {
+            if *parent == "T0" {
+                *parent = "T0-renamed";
+            }
+        }
+    }
+    for field in &mut source_key_changed.fields {
+        if field.owner == "T0" {
+            field.owner = "T0-renamed";
+        }
+    }
+    let source_key_view = source_key_changed.view();
+    source_key_view
+        .links()
+        .expect("source-key change preserves valid parent links");
+    assert_ne!(
+        type_entry(&baseline, "T0").effective_id,
+        type_entry(&source_key_view, "T0-renamed").effective_id,
+        "a changed original type key changes its declaration identity"
+    );
+    assert_ne!(
+        member_entry(&baseline, "T0", "T0/f").effective_id,
+        member_entry(&source_key_view, "T0-renamed", "T0/f").effective_id,
+        "a changed original member key changes its declaration identity"
+    );
+    assert_unique_effective_ids(&source_key_view);
+
+    let mut parent_edge_changed = baseline_fixture.clone();
+    parent_edge_changed.types[2].parents = vec!["T0"];
+    let parent_edge_view = parent_edge_changed.view();
+    parent_edge_view
+        .links()
+        .expect("changed parent edge has valid retained links");
+    assert_eq!(
+        type_entry(&baseline, "T2").effective_id,
+        type_entry(&parent_edge_view, "T2").effective_id,
+        "an unchanged type key keeps the structural identity"
+    );
+    let baseline_t2_field = member_entry(&baseline, "T2", "T0/f");
+    let parent_edge_t2_field = member_entry(&parent_edge_view, "T2", "T0/f");
+    assert_eq!(
+        baseline_t2_field.effective_id, parent_edge_t2_field.effective_id,
+        "the same owner and original member key keep the structural identity"
+    );
+    assert_ne!(
+        type_entry(&baseline, "T2").preimage.derivation,
+        type_entry(&parent_edge_view, "T2").preimage.derivation,
+        "the changed edge is retained in the type derivation facts"
+    );
+    assert_ne!(
+        baseline_t2_field.preimage.derivation, parent_edge_t2_field.preimage.derivation,
+        "the changed edge is retained in inherited member facts"
+    );
+    assert_ne!(baseline.declarations(), parent_edge_view.declarations());
+    assert_unique_effective_ids(&parent_edge_view);
+
+    let mut phase_four_changed = baseline_fixture;
+    phase_four_changed
+        .fields
+        .iter_mut()
+        .find(|field| field.name == "T1/s")
+        .expect("T1/s is present")
+        .subsets = vec!["T0/f"];
+    let phase_four_view = phase_four_changed.view();
+    phase_four_view
+        .links()
+        .expect("changed phase-four fact preserves valid parent links");
+    let baseline_subset = member_entry(&baseline, "T1", "T1/s");
+    let changed_subset = member_entry(&phase_four_view, "T1", "T1/s");
+    assert_eq!(
+        baseline_subset.effective_id, changed_subset.effective_id,
+        "the same owner and original member key keep the structural identity"
+    );
+    assert_ne!(
+        baseline_subset.preimage.derivation, changed_subset.preimage.derivation,
+        "the changed subset target is retained in phase-four derivation facts"
+    );
+    assert_ne!(baseline.declarations(), phase_four_view.declarations());
+    assert_unique_effective_ids(&phase_four_view);
 }
