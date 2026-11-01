@@ -1177,14 +1177,17 @@ fn lifecycle_generated_bodies_keep_format_identity() {
         )
         .unwrap()
     };
-    let body = vec!["1"; 40].join(" + ");
-    compile(
-        &fixture_text(
-            function_literal(fixture, "long_body_chain", "{HEADER}"),
-            &[("HEADER", &header), ("body", &body)],
-        ),
-        qsl_replay::spine::SpineLimits::default(),
-    );
+    let sum = |terms: usize| {
+        let mut source = header.clone();
+        source.push_str(&function_literal(fixture, "sum", "function big "));
+        let increment = function_literal(fixture, "sum", " + ");
+        for _ in 1..terms {
+            source.push_str(&increment);
+        }
+        source.push_str(&function_literal(fixture, "sum", " }"));
+        source
+    };
+    compile(&sum(40), qsl_replay::spine::SpineLimits::default());
     let mut source = format!("{header}function d0 using v(): Integer pure {{ 1 }}\n");
     let line = function_literal(fixture, "doubling", "function d{level}");
     for level in 1..24 {
@@ -1198,10 +1201,7 @@ fn lifecycle_generated_bodies_keep_format_identity() {
         source.push('\n');
     }
     compile(&source, qsl_replay::spine::SpineLimits::default());
-    let mut source = header;
-    source.push_str(&function_literal(fixture, "sum", "function big "));
-    source.push_str(&function_literal(fixture, "sum", " + ").repeat(2_999));
-    source.push_str(&function_literal(fixture, "sum", " }"));
+    let source = sum(3_000);
     let mut limits = qsl_replay::spine::SpineLimits::default();
     limits.source.source_bytes = source.len();
     limits.source.tokens = usize::MAX / 2;

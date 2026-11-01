@@ -275,20 +275,32 @@ fn a_collection_bound_adds_minimum_and_maximum_to_the_type_node() {
     assert_eq!(form, "collection_bounds");
     assert!(body.contains("min") && body.contains("max"), "{body}");
     assert!(body.contains("18446744073709551615"), "{body}");
+    let unbounded_key = parameter_type(&unbounded_graph, "f", 0);
+    let bounded_key = parameter_type(&bounded_graph, "f", 0);
     assert_ne!(
-        parameter_type(&unbounded_graph, "f", 0),
-        parameter_type(&bounded_graph, "f", 0),
+        unbounded_key, bounded_key,
         "bound presence distinguishes the checked type keys"
     );
     let unbounded = emitted(unbounded_graph);
     let bounded = emitted(bounded_graph);
-    let key = |node: &serde_json::Value| {
-        qsl_foundation::node_wire::node_key_from_json(&node["node_id"])
+    let key = |document: &serde_json::Value, node: &serde_json::Value| {
+        qsl_semantics::check::wire_id::WireGraph::of_package_value(document)
+            .expect("the emitted document supplies its operand-index context")
+            .key_of_value(&node["node_id"])
             .expect("an emitted structural node id")
     };
+    let emitted_unbounded_key = key(&unbounded, emitted_type(&unbounded, "set"));
+    let emitted_bounded_key = key(&bounded, emitted_type(&bounded, "collection_bounds"));
+    assert_eq!(
+        emitted_unbounded_key, unbounded_key,
+        "the emitted unbounded type retains its checked key"
+    );
+    assert_eq!(
+        emitted_bounded_key, bounded_key,
+        "the emitted bounded type retains its checked key"
+    );
     assert_ne!(
-        key(emitted_type(&unbounded, "set")),
-        key(emitted_type(&bounded, "collection_bounds")),
+        emitted_unbounded_key, emitted_bounded_key,
         "S4 preserves the bound distinction in its emitted type keys"
     );
     let bounds: BTreeMap<&str, u64> = emitted_type(&bounded, "collection_bounds")["body"]
