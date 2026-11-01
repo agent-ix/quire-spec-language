@@ -280,9 +280,9 @@ pub struct PackageSourceMap {
 }
 
 /// Debug writes each entry as (node, role, ordinal) with its regions. The
-/// nodes are written once, in the table of the enclosing [`scoped`] call, so
-/// the output is linear in the package rather than repeating every nested
-/// operand per key.
+/// nodes are written once with `std`, in the table of the enclosing [`scoped`]
+/// call, so the output is linear in the package rather than repeating every
+/// nested operand per key. Without `std`, each entry writes its full key.
 impl fmt::Debug for PackageSourceMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct Entries<'a>(&'a PackageSourceMap);
@@ -600,6 +600,7 @@ mod tests {
 
     /// The source map's debug output is linear in the depth of its nested
     /// nodes, not quadratic, and still names each node, role and ordinal.
+    #[cfg(feature = "std")]
     #[test]
     fn the_map_debug_output_grows_linearly_with_depth() {
         let (_, small) = chain_debug(500);
@@ -612,6 +613,7 @@ mod tests {
 
     /// Two maps formatted under one `scoped` call write a node they share
     /// once, in one table, however many collections hold it.
+    #[cfg(feature = "std")]
     #[test]
     fn one_scope_writes_a_node_shared_by_two_maps_once() {
         let (first, _) = chain_debug(3);
@@ -629,6 +631,7 @@ mod tests {
 
     /// Each node is written once, its nested node named by position, and each
     /// entry names its node position, role, ordinal and regions.
+    #[cfg(feature = "std")]
     #[test]
     fn the_map_debug_names_each_node_once_and_each_entry() {
         let (map, _) = chain_debug(3);
@@ -654,6 +657,67 @@ mod tests {
                 region(1)
             )
         );
+    }
+
+    /// Without a thread-local table, each occurrence still writes every
+    /// nested identity segment, package, ordinal, role and source region.
+    #[cfg(not(feature = "std"))]
+    #[test]
+    fn the_no_std_map_debug_writes_complete_nested_keys_and_regions() {
+        let (map, _) = chain_debug(3);
+        let region = |at: u64| {
+            alloc::format!(
+                "[SourceRegion {{ source: RawSourceRef {{ authority: \"a\", identity: \"unit\" }}, \
+                 start: {at}, end: {} }}]",
+                at + 1
+            )
+        };
+        assert_eq!(
+            alloc::format!("{map:?}"),
+            alloc::format!(
+                "PackageSourceMap {{ entries: {{\
+                 (NodeKey(pkg:[\"add\",node(pkg:[\"add\",node(pkg:[\"leaf\",]:0),]:0),]:1), Role(\"operand\"), 2): {}, \
+                 (NodeKey(pkg:[\"leaf\",]:0), Role(\"operand\"), 0): {}, \
+                 (NodeKey(pkg:[\"add\",node(pkg:[\"leaf\",]:0),]:0), Role(\"operand\"), 1): {}}} }}",
+                region(2), region(0), region(1)
+            )
+        );
+    }
+
+    /// The no_std scope is transparent even around multiple maps: neither
+    /// value nor any nested key content is discarded or replaced by a ref.
+    #[cfg(not(feature = "std"))]
+    #[test]
+    fn a_no_std_scope_preserves_both_maps_with_their_full_keys() {
+        let (first, _) = chain_debug(3);
+        let (second, _) = chain_debug(3);
+        struct Both<'a>(&'a PackageSourceMap, &'a PackageSourceMap);
+        impl fmt::Debug for Both<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                super::scoped(f, &(self.0, self.1))
+            }
+        }
+        let text = alloc::format!("{:?}", Both(&first, &second));
+        assert_eq!(text, alloc::format!("({first:?}, {second:?})"));
+        assert_eq!(text.matches("\"leaf\"").count(), 6, "{text}");
+        assert_eq!(text.matches("PackageSourceMap {").count(), 2, "{text}");
+    }
+
+    /// The no_std fallback retains every nested operand at the same depths
+    /// used by the std growth regression, including the repeated subtrees.
+    #[cfg(not(feature = "std"))]
+    #[test]
+    fn the_no_std_map_debug_preserves_every_nested_node_at_depth() {
+        for depth in [500_u64, 1_000, 2_000] {
+            let (map, _) = chain_debug(depth);
+            let text = alloc::format!("{map:?}");
+            let depth = usize::try_from(depth).unwrap();
+            assert_eq!(text.matches("NodeKey(pkg:").count(), depth);
+            assert_eq!(text.matches("node(pkg:[").count(), depth * (depth - 1) / 2);
+            assert_eq!(text.matches("\"leaf\"").count(), depth);
+            assert_eq!(text.matches("Role(\"operand\")").count(), depth);
+            assert_eq!(text.matches("SourceRegion {").count(), depth);
+        }
     }
 
     /// Debug order is independent of hash-map insertion and allocation order.

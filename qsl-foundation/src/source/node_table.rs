@@ -33,8 +33,9 @@ std::thread_local! {
 }
 
 /// Format `value` with one [`NodeTable`] for every [`NodeKeyDebug`] under it.
-/// The outermost call writes `WithNodes { value: .., nodes: {..} }`; a call
-/// made while another is open writes only `value`, into the open table.
+/// With `std`, the outermost call writes `WithNodes { value: .., nodes: {..} }`;
+/// a call made while another is open writes only `value`, into the open table.
+/// Without `std`, formats `value` directly; its keys are written in full.
 pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn fmt::Debug) -> fmt::Result {
     #[cfg(feature = "std")]
     {

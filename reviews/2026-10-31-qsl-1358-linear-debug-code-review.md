@@ -62,3 +62,40 @@ What holds:
 4. Completeness. `Origin` is exactly (role, ordinal), so `(#n, role, ordinal)` loses nothing. There is no cap or truncation (QSL-381). Every node's package, segments and ordinal are written.
 
 Side finding: `from_entries` is superlinear. It is not this PR's defect; it belongs to quire-exact. Measured at n=1000/2000/4000 on the test's shared chain: 0.47/2.2/9.1 s. perf puts nearly all of the time in `quire_exact::node::NodeKey::cmp`, under BTreeMap insertion, in `largest_matching_child`, `path_segments_order` and the zip iterators. Two chain keys of different depths are never `Arc::ptr_eq` at aligned positions, so each comparison descends the shallower depth. That gives O(n^2 log n) overall. The same cost is what holds FR-264-AC-1 in `emit::recorded_occurrences`. Raise it with the quire-exact owner. Hash-consing keys at decode in this repo would also resolve FND-002.
+
+
+## Disposition pass 1 scope and evidence
+
+Replacement independent reviewer at frozen `866f26cdb74c6ae1bdbd09cb882456ceb50fe771`; scoped to `87788cfc2b665ec115b34f9735b986261ee4ac46...HEAD`, excluding inherited parent implementation. All original findings and verdict text above are preserved as historical records. Methods: code-review with rust-review/rust-style baseline references and scoped gap-analysis. No applicable AssuranceProfile or spec changes; spec-review does not apply.
+
+Examined all 34 changed source/test files: foundation source/node_table and provenance; package checked, checked_v2, emit, emit/tests and source_map_debug; semantics check abstraction, assemble/equivalence, check, claims, family, hyper_clause, identity, ir, lowering, mod, node_key, protocol_clause/types, refinement/catalog/rows, state_clause, task_set, temporal_clause/timed, time_units, timed_model, type_invariant, wire_id; library/mod; value member/nominal_payload. FR-264-AC-1 examined: 100,000-term emit/read/identity verification/clone/equality/Debug/drop on 512 KiB. NFR-015-AC-3 examined: foundation tests pass with and without default features. NFR-015-AC-4 examined: package host check succeeds without default features. NFR-015 feature contract is context. QSL-1358's complete uncapped Debug is examined.
+
+In the std production path, one outer scoped table preserves every direct segment, package, ordinal, role and source region. Hashes only select buckets; full equality decides identity. Work lists avoid depth recursion. Provenance sorts cached hashes with full structural ties; other retained ordering stays deterministic. Expanded retained records use named destructuring. No caps, wire schema changes, duplicated upstream implementation, new framework or weakened CI gate occur in this diff.
+
+`StructuralIds::key_reader` seeds the inverse memo from authoritative emitter Arc allocations, retaining Arcs against address reuse; it is not indexed by positions in a filtered emitted list. Omitted or foreign records cannot shift memo slots. A foreign allocation follows ordinary conversion. This memo is used for internal inspection only; untrusted I2 still admits the package and uses WireGraph's existing range/cycle validation. No hash-only identity is introduced.
+
+Evidence read directly from `/home/peter/dev/.agents/tmp/pr1947-checks`: foundation 17/17, semantics library 20/20, inverse sharing 1/1, source-backed Debug 3/3, normal package 450 passed with 2 existing ignored and 10 held filters, scoped Clippy pass. The unchanged full FR-264-AC-1 test passed 1/1 in 142.96 s (elapsed 2:23.52, maximum RSS 4663316 KiB, exit 0), with its existing 512 KiB thread. Reviewer fmt and diff whitespace checks pass. No aggregate gate or duplicate heavy probe was launched.
+
+At depth 100/200/400, I2 Debug writes 357465/702965/1395085 bytes and post-emission package Debug writes 1042011/2048011/4063737 bytes. Inspected locked IR 21fd5e9 Debug: flat wire/node_index/source_index and structural_key_count; expanded structural_keys are omitted. The old upstream blocker does not apply to this indexed path. No IR relock is needed.
+
+The no_std formatter deliberately uses full NodeKey Debug without a shared table, as node_table module documentation states. It retains complete identities and regions but repeats nested keys; this pass establishes linear Debug for the std checked-package/I2 acceptance path only. It does not establish a no_std linear-growth guarantee. The supported no_std compilation and fallback tests must still pass, and the fixes should preserve complete fallback output rather than hide failures or cap depth.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | The new unconditional CheckedPackage Debug implementation uses std::fmt in a no_std crate, breaking the supported no-default-features host check (NFR-015-AC-4). Use core::fmt for the outer and inner implementations. Coder's focused check on frozen head exits 101 with six E0433 errors. | qsl-package/src/checked.rs:323, qsl-package/src/lib.rs:2 |
+| FND-004 | medium | New foundation provenance tests require the std-only scoped table but run with no default features. That configuration deliberately formats full keys, so exact WithNodes, shared-leaf-count and linear-size assertions fail in the required NFR-015-AC-3 lane. Configure table-specific representation tests for std and retain meaningful no_std completeness checks; do not suppress the required no_std lane. | qsl-foundation/src/source/provenance.rs:607, qsl-foundation/src/source/node_table.rs:67 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | CheckedPackage, V2Read, CheckedGraph and retained key-bearing records join one scoped table. Locked IR Debug is flat for indexed packages; unchanged full FR-264-AC-1 passes. |
+| FND-002 | fixed | I2 source-map keys share authoritative WireGraph operands; internal retained-emission inspection also seeds StructuralKeys from original emitter allocations. Full equality remains the collision fallback. Source-backed growth/sharing and full acceptance pass. Arbitrary independently constructed NodeKeys retain deep-equality cost, but production read no longer has the defect described. |
+| FND-003 | still-open | Confirmed by package-no-default-features.log: focused cargo check --locked -j1 -p qsl-package --no-default-features exits 101 with six E0433 errors at the new std::fmt references. |
+| FND-004 | still-open | The unconditional tests assume a representation the explicit no_std scoped branch does not produce; Coder probe foundation-source-no-default-features.log confirms 14 passed / 3 failed, exit 101: unique-leaf count 6 versus 1, PackageSourceMap versus WithNodes golden, and depth 500 to 1000 growth 2894057 to 11533308 bytes. |
+
+## Current verdict after disposition pass 1
+
+**FAIL / changes requested; not mergeable.** Both original findings are fixed and the unchanged 100k acceptance case passes. New no_std production/test regressions require correction and focused feature checks. A fmt qualifier/test-configuration-only fix does not justify repeating the 100k case.
