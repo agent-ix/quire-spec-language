@@ -899,6 +899,7 @@ enum LowerFrame<'n> {
         node: CheckedNode<'n>,
         object: NodeKey,
         name: &'n str,
+        explicit_deref: bool,
     },
     /// A record value: its present fields' values, in declaration order.
     Record(Box<RecordFrame<'n>>),
@@ -3875,7 +3876,10 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::Attribute {
-                reference, field, ..
+                reference,
+                field,
+                derefed,
+                ..
             } => {
                 // FR-093/FR-094 (QC-24): `quire.op.model.deref` over the
                 // reference, typed at its object type `T`'s model node, and
@@ -3886,6 +3890,7 @@ impl<'a> Lowering<'a> {
                     node,
                     object,
                     name: &field.name,
+                    explicit_deref: *derefed,
                 });
                 return Ok(LowerStep::Descend(node.at(*reference)));
             }
@@ -4363,6 +4368,7 @@ impl<'a> Lowering<'a> {
                             member: Some(Member::Field {
                                 declaration: object,
                                 name,
+                                explicit_deref: None,
                             }),
                             ..plain("quire.op.model.reaches_field")
                         },
@@ -4725,7 +4731,12 @@ impl<'a> Lowering<'a> {
                     .map(LowerStep::Lowered)
                 }
             },
-            LowerFrame::Attribute { node, object, name } => {
+            LowerFrame::Attribute {
+                node,
+                object,
+                name,
+                explicit_deref,
+            } => {
                 let dereferenced = self.typed_application(
                     node.location(),
                     object.clone(),
@@ -4746,6 +4757,7 @@ impl<'a> Lowering<'a> {
                         member: Some(Member::Field {
                             declaration: object,
                             name,
+                            explicit_deref: Some(explicit_deref),
                         }),
                         ..plain("quire.op.record.project")
                     },
@@ -5046,6 +5058,7 @@ impl<'a> Lowering<'a> {
         Ok(Member::Field {
             declaration: self.declared_member_key(node, location)?,
             name,
+            explicit_deref: None,
         })
     }
 
@@ -5679,12 +5692,23 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             }
             let operation = &application.operation;
             walk.text(operation.identity());
-            if let Some(Member::Fairness {
-                declaration, name, ..
-            }) = operation.member()
-            {
-                walk.push(PathSegment::Node(declaration.clone()));
-                walk.text(name.as_str());
+            match operation.member() {
+                Some(Member::Fairness {
+                    declaration, name, ..
+                }) => {
+                    walk.push(PathSegment::Node(declaration.clone()));
+                    walk.text(name.as_str());
+                }
+                Some(Member::Field {
+                    explicit_deref: Some(explicit_deref),
+                    ..
+                }) => {
+                    // FR-322 read_form is a checked semantic distinction,
+                    // so equal operands and result types must not alias its
+                    // bare and explicit source forms under one node key.
+                    walk.text(if *explicit_deref { "true" } else { "false" });
+                }
+                _ => {}
             }
             for law in operation.laws() {
                 walk.text(&law.definition.identity);
