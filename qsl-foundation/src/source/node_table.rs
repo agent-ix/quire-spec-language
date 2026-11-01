@@ -23,7 +23,7 @@ use core::hash::{Hash, Hasher};
 
 use quire_exact::{NodeKey, PathSegment};
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(kani)))]
 std::thread_local! {
     /// The table the value being formatted on this thread writes its keys
     /// into, while a [`scoped`] call is open.
@@ -35,9 +35,13 @@ std::thread_local! {
 /// Format `value` with one [`NodeTable`] for every [`NodeKeyDebug`] under it.
 /// With `std`, the outermost call writes `WithNodes { value: .., nodes: {..} }`;
 /// a call made while another is open writes only `value`, into the open table.
-/// Without `std`, formats `value` directly; its keys are written in full.
+/// Without `std`, or under `cfg(kani)`, formats `value` directly; its keys are
+/// written in full. The table is Debug-only output, and Kani 0.68.0 cannot
+/// compile a reachable destructor-bearing thread-local (it reaches the
+/// `catch_unwind` intrinsic, model-checking/kani#4813, fixed on main by #4819
+/// but unreleased), so the verification build takes the no-table path.
 pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn fmt::Debug) -> fmt::Result {
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "std", not(kani)))]
     {
         if ACTIVE.with(|active| active.borrow().is_some()) {
             return value.fmt(f);
@@ -64,7 +68,7 @@ pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn fmt::Debug) -> fmt::Result
             .field("nodes", &Active)
             .finish()
     }
-    #[cfg(not(feature = "std"))]
+    #[cfg(any(not(feature = "std"), kani))]
     value.fmt(f)
 }
 
@@ -74,7 +78,7 @@ pub struct NodeKeyDebug<'a>(pub &'a NodeKey);
 
 impl fmt::Debug for NodeKeyDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[cfg(feature = "std")]
+        #[cfg(all(feature = "std", not(kani)))]
         {
             let at = ACTIVE.with(|active| active.borrow_mut().as_mut().map(|t| t.intern(self.0)));
             if let Some(at) = at {
@@ -268,6 +272,28 @@ mod tests {
         assert_eq!(
             alloc::format!("{:?}", table.nodes()),
             "{#0: pkg:[\"first\",]:7, #1: pkg:[\"second\",]:9}"
+        );
+    }
+
+    struct Keys(NodeKey, NodeKey);
+
+    impl fmt::Debug for Keys {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            scoped(f, &(NodeKeyDebug(&self.0), NodeKeyDebug(&self.1)))
+        }
+    }
+
+    /// With `std` and outside `cfg(kani)`, the outermost `scoped` call writes
+    /// one table and each key as its position in it; the `cfg(kani)` and
+    /// no-`std` path (keys in full) is the only thing the gate changes.
+    #[cfg(all(feature = "std", not(kani)))]
+    #[test]
+    fn scoped_writes_one_table_and_keys_by_position_outside_kani() {
+        let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
+        let text = alloc::format!("{:?}", Keys(key.clone(), key));
+        assert_eq!(
+            text,
+            "WithNodes { value: (#0, #0), nodes: {#0: pkg:[\"k\",]:1} }"
         );
     }
 }
