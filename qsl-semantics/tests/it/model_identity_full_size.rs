@@ -292,7 +292,7 @@ mod tests {
             "running 1 test\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1301 filtered out; finished in 0.20s\n";
         let denial = "time: sysctl kern.clockrate: Operation not permitted";
 
-        assert!(macos_child_succeeded(false, &passed, denial));
+        assert!(macos_child_succeeded(false, passed, denial));
         assert!(!macos_child_succeeded(false, failed, denial));
         assert!(!macos_child_succeeded(false, "", denial));
         assert!(!macos_child_succeeded(
@@ -302,14 +302,14 @@ mod tests {
         ));
         assert!(!macos_child_succeeded(
             false,
-            &passed,
+            passed,
             "time: another operation not permitted"
         ));
         assert!(!macos_child_succeeded(
             false,
-            &passed,
+            passed,
             "sysctl kern.clockrate: Operation not permitted"
         ));
-        assert!(macos_child_succeeded(true, &passed, ""));
+        assert!(macos_child_succeeded(true, passed, ""));
     }
 }
