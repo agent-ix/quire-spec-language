@@ -231,6 +231,17 @@ pub enum BoundedMeasure {
         /// `h`.
         within: u64,
     },
+    /// `elapsed from holds(A) until holds(B) within h` on a timed subject.
+    Elapsed {
+        /// The source span of the measure.
+        span: Span,
+        /// `A`.
+        from: CheckedPredicate,
+        /// `B`.
+        until: CheckedPredicate,
+        /// `h`, in the subject's declared time unit.
+        within: Rational,
+    },
     /// `fraction holds(P) over [0, h]`.
     Fraction(FractionMeasure),
 }
@@ -1770,6 +1781,19 @@ impl Pass<'_, '_> {
                     from.normal_form.clone(),
                     until.normal_form.clone(),
                     within.to_be_bytes().to_vec(),
+                ],
+            ),
+            BoundedMeasure::Elapsed {
+                from,
+                until,
+                within,
+                ..
+            } => node_bytes(
+                b"elapsed",
+                &[
+                    from.normal_form.clone(),
+                    until.normal_form.clone(),
+                    rational_bytes(within),
                 ],
             ),
             BoundedMeasure::Fraction(fraction) => self.fraction_bytes(subject, fraction),

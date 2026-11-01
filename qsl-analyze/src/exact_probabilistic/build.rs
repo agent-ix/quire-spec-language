@@ -102,6 +102,7 @@ fn fault(invariant: &'static str) -> ProductRefusal {
 fn plan_refusal(fault_: PlanFault) -> ProductRefusal {
     match fault_ {
         PlanFault::Automaton(error) => automaton_refusal(error),
+        PlanFault::TimedFormShape { span } => ProductRefusal::TimedFormShape { span },
         PlanFault::Broken(invariant) => fault(invariant),
     }
 }
@@ -115,6 +116,25 @@ fn automaton_refusal(error: AutomatonError) -> ProductRefusal {
             value: limit,
         }),
         other => ProductRefusal::Translation(other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{plan_refusal, PlanFault, ProductRefusal};
+
+    /// FR-204-AC-4 (TC-639): the exact planner keeps the timed form refusal's source span.
+    #[ix_trace_rs::trace("TC-639", "FR-204-AC-4")]
+    #[test]
+    fn timed_form_shape_preserves_its_span() {
+        let span = qsl_foundation::Span { start: 12, end: 34 };
+        let ProductRefusal::TimedFormShape { span: actual } =
+            plan_refusal(PlanFault::TimedFormShape { span })
+        else {
+            panic!("a timed form shape refusal");
+        };
+
+        assert_eq!(actual, span);
     }
 }
 

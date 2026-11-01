@@ -6,6 +6,7 @@
 use qsl_eval::automaton::{
     translate_body, Atom, AutomatonError, Letter, Monitor, PropertyAutomaton, StateId,
 };
+use qsl_foundation::Span;
 use qsl_semantics::check::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, Event, ProbForm,
     ReachTarget, TemporalProfile,
@@ -24,6 +25,8 @@ use super::{
 pub(crate) enum PlanFault {
     /// The monitor's automaton refused.
     Automaton(AutomatonError),
+    /// FR-204 does not admit this timed bounded measure shape.
+    TimedFormShape { span: Span },
     /// A broken invariant of the product.
     Broken(&'static str),
 }
@@ -103,12 +106,12 @@ impl<'c> Plan<'c> {
             ProbForm::Probability {
                 event: Event::Compare { measure, bound },
                 ..
-            } => Self::of_measure(measure, threshold(bound)),
+            } => Self::of_measure(measure, threshold(bound))?,
             ProbForm::Quantile {
                 measure,
                 threshold: bound,
                 ..
-            } => Self::of_measure(measure, threshold(bound)),
+            } => Self::of_measure(measure, threshold(bound))?,
             ProbForm::MeanOfFraction { fraction, .. } => (
                 Self::Fraction {
                     window: fraction.window,
@@ -137,9 +140,12 @@ impl<'c> Plan<'c> {
         })
     }
 
-    fn of_measure(measure: &'c BoundedMeasure, threshold: &Rational) -> (Self, Reads<'c>) {
+    fn of_measure(
+        measure: &'c BoundedMeasure,
+        threshold: &Rational,
+    ) -> Result<(Self, Reads<'c>), PlanFault> {
         let role = |role, predicate| (UndefinedRead::Predicate(role), predicate);
-        match measure {
+        Ok(match measure {
             BoundedMeasure::Accumulate {
                 reward,
                 from,
@@ -171,6 +177,9 @@ impl<'c> Plan<'c> {
                     role(PredicateRole::Until, until),
                 ],
             ),
+            BoundedMeasure::Elapsed { span, .. } => {
+                return Err(PlanFault::TimedFormShape { span: *span });
+            }
             BoundedMeasure::Fraction(fraction) => (
                 Self::Fraction {
                     window: fraction.window,
@@ -178,7 +187,7 @@ impl<'c> Plan<'c> {
                 },
                 vec![role(PredicateRole::Target, &fraction.predicate)],
             ),
-        }
+        })
     }
 
     /// The control and amounts at an initial model state, whose predicates
