@@ -81,7 +81,8 @@ model selections, or a typed invalid, unsupported or resource-incomplete family
 disposition. An untimed subject remains representable by strict
 `quire.compiled-protocol/1`. A timed choreography requires the separately
 reviewed `quire.compiled-protocol/2` extension described under Dependencies;
-it cannot be emitted as `/1` with unauthenticated clock premises. Both versions
+it cannot be emitted as `/1`, which cannot carry the required temporal
+selections and clock configurations. Both versions
 are consumed only through the version-exact parser-free Rust readers owned by
 [FR-042](FR-042-publish-compiled-protocol-artifacts.md) and
 [FR-050](FR-050-publish-authenticated-temporal-artifacts.md).
@@ -153,14 +154,17 @@ operands and anchors rather than source-span proximity or simplified proofs.
 The compiler SHALL retain the selected temporal declaration/clock/activation
 interface without evaluating temporal settlement inside choreography admission.
 
-For a timed choreography, the `/2` artifact SHALL carry each selected temporal
-definition's identity, revision and immutable artifact reference,
-plus exactly one tagged clock configuration for that selection. Missing,
-duplicate, untagged or profile-incompatible clock configuration refuses the
-timed family. The strict `/1` reader SHALL continue to reject `/2`, and the
-strict `/2` reader SHALL NOT reinterpret or silently upgrade `/1`. This extension
-authenticates the inputs required by L5; it defines no clock progression,
-deadline settlement or late-evidence meaning.
+For a timed choreography, the `/2` artifact SHALL identify each selected
+temporal definition by its structural `NodeId {package, path, ordinal}` and the
+selected temporal profile by its `DefinitionRef {authority, identity}` in
+`lock.profile_selections` with role `temporal_profile`. Each selected temporal
+declaration/definition SHALL have exactly one typed clock configuration tagged to
+that selection. A missing, duplicate, untagged or selection-incompatible clock
+configuration refuses the timed family. The strict `/1` reader SHALL continue
+to reject `/2`, and the strict `/2` reader SHALL NOT reinterpret or silently
+upgrade `/1`. These selections and configurations provide the inputs required
+by L5; they define no clock progression, deadline settlement or late-evidence
+meaning.
 
 The compiler SHALL retain every required observation binding's owning native
 declaration, source locus, role kind, anchor, scope premises and capture
@@ -193,7 +197,7 @@ resource incompleteness and emits no static subject.
 | FR-048-AC-5 | A repeat with a feasible false guard contributes no guaranteed enclosing progress; an infeasible false valuation permits the entered body's proven progress; zero/exact/one-short proof budgets retain charge order and typed outcomes. | Test (TC-133) |
 | FR-048-AC-6 | Split shipments, one authored payment attempt under distinct supplied repeat ordinals, and refund paths preserve separate static subjects and required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation or minting another static attempt. | Test (TC-134) |
 | FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
-| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
+| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with each selected temporal definition identified by structural `NodeId {package, path, ordinal}`, and the selected temporal profile identified by its `DefinitionRef {authority, identity}` in `lock.profile_selections` with role `temporal_profile`; each selected temporal declaration/definition has exactly one typed clock configuration tagged to that selection. `/1` remains strict and cannot carry or infer `/2` temporal selections or clock configuration. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
 | FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/result identity substitution or recanonicalization refuses. | Test (TC-135) |
 | FR-048-AC-10 | A's release compiler contributes the exact source-derived artifact, selection and static binding requirements to the separately owned campaign run. The contribution is byte-identical at B's intake and retains every required domain-package, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
 
@@ -209,14 +213,12 @@ completeness, progress and closure assertions.
 The external L5 requirement and Rust-interface baseline is merged PR #70,
 comprising FR-043/044/045 and
 `temporal::evaluate`, `temporal::evaluate_with_progress` and
-`temporal::mapping_support`. That baseline records its narrow A-owned prerequisite:
-`quire.compiled-protocol/2` must extend `/1` with each selected temporal
-definition identity/revision/artifact and exactly one tagged
-clock configuration, while strict `/1` readers remain unchanged. This
-FR consumes that requirement but does not invent its schema or treat the L5
-evaluator alone as an authenticated compiler seam;
+`temporal::mapping_support`. That baseline requires the timed `/2` selection
+and per-selection clock-configuration behavior stated above while strict `/1`
+readers remain unchanged. This FR consumes that requirement but does not
+invent its schema or conflate the checked temporal selection with L5 settlement;
 [FR-050](FR-050-publish-authenticated-temporal-artifacts.md) owns the versioned
-wire/reader change. E remains the semantic authority for clock progression,
+temporal-selection and clock-configuration contract. E remains the semantic authority for clock progression,
 deadline settlement and late evidence. The `/2` extension and L5 acceptance are
 prerequisites only for the timed campaign case, not for untimed static
 choreography emission.
