@@ -323,10 +323,10 @@ fn topological_order(product: &ProbProduct) -> Result<Vec<ProbStateId>, FhError>
     Ok(order)
 }
 
-fn action_groups<'a>(
-    product: &'a ProbProduct,
+fn action_groups(
+    product: &ProbProduct,
     state: ProbStateId,
-) -> Result<Vec<Vec<&'a ProbEdge>>, FhError> {
+) -> Result<Vec<Vec<&ProbEdge>>, FhError> {
     let edges = product.outgoing(state);
     if edges.iter().any(|edge| edge.from != state) {
         return Err(FhError::InvalidState);
