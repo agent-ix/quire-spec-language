@@ -349,8 +349,9 @@ pub use family::fixtures::{
 };
 pub use ir::{
     CheckedBody, CheckedNode, EqualityConversionEdgeIdentity, EqualityDimensionIdentity,
-    EqualityDimensionRole, EqualityDimensionTermIdentity, EqualityProducerData,
-    EqualityProducerIdentity, EqualityUnitIdentityFact, Node, NodeId, Slot,
+    EqualityDimensionRole, EqualityDimensionTermIdentity, EqualityOperandTypeFact,
+    EqualityOperandTypeIdentity, EqualityProducerData, EqualityProducerIdentity,
+    EqualityUnitIdentityFact, EqualityUnitOperandRole, EqualityUnitTypeFact, Node, NodeId, Slot,
 };
 
 pub use assemble::{

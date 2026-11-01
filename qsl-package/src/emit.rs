@@ -1888,16 +1888,6 @@ fn equality_fact_witness_rows(
         .collect::<HashMap<_, _>>();
     let mut witnesses = Vec::new();
     for row in rows {
-        let Some(application) = graph_nodes.get(row.application()) else {
-            return Err(EmitRefusal::MissingEqualityIdentityContext {
-                application: row.application().clone(),
-            });
-        };
-        let BodyTerm::Application(application_body) = application.body() else {
-            return Err(EmitRefusal::MissingEqualityIdentityContext {
-                application: row.application().clone(),
-            });
-        };
         let mut add = |key: &NodeKey, fact: EqualityFactWitness| {
             let Some(structural_node) = emitted_node_ids.get(key).cloned() else {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
@@ -1926,98 +1916,70 @@ fn equality_fact_witness_rows(
             Ok(())
         };
 
-        for (position, authored) in row.producer_data.authored_operands().iter().enumerate() {
-            let Some(MemberTerm::Leaf(operand)) = application_body.arguments.get(position) else {
+        let identity_type_nodes = row.producer_identity.operand_type_nodes();
+        if identity_type_nodes.len() != row.producer_data.operand_type_facts().len() {
+            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                application: row.application().clone(),
+            });
+        }
+        for (identity_fact, producer_fact) in identity_type_nodes
+            .iter()
+            .zip(row.producer_data.operand_type_facts())
+        {
+            if identity_fact.operand_position != producer_fact.operand_position
+                || identity_fact.role != producer_fact.role
+                || identity_fact.operand_position >= 2
+            {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
                 });
-            };
-            let (operand_node, compared_type) = match operand {
-                LeafTerm::Reference { target } => {
-                    let Some(node) = target.admitted().and_then(|key| graph_nodes.get(key)) else {
-                        return Err(EmitRefusal::MissingEqualityIdentityContext {
-                            application: row.application().clone(),
-                        });
-                    };
-                    let Some(ty) = node.semantic_type() else {
-                        return Err(EmitRefusal::MissingEqualityIdentityContext {
-                            application: row.application().clone(),
-                        });
-                    };
-                    (Some(*node), ty.clone())
-                }
-                LeafTerm::Literal { ty, .. } => {
-                    let Some(ty) = ty.admitted() else {
-                        return Err(EmitRefusal::MissingEqualityIdentityContext {
-                            application: row.application().clone(),
-                        });
-                    };
-                    (None, ty.clone())
-                }
-                LeafTerm::DependencyReference { .. } => {
-                    return Err(EmitRefusal::MissingEqualityIdentityContext {
-                        application: row.application().clone(),
-                    });
-                }
-            };
-            let mut source_type = compared_type.clone();
-            if authored.target().is_some() {
-                if let Some(operand_node) = operand_node {
-                    if let BodyTerm::Application(convert) = operand_node.body() {
-                        if convert.operation.identity().ends_with(".convert") {
-                            let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) =
-                                convert.arguments.first()
-                            else {
-                                return Err(EmitRefusal::MissingEqualityIdentityContext {
-                                    application: row.application().clone(),
-                                });
-                            };
-                            let Some(source_node) =
-                                target.admitted().and_then(|key| graph_nodes.get(key))
-                            else {
-                                return Err(EmitRefusal::MissingEqualityIdentityContext {
-                                    application: row.application().clone(),
-                                });
-                            };
-                            source_type = source_node
-                                .semantic_type()
-                                .ok_or_else(|| EmitRefusal::MissingEqualityIdentityContext {
-                                    application: row.application().clone(),
-                                })?
-                                .clone();
-                        }
-                    }
-                }
             }
             add(
-                &source_type,
+                &identity_fact.node,
                 EqualityFactWitness::OperandType {
-                    position,
-                    role: EqualityOperandTypeRole::Source,
+                    position: identity_fact.operand_position,
+                    role: match identity_fact.role {
+                        qsl_semantics::check::EqualityUnitOperandRole::Source => {
+                            EqualityOperandTypeRole::Source
+                        }
+                        qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget => {
+                            EqualityOperandTypeRole::ConversionTarget
+                        }
+                    },
                 },
             )?;
-            if authored.target().is_some() {
-                add(
-                    &compared_type,
-                    EqualityFactWitness::OperandType {
-                        position,
-                        role: EqualityOperandTypeRole::ConversionTarget,
-                    },
-                )?;
-            }
-            if matches!(
-                row.producer_data.schedule(),
-                quire_semantic_value::declaration::EqualitySchedule::Text
-                    | quire_semantic_value::declaration::EqualitySchedule::Plan
-            ) {
-                let Some((ordinal, key)) =
-                    row.producer_identity.text_plan_type_nodes().get(position)
-                else {
+        }
+        if matches!(
+            row.producer_data.schedule(),
+            quire_semantic_value::declaration::EqualitySchedule::Text
+                | quire_semantic_value::declaration::EqualitySchedule::Plan
+        ) {
+            for (position, (ordinal, key)) in row
+                .producer_identity
+                .text_plan_type_nodes()
+                .iter()
+                .enumerate()
+            {
+                if position >= 2 {
                     return Err(EmitRefusal::MissingEqualityIdentityContext {
                         application: row.application().clone(),
                     });
+                }
+                let expected_role = if row.producer_data.authored_operands()[position]
+                    .target()
+                    .is_some()
+                {
+                    qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget
+                } else {
+                    qsl_semantics::check::EqualityUnitOperandRole::Source
                 };
-                if *ordinal != position || key != &compared_type {
+                if *ordinal != position
+                    || !identity_type_nodes.iter().any(|fact| {
+                        fact.operand_position == position
+                            && fact.role == expected_role
+                            && fact.node == *key
+                    })
+                {
                     return Err(EmitRefusal::MissingEqualityIdentityContext {
                         application: row.application().clone(),
                     });
@@ -2026,10 +1988,13 @@ fn equality_fact_witness_rows(
                     key,
                     EqualityFactWitness::TextPlanType {
                         position,
-                        role: if authored.target().is_some() {
-                            EqualityOperandTypeRole::ConversionTarget
-                        } else {
-                            EqualityOperandTypeRole::Source
+                        role: match expected_role {
+                            qsl_semantics::check::EqualityUnitOperandRole::Source => {
+                                EqualityOperandTypeRole::Source
+                            }
+                            qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget => {
+                                EqualityOperandTypeRole::ConversionTarget
+                            }
                         },
                     },
                 )?;
@@ -2046,106 +2011,37 @@ fn equality_fact_witness_rows(
                         application: row.application().clone(),
                     });
                 };
-                let (quantity_key, unit_key) = match unit {
+                let quantity_key = &unit_fact.structural_node;
+                let exact_unit_key = match unit {
                     quire_semantic_value::quantity::QuantityUnit::Declared(unit) => {
-                        (unit.key(), unit.key())
+                        unit.key() == *quantity_key
                     }
-                    quire_semantic_value::quantity::QuantityUnit::Compound(compound) => {
-                        let matched = graph_nodes.iter().find_map(|(key, node)| {
-                            (node.semantic_form() == "compound_unit"
-                                && compound_terms_match(node.body(), compound))
-                            .then(|| key.clone())
-                        });
-                        let Some(key) = matched else {
-                            return Err(EmitRefusal::MissingEqualityIdentityContext {
-                                application: row.application().clone(),
-                            });
-                        };
-                        (key.clone(), key)
-                    }
+                    quire_semantic_value::quantity::QuantityUnit::Compound(_) => graph_nodes
+                        .get(quantity_key)
+                        .is_some_and(|node| node.semantic_form() == "compound_unit"),
                 };
-                let mut unit_roles = Vec::new();
-                for (position, authored) in row.producer_data.authored_operands().iter().enumerate()
-                {
-                    let Some(MemberTerm::Leaf(operand)) = application_body.arguments.get(position)
-                    else {
-                        return Err(EmitRefusal::MissingEqualityIdentityContext {
-                            application: row.application().clone(),
-                        });
-                    };
-                    let compared_type = match operand {
-                        LeafTerm::Reference { target } => target
-                            .admitted()
-                            .and_then(|key| graph_nodes.get(key))
-                            .and_then(|node| node.semantic_type()),
-                        LeafTerm::Literal { ty, .. } => ty.admitted().cloned(),
-                        LeafTerm::DependencyReference { .. } => None,
-                    }
-                    .ok_or_else(|| {
-                        EmitRefusal::MissingEqualityIdentityContext {
-                            application: row.application().clone(),
-                        }
-                    })?;
-                    let mut source_type = compared_type.clone();
-                    if authored.target().is_some() {
-                        if let LeafTerm::Reference { target } = operand {
-                            if let Some(operand_node) =
-                                target.admitted().and_then(|key| graph_nodes.get(key))
-                            {
-                                if let BodyTerm::Application(convert) = operand_node.body() {
-                                    if convert.operation.identity().ends_with(".convert") {
-                                        let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) =
-                                            convert.arguments.first()
-                                        else {
-                                            return Err(
-                                                EmitRefusal::MissingEqualityIdentityContext {
-                                                    application: row.application().clone(),
-                                                },
-                                            );
-                                        };
-                                        source_type = target
-                                            .admitted()
-                                            .and_then(|key| graph_nodes.get(key))
-                                            .and_then(|node| node.semantic_type())
-                                            .ok_or_else(|| {
-                                                EmitRefusal::MissingEqualityIdentityContext {
-                                                    application: row.application().clone(),
-                                                }
-                                            })?;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if source_type == quantity_key {
-                        unit_roles.push((position, EqualityUnitRole::Source));
-                    }
-                    if compared_type == quantity_key {
-                        unit_roles.push((
-                            position,
-                            if authored.target().is_some() {
-                                EqualityUnitRole::ConversionTarget
-                            } else {
-                                EqualityUnitRole::Source
-                            },
-                        ));
-                    }
-                }
-                if unit_roles.is_empty() {
+                if !exact_unit_key {
                     return Err(EmitRefusal::MissingEqualityIdentityContext {
                         application: row.application().clone(),
                     });
                 }
-                for (operand_position, role) in unit_roles {
-                    let type_id =
-                        emitted_node_ids
-                            .get(&quantity_key)
-                            .cloned()
-                            .ok_or_else(|| EmitRefusal::MissingEqualityIdentityContext {
-                                application: row.application().clone(),
-                            })?;
+                let operand_position = unit_fact.operand_position;
+                let role = match unit_fact.operand_role {
+                    qsl_semantics::check::EqualityUnitOperandRole::Source => {
+                        EqualityUnitRole::Source
+                    }
+                    qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget => {
+                        EqualityUnitRole::ConversionTarget
+                    }
+                };
+                {
+                    let type_id = emitted_node_ids.get(quantity_key).cloned().ok_or_else(|| {
+                        EmitRefusal::MissingEqualityIdentityContext {
+                            application: row.application().clone(),
+                        }
+                    })?;
                     add(
-                        &unit_key,
+                        quantity_key,
                         EqualityFactWitness::Unit {
                             unit_id: unit_fact.unit_id.clone(),
                             quantity_type: type_id,
@@ -2641,38 +2537,35 @@ fn equality_units(
                 application: application.clone(),
             });
         };
-        let selected = data.units().ids().find_map(|id| {
-            if !identity.unit_ids().contains(&id) {
-                return None;
-            }
-            let quantity_unit = data.units().get(id.clone())?;
-            match quantity_unit {
-                quire_semantic_value::quantity::QuantityUnit::Declared(declared)
-                    if declared.key() == quantity_type =>
-                {
-                    Some((id, quantity_unit.clone()))
-                }
-                quire_semantic_value::quantity::QuantityUnit::Compound(compound)
-                    if quantity_node.semantic_form() == "compound_unit"
-                        && compound_terms_match(quantity_node.body(), compound) =>
-                {
-                    Some((id, quantity_unit.clone()))
-                }
-                _ => None,
-            }
-        });
-        let Some((selected_id, selected_unit)) = selected else {
+        let unit_fact =
+            equality_unit_identity_for_type(identity.unit_facts(), &quantity_type, application)?;
+        let selected_id = unit_fact.unit_id.clone();
+        if !identity.unit_ids().contains(&selected_id) {
             return Err(EmitRefusal::MissingEqualityIdentityContext {
                 application: application.clone(),
             });
-        };
-        let unit_identity = identity
-            .unit_facts()
-            .iter()
-            .find(|fact| fact.unit_id == selected_id)
+        }
+        let selected_unit = data
+            .units()
+            .get(selected_id.clone())
+            .cloned()
             .ok_or_else(|| EmitRefusal::MissingEqualityIdentityContext {
                 application: application.clone(),
             })?;
+        let exact_unit_type = match &selected_unit {
+            quire_semantic_value::quantity::QuantityUnit::Declared(unit) => {
+                unit.key() == quantity_type
+            }
+            quire_semantic_value::quantity::QuantityUnit::Compound(_) => {
+                quantity_node.semantic_form() == "compound_unit"
+            }
+        };
+        if !exact_unit_type {
+            return Err(EmitRefusal::MissingEqualityIdentityContext {
+                application: application.clone(),
+            });
+        }
+        let unit_identity = unit_fact;
         let compound = match &selected_unit {
             quire_semantic_value::quantity::QuantityUnit::Compound(compound) => Some(compound),
             quire_semantic_value::quantity::QuantityUnit::Declared(_) => None,
@@ -2814,45 +2707,25 @@ fn equality_units(
     Ok(rows)
 }
 
-fn compound_terms_match(
-    body: &qsl_semantics::check::BodyTerm,
-    compound: &quire_semantic_value::unit::CompoundUnit,
-) -> bool {
-    let qsl_semantics::check::BodyTerm::Aggregate(aggregate) = body else {
-        return false;
+fn equality_unit_identity_for_type<'a>(
+    facts: &'a [qsl_semantics::check::EqualityUnitIdentityFact],
+    quantity_type: &NodeKey,
+    application: &NodeKey,
+) -> Result<&'a qsl_semantics::check::EqualityUnitIdentityFact, EmitRefusal> {
+    let mut matching = facts
+        .iter()
+        .filter(|fact| fact.structural_node == *quantity_type);
+    let Some(selected) = matching.next() else {
+        return Err(EmitRefusal::MissingEqualityIdentityContext {
+            application: application.clone(),
+        });
     };
-    let mut actual = Vec::with_capacity(aggregate.members.len());
-    for member in &aggregate.members {
-        let qsl_semantics::check::MemberTerm::Group(group) = member else {
-            return false;
-        };
-        let (
-            Some(qsl_semantics::check::GroupMember::Binding(unit)),
-            Some(qsl_semantics::check::GroupMember::Binding(exponent)),
-        ) = (group.members.first(), group.members.get(1))
-        else {
-            return false;
-        };
-        let qsl_semantics::check::LeafTerm::Reference { target } = &unit.value else {
-            return false;
-        };
-        let qsl_semantics::check::LeafTerm::Literal {
-            value: qsl_semantics::check::LiteralValue::Integer(exponent),
-            ..
-        } = &exponent.value
-        else {
-            return false;
-        };
-        let Some(root) = target.admitted() else {
-            return false;
-        };
-        actual.push((root.clone(), exponent.clone()));
+    if matching.any(|fact| fact.unit_id != selected.unit_id) {
+        return Err(EmitRefusal::MissingEqualityIdentityContext {
+            application: application.clone(),
+        });
     }
-    let expected = compound
-        .terms()
-        .map(|(root, exponent)| (root, exponent.clone()))
-        .collect::<Vec<_>>();
-    actual == expected
+    Ok(selected)
 }
 
 /// The source map of the written nodes, in graph order, and the raw sources

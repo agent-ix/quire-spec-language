@@ -4738,13 +4738,31 @@ impl<'a> Lowering<'a> {
         data: &EqualityProducerData,
     ) -> Result<super::ir::EqualityProducerIdentity, CheckRefusal> {
         let unit_ids: Vec<_> = data.units().ids().collect();
-        let mut unit_facts = Vec::with_capacity(unit_ids.len());
-        for unit_id in &unit_ids {
+        let operand_type_nodes = data
+            .operand_type_facts()
+            .iter()
+            .map(|fact| {
+                self.type_node(&fact.value_type, &location).map(|node| {
+                    super::ir::EqualityOperandTypeIdentity {
+                        operand_position: fact.operand_position,
+                        role: fact.role,
+                        node,
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut unit_facts = Vec::with_capacity(data.unit_type_facts().len());
+        for operand_fact in data.unit_type_facts() {
+            let unit_id = &operand_fact.unit_id;
+            let structural_node = self.type_node(&operand_fact.value_type, &location)?;
             let Some(unit) = self.units.get(unit_id.clone()) else {
                 return Err(fault(&location, KeyFault::UnheldUnit(unit_id.clone())));
             };
             let mut facts = super::ir::EqualityUnitIdentityFact {
                 unit_id: unit_id.clone(),
+                structural_node,
+                operand_position: operand_fact.operand_position,
+                operand_role: operand_fact.role,
                 dimensions: Vec::new(),
                 dimension_terms: Vec::new(),
                 conversion_edges: Vec::new(),
@@ -4757,7 +4775,7 @@ impl<'a> Lowering<'a> {
                     )];
                     let mut visited = BTreeSet::new();
                     while let Some((key, role)) = pending.pop() {
-                        if !visited.insert(key.clone()) {
+                        if !visited.insert((key.clone(), role)) {
                             continue;
                         }
                         let Some(nominal) = self.units.nominal_node(&key) else {
@@ -4839,7 +4857,7 @@ impl<'a> Lowering<'a> {
                         ));
                     }
                     while let Some((key, role)) = pending.pop() {
-                        if !visited.insert(key.clone()) {
+                        if !visited.insert((key.clone(), role)) {
                             continue;
                         }
                         let Some(nominal) = self.units.nominal_node(&key) else {
@@ -5001,6 +5019,7 @@ impl<'a> Lowering<'a> {
                 text_plan_type_nodes,
                 enum_member_facts,
                 unit_facts,
+                operand_type_nodes,
             ),
         ))
     }

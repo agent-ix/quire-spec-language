@@ -258,21 +258,22 @@ fn structurally_reused_equality_keys_retain_each_occurrence() {
     );
 }
 
-/// QSL-1390: emitted identity rows retain unit ids and dimension roles.
-#[ix_trace_rs::trace("QSpec-TC-233", "QSL-1390")]
+/// IR FR-353 AC-1 and QSpec FR-322 AC-288: exact witness joins are emitted.
+#[ix_trace_rs::trace("IR-FR-353-AC-1", "QSpec-FR-322-AC-288")]
 #[test]
 fn emission_retains_unit_and_dimension_identity_roles() {
     use quire_exact::UnitDomain;
 
-    let emission = emitted(
+    let declarations =
         "dimension Length; dimension Area = Length;\n\
          unit m : Length = rational(1, 1); unit cm : Length = rational(1, 100) * m;\n\
          unit mm : Length = rational(1, 10) * cm;\n\
          unit sqm : Area = rational(1, 1);\n\
          function quantity using v(a: Quantity<mm>, b: Quantity<m>): Boolean pure { convert<Quantity<m>>(a) = b }\n\
          function area using v(a: Quantity<sqm>, b: Quantity<sqm>): Boolean pure { a = b }\n\
-         function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }",
-    );
+         function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }";
+    let graph = checked_graph(declarations);
+    let emission = emitted(declarations);
     let rows = emission.equality_producer_identity_rows();
     assert_eq!(rows.len(), 3);
     let declared = rows
@@ -366,6 +367,219 @@ fn emission_retains_unit_and_dimension_identity_roles() {
         witnesses.iter().any(|row| row.owner().is_some()),
         "source/model fact context is retained"
     );
+
+    for equality in rows {
+        let witness_rows = witnesses
+            .iter()
+            .filter(|witness| witness.application() == equality.application());
+        let witness_rows = witness_rows.collect::<Vec<_>>();
+        for type_fact in equality.producer_identity().operand_type_nodes() {
+            let role = match type_fact.role {
+                qsl_semantics::check::EqualityUnitOperandRole::Source => {
+                    EqualityOperandTypeRole::Source
+                }
+                qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget => {
+                    EqualityOperandTypeRole::ConversionTarget
+                }
+            };
+            assert!(witness_rows.iter().any(|row| {
+                row.structural_key() == &type_fact.node
+                    && matches!(row.fact(), EqualityFactWitness::OperandType { position, role: actual }
+                        if *position == type_fact.operand_position && *actual == role)
+            }), "operand type witness matches exact producer fact {type_fact:?}");
+        }
+        for unit_fact in equality.producer_identity().unit_facts() {
+            let unit_role = match unit_fact.operand_role {
+                qsl_semantics::check::EqualityUnitOperandRole::Source => EqualityUnitRole::Source,
+                qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget => {
+                    EqualityUnitRole::ConversionTarget
+                }
+            };
+            let unit_row = witness_rows
+                .iter()
+                .find(|row| {
+                    row.structural_key() == &unit_fact.structural_node
+                        && matches!(row.fact(), EqualityFactWitness::Unit {
+                        unit_id, quantity_type, operand_position, role,
+                    } if unit_id == &unit_fact.unit_id
+                        && quantity_type == row.structural_node()
+                        && *operand_position == unit_fact.operand_position
+                        && *role == unit_role)
+                })
+                .expect("UnitId joins its checker-held quantity type and role");
+            assert_eq!(
+                unit_row.structural_node(),
+                match unit_row.fact() {
+                    EqualityFactWitness::Unit { quantity_type, .. } => quantity_type,
+                    _ => unreachable!(),
+                }
+            );
+
+            for dimension in &unit_fact.dimensions {
+                assert!(
+                    witness_rows.iter().any(|row| {
+                        row.structural_key() == &dimension.node
+                            && matches!(row.fact(), EqualityFactWitness::DimensionDeclaration {
+                            unit_id, operand_position, role, ordinal,
+                        } if unit_id == &dimension.unit_id
+                            && *operand_position == unit_fact.operand_position
+                            && *role == dimension.role
+                            && *ordinal == dimension.ordinal)
+                    }),
+                    "dimension role and ordinal join to exact declaration {dimension:?}"
+                );
+            }
+            for term in &unit_fact.dimension_terms {
+                let row = witness_rows
+                    .iter()
+                    .find(|row| {
+                        row.structural_key() == &term.declaration
+                            && matches!(row.fact(), EqualityFactWitness::DimensionTerm {
+                            unit_id, operand_position, ordinal, base, base_node, exponent,
+                        } if unit_id == &term.unit_id
+                            && *operand_position == unit_fact.operand_position
+                            && *ordinal == term.ordinal
+                            && base == &term.base
+                            && exponent.as_ref() == term.exponent.to_string())
+                    })
+                    .expect("dimension term joins its declaration and base");
+                let base_row = witness_rows
+                    .iter()
+                    .find(|candidate| candidate.structural_key() == &term.base)
+                    .expect("base dimension has its own structural witness");
+                let EqualityFactWitness::DimensionTerm { base_node, .. } = row.fact() else {
+                    unreachable!()
+                };
+                assert_eq!(base_node, base_row.structural_node());
+            }
+            for edge in &unit_fact.conversion_edges {
+                let row = witness_rows
+                    .iter()
+                    .find(|row| {
+                        row.structural_key() == &edge.source
+                            && matches!(row.fact(), EqualityFactWitness::ConversionEdge {
+                            unit_id, operand_position, ordinal, target, ..
+                        } if unit_id == &edge.unit_id
+                            && *operand_position == unit_fact.operand_position
+                            && *ordinal == edge.ordinal
+                            && target == &edge.target)
+                    })
+                    .expect("conversion edge retains source, target, and ordinal");
+                let target_row = witness_rows
+                    .iter()
+                    .find(|candidate| candidate.structural_key() == &edge.target)
+                    .expect("conversion target has its own structural witness");
+                let EqualityFactWitness::ConversionEdge {
+                    target_node,
+                    scale,
+                    offset,
+                    ..
+                } = row.fact()
+                else {
+                    unreachable!()
+                };
+                assert_eq!(target_node, target_row.structural_node());
+                let source = graph
+                    .semantic_graph()
+                    .nodes()
+                    .find(|node| node.key() == edge.source)
+                    .expect("source nominal node is in the checked graph");
+                let Some(NominalPayload::Unit(payload)) = source.nominal_payload() else {
+                    panic!("unit edge payload")
+                };
+                assert_eq!(scale, &checked_rational(payload.factor()));
+                assert_eq!(offset, &checked_rational(payload.offset()));
+            }
+        }
+    }
+
+    let converted = rows
+        .iter()
+        .find(|row| {
+            row.producer_identity()
+                .operand_type_nodes()
+                .iter()
+                .any(|fact| {
+                    fact.role == qsl_semantics::check::EqualityUnitOperandRole::ConversionTarget
+                })
+        })
+        .expect("conversion equality retained");
+    let source_unit = converted
+        .producer_identity()
+        .unit_facts()
+        .iter()
+        .find(|fact| {
+            fact.operand_role == qsl_semantics::check::EqualityUnitOperandRole::Source
+                && !fact.conversion_edges.is_empty()
+        })
+        .expect("converted source unit retained");
+    let roles = converted
+        .producer_identity()
+        .unit_facts()
+        .iter()
+        .filter(|fact| fact.unit_id == source_unit.unit_id)
+        .flat_map(|fact| &fact.dimensions)
+        .map(|fact| (fact.node.clone(), fact.role, fact.ordinal))
+        .collect::<Vec<_>>();
+    assert!(
+        roles.iter().any(|(node, role, _)| {
+            *role == qsl_semantics::check::EqualityDimensionRole::UnitDimension
+                && roles.iter().any(|(other_node, other_role, other_ordinal)| {
+                    other_node == node
+                        && *other_role
+                            == qsl_semantics::check::EqualityDimensionRole::ConversionDimension
+                        && *other_ordinal != 0
+                })
+        }),
+        "same dimension retains distinct UnitDimension and ConversionDimension roles: {roles:?}"
+    );
+    let source_dimension = source_unit
+        .dimensions
+        .iter()
+        .find(|fact| fact.role == qsl_semantics::check::EqualityDimensionRole::UnitDimension)
+        .expect("source dimension fact");
+    let unit_dimension = witnesses
+        .iter()
+        .find(|row| {
+            row.application() == converted.application()
+                && row.structural_key() == &source_dimension.node
+                && matches!(row.fact(), EqualityFactWitness::DimensionDeclaration {
+                    unit_id,
+                    role: qsl_semantics::check::EqualityDimensionRole::UnitDimension,
+                    ..
+                } if unit_id == &source_unit.unit_id)
+        })
+        .expect("UnitDimension witness emitted");
+    let conversion_dimension = witnesses
+        .iter()
+        .find(|row| {
+            row.application() == converted.application()
+                && row.structural_key() == unit_dimension.structural_key()
+                && matches!(row.fact(), EqualityFactWitness::DimensionDeclaration {
+                    unit_id,
+                    role: qsl_semantics::check::EqualityDimensionRole::ConversionDimension,
+                    ..
+                } if unit_id == &source_unit.unit_id)
+        })
+        .expect("ConversionDimension witness emitted for the same key");
+    assert_eq!(
+        unit_dimension.structural_node(),
+        conversion_dimension.structural_node()
+    );
+    let (
+        EqualityFactWitness::DimensionDeclaration {
+            ordinal: unit_ordinal,
+            ..
+        },
+        EqualityFactWitness::DimensionDeclaration {
+            ordinal: conversion_ordinal,
+            ..
+        },
+    ) = (unit_dimension.fact(), conversion_dimension.fact())
+    else {
+        unreachable!()
+    };
+    assert_ne!(unit_ordinal, conversion_ordinal);
     let ordered_edges = witnesses
         .iter()
         .filter_map(|row| match row.fact() {
@@ -422,8 +636,49 @@ fn equality_fact_witness_join_refuses_missing_foreign_and_mismatched_rows() {
     ));
 }
 
-/// QSL-1390: Text and Plan comparisons retain the exact operand type keys.
-#[ix_trace_rs::trace("QSpec-TC-233", "QSL-1390")]
+/// A direct compound key join refuses missing and ambiguous producer witnesses.
+#[ix_trace_rs::trace("IR-FR-353-AC-1", "QSpec-FR-322-AC-288")]
+#[test]
+fn unit_identity_join_refuses_missing_and_ambiguous_compound_keys() {
+    use qsl_semantics::check::{EqualityUnitIdentityFact, EqualityUnitOperandRole};
+
+    let compound_key = fixture_type_key("compound_type");
+    let foreign_key = fixture_type_key("other_compound_type");
+    let first_id = quire_exact::UnitId::declared(fixture_type_key("unit_a"));
+    let second_id = quire_exact::UnitId::declared(fixture_type_key("unit_b"));
+    let fact = |unit_id, structural_node| EqualityUnitIdentityFact {
+        unit_id,
+        structural_node,
+        operand_position: 0,
+        operand_role: EqualityUnitOperandRole::Source,
+        dimensions: Vec::new(),
+        dimension_terms: Vec::new(),
+        conversion_edges: Vec::new(),
+    };
+    let application = fixture_type_key("equality");
+    let exact = vec![fact(first_id.clone(), compound_key.clone())];
+    assert_eq!(
+        equality_unit_identity_for_type(&exact, &compound_key, &application)
+            .expect("direct key mapping exists")
+            .unit_id,
+        first_id
+    );
+    assert!(matches!(
+        equality_unit_identity_for_type(&exact, &foreign_key, &application),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+    let ambiguous = vec![
+        fact(first_id, compound_key.clone()),
+        fact(second_id, compound_key.clone()),
+    ];
+    assert!(matches!(
+        equality_unit_identity_for_type(&ambiguous, &compound_key, &application),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+}
+
+/// IR FR-353 AC-1 and QSpec FR-322 AC-288: Text/Plan operand types join exactly.
+#[ix_trace_rs::trace("IR-FR-353-AC-1", "QSpec-FR-322-AC-288")]
 #[test]
 fn text_and_plan_equality_rows_retain_operand_type_identities() {
     let emission = emitted(
@@ -443,8 +698,48 @@ fn text_and_plan_equality_rows_retain_operand_type_identities() {
     for row in emission.equality_producer_identity_rows() {
         let type_rows = row.producer_identity().text_plan_type_nodes();
         assert_eq!(type_rows.len(), 2);
-        assert_eq!(type_rows[0].0, 0);
-        assert_eq!(type_rows[1].0, 1);
+        for (position, (ordinal, key)) in type_rows.iter().enumerate() {
+            assert_eq!(*ordinal, position);
+            let operand_fact = row
+                .producer_identity()
+                .operand_type_nodes()
+                .iter()
+                .find(|fact| fact.operand_position == position)
+                .expect("typed operand identity retained");
+            assert_eq!(operand_fact.node, *key);
+            assert_eq!(
+                operand_fact.role,
+                qsl_semantics::check::EqualityUnitOperandRole::Source
+            );
+            let type_witness = emission
+                .equality_fact_witness_rows()
+                .iter()
+                .find(|witness| {
+                    witness.application() == row.application()
+                        && witness.structural_key() == key
+                        && matches!(witness.fact(), EqualityFactWitness::TextPlanType {
+                            position: actual_position,
+                            role: EqualityOperandTypeRole::Source,
+                        } if *actual_position == position)
+                })
+                .expect("Text/Plan type fact retains exact source role");
+            let operand_witness = emission
+                .equality_fact_witness_rows()
+                .iter()
+                .find(|witness| {
+                    witness.application() == row.application()
+                        && witness.structural_key() == key
+                        && matches!(witness.fact(), EqualityFactWitness::OperandType {
+                            position: actual_position,
+                            role: EqualityOperandTypeRole::Source,
+                        } if *actual_position == position)
+                })
+                .expect("operand source fact retains exact type node");
+            assert_eq!(
+                type_witness.structural_node(),
+                operand_witness.structural_node()
+            );
+        }
     }
 }
 
