@@ -7,10 +7,12 @@
 //!   `exhaustive` and certification `uncertified` when it holds at every
 //!   assignment, and `refuted` at the first assignment where it is false or
 //!   undefined, once the native replay reproduces that violation.
-//! * A `scalar-operation` is `refuted` where the evaluation stops undefined
-//!   at its own occurrence. The evaluator reports neither the occurrences it
-//!   passed through nor those a stop elsewhere masked, so the arm never
-//!   proves one: with no violation found it is `unknown`.
+//! * A `scalar-operation` is `refuted` when the evaluation stops undefined at
+//!   its occurrence or its observed value is outside the selected result
+//!   bound. A reached occurrence with an admitted value counts as `holds`;
+//!   an assignment that does not reach it is not decisive. If no assignment
+//!   observes the occurrence, the arm establishes no proof; this can result
+//!   from a vacuous path or an earlier undefined expression masking the site.
 //! * The `max_cases` budget charges one case for each parameter assignment
 //!   and each function-body evaluation, including replay. Reaching it before
 //!   enumeration is complete is `incomplete` `limit-reached`.
