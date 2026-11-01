@@ -1640,15 +1640,19 @@ fn fair_coin_has_no_nonterminal_fair_end_component() {
 #[test]
 fn non_target_terminal_stutter_belongs_to_fair_reachability_u() {
     const CLAIM: &str = "probabilistic TerminalStutter using inf on M over (p: M::Proc) \
-         under every scheduler fair strong Proc::exit on origin \
+         under every scheduler fair strong Proc::proceed on origin \
          { probability >= 0.5 [ eventually holds(p.done) ] }";
-    let world = World::new(&prob_world::zero_reward_exit(CLAIM));
+    let world = World::new(&prob_world::fair_terminal_stutter(CLAIM));
     let product = built(&world, "TerminalStutter");
-    let all_non_target = vec![false; product.states.len()];
+    let target = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
     let result = decide_fair_reachability(
         &product,
         None,
-        &all_non_target,
+        &target,
         UnboundedObjective::Min,
         &ExactProbLimits::default(),
     )
@@ -1661,11 +1665,36 @@ fn non_target_terminal_stutter_belongs_to_fair_reachability_u() {
     assert!(terminal_stutter
         .states
         .iter()
-        .all(|state| product.labels[state.index()][0]));
+        .any(|state| !target[state.index()]));
     assert_eq!(
         result.values[start(&product).index()],
         qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(0, 1))
     );
+    let initial = start(&product);
+    let selected = match result.policy[initial.index()]
+        .as_ref()
+        .expect("the initial state has a fair scheduler choice")
+    {
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Deterministic(
+            qsl_analyze::exact_probabilistic::ActionChoice(index),
+        ) => vec![*index],
+        qsl_analyze::exact_probabilistic::SchedulerChoice::Randomized(choices) => choices
+            .iter()
+            .filter(|(_, probability)| probability > &ratio(0, 1))
+            .map(|(choice, _)| choice.0)
+            .collect(),
+    };
+    let mut actions = Vec::new();
+    for edge in product.outgoing(initial) {
+        if let Some(identity) = edge.action.as_ref() {
+            if !actions.iter().any(|seen| seen == identity) {
+                actions.push(identity.clone());
+            }
+        }
+    }
+    assert!(selected
+        .iter()
+        .any(|index| actions[*index].operation.contains("abandon")));
 }
 
 /// Expected-reward minimization ranges over fair schedulers: `free` alone is
@@ -1967,7 +1996,42 @@ fn fair_witness_validates_multiple_bottom_sccs() {
         result.values[start(&product).index()],
         qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(1, 2))
     );
-    assert!(result.policy[start(&product).index()].is_some());
+    let left_bottom = components
+        .iter()
+        .find(|component| {
+            component
+                .actions
+                .iter()
+                .any(|(_, identity)| identity.operation.contains("left_tick"))
+        })
+        .and_then(|component| component.states.first())
+        .copied()
+        .expect("left bottom state");
+    let right_bottom = components
+        .iter()
+        .find(|component| {
+            component
+                .actions
+                .iter()
+                .any(|(_, identity)| identity.operation.contains("right_tick"))
+        })
+        .and_then(|component| component.states.first())
+        .copied()
+        .expect("right bottom state");
+    assert_ne!(left_bottom, right_bottom);
+    let mut reachable = BTreeSet::from([start(&product)]);
+    let mut pending = VecDeque::from([start(&product)]);
+    while let Some(state) = pending.pop_front() {
+        for edge in product.outgoing(state) {
+            if reachable.insert(edge.to) {
+                pending.push_back(edge.to);
+            }
+        }
+    }
+    assert!(reachable.contains(&left_bottom));
+    assert!(reachable.contains(&right_bottom));
+    assert!(result.policy[left_bottom.index()].is_some());
+    assert!(result.policy[right_bottom.index()].is_some());
 }
 
 const COST: &str = "probabilistic Cost using ev on M over (m: M::Msg) under Even on origin \

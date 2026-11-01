@@ -937,6 +937,44 @@ pub(crate) fn zero_reward_exit(extra: &str) -> Model {
     }
 }
 
+/// `proceed` reaches the target `done`; `abandon` reaches the non-target
+/// terminal `stopped`, whose only subsequent edge is terminal stutter.
+pub(crate) fn fair_terminal_stutter(extra: &str) -> Model {
+    Model {
+        package: "test/fair-terminal-stutter",
+        object: "Proc",
+        population: "procs",
+        key: "p",
+        integers: vec![],
+        fields: vec![
+            ("done", BOOLEAN.to_owned()),
+            ("stopped", BOOLEAN.to_owned()),
+        ],
+        operations: vec![
+            Operation {
+                name: "proceed",
+                parameters: vec![],
+                modifies: vec!["done"],
+                deletes: false,
+            },
+            Operation {
+                name: "abandon",
+                parameters: vec![],
+                modifies: vec!["stopped"],
+                deletes: false,
+            },
+        ],
+        body: format!(
+            "pre Live_proceed using v on M::Proc::proceed {{ not self.done and not self.stopped }}\n\
+             post Proceeded using v on M::Proc::proceed {{ self.done = true and self.stopped = pre(self.stopped) }}\n\
+             pre Live_abandon using v on M::Proc::abandon {{ not self.done and not self.stopped }}\n\
+             post Abandoned using v on M::Proc::abandon {{ self.stopped = true and self.done = pre(self.done) }}\n\
+             terminal End using v on M when {{ self.done or self.stopped }};\n{extra}"
+        ),
+        initial: json!({"done": {"boolean": false}, "stopped": {"boolean": false}}),
+    }
+}
+
 /// A zero-reward self-loop and a unit-reward target action used to check fair
 /// expected-reward minimization.
 pub(crate) fn fair_min_reward(extra: &str) -> Model {
