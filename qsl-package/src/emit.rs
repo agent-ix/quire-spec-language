@@ -312,6 +312,11 @@ pub struct Emission {
     /// identities written in these bytes.
     pub(crate) selected_operation_member_rows:
         Vec<quire_contract_model::SelectedOperationMemberRow>,
+    /// QSL-stage tuple identities keyed by admitted model tuple nodes.
+    pub(crate) selected_tuple_declaration_rows:
+        Vec<quire_contract_model::SelectedTupleDeclarationRow>,
+    /// QSL-stage source-unit identities keyed by admitted source unit nodes.
+    pub(crate) selected_source_unit_rows: Vec<quire_contract_model::SelectedSourceUnitRow>,
 }
 
 impl Emission {
@@ -337,6 +342,18 @@ impl Emission {
         &self,
     ) -> &[quire_contract_model::SelectedOperationMemberRow] {
         &self.selected_operation_member_rows
+    }
+
+    /// Selected model tuple identity rows carried by this emission.
+    pub fn selected_tuple_declaration_rows(
+        &self,
+    ) -> &[quire_contract_model::SelectedTupleDeclarationRow] {
+        &self.selected_tuple_declaration_rows
+    }
+
+    /// Source-owned declared-unit identity rows carried by this emission.
+    pub fn selected_source_unit_rows(&self) -> &[quire_contract_model::SelectedSourceUnitRow] {
+        &self.selected_source_unit_rows
     }
 
     /// Validates the operation-member rows against this emission's admitted IR
@@ -2385,6 +2402,8 @@ pub fn emit_timed_models(
         capability_report,
         source_map: inspection_source_map,
         selected_operation_member_rows: Vec::new(),
+        selected_tuple_declaration_rows: Vec::new(),
+        selected_source_unit_rows: Vec::new(),
     })
 }
 
@@ -2731,6 +2750,12 @@ fn emit_package_inner(
                 selected_operation_identity: member.selected_operation_identity.clone(),
             },
         )
+        .collect();
+    let selected_tuple_declaration_rows = graph
+        .selected_tuple_declaration_rows()
+        .iter()
+        .filter(|row| emitted_keys.contains(&row.node_key))
+        .cloned()
         .collect();
     let (mut source_map, mut sources) = source_map(&order, &regions)?;
     sources.insert(source_artifact(graph.source()));
@@ -3198,6 +3223,30 @@ fn emit_package_inner(
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
+    let emitted_node_ids: HashSet<CheckedNodeId> =
+        nodes.iter().map(|node| node.node_id.clone()).collect();
+    let selected_source_unit_rows = graph
+        .source_unit_nodes()
+        .filter_map(|unit| {
+            let structural_node = node_id(ids, &unit.key);
+            if !emitted_node_ids.contains(&structural_node) {
+                return None;
+            }
+            let TimeNominalOrigin::Source { owner, .. } = &unit.origin else {
+                return None;
+            };
+            Some(quire_contract_model::SelectedSourceUnitRow::new(
+                structural_node,
+                owner.authority.as_str(),
+                owner.identity.as_str(),
+                unit.declaration()?
+                    .iter()
+                    .map(|segment| segment.as_str().into())
+                    .collect(),
+                quire_exact::UnitId::declared(unit.key.clone()),
+            ))
+        })
+        .collect();
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -3233,6 +3282,8 @@ fn emit_package_inner(
         capability_report: capability_report.to_vec(),
         source_map: inspection_source_map,
         selected_operation_member_rows,
+        selected_tuple_declaration_rows,
+        selected_source_unit_rows,
     })
 }
 

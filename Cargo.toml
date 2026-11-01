@@ -25,7 +25,7 @@ quire-checked = { git = "https://github.com/agent-ix/quire-eval", branch = "main
 # its own repository so RT and CG depend on it without the QSL repo.
 quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
 # IR-owned staged identity and operation-member witness joins.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "46d8e25811a177775e5f3c06bb69de4a72055918" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "47deabbc10fde1a79b3599ee240cc1344d4aafca" }
 
 [package]
 name = "quire-spec-language"

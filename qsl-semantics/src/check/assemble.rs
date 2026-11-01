@@ -3097,7 +3097,8 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
-        let (models, model_meter, exact_declarations, exact_fields) = models.into().into_parts();
+        let (models, model_meter, exact_declarations, exact_fields, tuple_declarations) =
+            models.into().into_parts();
         // FR-230 "Clock-typed positions": a package record type that holds a
         // clock is clock-bearing where the unit's own source writes it.
         let package_bearing: BTreeSet<String> = selections
@@ -4037,6 +4038,7 @@ impl PackageDeclarations {
         package.models = admitted;
         package.model_inputs = Some((models, model_meter));
         package.selected_exact_identity_rows = (exact_declarations, exact_fields);
+        package.selected_tuple_declaration_rows = tuple_declarations;
         package.pending_types = pending.map(super::check::StagedTypes);
         package.aliases = unit
             .aliases
