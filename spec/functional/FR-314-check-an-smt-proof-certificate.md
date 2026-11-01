@@ -382,9 +382,11 @@ rule's definition in the Alethe specification: `assume`, `refl`, `trans`,
 arithmetic), `la_disequality`, `la_totality`, `la_tautology`,
 `la_mult_pos`, `la_mult_neg`, `bind`, `subproof` and the `anchor`
 command. The checker also checks `poly_simp` and `poly_simp_rel` only under
-the following local rules; every other rule is unchecked.
+the following local rules. It checks the named local rules below for only the
+listed instances; every other rule instance is unchecked.
 
-- For `poly_simp`, the checker SHALL accept a command only when its conclusion
+- For `poly_simp`, the checker SHALL accept a command only when it has no
+  premises and its conclusion
   is an equality of two Int-sorted polynomial terms whose exact normal forms
   are equal. A polynomial term contains only Int variables and literals,
   addition, subtraction, unary negation and multiplication. The normal form is
@@ -393,32 +395,64 @@ the following local rules; every other rule is unchecked.
   zero coefficients are removed. No Real term, Boolean term, division,
   modulo, conditional, or uninterpreted application is in this rule's
   fragment.
-- For `poly_simp_rel`, the checker SHALL accept a command only when its
+- For `poly_simp_rel`, the checker SHALL accept a command only when it has
+  exactly one polynomial equality premise and its
   conclusion equates two integer relation atoms (equality `=`, or an order
   relation `<`, `<=`, `>` or `>=`) with the same relation operator and its
   single polynomial equality premise establishes that their normalized
   difference polynomials (left side minus right side) differ by a strictly
-  positive exact rational scale. The checker SHALL verify the premise, both
-  normal forms and the scale by exact arithmetic. A false relation step SHALL
-  be rejected `ProofStepInvalid`, including a negative scale with an
-  unchanged `<` relation. A semantically valid negative-scale step is outside
-  the admitted subset: it SHALL return `Unverifiable` when the order operator
-  is reversed accordingly (for example, `<` to `>`) or when an equality
-  operator is preserved. It SHALL not be rejected as an invalid step.
+  positive exact rational scale. Before comparing an equality atom's
+  difference, the checker SHALL canonicalize it up to sign because equality
+  is symmetric; order-relation differences SHALL retain their source
+  orientation. The checker SHALL verify the premise, both normal forms and
+  the scale by exact arithmetic. A false relation step SHALL be rejected
+  `ProofStepInvalid`, including a negative scale with an unchanged order
+  operator. A negative-scale order step with its operator reversed
+  accordingly (for example, `<` to `>`) is semantically valid but outside the
+  admitted subset and SHALL return `Unverifiable`. A preserved equality
+  operator is checked after sign canonicalization and is accepted when the
+  resulting scale is positive; it SHALL not be rejected merely because the
+  source operand order gives a negative scale.
 - Both polynomial checkers SHALL charge `max_certificate_edges` for each
   monomial generated and each coefficient combination performed during
   normalization, before doing that work. If such a charge exceeds the limit,
   the checker SHALL stop with `Stopped(LimitReached{limit:
   MaxCertificateEdges, ...})`; it SHALL never accept an incomplete
-  normalization. If a term is outside the rule's fragment, the command is
+  normalization. For an equality relation difference whose sign must be
+  canonicalized, the checker SHALL also charge one edge for each coefficient
+  entry it sign-negates, before that operation; it SHALL avoid constructing
+  the second coefficient map when the existing orientation is already
+  canonical. If a term is outside the rule's fragment, the command is
   `Unverifiable` at that command. A well-formed polynomial command whose
   normalized conclusion is false, whose conclusion has the wrong shape, or
   whose required relation/scale premise is false SHALL be rejected
   `ProofStepInvalid` at that command.
 
-`hole`, `lia_generic` and `rare_rewrite` remain unchecked. In particular,
-`rare_rewrite` is not accepted as a blanket rule, even when its arguments
-name a rewrite.
+The checker locally checks only these additional rule instances:
+
+- `rare_rewrite` with the exact name `bool-double-not-elim` verifies that a
+  Bool-sorted sole argument equals its double negation;
+  `eq-refl` verifies that the conclusion equates an operand's reflexive
+  equality with `true`.
+- `arith-elim-lt` verifies `< x k` equals `(not (>= x k))`;
+  `arith-elim-leq` verifies `<= k x` equals `>= x k`; and
+  `arith-leq-norm` verifies `<= x k` equals `(not (>= x (+ k 1)))`. These
+  arithmetic rules require Int-sorted operands, and `arith-leq-norm` requires
+  `k` to be a syntactic integer literal before evaluating or charging work.
+- `evaluate` verifies equality of exact integer-literal expressions built
+  from `+`, `-` and `*`; `aci_simp` verifies Boolean expressions built from
+  `and` and `or` using flattening, commutation, association, idempotence, and
+  true/false identities.
+
+Each supported instance has no premises and is accepted only when its
+conclusion equals the locally computed result. A false supported instance is
+`ProofStepInvalid`; an unsupported shape, sort or expression is
+`Unverifiable`. For each recognized instance, the checker SHALL charge one
+`max_certificate_edges` unit per term node in its conclusion and `:args`
+before the local semantic computation. Unknown rewrite names are
+`Unverifiable` and remain unchecked. `hole`, `lia_generic` and every other
+`rare_rewrite` instance remain unchecked; `rare_rewrite` is never admitted as
+a blanket rule.
 
 ## Acceptance Criteria
 
@@ -444,7 +478,7 @@ name a rewrite.
 | FR-314-AC-18 | On the row-1 refinement proof, a premise-free `poly_simp` equality is accepted exactly when both sides have equal normalized Int polynomials, including nonlinear monomials and zero by literal or cancellation. For `poly_simp_rel`, the sole premise must be such a polynomial equality; relation differences are normalized in source operand order, with equality-atom differences identified up to sign because equality is symmetric, and the conclusion must preserve the same relation operator at a positive exact rational scale. Thus the target row-1 equality-relation steps with swapped equality operands are accepted. The false equality `(= (* 2 x) (+ (* 2 x) 1))`, a non-equality `poly_simp` conclusion, a changed relation, a wrong relation operator, and a same-operator negative-scale order relation are rejected `ProofStepInvalid`. A negative-scale order relation with the corresponding reversed operator (for example `<` to `>`) is `Unverifiable`; a negative-scale equality relation is accepted only after canonicalizing its equality difference up to sign and confirming a positive scale. Real, division or modulo terms return `Unverifiable` at that command. | Test (TC-893) |
 | FR-314-AC-19 | Over AC-18's polynomial certificate, when `max_certificate_edges` is one less than the number of command, premise/discharge and polynomial-normalization charges required, the checker returns `Stopped(LimitReached{limit: MaxCertificateEdges, setting: certificate_check.max_certificate_edges})`, never `Verified`, and the item settles `incomplete`; with the full required budget it returns `Verified`. | Test (TC-893) |
 | FR-314-AC-20 | With otherwise well-formed proof commands, `hole`, `lia_generic` and `rare_rewrite` with an unknown or unsupported rewrite name return `Unverifiable` at their command; none returns `Verified`. | Test (TC-893) |
-| FR-314-AC-21 | The checker locally checks only the named `rare_rewrite` instances `bool-double-not-elim`, `arith-elim-lt`, `arith-elim-leq`, `arith-leq-norm` and `eq-refl`, by exact equality with their respective Boolean or integer relation rewrites; the arithmetic rewrites require Int-sorted operands, and `arith-leq-norm` additionally requires an integer-literal bound. It locally checks `evaluate` only for exact Int-literal expressions built from `+`, `-` and `*`, and `aci_simp` only for Boolean `and`/`or` flattening, commutation, association, idempotence and true/false identities. Each supported instance is accepted only when its conclusion equals the locally computed result; a false instance is `ProofStepInvalid`, while an unsupported expression or unknown rewrite name is `Unverifiable`. None of these checks admits `hole`, `lia_generic` or an unlisted `rare_rewrite`. | Test (TC-893) |
+| FR-314-AC-21 | The checker locally checks only the named `rare_rewrite` instances `bool-double-not-elim`, `arith-elim-lt`, `arith-elim-leq`, `arith-leq-norm` and `eq-refl`, by exact equality with their respective Boolean or integer relation rewrites; `bool-double-not-elim` requires a Bool-sorted operand, the arithmetic rewrites require Int-sorted operands, and `arith-leq-norm` additionally requires an integer-literal bound. It locally checks `evaluate` only for exact Int-literal expressions built from `+`, `-` and `*`, and `aci_simp` only for Boolean `and`/`or` flattening, commutation, association, idempotence and true/false identities. Each supported instance is accepted only when its conclusion equals the locally computed result; a false instance is `ProofStepInvalid`, while an unsupported expression or unknown rewrite name is `Unverifiable`. None of these checks admits `hole`, `lia_generic` or an unlisted `rare_rewrite`. | Test (TC-893) |
 
 ## Dependencies
 

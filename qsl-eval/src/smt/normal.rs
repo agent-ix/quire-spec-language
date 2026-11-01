@@ -20,7 +20,8 @@
 //! - an `ite` with a constant condition, equal branches or a Boolean
 //!   constant branch is its branch or the connective it stands for;
 //! - a sum splices its nested sums and gathers its literals into one last
-//!   summand, dropped when it is 0, and `t + (- u)` alone is `(- t u)`; a
+//!   summand, dropped when it is 0; linear sums use the coefficient map
+//!   below, whose only subtraction form is the exact +1/-1 atom pair; a
 //!   difference, negation or product of literals folds, `(- 0 t)` is
 //!   `(- t)`, `(* 1 t)` is `t`, `(* 0 t)` is 0 and `(- (- t))` is `t`;
 //! - `mod` of two literals is SMT-LIB's Euclidean remainder, in `[0, |n|)`.
@@ -309,10 +310,10 @@ fn linear_form(term: Term) -> Term {
             let second = terms.remove(1);
             let first = terms.remove(0);
             match (first, second) {
-                (Term::Negate(negative), positive) if !matches!(&positive, Term::Int(_)) => {
+                (Term::Negate(negative), positive) if is_unit_coefficient(&positive) => {
                     difference(positive, *negative)
                 }
-                (positive, Term::Negate(negative)) if !matches!(&positive, Term::Int(_)) => {
+                (positive, Term::Negate(negative)) if is_unit_coefficient(&positive) => {
                     difference(positive, *negative)
                 }
                 (first, second) => Term::Add(vec![first, second]),
@@ -320,6 +321,14 @@ fn linear_form(term: Term) -> Term {
         }
         _ => Term::Add(terms),
     }
+}
+
+/// Whether `term` is an atom printed with coefficient +1 by the linear form.
+fn is_unit_coefficient(term: &Term) -> bool {
+    !matches!(
+        term,
+        Term::Int(_) | Term::Negate(_) | Term::Scale(_, _) | Term::Add(_) | Term::Subtract(_, _)
+    )
 }
 
 /// `(ite c t e)` of normal `c`, `t` and `e`.
@@ -375,6 +384,17 @@ mod tests {
         assert_eq!(normal(Term::Add(vec![y.clone(), x.clone()])), "(+ x y)");
         assert_eq!(normal(Term::Add(vec![x.clone(), y.clone()])), "(+ x y)");
         assert_eq!(normal(x.clone().plus(y.clone().negated())), "(- x y)");
+        assert_eq!(
+            normal(Term::Add(vec![x.clone().negated(), y.clone().negated()])),
+            "(+ (- x) (- y))"
+        );
+        assert_eq!(
+            normal(Term::Add(vec![
+                Term::Scale(Integer::from(2_i64), Box::new(x.clone())),
+                y.clone().negated(),
+            ])),
+            "(+ (* 2 x) (- y))"
+        );
         assert_eq!(
             normal(Term::Add(vec![
                 x.clone(),

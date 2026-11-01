@@ -97,8 +97,9 @@ reads the printed script or the stated refusal.
     a refinement mapping with a product of two nonconstant terms to confirm
     that FR-315 refuses it `out-of-fragment` instead of expanding it. Also
     normalize `(+ x (- y))` and assert the rule 7 subtraction form `(- x y)`;
-    the two-atom subtraction exception in rule 9 has this precedence over its
-    general multiple-term `+` form.
+    normalize `(+ (- x) (- y))` and `(+ (* 2 x) (- y))` and assert those
+    general canonical `+` forms. Rule 9's subtraction form has precedence
+    only for exactly two atoms with coefficients +1 and -1 and zero constant.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 

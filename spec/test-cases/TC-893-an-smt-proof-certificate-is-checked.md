@@ -67,7 +67,7 @@ Scope: FR-314-AC-1 to FR-314-AC-4, FR-314-AC-9, FR-314-AC-10 to FR-314-AC-21.
    confirm each is `Unverifiable`. Check each of the five FR-314-AC-21 named
    rewrites with a valid instance and a false instance; additionally check
    `arith-leq-norm` with a non-literal bound and an arithmetic rewrite over
-   Real. Check `evaluate` with exact
+   Real, and `bool-double-not-elim` with an Int-sorted argument. Check `evaluate` with exact
    integer-literal `+`, `-` and `*` expressions, a false equality and an
    unsupported non-literal expression. Check `aci_simp` with an accepted
    associative/commutative/idempotent/identity example and a false example.

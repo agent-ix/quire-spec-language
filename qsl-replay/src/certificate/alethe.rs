@@ -1801,7 +1801,10 @@ fn polynomial_rule(
         if !step.premises.is_empty() {
             return Ok(Check::Fails);
         }
-        if clause.args_of("=").is_none() {
+        let Some(equality_arguments) = clause.args_of("=") else {
+            return Ok(Check::Fails);
+        };
+        if equality_arguments.len() != 2 {
             return Ok(Check::Fails);
         }
         let Some((left, right)) = polynomial_equality(clause, query, charge)? else {
@@ -1898,24 +1901,35 @@ fn relation_polynomial(
     };
     add_polynomial(&mut third, fourth, &Integer::from(-1_i64), charge)?;
     if left_op == "=" {
-        first = canonical_equality_difference(first);
-        third = canonical_equality_difference(third);
+        first = canonical_equality_difference(first, charge)?;
+        third = canonical_equality_difference(third, charge)?;
     }
     Ok(Some((left_op, first, right_op, third)))
 }
 
 /// Equality atoms are symmetric, so their difference has no semantic
 /// orientation. Choose one exact representative before comparing scales.
-fn canonical_equality_difference(polynomial: Polynomial) -> Polynomial {
-    let negative = polynomial
-        .iter()
-        .map(|(monomial, coefficient)| (monomial.clone(), coefficient.neg()))
-        .collect::<Polynomial>();
-    if negative < polynomial {
-        negative
-    } else {
-        polynomial
+fn canonical_equality_difference(
+    polynomial: Polynomial,
+    charge: &mut impl FnMut(u64) -> bool,
+) -> Result<Polynomial, ()> {
+    // Choose the representative whose first coefficient is positive. Both
+    // maps have the same keys, so inspect the first coefficient and avoid
+    // constructing a second map unless its sign requires reversal.
+    let reverse = polynomial
+        .first_key_value()
+        .is_some_and(|(_, coefficient)| coefficient < &Integer::zero());
+    if !reverse {
+        return Ok(polynomial);
     }
+    let mut negative = Polynomial::new();
+    for (monomial, coefficient) in polynomial {
+        if !charge(1) {
+            return Err(());
+        }
+        negative.insert(monomial, coefficient.neg());
+    }
+    Ok(negative)
 }
 
 /// Whether `right` is a positive exact-rational multiple of `left`. A
@@ -2258,10 +2272,11 @@ impl Step {
             return Ok(Check::Undecided);
         }
         if name == "arith-leq-norm"
-            && matches!(arguments, [_, bound] if evaluate_integer(bound).is_none())
+            && matches!(arguments, [_, bound] if !matches!(bound.as_ref(), Term::Number { real: false, .. }))
         {
             return Ok(Check::Undecided);
         }
+        self.charge_work(charge)?;
         let arithmetic_arguments = match (name, arguments) {
             ("arith-elim-lt", [value, bound])
             | ("arith-elim-leq", [bound, value])
@@ -2275,7 +2290,11 @@ impl Step {
         }) {
             return Ok(Check::Undecided);
         }
-        self.charge_work(charge)?;
+        if name == "bool-double-not-elim"
+            && matches!(arguments, [operand] if sort_of(operand, query, &mut Vec::new()) != Ok(Sort::Bool))
+        {
+            return Ok(Check::Undecided);
+        }
         let holds = match (name, arguments) {
             ("bool-double-not-elim", [operand]) => {
                 let double_not = Term::not(&Term::not(operand));
@@ -3573,6 +3592,12 @@ mod tests {
         };
         assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(0)));
 
+        let nary_equality = "(step t0 (cl (= x x x)) :rule poly_simp)";
+        let Reading::Read(proof) = read_proof(nary_equality.as_bytes(), &q, &mut |_| true) else {
+            panic!("n-ary equality conclusion reads");
+        };
+        assert_eq!(proof.invalid_step(&q, &mut |_| true), Ok(Some(0)));
+
         for unsupported in [
             "(step t0 (cl (= (div x 2) (div x 2))) :rule poly_simp)",
             "(step t0 (cl (= (mod x 2) (mod x 2))) :rule poly_simp)",
@@ -3693,7 +3718,7 @@ mod tests {
         );
 
         for invalid in [
-            "(step t0 (cl (= x x)) :rule rare_rewrite :args (\"bool-double-not-elim\" x))",
+            "(step t0 (cl (= b b)) :rule rare_rewrite :args (\"bool-double-not-elim\" b))",
             "(step t0 (cl (= (< x 2) (not (>= y 2)))) :rule rare_rewrite :args (\"arith-elim-lt\" x 2))",
             "(step t0 (cl (= (<= 0 x) (>= y 0))) :rule rare_rewrite :args (\"arith-elim-leq\" 0 x))",
             "(step t0 (cl (= (<= x 1) (not (>= x 3)))) :rule rare_rewrite :args (\"arith-leq-norm\" x 1))",
@@ -3737,16 +3762,29 @@ mod tests {
             Ok(ProofOutcome::Unverifiable { step: 0 })
         );
 
-        let unsupported_norm =
-            "(step t0 (cl (= (<= x y) (not (>= x (+ y 1))))) :rule rare_rewrite :args (\"arith-leq-norm\" x y))";
-        let Reading::Read(proof) = read_proof(unsupported_norm.as_bytes(), &query, &mut |_| true)
+        for unsupported_norm in [
+            "(step t0 (cl (= (<= x (+ 1 1)) (not (>= x (+ (+ 1 1) 1))))) :rule rare_rewrite :args (\"arith-leq-norm\" x (+ 1 1)))",
+            "(step t0 (cl (= (<= x (* 999999999999999999999 999999999999999999999)) (not (>= x (+ (* 999999999999999999999 999999999999999999999) 1))))) :rule rare_rewrite :args (\"arith-leq-norm\" x (* 999999999999999999999 999999999999999999999)))",
+        ] {
+            let Reading::Read(proof) =
+                read_proof(unsupported_norm.as_bytes(), &query, &mut |_| true)
+            else {
+                panic!("unsupported normalization bound reads");
+            };
+            assert_eq!(
+                proof.outcome(&query, &mut |_| true),
+                Ok(ProofOutcome::Unverifiable { step: 0 })
+            );
+            assert_eq!(proof.invalid_step(&query, &mut |_| false), Ok(None));
+        }
+
+        let int_double_not =
+            "(step t0 (cl (= x (not (not x)))) :rule rare_rewrite :args (\"bool-double-not-elim\" x))";
+        let Reading::Read(proof) = read_proof(int_double_not.as_bytes(), &query, &mut |_| true)
         else {
-            panic!("unsupported normalization bound reads");
+            panic!("non-Boolean double-not vector reads");
         };
-        assert_eq!(
-            proof.outcome(&query, &mut |_| true),
-            Ok(ProofOutcome::Unverifiable { step: 0 })
-        );
+        assert_eq!(proof.invalid_step(&query, &mut |_| true), Ok(Some(0)));
     }
 
     /// What FR-314's proof rules say of `proof`: `Err("malformed")`,
