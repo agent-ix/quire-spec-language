@@ -35,6 +35,7 @@ mod abstraction_relation_inert;
 mod assessment_artifact_kinds;
 mod call_replay_context_items;
 mod call_requirements_items;
+mod checked_temporal_successors;
 mod clause_kind_canonical;
 mod cli;
 mod compile_command;

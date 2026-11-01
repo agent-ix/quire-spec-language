@@ -228,7 +228,7 @@ fn write_v1_handoff_admits_from_its_files_through_the_strict_v1_reader() {
 }
 
 #[test]
-#[trace("TC-138", "FR-050-AC-8", "FR-050-AC-1")]
+#[trace("TC-138", "TC-150", "FR-050-AC-8", "FR-050-AC-1", "FR-050-AC-7")]
 fn write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader() {
     let (_directory, root) = written(handoff::write_v2);
 
@@ -435,7 +435,7 @@ fn write_v1_is_deterministic_across_runs() {
 }
 
 #[test]
-#[trace("TC-138", "FR-050-AC-8")]
+#[trace("TC-138", "TC-150", "FR-050-AC-8")]
 fn write_v2_is_deterministic_across_runs() {
     let (_first, first) = written(handoff::write_v2);
     let (_second, second) = written(handoff::write_v2);
@@ -443,7 +443,7 @@ fn write_v2_is_deterministic_across_runs() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-15")]
+#[trace("TC-121", "TC-150", "FR-042-AC-15", "FR-050-AC-8")]
 fn write_refuses_an_existing_directory() {
     let directory = tempfile::tempdir().expect("temporary directory");
     let sentinel = directory.path().join("sentinel.txt");
