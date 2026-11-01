@@ -942,12 +942,12 @@ fn a_certificate_with_no_initials_is_malformed_at_initials() {
 }
 
 /// QSpec FR-331-AC-46 (TC-1197): the certificate-member locus names
-/// exactly the 50 members of QSpec's backend-provider schema, in its order,
+/// exactly the 51 members of QSpec's backend-provider schema, in its order,
 /// each by its FR-331 spelling. The schema is read in place from
 /// `$QSPEC_DIR`, which the test requires; `initial` is no member.
 #[trace("TC-1197", "QSpec-FR-331-AC-46")]
 #[test]
-fn the_certificate_members_are_the_schemas_fifty_names() {
+fn the_certificate_members_are_the_schema_fifty_one_names() {
     let qspec = std::env::var_os("QSPEC_DIR")
         .expect("QSPEC_DIR names the QSpec checkout whose schema this reads");
     let path = std::path::PathBuf::from(qspec).join("proposals/backend-provider-v1/schema.json");
@@ -977,7 +977,7 @@ fn the_certificate_members_are_the_schemas_fifty_names() {
         .iter()
         .map(|member| member.as_str())
         .collect();
-    assert_eq!(written.len(), 50);
+    assert_eq!(written.len(), 51);
     assert_eq!(written, names);
     assert!(!written.contains(&"initial"));
     for member in CertificateMember::ALL {
