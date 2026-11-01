@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    build_product, Accumulator, Amount, FormulaState, MeasurePhase, MonitorState, MonitorVerdict,
-    PredicateRole, ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction,
-    ProductKind, ProductRefusal, ProductStop, UndefinedRead,
+    backward_induction, build_product, Accumulator, Amount, FhObjective, FhResult, FormulaState,
+    MeasurePhase, MonitorState, MonitorVerdict, PredicateRole, ProbBuild, ProbEdge, ProbKey,
+    ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductStop,
+    UndefinedRead,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -21,6 +22,11 @@ use crate::prob_world::{self, World};
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("nonzero")
+}
+
+fn dyadic(value: &qsl_analyze::exact_probabilistic::Dyadic) -> Rational {
+    Rational::from_integer(Integer::from_big(value.mantissa.clone()))
+        .divided_by_power_of_two(u64::from(value.exponent))
 }
 
 fn integer_of(value: &Value) -> i64 {
@@ -64,6 +70,17 @@ fn total(edges: &[ProbEdge]) -> Rational {
         .fold(ratio(0, 1), |sum, edge| sum.add(&edge.probability))
 }
 
+fn event_terminals(product: &ProbProduct) -> Vec<Option<Rational>> {
+    let mut terminal = vec![None; product.states.len()];
+    for (state, verdict) in &product.decided {
+        terminal[state.index()] = Some(match verdict {
+            MonitorVerdict::Accept => ratio(1, 1),
+            MonitorVerdict::Reject => ratio(0, 1),
+        });
+    }
+    terminal
+}
+
 /// The one state of `product` with no incoming edge and every initial state
 /// of the subject: the product has one.
 fn start(product: &ProbProduct) -> ProbStateId {
@@ -105,6 +122,61 @@ fn is_decided(product: &ProbProduct, state: ProbStateId) -> bool {
 
 const NO_FAULT: &str = "probabilistic NoFault using ev on M over (n: M::Node) under Steady \
      on origin { probability >= 0.999 [ always[0,1000] holds(n.healthy) ] }";
+
+/// Checks FR-197-AC-3 (TC-632 step 3): exact backward induction keeps the
+/// §15.1 rational while it fits, then outward dyadic rounding encloses it.
+#[trace("TC-632", "FR-197-AC-3")]
+#[test]
+fn no_fault_uses_exact_then_dyadic_backward_induction() {
+    let world = World::new(&prob_world::no_fault(NO_FAULT));
+    let product = built(&world, "NoFault");
+    let terminal = event_terminals(&product);
+    let start = start(&product);
+    let exact = backward_induction(
+        &product,
+        &terminal,
+        FhObjective::Min,
+        &ratio(999, 1000),
+        23_254,
+        64,
+        4096,
+    )
+    .expect("acyclic bounded product");
+    let FhResult::Exact { values, .. } = exact else {
+        panic!("the published rational budget keeps NoFault exact");
+    };
+    let expected = ratio(9_999_999, 10_000_000)
+        .pow(&Integer::from(1000))
+        .expect("positive integer exponent");
+    assert_eq!(values[start.index()], expected);
+
+    let bounded = backward_induction(
+        &product,
+        &terminal,
+        FhObjective::Min,
+        &ratio(999, 1000),
+        1024,
+        64,
+        4096,
+    )
+    .expect("dyadic fallback");
+    let FhResult::Bounds {
+        lower,
+        upper,
+        precision_bits,
+        ..
+    } = bounded
+    else {
+        panic!("the interval clears the threshold at 64 bits");
+    };
+    let start_lower = dyadic(&lower[start.index()]);
+    let start_upper = dyadic(&upper[start.index()]);
+    assert!(start_lower <= expected && expected <= start_upper);
+    assert!(start_lower > ratio(999, 1000));
+    assert_eq!(precision_bits, 64);
+    let maximum_width = ratio(2 * 1001, 1).divided_by_power_of_two(64);
+    assert!(start_upper.sub(&start_lower) <= maximum_width);
+}
 
 /// Checks FR-196-AC-1 (TC-631 step 1): §15.1's `NoFault` product is a DTMC whose
 /// undecided states hold the healthy model state at one position each, at
