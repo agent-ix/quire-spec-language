@@ -799,14 +799,14 @@ fn checked_ordered_query_returns_typed_unsupported_without_evaluation() {
     request.packages = packages;
 
     let report = run_clause(request).expect("a checked query returns a report");
-    let ClauseDisposition::UnsupportedProofRepresentation { cause, query } = report.disposition
+    let ClauseDisposition::UnsupportedProofRepresentation { cause, query } = &report.disposition
     else {
         panic!(
             "ordered query is explicitly unsupported: {:?}",
             report.disposition
         );
     };
-    assert_eq!(cause, super::UnsupportedProofCause::ValueRepresentation);
+    assert_eq!(*cause, super::UnsupportedProofCause::ValueRepresentation);
     assert_eq!(query.visit, qsl_semantics::check::Visit::Map);
     assert!(matches!(
         query.result_type,
