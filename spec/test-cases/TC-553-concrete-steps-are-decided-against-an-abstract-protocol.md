@@ -12,9 +12,10 @@ relationships:
 
 Verify the abstract protocol state sets with internal closure, visible and
 internal concrete steps, refutations that replay, and QSpec FR-177's
-divergence-freedom check on the same product.
+divergence-freedom and environment-assumption implication checks on the same
+product.
 
-Scope: FR-148-AC-1 to FR-148-AC-5.
+Scope: FR-148-AC-1 to FR-148-AC-9.
 
 ## Test Procedure
 
@@ -32,6 +33,25 @@ model (ADR-020 §8) with `peek` removed; `CasTwice` with `peek` kept.
 4. Check `CasTwice` against `Once` and replay its counterexample.
 5. Check `CasTwice` with `peek` kept and mapped `-> stutter`, with no
    fairness rows.
+6. Check a one-thread protocol whose only enabled node maps to `inc`, with
+   weak whole scheduler fairness, against a concrete `inc` model with the
+   corresponding weak whole `assume`; check the assumption implication over
+   every reachable paired lasso.
+7. Change the protocol to adversarial scheduling and remove its authored and
+   memory fairness constraints. Keep concrete weak whole `assume inc` and add
+   an infinite stutter loop while `inc` remains enabled; check, settle and
+   replay the assumption-strengthening witness.
+8. Use two concrete transition classes, `left` and `right`; constrain the
+   abstract protocol only to weak fairness of `left`, and the concrete model
+   to weak fairness of both classes. Check a reachable lasso that takes
+   `left` fairly while `right` remains continuously enabled but is never
+   taken; verify the implication counterexample. Repeat with a product limit
+   below the complete exploration and verify `incomplete`, never `proved`.
+9. Compare a strong each constraint over a finite single-operation domain to
+   a weak whole constraint for that operation (which passes), then compare a
+   weak abstract constraint to strong concrete fairness on a lasso where the
+   operation is enabled infinitely often but not continuously and never
+   taken (which refutes and replays).
 
 Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 
@@ -48,3 +68,14 @@ Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
   reproduced.
 - Step 5: `refuted` by the divergence-freedom check, a lasso whose loop is
   one `peek` step at the initial state.
+- Step 6: the abstract scheduler constraint implies the matching concrete
+  weak whole assumption over all reachable paired lassos; the item passes.
+- Step 7: the empty specification assumption is true on the stutter loop and
+  the concrete assumption is false; a typed assumption-strengthening witness
+  is returned and replay reproduces it.
+- Step 8: the `right` fairness constraint has a concrete counterexample
+  lasso despite the abstract `left` constraint; a limited exploration settles
+  incomplete without a proved result.
+- Step 9: strong each implies weak whole for the finite class set; weak does
+  not imply strong on the intermittent-enabledness lasso. Replay reproduces
+  the latter assumption-strengthening witness.

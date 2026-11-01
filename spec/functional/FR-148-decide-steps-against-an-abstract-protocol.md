@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-142
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-137
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-145
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-147
@@ -104,11 +106,35 @@ often than the protocol allows, is refuted with a prefix that replays.
   abstract step class (QSpec FR-379). This check reads no `F_A`, so it runs
   with hidden abstract fields; FR-147's `unsupported` liveness half is the
   `F_A` half only.
-- **Other checks.** The product SHALL apply QSpec FR-177's refusal-set,
-  terminal-success and assumption-weakening checks to the same product
-  states and edges, as QSpec states them, and report a violation with the
-  `refinement_failure` kind QSpec FR-379 gives it (ADR-020 QS-8), as a
-  prefix or lasso over concrete steps.
+- **Refusal sets and terminal success.** The product SHALL apply QSpec
+  FR-177's refusal-set and terminal-success checks to the same reachable
+  product states and edges, and report a violation with the typed
+  `refinement_failure` QSpec FR-379 assigns to that check (ADR-020 QS-8), as
+  a prefix over concrete steps.
+- **Assumption weakening.** For each reachable product behaviour, the
+  product SHALL treat the checked concrete `assume` constraints as the
+  implementation environment assumption `I`, and the checked abstract
+  protocol's authored fairness, derived scheduler fairness and memory
+  fairness constraints as the specification environment assumption `S`.
+  It SHALL NOT include `ensure` constraints in `I` or `S`: those are
+  guarantees, not environment assumptions (FR-137; ADR-020 RM-6). The
+  product SHALL prove the implication `S => I` over the paired behaviour
+  space: every concrete path that has a corresponding abstract protocol
+  path satisfying all of `S` SHALL satisfy every constraint in `I` under
+  the concrete model's own enabledness and taken-step semantics. Thus the
+  implementation assumption is no stronger than the specification's.
+  The check SHALL fail when a reachable lasso satisfies every specification
+  constraint and violates at least one concrete `assume` constraint; an
+  empty `I` passes, and an empty `S` is the unconstrained assumption. It
+  SHALL evaluate weak and strong fairness and `each` and `whole` granularity
+  by their source-side class semantics (ADR-018 FA-1 to FA-4; ADR-027 PA-1 to
+  PA-3, SE-1), without treating unlike operation, scheduler, or memory
+  target identities as equal. It SHALL report a violation with the typed
+  `refinement_failure` QSpec FR-379 assigns to assumption strengthening and
+  SHALL include a concrete prefix and lasso witness. If product exploration
+  stops at a configured limit before implication is decided, the item SHALL
+  settle incomplete and SHALL NOT settle proved. Replay (FR-145) SHALL
+  recompute both sides' assumption predicates over the same paired lasso.
 - A `proved` protocol refinement SHALL be labelled `Uncertified` (ADR-018
   PC-1, ADR-020 CT-4): FR-149's simulation-certificate checker covers the
   model-subject step relation and does not certify these protocol-subject
@@ -127,11 +153,18 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | FR-148-AC-3 | The lost-update model (ADR-020 §8) with `peek` removed, against `Twice` with the same rows, settles `refuted` with `NoAbstractMatch` at the commit that leaves `value` unchanged, and the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-553) |
 | FR-148-AC-4 | `CasTwice` against the protocol `Once` (`a1` then `finish`) settles `refuted` with `NoAbstractMatch{position: 4}`, whose step is the second commit, and the counterexample replays. | Test (TC-553) |
 | FR-148-AC-5 | `CasTwice` with `peek` kept in the concrete model and mapped `-> stutter` settles `refuted`, basis `decisive-counterexample`, by QSpec FR-177's divergence-freedom check with divergence observable, with a lasso whose loop is one `peek` step at the initial state, where the abstract `a1` is enabled. It refutes with no `assume` or `ensure` row present, because QSpec FR-177-AC-6 refutes an observable internal loop under every fairness set, including an empty one. | Test (TC-553) |
+| FR-148-AC-6 | When the abstract protocol has one thread whose only enabled node maps to concrete operation `inc`, its derived weak whole scheduler constraint implies the matching concrete weak whole `assume inc` over every reachable paired lasso; the assumption-weakening check passes. | Test (TC-553) |
+| FR-148-AC-7 | When the abstract protocol declares adversarial scheduling and has no memory or authored fairness constraint, while the concrete model declares weak whole fairness for an operation that remains enabled on an infinite stutter loop, the loop satisfies the empty `S` and violates `I`; the check refutes with the assumption-strengthening failure, and replay recomputes the same concrete loop and predicates. | Test (TC-553) |
+| FR-148-AC-8 | With concrete `assume` constraints on two distinct operation classes and an abstract protocol fairness constraint on only one class, a reachable lasso that satisfies the protocol constraint but violates the other concrete assumption refutes the implication even when the fairness classes are incomparable; when a product limit prevents that lasso relation from being decided, settlement is incomplete and never proved. | Test (TC-553) |
+| FR-148-AC-9 | For a single finite transition class, a strong each constraint on the specification side implies a weak whole constraint for the same operation on the implementation side; a weak specification constraint does not imply a strong implementation constraint on a lasso where the operation is enabled infinitely often but not continuously and is never taken. The first relation passes and the second has a replayable assumption-strengthening witness. | Test (TC-553) |
 
 ## Dependencies
 
-- ADR-020 §4 AX-2, §6 RC-1 to RC-3, §7 MC-1 (as amended by ADR-027); ADR-027
-  FO-3, TS-1, TS-3, PS-8, PR-2 and PR-3.
+- ADR-018 FA-1 to FA-4; ADR-020 §1 RM-6, §4 AX-2, §6 RC-1 to RC-3, §7
+  MC-1 and RS-14 (as amended by ADR-027); ADR-027 FO-3, PA-1 to PA-3,
+  SE-1, TS-1, TS-3, PS-8, PR-2 and PR-3.
+- [FR-137](FR-137-check-a-refinement-s-fairness-rows.md) supplies the checked
+  concrete `assume` constraints.
 - [FR-141](FR-141-decide-one-concrete-step-against-the-abstract-model.md),
   [FR-142](FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md),
   [FR-145](FR-145-replay-a-refinement-counterexample.md),
