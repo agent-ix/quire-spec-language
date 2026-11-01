@@ -22,10 +22,12 @@ bounded repeat, forward effect E1, refund registration/activation, distinct
 refund attempts/effects R1/R2, a forbidding commit and full/partial recovery
 predicates. Inspect exact operation, subject, target/capture, anchor, temporal,
 relationship, population, progress and closure requirements. For the timed
-family inspect its `/2` selection: each temporal definition retains identity,
-revision and artifact, with exactly one profile-tagged clock
-configuration. Refuse a missing, duplicate, untagged or profile-incompatible
-clock configuration; verify the strict `/1` reader rejects `/2` and remains
+family inspect its `/2` selection: each temporal definition is identified by
+structural `NodeId {package, path, ordinal}`, and the selected temporal profile
+by its `DefinitionRef {authority, identity}` in `lock.profile_selections` with
+role `temporal_profile`, with exactly one clock configuration tagged for that
+profile. Refuse a missing, duplicate, untagged or profile-incompatible clock
+configuration; verify the strict `/1` reader rejects `/2` and remains
 unchanged. Swap or omit each prerequisite independently and include an
 unactivated compensation control. Exercise attempt maxima one and the largest
 representable positive value, and refuse zero plus one beyond that
@@ -50,7 +52,8 @@ no fabricated future record. The artifact retains the downstream order,
 semantic-trigger, receipt-provenance and no-reactivation requirements but makes
 no claim about a concrete trigger set or F/B outcome. Distinct runtime ordinals
 for A1 remain assessment inputs and do not mint A2 in the static artifact. The
-timed positive retains the authenticated `/2` temporal/clock selections without
+timed positive retains the `/2` temporal-definition and profile identities and
+the single profile-tagged clock configuration without
 performing L5 settlement. This test evaluates no expression; TC-142 covers only
 the checked-package read-back integration, while TC-1070 through TC-1073 own
 the evaluation cases.
