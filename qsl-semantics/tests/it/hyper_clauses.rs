@@ -1197,10 +1197,14 @@ fn numbers_of_different_kinds_do_not_compare() {
         assert_eq!(faults.len(), 1, "{body}: {faults:?}");
         assert_eq!(faults[0].code(), Code::IllTyped, "{body}");
     }
-    body_outcome(&relation_over(
+    let faults = body_outcome(&relation_over(
         "rational(1, 2) < rational(3, 4) and x.i + 1 = y.i",
     ))
-    .expect("same kinds compare");
+    .expect_err("rational literals need a declared expected range");
+    assert!(matches!(
+        faults.as_slice(),
+        [HyperCause::BodyAmbiguousLiteral { .. }]
+    ));
 }
 
 /// Whether the value typer admits `body` as the body of a Boolean function
@@ -1247,6 +1251,49 @@ fn a_shared_value_form_is_admitted_as_the_value_typer_admits_it() {
         let hyper = body_outcome(&format!("{declarations}{}", relation_over(body))).is_ok();
         let value = value_typer_admits(&declarations, "", body);
         assert_eq!(hyper, value, "{body}: hyper {hyper}, value {value}");
+    }
+}
+
+/// FR-172-AC-6: relation and hyper atom bodies use the same value typer for
+/// rational obligations, contextual literals, and root shadowing.
+#[trace("TC-597", "FR-172-AC-6")]
+#[test]
+fn relation_and_hyper_atom_bodies_share_value_typer_refusals() {
+    let half = "function half using v(n: Integer): Rational[0, 1; 1, 2] pure { rational(1, 2) }\n";
+    let out_of_range = "half(x.i) < rational(3, 4)";
+    let faults = body_outcome(&format!("{half}{}", relation_over(out_of_range)))
+        .expect_err("the result literal is outside half's declared range");
+    assert!(
+        matches!(
+            faults.as_slice(),
+            [HyperCause::BodyUnproved {
+                obligation: qsl_semantics::check::Obligation::RationalRange,
+                ..
+            }]
+        ),
+        "{faults:?}"
+    );
+
+    let ambiguous = "rational(1, 2) < rational(3, 4)";
+    for declaration in [relation_over(ambiguous), atom_over(ambiguous)] {
+        let faults =
+            body_outcome(&declaration).expect_err("an unhinted rational literal is ambiguous");
+        assert!(
+            matches!(faults.as_slice(), [HyperCause::BodyAmbiguousLiteral { .. }]),
+            "{faults:?}"
+        );
+    }
+
+    for (declaration, shadowed) in [
+        (atom_over("let a = 1 in a = 1"), "a"),
+        (atom_over("let v = 1 in v = 1"), "v"),
+        (relation_over("let x = 1 in x = 1"), "x"),
+    ] {
+        let faults = body_outcome(&declaration).expect_err("a local may not shadow a hyper root");
+        assert!(
+            matches!(faults.as_slice(), [HyperCause::BodyShadows { name, .. }] if name == shadowed),
+            "{faults:?}"
+        );
     }
 }
 
