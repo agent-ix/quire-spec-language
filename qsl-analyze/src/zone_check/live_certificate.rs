@@ -19,8 +19,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use num_bigint::BigInt;
 use qsl_eval::fairness::{Analysis, Outcome};
 use qsl_replay::{
-    AcceptanceSet, CertEdge, CertNode, ComponentReason, Components, DivergenceWitness,
-    DivergentTarget, LuBounds, ProductMark, SilentMove,
+    AcceptanceSet, CertEdge, CertNode, CertificateTransition, ComponentReason, Components,
+    DivergenceWitness, DivergentTarget, LuBounds, ProductMark, SilentMove,
 };
 use quire_exact::{Integer, Rational};
 
@@ -126,7 +126,11 @@ impl Run<'_, '_, '_> {
                     .ok_or(ZoneCheckRefusal::Fault("edge-step"))?
                     .transition()
                     .clone();
-                (Some(transition), Some(part), None)
+                (
+                    Some(CertificateTransition::Source(transition)),
+                    Some(part),
+                    None,
+                )
             }
             Via::Wait => (None, None, Some(SilentMove::Wait)),
             Via::Diverge => (None, None, Some(SilentMove::Diverge)),

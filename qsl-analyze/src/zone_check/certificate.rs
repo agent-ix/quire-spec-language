@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
 use qsl_replay::{
-    CertEdge, CertNode, CertificateItem, Components, DivergenceWitness, DivergentTarget, LuBounds,
-    Zone, ZoneCertificate,
+    CertEdge, CertNode, CertificateItem, CertificateTransition, Components, DivergenceWitness,
+    DivergentTarget, LuBounds, Zone, ZoneCertificate,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Integer;
@@ -138,7 +138,7 @@ impl Run<'_, '_, '_> {
                         .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("edge-step")))?
                         .transition()
                         .clone();
-                    (Some(transition), Some(part))
+                    (Some(CertificateTransition::Source(transition)), Some(part))
                 }
                 None => (None, None),
             };

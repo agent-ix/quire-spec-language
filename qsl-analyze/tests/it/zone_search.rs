@@ -941,7 +941,10 @@ fn operation(certificate: &Certificate, edge: usize) -> &'static str {
     let Some(transition) = &certificate.edges[edge].transition else {
         return "stutter";
     };
-    let operation = transition.operation();
+    let operation = transition
+        .source()
+        .expect("a source-model edge")
+        .operation();
     [
         "send", "reply", "timeout", "reset", "go", "ping", "tock", "back", "tick", "work", "alpha",
     ]
@@ -1033,6 +1036,42 @@ fn model_certificate_reader_does_not_accept_task_product_metadata() {
             rule: CertificateRule::Malformed,
             at: CertificateLocus::CertificateMember(CertificateMember::TaskProduct),
         }))
+    );
+}
+
+#[trace("TC-371-ZC-18", "FR-418-AC-12")]
+#[test]
+fn source_only_reader_does_not_reinterpret_a_task_edge_as_a_source_step() {
+    let world = rpc(4);
+    let mut certificate = proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
+    let source = certificate.edges[0]
+        .transition
+        .as_ref()
+        .and_then(qsl_replay::CertificateTransition::source)
+        .expect("a source operation edge")
+        .clone();
+    certificate.edges[0].transition = Some(qsl_replay::CertificateTransition::Task(
+        qsl_replay::TaskTransitionIdentity {
+            action: qsl_replay::TaskAction::Activate,
+            taskset: "Ctl".to_owned(),
+            task: "a".to_owned(),
+            job: 0,
+            slot: 0,
+            generation: 0,
+            release: source.clone(),
+            source_transition: Some(source),
+            demand: Rational::from_integer(Integer::from(1_i64)),
+            jitter: Rational::from_integer(Integer::from(0_i64)),
+            deadline: Rational::from_integer(Integer::from(4_i64)),
+            priority: None,
+            budget_delta: None,
+        },
+    ));
+
+    assert_ne!(
+        check(&world, &certificate, CertificateCheckLimits::default()),
+        Ok(ZoneCertificateVerdict::Accepted),
+        "a source-only checker must recompile task-product state before accepting a derived edge"
     );
 }
 

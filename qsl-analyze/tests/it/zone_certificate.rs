@@ -342,12 +342,18 @@ fn a_locked_node_is_checked_for_divergence() {
     let go = transition(start.discrete(), "go");
     let ping = transition(gone.discrete(), "ping");
     for edge in &mut reset_bounds.edges {
-        let old = edge.transition.as_ref().expect("a step");
-        edge.transition = Some(if old.operation().contains("Call/go\"") {
-            go.clone()
-        } else {
-            ping.clone()
-        });
+        let old = edge
+            .transition
+            .as_ref()
+            .and_then(qsl_replay::CertificateTransition::source)
+            .expect("a source step");
+        edge.transition = Some(qsl_replay::CertificateTransition::Source(
+            if old.operation().contains("Call/go\"") {
+                go.clone()
+            } else {
+                ping.clone()
+            },
+        ));
     }
     reset_bounds.lu_bounds.lower[0] = Some(quire_exact::Integer::zero());
     assert_eq!(
@@ -711,12 +717,18 @@ fn a_zeno_set_is_bounded_by_its_own_invariants() {
         };
     }
     for edge in &mut moved.edges {
-        let old = edge.transition.as_ref().expect("a step");
-        edge.transition = Some(if old.operation().contains("Call/go\"") {
-            go.clone()
-        } else {
-            ping.clone()
-        });
+        let old = edge
+            .transition
+            .as_ref()
+            .and_then(qsl_replay::CertificateTransition::source)
+            .expect("a source step");
+        edge.transition = Some(qsl_replay::CertificateTransition::Source(
+            if old.operation().contains("Call/go\"") {
+                go.clone()
+            } else {
+                ping.clone()
+            },
+        ));
     }
     let x = moved
         .lu_bounds

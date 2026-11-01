@@ -637,9 +637,9 @@ pub struct CertNode {
 pub struct CertEdge {
     /// The source node.
     pub from: usize,
-    /// The step's transition identity; `None` for an idle-tail stutter
-    /// position of a TT-2 claim's automaton (FR-242).
-    pub transition: Option<ModelTransition>,
+    /// The source or task step's typed transition identity; `None` for an
+    /// idle-tail stutter position of a TT-2 claim's automaton (FR-242).
+    pub transition: Option<CertificateTransition>,
     /// The convex part of the step's guard taken; `None` for a stutter.
     pub part: Option<usize>,
     /// Under a dense source, the piece of a TT-2 claim's horizon axis the
@@ -653,6 +653,25 @@ pub struct CertEdge {
     /// A liveness product's silent edge; `transition` and `part` are then
     /// `None`.
     pub silent: Option<SilentMove>,
+}
+
+/// One transition identity carried by a zone-certificate edge.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CertificateTransition {
+    /// An admitted source-model operation transition.
+    Source(ModelTransition),
+    /// An FR-419 task-derived scheduler transition.
+    Task(TaskTransitionIdentity),
+}
+
+impl CertificateTransition {
+    /// The source-model operation identity, when this is a source edge.
+    pub fn source(&self) -> Option<&ModelTransition> {
+        match self {
+            Self::Source(transition) => Some(transition),
+            Self::Task(_) => None,
+        }
+    }
 }
 
 /// A path of certificate edges to a divergent target.
@@ -2064,7 +2083,11 @@ impl<O> Checker<'_, '_, O> {
                 let edge = &certificate.edges[index];
                 let target = &certificate.nodes[edge.to];
                 for (position, successor) in successors.iter().enumerate() {
-                    let same = successor.step.as_ref().map(GuardedStep::transition)
+                    let same = successor
+                        .step
+                        .as_ref()
+                        .map(|step| CertificateTransition::Source(step.transition().clone()))
+                        .as_ref()
                         == edge.transition.as_ref()
                         && successor.part == edge.part
                         && successor.horizon == edge.horizon

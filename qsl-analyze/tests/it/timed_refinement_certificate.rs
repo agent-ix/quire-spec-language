@@ -80,7 +80,10 @@ fn operation(certificate: &Certificate, index: usize) -> &'static str {
         .transition
         .as_ref()
         .expect("every refinement edge is a step");
-    let operation = transition.operation();
+    let operation = transition
+        .source()
+        .expect("a source-model edge")
+        .operation();
     ["send", "enter", "undo"]
         .into_iter()
         .find(|name| operation.contains(&format!("/Call/{name}\"")))

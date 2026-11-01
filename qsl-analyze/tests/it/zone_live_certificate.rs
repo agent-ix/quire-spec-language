@@ -55,9 +55,11 @@ fn holding(certificate: &Certificate, operation: &str) -> Vec<usize> {
         .filter(|edge| {
             numbering[edge.from] == numbering[edge.to]
                 && edge.transition.as_ref().is_some_and(|transition| {
-                    transition
-                        .operation()
-                        .contains(&format!("Call/{operation}\""))
+                    transition.source().is_some_and(|transition| {
+                        transition
+                            .operation()
+                            .contains(&format!("Call/{operation}\""))
+                    })
                 })
         })
         .filter_map(|edge| numbering[edge.from])
