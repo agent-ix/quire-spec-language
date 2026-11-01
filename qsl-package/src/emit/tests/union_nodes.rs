@@ -230,10 +230,15 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
         "Foreign",
     );
     let foreign_key = foreign.declaration.key();
-    let text = b"function area(): Foreign pure { Foreign::Ready }\n\
+    let text = b"function area(value: Foreign): Boolean pure { value = Foreign::Ready }\n\
                  function keep(): Boolean pure { true }\n";
-    let area_text = b"function area(): Foreign pure { Foreign::Ready }";
-    let area_body_text = b"Foreign::Ready";
+    let area_text = b"function area(value: Foreign): Boolean pure { value = Foreign::Ready }";
+    let area_type_text = b"Foreign";
+    let area_type_start = text
+        .windows(area_type_text.len())
+        .position(|window| window == area_type_text)
+        .expect("area parameter type is in source");
+    let area_body_text = b"value = Foreign::Ready";
     let area_body_start = text
         .windows(area_body_text.len())
         .position(|window| window == area_body_text)
@@ -249,23 +254,64 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
         .position(|window| window == keep_body_text)
         .map(|offset| keep_start + offset)
         .expect("keep body is in source");
+    let mut area_body_spans = ExpressionSpans::new(qsl_foundation::Span {
+        start: area_body_start,
+        end: area_body_start + area_body_text.len(),
+    })
+    .expect("area body span");
+    let area_body_root = area_body_spans.root();
+    let parameter_reference = b"value";
+    let parameter_reference_start = text[area_body_start..]
+        .windows(parameter_reference.len())
+        .position(|window| window == parameter_reference)
+        .map(|offset| area_body_start + offset)
+        .expect("area body parameter reference is in source");
+    area_body_spans
+        .push_child(
+            area_body_root,
+            qsl_foundation::Span {
+                start: parameter_reference_start,
+                end: parameter_reference_start + parameter_reference.len(),
+            },
+        )
+        .expect("parameter reference span is inside area body");
+    let ready_reference = b"Foreign::Ready";
+    let ready_reference_start = text[area_body_start..]
+        .windows(ready_reference.len())
+        .position(|window| window == ready_reference)
+        .map(|offset| area_body_start + offset)
+        .expect("area body Ready reference is in source");
+    area_body_spans
+        .push_child(
+            area_body_root,
+            qsl_foundation::Span {
+                start: ready_reference_start,
+                end: ready_reference_start + ready_reference.len(),
+            },
+        )
+        .expect("Ready reference span is inside area body");
     let area = FunctionDeclaration::new(
         "area",
-        Vec::new(),
-        TypeForm::name("Foreign", qsl_foundation::Span { start: 17, end: 24 }),
+        vec![(
+            "value".to_owned(),
+            TypeForm::name(
+                "Foreign",
+                qsl_foundation::Span {
+                    start: area_type_start,
+                    end: area_type_start + area_type_text.len(),
+                },
+            ),
+        )],
+        boolean(),
         None,
-        name("Foreign::Ready"),
+        Expression::binary(BinaryOperator::Equal, name("value"), name("Foreign::Ready")),
     )
     .with_spans(DeclarationSpans {
         declaration: qsl_foundation::Span {
             start: 0,
             end: area_text.len(),
         },
-        body: ExpressionSpans::new(qsl_foundation::Span {
-            start: area_body_start,
-            end: area_body_start + area_body_text.len(),
-        })
-        .expect("area body span"),
+        body: area_body_spans,
         measure: None,
     })
     .expect("area spans match its body");
@@ -304,23 +350,47 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
     let emission = emit_checked(&package)
         .expect("emit_checked omits the unlocked enum instead of trying to place it");
     let exports = verified_exports(&emission);
-    assert!(exports.contains_key("keep"), "the I2 read exports keep");
-    assert!(!exports.contains_key("area"), "the I2 read omits area");
+    assert_eq!(
+        exports.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+        BTreeSet::from(["keep"]),
+        "the I2 read exports only the independent function"
+    );
 
     let graph = package.graph().semantic_graph();
-    let id_for_key = |key: &NodeKey| {
-        let node = graph
-            .nodes()
-            .find(|node| node.key() == *key)
-            .expect("the package graph holds the node");
-        node_id(node.key())
-    };
+    let id_for_key = |key: &NodeKey| node_id(key.clone());
     let foreign_id = id_for_key(&foreign_key);
     let area_id = id_for_key(
         &package
             .graph()
             .function_identity("area")
             .expect("area exists"),
+    );
+    let ready_key = graph
+        .nodes()
+        .find(|node| {
+            node.semantic_form() == "enum_value"
+                && qsl_foundation::node_wire::node_key_to_json(&node.key())
+                    .expect("an enum value key encodes")["path"]
+                    .as_array()
+                    .and_then(|path| path.last())
+                    == Some(&json!("Ready"))
+        })
+        .expect("the graph holds the Ready enum value")
+        .key();
+    let ready_id = id_for_key(&ready_key);
+    let parameter_id = id_for_key(
+        &graph
+            .nodes()
+            .find(|node| node.semantic_form() == "parameter")
+            .expect("area has a value parameter")
+            .key(),
+    );
+    let body_id = id_for_key(
+        &graph
+            .nodes()
+            .find(|node| node.semantic_form() == "binary")
+            .expect("area body is an equality")
+            .key(),
     );
     let keep_id = id_for_key(
         &package
@@ -343,17 +413,27 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
         cause_of(&area_id),
         Some(OmissionCause::NamesOmittedNode(_))
     ));
+    assert_eq!(
+        cause_of(&ready_id),
+        Some(&OmissionCause::NamesOmittedNode(foreign_id.clone())),
+        "Ready is omitted because its enum declaration is unlocked"
+    );
+    assert_eq!(
+        cause_of(&parameter_id),
+        Some(&OmissionCause::NamesOmittedNode(foreign_id.clone())),
+        "the value parameter is omitted because its type is unlocked"
+    );
+    assert_eq!(
+        cause_of(&body_id),
+        Some(&OmissionCause::NamesOmittedNode(ready_id.clone())),
+        "the equality body is omitted because it names Ready"
+    );
+    assert_eq!(
+        cause_of(&area_id),
+        Some(&OmissionCause::NamesOmittedNode(parameter_id)),
+        "the area declaration is omitted because its parameter is omitted"
+    );
     assert_eq!(cause_of(&keep_id), None, "keep is written");
-
-    // The enum value named by `area` depends on the unlocked enum and is
-    // omitted for naming an omitted node.
-    let omitted_enum_values = graph
-        .nodes()
-        .filter(|node| node.semantic_form() == "enum_value")
-        .map(|node| node_id(node.key()))
-        .filter(|id| matches!(cause_of(id), Some(OmissionCause::NamesOmittedNode(_))))
-        .count();
-    assert!(omitted_enum_values >= 1, "the enum member is omitted");
 
     // The checked package itself is retained by the second emission path.
     // This is the same package as the first half, but no source occurrence is
