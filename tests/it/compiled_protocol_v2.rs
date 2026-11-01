@@ -2230,6 +2230,30 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         ));
         assert!(oversized.settled_siblings().is_empty());
 
+        let delivery_over_budget = budget_ledger
+            .evaluate(
+                checked.package(),
+                admitted.admitted(),
+                temporal::ProtocolEvaluationInput {
+                    selection: selection.clone(),
+                    trace: sibling_trace.clone(),
+                    trigger_identities: vec![identity.clone(), second_identity.clone()],
+                    correction: None,
+                },
+                temporal::Limits {
+                    visits: 2,
+                    ..temporal::Limits::default()
+                },
+            )
+            .expect("oversized delivery scan returns typed exhaustion");
+        assert!(matches!(
+            delivery_over_budget.report().result(),
+            Err(temporal::Error::Exhausted(exhaustion))
+                if exhaustion.dimension == temporal::LimitDimension::Visits
+                    && exhaustion.requested == 3
+                    && exhaustion.limit == 2
+        ));
+
         // A correction changes an admitted leaf valuation and names exactly
         // the prior result. The earlier result remains immutable.
         let mut corrected_trace = trace.clone();

@@ -381,62 +381,77 @@ fn preflight_input(
         declaration,
         ..super::Subject::default()
     };
-    let requested = [
-        (
-            Dimension::Positions,
-            trace.positions.len(),
-            limits.positions,
-        ),
-        (
-            Dimension::Valuations,
-            trace
-                .positions
-                .iter()
-                .map(|position| {
-                    position
-                        .instance_valuations
-                        .values()
-                        .map(BTreeMap::len)
-                        .fold(position.valuations.len(), usize::saturating_add)
-                })
-                .fold(0usize, usize::saturating_add),
-            limits.valuations,
-        ),
-        (Dimension::Retention, trace.evicted.len(), limits.retention),
-    ];
-    if let Some(exhaustion) = requested
-        .into_iter()
-        .find_map(|(dimension, requested, limit)| {
-            (requested > limit).then_some(super::Exhaustion {
-                dimension,
-                used: 0,
-                requested,
-                limit,
-                subject,
-            })
-        })
-    {
-        return Some(exhaustion);
+    if trace.positions.len() > limits.positions {
+        return Some(super::Exhaustion {
+            dimension: Dimension::Positions,
+            used: 0,
+            requested: trace.positions.len(),
+            limit: limits.positions,
+            subject,
+        });
     }
-
+    let mut valuations = 0usize;
+    for position in &trace.positions {
+        valuations = valuations.saturating_add(position.valuations.len());
+        if valuations > limits.valuations {
+            return Some(preflight_exhaustion(
+                Dimension::Valuations,
+                limits.valuations,
+                subject,
+            ));
+        }
+        for instance in position.instance_valuations.values() {
+            valuations = valuations.saturating_add(instance.len());
+            if valuations > limits.valuations {
+                return Some(preflight_exhaustion(
+                    Dimension::Valuations,
+                    limits.valuations,
+                    subject,
+                ));
+            }
+        }
+    }
+    if trace.evicted.len() > limits.retention {
+        return Some(super::Exhaustion {
+            dimension: Dimension::Retention,
+            used: 0,
+            requested: trace.evicted.len(),
+            limit: limits.retention,
+            subject,
+        });
+    }
     // The evaluator visits each delivery and supplied capture even when a
     // delivery repeats an existing semantic identity. Bound that scan before
     // constructing any temporary identity state; retained-instance and
     // capture charges below are then computed once per successful identity.
-    let delivery_work = trace
-        .triggers
-        .iter()
-        .map(|trigger| trigger.captures.len().saturating_add(1))
-        .fold(0usize, usize::saturating_add);
-    if delivery_work > limits.visits {
-        return Some(super::Exhaustion {
-            dimension: Dimension::Visits,
-            used: 0,
-            requested: delivery_work,
-            limit: limits.visits,
-            subject,
-        });
+    let mut delivery_work = 0usize;
+    for trigger in &trace.triggers {
+        delivery_work = delivery_work.saturating_add(1);
+        if delivery_work > limits.visits {
+            return Some(preflight_exhaustion(
+                Dimension::Visits,
+                limits.visits,
+                subject,
+            ));
+        }
+        delivery_work = delivery_work.saturating_add(trigger.captures.len());
+        if delivery_work > limits.visits {
+            return Some(preflight_exhaustion(
+                Dimension::Visits,
+                limits.visits,
+                subject,
+            ));
+        }
     }
+
+    let evicted_captures: BTreeSet<(&str, usize)> = trace
+        .evicted
+        .iter()
+        .filter_map(|evicted| match evicted {
+            super::Eviction::Capture { instance, capture } => Some((instance.as_str(), *capture)),
+            super::Eviction::Valuation { .. } => None,
+        })
+        .collect();
 
     let mut instances = BTreeSet::new();
     let mut captured = BTreeSet::new();
@@ -461,16 +476,11 @@ fn preflight_input(
         let captures_established = trigger.captures.len() == capture_count
             && trigger.anchor == trace.anchor
             && trigger.captures.iter().enumerate().all(|(index, capture)| {
-                !trace.evicted.iter().any(|evicted| {
-                    matches!(
-                        evicted,
-                        super::Eviction::Capture { instance, capture }
-                            if instance == identity.as_str() && *capture == index
+                !evicted_captures.contains(&(identity.as_str(), index))
+                    && matches!(
+                        capture,
+                        super::CaptureInput::Value { anchor, .. } if anchor == &trace.anchor
                     )
-                }) && matches!(
-                    capture,
-                    super::CaptureInput::Value { anchor, .. } if anchor == &trace.anchor
-                )
             });
         if captures_established && captured.insert(identity.as_str()) {
             retained_captures = retained_captures.saturating_add(capture_count);
@@ -486,6 +496,20 @@ fn preflight_input(
         }
     }
     None
+}
+
+fn preflight_exhaustion(
+    dimension: super::LimitDimension,
+    limit: usize,
+    subject: super::Subject,
+) -> super::Exhaustion {
+    super::Exhaustion {
+        dimension,
+        used: 0,
+        requested: limit.saturating_add(1),
+        limit,
+        subject,
+    }
 }
 
 fn evaluate_siblings(
