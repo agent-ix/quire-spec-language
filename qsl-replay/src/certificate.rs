@@ -224,6 +224,7 @@ certificate_members! {
     Locked => "locked",
     Start => "start",
     Nested => "nested",
+    TaskProduct => "task_product",
     AbstractStates => "abstract_states",
     Automaton => "automaton",
     Bias => "bias",
