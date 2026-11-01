@@ -12,15 +12,13 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1338. PR: quire-spec-language#1971. Frozen head: aacbdda5eeb2875ceba37db72e21b89d2ca28d4e. Scope is the two-file diff against origin/main: Makefile and tests/support/front_end.rs. No production behavior, dependency, fixture, spec or plan changed.
+Ticket: QSL-1338. Final frozen head: 2a164fe0e9474f202a6939233a6b80597bb3491e. Same-reviewer disposition round 1. The owned slice relative to integrated parent c19d214682d414ee481bfdea8f982ab4a71bf39b is Makefile, tests/support/front_end.rs and the two original review records. origin/main...HEAD also contains upstream child #1947 changes; those are separately reviewed and are not newly approved here.
 
-The parsed CST now drops at the end of the first formatting block; the reparsed CST drops after the second-pass byte assertion, both before emitted_once. The returned formatted String owns its bytes. Original emitted output, original bytes, formatting ceiling, source revision suffix, source/model/dependency/checking authority and retained-source assertions are unchanged. No duplicate helper, new unsafe code, mock, cap, reduced depth, new ignore or weakened assertion was introduced.
-
-The same five exact names are selected; each must list exactly once as an ignored test. Only harness concurrency changes from three to one. Workspace/default-feature target selection and CARGO_TARGET_DIR fallback/cache remain unchanged. The existing ignores remain executed by this dedicated aggregate-gate prerequisite; the four deep fixtures remain 100,000 levels/terms and the dependency chain remains 3 and 1,000 libraries. Serial harness execution prevents overlap between cases, not all internal threads (dependency_fixture_identity still checks its two sides concurrently).
+The CST lifetime change remains the reviewed change: first parse drops after producing owned formatted bytes; reparse drops after the second-pass assertion, before emitted_once. Formatting idempotence, retained sources, source revision suffix, limits and model/dependency/checking authority remain unchanged. The proposed serialization was removed. The final Makefile retains the ORIGINAL --test-threads=3 schedule and all five full-depth selectors, exact-name/count checks, ignored-test execution and default-lane artifact reuse. Only stale peak/fallback prose changes in the Makefile relative to its parent. No cap, fixture reduction, new skip/ignore, wrapper or assertion weakening was introduced.
 
 ## Verdict
 
-**CONDITIONAL** — No introduced defects found in the two-file change. Scoped mergeability remains conditional on integrating #1930, obtaining all full-depth results and passing required final gates; no full acceptance claim.
+**SCOPED CLEAN / SOURCE-REVIEW CLEAR** — No introduced defect or unresolved finding in the owned lifetime/comment slice. Final same-five full-depth lane evidence is now present and supports retaining three threads. Whole-repository assurance, aggregate gate and administrative landing authority are outside this clearance.
 
 ## Findings
 
@@ -30,15 +28,17 @@ The same five exact names are selected; each must list exactly once as an ignore
 
 ## Coverage
 
+Full gap-analysis remains incomplete: whole-repository computed matrix unavailable; prior stalled attempts were not repeated per dispatch. Manual scoped AC/code/test mapping only. No whole-repository PASS, complete matrix counts or full reverse-gap/stub inventory is asserted. Optional whole-repository semantic review not run.
+
 Plan completion: not assessed
 
-Reconciliation: computed whole-repository matrix unavailable in this constrained review. Dispatch reports previous identical attempts stalled without output for 3–4 minutes and were stopped; not repeated for this two-file diff. The full repository gap-analysis method is incomplete; manual changed-scope AC/code/test mapping substitutes under reviewer fallback. No whole-repository PASS, trace-count totals or complete reverse-gap/stub inventory is asserted. No new production surface is introduced. Optional whole-repository semantic review not run.
+Actual final log inspected: /home/peter/dev/.agents/tmp/qsl-1338d-checks/final-2a164fe0e/test-deep-format.log. Both admitted_source_head and finished_source_head equal the final frozen head. Actual make -j1 test-deep-format completed its five exact-name/count checks and all five named cases: 5 passed, 0 failed, 0 ignored; root harness 363.38s, whole command 15m27.33s including compilation, exit 0. Request and acquisition 04:15:23Z; finish 04:30:50Z. Profile: CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0. Maximum process RSS 8,712,772 KiB; whole cgroup peak 12,789,981,184 bytes (11.91 GiB) under memory.max 21,474,836,480 bytes (20 GiB). Before/after low, high, max, oom, oom_kill and oom_group_kill counters are all zero. The runner banner's environment test_threads=2 does not override the Makefile's explicit --test-threads=3.
 
-Reviewer reran cargo fmt --all -- --check and git diff --check successfully and inspected make -n test-deep-format; no build or heavy gate launched. No CI workflow changes. Read AGENTS.md, CLAUDE.md, README.md, Cargo.toml and applicable Rust baseline implementation/testing/lifecycle rules. No applicable AssuranceProfile found.
+Measured older-stack comparison logs under gate-profile-162e8da6f were also inspected: same five serial cases passed at 771.57s harness; three-thread cases passed at 338.13s harness, maxRSS 8,524,240 KiB, cgroup peak 8,741,199,872 bytes (8.14 GiB), 20 GiB cap and zero OOM/kill events. This supports keeping original concurrency over the proposed serial alternative; it is NOT a speedup comparison against original main. Four individual full-100,000-level runs on that older integrated stack were reported passed by the lead; final same-five execution independently supplies the relevant final-depth evidence.
 
-Verified actual logs in /home/peter/dev/.agents/tmp/qsl-1338d-checks: small.log has 1 passed, 0 failed, test 0.13s, command 32m49.54s (cold compile), maxRSS 2,715,812 KiB, exit 0; request 23:28:36Z, acquisition 23:29:19Z from brief, finish 00:02:10Z. dependency_chain_and_order_variants_keep_format_identity.log has 1 passed, 0 failed, test 20.76s, command 21.41s, maxRSS 306,584 KiB, exit 0; request 00:02:37Z, acquired 00:02:38Z, finish 00:02:59Z. Both commands explicitly use -j1 and --test-threads=1 under a 20 GiB bounded runner. Wait time is excluded from command timing. These are focused results, not evidence for all five full-depth cases.
+The final measured result establishes this lane fits its observed 20 GiB cgroup bound with unchanged workloads; it does not isolate upstream changes' contributions, prove earlier SIGKILLs were OOM, or guarantee all future loads. Source integration is present, but child #1947's administrative landing still awaits user approval. Full aggregate verification/administrative merge authorization remain separate from this source review. No full CI-green, merged-parent or full FR-003-AC-9 acceptance claim is made.
 
-Full four 100,000-level cases, make test-deep-format and the lead aggregate gate are pending integration of #1930. Clippy, cargo-deny and full crate/workspace tests were not rerun during this static review per the dispatch constraint. Prior SIGKILLs do not prove OOM, and no claim is made that this diff alone fixes total memory.
+No builds, gates or source edits were performed in this disposition pass. Formatting/diff checks passed as reported in the dispatch; no reason was found to repeat them. Frozen branch remains unchanged and clean.
 
 ## Oracle limits
 
@@ -69,5 +69,9 @@ scope:
 - id: test-deep-format
   path: Makefile
   role: examined
-  excerpt: cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1
+  excerpt: cargo test --locked --workspace --tests -- --ignored --exact --test-threads=3
 ```
+
+## Dispositions
+
+Round 1: the original Findings table contains only a schema placeholder, not a defect. There are no finding IDs requiring an outcome and no new findings. Final source review is clear within the owned slice.

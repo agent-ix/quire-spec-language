@@ -974,8 +974,25 @@ fn operation_term(
 fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Value, EmitRefusal> {
     use serde_json::json;
     Ok(match member {
-        Member::Field { declaration, name } => {
-            json!({"kind":"field","declaration":node_id(ids, declaration),"name":name.as_str()})
+        Member::Field {
+            declaration,
+            name,
+            explicit_deref,
+        } => {
+            let mut member = json!({
+                "kind":"field",
+                "declaration":node_id(ids, declaration),
+                "name":name.as_str()
+            });
+            if let Some(explicit_deref) = explicit_deref {
+                let read_form = if *explicit_deref {
+                    "explicit_deref"
+                } else {
+                    "bare"
+                };
+                member["read_form"] = json!(read_form);
+            }
+            member
         }
         Member::Position {
             declaration,

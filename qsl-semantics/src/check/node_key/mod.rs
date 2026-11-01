@@ -1158,9 +1158,14 @@ fn map_member(
     pending_member: &mut bool,
 ) -> Member {
     match member {
-        Member::Field { declaration, name } => Member::Field {
+        Member::Field {
+            declaration,
+            name,
+            explicit_deref,
+        } => Member::Field {
             declaration: map_key(map, pending_member, declaration),
             name,
+            explicit_deref,
         },
         Member::Position {
             declaration,
