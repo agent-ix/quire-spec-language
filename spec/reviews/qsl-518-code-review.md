@@ -53,3 +53,9 @@ Rechecked PR #2042 at `6d13fb005a2fe7b18d3a3f40ab605fbe5136cc58`, including the 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-002 | medium | `assert_silent` uses `gag::BufferRedirect`, which captures OS file descriptors but misses Rust `println!` output intercepted by libtest. A reproduction emitted `stream-capture-probe` while the gag buffer was empty. The test can therefore pass despite a direct `compare` call writing stdout/stderr under the normal test harness. Capture the calls in a subprocess or use a method that observes the test harness's captured output. | xtask/tests/refinement_layering.rs:45-72 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | The child test process runs with `--nocapture`; its probe verifies both stdout and stderr capture, then checks both streams around the no-negotiation and negotiated `compare` calls. |

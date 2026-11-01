@@ -46,3 +46,9 @@ The full repository matrix could not be assessed in this run: `quire matrix --sc
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | still-open | `gag::BufferRedirect` redirects OS file descriptors, but Rust test-harness output capture intercepts `println!` before it reaches those descriptors. A minimal libtest reproduction printed `stream-capture-probe` while the gag buffer remained empty. Thus `assert_silent` can pass while a Rust print macro writes output; a reliable process-stream capture/assertion is still missing. |
+
+Round 2:
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The probe child runs under `--nocapture`, confirms stdout and stderr writes are visible to the parent, and the comparison child asserts both stream regions are empty around each direct call. |
