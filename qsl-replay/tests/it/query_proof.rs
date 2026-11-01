@@ -22,7 +22,9 @@ fn checked_collection_query() -> CheckedUnit {
          model Config = {PACKAGE:?};\n\
          function ints using v(xs: Sequence<Int[0, 1]>[0, 3]): Sequence<Int[0, 1]>[0, 3] pure {{ xs }}\n\
          invariant QueryCandidate using v on Config::ConfigVersion at current {{ \
-         contains(map(item in ints(sequence[0, 1]): item), 0) }}\n"
+         contains(map(item in ints(sequence[0, 1]): item), 0) }}\n\
+         invariant FilterCandidate using v on Config::ConfigVersion at current {{ \
+         contains(filter(item in ints(sequence[0, 1]): item >= 0), 0) }}\n"
     );
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -58,20 +60,25 @@ fn checked_collection_query() -> CheckedUnit {
 #[test]
 fn checked_map_collection_is_explicitly_unsupported_at_proof_transfer() {
     let checked = checked_collection_query();
-    let result = spine::query_proof::select_query_proof(checked.package(), "QueryCandidate")
-        .expect("the clause is selected from the checked package");
-    let QueryProofDisposition::Unsupported(unsupported) = result else {
-        panic!("checked map collection has no proof transfer: {result:?}");
-    };
-    assert_eq!(
-        unsupported.cause,
-        spine::query_proof::QueryProofCause::ValueRepresentation
-    );
-    assert_eq!(unsupported.query.visit, qsl_semantics::check::Visit::Map);
-    assert!(matches!(
-        unsupported.query.result_type,
-        ValueType::Collection(_)
-    ));
-    // The disposition is only a typed unsupported cause plus the checked
-    // query identity. It has no value, outcome, or partial meter to leak.
+    for (name, expected_visit) in [
+        ("QueryCandidate", qsl_semantics::check::Visit::Map),
+        ("FilterCandidate", qsl_semantics::check::Visit::Filter),
+    ] {
+        let result = spine::query_proof::select_query_proof(checked.package(), name)
+            .expect("the clause is selected from the checked package");
+        let QueryProofDisposition::Unsupported(unsupported) = result else {
+            panic!("checked collection has no proof transfer: {result:?}");
+        };
+        assert_eq!(
+            unsupported.cause,
+            spine::query_proof::QueryProofCause::ValueRepresentation
+        );
+        assert_eq!(unsupported.query.visit, expected_visit);
+        assert!(matches!(
+            unsupported.query.result_type,
+            ValueType::Collection(_)
+        ));
+        // The disposition is only a typed unsupported cause plus the checked
+        // query identity. It has no value, outcome, or partial meter to leak.
+    }
 }
