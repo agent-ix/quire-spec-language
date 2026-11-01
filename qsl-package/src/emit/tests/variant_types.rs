@@ -150,7 +150,7 @@ fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_for
         assert_eq!(row.selected_document.as_ref(), fixture::PACKAGE);
         assert!([fixture::id("Tier"), fixture::id("Odd")]
             .iter()
-            .any(|identity| identity == row.original_identity.as_ref()));
+            .any(|identity| identity.as_str() == row.original_identity.as_ref()));
         let selected = emitted
             .emission
             .selected_model_enums(&admitted, 128)
@@ -174,8 +174,14 @@ fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_for
             "Gold Plus" => ("Odd", "variant/Odd-Gold-Plus"),
             other => panic!("unexpected selected model case {other:?}"),
         };
-        assert_eq!(row.enum_original_identity.as_ref(), fixture::id(owner));
-        assert_eq!(row.member_original_identity.as_ref(), fixture::id(member));
+        assert_eq!(
+            row.enum_original_identity.as_ref(),
+            fixture::id(owner).as_str()
+        );
+        assert_eq!(
+            row.member_original_identity.as_ref(),
+            fixture::id(member).as_str()
+        );
         let selected = emitted
             .emission
             .selected_model_enums(&admitted, 128)
@@ -250,7 +256,7 @@ fn selected_model_enum_rows_join_and_refuse_missing_mismatched_duplicate_and_for
     assert_eq!(
         SelectedModelEnums::from_stage_rows(
             &admitted,
-            [declaration],
+            [declaration.clone()],
             [member.clone(), member],
             128,
         )
