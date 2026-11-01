@@ -2315,14 +2315,14 @@ impl<'a> Lowering<'a> {
         unit: UnitId,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let quantity_type = match unit.domain() {
+        match unit.domain() {
             UnitDomain::Declared => {
                 let key = unit
                     .declared_key()
                     .cloned()
                     .ok_or_else(|| fault(location, KeyFault::UnheldUnit(unit.clone())))?;
                 self.unit_nodes(key.clone(), location)?;
-                key
+                Ok(key)
             }
             UnitDomain::Compound => {
                 let terms: Vec<(NodeKey, Integer)> = match self.units.get(unit.clone()) {
@@ -2350,24 +2350,9 @@ impl<'a> Lowering<'a> {
                     None,
                     None,
                     BodyTerm::aggregate(members),
-                )?
+                )
             }
-        };
-        if self
-            .quantity_type_nodes
-            .get(&unit)
-            .is_some_and(|held| held != &quantity_type)
-        {
-            return Err(fault(
-                location,
-                KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
-                    "S3",
-                    "quantity-type-node-is-stable-for-unit",
-                )),
-            ));
         }
-        self.quantity_type_nodes.insert(unit, quantity_type.clone());
-        Ok(quantity_type)
     }
 
     /// FR-094, FR-092 rule 1: add the declared unit node `unit` to the

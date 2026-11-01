@@ -190,6 +190,13 @@ pub enum EmitRefusal {
         /// Its operand.
         operand: Box<CheckedNodeId>,
     },
+    /// An equality producer identity row has no unique emitted application
+    /// occurrence to which it can be attached.
+    #[error("equality producer identity for application {application:?} has no unique emitted occurrence")]
+    MissingEqualityIdentityContext {
+        /// The exact checked application key retained by QSL lowering.
+        application: NodeKey,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -222,7 +229,8 @@ impl EmitRefusal {
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
             Self::SourceMapInvariant
             | Self::UnresolvedNodeReference
-            | Self::OperandNotInGraph { .. } => Code::RuntimeInvariant,
+            | Self::OperandNotInGraph { .. }
+            | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
         }
     }
 
@@ -248,7 +256,8 @@ impl EmitRefusal {
             | Self::UnlocatedRefinementDeclaration
             | Self::SourceMapInvariant
             | Self::UnresolvedNodeReference
-            | Self::OperandNotInGraph { .. } => None,
+            | Self::OperandNotInGraph { .. }
+            | Self::MissingEqualityIdentityContext { .. } => None,
         }
     }
 }
@@ -323,7 +332,51 @@ pub struct Emission {
     pub(crate) selected_model_enum_member_rows:
         Vec<quire_contract_model::SelectedModelEnumMemberRow>,
     /// Exact QSL identity witnesses for emitted equality occurrences.
-    pub(crate) equality_producer_identity_rows: Vec<qsl_semantics::check::EqualityProducerIdentity>,
+    pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
+}
+
+/// One equality's QSL producer identities joined to its emitted checked node
+/// and exact occurrence. This is in-memory producer data, not wire data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityProducerEmissionRow {
+    application: NodeKey,
+    checked_node: CheckedNodeId,
+    occurrence: CheckedOccurrence,
+    location: quire_exact::Location,
+    source_map_entry: CheckedSourceMapEntry,
+    producer_identity: qsl_semantics::check::EqualityProducerIdentity,
+}
+
+impl EqualityProducerEmissionRow {
+    /// The exact QSL application key retained during lowering.
+    pub fn application(&self) -> &NodeKey {
+        &self.application
+    }
+
+    /// The corresponding checked-package node id produced by the emitter.
+    pub fn checked_node(&self) -> &CheckedNodeId {
+        &self.checked_node
+    }
+
+    /// The emitted checked-package occurrence.
+    pub fn occurrence(&self) -> &CheckedOccurrence {
+        &self.occurrence
+    }
+
+    /// The exact checked structural node occurrence from the source graph.
+    pub fn location(&self) -> &quire_exact::Location {
+        &self.location
+    }
+
+    /// The selected source-map context for this exact emitted occurrence.
+    pub fn source_map_entry(&self) -> &CheckedSourceMapEntry {
+        &self.source_map_entry
+    }
+
+    /// The QSL-owned typed producer identities for this occurrence.
+    pub fn producer_identity(&self) -> &qsl_semantics::check::EqualityProducerIdentity {
+        &self.producer_identity
+    }
 }
 
 impl Emission {
@@ -378,9 +431,7 @@ impl Emission {
     }
 
     /// QSL-owned identity rows keyed by equality application and occurrence.
-    pub fn equality_producer_identity_rows(
-        &self,
-    ) -> &[qsl_semantics::check::EqualityProducerIdentity] {
+    pub fn equality_producer_identity_rows(&self) -> &[EqualityProducerEmissionRow] {
         &self.equality_producer_identity_rows
     }
 
@@ -1595,6 +1646,69 @@ fn recorded_occurrences(
         by_node.entry(key).or_default().push((occurrence, location));
     }
     Ok(by_node)
+}
+
+/// Joins each equality producer row to the exact occurrence and checked id
+/// emitted for its application. The join starts from QSL's retained key and
+/// expression location; it never reconstructs a key from a checked id.
+fn equality_producer_emission_rows(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    source_map: &[CheckedSourceMapEntry],
+) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
+    graph
+        .equality_producer_identities()
+        .iter()
+        .filter(|((application, _), _)| emitted_node_ids.contains_key(application))
+        .map(|((application, expression_location), producer_identity)| {
+            let Some(checked_node) = emitted_node_ids.get(application).cloned() else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: application.clone(),
+                });
+            };
+            let mut occurrences = graph.occurrences().filter(|(node, _, location)| {
+                node == application && *location == expression_location
+            });
+            let Some((node, origin, _)) = occurrences.next() else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: application.clone(),
+                });
+            };
+            if occurrences.next().is_some() {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: application.clone(),
+                });
+            }
+            let occurrence =
+                checked_occurrence(&origin).ok_or_else(|| EmitRefusal::UnknownOccurrenceRole {
+                    node: application.clone(),
+                    role: origin.role().to_string(),
+                })?;
+            let mut source_entries = source_map.iter().filter(|entry| {
+                entry.node_id == checked_node
+                    && entry.role == occurrence.role
+                    && entry.ordinal == occurrence.ordinal
+            });
+            let Some(source_map_entry) = source_entries.next().cloned() else {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: application.clone(),
+                });
+            };
+            if source_entries.next().is_some() {
+                return Err(EmitRefusal::MissingEqualityIdentityContext {
+                    application: application.clone(),
+                });
+            }
+            Ok(EqualityProducerEmissionRow {
+                application: application.clone(),
+                checked_node,
+                occurrence,
+                location: quire_exact::Location::new(node, origin),
+                source_map_entry,
+                producer_identity: producer_identity.clone(),
+            })
+        })
+        .collect()
 }
 
 /// The source map of the written nodes, in graph order, and the raw sources
@@ -2813,12 +2927,6 @@ fn emit_package_inner(
             .filter(|row| emitted_keys.contains(&row.node_key))
             .cloned()
             .collect();
-    let equality_producer_identity_rows = graph
-        .equality_producer_identities()
-        .values()
-        .filter(|row| emitted_keys.contains(row.application()))
-        .cloned()
-        .collect();
     let selected_model_enum_declaration_rows: Vec<
         quire_contract_model::SelectedModelEnumDeclarationRow,
     > = graph
@@ -3324,6 +3432,8 @@ fn emit_package_inner(
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
+    let equality_producer_identity_rows =
+        equality_producer_emission_rows(graph, &emitted_node_ids, &source_map)?;
     let selected_operation_member_rows = selected_operation_member_rows
         .into_iter()
         .map(|(key, mut row)| {

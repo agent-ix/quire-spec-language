@@ -169,70 +169,102 @@ fn structurally_reused_equality_keys_retain_each_occurrence() {
     assert_ne!(
         identity_rows[0].location(),
         identity_rows[1].location(),
-        "each identity row retains its own source occurrence"
+        "each identity row retains its own exact checked occurrence"
     );
+    assert_eq!(
+        identity_rows[0].checked_node(),
+        identity_rows[1].checked_node()
+    );
+    assert_ne!(identity_rows[0].occurrence(), identity_rows[1].occurrence());
     assert!(identity_rows
         .iter()
-        .all(|row| !row.quantity_type_nodes().is_empty()));
+        .all(|row| row.location().node() == row.application()));
+    assert!(identity_rows.iter().all(|row| {
+        row.source_map_entry().node_id == *row.checked_node()
+            && row.source_map_entry().role == row.occurrence().role
+            && row.source_map_entry().ordinal == row.occurrence().ordinal
+    }));
 }
 
-/// QSL-1390: emitted identity rows retain exact quantity type and nominal
-/// descriptor keys, including the root closure of a compound quantity.
+/// QSL-1390: emitted identity rows retain unit ids and dimension roles.
 #[ix_trace_rs::trace("QSpec-TC-233", "QSL-1390")]
 #[test]
-fn emission_retains_quantity_descriptor_node_keys() {
+fn emission_retains_unit_and_dimension_identity_roles() {
     use quire_exact::UnitDomain;
 
     let emission = emitted(
-        "dimension Length; unit m : Length = rational(1, 1);\n\
-         function quantity using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }\n\
+        "dimension Length; dimension Area = Length;\n\
+         unit m : Length = rational(1, 1); unit cm : Length = rational(1, 100) * m;\n\
+         unit sqm : Area = rational(1, 1);\n\
+         function quantity using v(a: Quantity<cm>, b: Quantity<m>): Boolean pure { convert<Quantity<m>>(a) = b }\n\
+         function area using v(a: Quantity<sqm>, b: Quantity<sqm>): Boolean pure { a = b }\n\
          function compound using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a * b = a * b }",
     );
     let rows = emission.equality_producer_identity_rows();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 3);
     let declared = rows
         .iter()
         .find(|row| {
-            row.quantity_type_nodes()
-                .keys()
+            row.producer_identity()
+                .unit_ids()
+                .iter()
                 .any(|unit| unit.domain() == UnitDomain::Declared)
         })
-        .expect("declared quantity rows retain a quantity type node");
+        .expect("quantity rows retain their source UnitIds");
     assert!(declared
-        .quantity_type_nodes()
+        .producer_identity()
+        .unit_ids()
         .iter()
-        .all(|(unit, node)| unit.declared_key() == Some(node)));
+        .any(|unit| { unit.domain() == UnitDomain::Declared && unit.declared_key().is_some() }));
 
     let compound = rows
         .iter()
         .find(|row| {
-            row.quantity_type_nodes()
-                .keys()
+            row.producer_identity()
+                .unit_ids()
+                .iter()
                 .any(|unit| unit.domain() == UnitDomain::Compound)
         })
-        .expect("compound quantity rows retain a quantity type node");
+        .expect("compound quantity rows retain their exact compound UnitId");
     assert!(compound
-        .quantity_type_nodes()
-        .keys()
+        .producer_identity()
+        .unit_ids()
+        .iter()
         .any(|unit| unit.domain() == UnitDomain::Compound));
-    assert!(!compound.nominal_nodes().is_empty());
-    for (key, node) in compound.nominal_nodes() {
-        assert_eq!(key, &node.key);
-        match &node.form {
-            quire_semantic_value::unit::NominalUnitForm::Dimension { terms } => {
-                assert!(terms
-                    .iter()
-                    .all(|(base, _)| compound.nominal_nodes().contains_key(base)));
-            }
-            quire_semantic_value::unit::NominalUnitForm::Unit {
-                dimension, target, ..
-            } => {
-                assert!(compound.nominal_nodes().contains_key(dimension));
-                assert!(target
-                    .as_ref()
-                    .is_none_or(|target| compound.nominal_nodes().contains_key(target)));
-            }
-        }
+    assert!(!compound
+        .producer_identity()
+        .dimension_declarations()
+        .is_empty());
+    let derived = rows
+        .iter()
+        .find(|row| !row.producer_identity().dimension_terms().is_empty())
+        .expect("derived dimension rows retain their exact term positions");
+    assert!(derived
+        .producer_identity()
+        .dimension_terms()
+        .iter()
+        .any(|(_, position, _, _)| *position == 0));
+    assert!(!declared
+        .producer_identity()
+        .conversion_edge_targets()
+        .is_empty());
+}
+
+/// QSL-1390: Text and Plan comparisons retain the exact operand type keys.
+#[ix_trace_rs::trace("QSpec-TC-233", "QSL-1390")]
+#[test]
+fn text_and_plan_equality_rows_retain_operand_type_identities() {
+    let emission = emitted(
+        "record R { x: Integer; }\n\
+         function text_eq using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }\n\
+         function plan_eq using v(a: R, b: R): Boolean pure { a = b }",
+    );
+    assert_eq!(emission.equality_producer_identity_rows().len(), 2);
+    for row in emission.equality_producer_identity_rows() {
+        let type_rows = row.producer_identity().text_plan_type_nodes();
+        assert_eq!(type_rows.len(), 2);
+        assert_eq!(type_rows[0].0, 0);
+        assert_eq!(type_rows[1].0, 1);
     }
 }
 

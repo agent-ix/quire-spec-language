@@ -1285,6 +1285,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::OperandNotInGraph { .. }) => {
                 panic!("every operand of a written node is a graph node")
             }
+            Err(EmitRefusal::MissingEqualityIdentityContext { .. }) => {
+                panic!("every emitted equality retains its exact producer occurrence")
+            }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")

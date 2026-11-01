@@ -11,7 +11,7 @@ use quire_semantic_value::declaration::{EqualityOperator, EqualitySchedule};
 use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::UnitTable;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::fmt;
 use std::ops::ControlFlow;
@@ -99,22 +99,31 @@ pub struct EqualityProducerData {
 pub struct EqualityProducerIdentity {
     application: NodeKey,
     location: Location,
-    quantity_type_nodes: BTreeMap<quire_exact::UnitId, NodeKey>,
-    nominal_nodes: BTreeMap<NodeKey, quire_semantic_value::unit::NominalUnitNode>,
+    unit_ids: Vec<quire_exact::UnitId>,
+    dimension_declarations: BTreeSet<NodeKey>,
+    dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
+    conversion_edge_targets: BTreeSet<NodeKey>,
+    text_plan_type_nodes: Vec<(usize, NodeKey)>,
 }
 
 impl EqualityProducerIdentity {
     pub(crate) fn new(
         application: NodeKey,
         location: Location,
-        quantity_type_nodes: BTreeMap<quire_exact::UnitId, NodeKey>,
-        nominal_nodes: BTreeMap<NodeKey, quire_semantic_value::unit::NominalUnitNode>,
+        unit_ids: Vec<quire_exact::UnitId>,
+        dimension_declarations: BTreeSet<NodeKey>,
+        dimension_terms: Vec<(NodeKey, usize, NodeKey, Integer)>,
+        conversion_edge_targets: BTreeSet<NodeKey>,
+        text_plan_type_nodes: Vec<(usize, NodeKey)>,
     ) -> Self {
         Self {
             application,
             location,
-            quantity_type_nodes,
-            nominal_nodes,
+            unit_ids,
+            dimension_declarations,
+            dimension_terms,
+            conversion_edge_targets,
+            text_plan_type_nodes,
         }
     }
 
@@ -128,14 +137,29 @@ impl EqualityProducerIdentity {
         &self.location
     }
 
-    /// Exact semantic quantity-type node keys by their admitted UnitIds.
-    pub fn quantity_type_nodes(&self) -> &BTreeMap<quire_exact::UnitId, NodeKey> {
-        &self.quantity_type_nodes
+    /// Source and compound unit identities retained by the equality checker.
+    pub fn unit_ids(&self) -> &[quire_exact::UnitId] {
+        &self.unit_ids
     }
 
-    /// Exact admitted unit and dimension descriptor nodes in closure order.
-    pub fn nominal_nodes(&self) -> &BTreeMap<NodeKey, quire_semantic_value::unit::NominalUnitNode> {
-        &self.nominal_nodes
+    /// Exact dimension declaration keys in the retained unit closure.
+    pub fn dimension_declarations(&self) -> &BTreeSet<NodeKey> {
+        &self.dimension_declarations
+    }
+
+    /// `(dimension declaration, term position, base dimension, exponent)` rows.
+    pub fn dimension_terms(&self) -> &[(NodeKey, usize, NodeKey, Integer)] {
+        &self.dimension_terms
+    }
+
+    /// Exact targets of admitted conversion edges in the retained unit closure.
+    pub fn conversion_edge_targets(&self) -> &BTreeSet<NodeKey> {
+        &self.conversion_edge_targets
+    }
+
+    /// Exact Text/Plan comparison type keys by authored operand position.
+    pub fn text_plan_type_nodes(&self) -> &[(usize, NodeKey)] {
+        &self.text_plan_type_nodes
     }
 }
 

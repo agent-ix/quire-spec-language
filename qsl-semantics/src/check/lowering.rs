@@ -771,8 +771,6 @@ pub(crate) struct Lowering<'a> {
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
     equality_producer_data: BTreeMap<(NodeKey, Location), EqualityProducerData>,
-    /// The quantity type node built for each semantic unit id.
-    quantity_type_nodes: BTreeMap<quire_exact::UnitId, NodeKey>,
     /// Exact identity witnesses for equality application occurrences.
     equality_producer_identities:
         BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
@@ -1760,7 +1758,6 @@ impl<'a> Lowering<'a> {
             protocol_keys: Vec::new(),
             protocol_members: BTreeMap::new(),
             equality_producer_data: BTreeMap::new(),
-            quantity_type_nodes: BTreeMap::new(),
             equality_producer_identities: BTreeMap::new(),
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
@@ -4685,7 +4682,8 @@ impl<'a> Lowering<'a> {
                     else {
                         return Err(fault(location, KeyFault::UnresolvedDraft));
                     };
-                    let identity = self.equality_identity(key.clone(), location.clone(), &data)?;
+                    let identity =
+                        self.equality_identity(node, key.clone(), location.clone(), &data)?;
                     self.equality_producer_data
                         .insert((key.clone(), location.clone()), data);
                     self.equality_producer_identities
@@ -4733,18 +4731,15 @@ impl<'a> Lowering<'a> {
     }
 
     fn equality_identity(
-        &self,
+        &mut self,
+        node: CheckedNode<'_>,
         application: NodeKey,
         location: Location,
         data: &EqualityProducerData,
     ) -> Result<super::ir::EqualityProducerIdentity, CheckRefusal> {
-        let mut quantity_type_nodes = BTreeMap::new();
+        let unit_ids: Vec<_> = data.units().ids().collect();
         let mut pending = Vec::new();
-        for unit_id in data.units().ids() {
-            let Some(type_node) = self.quantity_type_nodes.get(&unit_id) else {
-                return Err(fault(&location, KeyFault::UnheldUnit(unit_id)));
-            };
-            quantity_type_nodes.insert(unit_id.clone(), type_node.clone());
+        for unit_id in &unit_ids {
             match self.units.get(unit_id.clone()) {
                 Some(quire_semantic_value::quantity::QuantityUnit::Declared(unit)) => {
                     pending.push(unit.key());
@@ -4752,13 +4747,16 @@ impl<'a> Lowering<'a> {
                 Some(quire_semantic_value::quantity::QuantityUnit::Compound(compound)) => {
                     pending.extend(compound.terms().map(|(root, _)| root));
                 }
-                None => return Err(fault(&location, KeyFault::UnheldUnit(unit_id))),
+                None => return Err(fault(&location, KeyFault::UnheldUnit(unit_id.clone()))),
             }
         }
 
-        let mut nominal_nodes = BTreeMap::new();
+        let mut dimension_declarations = BTreeSet::new();
+        let mut dimension_terms = Vec::new();
+        let mut conversion_edge_targets = BTreeSet::new();
+        let mut visited = BTreeSet::new();
         while let Some(key) = pending.pop() {
-            if nominal_nodes.contains_key(&key) {
+            if !visited.insert(key.clone()) {
                 continue;
             }
             let Some(nominal) = self.units.nominal_node(&key) else {
@@ -4766,23 +4764,54 @@ impl<'a> Lowering<'a> {
             };
             match &nominal.form {
                 quire_semantic_value::unit::NominalUnitForm::Dimension { terms } => {
-                    pending.extend(terms.iter().map(|(base, _)| base.clone()));
+                    dimension_declarations.insert(key.clone());
+                    for (position, (base, exponent)) in terms.iter().enumerate() {
+                        dimension_terms.push((
+                            key.clone(),
+                            position,
+                            base.clone(),
+                            exponent.clone(),
+                        ));
+                        pending.push(base.clone());
+                    }
                 }
                 quire_semantic_value::unit::NominalUnitForm::Unit {
                     dimension, target, ..
                 } => {
                     pending.push(dimension.clone());
-                    pending.extend(target.iter().cloned());
+                    if let Some(target) = target {
+                        conversion_edge_targets.insert(target.clone());
+                        pending.push(target.clone());
+                    }
                 }
             }
-            nominal_nodes.insert(key, nominal.clone());
         }
+
+        let text_plan_type_nodes = if matches!(
+            data.schedule(),
+            quire_semantic_value::declaration::EqualitySchedule::Text
+                | quire_semantic_value::declaration::EqualitySchedule::Plan
+        ) {
+            node.children()
+                .into_iter()
+                .enumerate()
+                .map(|(position, child)| {
+                    self.type_node(child.value_type(), &location)
+                        .map(|key| (position, key))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
 
         Ok(super::ir::EqualityProducerIdentity::new(
             application,
             location,
-            quantity_type_nodes,
-            nominal_nodes,
+            unit_ids,
+            dimension_declarations,
+            dimension_terms,
+            conversion_edge_targets,
+            text_plan_type_nodes,
         ))
     }
 
