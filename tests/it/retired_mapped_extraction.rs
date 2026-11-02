@@ -106,8 +106,9 @@ fn retired_mapped_and_extraction_imports_fail_in_a_downstream_crate() {
     for diagnostic in [
         "no `mapped` in the root",
         "no `extraction` in `command`",
+        "no `extraction` in `command::output`",
         "module `output` is private",
-        "no variant or associated item named `Extraction`",
+        "no variant, associated function, or constant named `Extraction`",
     ] {
         assert!(
             stderr.contains(diagnostic),
