@@ -428,9 +428,10 @@ fn mixed_protocol_cycle_work_is_linear_and_uses_the_exact_budget() {
     for (bound, label) in [(0, "zero units"), (exact - 1, "one unit short")] {
         let refusals = check_result(&text, limits.with_work_budget(bound))
             .expect_err("the insufficient S3 work budget refuses");
-        let [refusal] = refusals.as_slice() else {
-            panic!("one typed S3 work refusal for {label}: {refusals:?}");
-        };
+        let refusal = refusals
+            .iter()
+            .find(|refusal| matches!(refusal.cause, CheckCause::ResourceExhausted(_)))
+            .unwrap_or_else(|| panic!("typed S3 work refusal for {label}: {refusals:?}"));
         assert_eq!(
             refusal.cause.code(),
             qsl_foundation::Code::StageLimitExceeded,

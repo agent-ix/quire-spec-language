@@ -715,6 +715,9 @@ pub(crate) struct Lowering<'a> {
     composite_placeholders: HashMap<NodeKey, NodeRef>,
     /// Whether a recursive function group is being lowered.
     functions_open: bool,
+    /// A mixed cycle containing an attempt protocol stays open until its
+    /// clause includes the lowered attempt nodes.
+    deferred_mixed_settlement: bool,
     /// The `clock_place` template node of each clock place of the unit's
     /// timed models, which a `presence_read` names (QSpec FR-322
     /// "Presence").
@@ -1748,6 +1751,7 @@ impl<'a> Lowering<'a> {
             composites_open: HashSet::new(),
             composite_placeholders: HashMap::new(),
             functions_open: false,
+            deferred_mixed_settlement: false,
             timed_places: Vec::new(),
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
@@ -2719,7 +2723,10 @@ impl<'a> Lowering<'a> {
         }
         self.composites.insert(declaration.clone(), key.clone());
         self.unsettled_composites.push(declaration.clone());
-        if self.composites_in_progress.is_empty() && !self.functions_open {
+        if self.composites_in_progress.is_empty()
+            && !self.functions_open
+            && !self.deferred_mixed_settlement
+        {
             self.settle()?;
         }
         Ok(self.composites.get(&declaration).cloned().unwrap_or(key))
@@ -3083,8 +3090,10 @@ impl<'a> Lowering<'a> {
             }
         }
         self.functions_open = false;
-        if let Err(refusal) = self.settle() {
-            refusals.push(refusal);
+        if !self.deferred_mixed_settlement {
+            if let Err(refusal) = self.settle() {
+                refusals.push(refusal);
+            }
         }
         refusals
     }
@@ -3135,9 +3144,14 @@ impl<'a> Lowering<'a> {
 
     /// Settle the open mixed function/protocol component after all its
     /// members have been lowered.
-    pub(crate) fn settle_mixed_cycle(&mut self) -> Result<(), CheckRefusal> {
+    pub(crate) fn settle_mixed_cycle(&mut self, defer: bool) -> Result<(), CheckRefusal> {
         self.functions_open = false;
-        self.settle()
+        self.deferred_mixed_settlement |= defer;
+        if self.deferred_mixed_settlement {
+            Ok(())
+        } else {
+            self.settle()
+        }
     }
 
     /// Key every draft (FR-092 "Recursion groups"), once nothing is open:

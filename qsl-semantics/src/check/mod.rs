@@ -4323,7 +4323,17 @@ impl PackageDeclarations {
                     for group in functions {
                         lower_functions(&mut lowering, &mut refusals, group, true);
                     }
-                    if let Err(refusal) = lowering.settle_mixed_cycle() {
+                    let defer_attempt_clause = protocols.iter().any(|index| {
+                        protocol_list.get(*index).is_some_and(|protocol| {
+                            protocol
+                                .checked
+                                .controls
+                                .controls
+                                .iter()
+                                .any(|control| control.step() == ControlStep::Attempt)
+                        })
+                    });
+                    if let Err(refusal) = lowering.settle_mixed_cycle(defer_attempt_clause) {
                         refusals.push(refusal);
                     }
                     for index in temporals {
@@ -5291,6 +5301,9 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         let lowered = lowering
             .finish(&lowering::generated_location())
             .map_err(|refusal| vec![refusal])?;
@@ -5302,9 +5315,6 @@ impl PackageDeclarations {
             |location| regions.region(location).map(|region| region.start()),
         );
         let parameter_spans = lowered.parameter_spans;
-        if !refusals.is_empty() {
-            return Err(refusals);
-        }
         // Every clause and attempt lowered above (a failed one refused, and
         // `refusals` is empty here); a slot left empty is an internal fault,
         // never a silent omission.

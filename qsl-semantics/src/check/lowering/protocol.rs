@@ -647,6 +647,11 @@ impl Lowering<'_> {
                 if let Some(placeholder) = placeholder {
                     self.placeholders.insert(placeholder, Some(key));
                 } else {
+                    if matches!(key, NodeRef::Pending(_))
+                        && !self.unsettled_protocols.contains(&index)
+                    {
+                        self.unsettled_protocols.push(index);
+                    }
                     self.set_protocol_key(index, ProtocolKey::Keyed(key));
                 }
                 Ok(Vec::new())
@@ -727,8 +732,16 @@ impl Lowering<'_> {
             if let Some(placeholder) = placeholder {
                 self.placeholders.insert(placeholder, Some(key));
             } else {
+                if matches!(key, NodeRef::Pending(_)) && !self.unsettled_protocols.contains(&index)
+                {
+                    self.unsettled_protocols.push(index);
+                }
                 self.protocol_keys[index] = ProtocolKey::Keyed(key);
             }
+        }
+        if self.deferred_mixed_settlement {
+            self.deferred_mixed_settlement = false;
+            self.settle()?;
         }
         Ok(())
     }
