@@ -21,7 +21,9 @@ use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Ra, RestKind, Sc, StepKind,
     ThreadPath, Tso, WaitCause, WeakAccesses,
 };
-use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{
+    independent, ExpansionLimit, Location, SubjectSystem, TransitionSystem,
+};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
@@ -180,9 +182,27 @@ impl Case {
         selection: &[MemorySelection],
         memory: M,
     ) -> Result<ProtocolSystem<'_, M>, ProtocolRefusal> {
-        let subject = self.subject(selection);
+        Self::build(&self.subject(selection), memory)
+    }
+
+    /// [`Self::system`] with each expansion bound to `max_candidates`.
+    fn system_within<M: MemoryModel>(
+        &self,
+        selection: &[MemorySelection],
+        memory: M,
+        max_candidates: u64,
+    ) -> Result<ProtocolSystem<'_, M>, ProtocolRefusal> {
+        let mut subject = self.subject(selection);
+        subject.model.simulation.expansion.max_candidates = max_candidates;
+        Self::build(&subject, memory)
+    }
+
+    fn build<'s, M: MemoryModel>(
+        subject: &ProtocolSubject<'s>,
+        memory: M,
+    ) -> Result<ProtocolSystem<'s, M>, ProtocolRefusal> {
         let model = ModelSystem::new(subject.model.simulation.clone()).expect("admits");
-        ProtocolSystem::new(model, &subject, memory)
+        ProtocolSystem::new(model, subject, memory)
     }
 
     /// EN-1 over `SB` with `item`, the selection and the store buffer bound.
@@ -2606,6 +2626,34 @@ fn a_memory_model_refuses_a_resolved_model_it_does_not_implement() {
             ("unsupported_construct", "not-yet-implemented")
         );
     }
+}
+
+/// EN-1's classification of `SB`'s attempts over the initial state expands
+/// their applications under the subject's `max_candidates`: a bound the
+/// expansion reaches stops construction with FR-120's resource stop naming
+/// `MaxCandidates`, not with an internal fault, under `tso` and `ra`; the
+/// default bound builds.
+#[trace("TC-665", "FR-120", "FR-220")]
+#[test]
+fn a_candidate_bound_reached_while_classifying_is_a_resource_stop() {
+    let case = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let ra = [select("SB::Both", MemoryModelName::Ra)];
+    for refused in [
+        case.system_within(&tso, Tso::default(), 0).err(),
+        case.system_within(&ra, Ra::default(), 0).err(),
+    ] {
+        let refusal = refused.expect("the bound stops construction");
+        let ProtocolRefusal::InitialStop(stop) = &refusal else {
+            panic!("{refusal:?}");
+        };
+        assert_eq!(stop.limit, Some(ExpansionLimit::MaxCandidates));
+        assert_eq!(
+            (refusal.code().as_str(), refusal.cause()),
+            ("resource_exhausted", "insufficient-next-charge")
+        );
+    }
+    assert!(case.system(&tso, Tso::default()).is_ok());
 }
 
 /// A claim's one atom over the bound core's registers: the weak outcome
