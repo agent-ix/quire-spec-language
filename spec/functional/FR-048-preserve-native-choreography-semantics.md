@@ -164,8 +164,10 @@ configuration refuses the timed family. A compensation's own timed clause
 (`compensate ... using A clock "c" { within [a, b] }`) is a selected temporal
 declaration with its own clock name, so it has its own typed clock configuration
 and, on the checked-package route, its own `temporal_bindings` row beside the
-rows of the `temporal` clauses (FR-050, "Checked-package clock bindings"); the
-lock's `temporal_profile` selection alone does not supply it. The strict `/1` reader SHALL continue
+rows of the `temporal` clauses (FR-050, "Checked-package clock bindings", whose
+compensation rows await QSpec STD-644 for reader admission); the lock's
+`temporal_profile` selection alone does not supply it.
+The strict `/1` reader SHALL continue
 to reject `/2`, and the strict `/2` reader SHALL NOT reinterpret or silently
 upgrade `/1`. These selections and configurations provide the inputs required
 by L5; they define no clock progression, deadline settlement or late-evidence

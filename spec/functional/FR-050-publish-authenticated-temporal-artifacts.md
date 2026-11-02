@@ -229,7 +229,8 @@ extension.
 ### Checked-package clock bindings
 
 On the checked-package route the same selection is carried by QSpec FR-322's
-top-level `temporal_bindings` member ("Temporal clock bindings",
+top-level `temporal_bindings` member (a different member from the `/2` wire's
+`temporal_bindings` table above, with the row shape stated here) ("Temporal clock bindings",
 FR-322-AC-294). A **selected temporal declaration** is each `temporal` clause
 and each protocol `compensate` template whose body names a clock and a `within`
 window: a compensation's own timed clause
@@ -237,6 +238,18 @@ window: a compensation's own timed clause
 FR-381) is a selected temporal declaration like a `temporal` clause, not a part
 of its protocol's declaration. It carries its own clock name, so binding only
 the package's `lock.profile_selections` `temporal_profile` row is not enough.
+
+**Pending QSpec.** QSpec FR-322 today admits a row only for a
+`temporal`/`temporal_clause` declaration, defines `clock_name` as that clause's
+`quire.op.temporal.clause` clock argument and joins the profile through the
+clause's own `temporal_profile` law. A row for a compensation window, its
+`clock_name` as the template's `clock` text and its profile join through the
+lock's `temporal_profile` selection are the QSL rules below and are not
+admissible through the QSpec strict reader until STD-644 lands; the reader
+refusal text below holds today for clause rows only. An `await` also reads a
+clock role (QSpec FR-464, FR-466) but is outside this ruling, which covers
+compensation windows only; it keeps the lock-level `temporal_profile`
+selection (FR-383) until a decision names it.
 
 - The emitter SHALL write exactly one `temporal_bindings` row
   `{declaration, clock, clock_name}` for each selected temporal declaration,
@@ -247,8 +260,9 @@ the package's `lock.profile_selections` `temporal_profile` row is not enough.
   `temporal`/`temporal_clause` node for a clause, and the
   `protocol`/`compensation` template node for a compensation window. Its
   producer-side identity is the pair (source authority and identity, declaration
-  byte span) that this requirement already keys `native::TemporalSelection` by,
-  resolved to the node's `NodeRef` by the emitter. Two compensations of one
+  byte span of the whole declaration, the entire `compensate` template for a
+  compensation) that this requirement already keys `native::TemporalSelection`
+  by, resolved to the node's `NodeRef` by the emitter. Two compensations of one
   protocol, or a clause and a compensation, that agree in model, profile and
   clock name are two declarations with two rows.
 - `clock_name` is the exact non-empty clock text of the declaration (the clause
