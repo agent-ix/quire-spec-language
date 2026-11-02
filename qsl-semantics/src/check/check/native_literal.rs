@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-091 "Native scalar literals": the calls `UUID("...")` and `Timestamp(n)`
-//! check to a `UUID` or `Timestamp` literal.
+//! FR-091 "Native scalar literals": the calls `UUID("...")`, `Timestamp(n)`
+//! and `Text("...")` check to their typed literal values.
 //!
-//! The two spellings are ordinary calls to S2; here the native literal
+//! These spellings are ordinary calls to S2; here the native literal
 //! constructor of that name is one candidate beside the unit's declared
 //! functions and tuples of the same name, and exactly one candidate is
 //! required. The quoted `String` literal needs no resolution and is typed in
