@@ -103,6 +103,7 @@ fn wire(compiled: &ComposedUnit) -> Value {
 /// FR-099-AC-3 (TC-446 step 3), selection and dependency input: each
 /// refusal is located as D-1 states, and none yields a package.
 #[trace("FR-099-AC-3", "TC-446")]
+#[trace("QSpec-FR-307-AC-6", "QSpec-TC-227")]
 #[test]
 fn selection_and_dependency_input_refusals() {
     let geometry = library("test/geometry", "geometry", F);
@@ -189,6 +190,7 @@ fn selection_and_dependency_input_refusals() {
 /// declares it; a library's own refusal is wrapped with its
 /// dependency path and located in the library's source.
 #[trace("FR-099-AC-3", "TC-446")]
+#[trace("QSpec-FR-307-AC-4", "QSpec-TC-227")]
 #[test]
 fn a_cycle_and_a_library_refusal() {
     // test/a and test/b import each other.
@@ -281,6 +283,7 @@ fn a_library_header_that_does_not_resolve_is_refused() {
 /// selects its library, and a supplied library the unit does not import
 /// changes nothing in the emitted bytes.
 #[trace("FR-099-AC-1", "TC-446")]
+#[trace("QSpec-FR-307-AC-4", "QSpec-FR-307-AC-6", "QSpec-TC-227")]
 #[test]
 fn an_unreferenced_import_selects_its_library_and_an_unimported_one_changes_nothing() {
     let source = unit(&format!("{}{H}", import("test/geometry", "g")));
@@ -625,6 +628,7 @@ fn spine_model() -> Vec<u8> {
 /// record, or over a model reference, and a use of the library's record in
 /// a type position, each refuse `ill_typed`/`operator-ineligible` at the use.
 #[trace("FR-099-AC-5", "TC-446")]
+#[trace("QSpec-FR-307-AC-6", "QSpec-TC-227")]
 #[test]
 fn an_imported_name_whose_signature_is_package_dependent_refuses() {
     let document = spine_model();
@@ -704,6 +708,7 @@ fn an_imported_name_whose_signature_is_package_dependent_refuses() {
 /// against the library's own package, where its own calls resolve, and the
 /// caller's package is restored when it returns.
 #[trace("FR-099-AC-5", "TC-446")]
+#[trace("QSpec-FR-307-AC-6", "QSpec-TC-227")]
 #[test]
 fn an_imported_call_evaluates_in_the_library_and_returns_to_the_caller() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
@@ -910,4 +915,44 @@ fn an_imported_call_over_each_independent_scalar_kind_checks_and_reads() {
         view_of(&compiled.package, "fixture")
             .unwrap_or_else(|refusal| panic!("{kind}: the I2 read admits p: {refusal}"));
     }
+}
+
+/// FR-307-AC-4 (TC-227): two imports declaring one qualifier are
+/// `ambiguous_declaration`/`ambiguous-name`, and a name used through the
+/// qualifier of an import written without `as` is `missing_declaration`.
+#[trace("QSpec-FR-307-AC-4", "QSpec-TC-227")]
+#[test]
+fn a_duplicate_import_qualifier_is_ambiguous_and_an_unaliased_import_binds_no_name() {
+    let dependencies = input(vec![
+        library("test/geometry", "geometry", F),
+        library("test/other", "other", F),
+    ]);
+
+    let duplicate = unit(&format!(
+        "{}{}{H}",
+        import("test/geometry", "g"),
+        import("test/other", "g"),
+    ));
+    let refusal =
+        compile_as("u", &duplicate, &dependencies).expect_err("one qualifier names two imports");
+    assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
+    let CompileRefusal::Assembly {
+        refusal: assembly, ..
+    } = &*refusal
+    else {
+        panic!("an assembly refusal, not {refusal:?}");
+    };
+    assert_eq!(
+        assembly.errors[0].cause.catalog_code().to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
+
+    let unaliased = unit(
+        "import \"test/geometry\";\n\
+         function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }\n",
+    );
+    let refusal = compile_as("u", &unaliased, &dependencies)
+        .expect_err("an import without `as` binds no qualifier");
+    assert_eq!(refusal.code(), Code::MissingDeclaration);
+    assert_eq!(covered(&unaliased, &refusal), "g::f(y)");
 }

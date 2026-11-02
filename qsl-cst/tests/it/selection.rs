@@ -119,6 +119,7 @@ fn a_model_names_only_its_domain_package_identity() {
 /// alone, `import "L" [as a];`. A `version` or `digest` token after the
 /// identity is a syntax error, and the selection is not recorded.
 #[trace("FR-099-AC-2", "TC-446")]
+#[trace("QSpec-FR-307-AC-6", "QSpec-TC-227")]
 #[test]
 fn an_import_names_only_its_library_identity() {
     let parse_import = |import: &str| {
@@ -159,5 +160,29 @@ fn an_import_names_only_its_library_identity() {
         assert!(!parsed.is_admissible(), "{old}");
         assert!(parsed.selections().imports.is_empty(), "{old}");
         assert_eq!(parsed.diagnostics()[0].code, Code::InvalidSyntax, "{old}");
+        // FR-307-AC-6: the cause is `unexpected-token`, located at the
+        // `version` or `digest` token itself.
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.cause, qsl_cst::CompleteCause::UnexpectedToken);
+        let token = if old.contains("version") {
+            "version"
+        } else {
+            "digest"
+        };
+        assert_eq!(
+            diagnostic
+                .region
+                .as_ref()
+                .map(|region| usize::try_from(region.start()).unwrap()),
+            token_offset(&old, token),
+            "{old}"
+        );
     }
+}
+
+/// The byte offset of `token` in the unit text `parse_import` builds.
+fn token_offset(import: &str, token: &str) -> Option<usize> {
+    let header =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+    import.find(token).map(|at| header.len() + at)
 }

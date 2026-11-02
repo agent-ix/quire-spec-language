@@ -104,6 +104,8 @@ fn assert_library_refusal_classified(
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-4")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-6")]
 #[test]
 fn l01_an_import_selects_the_library() {
     let lock = resolve_libraries(&over_l("P"), &[library_l()]).unwrap();
@@ -150,6 +152,7 @@ fn l04_a_diamond_selects_its_shared_library_once() {
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-4")]
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l05_an_import_cycle_lists_its_dependency_edges() {
@@ -188,6 +191,7 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
 }
 
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-4")]
 #[test]
 fn l07_migration_is_a_changed_export_set_and_never_relabels_evidence() {
     let old_library = library_l();
@@ -330,6 +334,7 @@ fn invalid_qualifier_classifies_to_e3_name_resolution() {
 }
 
 #[trace("TC-282", "FR-087-AC-12")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-6")]
 #[test]
 fn conflicting_definition_classifies_to_i2_rule_2() {
     assert_library_refusal_classified(
@@ -345,6 +350,7 @@ fn conflicting_definition_classifies_to_i2_rule_2() {
 }
 
 #[trace("TC-282", "FR-087-AC-12")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-6")]
 #[test]
 fn missing_import_classifies_to_i2_rule_1() {
     let root = package("P", "P@1", vec![import("Z", Some("z"))]);
