@@ -58,7 +58,7 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 21 | same, `Counter{u=1}` and the same-tick pair | per QSpec `tick-cover-vectors.json` `TCV-01` to `TCV-15` | the file's verdict for each vector |
 | 22 | `eventually[0,2] holds(p)` `on each` | stamps 0,10; p F,F; W 10; C(10); then p T at 0 | `Completed(false)` at 0; then `Pending {where 1, deadline 12}` |
 | 23 | row 3's first clause, meter 6 then 7 | stamps 0,2,5; p F,T,F | `Incomplete` at `temporal.visit`; the verdict with 7 charges |
-| 24 | `run_clause` over rows 1, 3 first case, 6, 8 | as rows | `violation`/exit 10 pos 0; `success`/0; `inconclusive`/0; `undefined`/10 cause `MissingValuation`; no `unsupported_profile` |
+| 24 | `run_clause` over rows 1, 3 first case, 6, 8 | as rows | `violation`/exit 10 pos 0; `success`/0; `inconclusive`/0; `indeterminate`/11 cause `MissingValuation`; no `unsupported_profile` |
 | 25 | the row 1 clause over `TraceInput::Finite`, and an event-position clause over `Timestamped` | none | stage `admit`, `invalid_runtime_input`/`invalid-value` each |
 | 26 | rows 1 to 22 run twice | same inputs | equal outcomes and one result identity |
 | 27 | row 20's clause, cover `Counter{u=1}`; then `Exact` | req at 0; no ack; W 3001, C(3002); W 3002, C(3002); then Exact W 3000, C(3000) | `Pending {deadline 3002}`; `Completed(false)`; `Completed(false)` |

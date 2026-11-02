@@ -107,7 +107,7 @@ FR-267 writer writes these as the report holds them and derives none.
 - The entry SHALL report a `Finite`, `Lasso` or `Model` trace for that profile, and a
   `Timestamped` trace for any other profile, at stage `admit`,
   `invalid_runtime_input`/`invalid-value`. FR-501's `Pending` reports
-  `inconclusive` (exit 0) and its `Indeterminate` reports `undefined` (exit 10)
+  `inconclusive` (exit 0) and its `Indeterminate` reports `indeterminate` (exit 11)
   with its reason as the cause, no `truth` and no counterexample. A progress
   contradiction (FR-502) reports stage `evaluate`, category `refusal`, with its
   record.

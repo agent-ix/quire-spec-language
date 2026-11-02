@@ -284,7 +284,7 @@ and denies `clippy::wildcard_enum_match_arm` (ADR-011 §5):
 | internal failure (including tool failure) | 30 |
 
 A multi-item outcome exits with the most severe code present, in QSpec
-FR-301's order: 30, 20, 21, 22, 10, 0. `StageFailure::Refused` takes the O-16
+FR-301's order: 30, 20, 21, 22, 10, 0 (FR-285 adds 11 for an indeterminate finite-window clause, ranked below 10). `StageFailure::Refused` takes the O-16
 category of its cause, so a profile-gated construct is unsupported (21) and
 any other refusal is refusal (20). `StageFailure::Limit` and
 `StageFailure::Cancelled` are incomplete (22). `StageFailure::Fault` is

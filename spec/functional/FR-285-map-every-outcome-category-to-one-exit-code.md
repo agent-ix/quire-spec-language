@@ -43,6 +43,7 @@ binary.
 | incomplete (limit, cancellation, deadline, budget) | 22 |
 | inconclusive: a proof or `analyze` item | 22 |
 | inconclusive: a supplied-trace clause still pending when the trace ends | 0 |
+| indeterminate: a finite-window clause (FR-501) whose window is closed and whose evidence stays unresolved | 11 |
 | internal failure (including tool failure) | 30 |
 
 The category undefined belongs to non-proof evaluation items: an `execute`
@@ -54,14 +55,25 @@ cause `UndefinedEvaluation{where, cause}`, category violation (FR-281). An
 undefined clause evaluation over a supplied trace (FR-283) is likewise a
 violation. Each of these exits 10.
 
+The category indeterminate belongs to a supplied-trace clause under the
+finite-window profile (FR-501) whose window is closed and whose evidence still
+leaves the claim open (a missing or conflicting valuation, an incomplete input,
+missing history, or a straddled bound). It is neither a violation nor a success:
+the trace lacks the data to decide the claim. It exits 11, a code of its own, so
+a script that tests for exit 10 does not read it as a violation and one that
+tests for 0 does not read it as success. The code sits in the evaluation-result
+decade beside 10 and ranks below it in severity, so an indeterminate item never
+hides a violation in a multi-item outcome. QSpec FR-301 owns the exit-code
+catalog; it must add 11 and the order below (see References).
+
 QSpec FR-301 gives exit 22 to an incomplete result and exit 0 to a run
 that completed without violation. An inconclusive proof or `analyze` item
 did not settle its claim, so it is incomplete and exits 22. A supplied-trace
 clause still pending when the trace ends (FR-283) observed no violation, so
 it exits 0.
 
-A multi-item outcome exits with the most severe code present, in QSpec
-FR-301's order: 30, 20, 21, 22, 10, 0.
+A multi-item outcome exits with the most severe code present, in the order
+30, 20, 21, 22, 10, 11, 0 (QSpec FR-301's order with 11 added below 10).
 
 `StageFailure` maps to a category as follows: `Refused` takes the category of
 its cause, so a profile-gated construct is unsupported (21) and any other
@@ -84,10 +96,11 @@ One exit code.
 
 - The exit function shall map each O-16 category to the code the table
   states.
+- The exit function shall map the category indeterminate to 11.
 - The exit function shall map an inconclusive proof or `analyze` item to 22
   and a supplied-trace clause pending at the trace's end to 0.
 - When an outcome holds several items, the frontend shall exit with the most
-  severe item code under the order 30, 20, 21, 22, 10, 0.
+  severe item code under the order 30, 20, 21, 22, 10, 11, 0.
 - Each `StageFailure` and `CallFailure` variant shall have the O-16 category
   the Description states.
 - A non-proof evaluation item whose category is undefined shall keep the
@@ -100,12 +113,13 @@ One exit code.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-285-AC-1 | For each of the nine table rows, the exit function returns the code the table states: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, and FR-283-AC-1's pending clause exits 0. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
-| FR-285-AC-2 | Multi-item outcomes with item codes {10, 22} exit 22; {0, 30, 20} exit 30; {21, 22} exit 21; {20, 21} exit 20; {0, 10} exit 10; {0} exit 0. | Test (TC-769) |
+| FR-285-AC-1 | For each of the ten table rows, the exit function returns the code the table states: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, FR-283-AC-1's pending clause exits 0, and FR-501-AC-4's `Indeterminate` clause exits 11. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
+| FR-285-AC-2 | Multi-item outcomes with item codes {10, 22} exit 22; {0, 30, 20} exit 30; {21, 22} exit 21; {20, 21} exit 20; {0, 10} exit 10; {10, 11} exit 10; {11, 22} exit 22; {0, 11} exit 11; {0} exit 0. | Test (TC-769) |
 | FR-285-AC-3 | `StageFailure::Refused` with a profile-gated cause exits 21 and with an `ill_typed` cause exits 20; `StageFailure::Limit` and `StageFailure::Cancelled` exit 22; `StageFailure::Fault` exits 30; `CallFailure::Input`, `Cancelled` and `Fault` exit 20, 22 and 30. | Test (TC-769) |
 | FR-285-AC-4 | FR-100's outcome mapping renders FR-100-AC-10's `sum-out-of-domain` evaluation as `{"kind": "undefined", "reason": "sum-out-of-domain"}` and exits 10. | Test (TC-769) |
 | FR-285-AC-5 | A `run` whose compile reaches a stage limit (the source byte limit set to 1, and `s3.nodes` set to 1) refuses with the `stage_limit_exceeded` code in category `incomplete`, exits 22 and not 20, and the refusal names the limits field and the configured bound. | Test (TC-769) |
 | FR-285-AC-6 | `CallFailure::Unsupported` with cause `NotSupplied` and with cause `Untranslatable` each exit 21, and `CallFailure::Limit` naming `prepare.compile_work_units` exits 22. | Test (TC-769) |
+| FR-285-AC-7 | A finite-window clause run (FR-330) whose result is FR-501's `Indeterminate` reports category `indeterminate`, keeps that label and the reason in its machine output, and exits 11; it does not exit 10 or 0. | Test (TC-769) |
 
 ## Dependencies
 
@@ -121,4 +135,6 @@ One exit code.
 - QSL-390 (ARCH-50): ruling RU-1, recorded on the ticket, and the
   team-leader decision ADR-029's References records, which reconciles RU-1
   with the QSL-366 ruling for proof items.
-- QSpec FR-301-AC-2 (STD-141): the QSpec half.
+- QSpec FR-301-AC-2 (STD-141): the QSpec half. QSpec must add exit 11 for the
+  category indeterminate and the order 30, 20, 21, 22, 10, 11, 0 to its exit
+  table; the mirror is tracked on QSL-1500.
