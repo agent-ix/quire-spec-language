@@ -331,6 +331,7 @@ impl Observed<'_> {
 type AppliedAt = (String, Option<BTreeSet<ModelTransition>>, bool);
 
 /// A memoized application and the candidates it charged.
+#[derive(Clone)]
 enum AppliedKind {
     Applications(Applications),
     Enabled(Vec<ModelTransition>),
@@ -478,11 +479,7 @@ impl ModelSystem<'_> {
         let identity = identity.as_ref()?;
         let applied = self.lock_applied();
         let (kind, charged) = applied.get(identity)?.get(at)?;
-        let kind = match kind {
-            AppliedKind::Applications(found) => AppliedKind::Applications(found.clone()),
-            AppliedKind::Enabled(found) => AppliedKind::Enabled(found.clone()),
-        };
-        Some((kind, *charged))
+        Some((kind.clone(), *charged))
     }
 
     /// Remember the application `at` of the observed state `identity`.

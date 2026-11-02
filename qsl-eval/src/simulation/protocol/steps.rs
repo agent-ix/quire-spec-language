@@ -467,22 +467,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         let operation = self.operation(node)?;
                         let select = |clause| attempt.contracts.contains(&clause);
                         let load_candidates = self.potential.load_candidates(node);
-                        let readable: Vec<&Location> = load_candidates
+                        let readable: Vec<(&Location, _)> = load_candidates
                             .into_iter()
                             .flat_map(|candidates| candidates.keys())
-                            .filter(|location| self.potential.cell(location).is_some())
+                            .filter_map(|location| {
+                                self.potential.cell(location).map(|cell| (location, cell))
+                            })
                             .collect();
-                        for location in &readable {
-                            if reads_at.contains_key(*location) {
+                        for &(location, cell) in &readable {
+                            if reads_at.contains_key(location) {
                                 continue;
                             }
-                            let Some(cell) = self.potential.cell(location) else {
-                                continue;
-                            };
                             let shared = super::memory::SharedCell {
                                 location,
                                 cell,
-                                non_atomic: self.non_atomic.contains(*location),
+                                non_atomic: self.non_atomic.contains(location),
                             };
                             let reads = self.memory.reads(
                                 &state.memory,
@@ -500,7 +499,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         }
                         let mut observations = vec![(&probe, None)];
                         let mut read_locations = BTreeSet::new();
-                        for location in readable {
+                        for (location, _) in readable {
                             let reads = reads_at.get(location).map_or(&[][..], Vec::as_slice);
                             if !reads.is_empty() {
                                 observations

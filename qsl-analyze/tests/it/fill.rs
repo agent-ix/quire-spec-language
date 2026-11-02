@@ -607,11 +607,15 @@ fn expand<M: MemoryModel>(system: &ProtocolSystem<'_, M>, state: &ProtocolState<
 
 /// Expands every state of `frontier` across the available cores, returning
 /// each expansion at its frontier position.
-fn expand_level<M: MemoryModel>(
+fn expand_level<M>(
     system: &ProtocolSystem<'_, M>,
     reached: &[Reached<M>],
     frontier: &[usize],
-) -> Vec<Expanded<M>> {
+) -> Vec<Expanded<M>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
     let workers = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
         .min(frontier.len());
@@ -653,9 +657,14 @@ fn expand_level<M: MemoryModel>(
 }
 
 /// Every reachable state of `system`, breadth-first from its initial states,
-/// each once by its state key, successors in transition-identity order. Each breadth-first level expands in parallel and is admitted in
-/// frontier order, so indices and steps equal a sequential FIFO search's.
-pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
+/// each once by its state key, successors in transition-identity order. Each
+/// breadth-first level expands in parallel and is admitted in frontier
+/// order, so indices and steps equal a sequential FIFO search's.
+pub(crate) fn reachable<M>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
     // State identity is the full canonical key, so equality cannot collapse
     // distinct states through a state key collision.
     let mut known: HashMap<StateKey, usize> = HashMap::new();

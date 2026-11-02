@@ -2795,7 +2795,11 @@ fn forbidden_litmus() -> Vec<(&'static str, String, &'static Forbid)> {
 }
 
 /// The core's registers at every terminal state of `system`.
-pub(crate) fn outcomes<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>> {
+pub(crate) fn outcomes<M>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
     reachable(system)
         .iter()
         .filter(|state| state.steps.is_empty())

@@ -10,7 +10,7 @@
 //! declared nesting level and never per element.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
@@ -387,7 +387,7 @@ pub(crate) struct Typing<'t> {
 /// are functions of the run's model alone.
 #[derive(Default)]
 pub(crate) struct KeyNames {
-    references: Mutex<BTreeMap<(DeclarationKey, String), KeyName>>,
+    references: RwLock<BTreeMap<DeclarationKey, BTreeMap<String, KeyName>>>,
     populations: Mutex<BTreeMap<DeclarationKey, KeyName>>,
 }
 
@@ -411,16 +411,23 @@ impl KeyNames {
         type_identity: &DeclarationKey,
         key: &str,
     ) -> Option<KeyName> {
-        let mut references = self
+        if let Some(found) = self
             .references
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(found) = references.get(&(type_identity.clone(), key.to_owned())) {
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(type_identity)
+            .and_then(|objects| objects.get(key))
+        {
             return Some(found.clone());
         }
         let reference = model.object_reference(type_identity, key).ok()?;
         let named = keyed_name(reference_enc(&reference));
-        references.insert((type_identity.clone(), key.to_owned()), named.clone());
+        self.references
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(type_identity.clone())
+            .or_default()
+            .insert(key.to_owned(), named.clone());
         Some(named)
     }
 
