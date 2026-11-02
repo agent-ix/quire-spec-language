@@ -1,6 +1,6 @@
 ---
 id: TC-1052
-title: "Write String, UUID and Timestamp constants as literals in the unit language"
+title: "Write String, UUID, Timestamp and Text constants as literals in the unit language"
 type: TC
 relationships:
   - target: "ix://agent-ix/quire-spec-language/FR-056"
@@ -12,12 +12,13 @@ relationships:
   - target: "ix://agent-ix/quire-spec-language/FR-098"
     type: verifies
 ---
-# TC-1052: Write String, UUID and Timestamp constants as literals in the unit language
+# TC-1052: Write String, UUID, Timestamp and Text constants as literals in the unit language
 
 ## Description
 
-Verify that the quoted literal, `UUID("...")` and `Timestamp(n)` build, check,
-lower and evaluate as the native `String`, `UUID` and `Timestamp` values; that
+Verify that the quoted literal, `UUID("...")`, `Timestamp(n)` and the explicit
+`Text("...")` constructor build, check, lower and evaluate as the native
+`String`, `UUID` and `Timestamp` values and the slot's `Text[..]` value; that
 malformed literals refuse with the stated code and cause; and that a literal
 never adapts to a slot of another type.
 
@@ -42,6 +43,13 @@ Every unit starts with the complete-V1 header and one profile selection `v`.
    `!=` counterpart `ns` through the real spine (FR-098) with an `Input`
    assignment carrying the String wire object `{"kind":"string","text":...}`
    for the texts `abc`, `ABC` and the empty text.
+7. Check and evaluate the `Text("...")` bodies of FR-056-AC-51 over the
+   `nfc`, `unicode-scalars` and `binary-utf8` slots, with the composed and
+   decomposed spellings of `\u00e9`.
+8. Check the refusals of FR-056-AC-52 and FR-091-AC-69: bounds, positions that
+   expect no `Text[..]`, argument forms, the ambiguous name and the lexical
+   escape.
+9. Lower the functions of FR-093-AC-50 and inspect the nodes.
 
 ## Expected Results
 
@@ -64,3 +72,13 @@ Every unit starts with the complete-V1 header and one profile selection `v`.
   text, `ns` the negation. Each `true` settles `inconclusive` with cause
   `Verdicts` and each `false` `reproduced-without-witness`, as in TC-1028
   Step 6.
+- Step 7: under `nfc` both spellings are the one retained sequence U+00E9 and
+  both bodies give the same Boolean; under `unicode-scalars` they differ; the
+  retained length, not the written length, is checked against the bounds.
+- Step 8: each row refuses with the stated code, cause and position and yields
+  no form, no value and no coercion; `TextLiteralOutsideBounds` names the
+  argument as written, the bounds, the profile and the retained length.
+- Step 9: each `Text("...")` lowers to one `value`/`literal` node of
+  `value_kind` `text` typed by the slot's `Text[..]` node; equal retained
+  sequences share a node; the comparison is the text equality with the
+  `text_profile` law.

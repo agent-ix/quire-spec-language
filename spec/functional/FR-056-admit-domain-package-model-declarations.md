@@ -377,6 +377,35 @@ equality identities of QSpec FR-322, as FR-093 states. QSpec FR-322 and
 FR-149 own the identities, the canonical equality and the refusal causes
 named here; this requirement states only that the unit language admits them.
 
+### The explicit Text constructor
+
+A `Text` value is written in source only as `Text("...")` (FR-091, "Native
+scalar literals"); there is no implicit conversion from `String` to `Text`, and
+FR-056-AC-41 stands: a quoted literal never changes type to fit its slot. The
+constructor takes one quoted text literal and has the type `Text[min, max;
+profile]` that its position expects: the declared type of the position it
+fills, namely the declared result type of the function whose body it is, a
+declared parameter or record field type, or the type of the other operand of
+`=` or `!=`. It has no type of its own, so a position with no declared
+`Text[..]` type refuses it.
+
+The value is the retained sequence of the argument under the slot's profile, as
+the Text paragraph above states it: the decoded scalar sequence itself under
+`unicode-scalars`, its normalization under `nfc`, `nfd`, `nfkc` and `nfkd`
+(QSpec FR-141), and its UTF-8 bytes under `binary-utf8`. Normalization is
+total, so it is applied and never refused: `Text("\u00e9")` and
+`Text("e\u0301")` over a `Text[..; nfc]` slot are one value, the single scalar
+U+00E9, and compare equal there, while over a `unicode-scalars` slot they are
+two values. The domain is decided on the retained sequence and never repairs
+it: a retained length outside `[min, max]` (the scalar count, or the byte count
+under `binary-utf8`) refuses at check time with the typed cause
+`TextLiteralOutsideBounds`, code `ill_typed`/`type-mismatch`, naming the
+argument as written, the slot's bounds and profile, the retained length and the
+span of the call. A
+value that the kernel produces outside the domain stays `text_length_out_of_domain`
+(FR-100); the constructor's check-time refusal is the static case of the same
+domain.
+
 ### K2 admission and composite boundary
 
 This vocabulary requirement does not bypass the reader or change FR-154's
@@ -944,6 +973,8 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-43 | A domain package whose object type `Note` declares fields `memo` typed `ix://quire/native/Text`, `ratio` typed `ix://quire/native/Rational`, `amount` typed `ix://quire/native/Decimal`, `amounts` typed `ix://quire/native/Decimal` with multiplicity `[0, 3]` and `count` typed `ix://quire/native/Integer`, an operation `scale(by)` whose parameter `by` is typed `ix://quire/native/Rational` and whose result is typed `ix://quire/native/Integer`, and an operation `peek()` whose result is typed `ix://quire/native/Text`, is admitted by intake and by the assembler with no refusal, and a unit selecting it whose clauses name none of these members is admitted. Adding, one at a time: the invariants `self.memo = self.memo`, `self.ratio = self.ratio`, `self.amount = self.amount` and `self.amounts = self.amounts` each refuse `ill_typed`/`operator-ineligible` at the projection naming `Note` and `Field.typeRef`; an invariant comparing a call of `scale` with argument `self.count` to `1` refuses the same at the call naming `scale` and `Operation.params[0].typeRef`, with no refusal for the argument; an invariant comparing a call of `peek()` to itself refuses at the call naming `peek` and `Operation.returns.typeRef`; an operation `touch()` with `modifies memo` and the postcondition `self.memo = pre(self.memo)` refuses at the post-state projection `self.memo` naming `Note` and `Field.typeRef`, while `touch()` with `modifies memo` and no postcondition is admitted. Over the admitted unit, an FR-106 snapshot whose `Note` object supplies `count` and omits `memo`, `ratio`, `amount` and `amounts` is admitted and an invariant over `count` is checked against it; the same snapshot supplying `{"kind": "text", "text": "a"}` for `memo` refuses `ill_typed`/`operator-ineligible` at `fields.memo` naming `Note` and `Field.typeRef`, the value unread. An invocation of `scale` supplying `by` refuses the same at `parameters.by` naming `scale` and `Operation.params[0].typeRef`, one omitting `by` refuses `invalid_runtime_input`/`missing-member`, and an invocation of `peek` with a non-null `result` refuses `ill_typed`/`operator-ineligible` at `result` naming `peek` and `Operation.returns.typeRef`. | Test (TC-897) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 | FR-056-AC-44 | A business bundle with model-declaring artifacts `FR-001` and `OP-001`, including the underscore member names and references in TC-145, passes the real FCD bundle-to-lift path and QSL's intake/read path. The admitted declarations retain keys `ix://<package identity>/FR-001` and `ix://<package identity>/OP-001`; field and operation member identities retain their authored names and references resolve to those declarations, with no refusal caused by the artifact ids' spelling. | Test (TC-145) |
+| FR-056-AC-51 | Over `function a1 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text("\u00e9") }` and `function a2 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text("e\u0301") }`, `x` holding U+00E9 gives `true` for both, and `x` holding the empty text gives `false` for both; the two bodies hold the one retained sequence U+00E9. Over `Text[0, 8; unicode-scalars]` the same bodies are `true` for U+00E9 and U+0065 U+0301 respectively and `false` for the other. `function r1 using v(): Text[1, 1; nfc] pure { Text("e\u0301") }` checks (the retained length is one) and returns the text U+00E9; `Text[0, 1; binary-utf8]` with `Text("\u00e9")` refuses `TextLiteralOutsideBounds` (two bytes) and `Text[0, 2; binary-utf8]` admits it. | Test (TC-1052) |
+| FR-056-AC-52 | `function b1 using v(): Text[0, 2; nfc] pure { Text("abc") }` refuses `ill_typed`/`type-mismatch` with the cause `TextLiteralOutsideBounds` naming `abc`, the bounds `0` and `2`, the profile `nfc`, the retained length `3` and the span of the call, and `Text[2, 2; nfc]` with `Text("e\u0301")` refuses it with retained length `1`; `Text[1, 8; nfc]` with `Text("")` refuses it with retained length `0`. A `Text("abc")` in the body of a function whose result is `String`, `Integer` or `UUID`, and as an operand of `=` against a `String` operand, each refuse `ill_typed`/`type-mismatch` at the call, and `r = Text("abc")` over `r: String` and `x = "abc"` over `x: Text[0, 8; nfc]` still refuse (FR-056-AC-41); no refusal yields a value or a coercion. | Test (TC-1052) |
 
 ### FR-056-AC-17
 
@@ -1010,7 +1041,7 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
   payload contract above. Reader alignment and QSL/shared-value integration
   remain separate dependencies; accepting this spec does not deliver them.
 - [TC-1052](../test-cases/TC-1052-native-string-uuid-and-timestamp-literals.md)
-  verifies the String, UUID and Timestamp literals in `=` and `!=`.
+  verifies the String, UUID and Timestamp literals in `=` and `!=` and the explicit `Text("...")` constructor.
 - [TC-1028](../test-cases/TC-1028-unit-equality-on-native-string-uuid-and-timestamp.md)
   verifies unit-language `=` and `!=` over native String, UUID and Timestamp.
 - [TC-992](../test-cases/TC-992-native-string-and-uuid-checked-leaves.md)

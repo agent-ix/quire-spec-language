@@ -321,7 +321,7 @@ The `Value` production maps each CST expression construct to one
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
-| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")`, `Timestamp(n)`, `Bytes("...")` and `JsonObject("...")` are such calls, and check resolves them ("Native scalar literals") |
+| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")`, `Timestamp(n)`, `Bytes("...")`, `JsonObject("...")` and `Text("...")` are such calls, and check resolves them ("Native scalar literals") |
 | record value `R { f: e, g: null }` | `Record`; a field whose whole value is `null` is `FieldInitializer::Null` |
 | `sequence[..]`, `set[..]`, `bag[..]`, `orderedSet[..]` | `Collection` with kind `Sequence`, `Set`, `Bag`, `OrderedSet` |
 | `map`, `collect` `(x in c: e)` | `Query` with `BinderQuery::Map` |
@@ -867,11 +867,13 @@ or refuse a literal that this rule admits.
 ### Native scalar literals
 
 The unit language writes a constant of each native value type `String`,
-`UUID`, `Timestamp`, `Bytes` and `JsonObject` with one literal form. The forms are the only way to
-write such a constant, and each has exactly one checked type. They add no
+`UUID`, `Timestamp`, `Bytes` and `JsonObject`, and of a `Text[..]` value type,
+with one literal form. The forms are the only way to
+write such a constant, and each has exactly one checked type (a `Text("...")`
+takes the `Text[..]` type of its position). They add no
 production, no token and no reserved word: the quoted text token is already
-read by the lexer, and `UUID("...")`, `Timestamp(n)`, `Bytes("...")` and
-`JsonObject("...")` are ordinary calls that the shared complete-V1 grammar
+read by the lexer, and `UUID("...")`, `Timestamp(n)`, `Bytes("...")`,
+`JsonObject("...")` and `Text("...")` are ordinary calls that the shared complete-V1 grammar
 already parses.
 
 | Literal | Syntax | Checked type | Value |
@@ -881,6 +883,7 @@ already parses.
 | `Timestamp(n)` | a call of the name `Timestamp` with one integer argument | `Timestamp` | the signed 128-bit nanosecond count `n` on the POSIX epoch scale |
 | `Bytes("...")` | a call of the name `Bytes` with one quoted text argument | `Bytes` | the octet sequence of the canonical hexadecimal text |
 | `JsonObject("...")` | a call of the name `JsonObject` with one quoted text argument | `JsonObject` | the JSON value of the canonical RFC 8785 text |
+| `Text("...")` | a call of the name `Text` with one quoted text argument | `Text[min, max; profile]` of the position that expects it | the argument's retained sequence under that profile |
 
 **String.** The quoted text token is the JSON-compatible quoted text the
 lexer already reads: the escapes `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
@@ -944,14 +947,32 @@ argument text as written and the span of the call, code
 `ill_typed`/`type-mismatch`. A `Duration` has no literal form of its own: a
 quantity literal over the unit `s` (`3 s`, `rational(3, 2) s`) is a Duration.
 
-**Name resolution.** `UUID`, `Timestamp`, `Bytes` and `JsonObject` in a call position resolve with the native
+**Text.** `Text("...")` takes one argument, which must be a quoted text literal
+(not a `String`-typed expression), decoded as the String literal is, and is
+the only way to write a `Text` value. Its checked type is the `Text[min, max;
+profile]` that the enclosing position expects, FR-056's "The explicit Text
+constructor": the declared type of the position it fills (a function body's
+result, a parameter, a record field), or the type of the other operand of `=`
+or `!=`. A position that expects no `Text[..]` type (a `String`,
+`Integer`, `UUID` or other slot, a `String` peer, or no expectation, as in
+`Text("a") = Text("a")`) refuses `ill_typed`/`type-mismatch` at the call. Check
+computes the retained sequence under the profile and refuses a retained length
+outside `[min, max]` with the typed cause `TextLiteralOutsideBounds`, naming
+the argument text as written, the slot's bounds and profile, the retained
+length and the span of the call, code `ill_typed`/`type-mismatch`; no
+normalization refusal exists, because normalization is total. The refusal is
+reported with every other error of the unit, and no checked package holds the
+literal. Two `Text("...")` with one retained sequence and one slot type are one
+value.
+
+**Name resolution.** `UUID`, `Timestamp`, `Bytes`, `JsonObject` and `Text` in a call position resolve with the native
 literal constructor of that spelling as a candidate beside the unit's function,
 predicate and tuple declarations of that name, and exactly one candidate is
 required. This is new behavior: a call otherwise resolves a declared function
 before a type, and a call headed by a native type refuses
 `ill_typed`/`operator-ineligible`; the literal constructors are the only calls
 that take the native type name. A unit that also
-declares a function, predicate or tuple `UUID` (or `Timestamp`, `Bytes`, `JsonObject`) makes the call
+declares a function, predicate or tuple `UUID` (or `Timestamp`, `Bytes`, `JsonObject`, `Text`) makes the call
 an ambiguous name, `ambiguous_declaration`/`ambiguous-name`, naming the use,
 the span of each declaration and the native constructor as a candidate without
 a span, as the ambiguous type-name rule above does. The native operations `length(b)` and `concat(a, b)` of FR-056's "Native Bytes, JsonObject and Duration" resolve by the same rule and the same ambiguity refusal. A qualified spelling such
@@ -959,19 +980,19 @@ as `M::UUID("...")` names no native constructor and resolves as any qualified
 call does, refusing `missing_declaration`/`missing-name` when it names
 nothing. A call whose argument is not the form above (`UUID(x)`, `UUID(5)`,
 `Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Bytes(x)`, `Bytes(5)`,
-`JsonObject(x)`), or that has no argument
+`JsonObject(x)`, `Text(x)`, `Text(5)`), or that has no argument
 or two, refuses `ill_typed`/`type-mismatch` at the argument, or at the call
 when the argument count is not one, naming the expected argument form. The `UUID` and
 `Timestamp` type names are the predeclared type names above and are unaffected.
 
-The five literals have no operator of their own. They take part in `=` and
+The six literals have no operator of their own. They take part in `=` and
 `!=` under FR-056, and a `Bytes` literal in `length` and `concat`, as arguments, `let` bindings, record field values,
 conditional branches, collection elements and bodies, wherever a value of the
 literal's type is accepted. A literal at a slot of another type, including
-`"abc"` at a `Text[0, 8; nfc]` slot, `"00112233-4455-6677-8899-aabbccddeeff"`
+`"abc"` at a `Text[0, 8; nfc]` slot (write `Text("abc")`), `"00112233-4455-6677-8899-aabbccddeeff"`
 at a `UUID` slot, `"00ff"` at a `Bytes` slot and the integer `5` at a `Timestamp` slot, refuses
 `ill_typed`/`type-mismatch` at the literal as every typed mismatch does, with
-no coercion. FR-093 lowers the five literals.
+no coercion. FR-093 lowers the six literals.
 
 ### Decimal constructor
 
@@ -1144,6 +1165,7 @@ every checker of the language.
 | FR-091-AC-66 | Under one required `package_name`, assembling `ordered enum Status { READY, DONE }` followed by `enum Color { RED, BLUE = "Blue" }` returns `enums` holding `Status` then `Color`. `Status` has members `READY` then `DONE`; `Color` has members `BLUE` then `RED`. Each declaration key is the QSpec FR-322 structural node id with that package and the declaration's qualified path; each member key has the declaration's package and qualified path extended by its case name. Removing `BLUE`'s display string leaves `Color`'s key and member keys unchanged. Reassembling `Status` under owner (`a`, `w`) instead of (`a`, `u`) with the same `package_name` leaves its keys unchanged. `declared_type_spans` holds the span of each declaration. | Test (TC-481) |
 | FR-091-AC-67 | Assembling the Q1–Q10 source forms under one required `package_name` returns five dimensions and five units keyed by their QSpec FR-322 structural declared paths; every admitted key equals its declaration's structural key and is stable under a source-owner unit-label change with the package name fixed. `Speed` has exactly the ordered base terms `[(Length, 1), (Time, -1)]` and `Accel = Speed / Time` has exactly `[(Length, 1), (Time, -2)]`, both in ascending structural-key order. `km`'s edge has scale `1000` from `rational(2000, 2)`, `cm`'s scale `1/100` from `decimal(1, 2)`, and `C`'s offset `5463/20`; `C` is affine and `km` is not. `nominal_spans` holds each declared name's span under its key. A unit without a dimension or unit form has empty `units`. At decimal-scale bound `4`, `unit c : Length = decimal(1, 5) * m;` refuses `stage_limit_exceeded`/`work-budget-exceeded`, naming bound `4`, actual `5` and the number's span, while `decimal(1, 4)` assembles. | Test (TC-483) |
 | FR-091-AC-68 | For the Q11–Q13 dimension-equivalence sources, each admitted equivalence key is a QSpec FR-322 structural node id for the required `package_name`; it is stable under equivalent ratio spelling and source-owner unit-label changes with the package name fixed. `dimension Length ~ Distance by 1 km = 1 dist;`, its reversed form, and `by 1 dist = 1000 m` represent one normalized pair with `dimension_node_ids` in ascending structural-key order and the ratio stated for the first node; the ratios of the former Q12 and Q13 sources are respectively `1000/1` and `1/200`. Adding an equivalence leaves the `Length`, `Distance` and `Speed = Length / Time` declaration keys and `Speed`'s terms unchanged. For the three package pairs over `acme/rpc`, `acme/flow` and `acme/clock` `Time`, each equivalence retains the two package dimension node ids in ascending structural-key order and the normalized `root_scale` for the first node: `1/1` for rpc/flow, `1000/1` for rpc/clock and `1000/1` for flow/clock; each admitted equivalence has its declaration span in `nominal_spans`. | Test (TC-483) |
+| FR-091-AC-69 | S2 builds, for the bodies `Text("abc")` and `Text("e\u0301")`, a `Call` of the name `Text` with one `Expression::String` argument each and no new expression kind, and check resolves each to the explicit Text constructor of the position's `Text[..]` type. `Text(x)` over a `String` parameter, `Text(5)`, `Text()` and `Text("a", "b")` refuse `ill_typed`/`type-mismatch` at the argument (at the call for the last two); `Text("\ud800")` refuses `invalid_syntax`/`invalid-escape`; a unit that also declares `function Text using v(): Boolean pure { true }` makes `Text("abc")` refuse `ambiguous_declaration`/`ambiguous-name` as for `UUID`; and `Text("abc")` at a `Text[0, 2; nfc]` slot refuses `ill_typed`/`type-mismatch` with the cause `TextLiteralOutsideBounds` naming `abc`, `0`, `2`, `nfc`, the retained length `3` and the call's span. | Test (TC-1052) |
 
 ## Dependencies
 
