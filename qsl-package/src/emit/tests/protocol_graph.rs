@@ -1332,8 +1332,11 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         standalone_declaration_span.end + good.len() + 1
     );
     assert_eq!(*source_index, 1);
-    assert_eq!(padded_refusal.code(), standalone_refusal.code());
-    assert_eq!(padded_refusal.cause(), standalone_refusal.cause());
+    assert_eq!(padded_refusal.cause.code(), standalone_refusal.cause.code());
+    assert_eq!(
+        padded_refusal.cause.cause(),
+        standalone_refusal.cause.cause()
+    );
     assert_eq!(padded_refusal.location, standalone_refusal.location);
     assert!(matches!(
         (&padded_refusal.cause, &standalone_refusal.cause),
