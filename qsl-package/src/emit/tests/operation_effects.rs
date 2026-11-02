@@ -378,17 +378,10 @@ fn frame(document: &mut Value, owner: &str, name: &str, frame: Value) {
     }
 }
 
-/// FR-496-AC-4 (TC-1286 step 2): a state machine, a process and an object
-/// type each emit rows for the operations they declare; a subtype that only
-/// inherits an operation emits none, and no row is declared by a node of
-/// another form (a relationship, a persistence interface or a systems
-/// interface declares no FR-013 frame).
-#[trace("FR-496-AC-4", "TC-1286")]
-#[test]
-fn state_machines_processes_and_object_types_emit_rows_and_a_subtype_does_not() {
+/// The k2 document without its first transition's guard: IR resolves a guard
+/// by clause identity, not by the local clause id the k2 document gives it.
+fn guardless_k2() -> Value {
     let mut document = k2::k2();
-    // IR resolves a transition guard by clause identity, not by the local
-    // clause id the k2 document gives it, so the first transition has none.
     document["types"]
         .as_array_mut()
         .unwrap()
@@ -398,6 +391,18 @@ fn state_machines_processes_and_object_types_emit_rows_and_a_subtype_does_not() 
         .as_object_mut()
         .unwrap()
         .remove("guard");
+    document
+}
+
+/// FR-496-AC-4 (TC-1286 step 2): a state machine, a process and an object
+/// type each emit rows for the operations they declare; a subtype that only
+/// inherits an operation emits none, and no row is declared by a node of
+/// another form (a relationship, a persistence interface or a systems
+/// interface declares no FR-013 frame).
+#[trace("FR-496-AC-4", "TC-1286")]
+#[test]
+fn state_machines_processes_and_object_types_emit_rows_and_a_subtype_does_not() {
+    let mut document = guardless_k2();
     document["types"]
         .as_array_mut()
         .unwrap()
@@ -549,6 +554,80 @@ fn an_unavailable_effect_omits_the_whole_member() {
     assert!(emitted.wire.get("operation_effects").is_none());
     assert_eq!(emitted.rows(), None);
     assert!(emitted.verified());
+}
+
+/// FR-496-AC-5, one arm of the carried-node check per case: the k2 package
+/// carries `operation_effects`, and when IR cannot decode the process form the
+/// one node that arm names is omitted, so the whole member goes with it and the
+/// remaining package still reads back `Verified`. Each case names the process
+/// `Fulfilment` as only that arm's node: a creates target, a deletes target, a
+/// field's owner, or the declaring node.
+#[trace("FR-496-AC-5", "TC-1286")]
+#[test]
+fn each_node_an_effect_names_omits_the_whole_member_when_the_package_lacks_it() {
+    let process = k2::id("Fulfilment");
+    let settle = |frame: Value| ("Order", "settle", frame);
+    let cases = [
+        (
+            "creates",
+            settle(json!({"modifies": [], "creates": [process], "deletes": []})),
+        ),
+        (
+            "deletes",
+            settle(json!({"modifies": [], "creates": [], "deletes": [process]})),
+        ),
+        (
+            "field owner",
+            settle(json!({"modifies": [k2::id("Fulfilment/correlation_id")],
+                          "creates": [], "deletes": []})),
+        ),
+        (
+            "declaring",
+            (
+                "Fulfilment",
+                "run",
+                json!({"modifies": [], "creates": [], "deletes": []}),
+            ),
+        ),
+    ];
+    let cannot_decode_process = |tag: CheckedNodeTag, form: &str| {
+        !(tag == CheckedNodeTag::Model && form == "process")
+            && CheckedNodeKind::decode(tag, form).is_some()
+    };
+    for (arm, (owner, operation, operation_frame)) in cases {
+        let mut document = guardless_k2();
+        frame(&mut document, owner, operation, operation_frame);
+        let clauses = format!("post Named using v on M::{owner}::{operation} {{ true }}\n");
+        let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
+        let (checked, _) = compile(&document, &clauses);
+
+        let carried = emit_checked(&checked).expect("the package emits");
+        assert_eq!(carried.omitted, [], "{arm}");
+        let with = admit(&carried, &bytes);
+        assert!(
+            with.rows().is_some(),
+            "{arm}: the package carries the member"
+        );
+        assert!(with.verified(), "{arm}");
+
+        let emission = emit_package_decoding(
+            &checked,
+            checked.graph().memoized_regions(),
+            &cannot_decode_process,
+        )
+        .expect("the remaining nodes emit");
+        assert!(
+            !emission.omitted.is_empty(),
+            "{arm}: the process is omitted"
+        );
+        let without = admit(&emission, &bytes);
+        assert!(
+            without.wire.get("operation_effects").is_none(),
+            "{arm}: the member is omitted whole"
+        );
+        assert_eq!(without.rows(), None, "{arm}");
+        assert!(without.verified(), "{arm}");
+    }
 }
 
 /// The wire of `package` re-encoded by IR's typed writer with every sidecar it
