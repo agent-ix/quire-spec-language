@@ -457,7 +457,7 @@ fn listed(world: &World) -> SimulationCertificate {
             )
             .verdict
             {
-                StepVerdict::Passes { taken, .. } => taken,
+                StepVerdict::Passes { taken, .. } => *taken,
                 _ => Taken::Stutter,
             };
             row.push(CertifiedEdge {
