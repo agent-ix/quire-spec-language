@@ -620,6 +620,9 @@ fn function_state<'a>(
 ///
 /// quire:canonical
 pub struct CheckedGraph {
+    /// Process-local identity shared with standalone expressions checked
+    /// against this graph. It is never serialized or used as package identity.
+    graph_identity: CheckedGraphIdentity,
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
     source: qsl_foundation::source::provenance::RawSourceRef,
@@ -824,6 +827,21 @@ pub struct CheckedGraph {
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
 }
 
+/// Opaque identity of one checked graph instance, not its package name or
+/// source document identity.
+#[derive(Clone, Debug)]
+struct CheckedGraphIdentity(std::sync::Arc<()>);
+
+impl CheckedGraphIdentity {
+    fn fresh() -> Self {
+        Self(std::sync::Arc::new(()))
+    }
+
+    fn matches(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 /// Debug writes every node key under one [`scoped`] table, so each node of
 /// the package is written once however many collections hold it, and the
 /// output is linear in the package. The fields are destructured by name, so a
@@ -834,6 +852,7 @@ impl fmt::Debug for CheckedGraph {
         impl fmt::Debug for Body<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let CheckedGraph {
+                    graph_identity: _,
                     source,
                     package_name,
                     scope,
@@ -1131,6 +1150,8 @@ impl TemporalClauseNode {
 /// and every field are private to this module (ADR-011 §4).
 #[derive(Debug)]
 pub struct CheckedExpression {
+    /// The exact checked graph that established this expression's typing.
+    graph_identity: CheckedGraphIdentity,
     parameters: Vec<(String, ValueType)>,
     root: CheckedBody,
     slots: usize,
@@ -1139,6 +1160,14 @@ pub struct CheckedExpression {
 }
 
 impl CheckedExpression {
+    /// Whether this expression was checked against `graph` itself.
+    ///
+    /// Package names and source references alone do not identify a checked
+    /// graph instance: the same unit can be checked in distinct contexts.
+    pub fn is_from_graph(&self, graph: &CheckedGraph) -> bool {
+        self.graph_identity.matches(&graph.graph_identity)
+    }
+
     /// The result type.
     pub fn value_type(&self) -> &ValueType {
         self.root.root().value_type()
@@ -6244,6 +6273,7 @@ impl PackageDeclarations {
             })
             .collect();
         let mut graph = CheckedGraph {
+            graph_identity: CheckedGraphIdentity::fresh(),
             source,
             package_name,
             scope,
@@ -7269,6 +7299,7 @@ impl CheckedGraph {
             .check(root.root())?;
         }
         Ok(CheckedExpression {
+            graph_identity: self.graph_identity.clone(),
             parameters,
             root,
             slots,

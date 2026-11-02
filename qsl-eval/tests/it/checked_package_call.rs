@@ -111,6 +111,93 @@ fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     }
 }
 
+fn declarations_with_source(
+    functions: Vec<FunctionDeclaration>,
+    source: qsl_foundation::source::provenance::RawSourceRef,
+) -> PackageDeclarations {
+    PackageDeclarations {
+        functions,
+        ..PackageDeclarations::new(
+            source,
+            "same-package".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        )
+    }
+}
+
+/// FR-049-AC-1 / TC-136 H5: expression ownership is tied to the exact checked
+/// graph, even when two graphs use the same package name.
+#[trace("FR-049-AC-1", "TC-136")]
+#[test]
+fn evaluate_refuses_expression_from_another_checked_graph() {
+    let source_a = qsl_foundation::source::provenance::RawSourceRef::new("test", "graph-a")
+        .expect("source A is valid");
+    let source_b = qsl_foundation::source::provenance::RawSourceRef::new("test", "graph-b")
+        .expect("source B is valid");
+    let graph_a = declarations_with_source(vec![function_one()], source_a)
+        .check(CheckingLimits::default())
+        .expect("package A checks");
+    let graph_b = declarations_with_source(vec![function_one()], source_b)
+        .check(CheckingLimits::default())
+        .expect("package B checks");
+    let expression_a = graph_a
+        .check_expression(
+            Vec::new(),
+            &Expression::integer(7_i64),
+            Some(&ValueType::Integer),
+            CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+        .expect("expression A checks against package A");
+    let expression_b = graph_b
+        .check_expression(
+            Vec::new(),
+            &Expression::integer(11_i64),
+            Some(&ValueType::Integer),
+            CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+        .expect("expression B checks against package B");
+    let package_a = link(graph_a);
+    let package_b = link(graph_b);
+    let objects = ObjectEnvironment::default();
+
+    let mut meter_a = Meter::new(UNLIMITED);
+    let Outcome::Completed(Value::Integer(value)) = evaluated(
+        package_a
+            .evaluate(&expression_a, Vec::new(), &objects, &mut meter_a)
+            .expect("an expression evaluates through its own package"),
+    ) else {
+        panic!("an expression evaluates through its own package");
+    };
+    assert_eq!(value, Integer::from(7_i64));
+
+    let mut meter = Meter::new(UNLIMITED);
+    let meter_before = meter.clone();
+    let failure = package_b
+        .evaluate(&expression_a, Vec::new(), &objects, &mut meter)
+        .expect_err("a foreign checked expression must be refused before evaluation");
+    let CallFailure::Admission(failure) = failure else {
+        panic!("foreign expression must be a typed admission refusal: {failure:?}");
+    };
+    let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+        panic!("foreign expression admission must be a refusal: {failure:?}");
+    };
+    assert_eq!(record.record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.record.catalog.cause(), "foreign-checked-expression");
+    assert_eq!(meter, meter_before, "the refusal must not charge the meter");
+
+    let mut meter_b = Meter::new(UNLIMITED);
+    let Outcome::Completed(Value::Integer(value)) = evaluated(
+        package_b
+            .evaluate(&expression_b, Vec::new(), &objects, &mut meter_b)
+            .expect("package B's own expression evaluates"),
+    ) else {
+        panic!("package B's own expression evaluates");
+    };
+    assert_eq!(value, Integer::from(11_i64));
+}
+
 /// ADR-013 T-1 (FR-087): the S4 link step, over an empty
 /// dependency closure -- every fixture here declares no import, so E4
 /// never has a real dependency to populate (see [`CheckedPackage`]'s own
