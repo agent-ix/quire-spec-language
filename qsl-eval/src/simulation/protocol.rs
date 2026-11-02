@@ -59,7 +59,7 @@ use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::footprint::Location;
 use crate::simulation::key::{self, EncodingRefusal};
-use crate::simulation::model::encode::{map_enc, reference_enc, Enc};
+use crate::simulation::model::encode::{map_enc, reference_enc, Canonicalizer, Enc};
 use crate::simulation::model::{
     verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, Observed, TerminalClass,
     Verdict, BROKEN,
@@ -584,14 +584,57 @@ pub struct ProtocolKey<C> {
 
 impl<C: Encode> Encode for ProtocolKey<C> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        Envelope {
+            members: &self.members,
+            memory: &self.memory,
+        }
+        .encode_into(writer)
+    }
+}
+
+/// A [`ProtocolKey`]'s layout, over borrowed parts: the one place both its
+/// [`Encode`] implementation and its directly written bytes
+/// ([`Envelope::to_vec`]) take the members from.
+struct Envelope<'k, C> {
+    members: &'k [(&'static str, Enc)],
+    memory: &'k C,
+}
+
+impl<C> Envelope<'_, C> {
+    /// The name of the memory model's member.
+    const MEMORY: &'static str = "memory";
+}
+
+impl<C: Encode> Encode for Envelope<'_, C> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
         writer.begin_object()?;
-        for (name, value) in &self.members {
+        for (name, value) in self.members {
             writer.name(name)?;
             value.encode_into(writer)?;
         }
-        writer.name("memory")?;
+        writer.name(Self::MEMORY)?;
         self.memory.encode_into(writer)?;
         writer.end_object()
+    }
+}
+
+impl<C: Encode> Envelope<'_, C> {
+    /// The key's RFC 8785 bytes under `limits`, the memory member's bytes
+    /// `memory` when the memory model wrote them: the members written by
+    /// `canonical` beside those bytes, or else this envelope's [`Encode`]
+    /// bytes and refusal.
+    fn to_vec(
+        &self,
+        canonical: &Canonicalizer,
+        memory: Option<&[u8]>,
+        limits: quire_canonical::Limits,
+    ) -> Result<Vec<u8>, Error> {
+        match memory
+            .and_then(|memory| canonical.object_with(self.members, Self::MEMORY, memory, limits))
+        {
+            Some(bytes) => Ok(bytes),
+            None => quire_canonical::to_vec(self, limits),
+        }
     }
 }
 
@@ -1711,14 +1754,19 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
         &self,
         state: &Self::State,
     ) -> Result<(Vec<u8>, crate::simulation::StateKey), EncodingRefusal> {
-        key::state_key(&self.key(state), identity_limits())
+        let bytes = self.key_bytes(state)?;
+        Ok((
+            bytes.clone(),
+            crate::simulation::StateKey::from_canonical_bytes(bytes),
+        ))
     }
 
     fn canonical_state_key(
         &self,
         state: &Self::State,
     ) -> Result<crate::simulation::StateKey, EncodingRefusal> {
-        key::canonical_state_key(&self.key(state), identity_limits())
+        self.key_bytes(state)
+            .map(crate::simulation::StateKey::from_canonical_bytes)
     }
 
     fn transition_key(&self, transition: &ProtocolTransition) -> Result<Vec<u8>, EncodingRefusal> {
@@ -1800,6 +1848,24 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
     }
 }
 
+impl<M: MemoryModel> ProtocolSystem<'_, M> {
+    /// The RFC 8785 bytes of `state`'s key ([`TransitionSystem::key`]),
+    /// written without the event writer: the members through the model's
+    /// canonical writer, the memory member through [`MemoryModel::key_bytes`].
+    fn key_bytes(&self, state: &ProtocolState<M>) -> Result<Vec<u8>, EncodingRefusal> {
+        let identity = identity_limits();
+        let limits = quire_canonical::Limits::new(identity.input_bytes);
+        let canonical = self.model.canonical();
+        let memory = self.memory.key_bytes(&state.memory, canonical, limits);
+        Envelope {
+            members: &self.key_members(state),
+            memory: &state.memory,
+        }
+        .to_vec(canonical, memory.as_deref(), limits)
+        .map_err(|error| EncodingRefusal::of(&error, identity))
+    }
+}
+
 /// The identity limits exploration encodes under.
 fn identity_limits() -> qsl_foundation::IdentityLimits {
     qsl_foundation::IdentityLimits::default()
@@ -1810,5 +1876,102 @@ fn undetermined(node: &str, outcome: crate::simulation::model::ClauseOutcome) ->
     ModelFinding::ProtocolExpressionUndetermined {
         node: node.to_owned(),
         evaluation: outcome,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_canonical::Limits;
+
+    use super::*;
+
+    /// The envelope's directly written result, bytes or refusal, against
+    /// `quire_canonical::to_vec` of the same envelope.
+    fn written_as_encoded(
+        envelope: &Envelope<'_, Enc>,
+        memory: Option<&[u8]>,
+        bound: u64,
+    ) -> Result<Vec<u8>, Error> {
+        let limits = Limits::new(bound);
+        let written = envelope.to_vec(&Canonicalizer::default(), memory, limits);
+        let encoded = quire_canonical::to_vec(envelope, limits);
+        assert_eq!(
+            format!("{written:?}"),
+            format!("{encoded:?}"),
+            "under {bound} bytes"
+        );
+        written
+    }
+
+    /// FR-101-AC-2 and FR-101-AC-11: a protocol state key written from its
+    /// members and the memory model's own bytes is the key's RFC 8785
+    /// encoding, and refuses as that encoding does: a member or a memory
+    /// component with no encoding, a member named `memory`, or a key past
+    /// the byte bound.
+    #[trace("TC-453", "FR-101-AC-2", "FR-101-AC-11")]
+    #[test]
+    fn a_protocol_key_is_written_and_refused_as_it_encodes() {
+        let members = vec![
+            ("type", Enc::text("simulation-state")),
+            (
+                "control",
+                map_enc(vec![
+                    (Enc::text("b"), Enc::Null),
+                    (Enc::text("a"), Enc::Null),
+                ]),
+            ),
+        ];
+        let memory = Enc::Object(vec![("z", Enc::Null), ("y", Enc::text("\n"))]);
+        let memory_bytes =
+            quire_canonical::to_vec(&memory, Limits::new(u64::MAX)).expect("the memory encodes");
+        let envelope = Envelope {
+            members: &members,
+            memory: &memory,
+        };
+        let length = quire_canonical::to_vec(&envelope, Limits::new(u64::MAX))
+            .expect("the key encodes")
+            .len();
+        let length = u64::try_from(length).expect("a length fits u64");
+        for bound in 0..length {
+            written_as_encoded(&envelope, Some(&memory_bytes), bound)
+                .expect_err("a key past the bound refuses");
+        }
+        written_as_encoded(&envelope, Some(&memory_bytes), length).expect("the key encodes");
+        // The memory model wrote no bytes: the envelope's encoding decides.
+        written_as_encoded(&envelope, None, u64::MAX).expect("the key encodes");
+
+        let unencodable_memory = Enc::Unencodable("a memory component");
+        written_as_encoded(
+            &Envelope {
+                members: &members,
+                memory: &unencodable_memory,
+            },
+            None,
+            u64::MAX,
+        )
+        .expect_err("the key has no encoding");
+        let mut refused = members.clone();
+        refused.push(("rest", Enc::Unencodable("a rest point")));
+        written_as_encoded(
+            &Envelope {
+                members: &refused,
+                memory: &memory,
+            },
+            Some(&memory_bytes),
+            u64::MAX,
+        )
+        .expect_err("the key has no encoding");
+        let mut duplicated = members;
+        duplicated.push(("memory", Enc::Null));
+        written_as_encoded(
+            &Envelope {
+                members: &duplicated,
+                memory: &memory,
+            },
+            Some(&memory_bytes),
+            u64::MAX,
+        )
+        .expect_err("the key has no encoding");
     }
 }

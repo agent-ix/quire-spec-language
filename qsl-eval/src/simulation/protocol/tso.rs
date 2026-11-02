@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{AccessClass, AccessOrdering};
-use quire_canonical::{Encode, Error, Sink, Writer};
+use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::Value;
 
 use super::access::location_enc;
@@ -45,7 +45,7 @@ use super::race::{
     RaceSummary,
 };
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::{map_enc, untyped_value_enc, Enc};
+use crate::simulation::model::encode::{map_enc, untyped_value_enc, Canonicalizer, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// The published default of a memory bound (ADR-025 MB-2).
@@ -571,6 +571,16 @@ fn unbuffered(pre: &ModelSimState, mut post: ModelSimState, buffer: &[Buffered])
 
 impl MemoryModel for Tso {
     type Component = TsoComponent;
+
+    /// The component's typed canonical form, written straight to bytes.
+    fn key_bytes(
+        &self,
+        component: &TsoComponent,
+        canonical: &Canonicalizer,
+        limits: Limits,
+    ) -> Option<Vec<u8>> {
+        canonical.written(&component.enc(), limits)
+    }
 
     fn models(&self) -> &'static [MemoryModelName] {
         &[MemoryModelName::Sc, MemoryModelName::Tso]

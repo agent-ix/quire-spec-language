@@ -6,7 +6,7 @@
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use ix_trace_rs::trace;
-use qsl_eval::simulation::protocol::{MemoryModel, Ra, Sc, Tso};
+use qsl_eval::simulation::protocol::{MemoryModel, ProtocolSystem, Ra, Sc, Tso};
 use qsl_eval::simulation::{StateKey, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 
@@ -502,4 +502,46 @@ fn mp(
     reader.extend(acquire_fence.map(Op::fence));
     reader.push(Op::load(X, 2, Order::Relaxed));
     vec![writer, reader]
+}
+
+/// FR-101: the state key the engine writes is the RFC 8785 encoding of the
+/// state's key envelope, byte for byte, at every state LT-12 reaches under
+/// `ra` and `tso`, whose keys name messages, views, store buffers and the
+/// SC event graph, and under `sc`, whose memory member its own encoding
+/// writes.
+#[trace("TC-453", "FR-101-AC-2")]
+#[test]
+fn the_written_state_key_is_the_encoded_key_envelope() {
+    fn written_is_encoded<M>(system: &ProtocolSystem<'_, M>)
+    where
+        M: MemoryModel + Sync,
+        M::Component: Send + Sync,
+    {
+        for reached in reachable(system) {
+            let encoded = quire_canonical::to_vec(
+                &TransitionSystem::key(system, &reached.state),
+                quire_canonical::Limits::new(u64::MAX),
+            )
+            .expect("the key encodes");
+            assert_eq!(reached.key, encoded);
+        }
+    }
+    let case = case_of(&lt12());
+    written_is_encoded(&case.system(&[], Sc).expect("builds"));
+    written_is_encoded(
+        &case
+            .system(
+                &[select("SB::Main::Both", MemoryModelName::Ra)],
+                Ra::default(),
+            )
+            .expect("builds"),
+    );
+    written_is_encoded(
+        &case
+            .system(
+                &[select("SB::Main::Both", MemoryModelName::Tso)],
+                Tso::default(),
+            )
+            .expect("builds"),
+    );
 }

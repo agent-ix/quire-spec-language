@@ -75,7 +75,7 @@ use super::race::{
 use super::tso::DEFAULT_MEMORY_BOUND;
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::{
-    keyed_name, map_enc, sorted_map_enc, untyped_value_enc, Enc, KeyName,
+    keyed_name, map_enc, sorted_map_enc, untyped_value_enc, Canonicalizer, Enc, KeyName,
 };
 use crate::simulation::model::{Cell, ModelSimState};
 
@@ -145,6 +145,16 @@ struct Views {
 struct Shared {
     cell: Cell,
     messages: Vec<Message>,
+    /// The location's typed canonical form, an [`Enc::Shared`] found and
+    /// written once for every key and member that names it.
+    key: Enc,
+}
+
+impl Shared {
+    /// The location's typed canonical form.
+    fn enc(&self) -> Enc {
+        self.key.clone()
+    }
 }
 
 /// What an SC event is (PSC-1).
@@ -265,7 +275,9 @@ type Canonical = (Option<Vec<u8>>, Enc);
 
 /// `value`'s RFC 8785 bytes, `None` when it does not encode.
 fn canonical(value: &Enc) -> Option<Vec<u8>> {
-    quire_canonical::to_vec(value, Limits::new(u64::MAX)).ok()
+    Canonicalizer::default()
+        .to_vec(value, Limits::new(u64::MAX))
+        .ok()
 }
 
 /// The names one encoding of a component writes into many maps: each
@@ -574,10 +586,11 @@ impl RaComponent {
             self.shared.insert(
                 cell.location.clone(),
                 Shared {
+                    key: Enc::shared(location_enc(cell.location, Some(cell.cell))),
                     cell: cell.cell.clone(),
                     messages: vec![Message {
                         id,
-                        enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
+                        enc: Enc::shared(value.as_ref().map_or(Enc::Null, untyped_value_enc)),
                         value,
                         view: View::default(),
                         attached: false,
@@ -695,7 +708,7 @@ impl RaComponent {
                 slot,
                 Message {
                     id,
-                    enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
+                    enc: Enc::shared(value.as_ref().map_or(Enc::Null, untyped_value_enc)),
                     value,
                     view: View::default(),
                     attached,
@@ -1070,10 +1083,9 @@ impl RaComponent {
     }
 
     fn location_enc(&self, location: &Location) -> Enc {
-        location_enc(
-            location,
-            self.shared.get(location).map(|shared| &shared.cell),
-        )
+        self.shared
+            .get(location)
+            .map_or_else(|| location_enc(location, None), Shared::enc)
     }
 
     /// `location` as a map key of this component, through `names`.
@@ -1172,7 +1184,7 @@ impl RaComponent {
         if let Some((location, shared)) = shared {
             members.push((
                 "location",
-                location_enc(location, shared.map(|shared| &shared.cell)),
+                shared.map_or_else(|| location_enc(location, None), Shared::enc),
             ));
         }
         let named = |message: Option<Id>| {
@@ -1594,6 +1606,16 @@ fn depth_of_slot(len: usize, slot: usize) -> u64 {
 
 impl MemoryModel for Ra {
     type Component = RaComponent;
+
+    /// The component's typed canonical form, written straight to bytes.
+    fn key_bytes(
+        &self,
+        component: &RaComponent,
+        canonical: &Canonicalizer,
+        limits: Limits,
+    ) -> Option<Vec<u8>> {
+        canonical.written(&component.enc(), limits)
+    }
 
     fn models(&self) -> &'static [MemoryModelName] {
         &[MemoryModelName::Sc, MemoryModelName::Ra]

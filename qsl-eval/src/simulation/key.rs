@@ -11,6 +11,8 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{IdentityLimits, Setting};
 use quire_canonical::{Encode, Limits};
 
+use crate::simulation::model::encode::{Canonicalizer, Enc};
+
 /// The limit the sampler's own draw preimage encodes under. A draw preimage
 /// is five bounded decimal strings this crate builds itself, so it needs no
 /// caller limit.
@@ -117,6 +119,34 @@ pub(crate) fn canonical_state_key(
     identity: IdentityLimits,
 ) -> Result<StateKey, EncodingRefusal> {
     quire_canonical::to_vec(value, Limits::new(identity.input_bytes))
+        .map(StateKey)
+        .map_err(|error| EncodingRefusal::of(&error, identity))
+}
+
+/// [`state_key`] of the typed canonical form `value`, written by
+/// `canonical`: the same bytes and refusals, without the event writer.
+///
+/// # Errors
+///
+/// [`EncodingRefusal`] when `value` has no RFC 8785 encoding.
+pub(crate) fn state_key_of(
+    canonical: &Canonicalizer,
+    value: &Enc,
+    identity: IdentityLimits,
+) -> Result<(Vec<u8>, StateKey), EncodingRefusal> {
+    let key = canonical_state_key_of(canonical, value, identity)?;
+    Ok((key.0.clone(), key))
+}
+
+/// [`canonical_state_key`] of the typed canonical form `value`, written by
+/// `canonical`.
+pub(crate) fn canonical_state_key_of(
+    canonical: &Canonicalizer,
+    value: &Enc,
+    identity: IdentityLimits,
+) -> Result<StateKey, EncodingRefusal> {
+    canonical
+        .to_vec(value, Limits::new(identity.input_bytes))
         .map(StateKey)
         .map_err(|error| EncodingRefusal::of(&error, identity))
 }

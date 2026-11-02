@@ -195,3 +195,17 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.quire-exact]
 opt-level = 3
+
+# Protocol exploration (QSL-1438: the LT-16 litmus test) spends its time in
+# the evaluator crates and in the generic collection code they share with
+# their dependencies, which a debug build otherwise runs unoptimized. Every
+# dependency, and the three crates exploration runs through, compile at
+# opt-level 1; the explicit levels above still apply.
+[profile.dev.package."*"]
+opt-level = 1
+[profile.dev.package.qsl-foundation]
+opt-level = 1
+[profile.dev.package.qsl-semantics]
+opt-level = 1
+[profile.dev.package.qsl-eval]
+opt-level = 1

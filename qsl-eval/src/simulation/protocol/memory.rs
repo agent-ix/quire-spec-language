@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::AccessClass;
 use qsl_semantics::check::AccessOrdering;
-use quire_canonical::{Encode, Error, Sink, Writer};
+use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 
 use std::collections::BTreeSet;
 
@@ -18,7 +18,7 @@ use super::identity::ThreadPath;
 use super::ra::CarriedView;
 use super::race::{AccessRecord, DataRace};
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::Enc;
+use crate::simulation::model::encode::{Canonicalizer, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// The step of a thread a memory model's gate is read for (SE-1 e).
@@ -246,6 +246,22 @@ pub enum Written<C> {
 pub trait MemoryModel {
     /// (a) The memory state, a member of the state key.
     type Component: Clone + Eq + std::fmt::Debug + Encode;
+
+    /// The RFC 8785 bytes of `component` as the state key's `memory` member,
+    /// written through the system's canonical writer: the bytes its
+    /// [`Encode`] implementation gives under `limits`.
+    ///
+    /// `None` when `component` has no encoding or exceeds `limits`; the
+    /// state key's own encoding then decides the refusal. Only this crate
+    /// can name [`Canonicalizer`], so only its memory models override this.
+    fn key_bytes(
+        &self,
+        component: &Self::Component,
+        _canonical: &Canonicalizer,
+        limits: Limits,
+    ) -> Option<Vec<u8>> {
+        quire_canonical::to_vec(component, limits).ok()
+    }
 
     /// The resolved models (FR-219) this memory model implements: a
     /// protocol subject whose `parallel` resolves to another is refused.
