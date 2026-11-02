@@ -1111,6 +1111,7 @@ mod tests {
         }));
     }
 
+    #[ix_trace_rs::trace("TC-161", "FR-063-AC-6")]
     #[test]
     fn checked_in_locations_contains_value_check_case_budget_seam() {
         assert!(checked_in_locations().contains(&SeamLocation {
