@@ -951,10 +951,12 @@ fn equality_producer_rows_are_emitted_in_checked_term_data() {
         [
             "dispatch_tables",
             "equality_decisions",
-            "protocol_locations"
+            "probabilistic_claims",
+            "protocol_locations",
         ]
     );
     assert_eq!(sidecar["dispatch_tables"], json!([]));
+    assert_eq!(sidecar["probabilistic_claims"], json!([]));
     assert_eq!(sidecar["protocol_locations"], json!([]));
     let decisions = sidecar["equality_decisions"]
         .as_array()
