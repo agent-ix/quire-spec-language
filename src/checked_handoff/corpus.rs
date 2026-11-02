@@ -320,24 +320,57 @@ fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Opt
     ok(w, expected)
 }
 
-/// `definition` with one member changed: the identity gains `suffix` before
-/// its revision, the revision becomes `value`, or the authority becomes
-/// `value`.
+/// `definition` with its revision or its authority changed to `value`.
 fn rewrite_definition(definition: &mut Value, member: &str, value: &str) -> Option<Value> {
     let identity = definition.get("identity")?.as_str()?.to_owned();
-    let (name, revision) = identity.rsplit_once('/')?;
+    let (name, _revision) = identity.rsplit_once('/')?;
     match member {
-        "identity" => *definition.get_mut("identity")? = json!(format!("{name}{value}/{revision}")),
         "revision" => *definition.get_mut("identity")? = json!(format!("{name}/{value}")),
         _ => *definition.get_mut("authority")? = json!(value),
     }
     Some(definition.clone())
 }
 
+/// Row 12: the profile law of every clause, the lock's `temporal_profile`
+/// selection and every binding row move together to another registered
+/// profile, which the reader admits; only the sidecar names the first one.
 fn definition_identity(v: &Value) -> Option<Made> {
-    profile_law(v, "identity", "-other", SelectionAxis::DefinitionIdentity)
+    let other = "quire.temporal.fixed-sample.false-extension/v1";
+    let mut w = clone(v);
+    for node in w
+        .get_mut("semantic_graph")?
+        .get_mut("nodes")?
+        .as_array_mut()?
+    {
+        if node.get("semantic_form") == Some(&json!("temporal_clause")) {
+            *node
+                .get_mut("body")?
+                .get_mut("operation")?
+                .get_mut("laws")?
+                .get_mut(0)?
+                .get_mut("definition")?
+                .get_mut("identity")? = json!(other);
+        }
+    }
+    *selection_mut(&mut w, "profile_selections")?
+        .iter_mut()
+        .find(|selection| selection.get("role") == Some(&json!("temporal_profile")))?
+        .get_mut("definition")?
+        .get_mut("identity")? = json!(other);
+    for row in w.get_mut("temporal_bindings")?.as_array_mut()? {
+        *row.get_mut("clock")? = json!({
+            "kind": "fixed_sample",
+            "epoch": {"kind": "integer", "decimal": "0"},
+            "period": {"kind": "integer", "decimal": "1"},
+            "unit": "milliseconds",
+        });
+    }
+    ok(w, Expected::Selection(SelectionAxis::DefinitionIdentity))
 }
 
+/// Row 13: Contract IR registers one revision of each profile (`/v1`), so a
+/// changed revision is an unknown profile; `definition.revision` is compared by
+/// `Selection::check` but no admitted package can differ on it.
 fn definition_revision(v: &Value) -> Option<Made> {
     profile_law(v, "revision", "v2", SelectionAxis::DefinitionRevision)
 }

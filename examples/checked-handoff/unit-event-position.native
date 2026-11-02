@@ -23,6 +23,9 @@ temporal DueLate using t over (view: M::Workflow) clock "events" on origin {
     always[0,60] holds(L::Ready(view.ready))
 }
 
+// The legacy recipe compares the receipt sum with the captured target in
+// `recover`; a `sum` query binder there fails emission (QSL-1555), so these
+// conditions read the target and bound the receipt count instead.
 protocol Flow using p over (view: M::Workflow) on origin {
     role Service on M::Workflow;
     role Provider on M::Provider;
@@ -42,7 +45,8 @@ protocol Flow using p over (view: M::Workflow) on origin {
         };
         commit Main::Committed;
         recover (recoveredFull: M::Recovery) {
-            size(recoveredFull.receipts) <= 5 and not activatedFull
+            size(recoveredFull.receipts) <= 5 and targetFull >= 0
+            and not activatedFull
         };
     }
 
@@ -62,7 +66,7 @@ protocol Flow using p over (view: M::Workflow) on origin {
         commit never;
         recover (recoveredPartial: M::Recovery) {
             size(recoveredPartial.receipts) > 0 and size(recoveredPartial.receipts) < 5
-            and not activatedPartial
+            and targetPartial >= 0 and not activatedPartial
         };
     }
 

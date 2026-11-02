@@ -192,10 +192,6 @@ pub trait Environment {
     /// mutated-source case; `None` for a reader that admits it.
     fn source_integrity(&self) -> Option<ReaderRefusal>;
 
-    /// Whether the read-back comparison reports a difference regardless of
-    /// the package (a failure injected by a test).
-    fn read_back_differs(&self) -> bool;
-
     /// Write `contents` to a new file at `path`; the `index`th write of one
     /// tree.
     fn write_file(&self, index: usize, path: &Path, contents: &[u8]) -> std::io::Result<()>;
@@ -225,10 +221,6 @@ impl Environment for RealEnvironment {
 
     fn source_integrity(&self) -> Option<ReaderRefusal> {
         None
-    }
-
-    fn read_back_differs(&self) -> bool {
-        false
     }
 
     fn write_file(&self, _index: usize, path: &Path, contents: &[u8]) -> std::io::Result<()> {
@@ -270,11 +262,6 @@ pub fn write_with(
         }
     };
     let selection = Selection::derive(&compiled, &request.emit, &bytes)?;
-    if environment.read_back_differs() {
-        return Err(Error::ReadBackDiffers {
-            detail: "injected".to_owned(),
-        });
-    }
     environment
         .check(&selection, &package)
         .map_err(|refusal| Error::ReadBackDiffers {

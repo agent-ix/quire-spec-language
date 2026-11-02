@@ -75,19 +75,34 @@ pub(super) fn publish(
 ) -> Result<(), Error> {
     let temporary = sibling(directory);
     std::fs::create_dir(&temporary).map_err(io(&temporary))?;
-    let built = build(&temporary, files, environment).and_then(|()| {
-        if exists(directory) {
-            return Err(Error::Exists {
-                path: directory.display().to_string(),
-            });
-        }
-        std::fs::rename(&temporary, directory).map_err(io(directory))
-    });
+    let built =
+        build(&temporary, files, environment).and_then(|()| claim_and_move(&temporary, directory));
     if built.is_err() {
-        // The temporary tree is ours; a failed removal leaves only it behind.
+        // Best effort: the temporary tree is ours, and a failed removal can
+        // only leave that tree behind, never anything at `directory`.
         let _ = std::fs::remove_dir_all(&temporary);
     }
     built
+}
+
+/// Claim `directory` with an atomic `create_dir`, which fails when anything
+/// exists there, and only then move the tree over the claim; a racing creator
+/// is refused rather than replaced. A failed move releases the claim.
+fn claim_and_move(temporary: &Path, directory: &Path) -> Result<(), Error> {
+    match std::fs::create_dir(directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(Error::Exists {
+                path: directory.display().to_string(),
+            })
+        }
+        Err(error) => return Err(io(directory)(error)),
+    }
+    std::fs::rename(temporary, directory).map_err(|error| {
+        // The claim is an empty directory this call created.
+        let _ = std::fs::remove_dir(directory);
+        io(directory)(error)
+    })
 }
 
 fn build(root: &Path, files: &Files, environment: &dyn Environment) -> Result<(), Error> {

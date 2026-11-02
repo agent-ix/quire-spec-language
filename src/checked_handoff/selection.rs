@@ -143,7 +143,7 @@ pub enum SelectionAxis {
     ClauseName,
     /// The protocol requirement entries that name a clause.
     ClauseRequirement,
-    /// A clause's node id, or a node form count.
+    /// A clause's node id.
     ClauseNode,
     /// A clause's activation form.
     ClauseActivation,
@@ -163,6 +163,15 @@ pub enum SelectionAxis {
     ClockUnit,
     /// The timestamp unit of a timestamped-event row.
     ClockTimestampUnit,
+    /// The clock alternative of a clause's binding row.
+    ClockKind,
+    /// The clock name of a clause's binding row.
+    ClockName,
+    /// A clause's binding row is missing, or the package holds one the
+    /// sidecar does not.
+    ClauseBinding,
+    /// The package's count of nodes of a form the sidecar counts.
+    PackageNodes,
 }
 
 impl SelectionAxis {
@@ -181,6 +190,10 @@ impl SelectionAxis {
             Self::ClockPeriod => "clock.period",
             Self::ClockUnit => "clock.unit",
             Self::ClockTimestampUnit => "clock.timestamp_unit",
+            Self::ClockKind => "clock.kind",
+            Self::ClockName => "clock.name",
+            Self::ClauseBinding => "clause.binding",
+            Self::PackageNodes => "package.nodes",
         }
     }
 
@@ -199,6 +212,10 @@ impl SelectionAxis {
             Self::ClockPeriod,
             Self::ClockUnit,
             Self::ClockTimestampUnit,
+            Self::ClockKind,
+            Self::ClockName,
+            Self::ClauseBinding,
+            Self::PackageNodes,
         ]
         .into_iter()
         .find(|axis| axis.name() == name)
@@ -400,11 +417,20 @@ impl Selection {
         let counts = form_counts(package);
         for (form, expected) in &self.package.node_counts {
             if counts.get(form.as_str()).copied().unwrap_or(0) != *expected {
-                return Err(refusal(SelectionAxis::ClauseNode, None));
+                return Err(refusal(SelectionAxis::PackageNodes, None));
             }
         }
         for row in &self.clauses {
             check_clause(row, package)?;
+        }
+        let rows = package.temporal_bindings().map_or(0, <[_]>::len);
+        let expected = self
+            .clauses
+            .iter()
+            .filter(|row| row.binding.is_some())
+            .count();
+        if rows != expected {
+            return Err(refusal(SelectionAxis::ClauseBinding, None));
         }
         Ok(())
     }
@@ -488,6 +514,9 @@ fn check_clause(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Selec
         .iter()
         .find(|node| node.node_id == row.node)
         .ok_or_else(|| refusal(SelectionAxis::ClauseNode, Some(row)))?;
+    // The package carries a declared name only where Contract IR's rules give
+    // the node one; a temporal clause node has none today, so the sidecar's
+    // name has nothing to be compared with and this comparison does not run.
     if let Some(declaration) = &node.declaration {
         if declaration.qualified_name.last().map(AsRef::as_ref) != Some(row.name.as_str()) {
             return Err(refusal(SelectionAxis::ClauseName, Some(row)));
@@ -525,7 +554,7 @@ fn check_clause(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Selec
     if form != Some(row.activation.form.as_str()) || guarded != row.activation.guarded {
         return Err(refusal(SelectionAxis::ClauseActivation, Some(row)));
     }
-    check_profile(row, node, package)?;
+    check_profile(row, node)?;
     check_binding(row, package)
 }
 
@@ -540,7 +569,6 @@ fn binding_members_or_aggregate(arguments: &[CheckedTerm], index: usize) -> Opti
 fn check_profile(
     row: &ClauseRow,
     node: &quire_contract_model::CheckedSemanticNodeV2,
-    _package: &CheckedPackageV2,
 ) -> Result<(), SelectionRefusal> {
     let law = match &node.body {
         CheckedTerm::Application { operation, .. } => operation
@@ -570,11 +598,11 @@ fn check_binding(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Sele
     let (Some(expected), Some(actual)) = (&row.binding, actual) else {
         return match (&row.binding, actual) {
             (None, None) => Ok(()),
-            _ => Err(refusal(SelectionAxis::ClauseNode, Some(row))),
+            _ => Err(refusal(SelectionAxis::ClauseBinding, Some(row))),
         };
     };
     if *actual.clock_name != *expected.clock_name {
-        return Err(refusal(SelectionAxis::ClauseNode, Some(row)));
+        return Err(refusal(SelectionAxis::ClockName, Some(row)));
     }
     use ClockConfiguration as C;
     match (&expected.clock, &actual.clock) {
@@ -618,6 +646,6 @@ fn check_binding(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Sele
         ) if want != got => Err(refusal(SelectionAxis::ClockTimestampUnit, Some(row))),
         (C::EventPosition { .. }, C::EventPosition { .. })
         | (C::TimestampedEvent { .. }, C::TimestampedEvent { .. }) => Ok(()),
-        _ => Err(refusal(SelectionAxis::ClauseNode, Some(row))),
+        _ => Err(refusal(SelectionAxis::ClockKind, Some(row))),
     }
 }

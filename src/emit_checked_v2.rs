@@ -340,6 +340,13 @@ fn refusal(failure: spine::FrontEndFailure) -> Error {
 
 /// Read `request`'s inputs and run the spine over them: parse, select, check
 /// and emit, with each temporal clock selection joined to its clause.
+///
+/// This is the spine pipeline `qsl_replay::compile_package` runs
+/// (`tests/it/emit_checked_v2.rs` compares the two byte for byte), split at the
+/// checked unit so the writer can keep it. The unit-owner check
+/// (`DependencyInput::check_unit_owner`) runs inside the check stage. A
+/// clock selection joins only to a clause of the unit itself: a library's
+/// clause that needs a clock is refused by emission.
 pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     let source = read(&request.source, false)?;
     let models = request

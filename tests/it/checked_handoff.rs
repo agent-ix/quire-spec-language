@@ -143,8 +143,9 @@ struct Double {
     refuse_reads: bool,
     /// A reader that verifies source bytes (IR-1273) refuses case 28m.
     source_integrity: bool,
-    /// Report a read-back difference.
-    differs: bool,
+    /// Read these bytes instead of the first package read: an admitted
+    /// package that is not the one the unit compiled to.
+    substitute_first_read: Option<Vec<u8>>,
     /// Fail the write of the file with this index.
     fail_write_at: Option<usize>,
     reads: Cell<usize>,
@@ -161,6 +162,9 @@ impl Environment for Double {
         self.reads.set(self.reads.get() + 1);
         if self.refuse_reads || (self.wrong_case_refusal && !first) {
             return CheckedPackageDispatchResult::Refused(other_refusal());
+        }
+        if let (true, Some(substitute)) = (first, &self.substitute_first_read) {
+            return RealEnvironment.read(substitute, limits, evidence);
         }
         RealEnvironment.read(bytes, limits, evidence)
     }
@@ -179,10 +183,6 @@ impl Environment for Double {
             cause: Some("source-integrity".into()),
             pointer: "/lock/sources/0".into(),
         })
-    }
-
-    fn read_back_differs(&self) -> bool {
-        self.differs
     }
 
     fn write_file(&self, index: usize, path: &Path, contents: &[u8]) -> std::io::Result<()> {
@@ -210,11 +210,11 @@ fn admitted(bytes: &[u8], evidence: &CheckedPackageEvidence) -> Box<CheckedPacka
 
 const SOURCE_LABEL: &str = "sources/source:examples/checked-handoff/unit-event-position.native";
 
-/// FR-517-AC-1: the paths of the Outputs table, no `mutations/` for a `None`
-/// corpus, and the package bytes `emit_checked_v2::emit` returns.
-#[trace("FR-517-AC-1", "TC-1312")]
+/// FR-517-AC-1, the paths the writer writes today: everything in the Outputs
+/// table except `inventory.json`, and no `mutations/` for a `None` corpus. The
+/// package bytes are those `emit_checked_v2::emit` returns.
 #[test]
-fn the_directory_holds_exactly_the_outputs_table() {
+fn the_directory_holds_the_outputs_table_except_the_inventory() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
     let files = tree(&out);
     let paths: Vec<&str> = files.keys().map(String::as_str).collect();
@@ -243,6 +243,28 @@ fn the_directory_holds_exactly_the_outputs_table() {
     );
 }
 
+/// FR-517-AC-1: exactly the paths of the Outputs table, `inventory.json`
+/// included (`qsl_replay::qsl_inventory` over the unit with the selected
+/// formal identity, FR-514).
+#[trace("FR-517-AC-1", "TC-1312")]
+#[test]
+#[ignore = "gated on QSL-1512 (PR 2140): qsl_inventory over the spine unit with a formal identity"]
+fn the_directory_holds_exactly_the_outputs_table() {
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let paths: Vec<String> = tree(&out).into_keys().collect();
+    assert_eq!(
+        paths,
+        [
+            "checked-package.json",
+            "inventory.json",
+            "models/0.json",
+            "selection.json",
+            "sources/library:examples/checked-handoff/library.native",
+            SOURCE_LABEL,
+        ]
+    );
+}
+
 /// FR-517-AC-2: the package read with evidence from the written files is
 /// admitted, `Selection::check` passes, and the sidecar rows name the
 /// clauses and clock rows of the package.
@@ -266,6 +288,53 @@ fn the_written_package_is_admitted_and_matches_its_sidecar() {
         let rows = sidecar["clauses"].as_array().unwrap();
         let bindings = package.temporal_bindings().unwrap();
         assert_eq!(rows.len(), bindings.len());
+        let names: Vec<&str> = rows
+            .iter()
+            .map(|row| row["name"].as_str().unwrap())
+            .collect();
+        let authored: &[&str] = match kind {
+            "event_position" => &["Due", "DueLate"],
+            "fixed_sample" => &["DueSample"],
+            _ => &["DueTimestamp"],
+        };
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        let mut want = authored.to_vec();
+        want.sort_unstable();
+        assert_eq!(sorted, want, "the sidecar names the authored clauses");
+        let protocols: Vec<&CheckedNodeKind> = package
+            .node_kinds()
+            .iter()
+            .filter(|k| **k == CheckedNodeKind::Protocol(ProtocolForm::ProtocolClause))
+            .collect();
+        for row in rows {
+            assert_eq!(row["activation"]["form"], "origin");
+            assert_eq!(row["profile"]["authority"], "agent-ix");
+            let lock = serde_json::to_value(&package.lock().profile_selections).unwrap();
+            let selected = lock
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["role"] == "temporal_profile")
+                .unwrap();
+            let identity = selected["definition"]["identity"].as_str().unwrap();
+            assert_eq!(
+                format!(
+                    "{}/{}",
+                    row["profile"]["identity"].as_str().unwrap(),
+                    row["profile"]["revision"].as_str().unwrap()
+                ),
+                identity
+            );
+            assert_eq!(
+                selected["definition"]["authority"],
+                row["profile"]["authority"]
+            );
+            let requirements = row["requirements"].as_array().unwrap();
+            // Only the clause `Due` of the event-position unit is required.
+            assert_eq!(requirements.len(), usize::from(row["name"] == "Due"));
+            assert_eq!(protocols.len(), usize::from(kind == "event_position"));
+        }
         for row in rows {
             let binding = bindings
                 .iter()
@@ -339,13 +408,39 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
                 .filter(|(k, _)| **k == CheckedNodeKind::Protocol(ProtocolForm::Compensation))
                 .map(|(_, node)| node)
                 .collect();
-            assert_ne!(compensations[0].node_id, compensations[1].node_id);
+            let keys: Vec<String> = compensations
+                .iter()
+                .map(|node| serde_json::to_string(&node.node_id).unwrap())
+                .collect();
+            assert_ne!(keys[0], keys[1]);
+            assert!(
+                keys.iter().any(|key| key.contains("\"Full\""))
+                    && keys.iter().any(|key| key.contains("\"Partial\"")),
+                "{keys:?}"
+            );
             let shared: Vec<_> = compensations[0]
                 .dependencies
                 .iter()
                 .filter(|dependency| compensations[1].dependencies.contains(dependency))
                 .collect();
             assert!(!shared.is_empty(), "both pair with the one effect node");
+            let effects: Vec<String> =
+                shared
+                    .iter()
+                    .filter(|id| {
+                        package.graph().nodes.iter().any(|node| {
+                            &node.node_id == **id && node.node_tag.as_ref() == "protocol"
+                        })
+                    })
+                    .map(|id| serde_json::to_string(id).unwrap())
+                    .filter(|id| id.contains("\"run\""))
+                    .collect();
+            assert_eq!(effects.len(), 1, "one shared run node: {effects:?}");
+            let effect = &effects[0];
+            assert!(
+                effect.contains("\"Applied\""),
+                "the shared node is the Main::Applied effect: {effect}"
+            );
         }
     }
     assert_eq!(
@@ -392,14 +487,22 @@ fn the_signed_64_extrema_are_package_values_within_their_declared_bounds() {
     assert_eq!(bounds, ["-9223372036854775808", "9223372036854775807"]);
 }
 
-/// FR-517-AC-4, the rational half: `Exact` and `Ratio` need bounded Rational
-/// value types on the spine (FR-505, QSL-1522), which it does not admit yet.
+/// FR-517-AC-4, the rational half: `Exact` carries the extreme rationals
+/// `9223372036854775807/9223372036854775806` and
+/// `-9223372036854775808/9223372036854775807`. The spine admits no bounded
+/// Rational value type yet (FR-505, QSL-1522), so R has none.
 #[trace("FR-517-AC-4", "TC-1312")]
 #[test]
 #[ignore = "gated on QSL-1522 (FR-505): the spine admits no bounded Rational value type"]
 fn the_extreme_rationals_are_package_values() {
-    let model = std::fs::read_to_string(format!("{DIR}/model.semantic-ir.json")).unwrap();
-    assert!(model.contains("\"Exact\""));
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let text = String::from_utf8(tree(&out)["checked-package.json"].clone()).unwrap();
+    for rational in [
+        "9223372036854775807/9223372036854775806",
+        "-9223372036854775808/9223372036854775807",
+    ] {
+        assert!(text.contains(rational), "{rational}");
+    }
 }
 
 /// FR-517-AC-5: two writes of equal requests give byte-identical trees.
@@ -469,13 +572,20 @@ fn a_refusal_or_difference_writes_nothing() {
     let error =
         write_with(&request("event_position", Corpus::None), &target, &refuses).unwrap_err();
     assert_eq!(error.code(), ErrorCode::Reader);
+    // The read-back comparison fails for real: the reader admits a package
+    // whose sequence authority is not the one the unit compiled to.
+    let (_holder, corpus) = written("event_position", Corpus::Standard, &ir_1273());
+    let other = tree(&corpus)["mutations/clock-sequence-authority.json"].clone();
     let differs = Double {
-        differs: true,
+        substitute_first_read: Some(other),
         ..Double::default()
     };
     let error =
         write_with(&request("event_position", Corpus::None), &target, &differs).unwrap_err();
-    assert!(matches!(error, Error::ReadBackDiffers { .. }));
+    assert!(
+        matches!(&error, Error::ReadBackDiffers { detail } if detail.contains("clock.sequence_authority")),
+        "{error:?}"
+    );
     assert_eq!(entries(fresh.path()), ["bad.native"]);
 }
 
@@ -555,6 +665,17 @@ fn a_changed_clock_value_is_admitted_by_the_reader_and_refused_by_the_sidecar() 
         let text = std::fs::read_to_string(file).unwrap();
         assert!(!text.contains("CheckedPackageV2::read"), "{file}");
         assert!(!text.contains("read_checked_package_v2"), "{file}");
+        // The two JSON parses of package bytes: the corpus mutates them, and
+        // the wire-id join reads the node ids; neither admits a package.
+        let parses = text.matches("serde_json::from_slice").count()
+            + text.matches("of_package_bytes").count();
+        let allowed =
+            usize::from(file.ends_with("corpus.rs")) + usize::from(file.ends_with("selection.rs"));
+        assert_eq!(
+            parses,
+            allowed + usize::from(file.ends_with("selection.rs")),
+            "{file}"
+        );
     }
 }
 
@@ -694,13 +815,7 @@ fn table() -> Vec<Row> {
         selection("declaration-requirement", EP, "clause.requirement"),
         selection("declaration-clause", EP, "clause.node"),
         selection("declaration-execution", EP, "clause.activation"),
-        reader(
-            "definition-identity",
-            EP,
-            "unknown_profile",
-            Some("unsupported-selection"),
-            LAW,
-        ),
+        selection("definition-identity", EP, "definition.identity"),
         reader(
             "definition-revision",
             EP,
@@ -931,26 +1046,42 @@ fn every_case_gets_the_refusal_of_its_row() {
         }
     }
     // Rows 1 to 31 without 28m, whose reader refusal needs IR-1273.
-    assert_eq!((reader_cases, selection_cases), (21, 9));
+    assert_eq!((reader_cases, selection_cases), (20, 10));
 }
 
-/// FR-518-AC-4: the lock definition authority (row 29) is admitted by the
-/// reader and refused with `definition.authority`; a changed profile identity
-/// or revision (rows 12 and 13) is refused by the reader as an unknown
-/// profile, so `definition.identity` and `definition.revision` have no
-/// selection-stage case today.
+/// FR-518-AC-4: the case of row 12 (the clauses, the lock and the binding rows
+/// move to another registered profile) and the case of row 29 are admitted by
+/// the reader and refused with `definition.identity` and `definition.authority`.
+/// Row 13 is a reader refusal: Contract IR registers one revision per profile.
 #[trace("FR-518-AC-4", "TC-1313")]
 #[test]
-fn the_definition_cases_move_onto_authority_and_the_unknown_profile_refusal() {
-    let table = table();
-    let by = |identity: &str| table.iter().find(|row| row.identity == identity).unwrap();
-    assert_eq!(by("definition-artifact-wire-identity").stage, "selection");
-    assert_eq!(
-        by("definition-artifact-wire-identity").code,
-        "definition.authority"
+fn the_definition_cases_are_refused_on_identity_and_authority() {
+    let (_holder, out) = written("event_position", Corpus::Standard, &ir_1273());
+    let files = tree(&out);
+    let held = evidence(&request("event_position", Corpus::Standard)).unwrap();
+    let selection = Selection::read(&files["selection.json"]).unwrap();
+    for (case, axis) in [
+        ("definition-identity", SelectionAxis::DefinitionIdentity),
+        (
+            "definition-artifact-wire-identity",
+            SelectionAxis::DefinitionAuthority,
+        ),
+    ] {
+        let package = admitted(&files[&format!("mutations/{case}.json")], &held);
+        assert_eq!(selection.check(&package).unwrap_err().axis, axis, "{case}");
+    }
+    let revision = read_checked_package(
+        &files["mutations/definition-revision.json"],
+        CheckedPackageReadLimits::bounded(),
+        &held,
     );
-    assert_eq!(by("definition-identity").code, "unknown_profile");
-    assert_eq!(by("definition-revision").code, "unknown_profile");
+    let CheckedPackageDispatchResult::Refused(refusal) = revision else {
+        panic!("admitted")
+    };
+    assert_eq!(
+        serde_json::to_value(refusal.code).unwrap(),
+        "unknown_profile"
+    );
 }
 
 /// FR-518-AC-5: a stage that gives another refusal, and a case whose bytes
@@ -1062,7 +1193,8 @@ fn files_and_cases_correspond_one_to_one() {
 /// FR-518-AC-1 and AC-9 against a reader that implements IR-1273: `write`
 /// with the real reader returns a corpus that includes 28m refused with
 /// `invalid_package`/`source-integrity`.
-#[trace("FR-518-AC-1", "FR-518-AC-9", "TC-1313")]
+// FR-518-AC-9 is not tagged: no running test covers it until IR-1273 lands.
+#[trace("FR-518-AC-1", "TC-1313")]
 #[test]
 #[ignore = "gated on IR-1273: the reader takes no source bytes and admits case 28m"]
 fn the_real_reader_refuses_the_moved_source_case() {
@@ -1087,4 +1219,214 @@ fn a_reader_that_admits_the_moved_case_gets_no_corpus() {
         other => panic!("{other:?}"),
     }
     assert_eq!(entries(fresh.path()), Vec::<String>::new());
+}
+
+/// The package and sidecar of the event-position handoff, with the sidecar as
+/// JSON, for tests that edit the sidecar.
+fn sidecar_fixture() -> (Value, Box<CheckedPackageV2>) {
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let files = tree(&out);
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    (
+        serde_json::from_slice(&files["selection.json"]).unwrap(),
+        admitted(&files["checked-package.json"], &held),
+    )
+}
+
+fn axis_of(sidecar: &Value, package: &CheckedPackageV2) -> Option<SelectionAxis> {
+    let selection = Selection::read(&serde_json::to_vec(sidecar).unwrap())
+        .expect("an edited sidecar still parses");
+    selection.check(package).err().map(|refusal| refusal.axis)
+}
+
+/// Selection::check compares every sidecar value with the package; each edit
+/// of one sidecar value, against the unchanged admitted package, is refused
+/// on that value's own axis. Deleting any comparison turns one row red.
+#[trace("FR-517-AC-2", "FR-517-AC-9", "TC-1312")]
+#[test]
+fn each_sidecar_value_is_compared_on_its_own_axis() {
+    let (sidecar, package) = sidecar_fixture();
+    assert_eq!(
+        axis_of(&sidecar, &package),
+        None,
+        "the unedited sidecar passes"
+    );
+    let edit = |change: &dyn Fn(&mut Value)| {
+        let mut edited = sidecar.clone();
+        change(&mut edited);
+        axis_of(&edited, &package)
+    };
+    use SelectionAxis as A;
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["profile"]["identity"] = "other.profile".into()),
+        Some(A::DefinitionIdentity)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["profile"]["revision"] = "v9".into()),
+        Some(A::DefinitionRevision)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["profile"]["authority"] = "other".into()),
+        Some(A::DefinitionAuthority)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["node"]["ordinal"] = 7.into()),
+        Some(A::ClauseNode)
+    );
+    assert_eq!(
+        edit(
+            &|v| v["clauses"][1]["requirements"] = serde_json::json!([{"protocol": "Flow", "node": v["clauses"][0]["requirements"][0]["node"].clone()}])
+        ),
+        Some(A::ClauseRequirement)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["requirements"] = serde_json::json!([])),
+        Some(A::ClauseRequirement)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["activation"]["form"] = "each".into()),
+        Some(A::ClauseActivation)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["activation"]["guarded"] = true.into()),
+        Some(A::ClauseActivation)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["binding"]["clock_name"] = "other".into()),
+        Some(A::ClockName)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["binding"]["clock"] =
+            serde_json::json!({"kind": "timestamped_event", "timestamp_unit": "u"})),
+        Some(A::ClockKind)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["binding"]["clock"]["sequence_authority"] = "other".into()),
+        Some(A::ClockSequenceAuthority)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][0]["binding"] = Value::Null),
+        Some(A::ClauseBinding)
+    );
+    assert_eq!(
+        edit(&|v| v["package"]["node_counts"]["protocol/compensation"] = 9.into()),
+        Some(A::PackageNodes)
+    );
+    assert_eq!(
+        edit(&|v| {
+            v["clauses"].as_array_mut().unwrap().pop();
+        }),
+        Some(A::ClauseBinding)
+    );
+    assert_eq!(
+        edit(&|v| v["clauses"][1]["node"]["ordinal"] = 7.into()),
+        Some(A::ClauseNode)
+    );
+}
+
+/// The fixed-sample and timestamped-event sidecars compare their own clock
+/// members on their own axes.
+#[trace("FR-517-AC-9", "TC-1312")]
+#[test]
+fn the_other_clock_kinds_are_compared_member_by_member() {
+    for (kind, member, axis) in [
+        ("fixed_sample", "epoch", SelectionAxis::ClockEpoch),
+        ("fixed_sample", "period", SelectionAxis::ClockPeriod),
+        ("fixed_sample", "unit", SelectionAxis::ClockUnit),
+        (
+            "timestamped_event",
+            "timestamp_unit",
+            SelectionAxis::ClockTimestampUnit,
+        ),
+    ] {
+        let (_holder, out) = written(kind, Corpus::None, &Double::default());
+        let files = tree(&out);
+        let held = evidence(&request(kind, Corpus::None)).unwrap();
+        let package = admitted(&files["checked-package.json"], &held);
+        let mut sidecar: Value = serde_json::from_slice(&files["selection.json"]).unwrap();
+        sidecar["clauses"][0]["binding"]["clock"][member] =
+            serde_json::json!({"kind": "integer", "decimal": "99"});
+        if member == "unit" || member == "timestamp_unit" {
+            sidecar["clauses"][0]["binding"]["clock"][member] = "other-unit".into();
+        }
+        assert_eq!(axis_of(&sidecar, &package), Some(axis), "{kind} {member}");
+    }
+}
+
+/// The package carries no declared clause name (a `temporal_clause` node has no
+/// `declaration`), so the sidecar's name has nothing to compare with: an edited
+/// name passes. `clause.name` fires only for a node that carries a declaration,
+/// and the reader refuses that member on this node.
+#[test]
+fn the_clause_name_has_no_package_side_value() {
+    let (mut sidecar, package) = sidecar_fixture();
+    sidecar["clauses"][0]["name"] = "Renamed".into();
+    assert_eq!(axis_of(&sidecar, &package), None);
+    assert!(
+        package
+            .graph()
+            .nodes
+            .iter()
+            .all(|node| node.declaration.is_none()
+                || node.semantic_form.as_ref() != "temporal_clause")
+    );
+}
+
+/// Selection::read refuses bytes that are not a sidecar of this format.
+#[test]
+fn a_sidecar_that_does_not_parse_is_refused() {
+    use quire_spec_language::checked_handoff::SelectionReadError as E;
+    assert!(matches!(Selection::read(b"not json"), Err(E::Malformed(_))));
+    assert!(matches!(Selection::read(b"{}"), Err(E::Malformed(_))));
+    let (mut sidecar, _package) = sidecar_fixture();
+    sidecar["format"] = "quire.checked-handoff.selection/2".into();
+    let error = Selection::read(&serde_json::to_vec(&sidecar).unwrap()).unwrap_err();
+    assert!(matches!(&error, E::Format(format) if format == "quire.checked-handoff.selection/2"));
+    sidecar["format"] = "quire.checked-handoff.selection/1".into();
+    sidecar["extra"] = 1.into();
+    assert!(matches!(
+        Selection::read(&serde_json::to_vec(&sidecar).unwrap()),
+        Err(E::Malformed(_))
+    ));
+}
+
+/// The error variants a request can reach: a clock selection naming no
+/// clause or naming one twice, a label that leaves the directory, and an
+/// existing empty directory.
+#[test]
+fn bad_requests_get_their_own_error() {
+    let fresh = tempfile::tempdir().unwrap();
+    let target = fresh.path().join("handoff");
+    let mut unknown = request("event_position", Corpus::None);
+    unknown.emit.temporal_selections[0].clause = "Missing".into();
+    let error = write(&unknown, &target).unwrap_err();
+    assert!(
+        matches!(&error, Error::Compile(emit_checked_v2::Error::UnknownClause { clause }) if clause == "Missing"),
+        "{error:?}"
+    );
+    let mut twice = request("event_position", Corpus::None);
+    twice.emit.temporal_selections[1].clause = "Due".into();
+    let error = write(&twice, &target).unwrap_err();
+    assert!(
+        matches!(&error, Error::Compile(emit_checked_v2::Error::DuplicateClause { clause }) if clause == "Due"),
+        "{error:?}"
+    );
+
+    let mut label = request("event_position", Corpus::None);
+    let moved = fresh.path().join("unit.native");
+    std::fs::copy(&label.emit.source, &moved).unwrap();
+    label.emit.source = fresh.path().join("sub/../unit.native");
+    std::fs::create_dir(fresh.path().join("sub")).unwrap();
+    let error = write(&label, &target).unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Label, "{error:?}");
+    assert!(!target.exists());
+
+    std::fs::create_dir(&target).unwrap();
+    let error = write(&request("event_position", Corpus::None), &target).unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Exists);
+    assert_eq!(
+        std::fs::read_dir(&target).unwrap().count(),
+        0,
+        "the empty directory is left as it was"
+    );
 }
