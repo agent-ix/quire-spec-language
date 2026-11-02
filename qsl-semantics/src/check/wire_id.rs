@@ -16,7 +16,7 @@
 //! Every walk uses an explicit stack, so the depth of an operand chain never
 //! consumes the call stack.
 
-use qsl_foundation::source::node_table::NodeList;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeList};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -329,12 +329,22 @@ pub struct WireGraph {
 
 /// The keys in graph order; the index is derived from them, and a hash map's
 /// iteration order would make two equal graphs format differently.
-impl std::fmt::Debug for WireGraph {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for WireGraph {
+    fn fmt_with(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+        table: &DebugTable,
+    ) -> std::fmt::Result {
         formatter
             .debug_struct("WireGraph")
-            .field("keys", &NodeList(self.keys.iter()))
+            .field("keys", &NodeList(self.keys.iter(), table))
             .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for WireGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

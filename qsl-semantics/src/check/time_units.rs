@@ -11,7 +11,9 @@
 //! then its composed offset is zero. FR-233 reads an interval bound through
 //! it; the `time` member's own reading waits on FR-230's facet gate.
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeValueMap, ValueMap, With,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
@@ -40,8 +42,8 @@ struct DeclaredUnit {
     offset: Rational,
 }
 
-impl std::fmt::Debug for DeclaredUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for DeclaredUnit {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             node,
             dimension,
@@ -49,11 +51,20 @@ impl std::fmt::Debug for DeclaredUnit {
             offset,
         } = self;
         f.debug_struct("DeclaredUnit")
-            .field("node", &node.as_ref().map(NodeKeyDebug))
-            .field("dimension", &dimension.as_ref().map(NodeKeyDebug))
+            .field("node", &node.as_ref().map(|key| NodeKeyDebug(key, table)))
+            .field(
+                "dimension",
+                &dimension.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
             .field("scale", &scale)
             .field("offset", &offset)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for DeclaredUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -73,8 +84,8 @@ pub struct TimeUnits {
     classes: EquivalenceClasses,
 }
 
-impl std::fmt::Debug for TimeUnits {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for TimeUnits {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             time,
             time_dimensions,
@@ -83,24 +94,24 @@ impl std::fmt::Debug for TimeUnits {
             classes,
         } = self;
         f.debug_struct("TimeUnits")
-            .field("time", &time.as_ref().map(NodeKeyDebug))
+            .field("time", &time.as_ref().map(|key| NodeKeyDebug(key, table)))
             .field(
                 "time_dimensions",
                 &time_dimensions
                     .iter()
-                    .map(|(key, value)| (key, NodeKeyDebug(value)))
+                    .map(|(key, value)| (key, NodeKeyDebug(value, table)))
                     .collect::<Vec<_>>(),
             )
-            .field("units", &units)
-            .field(
-                "nominal_nodes",
-                &nominal_nodes
-                    .iter()
-                    .map(|(key, value)| (NodeKeyDebug(key), value))
-                    .collect::<Vec<_>>(),
-            )
-            .field("classes", &classes)
+            .field("units", &ValueMap(units.iter(), table))
+            .field("nominal_nodes", &NodeValueMap(nominal_nodes.iter(), table))
+            .field("classes", &With(classes, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for TimeUnits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -517,7 +528,7 @@ pub(crate) fn rational(spelling: &str) -> Option<Rational> {
 }
 
 /// A time unit as a conversion target ([`TimeUnits::target`]).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TimeScale {
     /// `1 / scale` of the unit to its root.
     reciprocal: Rational,
@@ -528,6 +539,8 @@ pub struct TimeScale {
     /// Nominal unit-graph closure required by the timed root.
     nominal_nodes: Vec<TimeNominalNode>,
 }
+
+qsl_foundation::debug_with_struct!(TimeScale, "TimeScale" { reciprocal: plain, dimension: plain, unit: plain, nominal_nodes: with });
 
 impl TimeScale {
     /// The unit's nominal dimension node.

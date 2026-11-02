@@ -13,20 +13,24 @@ use super::{NodeKeyRefusal, NodeRef};
 
 /// An abstraction relation node's body, `{term: "abstraction_relation",
 /// objects, populations, frames}` (QSpec FR-451).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct AbstractionTerm {
     objects: Vec<ObjectEntry>,
     populations: Vec<PopulationEntry>,
     frames: Vec<FrameEntry>,
 }
 
+qsl_foundation::debug_with_struct!(AbstractionTerm, "AbstractionTerm" { objects: with, populations: with, frames: with });
+
 /// One object binding: `{type, rust_type, fields}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ObjectEntry {
     ty: NodeRef,
     rust_type: Vec<String>,
     fields: Vec<FieldEntry>,
 }
+
+qsl_foundation::debug_with_struct!(ObjectEntry, "ObjectEntry" { ty: with, rust_type: plain, fields: plain });
 
 /// One field binding: `{name, rust_field}`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -36,15 +40,17 @@ struct FieldEntry {
 }
 
 /// One population binding: `{population, collection}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct PopulationEntry {
     population: NodeRef,
     collection: Vec<String>,
 }
 
+qsl_foundation::debug_with_struct!(PopulationEntry, "PopulationEntry" { population: with, collection: plain });
+
 /// One operation binding: `{context, operation, function, receiver,
 /// parameters}`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct FrameEntry {
     context: NodeRef,
     operation: String,
@@ -52,6 +58,8 @@ pub struct FrameEntry {
     receiver: String,
     parameters: Vec<ParameterEntry>,
 }
+
+qsl_foundation::debug_with_struct!(FrameEntry, "FrameEntry" { context: with, operation: plain, function: plain, receiver: plain, parameters: plain });
 
 /// One parameter binding: `{name, rust_parameter}`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

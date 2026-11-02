@@ -19,17 +19,12 @@ use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::cell::RefCell;
 use core::fmt;
 use hashbrown::HashMap;
 
 use quire_exact::{Location, NodeKey, Origin, Role};
 
-#[cfg(not(feature = "std"))]
-use super::node_table::scoped;
-#[cfg(feature = "std")]
-use super::node_table::NodeTableContents;
-use super::node_table::{NodeKeyDebug, NodeKeyDebugScoped, NodeTable};
+use super::node_table::{scoped, standalone, DebugTable, DebugWith, NodeKeyDebug};
 
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
@@ -200,13 +195,20 @@ pub struct OccurrenceKey {
     origin: Origin,
 }
 
-/// The node is written through [`NodeKeyDebug`] as its complete identity.
-impl fmt::Debug for OccurrenceKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+/// The node is written through [`NodeKeyDebug`]: as its position in the
+/// enclosing [`scoped`] table, or as its complete identity on its own.
+impl DebugWith for OccurrenceKey {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
         f.debug_struct("OccurrenceKey")
-            .field("node", &NodeKeyDebug(&self.node))
+            .field("node", &NodeKeyDebug(&self.node, table))
             .field("origin", &self.origin)
             .finish()
+    }
+}
+
+impl fmt::Debug for OccurrenceKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -284,11 +286,13 @@ pub struct PackageSourceMap {
 }
 
 /// Debug writes each entry as (node, role, ordinal) with its regions. With
-/// `std`, one explicitly local node table writes each nested identity once;
-/// without `std`, every entry writes its complete key.
-impl fmt::Debug for PackageSourceMap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Entries<'a>(&'a PackageSourceMap, Option<&'a RefCell<NodeTable>>);
+/// `std`, one node table writes each nested identity once, so the output is
+/// linear in the package rather than repeating every nested operand per key.
+/// Formatted as a part of a larger [`scoped`] value, the map joins that
+/// value's table; without `std`, each entry writes its complete key.
+impl DebugWith for PackageSourceMap {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        struct Entries<'a>(&'a PackageSourceMap, &'a DebugTable);
         impl fmt::Debug for Entries<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut map = f.debug_map();
@@ -301,7 +305,7 @@ impl fmt::Debug for PackageSourceMap {
                 for (_, occurrences) in nodes {
                     for (key, regions) in occurrences.values() {
                         let at = (
-                            NodeKeyDebugScoped(&key.node, self.1),
+                            NodeKeyDebug(&key.node, self.1),
                             key.origin.role(),
                             key.origin.ordinal(),
                         );
@@ -311,24 +315,15 @@ impl fmt::Debug for PackageSourceMap {
                 map.finish()
             }
         }
-        struct Body<'a>(&'a PackageSourceMap, Option<&'a RefCell<NodeTable>>);
-        impl fmt::Debug for Body<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("PackageSourceMap")
-                    .field("entries", &Entries(self.0, self.1))
-                    .finish()
-            }
-        }
-        #[cfg(feature = "std")]
-        {
-            let table = RefCell::new(NodeTable::new());
-            f.debug_struct("WithNodes")
-                .field("value", &Body(self, Some(&table)))
-                .field("nodes", &NodeTableContents(&table))
-                .finish()
-        }
-        #[cfg(not(feature = "std"))]
-        scoped(f, &Body(self, None))
+        f.debug_struct("PackageSourceMap")
+            .field("entries", &Entries(self, table))
+            .finish()
+    }
+}
+
+impl fmt::Debug for PackageSourceMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        scoped(f, self)
     }
 }
 /// One node's mapped occurrences, in (role, ordinal) order, each with its
@@ -664,10 +659,10 @@ mod tests {
         );
     }
 
-    /// Each value owns its debug table; wrapping several maps does not create
-    /// ambient state shared between unrelated formatter calls.
+    /// Two maps formatted under one `scoped` call share its table, so a node
+    /// both hold is written once; with no `std` each map writes complete keys.
     #[test]
-    fn separate_maps_format_with_independent_local_tables() {
+    fn maps_under_one_scope_share_one_table() {
         let (first, _) = chain_debug(3);
         let (second, _) = chain_debug(3);
         struct Both<'a>(&'a PackageSourceMap, &'a PackageSourceMap);
@@ -677,8 +672,7 @@ mod tests {
             }
         }
         let text = alloc::format!("{:?}", Both(&first, &second));
-        assert_eq!(text, alloc::format!("({first:?}, {second:?})"));
-        let expected_leaves = if cfg!(feature = "std") { 2 } else { 6 };
+        let expected_leaves = if cfg!(feature = "std") { 1 } else { 6 };
         assert_eq!(text.matches("\"leaf\"").count(), expected_leaves, "{text}");
         assert_eq!(text.matches("PackageSourceMap {").count(), 2, "{text}");
     }

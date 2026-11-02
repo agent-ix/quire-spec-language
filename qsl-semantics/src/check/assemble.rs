@@ -3054,7 +3054,7 @@ fn admit_types_with<T>(
 /// library identity it names, the library's verified import view (ADR-011
 /// §4), and the library's checked graph, compiled from source, which E3
 /// types an imported name from (ADR-015 D-5).
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AdmittedImport {
     /// The library identity the import names.
     pub identity: LibraryName,
@@ -3063,6 +3063,8 @@ pub struct AdmittedImport {
     /// The library's checked graph.
     pub graph: Arc<CheckedGraph>,
 }
+
+qsl_foundation::debug_with_struct!(AdmittedImport, "AdmittedImport" { identity: plain, view: with, graph: with });
 
 impl PackageDeclarations {
     /// FR-091's assembler: the package declared by `unit`, the S2 output of

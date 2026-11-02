@@ -25,7 +25,9 @@
 use qsl_forms::{QuantityForm, TimedIntervalForm, TimedUpper};
 use qsl_foundation::bound::TimedInterval;
 use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList, With,
+};
 use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, Rational, ValueType};
 
@@ -88,8 +90,8 @@ pub struct ModelTimeSource {
     pub nominal_nodes: Vec<TimeNominalNode>,
 }
 
-impl std::fmt::Debug for ModelTimeSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for ModelTimeSource {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             model,
             span,
@@ -106,19 +108,27 @@ impl std::fmt::Debug for ModelTimeSource {
         f.debug_struct("ModelTimeSource")
             .field("model", &model)
             .field("span", &span)
-            .field("model_node", &NodeKeyDebug(model_node))
+            .field("model_node", &NodeKeyDebug(model_node, table))
             .field("tick_operation_key", &tick_operation_key)
             .field("tick_operation_span", &tick_operation_span)
             .field(
                 "tick_operation_anchor",
-                &tick_operation_anchor.as_ref().map(NodeKeyDebug),
+                &tick_operation_anchor
+                    .as_ref()
+                    .map(|key| NodeKeyDebug(key, table)),
             )
             .field("source", &source)
             .field("unit", &unit)
-            .field("unit_node", &NodeKeyDebug(unit_node))
-            .field("time_dimension", &NodeKeyDebug(time_dimension))
-            .field("nominal_nodes", &nominal_nodes)
+            .field("unit_node", &NodeKeyDebug(unit_node, table))
+            .field("time_dimension", &NodeKeyDebug(time_dimension, table))
+            .field("nominal_nodes", &With(nominal_nodes, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for ModelTimeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -138,8 +148,8 @@ pub struct TimeNominalNode {
     pub nominal: Option<crate::value::nominal_payload::NominalPayload>,
 }
 
-impl std::fmt::Debug for TimeNominalNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for TimeNominalNode {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             key,
             form,
@@ -148,12 +158,18 @@ impl std::fmt::Debug for TimeNominalNode {
             nominal,
         } = self;
         f.debug_struct("TimeNominalNode")
-            .field("key", &NodeKeyDebug(key))
+            .field("key", &NodeKeyDebug(key, table))
             .field("form", &form)
             .field("origin", &origin)
-            .field("dependencies", &NodeList(dependencies.iter()))
+            .field("dependencies", &NodeList(dependencies.iter(), table))
             .field("nominal", &nominal)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for TimeNominalNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

@@ -8,7 +8,7 @@
 //! as its node key. [`super::CheckedRefinement::v2_emission`] orders them
 //! canonically and writes them.
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug, With};
 use quire_exact::NodeKey;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
@@ -21,16 +21,28 @@ pub(crate) struct KeyedPopulationRow {
     pub(crate) concrete_population: NodeKey,
 }
 
-impl std::fmt::Debug for KeyedPopulationRow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for KeyedPopulationRow {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             abstract_population,
             concrete_population,
         } = self;
         f.debug_struct("KeyedPopulationRow")
-            .field("abstract_population", &NodeKeyDebug(abstract_population))
-            .field("concrete_population", &NodeKeyDebug(concrete_population))
+            .field(
+                "abstract_population",
+                &NodeKeyDebug(abstract_population, table),
+            )
+            .field(
+                "concrete_population",
+                &NodeKeyDebug(concrete_population, table),
+            )
             .finish()
+    }
+}
+
+impl std::fmt::Debug for KeyedPopulationRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -43,18 +55,24 @@ pub(crate) struct KeyedObjectRow {
     pub(crate) fields: Vec<(String, LeafTerm)>,
 }
 
-impl std::fmt::Debug for KeyedObjectRow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for KeyedObjectRow {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             abstract_type,
             concrete_type,
             fields,
         } = self;
         f.debug_struct("KeyedObjectRow")
-            .field("abstract_type", &NodeKeyDebug(abstract_type))
-            .field("concrete_type", &NodeKeyDebug(concrete_type))
+            .field("abstract_type", &NodeKeyDebug(abstract_type, table))
+            .field("concrete_type", &NodeKeyDebug(concrete_type, table))
             .field("fields", &fields)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for KeyedObjectRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -69,8 +87,8 @@ pub(crate) struct KeyedStepRow {
     pub(crate) source: usize,
 }
 
-impl std::fmt::Debug for KeyedStepRow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for KeyedStepRow {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             source_class,
             source_node,
@@ -79,10 +97,19 @@ impl std::fmt::Debug for KeyedStepRow {
         } = self;
         f.debug_struct("KeyedStepRow")
             .field("source_class", &source_class)
-            .field("source_node", &source_node.as_ref().map(NodeKeyDebug))
-            .field("target", &target)
+            .field(
+                "source_node",
+                &source_node.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
+            .field("target", &With(target, table))
             .field("source", &source)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for KeyedStepRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -109,8 +136,8 @@ pub(crate) enum KeyedStepTarget {
     Any,
 }
 
-impl std::fmt::Debug for KeyedStepTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for KeyedStepTarget {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Operation {
                 operation,
@@ -118,7 +145,7 @@ impl std::fmt::Debug for KeyedStepTarget {
                 arguments,
             } => f
                 .debug_struct("Operation")
-                .field("operation", &NodeKeyDebug(operation))
+                .field("operation", &NodeKeyDebug(operation, table))
                 .field("receiver", &receiver)
                 .field("arguments", &arguments)
                 .finish(),
@@ -129,12 +156,18 @@ impl std::fmt::Debug for KeyedStepTarget {
             } => f
                 .debug_struct("ProtocolStep")
                 .field("class", &class)
-                .field("node", &node.as_ref().map(NodeKeyDebug))
+                .field("node", &node.as_ref().map(|key| NodeKeyDebug(key, table)))
                 .field("arguments", &arguments)
                 .finish(),
             Self::Stutter => f.write_str("Stutter"),
             Self::Any => f.write_str("Any"),
         }
+    }
+}
+
+impl std::fmt::Debug for KeyedStepTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -147,23 +180,29 @@ pub(crate) struct KeyedFairnessRow {
     pub(crate) granularity: FairnessGranularity,
 }
 
-impl std::fmt::Debug for KeyedFairnessRow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for KeyedFairnessRow {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             operation,
             kind,
             granularity,
         } = self;
         f.debug_struct("KeyedFairnessRow")
-            .field("operation", &NodeKeyDebug(operation))
+            .field("operation", &NodeKeyDebug(operation, table))
             .field("kind", &kind)
             .field("granularity", &granularity)
             .finish()
     }
 }
 
+impl std::fmt::Debug for KeyedFairnessRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
 /// Every authored row of one refinement, keyed.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub(crate) struct KeyedRefinementRows {
     pub(crate) populations: Vec<KeyedPopulationRow>,
     pub(crate) objects: Vec<KeyedObjectRow>,
@@ -171,6 +210,8 @@ pub(crate) struct KeyedRefinementRows {
     pub(crate) assume: Vec<KeyedFairnessRow>,
     pub(crate) ensure: Vec<KeyedFairnessRow>,
 }
+
+qsl_foundation::debug_with_struct!(KeyedRefinementRows, "KeyedRefinementRows" { populations: with, objects: with, steps: with, assume: with, ensure: with });
 
 impl KeyedRefinementRows {
     /// Every node of this graph the rows name, which QSpec FR-375 makes the

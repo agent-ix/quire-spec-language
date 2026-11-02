@@ -18,7 +18,7 @@
 //! [`StateClauseForm`]: qsl_forms::StateClauseForm
 //! [`PackageDeclarations::check`]: super::PackageDeclarations::check
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use quire_checked::node::{AuthoredBound, NodeKind};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -119,8 +119,8 @@ pub struct CheckedOperationFrame {
     pub(crate) frame_origin: Origin,
 }
 
-impl std::fmt::Debug for CheckedOperationFrame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedOperationFrame {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             operation,
             anchor,
@@ -129,10 +129,16 @@ impl std::fmt::Debug for CheckedOperationFrame {
         } = self;
         f.debug_struct("CheckedOperationFrame")
             .field("operation", &operation)
-            .field("anchor", &NodeKeyDebug(anchor))
-            .field("frame", &NodeKeyDebug(frame))
+            .field("anchor", &NodeKeyDebug(anchor, table))
+            .field("frame", &NodeKeyDebug(frame, table))
             .field("frame_origin", &frame_origin)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedOperationFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -1067,8 +1073,8 @@ pub struct CheckedStateClause {
     pub(crate) bounds: Vec<AuthoredBound>,
 }
 
-impl std::fmt::Debug for CheckedStateClause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedStateClause {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             name,
             kind,
@@ -1093,12 +1099,18 @@ impl std::fmt::Debug for CheckedStateClause {
             .field("body", &body)
             .field("slots", &slots)
             .field("observations", &observations)
-            .field("identity", &NodeKeyDebug(identity))
+            .field("identity", &NodeKeyDebug(identity, table))
             .field("claim", &claim)
             .field("spans", &spans)
             .field("has_result", &has_result)
             .field("bounds", &bounds)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedStateClause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

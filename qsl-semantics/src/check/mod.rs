@@ -205,7 +205,10 @@ use quire_exact::Identifier;
 use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_foundation::diagnostic::{Locus, StageFailure};
-use qsl_foundation::source::node_table::{scoped, NodeKeyDebug, NodeList, NodeMap};
+use qsl_foundation::source::node_table::{
+    scoped, standalone, DebugTable, DebugWith, Maybe, NodeKeyDebug, NodeList, NodeMap,
+    NodeValueMap, Seq, ValueMap, With,
+};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Cancel, ValueType};
 use std::fmt;
@@ -493,18 +496,24 @@ struct CheckedFunction {
     slots: usize,
 }
 
-impl std::fmt::Debug for CheckedFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedFunction {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             identity,
             body,
             slots,
         } = self;
         f.debug_struct("CheckedFunction")
-            .field("identity", &NodeKeyDebug(identity))
+            .field("identity", &NodeKeyDebug(identity, table))
             .field("body", &body)
             .field("slots", &slots)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -520,8 +529,8 @@ struct CheckedFunctions {
     by_identity: BTreeMap<quire_exact::NodeKey, usize>,
 }
 
-impl std::fmt::Debug for CheckedFunctions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedFunctions {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             signatures,
             bodies,
@@ -529,15 +538,21 @@ impl std::fmt::Debug for CheckedFunctions {
         } = self;
         f.debug_struct("CheckedFunctions")
             .field("signatures", &signatures)
-            .field("bodies", &bodies)
+            .field("bodies", &With(bodies, table))
             .field(
                 "by_identity",
                 &by_identity
                     .iter()
-                    .map(|(key, value)| (NodeKeyDebug(key), value))
+                    .map(|(key, value)| (NodeKeyDebug(key, table), value))
                     .collect::<Vec<_>>(),
             )
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedFunctions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -846,166 +861,172 @@ impl CheckedGraphIdentity {
 /// the package is written once however many collections hold it, and the
 /// output is linear in the package. The fields are destructured by name, so a
 /// field added to the struct without a line here does not compile.
+impl DebugWith for CheckedGraph {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        let CheckedGraph {
+            graph_identity: _,
+            source,
+            package_name,
+            scope,
+            functions,
+            dispatch_tables,
+            occurrences,
+            parameter_spans,
+            requirements,
+            model_correspondence,
+            type_nodes,
+            semantic_graph,
+            equality_producer_data,
+            equality_producer_identities,
+            dispatch_producer_decisions,
+            effective_limits,
+            form_spans,
+            type_spans,
+            site_spans,
+            synthesized_spans,
+            embedding,
+            model_selections,
+            selected_exact_identity_rows,
+            selected_tuple_declaration_rows,
+            operation_effects,
+            protocol_population_types,
+            model_roots,
+            header_layers,
+            time_sources,
+            time_units,
+            state_clauses,
+            type_invariants,
+            terminals,
+            timed_models,
+            refinements,
+            abstractions,
+            model_names,
+            abstraction,
+            protocols,
+            protocol_classes,
+            protocol_node_keys,
+            temporal_clauses,
+            hyper_nodes,
+            step_relations,
+            state_graph_claims,
+            hybrid_models,
+            hybrid_claims,
+            probabilistic,
+            task_sets,
+            operation_frames,
+            model_objects,
+            model_owners,
+            model_non_owners,
+            owner_types,
+            object_types,
+            object_nodes,
+            model_populations,
+            population_bounds,
+            population_keys,
+            declaration_keys,
+            attempt_spans,
+        } = self;
+        f.debug_struct("CheckedGraph")
+            .field("source", &source)
+            .field("package_name", &package_name)
+            .field("scope", &With(scope, table))
+            .field("functions", &With(functions, table))
+            .field("dispatch_tables", &dispatch_tables)
+            .field("occurrences", &With(occurrences, table))
+            .field(
+                "parameter_spans",
+                &parameter_spans
+                    .iter()
+                    .map(|((node, origin), span)| ((NodeKeyDebug(node, table), origin), span))
+                    .collect::<Vec<_>>(),
+            )
+            .field("requirements", &With(requirements, table))
+            .field("model_correspondence", &With(model_correspondence, table))
+            .field("type_nodes", &NodeValueMap(type_nodes.iter(), table))
+            .field("semantic_graph", &With(semantic_graph, table))
+            .field(
+                "equality_producer_data",
+                &equality_producer_data
+                    .iter()
+                    .map(|((node, location), data)| ((NodeKeyDebug(node, table), location), data))
+                    .collect::<Vec<_>>(),
+            )
+            .field("equality_producer_identities", equality_producer_identities)
+            .field("dispatch_producer_decisions", dispatch_producer_decisions)
+            .field("effective_limits", &effective_limits)
+            .field("form_spans", &form_spans)
+            .field("type_spans", &type_spans)
+            .field("site_spans", &site_spans)
+            .field("synthesized_spans", &synthesized_spans)
+            .field("embedding", &embedding)
+            .field("model_selections", &model_selections)
+            .field(
+                "selected_exact_identity_rows",
+                &selected_exact_identity_rows,
+            )
+            .field(
+                "selected_tuple_declaration_rows",
+                &selected_tuple_declaration_rows,
+            )
+            .field("operation_effects", &operation_effects)
+            .field(
+                "protocol_population_types",
+                &NodeMap(protocol_population_types.iter(), table),
+            )
+            .field("model_roots", &NodeList(model_roots.iter(), table))
+            .field("header_layers", &header_layers)
+            .field("time_sources", &Seq(time_sources, table))
+            .field("time_units", &With(time_units, table))
+            .field("state_clauses", &Seq(state_clauses, table))
+            .field("type_invariants", &With(type_invariants, table))
+            .field("terminals", &terminals)
+            .field("timed_models", &Seq(timed_models, table))
+            .field("refinements", &Seq(refinements, table))
+            .field("abstractions", &abstractions)
+            .field("model_names", &model_names)
+            .field("abstraction", &Maybe(abstraction, table))
+            .field("protocols", &Seq(protocols, table))
+            .field(
+                "protocol_classes",
+                &ValueMap(protocol_classes.iter(), table),
+            )
+            .field(
+                "protocol_node_keys",
+                &ValueMap(protocol_node_keys.iter(), table),
+            )
+            .field("temporal_clauses", &Seq(temporal_clauses, table))
+            .field("hyper_nodes", &hyper_nodes)
+            .field("step_relations", &Seq(step_relations, table))
+            .field("state_graph_claims", &state_graph_claims)
+            .field("hybrid_models", &hybrid_models)
+            .field("hybrid_claims", &hybrid_claims)
+            .field("probabilistic", &probabilistic)
+            .field("task_sets", &With(task_sets, table))
+            .field("operation_frames", &Seq(operation_frames, table))
+            .field("model_objects", &model_objects)
+            .field("model_owners", &model_owners)
+            .field("model_non_owners", &model_non_owners)
+            .field("owner_types", &owner_types)
+            .field("object_types", &object_types)
+            .field(
+                "object_nodes",
+                &object_nodes
+                    .iter()
+                    .map(|(declaration, node)| (declaration, NodeKeyDebug(node, table)))
+                    .collect::<Vec<_>>(),
+            )
+            .field("model_populations", &model_populations)
+            .field("population_bounds", &population_bounds)
+            .field("population_keys", &population_keys)
+            .field("declaration_keys", &declaration_keys)
+            .field("attempt_spans", &attempt_spans)
+            .finish()
+    }
+}
+
 impl fmt::Debug for CheckedGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Body<'a>(&'a CheckedGraph);
-        impl fmt::Debug for Body<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let CheckedGraph {
-                    graph_identity: _,
-                    source,
-                    package_name,
-                    scope,
-                    functions,
-                    dispatch_tables,
-                    occurrences,
-                    parameter_spans,
-                    requirements,
-                    model_correspondence,
-                    type_nodes,
-                    semantic_graph,
-                    equality_producer_data,
-                    equality_producer_identities,
-                    dispatch_producer_decisions,
-                    effective_limits,
-                    form_spans,
-                    type_spans,
-                    site_spans,
-                    synthesized_spans,
-                    embedding,
-                    model_selections,
-                    selected_exact_identity_rows,
-                    selected_tuple_declaration_rows,
-                    operation_effects,
-                    protocol_population_types,
-                    model_roots,
-                    header_layers,
-                    time_sources,
-                    time_units,
-                    state_clauses,
-                    type_invariants,
-                    terminals,
-                    timed_models,
-                    refinements,
-                    abstractions,
-                    model_names,
-                    abstraction,
-                    protocols,
-                    protocol_classes,
-                    protocol_node_keys,
-                    temporal_clauses,
-                    hyper_nodes,
-                    step_relations,
-                    state_graph_claims,
-                    hybrid_models,
-                    hybrid_claims,
-                    probabilistic,
-                    task_sets,
-                    operation_frames,
-                    model_objects,
-                    model_owners,
-                    model_non_owners,
-                    owner_types,
-                    object_types,
-                    object_nodes,
-                    model_populations,
-                    population_bounds,
-                    population_keys,
-                    declaration_keys,
-                    attempt_spans,
-                } = self.0;
-                f.debug_struct("CheckedGraph")
-                    .field("source", &source)
-                    .field("package_name", &package_name)
-                    .field("scope", &scope)
-                    .field("functions", &functions)
-                    .field("dispatch_tables", &dispatch_tables)
-                    .field("occurrences", &occurrences)
-                    .field(
-                        "parameter_spans",
-                        &parameter_spans
-                            .iter()
-                            .map(|((node, origin), span)| ((NodeKeyDebug(node), origin), span))
-                            .collect::<Vec<_>>(),
-                    )
-                    .field("requirements", &requirements)
-                    .field("model_correspondence", &model_correspondence)
-                    .field("type_nodes", &NodeMap(type_nodes.iter()))
-                    .field("semantic_graph", &semantic_graph)
-                    .field(
-                        "equality_producer_data",
-                        &equality_producer_data
-                            .iter()
-                            .map(|((node, location), data)| ((NodeKeyDebug(node), location), data))
-                            .collect::<Vec<_>>(),
-                    )
-                    .field("equality_producer_identities", equality_producer_identities)
-                    .field("dispatch_producer_decisions", dispatch_producer_decisions)
-                    .field("effective_limits", &effective_limits)
-                    .field("form_spans", &form_spans)
-                    .field("type_spans", &type_spans)
-                    .field("site_spans", &site_spans)
-                    .field("synthesized_spans", &synthesized_spans)
-                    .field("embedding", &embedding)
-                    .field("model_selections", &model_selections)
-                    .field(
-                        "selected_exact_identity_rows",
-                        &selected_exact_identity_rows,
-                    )
-                    .field(
-                        "selected_tuple_declaration_rows",
-                        &selected_tuple_declaration_rows,
-                    )
-                    .field("operation_effects", &operation_effects)
-                    .field(
-                        "protocol_population_types",
-                        &NodeMap(protocol_population_types.iter()),
-                    )
-                    .field("model_roots", &NodeList(model_roots.iter()))
-                    .field("header_layers", &header_layers)
-                    .field("time_sources", &time_sources)
-                    .field("time_units", &time_units)
-                    .field("state_clauses", &state_clauses)
-                    .field("type_invariants", &type_invariants)
-                    .field("terminals", &terminals)
-                    .field("timed_models", &timed_models)
-                    .field("refinements", &refinements)
-                    .field("abstractions", &abstractions)
-                    .field("model_names", &model_names)
-                    .field("abstraction", &abstraction)
-                    .field("protocols", &protocols)
-                    .field("protocol_classes", &protocol_classes)
-                    .field("protocol_node_keys", &protocol_node_keys)
-                    .field("temporal_clauses", &temporal_clauses)
-                    .field("hyper_nodes", &hyper_nodes)
-                    .field("step_relations", &step_relations)
-                    .field("state_graph_claims", &state_graph_claims)
-                    .field("hybrid_models", &hybrid_models)
-                    .field("hybrid_claims", &hybrid_claims)
-                    .field("probabilistic", &probabilistic)
-                    .field("task_sets", &task_sets)
-                    .field("operation_frames", &operation_frames)
-                    .field("model_objects", &model_objects)
-                    .field("model_owners", &model_owners)
-                    .field("model_non_owners", &model_non_owners)
-                    .field("owner_types", &owner_types)
-                    .field("object_types", &object_types)
-                    .field(
-                        "object_nodes",
-                        &object_nodes
-                            .iter()
-                            .map(|(declaration, node)| (declaration, NodeKeyDebug(node)))
-                            .collect::<Vec<_>>(),
-                    )
-                    .field("model_populations", &model_populations)
-                    .field("population_bounds", &population_bounds)
-                    .field("population_keys", &population_keys)
-                    .field("declaration_keys", &declaration_keys)
-                    .field("attempt_spans", &attempt_spans)
-                    .finish()
-            }
-        }
-        scoped(f, &Body(self))
+        scoped(f, self)
     }
 }
 
@@ -1030,8 +1051,8 @@ pub struct TemporalClauseNode {
     captures: Vec<(CheckedBody, usize)>,
 }
 
-impl std::fmt::Debug for TemporalClauseNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for TemporalClauseNode {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             clause,
             identity,
@@ -1042,14 +1063,20 @@ impl std::fmt::Debug for TemporalClauseNode {
             captures,
         } = self;
         f.debug_struct("TemporalClauseNode")
-            .field("clause", &clause)
-            .field("identity", &NodeKeyDebug(identity))
+            .field("clause", &With(clause, table))
+            .field("identity", &NodeKeyDebug(identity, table))
             .field("claim", &claim)
-            .field("over", &NodeKeyDebug(over))
+            .field("over", &NodeKeyDebug(over, table))
             .field("conditions", &conditions)
             .field("guard", &guard)
             .field("captures", &captures)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for TemporalClauseNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
