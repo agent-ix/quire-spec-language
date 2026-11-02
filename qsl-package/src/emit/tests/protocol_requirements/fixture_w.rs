@@ -912,3 +912,178 @@ fn a_canonical_relationship_binds_through_real_model_intake() {
         assert_eq!(&text[span.start..span.end], format!("M::{target}"));
     }
 }
+
+const TIMED_PROFILES_W: &str = "profile P = \"quire.protocol.finite-global/v1\";\n\
+                         profile T = \"quire.temporal.event-position.false-extension/v1\";\n";
+
+/// The v2 checked-package event-position clock the timed TC-134 fixture
+/// selects for its temporal declarations.
+fn tc134_clock() -> quire_contract_model::ClockConfiguration {
+    quire_contract_model::ClockConfiguration::EventPosition {
+        sequence_authority: "tc134-order-events".into(),
+    }
+}
+
+fn tc134_timed_graph() -> qsl_semantics::check::CheckedGraph {
+    let domain = document();
+    let packages =
+        qsl_semantics::model::intake::package_input([domain.as_slice()]).expect("model intake");
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{TIMED_PROFILES_W}\
+         model M = \"acme/orders\";\n{}\n",
+        tc134_source()
+    );
+    assemble_with_models(source.as_bytes(), &packages)
+        .expect("unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("timed TC-134 checks: {refusals:?}"))
+}
+
+/// One clock selection per timed temporal declaration of `graph`.
+fn tc134_selections(
+    graph: &qsl_semantics::check::CheckedGraph,
+) -> Vec<crate::emit::TemporalClockSelection> {
+    let source = graph.source().clone();
+    let temporal = graph.temporal_clauses().iter().map(|t| t.clause().span());
+    let hyper = graph.hyper_clauses().iter().map(|h| h.span());
+    temporal
+        .chain(hyper)
+        .map(|span| crate::emit::TemporalClockSelection {
+            source: source.clone(),
+            declaration_span: span,
+            clock: tc134_clock(),
+        })
+        .collect()
+}
+
+/// FR-048-AC-8: a timed compensation subject emits as strict `/2` with one
+/// typed clock binding per selected temporal declaration, and the actual
+/// strict reader admits the package and retains each binding and the
+/// temporal profile selection.
+#[trace("FR-048-AC-8", "TC-134")]
+#[test]
+fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back() {
+    let graph = tc134_timed_graph();
+    let selections = tc134_selections(&graph);
+    assert!(
+        !selections.is_empty(),
+        "the timed compensation fixture selects at least one temporal declaration"
+    );
+    let package = CheckedPackage::link(graph);
+    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
+        .expect("the timed package emits with its selections");
+    let wire = wire(&emission);
+    let bindings = wire["temporal_bindings"]
+        .as_array()
+        .expect("a timed subject carries temporal bindings");
+    assert_eq!(bindings.len(), selections.len(), "exactly one per selection");
+    for binding in bindings {
+        assert_eq!(
+            binding["clock"],
+            json!({"kind": "event_position", "sequence_authority": "tc134-order-events"})
+        );
+        assert!(
+            nodes(&wire).iter().any(|node| node["node_id"] == binding["declaration"]),
+            "the binding is tagged to an emitted declaration"
+        );
+    }
+    let declarations: std::collections::BTreeSet<String> =
+        bindings.iter().map(|b| b["declaration"].to_string()).collect();
+    assert_eq!(declarations.len(), bindings.len(), "no declaration is bound twice");
+    assert!(
+        wire["lock"]["profile_selections"]
+            .as_array()
+            .expect("profile selections")
+            .iter()
+            .any(|selection| selection["role"] == "temporal_profile"
+                && selection["definition"]["identity"]
+                    == "quire.temporal.event-position.false-extension/v1"),
+        "the temporal profile DefinitionRef is selected with role temporal_profile"
+    );
+
+    let mut evidence = read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
+        .expect("a fresh evidence key");
+    let admitted = match quire_contract_model::read_checked_package(
+        emission.package.bytes(),
+        quire_contract_model::CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
+        other => panic!("strict v2 read admits the timed package: {other:?}"),
+    };
+    let read_bindings = admitted
+        .temporal_bindings()
+        .expect("the admitted package retains its temporal bindings");
+    assert_eq!(read_bindings.len(), bindings.len());
+    for read in read_bindings {
+        assert_eq!(read.clock, tc134_clock());
+        assert_eq!(read.clock_name, "refund-clock");
+    }
+}
+
+/// FR-048-AC-8: a missing, duplicate, surplus or profile-incompatible clock
+/// selection refuses emission for the timed compensation fixture.
+#[trace("FR-048-AC-8", "TC-134")]
+#[test]
+fn tc134_timed_compensation_refuses_each_unfit_clock_selection() {
+    use crate::emit::EmitRefusal as R;
+    let graph = tc134_timed_graph();
+    let selections = tc134_selections(&graph);
+    let package = CheckedPackage::link(graph);
+    let emit = |s: &[crate::emit::TemporalClockSelection]| {
+        crate::emit::emit_checked_with_temporal_selections(&package, s)
+    };
+
+    assert!(matches!(emit(&[]), Err(R::MissingTemporalClockSelection { .. })));
+    let mut duplicate = selections.clone();
+    duplicate.push(selections[0].clone());
+    assert!(matches!(emit(&duplicate), Err(R::DuplicateTemporalClockSelection { .. })));
+    let mut surplus = selections.clone();
+    surplus.push(crate::emit::TemporalClockSelection {
+        declaration_span: qsl_foundation::Span { start: 0, end: 1 },
+        ..selections[0].clone()
+    });
+    assert!(matches!(emit(&surplus), Err(R::SurplusTemporalClockSelection { .. })));
+    let mut incompatible = selections.clone();
+    incompatible[0].clock = quire_contract_model::ClockConfiguration::TimestampedEvent {
+        timestamp_unit: "tc134-rfc3339".into(),
+    };
+    assert!(matches!(emit(&incompatible), Err(R::TemporalClockProfileMismatch { .. })));
+}
+
+/// FR-048-AC-8: `/1` stays strict. The reader refuses a `/1` contract
+/// version outright, so a timed subject's clock selections are never
+/// carried or inferred under it.
+#[trace("FR-048-AC-8", "TC-134")]
+#[test]
+fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
+    let graph = tc134_timed_graph();
+    let selections = tc134_selections(&graph);
+    let package = CheckedPackage::link(graph);
+    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
+        .expect("the timed package emits");
+    let mut forged = wire(&emission);
+    assert!(forged["temporal_bindings"].is_array());
+    forged["contract_version"] = json!("quire.checked-package/v1");
+    let mut evidence = read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
+        .expect("a fresh evidence key");
+    let outcome = read_v2(
+        &serde_json::to_vec(&forged).unwrap(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    );
+    assert!(
+        matches!(
+            &outcome,
+            Read::Refused(V2ReadRefusal::UnsupportedVersion { wire, .. })
+                if &*wire.actual == "quire.checked-package/v1"
+        ),
+        "expected /1 refusal, got {outcome:?}"
+    );
+}
