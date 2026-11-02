@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_forms::{AnchorSite, JoinPolicy, Outstanding, ProtocolNodeKind};
 use quire_exact::{Integer, NodeKey};
 
-use super::super::{fault, Binder, Binders, Lowering};
+use super::super::{fault, Binder, Binders, Lowering, NodeRef};
 use super::{
     empty_group, identifier, member, protocol_location, sorted, ProtocolInput, ProtocolSite,
 };
@@ -86,10 +86,10 @@ pub(super) struct RunInputs<'a> {
 /// The `run` tree as written: the root's key and the binders readable after
 /// it, which `finish` reads.
 pub(super) struct Run {
-    pub(super) root: NodeKey,
+    pub(super) root: NodeRef,
     pub(super) readable: Vec<Binder>,
     /// Every control's node, by its declaration.
-    pub(super) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
+    pub(super) nodes: BTreeMap<ProtocolNodeId, NodeRef>,
 }
 
 /// What the lowering of one control reads of its protocol.
@@ -189,7 +189,7 @@ impl Lowering<'_> {
         }
 
         let declarations = control_declarations(name, tree);
-        let mut keys: BTreeMap<ProtocolNodeId, NodeKey> = BTreeMap::new();
+        let mut keys: BTreeMap<ProtocolNodeId, NodeRef> = BTreeMap::new();
         for node in controls.build_order()? {
             let control = tree.control(node).ok_or_else(unchecked)?;
             // A branch's or a case's body is held by its `parallel` or its
@@ -209,7 +209,7 @@ impl Lowering<'_> {
                 .collect::<Result<Vec<_>, _>>()?;
             let (operator, arguments) =
                 self.control_arguments(&controls, node, &keys, &location)?;
-            let key = self.protocol_member(
+            let key = self.protocol_member_ref(
                 &location,
                 "control",
                 inputs.boolean.clone(),
@@ -250,7 +250,7 @@ impl Lowering<'_> {
         &mut self,
         controls: &Controls<'_, '_>,
         node: ProtocolNodeId,
-        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        keys: &BTreeMap<ProtocolNodeId, NodeRef>,
         location: &quire_semantic_value::location::Location,
     ) -> Result<(&'static str, Vec<MemberTerm>), CheckRefusal> {
         let protocol = controls.protocol;
@@ -275,10 +275,7 @@ impl Lowering<'_> {
                 .and_then(|binder| {
                     Ok(MemberTerm::bound(
                         "binder",
-                        LeafTerm::reference(super::super::require_admitted(
-                            binder.parameter.clone(),
-                            location,
-                        )?),
+                        LeafTerm::reference_node(binder.parameter.clone()),
                     ))
                 })
         };
@@ -320,7 +317,7 @@ impl Lowering<'_> {
                     "sequence",
                     vec![MemberTerm::binding(
                         "children",
-                        BindingValue::Group(GroupTerm::references(children)),
+                        BindingValue::Group(GroupTerm::references_nodes(children)),
                     )],
                 )
             }
@@ -355,7 +352,7 @@ impl Lowering<'_> {
                     "receive",
                     vec![
                         channel()?,
-                        MemberTerm::bound("of", LeafTerm::reference(anchor_of()?)),
+                        MemberTerm::bound("of", LeafTerm::reference_node(anchor_of()?)),
                         binder()?,
                         related,
                         MemberTerm::bound("constraint", constraint),
@@ -404,7 +401,7 @@ impl Lowering<'_> {
                 (
                     "effect",
                     vec![
-                        MemberTerm::bound("of", LeafTerm::reference(anchor_of()?)),
+                        MemberTerm::bound("of", LeafTerm::reference_node(anchor_of()?)),
                         binder()?,
                         related,
                         MemberTerm::bound("constraint", constraint),
@@ -445,7 +442,7 @@ impl Lowering<'_> {
                 let target = anchor_of()?;
                 let after = GroupTerm::new(vec![
                     member("kind", self.text_literal("event", location)?),
-                    member("target", LeafTerm::reference(target)),
+                    member("target", LeafTerm::reference_node(target)),
                 ]);
                 let clock = self.text_literal(&awaited.clock, location)?;
                 let within = GroupTerm::new(vec![
@@ -464,9 +461,12 @@ impl Lowering<'_> {
                         MemberTerm::binding("after", BindingValue::Group(after)),
                         MemberTerm::bound("clock", clock),
                         MemberTerm::binding("within", BindingValue::Group(within)),
-                        MemberTerm::bound("event", LeafTerm::reference(key_of(&parts.event)?)),
-                        MemberTerm::bound("then", LeafTerm::reference(key_of(&parts.then)?)),
-                        MemberTerm::bound("timeout", LeafTerm::reference(key_of(&parts.timeout)?)),
+                        MemberTerm::bound("event", LeafTerm::reference_node(key_of(&parts.event)?)),
+                        MemberTerm::bound("then", LeafTerm::reference_node(key_of(&parts.then)?)),
+                        MemberTerm::bound(
+                            "timeout",
+                            LeafTerm::reference_node(key_of(&parts.timeout)?),
+                        ),
                     ],
                 )
             }
@@ -499,7 +499,7 @@ impl Lowering<'_> {
         &mut self,
         protocol: &ProtocolInput<'_>,
         control: &CheckedControl,
-        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        keys: &BTreeMap<ProtocolNodeId, NodeRef>,
         location: &quire_semantic_value::location::Location,
     ) -> Result<Vec<MemberTerm>, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
@@ -509,7 +509,7 @@ impl Lowering<'_> {
             .iter()
             .find(|parallel| parallel.declaration == control.node.0)
             .ok_or_else(unchecked)?;
-        let mut branches: Vec<(&str, NodeKey)> = Vec::with_capacity(control.children.len());
+        let mut branches: Vec<(&str, NodeRef)> = Vec::with_capacity(control.children.len());
         for branch in &control.children {
             let branch = protocol
                 .checked
@@ -528,7 +528,7 @@ impl Lowering<'_> {
         for (label, body) in branches {
             records.push(TupleMember::Group(GroupTerm::new(vec![
                 member("label", self.text_literal(label, location)?),
-                member("body", LeafTerm::reference(body)),
+                member("body", LeafTerm::reference_node(body)),
             ])));
         }
         let mut join = vec![member(
@@ -553,10 +553,7 @@ impl Lowering<'_> {
                     .find(|join| join.node == control.node)
                     .and_then(|join| self.functions.get(join.function).cloned().flatten())
                     .ok_or_else(unchecked)?;
-                join.push(member(
-                    "predicate",
-                    LeafTerm::reference(super::super::require_admitted(function, location)?),
-                ));
+                join.push(member("predicate", LeafTerm::reference_node(function)));
             }
         }
         let mut joined: Vec<&str> = form
@@ -602,7 +599,7 @@ impl Lowering<'_> {
         controls: &Controls<'_, '_>,
         control: &CheckedControl,
         entry: &BTreeSet<usize>,
-        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        keys: &BTreeMap<ProtocolNodeId, NodeRef>,
         location: &quire_semantic_value::location::Location,
     ) -> Result<Vec<MemberTerm>, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
@@ -622,7 +619,7 @@ impl Lowering<'_> {
             .ok_or_else(unchecked)?;
         let owner = controls.role(&form.owner.name).ok_or_else(unchecked)?;
         let visible = self.visible_entries(controls, &checked.visible, entry, location)?;
-        let mut cases: Vec<(&str, LeafTerm, NodeKey)> = Vec::with_capacity(control.children.len());
+        let mut cases: Vec<(&str, LeafTerm, NodeRef)> = Vec::with_capacity(control.children.len());
         for case in &control.children {
             let case = protocol
                 .checked
@@ -648,7 +645,7 @@ impl Lowering<'_> {
             records.push(TupleMember::Group(GroupTerm::new(vec![
                 member("label", self.text_literal(label, location)?),
                 member("guard", guard),
-                member("body", LeafTerm::reference(body)),
+                member("body", LeafTerm::reference_node(body)),
             ])));
         }
         Ok(vec![
@@ -670,7 +667,7 @@ impl Lowering<'_> {
         controls: &Controls<'_, '_>,
         control: &CheckedControl,
         entry: &BTreeSet<usize>,
-        keys: &BTreeMap<ProtocolNodeId, NodeKey>,
+        keys: &BTreeMap<ProtocolNodeId, NodeRef>,
         location: &quire_semantic_value::location::Location,
     ) -> Result<Vec<MemberTerm>, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
@@ -710,7 +707,7 @@ impl Lowering<'_> {
         let body = within(form.body)?;
         let exhausted = match form.exhausted {
             None => empty_group(),
-            Some(span) => BindingValue::Group(GroupTerm::references([within(span)?])),
+            Some(span) => BindingValue::Group(GroupTerm::references_nodes([within(span)?])),
         };
         let owner = controls.role(&form.owner.name).ok_or_else(unchecked)?;
         let visible = self.visible_entries(controls, &checked.visible, entry, location)?;
@@ -740,7 +737,7 @@ impl Lowering<'_> {
             MemberTerm::binding("maximum", maximum),
             MemberTerm::binding("proof", BindingValue::Group(GroupTerm::new(proof))),
             MemberTerm::bound("guard", guard),
-            MemberTerm::bound("body", LeafTerm::reference(body)),
+            MemberTerm::bound("body", LeafTerm::reference_node(body)),
             MemberTerm::binding("exhausted", exhausted),
         ])
     }

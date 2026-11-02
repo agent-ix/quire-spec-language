@@ -427,7 +427,10 @@ fn lower_with_occurrences<T>(
         "fixture",
     );
     let built = build(&mut lowering);
-    let graph = lowering.finish(&generated_location()).graph;
+    let graph = lowering
+        .finish(&generated_location())
+        .expect("lowering finishes")
+        .graph;
     (built, graph, occurrences)
 }
 

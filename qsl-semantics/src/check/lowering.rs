@@ -651,7 +651,7 @@ pub(crate) struct Lowered {
     pub(crate) composites: BTreeMap<NodeKey, NodeKey>,
     /// The S4 identities of each protocol's clause and emitted members,
     /// retained for FR-390's checked-body selector.
-    pub(crate) protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    pub(crate) protocol_members: BTreeMap<String, protocol::AdmittedProtocolMembers>,
     /// QSL equality facts retained by the checked equality application's key
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
@@ -1798,7 +1798,7 @@ impl<'a> Lowering<'a> {
     /// The finished graph, its model correspondence and each
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
-    pub(crate) fn finish(mut self, root: &Location) -> Lowered {
+    pub(crate) fn finish(mut self, root: &Location) -> Result<Lowered, CheckRefusal> {
         self.graph.rank();
         let enclosing = enclosing_declarations(&self.graph, self.occurrences);
         for key in self.graph.nodes.keys() {
@@ -1830,7 +1830,12 @@ impl<'a> Lowering<'a> {
                     .map(|span| ((key, origin), span))
             })
             .collect();
-        Lowered {
+        let protocol_members = self
+            .protocol_members
+            .into_iter()
+            .map(|(name, members)| Ok((name, members.into_admitted(root)?)))
+            .collect::<Result<_, CheckRefusal>>()?;
+        Ok(Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
             functions: self
@@ -1853,11 +1858,11 @@ impl<'a> Lowering<'a> {
             )
             .into_iter()
             .collect(),
-            protocol_members: self.protocol_members,
+            protocol_members,
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,
             dispatch_producer_decisions: self.dispatch_producer_decisions,
-        }
+        })
     }
 
     /// Record an occurrence of `key`: a draft's waits until it is keyed.
@@ -3088,6 +3093,7 @@ impl<'a> Lowering<'a> {
     /// before any member is lowered, so protocol bodies and function bodies
     /// can refer to one another through drafts.
     pub(crate) fn begin_mixed_cycle(&mut self, protocols: &[usize], functions: &[usize]) {
+        self.functions_open = true;
         for &index in protocols {
             let placeholder = self.placeholder();
             self.protocol_keys[index] = protocol::ProtocolKey::Keyed(placeholder);
@@ -3130,6 +3136,7 @@ impl<'a> Lowering<'a> {
     /// Settle the open mixed function/protocol component after all its
     /// members have been lowered.
     pub(crate) fn settle_mixed_cycle(&mut self) -> Result<(), CheckRefusal> {
+        self.functions_open = false;
         self.settle()
     }
 
@@ -3316,6 +3323,12 @@ impl<'a> Lowering<'a> {
         for index in unsettled_protocols {
             if let Some(protocol::ProtocolKey::Keyed(key)) = self.protocol_keys.get_mut(index) {
                 *key = resolve(key).map_err(|()| unresolved(&root))?;
+            }
+        }
+        for members in self.protocol_members.values_mut() {
+            members.clause = resolve(&members.clause).map_err(|()| unresolved(&root))?;
+            for node in members.nodes.values_mut() {
+                *node = resolve(node).map_err(|()| unresolved(&root))?;
             }
         }
         for declaration in unsettled_composites {

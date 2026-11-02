@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use quire_exact::{Identifier, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
-use super::{fault, Binder, Binders, Lowering};
+use super::{fault, require_admitted, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
@@ -281,14 +281,14 @@ impl Lowering<'_> {
                     let target = match &constraint.target {
                 crate::check::temporal_clause::CheckedProtocolTarget::Root => {
                     FairnessTarget::ProtocolRoot {
-                        node: members.clause.clone(),
+                        node: require_admitted(members.clause.clone(), &location)?,
                     }
                 }
                 crate::check::temporal_clause::CheckedProtocolTarget::AttemptNode { node } => {
                     FairnessTarget::AttemptNode {
                         node: members.nodes.get(node).cloned().ok_or_else(|| {
                             stage_fault(&location, "attempt-fairness-node-emitted")
-                        })?,
+                        }).and_then(|node| require_admitted(node, &location))?,
                     }
                 }
                 crate::check::temporal_clause::CheckedProtocolTarget::Branch {
@@ -298,7 +298,7 @@ impl Lowering<'_> {
                     FairnessTarget::ParallelBranch {
                         parallel: members.nodes.get(parallel).cloned().ok_or_else(|| {
                             stage_fault(&location, "branch-fairness-node-emitted")
-                        })?,
+                        }).and_then(|node| require_admitted(node, &location))?,
                         branch: Identifier::new(branch.clone())
                             .map_err(|_| stage_fault(&location, "branch-fairness-label-valid"))?,
                     }
