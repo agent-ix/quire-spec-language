@@ -26,6 +26,7 @@
 //! here.
 
 mod build;
+mod digital;
 mod fair;
 mod finite_horizon;
 pub(crate) mod plan;
@@ -140,6 +141,36 @@ pub enum MonitorState {
         /// The positions still to contribute.
         remaining: u64,
     },
+    /// A timed deadline event (FR-196 canonical key, FR-204): the event's
+    /// kind and phase. `D` and the exact elapsed clock are in the model
+    /// member of the key.
+    Deadline {
+        /// `eventually` or `until`.
+        kind: DeadlineKind,
+        /// Where the event stands.
+        phase: DeadlinePhase,
+    },
+}
+
+/// The shape of a timed deadline event (FR-204 "Admission").
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DeadlineKind {
+    /// `eventually[0, D] holds(P)`.
+    Eventually,
+    /// `holds(A) until[0, D] holds(B)`.
+    Until,
+}
+
+/// Where a timed deadline event stands.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DeadlinePhase {
+    /// Undecided.
+    Pending,
+    /// The event held at or before `D`. Decided and absorbing.
+    Accept,
+    /// A delay crossed `D` first, or `A` failed before `B`. Decided and
+    /// absorbing.
+    Reject,
 }
 
 impl MonitorState {
@@ -153,6 +184,7 @@ impl MonitorState {
                 MeasurePhase::Complete | MeasurePhase::Censored | MeasurePhase::Unactivated
             ),
             Self::Fraction { remaining } => remaining == 0,
+            Self::Deadline { phase, .. } => !matches!(phase, DeadlinePhase::Pending),
         }
     }
 }
@@ -298,6 +330,17 @@ pub enum ProductAction {
     PostState(Box<ProbKey>),
     /// The untimed terminal stutter step (ADR-018 SM-4).
     TerminalStutter,
+    /// A timed product's ordinary running delay by one digital unit
+    /// (FR-196 `UnitDelay`): no predicate letter.
+    UnitDelay,
+    /// A positive delay committing a quiescent running state to TS-5's idle
+    /// tail (FR-196 `EnterIdleDelay`).
+    EnterIdleDelay,
+    /// A positive delay already in the idle tail (FR-196 `IdleDelay`).
+    IdleDelay,
+    /// The idle tail's clock-valued observation, which advances no clock
+    /// (FR-196 `IdleObserve`).
+    IdleObserve,
 }
 
 /// One product edge, with its exact probability.
@@ -498,6 +541,42 @@ pub enum ProductRefusal {
     TimedFormShape {
         /// The source span of the unsupported form.
         span: Span,
+    },
+    /// A strict clock constraint has no digital reading (FR-204 "Admission",
+    /// ADR-028 TA-2): the first one in source order.
+    #[error("strict clock constraint at {span:?}")]
+    StrictClockConstraint {
+        /// The source span of the constraint.
+        span: Span,
+    },
+    /// A delay distribution has no exact digital reading (FR-204
+    /// "Admission", ADR-028 TA-1): the first such operation.
+    #[error("delay distribution of `{operation}` has no exact digital reading")]
+    DelayDistribution {
+        /// The operation's identity text.
+        operation: String,
+    },
+    /// A reachable cycle of discrete moves has no delay (FR-204, ADR-028
+    /// TA-5): the product keys of its states.
+    #[error("a reachable zero-delay cycle through {} states", states.len())]
+    ZeroDelayCycle {
+        /// The states of the cycle's strongly connected component.
+        states: Vec<ProbKey>,
+    },
+    /// A digital timed state where no identity races and delay is bounded
+    /// (ADR-026 SD-4, ADR-028 TA-1a).
+    #[error("not stochastic at a digital timed state")]
+    NotStochastic {
+        /// The product key of the state.
+        state: Box<ProbKey>,
+    },
+    /// A digital timed state where identities with a given delay and identities
+    /// with a free delay race together (ADR-026 SD-3 leaves the joint
+    /// resolution to the spec lane).
+    #[error("given and free delays race together at a digital timed state")]
+    MixedDelays {
+        /// The product key of the state.
+        state: Box<ProbKey>,
     },
     /// A budget or a cancellation ended the build.
     #[error("the build stopped: {0:?}")]

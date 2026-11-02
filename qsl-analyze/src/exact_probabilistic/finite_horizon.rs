@@ -418,7 +418,11 @@ fn action_equal(left: &ProductAction, right: &ProductAction) -> bool {
     match (left, right) {
         (ProductAction::Identity(left), ProductAction::Identity(right)) => left == right,
         (ProductAction::PostState(left), ProductAction::PostState(right)) => left == right,
-        (ProductAction::TerminalStutter, ProductAction::TerminalStutter) => true,
+        (ProductAction::TerminalStutter, ProductAction::TerminalStutter)
+        | (ProductAction::UnitDelay, ProductAction::UnitDelay)
+        | (ProductAction::EnterIdleDelay, ProductAction::EnterIdleDelay)
+        | (ProductAction::IdleDelay, ProductAction::IdleDelay)
+        | (ProductAction::IdleObserve, ProductAction::IdleObserve) => true,
         _ => false,
     }
 }
