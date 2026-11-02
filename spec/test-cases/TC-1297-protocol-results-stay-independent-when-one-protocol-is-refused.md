@@ -35,12 +35,12 @@ Compile through S1 to S4 and assert fields, never message text.
 | 3 | **X**, then **W** | the same two results and records as row 2, reported in this declaration order |
 | 4 | row 2's diagnostics and exit | exactly one record (**X**'s); exit 20 (FR-285-AC-2 over {0, 20}), never 0 |
 | 5 | **W**, **X**, **Z** | results [Emitted, Refused, Emitted]; both good protocols' nodes equal their standalone emissions |
-| 6 | **X** alone | the same refusal reason and reference locus as row 2: code, cause and label span equal; `source_index` and `declaration_span` are relative to this unit |
+| 6 | **X** alone | the same refusal identity as row 2: code, typed cause and declaration/reference names equal; `source_index`, declaration span and any cause span are relative to this unit |
 | 7 | **W**, **X**, **Y** | **Y** `Refused` `missing_declaration`/`missing-name` at the reference to **X**, with `refused_dependency` naming **X** and `consequence` true; **W** unchanged; aggregate `Refused` with **X**'s code, cause and locus as the primary |
 | 8 | **W** and a protocol over `Boolean` (`NoOwnerModel`) | results [Emitted, Refused `unsupported_construct`/`not-yet-implemented`]; aggregate `Refused`; **W** bytes equal row 1's |
 | 9 | **W**, **Z**, **V** (renamed copies, equal measured work `n`) with an `s3.work_units` budget of exactly `n` | results [Emitted, `Incomplete` naming `s3.work_units`, `Incomplete` naming `s3.work_units`]; aggregate `Incomplete`; exit 22 |
 | 10 | row 9 in the source order **Z**, **W**, **V**; then row 9 with a budget of `3n` in both orders | the first: **Z** `Emitted`, **W** and **V** `Incomplete`; the second: three `Emitted` in either order |
-| 11 | row 2 with **X** removed, then with **W** removed | **W**'s result changes in no byte; **X**'s refusal reason and reference locus (code, cause and label span) are unchanged. `source_index` and `declaration_span` reflect the new unit order and layout |
+| 11 | row 2 with **X** removed, then with **W** removed | **W**'s result changes in no byte; **X**'s refusal identity (code, typed cause and declaration/reference names) is unchanged. `source_index`, declaration span and any cause span reflect the new unit order and layout |
 | 12 | **X** with a syntax error confined to its declaration; **X** with an S2 refusal; **X** with an S3 refusal; **X** with an S4 `NoOwnerModel` refusal; each beside **W** | **X** `Refused` with that stage's code and cause; **W** equal to row 1's |
 | 13 | a syntax error in the unit header | `Refused` unit, no `ProtocolResult` |
 

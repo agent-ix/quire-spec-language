@@ -1319,7 +1319,7 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
             padded_without_flow.results()
         );
     };
-    assert_eq!(padded_refusal, standalone_refusal);
+    assert_eq!(padded_refusal, refusal);
     assert_eq!(*standalone_source_index, 0);
     assert_eq!(*padded_source_index, 0);
     assert_eq!(padded_declaration_span, declaration_span);
@@ -1332,6 +1332,34 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         standalone_declaration_span.end + good.len() + 1
     );
     assert_eq!(*source_index, 1);
+    assert_eq!(padded_refusal.code(), standalone_refusal.code());
+    assert_eq!(padded_refusal.cause(), standalone_refusal.cause());
+    assert_eq!(padded_refusal.location, standalone_refusal.location);
+    assert!(matches!(
+        (&padded_refusal.cause, &standalone_refusal.cause),
+        (
+            qsl_semantics::check::CheckCause::ProtocolAnchor(padded),
+            qsl_semantics::check::CheckCause::ProtocolAnchor(standalone)
+        ) if matches!(
+            (padded.as_ref(), standalone.as_ref()),
+            (
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segments: padded_segments,
+                    segment: padded_segment,
+                    scope: padded_scope,
+                    ..
+                },
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segments: standalone_segments,
+                    segment: standalone_segment,
+                    scope: standalone_scope,
+                    ..
+                }
+            ) if padded_segments == standalone_segments
+                && padded_segment == standalone_segment
+                && padded_scope == standalone_scope
+        )
+    ));
     assert_eq!(
         *padded_source_index, 0,
         "source index is relative to the containing unit after removing Flow"
