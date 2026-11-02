@@ -15,6 +15,7 @@
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::StateKey;
+use qsl_package::TemporalClockSelection;
 use qsl_semantics::check::CheckedStateGraphClaim;
 use quire_exact::Cancel;
 
@@ -120,6 +121,7 @@ pub fn settle_state_graph(
     method: &StateGraphMethod,
     subject: &ModelSubject<'_>,
     claim: &CheckedStateGraphClaim,
+    temporal_clock_selections: &[TemporalClockSelection],
     cancel: &Cancel,
     replay: impl FnOnce(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
 ) -> StateGraphRecord {
@@ -144,6 +146,7 @@ pub fn settle_state_graph(
         subject.simulation.package,
         subject.simulation.packages,
         claim,
+        temporal_clock_selections,
         cancel,
     ) {
         let row = match refusal {

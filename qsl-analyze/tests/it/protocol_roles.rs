@@ -151,9 +151,13 @@ impl World {
         max_depth: Option<usize>,
         max_live_instances: Option<u64>,
     ) -> ModelCheckOutcome<ProtocolTransition> {
+        let subject = self.subject();
+        let temporal_clock_selections =
+            crate::fill::tcb_01_event_position_selection(subject.model.simulation.package);
         check_protocol(
             ProtocolCheckRequest {
-                subject: self.subject(),
+                temporal_clock_selections: &temporal_clock_selections,
+                subject,
                 item,
                 max_depth,
                 max_store_buffer: None,
@@ -180,6 +184,7 @@ impl World {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(),
                 item,
                 max_store_buffer: None,
@@ -1549,7 +1554,9 @@ fn requests_differing_only_in_max_live_instances_share_one_obligation_identity()
         &[0],
     );
     let letters = CellV { holds: |v| v <= 3 };
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&world.checked);
     let request = |max_live_instances| ProtocolCheckRequest {
+        temporal_clock_selections: &temporal_clock_selections,
         subject: world.subject(),
         item: world.claim(&letters),
         max_depth: None,
@@ -1659,8 +1666,11 @@ fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
         else {
             panic!("one deadlock-freedom item");
         };
+        let temporal_clock_selections =
+            crate::fill::tcb_01_event_position_selection(&world.checked);
         let item = ProtocolItem {
             request: ProtocolCheckRequest {
+                temporal_clock_selections: &temporal_clock_selections,
                 subject: world.subject(),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: Some(1),
@@ -1671,6 +1681,7 @@ fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
                 ignore_memory_constraints: false,
             },
             certificate: ProtocolCertificateRequest {
+                temporal_clock_selections: &temporal_clock_selections,
                 subject: world.subject(),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer: None,

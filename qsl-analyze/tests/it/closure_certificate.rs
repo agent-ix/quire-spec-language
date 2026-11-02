@@ -38,6 +38,7 @@ use crate::counter::{
     document, package, package_with_clauses, reference, subject, value, Documents, Letters,
     CONTRACT, UNLIMITED, ZERO,
 };
+use crate::fill::tcb_01_event_position_selection;
 
 const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
                        post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n";
@@ -90,9 +91,14 @@ impl World {
         clause: CheckedTemporalClause,
         atom: fn(i64) -> Option<bool>,
     ) -> Invariant {
-        let identity =
-            ClauseIdentity::resolve(&package, &self.documents.packages, &clause, &Cancel::new())
-                .expect("the package declares the clause");
+        let identity = ClauseIdentity::resolve(
+            &package,
+            &self.documents.packages,
+            &clause,
+            &[],
+            &Cancel::new(),
+        )
+        .expect("the package declares the clause");
         Invariant {
             package,
             clause,
@@ -124,6 +130,7 @@ impl World {
         meter: ScalarLimits,
     ) -> CertificateRequest<'w> {
         CertificateRequest {
+            temporal_clock_selections: &[],
             subject: subject(
                 package,
                 &self.documents,
@@ -180,6 +187,7 @@ impl World {
     fn run_in(&self, package: &CheckedPackage, item: ModelCheckItem<'_>) -> ModelCheckOutcome {
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: subject(
                     package,
                     &self.documents,
@@ -214,6 +222,7 @@ impl Invariant {
     ) -> qsl_analyze::analyze::ModelItem<'w> {
         qsl_analyze::analyze::ModelItem {
             request: ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: subject(
                     &self.package,
                     &world.documents,
@@ -533,8 +542,14 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
     };
     assert_eq!(node_c.identity(), node_d.identity(), "one shared node");
     let at = |clause: &CheckedTemporalClause| {
-        ClauseIdentity::resolve(&package, &world.documents.packages, clause, &Cancel::new())
-            .expect("the package declares the clause")
+        ClauseIdentity::resolve(
+            &package,
+            &world.documents.packages,
+            clause,
+            &[],
+            &Cancel::new(),
+        )
+        .expect("the package declares the clause")
     };
     for (identity, node) in [(at(c), node_c), (at(d), node_d)] {
         assert_eq!(*identity.occurrence().node(), node.identity());
@@ -614,6 +629,7 @@ fn a_request_whose_clause_root_does_not_resolve_settles_failed() {
     }
     let refused = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: request.subject,
             item: foreign,
             max_depth: None,
@@ -892,6 +908,7 @@ fn a_cancellation_during_the_certificate_check_settles_cancelled() {
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let outcome = invariant.run(&world);
     let request = invariant.request(&world, UNLIMITED);
+    let clock_selections = tcb_01_event_position_selection(request.subject.simulation.package);
     let settle = |cancel: &Cancel| {
         settle_model_check(
             &outcome,
@@ -910,8 +927,12 @@ fn a_cancellation_during_the_certificate_check_settles_cancelled() {
         polls.load(Ordering::Relaxed)
     };
     let emission = counted(&|cancel| {
-        qsl_package::emit_checked_with_cancel(request.subject.simulation.package, cancel)
-            .expect("emits");
+        qsl_package::emit_checked_with_temporal_selections_and_cancel(
+            request.subject.simulation.package,
+            &clock_selections,
+            cancel,
+        )
+        .expect("emits with the fixture's selected temporal clock");
     });
     let total = counted(&|cancel| {
         settle(cancel);

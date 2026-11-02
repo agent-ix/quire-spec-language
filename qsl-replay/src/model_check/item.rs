@@ -158,9 +158,10 @@ impl ModelCheckItem<'_> {
         &self,
         subject: &ModelSubject<'_>,
         system: &ModelSystem<'_>,
+        temporal_clock_selections: &[qsl_package::TemporalClockSelection],
         cancel: &Cancel,
     ) -> Result<Vec<Instance>, ItemRefusal> {
-        self.build_instances(subject, system, cancel, None)
+        self.build_instances(subject, system, temporal_clock_selections, cancel, None)
     }
 
     /// Instances whose TP-4 liveness clauses carry a subject-specific key
@@ -176,6 +177,7 @@ impl ModelCheckItem<'_> {
         &self,
         subject: &ModelSubject<'_>,
         system: &ModelSystem<'_>,
+        temporal_clock_selections: &[qsl_package::TemporalClockSelection],
         cancel: &Cancel,
         subject_kind: SubjectKind,
         max_automaton_states: u64,
@@ -183,6 +185,7 @@ impl ModelCheckItem<'_> {
         self.build_instances(
             subject,
             system,
+            temporal_clock_selections,
             cancel,
             Some(Tp4 {
                 subject_kind,
@@ -195,6 +198,7 @@ impl ModelCheckItem<'_> {
         &self,
         subject: &ModelSubject<'_>,
         system: &ModelSystem<'_>,
+        temporal_clock_selections: &[qsl_package::TemporalClockSelection],
         cancel: &Cancel,
         tp4: Option<Tp4>,
     ) -> Result<Vec<Instance>, ItemRefusal> {
@@ -217,6 +221,7 @@ impl ModelCheckItem<'_> {
                     subject.simulation.package,
                     subject.simulation.packages,
                     clause,
+                    temporal_clock_selections,
                     cancel,
                 )?;
                 let over = &clause.over().1;

@@ -92,6 +92,7 @@ use qsl_eval::simulation::{
     SymmetryGroup, TransitionSystem, ZeroProgress, ZeroProgressError,
 };
 use qsl_eval::temporal::{AtomReading, CaptureReading};
+use qsl_package::TemporalClockSelection;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
@@ -122,6 +123,9 @@ pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
 pub struct ModelCheckRequest<'a> {
     /// The model subject.
     pub subject: ModelSubject<'a>,
+    /// Explicit clock configurations selected for this subject's checked
+    /// temporal declarations.
+    pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
     /// The search horizon `k`; `None` sets none.
@@ -526,7 +530,12 @@ pub fn check_model(
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
     let (instances, root_cancelled) = if certified {
-        match request.item.instances(&request.subject, &system, cancel) {
+        match request.item.instances(
+            &request.subject,
+            &system,
+            request.temporal_clock_selections,
+            cancel,
+        ) {
             Ok(instances) => (instances, None),
             Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
                 (Vec::new(), Some(cause))
@@ -620,6 +629,9 @@ pub fn check_model(
 pub struct ProtocolCheckRequest<'a> {
     /// The protocol subject.
     pub subject: ProtocolSubject<'a>,
+    /// Explicit clock configurations selected for this subject's checked
+    /// temporal declarations.
+    pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item: a safety clause over the subject's model, or the
     /// deadlock-freedom item, whose deadlocks are FR-211's.
     pub item: ModelCheckItem<'a>,
@@ -707,7 +719,12 @@ pub fn check_protocol(
         value: live_instances,
     });
     let (instances, root_cancelled) = if certified {
-        match request.item.instances(&subject.model, &model, cancel) {
+        match request.item.instances(
+            &subject.model,
+            &model,
+            request.temporal_clock_selections,
+            cancel,
+        ) {
             Ok(instances) => (instances, None),
             Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
                 (Vec::new(), Some(cause))
@@ -867,6 +884,7 @@ fn check_protocol_liveness(
                     &system.with_max_live_instances(live_instances),
                     Some(bound),
                     request.item,
+                    request.temporal_clock_selections,
                     request.max_depth,
                     super::liveness::ProtocolLivenessOptions {
                         limits: request.limits,
@@ -883,6 +901,7 @@ fn check_protocol_liveness(
                 &system.with_max_live_instances(live_instances),
                 None,
                 request.item,
+                request.temporal_clock_selections,
                 request.max_depth,
                 super::liveness::ProtocolLivenessOptions {
                     limits: request.limits,

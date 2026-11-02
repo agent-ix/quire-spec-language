@@ -14,7 +14,7 @@ use quire_exact::ObjectReference;
 use quire_semantic_value::catalog::Category;
 
 use crate::bounds::ReplayLimits;
-use crate::execute::{recompile, request_limits, ReplayRefusal};
+use crate::execute::{recompile_with_temporal_selections, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::ModelStep;
 use crate::model_check::graph_settle::{GraphReplayResult, GraphReplaySettlement};
 use crate::model_check::identity::StateGraphIdentity;
@@ -35,13 +35,48 @@ pub fn replay_model_graph(
     subject: &ModelTraceSubject,
     replay_limits: ReplayLimits,
 ) -> Result<crate::result::ReplayResult, ReplayRefusal> {
-    replay_model_graph_with_cancel(wire, subject, replay_limits, &Cancel::new())
+    replay_model_graph_with_temporal_selections(wire, subject, &[], replay_limits)
+}
+
+/// Replay a model-graph witness while recompiling with explicit temporal clock
+/// selections for every configured clause in the checked package.
+pub fn replay_model_graph_with_temporal_selections(
+    wire: ReplayRequestWire,
+    subject: &ModelTraceSubject,
+    temporal_clock_selections: &[qsl_package::TemporalClockSelection],
+    replay_limits: ReplayLimits,
+) -> Result<crate::result::ReplayResult, ReplayRefusal> {
+    replay_model_graph_with_cancel_and_temporal_selections(
+        wire,
+        subject,
+        temporal_clock_selections,
+        replay_limits,
+        &Cancel::new(),
+    )
 }
 
 /// [`replay_model_graph`] with the caller's cancellation handle.
 pub fn replay_model_graph_with_cancel(
     wire: ReplayRequestWire,
     subject: &ModelTraceSubject,
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+) -> Result<crate::result::ReplayResult, ReplayRefusal> {
+    replay_model_graph_with_cancel_and_temporal_selections(
+        wire,
+        subject,
+        &[],
+        replay_limits,
+        cancel,
+    )
+}
+
+/// [`replay_model_graph_with_temporal_selections`] with the caller's
+/// cancellation handle.
+pub fn replay_model_graph_with_cancel_and_temporal_selections(
+    wire: ReplayRequestWire,
+    subject: &ModelTraceSubject,
+    temporal_clock_selections: &[qsl_package::TemporalClockSelection],
     replay_limits: ReplayLimits,
     cancel: &Cancel,
 ) -> Result<crate::result::ReplayResult, ReplayRefusal> {
@@ -71,7 +106,8 @@ pub fn replay_model_graph_with_cancel(
         request.accounting_limits(),
         replay_limits,
     )?;
-    let compiled = recompile(&request, &caller)?;
+    let compiled =
+        recompile_with_temporal_selections(&request, &caller, temporal_clock_selections)?;
     let package = compiled.checked.package();
     if envelope.claim_node() != envelope.occurrence_key().node() {
         return Err(ReplayRefusal::ModelGraphMismatch {
@@ -94,15 +130,21 @@ pub fn replay_model_graph_with_cancel(
         });
     }
     if let Some(claim) = claim {
-        let identity = StateGraphIdentity::resolve(package, &compiled.packages, claim, cancel)
-            .map_err(|refusal| match refusal {
-                crate::model_check::identity::ClauseRootRefusal::Cancelled(cause) => {
-                    ReplayRefusal::Cancelled(cause)
-                }
-                _ => ReplayRefusal::ModelGraphMismatch {
-                    member: "claim_identity",
-                },
-            })?;
+        let identity = StateGraphIdentity::resolve(
+            package,
+            &compiled.packages,
+            claim,
+            temporal_clock_selections,
+            cancel,
+        )
+        .map_err(|refusal| match refusal {
+            crate::model_check::identity::ClauseRootRefusal::Cancelled(cause) => {
+                ReplayRefusal::Cancelled(cause)
+            }
+            _ => ReplayRefusal::ModelGraphMismatch {
+                member: "claim_identity",
+            },
+        })?;
         if identity.occurrence() != envelope.occurrence_key() {
             return Err(ReplayRefusal::ModelGraphMismatch {
                 member: "claim_identity",
@@ -113,6 +155,7 @@ pub fn replay_model_graph_with_cancel(
             package,
             &compiled.packages,
             clause,
+            temporal_clock_selections,
             cancel,
         )
         .map_err(|refusal| match refusal {
