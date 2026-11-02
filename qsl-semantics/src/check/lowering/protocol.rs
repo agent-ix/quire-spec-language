@@ -691,21 +691,29 @@ impl Lowering<'_> {
         attempts: &[Vec<AttemptNodes>],
         compensations: &[Vec<CompensationNodes>],
     ) -> Result<(), CheckRefusal> {
-        for index in 0..protocols.len() {
-            self.protocol_attempts[index] = attempts.get(index).cloned().unwrap_or_default();
-            self.protocol_compensations[index] =
-                compensations.get(index).cloned().unwrap_or_default();
+        for (compact_index, protocol) in protocols.iter().enumerate() {
+            let source_index = protocol.source_index;
+            if let Some(slot) = self.protocol_attempts.get_mut(source_index) {
+                *slot = attempts.get(compact_index).cloned().unwrap_or_default();
+            }
+            if let Some(slot) = self.protocol_compensations.get_mut(source_index) {
+                *slot = compensations
+                    .get(compact_index)
+                    .cloned()
+                    .unwrap_or_default();
+            }
         }
-        for (index, protocol) in protocols.iter().enumerate() {
+        for (compact_index, protocol) in protocols.iter().enumerate() {
+            let source_index = protocol.source_index;
             if !protocol.has_attempt() {
                 continue;
             }
-            let placeholder = match self.protocol_keys.get(index) {
+            let placeholder = match self.protocol_keys.get(source_index) {
                 Some(ProtocolKey::Keyed(NodeRef::Pending(handle))) => Some(*handle),
                 _ => None,
             };
             if !matches!(
-                self.protocol_keys.get(index),
+                self.protocol_keys.get(source_index),
                 Some(ProtocolKey::AfterClauses)
             ) && placeholder.is_none()
             {
@@ -716,10 +724,12 @@ impl Lowering<'_> {
             let owner = self
                 .owner_model_object(protocol)
                 .ok_or_else(|| fault(&location, KeyFault::UncheckedProtocolFact))?;
-            let nodes = attempts.get(index).map_or(&[][..], Vec::as_slice);
-            let compensation_nodes = compensations.get(index).map_or(&[][..], Vec::as_slice);
+            let nodes = attempts.get(compact_index).map_or(&[][..], Vec::as_slice);
+            let compensation_nodes = compensations
+                .get(compact_index)
+                .map_or(&[][..], Vec::as_slice);
             let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
-                self.protocol_keys[index] = ProtocolKey::Unkeyed;
+                self.set_protocol_key(source_index, ProtocolKey::Unkeyed);
                 continue;
             };
             let key = self.protocol_node_for(
@@ -736,11 +746,12 @@ impl Lowering<'_> {
             if let Some(placeholder) = placeholder {
                 self.placeholders.insert(placeholder, Some(key));
             } else {
-                if matches!(key, NodeRef::Pending(_)) && !self.unsettled_protocols.contains(&index)
+                if matches!(key, NodeRef::Pending(_))
+                    && !self.unsettled_protocols.contains(&source_index)
                 {
-                    self.unsettled_protocols.push(index);
+                    self.unsettled_protocols.push(source_index);
                 }
-                self.protocol_keys[index] = ProtocolKey::Keyed(key);
+                self.set_protocol_key(source_index, ProtocolKey::Keyed(key));
             }
         }
         if self.deferred_mixed_settlement {

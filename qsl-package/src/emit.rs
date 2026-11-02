@@ -78,6 +78,10 @@ pub enum EmitRefusal {
         /// Every node the wire would omit, with its cause.
         omitted: Vec<OmittedNode>,
     },
+    /// The graph has protocol-local refusals, so only its per-protocol result
+    /// API may expose the successful protocol nodes.
+    #[error("per-protocol refusals require emit_checked_with_protocol_results")]
+    ProtocolResultsRequired,
     /// The caller's region conversion places no region, or an empty one,
     /// for one occurrence.
     #[error("occurrence {role:?}/{ordinal} of node {node} has no source region")]
@@ -292,6 +296,7 @@ impl EmitRefusal {
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
+            | Self::ProtocolResultsRequired
             | Self::MissingTemporalClockSelection { .. } => Code::UnsupportedProjection,
             Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
@@ -330,6 +335,7 @@ impl EmitRefusal {
             }
             Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
+            | Self::ProtocolResultsRequired
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
@@ -3526,10 +3532,31 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// package does not change, so a dependency reached again, or a caller that
 /// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    if !package.graph().protocol_refusals().is_empty() {
+        return Err(EmitRefusal::ProtocolResultsRequired);
+    }
     if let Some(emission) = package.remembered_emission() {
         return Ok(emission.clone());
     }
     emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// Emit the checked graph without reading or populating `CheckedPackage`'s
+/// remembered emission. Per-protocol results use this before deciding
+/// whether the aggregate is admissible.
+fn emit_checked_uncached(
+    package: &CheckedPackage,
+    cancel: &Cancel,
+) -> Result<Emission, EmitRefusal> {
+    let graph = package.graph();
+    emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+        &[],
+    )
 }
 
 /// Emit checked protocols independently and retain each protocol's result
@@ -3539,7 +3566,7 @@ pub fn emit_checked_with_protocol_results(
     package: &CheckedPackage,
 ) -> Result<ProtocolEmission, EmitRefusal> {
     let graph = package.graph();
-    let emission = match emit_checked(package) {
+    let emission = match emit_checked_uncached(package, &Cancel::new()) {
         Ok(emission) => Some(emission),
         Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
         Err(refusal) => return Err(refusal),
@@ -4681,15 +4708,10 @@ pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
-    let graph = package.graph();
-    let emission = emit_package_inner(
-        package,
-        graph.memoized_regions(),
-        |_| None,
-        cancel,
-        &ir_decodes,
-        &[],
-    )?;
+    if !package.graph().protocol_refusals().is_empty() {
+        return Err(EmitRefusal::ProtocolResultsRequired);
+    }
+    let emission = emit_checked_uncached(package, cancel)?;
     package.remember_emission(&emission);
     Ok(emission)
 }

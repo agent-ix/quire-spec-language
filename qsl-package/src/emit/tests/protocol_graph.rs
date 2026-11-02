@@ -1066,13 +1066,7 @@ fn minimum_protocol_work_budget(protocols: &str) -> u64 {
 
 /// FR-383-AC-18, AC-28 and AC-29 (TC-1297): a refused protocol leaves
 /// independent protocol results readable and makes the aggregate inadmissible.
-#[trace(
-    "FR-383-AC-18",
-    "FR-383-AC-28",
-    "FR-383-AC-29",
-    "FR-383-AC-31",
-    "TC-1297"
-)]
+#[trace("FR-383-AC-18", "FR-383-AC-28", "FR-383-AC-29", "TC-1297")]
 #[test]
 fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     let good = parallel_flow(
@@ -1122,7 +1116,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     );
     assert_eq!(combined_graph.protocol_refusals().len(), 1);
     assert_eq!(combined_graph.protocol_refusals()[0].declaration, "Broken");
-    let combined = emit_checked_with_protocol_results(&CheckedPackage::link(combined_graph))
+    let combined_package = CheckedPackage::link(combined_graph);
+    let combined = emit_checked_with_protocol_results(&combined_package)
         .expect("the good protocol's nodes can still be emitted");
     let ProtocolEmissionAggregate::Refused { primary } = combined.aggregate() else {
         panic!("a refused protocol makes the aggregate refused")
@@ -1182,6 +1177,11 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         1,
         "one diagnostic result is retained for the refused protocol"
     );
+    assert!(matches!(
+        emit_checked(&combined_package),
+        Err(EmitRefusal::ProtocolResultsRequired)
+    ));
+    assert!(combined_package.remembered_emission().is_none());
 
     let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
         "{broken}\n{good}"
@@ -1273,6 +1273,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     let only_broken = emit_checked_with_protocol_results(&CheckedPackage::link(check(&broken)))
         .expect("a refused protocol result is available without Flow");
     let ProtocolEmissionResult::Refused {
+        source_index: standalone_source_index,
+        declaration_span: standalone_declaration_span,
         refusal: standalone_refusal,
         ..
     } = &only_broken.results()[0]
@@ -1306,6 +1308,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         emit_checked_with_protocol_results(&CheckedPackage::link(check(&padded_without_flow)))
             .expect("Broken refuses without Flow");
     let ProtocolEmissionResult::Refused {
+        source_index: padded_source_index,
+        declaration_span: padded_declaration_span,
         refusal: padded_refusal,
         ..
     } = &padded_without_flow.results()[0]
@@ -1315,9 +1319,22 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
             padded_without_flow.results()
         );
     };
+    assert_eq!(padded_refusal, standalone_refusal);
+    assert_eq!(*standalone_source_index, 0);
+    assert_eq!(*padded_source_index, 0);
+    assert_eq!(padded_declaration_span, declaration_span);
     assert_eq!(
-        padded_refusal, refusal,
-        "removing Flow while preserving X's source region changes no refusal field"
+        padded_declaration_span.start,
+        standalone_declaration_span.start + good.len() + 1
+    );
+    assert_eq!(
+        padded_declaration_span.end,
+        standalone_declaration_span.end + good.len() + 1
+    );
+    assert_eq!(*source_index, 1);
+    assert_eq!(
+        *padded_source_index, 0,
+        "source index is relative to the containing unit after removing Flow"
     );
 
     let no_owner = flow_over("Boolean", "on origin", "role Buyer on M::Order;");
@@ -1351,10 +1368,14 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     let dependent = good
         .replace("protocol Flow", "protocol Dependent")
         .replace("join all [a, b]", "join predicate(Broken) [a, b]");
-    let dependent_results = emit_checked_with_protocol_results(&CheckedPackage::link(check(
-        &format!("{good}\n{broken}\n{dependent}"),
-    )))
-    .expect("a refused predicate dependency retains the independent results");
+    let dependent_source = format!("{good}\n{broken}\n{dependent}");
+    let dependent_reference_start = dependent_source
+        .find("predicate(Broken)")
+        .expect("dependent predicate reference")
+        + "predicate(".len();
+    let dependent_results =
+        emit_checked_with_protocol_results(&CheckedPackage::link(check(&dependent_source)))
+            .expect("a refused predicate dependency retains the independent results");
     assert_eq!(dependent_results.diagnostics().count(), 2);
     assert!(matches!(
         dependent_results.results(),
@@ -1392,11 +1413,13 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
                             function,
                             refused_dependency,
                             consequence: true,
-                            ..
+                            span,
                         } if function == "Broken"
                             && refused_dependency.declaration == "Broken"
                             && refused_dependency.code == qsl_foundation::diagnostic::Code::MissingDeclaration
                             && refused_dependency.cause == "missing-name"
+                            && span.start == dependent_reference_start
+                            && span.end == dependent_reference_start + "Broken".len()
                     )
             )
             && dependent_refusal.cause.code() == qsl_foundation::diagnostic::Code::MissingDeclaration
