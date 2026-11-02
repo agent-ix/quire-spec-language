@@ -86,6 +86,11 @@ pub enum LimitKind {
         /// The caller's effective aggregate dependent byte ceiling.
         maximum: usize,
     },
+    /// A compile request exceeded the fixed aggregate dependent-file ceiling.
+    FixedDependentBytes {
+        /// The effective aggregate dependent byte ceiling.
+        maximum: usize,
+    },
     /// One selected observation exceeded its document byte ceiling.
     ObservationDocumentBytes {
         /// Effective observation document byte ceiling.
@@ -110,7 +115,7 @@ impl LimitKind {
         match self {
             Self::FileBytes => "file bytes",
             Self::RequestBytes { .. } => "request_bytes",
-            Self::DependentBytes { .. } => "dependent_bytes",
+            Self::DependentBytes { .. } | Self::FixedDependentBytes { .. } => "dependent_bytes",
             Self::ObservationDocumentBytes { .. } => "observation.document_bytes",
             Self::SelectedFiles { .. } => "selected files",
         }
@@ -326,7 +331,13 @@ struct Intake<'a> {
     directory: &'a Path,
     remaining: usize,
     maximum: usize,
-    configured: bool,
+    dependent_limit: Option<DependentLimit>,
+}
+
+#[derive(Clone, Copy)]
+enum DependentLimit {
+    Fixed,
+    CallerConfigured,
 }
 
 impl Intake<'_> {
@@ -346,11 +357,19 @@ impl Intake<'_> {
                 {
                     RunCause::Limit(LimitKind::ObservationDocumentBytes { maximum: ceiling })
                 }
-                RunCause::Limit(LimitKind::FileBytes) if self.configured => {
-                    RunCause::Limit(LimitKind::DependentBytes {
-                        maximum: self.maximum,
-                    })
-                }
+                RunCause::Limit(LimitKind::FileBytes) => match self.dependent_limit {
+                    Some(DependentLimit::CallerConfigured) => {
+                        RunCause::Limit(LimitKind::DependentBytes {
+                            maximum: self.maximum,
+                        })
+                    }
+                    Some(DependentLimit::Fixed) => {
+                        RunCause::Limit(LimitKind::FixedDependentBytes {
+                            maximum: self.maximum,
+                        })
+                    }
+                    None => RunCause::Limit(LimitKind::FileBytes),
+                },
                 cause => cause,
             },
         )?;
@@ -427,7 +446,7 @@ pub fn read_clause_run_request(
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
-        let mut intake = intake_with_bytes(
+        let mut intake = intake_with_fixed_bytes(
             directory,
             FileCounts {
                 // A library source is a program source a `1-draft` program
@@ -706,7 +725,7 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
         directory,
         remaining: TOTAL_BYTES,
         maximum: TOTAL_BYTES,
-        configured: false,
+        dependent_limit: None,
     })
 }
 
@@ -716,7 +735,21 @@ fn intake_with_bytes(directory: &Path, counts: FileCounts, maximum: usize) -> Re
         directory,
         remaining: maximum,
         maximum,
-        configured: true,
+        dependent_limit: Some(DependentLimit::CallerConfigured),
+    })
+}
+
+fn intake_with_fixed_bytes(
+    directory: &Path,
+    counts: FileCounts,
+    maximum: usize,
+) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
+    Ok(Intake {
+        directory,
+        remaining: maximum,
+        maximum,
+        dependent_limit: Some(DependentLimit::Fixed),
     })
 }
 

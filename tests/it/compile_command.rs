@@ -168,6 +168,7 @@ fn source_selection_and_dependent_byte_refusals_are_typed() {
     assert_eq!(value["code"], "resource_exhausted", "{value}");
     assert_eq!(value["details"]["limit"], "dependent_bytes", "{value}");
     assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
     assert!(value.get("artifact").is_none(), "{value}");
 }
 

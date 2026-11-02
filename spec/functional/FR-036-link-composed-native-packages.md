@@ -153,12 +153,6 @@ The composed type checker SHALL type a domain object type, Interface or record v
 
 The composed type checker SHALL refuse any other field type, and a domain value type, as an unsupported prerequisite.
 
-The historical single-unit APIs and package encodings keep their existing atomic
-refusal and identity behavior. Partial composed reports cannot be serialized as
-historical complete packages or enter a historical execution API by retagging.
-Future composed interchange is governed separately; linking does not introduce
-a new wire format as an incidental implementation choice.
-
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |

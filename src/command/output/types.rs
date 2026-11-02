@@ -72,6 +72,10 @@ pub(super) enum Details<'a> {
         maximum: usize,
         option: &'static str,
     },
+    FixedBytes {
+        limit: &'static str,
+        maximum: usize,
+    },
     FileCount {
         limit: &'static str,
         category: &'static str,

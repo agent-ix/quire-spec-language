@@ -163,6 +163,4 @@ implementation delivery. No metric row above claims it.
   [FR-044](../functional/FR-044-activate-temporal-obligations.md) and
   [FR-045](../functional/FR-045-classify-temporal-mapping-support.md) define the
   outcomes this requirement bounds.
-- **Peer**: [NFR-006](./NFR-006-bound-native-runtime.md) bounds the historical
-  native runtime; its counters and ceilings are separate from these.
 - Shared source requirement: `ix://agent-ix/quire-specification/NFR-040`.
