@@ -5311,7 +5311,8 @@ fn emit_package_inner(
         &mut step_rows,
         &mut schedulability_claim_rows,
     )?;
-    let temporal_bindings = temporal_binding_rows(graph, &emitted_node_ids, temporal_selections)?;
+    let temporal_bindings =
+        temporal_binding_rows(graph, &emitted_node_ids, &nodes, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
         &emitted_node_ids,
@@ -5471,6 +5472,7 @@ fn temporal_clock_matches_profile(
 fn temporal_binding_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    nodes: &[CheckedSemanticNodeV2],
     selections: &[TemporalClockSelection],
 ) -> Result<Vec<quire_contract_model::TemporalBinding>, EmitRefusal> {
     use qsl_semantics::check::TemporalProfile;
@@ -5523,14 +5525,11 @@ fn temporal_binding_rows(
             .get(&declaration_key)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        rows.push((
-            declaration_key,
-            quire_contract_model::TemporalBinding {
-                declaration,
-                clock_name: clause.clock().into(),
-                clock: clock.clone(),
-            },
-        ));
+        rows.push(quire_contract_model::TemporalBinding {
+            declaration,
+            clock_name: clause.clock().into(),
+            clock: clock.clone(),
+        });
     }
 
     for hyper in graph.hyper_clauses() {
@@ -5596,19 +5595,75 @@ fn temporal_binding_rows(
                 _ => None,
             })
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        let declaration_key = wrapper;
         let declaration = emitted_node_ids
-            .get(&declaration_key)
+            .get(&wrapper)
             .cloned()
             .ok_or(EmitRefusal::SourceMapInvariant)?;
-        rows.push((
-            declaration_key,
-            quire_contract_model::TemporalBinding {
+        rows.push(quire_contract_model::TemporalBinding {
+            declaration,
+            clock_name: clock_name.into(),
+            clock: clock.clone(),
+        });
+    }
+
+    // QSpec FR-322-AC-305: a `compensate` node reads a clock too, so it is
+    // keyed by its own node identity, named by the template's clock text,
+    // and shares the one array with the clause rows. Its profile is the one
+    // its `using` alias selects; a node of a profile that is not a
+    // clock-configured one writes no row.
+    for protocol in graph.protocols() {
+        for template in &protocol.obligations.compensations {
+            let Some(profile) = template.temporal_profile else {
+                continue;
+            };
+            if !matches!(
+                profile,
+                TemporalProfile::EventPositionFalseExtension
+                    | TemporalProfile::FixedSampleFalseExtension
+                    | TemporalProfile::TimestampedEventFiniteWindow
+            ) {
+                continue;
+            }
+            let path = [protocol.name.as_str(), "compensate", template.name.as_str()];
+            let Some(declaration) = nodes
+                .iter()
+                .find(|node| {
+                    is_compensation_node(node)
+                        && node.declaration.as_ref().is_some_and(|declaration| {
+                            declaration
+                                .qualified_name
+                                .iter()
+                                .map(AsRef::as_ref)
+                                .eq(path)
+                        })
+                })
+                .map(|node| node.node_id.clone())
+            else {
+                // The protocol's controls are not written, so the template
+                // has no node to bind; a selection naming it is surplus.
+                continue;
+            };
+            let span = template.span;
+            let key = (source.clone(), span.start, span.end);
+            let Some(clock) = selected.remove(&key) else {
+                return Err(EmitRefusal::MissingTemporalClockSelection {
+                    source_ref: source.clone(),
+                    span,
+                });
+            };
+            if !temporal_clock_matches_profile(profile, clock) {
+                return Err(EmitRefusal::TemporalClockProfileMismatch {
+                    source_ref: source.clone(),
+                    span,
+                    profile: profile.identity(),
+                });
+            }
+            rows.push(quire_contract_model::TemporalBinding {
                 declaration,
-                clock_name: clock_name.into(),
+                clock_name: template.clock.as_str().into(),
                 clock: clock.clone(),
-            },
-        ));
+            });
+        }
     }
 
     if let Some(((source_ref, start, end), _)) = selected.into_iter().next() {
@@ -5617,8 +5672,8 @@ fn temporal_binding_rows(
             span: qsl_foundation::Span { start, end },
         });
     }
-    rows.sort_by(|left, right| left.1.declaration.cmp(&right.1.declaration));
-    Ok(rows.into_iter().map(|(_, row)| row).collect())
+    rows.sort_by(|left, right| left.declaration.cmp(&right.declaration));
+    Ok(rows)
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public

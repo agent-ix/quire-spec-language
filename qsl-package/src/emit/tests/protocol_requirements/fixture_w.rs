@@ -943,15 +943,24 @@ fn tc134_timed_graph() -> qsl_semantics::check::CheckedGraph {
         .unwrap_or_else(|refusals| panic!("timed TC-134 checks: {refusals:?}"))
 }
 
-/// One clock selection per timed temporal declaration of `graph`.
+/// One clock selection per timed temporal declaration of `graph`, the
+/// `compensate` windows included (QSpec FR-322-AC-305).
 fn tc134_selections(
     graph: &qsl_semantics::check::CheckedGraph,
 ) -> Vec<crate::emit::TemporalClockSelection> {
     let source = graph.source().clone();
     let temporal = graph.temporal_clauses().iter().map(|t| t.clause().span());
     let hyper = graph.hyper_clauses().iter().map(|h| h.span());
+    let compensations = graph.protocols().iter().flat_map(|protocol| {
+        protocol
+            .obligations
+            .compensations
+            .iter()
+            .map(|template| template.span)
+    });
     temporal
         .chain(hyper)
+        .chain(compensations)
         .map(|span| crate::emit::TemporalClockSelection {
             source: source.clone(),
             declaration_span: span,
@@ -960,21 +969,27 @@ fn tc134_selections(
         .collect()
 }
 
-/// FR-048-AC-8, PARTIAL: a timed variant of the TC-134 fixture emits as strict
-/// `/2` with one typed clock binding per explicitly selected temporal
-/// declaration (`OrderClosureBounded`), and the actual strict reader admits
-/// the package and retains each binding and the `temporal_profile` selection.
-/// The compensation's own `refund-clock` is present in the package but is NOT
-/// bound: whether a compensation window is a selected temporal declaration
-/// awaits the spec ruling on compensation clock rows (QSL-1384/QSL-1414).
-#[trace("FR-048-AC-8", "TC-134")]
+/// FR-048-AC-8, FR-050-AC-13, FR-322-AC-305: a timed variant of the TC-134
+/// fixture emits as strict `/2` with one typed clock binding per explicitly
+/// selected temporal declaration (`OrderClosureBounded`) AND one per
+/// `compensate` node, keyed by that node's own `node_id`, named by the
+/// template's clock text (`refund-clock`), all in the one array in ascending
+/// node order. Read-back is not claimed: the strict reader at the pinned
+/// quire-contract-ir still refuses a compensation row (IR-1262 admits it),
+/// which [`tc134_strict_reader_refuses_compensation_rows_until_ir_1262`] pins.
+#[trace("FR-048-AC-8", "FR-050-AC-13", "FR-322-AC-305", "TC-134")]
 #[test]
-fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_partial() {
+fn tc134_timed_fixture_binds_every_compensation_node_and_temporal_declaration() {
     let graph = tc134_timed_graph();
     let selections = tc134_selections(&graph);
-    assert!(
-        !selections.is_empty(),
-        "the timed fixture selects at least one temporal declaration"
+    let compensation_count: usize = graph
+        .protocols()
+        .iter()
+        .map(|protocol| protocol.obligations.compensations.len())
+        .sum();
+    assert_eq!(
+        compensation_count, 2,
+        "the fixture writes two refund windows"
     );
     let package = CheckedPackage::link(graph);
     let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
@@ -988,18 +1003,46 @@ fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_parti
         selections.len(),
         "exactly one per selection"
     );
+    let all_nodes = nodes(&wire);
+    let position = |id: &Value| {
+        all_nodes
+            .iter()
+            .position(|node| &node["node_id"] == id)
+            .expect("the binding is tagged to an emitted node")
+    };
+    let compensation_ids: Vec<&Value> = all_nodes
+        .iter()
+        .filter(|node| node["semantic_form"] == "compensation")
+        .map(|node| &node["node_id"])
+        .collect();
+    assert_eq!(compensation_ids.len(), 2);
     for binding in bindings {
         assert_eq!(
             binding["clock"],
             json!({"kind": "event_position", "sequence_authority": "tc134-order-events"})
         );
-        assert!(
-            nodes(&wire)
-                .iter()
-                .any(|node| node["node_id"] == binding["declaration"]),
-            "the binding is tagged to an emitted declaration"
+        let name = binding["clock_name"].as_str().expect("clock name");
+        let is_compensation = compensation_ids.contains(&&binding["declaration"]);
+        assert_eq!(
+            name,
+            if is_compensation {
+                "refund-clock"
+            } else {
+                "model-steps"
+            },
+            "a compensation row names the template's clock text, a clause row its clause's"
         );
     }
+    let bound_compensations: Vec<&Value> = bindings
+        .iter()
+        .map(|binding| &binding["declaration"])
+        .filter(|declaration| compensation_ids.contains(declaration))
+        .collect();
+    assert_eq!(
+        bound_compensations.len(),
+        2,
+        "every compensation node has exactly one row, keyed by its own node_id"
+    );
     let declarations: std::collections::BTreeSet<String> = bindings
         .iter()
         .map(|b| b["declaration"].to_string())
@@ -1008,6 +1051,14 @@ fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_parti
         declarations.len(),
         bindings.len(),
         "no declaration is bound twice"
+    );
+    let order: Vec<usize> = bindings
+        .iter()
+        .map(|binding| position(&binding["declaration"]))
+        .collect();
+    assert!(
+        order.windows(2).all(|pair| pair[0] < pair[1]),
+        "clause and compensation rows share one array in ascending node order: {order:?}"
     );
     assert!(
         wire["lock"]["profile_selections"]
@@ -1019,59 +1070,61 @@ fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_parti
                     == "quire.temporal.event-position.false-extension/v1"),
         "the emitted wire selects the temporal profile with role temporal_profile"
     );
+}
 
+/// FR-322-AC-305, pending IR-1262: the strict reader at the pinned
+/// quire-contract-ir does not yet admit a `temporal_bindings` row keyed by a
+/// compensation node. It refuses the package as `invalid_package` /
+/// `timed-node-reference` at the first compensation row's `declaration`,
+/// naming that compensation node. When IR-1262 merges this refusal becomes
+/// an admission and this test is restated to assert the retained rows.
+#[trace("FR-322-AC-305", "TC-134")]
+#[test]
+fn tc134_strict_reader_refuses_compensation_rows_until_ir_1262() {
+    let graph = tc134_timed_graph();
+    let selections = tc134_selections(&graph);
+    let package = CheckedPackage::link(graph);
+    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
+        .expect("the timed package emits with its selections");
+    let wire = wire(&emission);
+    let first_compensation = wire["temporal_bindings"]
+        .as_array()
+        .expect("temporal bindings")
+        .iter()
+        .position(|binding| binding["clock_name"] == "refund-clock")
+        .expect("a compensation row");
     let mut evidence = read_evidence(&emission);
     evidence
         .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
         .expect("a fresh evidence key");
-    let admitted = match quire_contract_model::read_checked_package(
+    match quire_contract_model::read_checked_package(
         emission.package.bytes(),
         quire_contract_model::CheckedPackageReadLimits::bounded(),
         &evidence,
     ) {
-        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
-        other => panic!("strict v2 read admits the timed package: {other:?}"),
-    };
-    let admitted_selections = serde_json::to_value(&admitted.lock().profile_selections)
-        .expect("admitted profile selections serialize");
-    assert!(
-        admitted_selections.as_array().is_some_and(|selections| {
-            selections.iter().any(|selection| {
-                selection["role"] == "temporal_profile"
-                    && selection["definition"]["identity"]
-                        == "quire.temporal.event-position.false-extension/v1"
-            })
-        }),
-        "the admitted package retains the temporal_profile selection: {admitted_selections}"
-    );
-    let read_bindings = admitted
-        .temporal_bindings()
-        .expect("the admitted package retains its temporal bindings");
-    assert_eq!(read_bindings.len(), bindings.len());
-    for read in read_bindings {
-        assert_eq!(read.clock, tc134_clock());
-        assert_eq!(&*read.clock_name, "model-steps");
-        assert_ne!(
-            &*read.clock_name, "refund-clock",
-            "the compensation's own clock is not bound (partial coverage)"
-        );
-        let declaration = serde_json::to_value(&read.declaration).expect("node id serializes");
-        assert!(
-            declaration["package"].is_string()
-                && declaration["path"]
-                    .as_array()
-                    .is_some_and(|path| !path.is_empty())
-                && declaration["ordinal"].is_u64(),
-            "the binding declaration is a structural NodeId: {declaration}"
-        );
+        quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => {
+            assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
+            assert_eq!(
+                refusal.cause,
+                Some(CheckedPackageRefusalCause::TimedNodeReference)
+            );
+            let locus = format!("{:?}", refusal.loci);
+            assert!(
+                locus.contains(&format!(
+                    "/temporal_bindings/{first_compensation}/declaration"
+                )),
+                "the refusal names the compensation row: {locus}"
+            );
+        }
+        other => panic!("IR-1262 has merged; restate this test to the read-back: {other:?}"),
     }
 }
 
-/// FR-048-AC-8, PARTIAL: a missing, duplicate, surplus or profile-incompatible
-/// clock selection for the explicit temporal declaration refuses emission.
-/// Compensation-window clock rows are NOT covered here; spec FR-050-AC-13/14
-/// and FR-322-AC-305 require them, pending IR-1262.
-#[trace("FR-048-AC-8", "TC-134")]
+/// FR-048-AC-8, FR-050-AC-14, FR-322-AC-305: a missing, duplicate, surplus or
+/// profile-incompatible clock selection for an explicit temporal declaration
+/// refuses emission, and so does each of those for a `compensate` window
+/// (CB-01 missing, CB-02 duplicate, CB-03 surplus, CB-05 kind mismatch).
+#[trace("FR-048-AC-8", "FR-050-AC-14", "FR-322-AC-305", "TC-134")]
 #[test]
 fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
     use crate::emit::EmitRefusal as R;
@@ -1109,6 +1162,61 @@ fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
         emit(&incompatible),
         Err(R::TemporalClockProfileMismatch { .. })
     ));
+
+    // A `compensate` window is a selected declaration of its own.
+    let compensation_spans: Vec<qsl_foundation::Span> = package
+        .graph()
+        .protocols()
+        .iter()
+        .flat_map(|protocol| protocol.obligations.compensations.iter().map(|c| c.span))
+        .collect();
+    let compensation_at = |selections: &[crate::emit::TemporalClockSelection], span| {
+        selections
+            .iter()
+            .position(|selection| selection.declaration_span == span)
+            .expect("a compensation selection")
+    };
+    let first = compensation_spans[0];
+
+    let mut missing = selections.clone();
+    missing.remove(compensation_at(&selections, first));
+    assert!(
+        matches!(
+            emit(&missing),
+            Err(R::MissingTemporalClockSelection { span, .. }) if span == first
+        ),
+        "a compensation node without its row refuses"
+    );
+    let mut duplicate = selections.clone();
+    duplicate.push(selections[compensation_at(&selections, first)].clone());
+    assert!(
+        matches!(
+            emit(&duplicate),
+            Err(R::DuplicateTemporalClockSelection { span, .. }) if span == first
+        ),
+        "two rows for one compensation node refuse"
+    );
+    let mut surplus = selections.clone();
+    surplus.push(crate::emit::TemporalClockSelection {
+        declaration_span: qsl_foundation::Span { start: 0, end: 1 },
+        ..selections[0].clone()
+    });
+    assert!(matches!(
+        emit(&surplus),
+        Err(R::SurplusTemporalClockSelection { .. })
+    ));
+    let mut incompatible = selections.clone();
+    let at = compensation_at(&selections, first);
+    incompatible[at].clock = quire_contract_model::ClockConfiguration::TimestampedEvent {
+        timestamp_unit: "tc134-rfc3339".into(),
+    };
+    assert!(
+        matches!(
+            emit(&incompatible),
+            Err(R::TemporalClockProfileMismatch { span, .. }) if span == first
+        ),
+        "a compensation clock of another kind than its profile refuses"
+    );
 }
 
 /// FR-048-AC-8: `/2` bytes carrying clock bindings whose `contract_version`
