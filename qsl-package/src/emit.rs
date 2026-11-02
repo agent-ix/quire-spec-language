@@ -16,14 +16,14 @@ use quire_contract_model::{
     CheckedAbstractionFrame, CheckedAbstractionObject, CheckedAbstractionParameter,
     CheckedAbstractionPopulation, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
-    CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2,
-    CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody,
-    ProtocolForm, StateForm, ValueForm,
+    CheckedDiagnosticsV2, CheckedDimensionOperand, CheckedFieldScope, CheckedFrameModification,
+    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    CheckedPackageLockV2, CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef,
+    CheckedPackageV2, CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion,
+    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm,
+    LiteralKind, NominalBody, ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -1099,10 +1099,10 @@ fn nominal_term(ids: &StructuralIds, payload: &NominalPayload) -> Result<Checked
         ),
         NominalPayload::DimensionEquivalence(equivalence) => {
             NominalBody::try_dimension_equivalence(
-                equivalence
-                    .dimensions()
-                    .each_ref()
-                    .map(|key| node_id(ids, key)),
+                [
+                    CheckedDimensionOperand::Local(node_id(ids, &equivalence.dimensions()[0])),
+                    CheckedDimensionOperand::Local(node_id(ids, &equivalence.dimensions()[1])),
+                ],
                 checked_rational(equivalence.scale()),
             )
         }
@@ -1886,14 +1886,30 @@ fn equality_producer_emission_rows(
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     source_map: &[CheckedSourceMapEntry],
 ) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
-    equality_producer_emission_rows_excluding(graph, emitted_node_ids, source_map, &HashSet::new())
+    equality_producer_emission_rows_inner(
+        graph,
+        emitted_node_ids,
+        source_map,
+        &HashSet::new(),
+        false,
+    )
 }
 
-fn equality_producer_emission_rows_excluding(
+fn emitted_equality_producer_emission_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     source_map: &[CheckedSourceMapEntry],
     omitted_nodes: &HashSet<NodeKey>,
+) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
+    equality_producer_emission_rows_inner(graph, emitted_node_ids, source_map, omitted_nodes, true)
+}
+
+fn equality_producer_emission_rows_inner(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    source_map: &[CheckedSourceMapEntry],
+    omitted_nodes: &HashSet<NodeKey>,
+    omit_unemitted: bool,
 ) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
     let producer_data = graph.equality_producer_data();
     let producer_identities = graph.equality_producer_identities();
@@ -1914,6 +1930,9 @@ fn equality_producer_emission_rows_excluding(
         .filter(|((application, _), _)| !omitted_nodes.contains(application))
         .map(|((application, expression_location), producer_identity)| {
             let Some(checked_node) = emitted_node_ids.get(application).cloned() else {
+                if omit_unemitted {
+                    return Ok(None);
+                }
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: application.clone(),
                 });
@@ -1970,7 +1989,7 @@ fn equality_producer_emission_rows_excluding(
                     application: application.clone(),
                 });
             }
-            Ok(EqualityProducerEmissionRow {
+            Ok(Some(EqualityProducerEmissionRow {
                 application: application.clone(),
                 checked_node,
                 occurrence,
@@ -1978,9 +1997,10 @@ fn equality_producer_emission_rows_excluding(
                 source_map_entry,
                 producer_identity: producer_identity.clone(),
                 producer_data,
-            })
+            }))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Resolves each enum witness key independently through the emitter's exact
@@ -2007,11 +2027,31 @@ fn enum_member_node_ids(
     ))
 }
 
+#[cfg(test)]
 fn equality_fact_witness_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     wire_nodes: &[CheckedSemanticNodeV2],
     rows: &[EqualityProducerEmissionRow],
+) -> Result<Vec<EqualityFactWitnessRow>, EmitRefusal> {
+    equality_fact_witness_rows_inner(graph, emitted_node_ids, wire_nodes, rows, false)
+}
+
+fn emitted_equality_fact_witness_rows(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    wire_nodes: &[CheckedSemanticNodeV2],
+    rows: &[EqualityProducerEmissionRow],
+) -> Result<Vec<EqualityFactWitnessRow>, EmitRefusal> {
+    equality_fact_witness_rows_inner(graph, emitted_node_ids, wire_nodes, rows, true)
+}
+
+fn equality_fact_witness_rows_inner(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    wire_nodes: &[CheckedSemanticNodeV2],
+    rows: &[EqualityProducerEmissionRow],
+    omit_unemitted: bool,
 ) -> Result<Vec<EqualityFactWitnessRow>, EmitRefusal> {
     let graph_nodes = graph
         .semantic_graph()
@@ -2023,7 +2063,17 @@ fn equality_fact_witness_rows(
         let mut add = |key: &NodeKey,
                        fact: EqualityFactWitness,
                        value_type: Option<quire_exact::ValueType>| {
+            // A selected Exact identity can name a dependency declaration
+            // that is not part of this package's admitted graph. IR's typed
+            // equality reader accepts only package-local structural facts, so
+            // retain rows only for declarations in the emitted graph.
+            if !graph_nodes.contains_key(key) {
+                return Ok(());
+            }
             let Some(structural_node) = emitted_node_ids.get(key).cloned() else {
+                if omit_unemitted {
+                    return Ok(());
+                }
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
                 });
@@ -2032,6 +2082,9 @@ fn equality_fact_witness_rows(
                 .iter()
                 .find(|node| node.node_id == structural_node)
             else {
+                if omit_unemitted {
+                    return Ok(());
+                }
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
                 });
@@ -4862,13 +4915,13 @@ fn emit_package_inner(
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
     let temporal_bindings = temporal_binding_rows(graph, &emitted_node_ids, temporal_selections)?;
-    let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
+    let equality_producer_identity_rows = emitted_equality_producer_emission_rows(
         graph,
         &emitted_node_ids,
         &source_map,
         &omitted_keys,
     )?;
-    let equality_fact_witness_rows = equality_fact_witness_rows(
+    let equality_fact_witness_rows = emitted_equality_fact_witness_rows(
         graph,
         &emitted_node_ids,
         &nodes,
