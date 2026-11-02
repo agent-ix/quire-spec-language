@@ -328,6 +328,12 @@ fn expression_spans_at(
     expression: &Expression,
     span: Span,
 ) -> Result<ExpressionSpans, qsl_forms::SpanRefusal> {
+    // A quantifier read through a clock-reading declaration is located at
+    // its call, a point with no source range to divide: its generated nodes
+    // sit at that point, as the call's other grafted nodes do.
+    if span.start == span.end {
+        return ExpressionSpans::at_point(expression, span.start);
+    }
     let mut spans = ExpressionSpans::new(span)?;
     let root_span = spans.root();
     let root = expression.root_id();
