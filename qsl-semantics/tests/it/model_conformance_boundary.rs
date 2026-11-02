@@ -292,7 +292,7 @@ fn check(document: &[u8], body: &str) -> Result<(), Vec<(Code, Option<&'static s
     tuples(&run(document, body, None).outcome)
 }
 
-fn denial(refusals: &[CheckRefusal]) -> NormalizationNormalizationIncomplete {
+fn denial(refusals: &[CheckRefusal]) -> NormalizationIncomplete {
     assert_eq!(
         refusals.len(),
         1,
