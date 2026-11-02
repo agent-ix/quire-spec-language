@@ -848,39 +848,42 @@ fn quantified_clock_guards_emit_ordered_slot_binders() {
     }
 }
 
-/// FR-230-AC-50: element-presence reads remain unavailable in timed guards,
-/// invariants and urgency predicates until their quantified wire form is
-/// admitted. Each model refuses as a whole instead of emitting a guard with
-/// the presence requirement missing.
-#[trace("TC-685", "FR-230-AC-50")]
+/// FR-230-AC-55/56/53: quantified element-presence reads in a timed guard,
+/// invariant or urgency predicate refuse at the owning timed member, before
+/// any partial timed nodes can be emitted.
+#[trace("TC-685", "FR-230-AC-55", "FR-230-AC-56", "FR-230-AC-53")]
 #[test]
-fn element_presence_in_timed_predicates_refuses_without_emitting_partial_nodes() {
+fn element_presence_in_timed_predicates_refuses_at_the_owner_without_partial_nodes() {
     use qsl_semantics::check::UnwrittenTimedMember as Member;
 
     let quantifier = "forall(e in self.q: present(e))";
-    let (member, text) = unwritten(
-        &slot_presence_document(),
-        &format!(
-            "pre HasElement using v on Config::ConfigVersion::attemptUpdate {{ \
-             self.x >= 1 ms and {quantifier} }}\n"
-        ),
+    let guard = format!(
+        "pre HasElement using v on Config::ConfigVersion::attemptUpdate {{ \
+         self.x >= 1 ms and {quantifier} }}"
     );
+    let (member, text) = unwritten(&slot_presence_document(), &format!("{guard}\n"));
     assert_eq!(
         (member, text.as_str()),
-        (Member::QuantifiedClause, quantifier),
-        "a quantified guard cannot be written without its binder form"
+        (Member::ElementPresence, guard.as_str()),
+        "AC-55 refuses the guard at its owning timed member"
     );
 
     let invariant =
         format!("time invariant HasElement when {{ {quantifier} }} {{ self.x <= 9 ms }}");
     let (member, text) = unwritten(&slot_presence_document(), &format!("{invariant}\n"));
-    assert_eq!(member, Member::ElementPresence);
-    assert!(text.starts_with("time invariant HasElement"), "{text}");
+    assert_eq!(
+        (member, text.as_str()),
+        (Member::ElementPresence, invariant.as_str()),
+        "AC-56 refuses the invariant at its owning timed member"
+    );
 
     let urgency = format!("urgent HasElement when {{ {quantifier} }};");
     let (member, text) = unwritten(&slot_presence_document(), &format!("{urgency}\n"));
-    assert_eq!(member, Member::ElementPresence);
-    assert!(text.starts_with("urgent HasElement"), "{text}");
+    assert_eq!(
+        (member, text.as_str()),
+        (Member::ElementPresence, urgency.as_str()),
+        "AC-53 refuses the urgency at its owning timed member"
+    );
 }
 
 /// FR-230-AC-50, QSpec FR-342-AC-11: a clock-reading clause bound to an
