@@ -1043,6 +1043,7 @@ fn settle(world: &World, outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckR
         outcome,
         &ModelCheckLimits::default(),
         &CertificateRequest {
+            temporal_clock_selections: &[],
             subject: world.subject(),
             item: ModelCheckItem::DeadlockFreedom,
             smt_encoding: qsl_replay::SmtEncodingLimits::default(),

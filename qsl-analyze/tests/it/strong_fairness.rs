@@ -367,6 +367,7 @@ pub(crate) fn settle_en1(
         outcome,
         &ModelCheckLimits::default(),
         &CertificateRequest {
+            temporal_clock_selections: &[],
             subject: subject(
                 &fixture.package,
                 &fixture.documents,

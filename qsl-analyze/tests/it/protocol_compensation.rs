@@ -1533,6 +1533,7 @@ fn requires_bound(attempts: &str) -> Vec<(Vec<u32>, DomainKind)> {
     let case = Case::new(&body, &[0]);
     let refused = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject: case.subject("Pay"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,

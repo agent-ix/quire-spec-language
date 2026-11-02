@@ -151,6 +151,7 @@ impl Unit {
     ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
         check_protocol(
             ProtocolCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(selection),
                 item: self.item(),
                 max_depth: None,
@@ -170,6 +171,7 @@ impl Unit {
         item: ModelCheckItem<'u>,
     ) -> ProtocolCertificateRequest<'u> {
         ProtocolCertificateRequest {
+            temporal_clock_selections: &[],
             subject: self.subject(selection),
             item,
             max_store_buffer: None,

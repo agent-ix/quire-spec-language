@@ -20,8 +20,8 @@ use qsl_eval::simulation::protocol::{
 use qsl_eval::simulation::StateKey;
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_foundation::SourceIdentity;
-use qsl_package::CheckedPackage;
-use qsl_semantics::check::PackageDeclarations;
+use qsl_package::{CheckedPackage, ClockConfiguration, TemporalClockSelection};
+use qsl_semantics::check::{PackageDeclarations, TemporalProfile};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
@@ -283,6 +283,33 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
 /// The header line selecting the protocol profile, so each protocol clause
 /// the package writes has its node.
 pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
+
+/// TCB-01's independent temporal selection: the checked clause supplies
+/// `model-steps`, while this fixture explicitly selects `order-events` as
+/// the event sequence authority (QSpec FR-322).
+pub(crate) fn tcb_01_event_position_selection(
+    package: &CheckedPackage,
+) -> Vec<TemporalClockSelection> {
+    let graph = package.graph();
+    graph
+        .temporal_clauses()
+        .iter()
+        .filter_map(|temporal| {
+            let clause = temporal.clause();
+            if clause.profile() != TemporalProfile::EventPositionFalseExtension {
+                return None;
+            }
+            assert_eq!(clause.clock(), "model-steps");
+            Some(TemporalClockSelection {
+                source: graph.source().clone(),
+                declaration_span: clause.span(),
+                clock: ClockConfiguration::EventPosition {
+                    sequence_authority: "order-events".into(),
+                },
+            })
+        })
+        .collect()
+}
 
 /// [`package`] with the further header `profiles` lines.
 pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
