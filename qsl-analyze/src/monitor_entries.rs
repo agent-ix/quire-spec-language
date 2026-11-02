@@ -529,7 +529,7 @@ pub fn render(spec: &EntrySpec) -> String {
          function member using v(dmin: Integer, dmax: Integer, same: Boolean): V pure {{ \
             let k = memberKind(dmin, dmax, same) in \
             if k = 2 then vTrue() else if k = 0 then vFalse() else vUnknown() }}\n\
-         function phi using v(c: Cell): V pure {{ if c.lost then vLost() else vPolar({phi}) }}\n\
+         function phi using v(c: Cell): V pure {{ {phi} }}\n\
          function psi using v(c: Cell): V pure {{ if c.lost then vLost() else vPolar({psi}) }}",
         polar = if node.dual { "vNot(a)" } else { "a" },
         zero = t.zero_in,
@@ -538,7 +538,10 @@ pub fn render(spec: &EntrySpec) -> String {
         none_lo = sig(t.none_lo),
         none_hi = sig(t.none_hi),
         phi = match &node.phi {
-            Some(expr) => format!("vOf({})", expr.render("c.inputs", &bits)),
+            Some(expr) => format!(
+                "if c.lost then vLost() else vPolar(vOf({}))",
+                expr.render("c.inputs", &bits)
+            ),
             None => "vTrue()".to_owned(),
         },
         psi = psi_text,

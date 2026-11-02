@@ -336,3 +336,147 @@ fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
         run_reference(&plan, node, &inputs)
     );
 }
+
+/// A deterministic generator of traces (a fixed linear congruential stream,
+/// so a failure reproduces).
+struct Stream(u64);
+
+impl Stream {
+    fn next(&mut self, bound: u64) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (self.0 >> 33) % bound
+    }
+}
+
+fn trace(seed: u64, atoms: &[usize], width_bits: u32, length: usize) -> Vec<Input> {
+    let mut stream = Stream(seed);
+    let modulus = 1_u64 << width_bits;
+    let (mut raw, mut now, mut watermark) = (stream.next(modulus), 0_u64, 0_u64);
+    let mut inputs = vec![Input::Reading(
+        raw,
+        atoms
+            .iter()
+            .map(|atom| (*atom, stream.next(2) == 1))
+            .collect(),
+    )];
+    for _ in 0..length {
+        match stream.next(10) {
+            0 => {
+                let boundary = watermark.max(now) + stream.next(2500);
+                watermark = boundary;
+                inputs.push(Input::Watermark(boundary));
+            }
+            1 => inputs.push(Input::Poll(stream.next(modulus))),
+            _ => {
+                let floor = if watermark >= now {
+                    watermark - now + 1
+                } else {
+                    0
+                };
+                let delta = [0, 1, 300, 700, 1200, 2999, 3000, 3001, 3500]
+                    [usize::try_from(stream.next(9)).unwrap()]
+                .max(floor)
+                .min(modulus - 1);
+                raw = (raw + delta) % modulus;
+                now += delta;
+                let truths = atoms
+                    .iter()
+                    .map(|atom| (*atom, stream.next(2) == 1))
+                    .collect();
+                inputs.push(Input::Reading(raw, truths));
+            }
+        }
+    }
+    inputs
+}
+
+fn differential(formula: &str, target: qsl_replay::MonitorTarget, traces: u64) {
+    let plan = premise_plan(formula, &target);
+    let spec = spec_from_plan(&plan).unwrap_or_else(|refusal| panic!("{formula}: {refusal}"));
+    for seed in 0..traces {
+        let inputs = trace(seed * 7919 + 13, &spec.atoms, target.width_bits, 14);
+        let entries = run_entries(&plan, &inputs);
+        let reference = run_reference(&plan, spec.node.subformula, &inputs);
+        assert_eq!(
+            entries, reference,
+            "{formula} {target:?} seed {seed}\n{inputs:#?}"
+        );
+    }
+}
+
+const SHAPES: [&str; 9] = [
+    "eventually[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "always[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "once[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "historically[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "holds(c.versionNumber = 2) until[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "holds(c.versionNumber = 2) release[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "holds(c.versionNumber = 2) since[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "holds(c.versionNumber = 2) triggered[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "eventually[1 ms, 3 ms] (holds(c.versionNumber = 2) and not holds(c.versionNumber = 3))",
+];
+
+fn microsecond_target(
+    uncertainty: Rational,
+    rate: i64,
+    width_bits: u32,
+    gap: u64,
+) -> qsl_replay::MonitorTarget {
+    qsl_replay::MonitorTarget {
+        unit: "us".to_owned(),
+        width_bits,
+        max_reading_gap: gap,
+        uncertainty,
+        max_event_rate: Some(crate::monitor_plan::ratio(rate, 1000)),
+        ..base_target()
+    }
+}
+
+use quire_exact::Rational;
+
+#[test]
+fn every_operator_agrees_with_the_reference_without_uncertainty() {
+    for shape in SHAPES {
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600),
+            25,
+        );
+    }
+}
+
+#[test]
+fn every_operator_agrees_with_the_reference_under_uncertainty() {
+    for shape in SHAPES {
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600),
+            25,
+        );
+    }
+}
+
+#[test]
+fn small_buffers_overflow_the_same_way() {
+    for shape in SHAPES {
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(0, 1), 1, 12, 3600),
+            25,
+        );
+    }
+}
+
+#[test]
+fn reading_gaps_fail_the_open_instances_the_same_way() {
+    for shape in SHAPES {
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 1500),
+            25,
+        );
+    }
+}
