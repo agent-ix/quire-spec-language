@@ -6871,19 +6871,21 @@ fn checked_model_operation_effects(
                     member: operation.key.node.as_str().into(),
                 },
             };
-            rows.push((document.to_owned(), declaring_key, row));
+            rows.push(row);
         }
     }
-    rows.sort_by(
-        |(left_document, left_key, left), (right_document, right_key, right)| {
-            left_document
-                .as_bytes()
-                .cmp(right_document.as_bytes())
-                .then_with(|| left_key.cmp(right_key))
-                .then_with(|| left.operation.as_bytes().cmp(right.operation.as_bytes()))
-        },
-    );
-    (!rows.is_empty()).then(|| rows.into_iter().map(|(_, _, row)| row).collect())
+    // QSpec FR-322 and FR-496: `document` as UTF-8 bytes, then `declaring` by
+    // structural identity, then `operation` as UTF-8 bytes. The declaring
+    // `DeclarationKey` order is not that order: the structural path leads
+    // with the declaration's form.
+    rows.sort_by(|left, right| {
+        left.document
+            .as_bytes()
+            .cmp(right.document.as_bytes())
+            .then_with(|| left.declaring.cmp(&right.declaring))
+            .then_with(|| left.operation.as_bytes().cmp(right.operation.as_bytes()))
+    });
+    (!rows.is_empty()).then_some(rows)
 }
 
 fn effect_modification_key(
