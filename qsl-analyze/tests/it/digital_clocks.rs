@@ -205,7 +205,7 @@ fn discrete_delays_under_a_workload_are_a_chain() {
     };
     assert!(operation.contains("send"), "{operation}");
 
-    let exponential = one_workload("delay M::Call::send ~ exponential(1 per ms);\n");
+    let exponential = one_workload("delay M::Call::send ~ exponential(1);\n");
     assert!(matches!(
         refusal(&exponential, "Under"),
         ProductRefusal::DelayDistribution { .. }

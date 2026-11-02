@@ -23,8 +23,7 @@ use num_traits::{One, ToPrimitive, Zero};
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{
     same_rewards, Action, ClockValuation, GuardedStep, ModelSimState, ModelSystem, NotMarkov,
-    PlaceConstraint, PredicateReading, ScheduledIdentity, TimedStop,
-    TimedSystem,
+    PlaceConstraint, PredicateReading, ScheduledIdentity, TimedStop, TimedSystem,
 };
 use qsl_eval::simulation::StateKey;
 use qsl_replay::ModelCheckLimit;
@@ -223,7 +222,10 @@ impl<'c> Form<'c> {
 }
 
 /// Every atomic clock constraint of a convex part, families included.
-fn constraints_of<'m>(part: &'m ConvexPart, found: &mut Vec<&'m qsl_semantics::check::ClockConstraint>) {
+fn constraints_of<'m>(
+    part: &'m ConvexPart,
+    found: &mut Vec<&'m qsl_semantics::check::ClockConstraint>,
+) {
     found.extend(part.clocks());
     for family in part.families() {
         for inner in family.parts() {
@@ -287,7 +289,8 @@ fn admit(
     }
     let delays = system.package().graph().probabilistic_model().delays();
     for delay in delays {
-        let admitted = workload.is_some() && matches!(delay.distribution(), DelayDistribution::Discrete(_));
+        let admitted =
+            workload.is_some() && matches!(delay.distribution(), DelayDistribution::Discrete(_));
         if !admitted {
             let operation = delay.operation();
             return Err(ProductRefusal::DelayDistribution {
@@ -642,7 +645,12 @@ impl<'c> Builder<'_, '_, 'c> {
 
     /// The scheduled identities enabled at `clocks` with their enabled
     /// post-states (ADR-026 TS-2 with integer clocks).
-    fn enabled(&mut self, local: &Local, model: &ModelSimState, clocks: &[u64]) -> Step<Vec<Enabled>> {
+    fn enabled(
+        &mut self,
+        local: &Local,
+        model: &ModelSimState,
+        clocks: &[u64],
+    ) -> Step<Vec<Enabled>> {
         let valuation = self.valuation(clocks)?;
         let mut found = Vec::new();
         for action in &local.actions {
@@ -650,7 +658,10 @@ impl<'c> Builder<'_, '_, 'c> {
             for draw in &action.draws {
                 let mut posts = Vec::new();
                 for (transition, post) in &draw.successors {
-                    let Some(step) = local.steps.iter().find(|step| step.transition() == transition)
+                    let Some(step) = local
+                        .steps
+                        .iter()
+                        .find(|step| step.transition() == transition)
                     else {
                         continue;
                     };
@@ -1202,7 +1213,12 @@ impl<'c> Builder<'_, '_, 'c> {
     }
 
     /// Over every scheduler: the delays and each enabled identity's draws.
-    fn scheduler_moves(&mut self, at: usize, state: &DState, local: &Rc<Local>) -> Step<Vec<Planned>> {
+    fn scheduler_moves(
+        &mut self,
+        at: usize,
+        state: &DState,
+        local: &Rc<Local>,
+    ) -> Step<Vec<Planned>> {
         let mut planned = Vec::new();
         self.running_delays(at, state, local, &mut planned)?;
         let enabled = self.enabled(local, &state.model, &state.clocks)?;
@@ -1327,7 +1343,9 @@ impl<'c> Builder<'_, '_, 'c> {
             .weights()
             .iter()
             .find(|(weighted, _)| {
-                self.system.operation_text(weighted.declaring(), weighted.name()) == Some(operation)
+                self.system
+                    .operation_text(weighted.declaring(), weighted.name())
+                    == Some(operation)
             })
             .map(|(_, weight)| weight.clone())
             .ok_or_else(|| fault("workload-weighs-an-operation").into())
@@ -1356,7 +1374,10 @@ impl<'c> Builder<'_, '_, 'c> {
         let mut forever = false;
         let bound = self.max_states.max(1);
         while states.len() <= bound {
-            let last = states.last().cloned().ok_or_else(|| fault("trajectory-starts"))?;
+            let last = states
+                .last()
+                .cloned()
+                .ok_or_else(|| fault("trajectory-starts"))?;
             let local = self.local(&last.model)?;
             let Some((clocks, deadline)) = self.unit_delay(&local, &last)? else {
                 break;
@@ -1626,7 +1647,10 @@ impl<'c> Builder<'_, '_, 'c> {
         }
         let mut operations: Vec<(String, Rational)> = Vec::new();
         for identity in tied {
-            if !operations.iter().any(|(name, _)| *name == identity.operation) {
+            if !operations
+                .iter()
+                .any(|(name, _)| *name == identity.operation)
+            {
                 operations.push((
                     identity.operation.clone(),
                     self.weight_of(workload, &identity.operation)?,
@@ -1681,7 +1705,12 @@ impl<'c> Builder<'_, '_, 'c> {
     ) -> Step<()> {
         let (probability, zero_delay, representative) = outcome;
         // (probability, states reached after each step, first draw, first rewards)
-        type Chain = (Rational, Vec<DState>, Option<Vec<Value>>, Vec<(Identifier, Value)>);
+        type Chain = (
+            Rational,
+            Vec<DState>,
+            Option<Vec<Value>>,
+            Vec<(Identifier, Value)>,
+        );
         let mut chains: Vec<Chain> = vec![(
             probability,
             vec![start.clone()],
@@ -1691,10 +1720,15 @@ impl<'c> Builder<'_, '_, 'c> {
         for (position, identity) in ordered.iter().enumerate() {
             let mut next: Vec<Chain> = Vec::new();
             for (chain_probability, states, first_draw, first_rewards) in chains {
-                let current = states.last().cloned().ok_or_else(|| fault("chain-has-a-state"))?;
+                let current = states
+                    .last()
+                    .cloned()
+                    .ok_or_else(|| fault("chain-has-a-state"))?;
                 let local = self.local(&current.model)?;
                 let available = self.enabled(&local, &current.model, &current.clocks)?;
-                let Some(action) = available.iter().find(|candidate| candidate.identity == *identity)
+                let Some(action) = available
+                    .iter()
+                    .find(|candidate| candidate.identity == *identity)
                 else {
                     next.push((chain_probability, states, first_draw, first_rewards));
                     continue;
@@ -1734,11 +1768,20 @@ impl<'c> Builder<'_, '_, 'c> {
             }
             chains = next;
         }
-        let first = ordered.first().cloned().ok_or_else(|| fault("race-takes-an-identity"))?;
+        let first = ordered
+            .first()
+            .cloned()
+            .ok_or_else(|| fault("race-takes-an-identity"))?;
         for (chain_probability, states, draw, rewards) in chains {
-            let reached = states.last().cloned().ok_or_else(|| fault("chain-has-a-state"))?;
-            let landed: Vec<ModelSimState> =
-                states.iter().skip(1).map(|state| state.model.clone()).collect();
+            let reached = states
+                .last()
+                .cloned()
+                .ok_or_else(|| fault("chain-has-a-state"))?;
+            let landed: Vec<ModelSimState> = states
+                .iter()
+                .skip(1)
+                .map(|state| state.model.clone())
+                .collect();
             let taken = TraceStep {
                 action: Some(first.clone()),
                 draw: draw.clone(),
@@ -1803,7 +1846,9 @@ impl<'c> Builder<'_, '_, 'c> {
             let share = weight
                 .div(&total)
                 .and_then(|share| {
-                    share.div(&Rational::from_integer(Integer::from_big(BigInt::from(*identities))))
+                    share.div(&Rational::from_integer(Integer::from_big(BigInt::from(
+                        *identities,
+                    ))))
                 })
                 .ok_or_else(|| fault("workload-share"))?;
             let first = planned.len();
