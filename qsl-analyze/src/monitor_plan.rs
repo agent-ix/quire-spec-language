@@ -10,7 +10,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
-    MonitorSubject, MonitorTarget, SubformulaId, TickInterval, TimedMonitorPlan, TimingObligation,
+    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan, TimingObligation,
     TimingObligationSettings,
 };
 use qsl_semantics::check::{CheckedInterval, CheckedTemporalClause, FormulaNode};
@@ -172,8 +172,51 @@ pub fn produce(
         buffers,
         rate_limit,
     );
+    plan.root_premises()
+        .validate()
+        .map_err(MonitorPlanRefusal::Premise)?;
     let obligations = plan_obligations(&plan, settings);
     Ok((plan, obligations))
+}
+
+/// Why admission refused a candidate plan.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PlanAdmissionRefusal {
+    /// The selected clause and target yield no plan.
+    #[error("the selection derives no plan: {0}")]
+    Underivable(MonitorPlanRefusal),
+    /// The candidate is not the plan derived from the selected clause and
+    /// target (an altered atom, operand, interval, buffer, activation or
+    /// target premise).
+    #[error("the candidate is not the plan derived from the selection")]
+    NotDerivedFromSelection,
+}
+
+/// Driver admission (FR-251 "Build inputs and identity"): re-derive the
+/// plan from the independently selected checked clause and target and admit
+/// `candidate` only when it equals the derived plan in every field. Matching
+/// subformula numbers of another subject never alias, because the subject is
+/// part of the compared plan. Returns the admitted plan's identity.
+pub fn admit(
+    package: &CheckedPackage,
+    library: LibraryName,
+    clause: &CheckedTemporalClause,
+    target: &MonitorTarget,
+    candidate: &TimedMonitorPlan,
+) -> Result<PlanId, PlanAdmissionRefusal> {
+    let (derived, _) = produce(
+        package,
+        library,
+        clause,
+        target,
+        &TimingObligationSettings::default(),
+    )
+    .map_err(PlanAdmissionRefusal::Underivable)?;
+    if &derived == candidate && derived.id() == candidate.id() {
+        Ok(derived.id())
+    } else {
+        Err(PlanAdmissionRefusal::NotDerivedFromSelection)
+    }
 }
 
 #[cfg(test)]

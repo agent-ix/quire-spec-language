@@ -209,3 +209,129 @@ fn producer_refuses_a_gap_at_least_one_full_counter_wrap() {
         })
     );
 }
+
+fn premise_plan(formula: &str, target: &MonitorTarget) -> qsl_replay::TimedMonitorPlan {
+    let (package, _) = checked_clause(formula);
+    let clause = package.graph().temporal_clauses()[0].clause();
+    produce(
+        &package,
+        qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
+        clause,
+        target,
+        &TimingObligationSettings::default(),
+    )
+    .expect("plan")
+    .0
+}
+
+fn base_target() -> MonitorTarget {
+    MonitorTarget {
+        counter: "counter".to_owned(),
+        unit: "ms".to_owned(),
+        width_bits: 20,
+        uncertainty: ratio(0, 1),
+        max_event_rate: Some(ratio(2, 1)),
+        max_reading_gap: 100,
+    }
+}
+
+/// FR-487-AC-6 (MP-02, MP-33, MP-43, MP-44): each identity-bearing premise
+/// alone changes the plan identity, and so does the formula's interval.
+#[trace("TC-1081", "FR-251-AC-5")]
+#[test]
+fn each_premise_alone_changes_the_complete_plan_identity() {
+    let formula = "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))";
+    let base = premise_plan(formula, &base_target());
+    assert_eq!(base.id(), premise_plan(formula, &base_target()).id());
+    let changed: Vec<MonitorTarget> = vec![
+        MonitorTarget { counter: "counter2".to_owned(), ..base_target() },
+        MonitorTarget { width_bits: 24, ..base_target() },
+        MonitorTarget { uncertainty: ratio(1, 2), ..base_target() },
+        MonitorTarget { max_event_rate: Some(ratio(1, 10)), ..base_target() },
+        MonitorTarget { max_reading_gap: 101, ..base_target() },
+        MonitorTarget { max_event_rate: Some(ratio(3, 1)), ..base_target() },
+    ];
+    for target in changed {
+        assert_ne!(base.id(), premise_plan(formula, &target).id(), "{target:?}");
+    }
+    let other = premise_plan(
+        "always (holds(c.versionNumber = 2) implies eventually[0 ms, 4 ms] holds(c.versionNumber = 3))",
+        &base_target(),
+    );
+    assert_ne!(base.id(), other.id());
+    let swapped = premise_plan(
+        "always (eventually[0 ms, 3 ms] holds(c.versionNumber = 3) implies holds(c.versionNumber = 2))",
+        &base_target(),
+    );
+    assert_ne!(base.id(), swapped.id());
+}
+
+/// FR-487-AC-4 premise ranges (MP-18, MP-21, MP-34, MP-36, MP-38): the
+/// producer refuses what the reader would.
+#[trace("TC-978", "FR-487-AC-4")]
+#[test]
+fn producer_premises_meet_the_plan_root_reader_ranges() {
+    let premises = premise_plan("once[0 ms, 10 ms] holds(c.versionNumber = 2)", &base_target())
+        .root_premises();
+    assert_eq!(premises.validate(), Ok(()));
+    assert_eq!(qsl_replay::canonical_rational(&premises.max_event_rate), "2");
+    assert_eq!(qsl_replay::canonical_rational(&ratio(1, 10)), "1/10");
+    for (edit, defect) in [
+        (qsl_replay::PlanRootPremises { counter_width_bits: 0, ..premises.clone() }, qsl_replay::PremiseDefect::CounterWidth),
+        (qsl_replay::PlanRootPremises { counter_width_bits: 65, ..premises.clone() }, qsl_replay::PremiseDefect::CounterWidth),
+        (qsl_replay::PlanRootPremises { max_reading_gap: 1 << 20, ..premises.clone() }, qsl_replay::PremiseDefect::MaxReadingGap),
+        (qsl_replay::PlanRootPremises { max_event_rate: ratio(0, 1), ..premises.clone() }, qsl_replay::PremiseDefect::MaxEventRate),
+        (qsl_replay::PlanRootPremises { max_event_rate: ratio(-1, 2), ..premises.clone() }, qsl_replay::PremiseDefect::MaxEventRate),
+        (qsl_replay::PlanRootPremises { counter: String::new(), ..premises.clone() }, qsl_replay::PremiseDefect::Counter),
+        (qsl_replay::PlanRootPremises { uncertainty: ratio(-1, 2), ..premises.clone() }, qsl_replay::PremiseDefect::Uncertainty),
+    ] {
+        assert_eq!(edit.validate(), Err(defect));
+    }
+}
+
+/// FR-251-AC-5 (TC-1081 step 2): a plan with any one component replaced is
+/// refused at admission, and the plan for another target is a distinct,
+/// admitted plan.
+#[trace("TC-1081", "FR-251-AC-5")]
+#[test]
+fn admission_refuses_a_plan_with_one_component_replaced() {
+    use qsl_analyze::monitor_plan::{admit, PlanAdmissionRefusal};
+    use qsl_replay::TimedMonitorPlan;
+    let formula = "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))";
+    let (package, _) = checked_clause(formula);
+    let clause = package.graph().temporal_clauses()[0].clause();
+    let library = || qsl_semantics::library::LibraryName::new("fixture").expect("a library name");
+    let target = base_target();
+    let plan = premise_plan(formula, &target);
+    let id = admit(&package, library(), clause, &target, &plan).expect("derived plan admits");
+    assert_eq!(id, plan.id());
+
+    let rebuild = |buffers: Option<Vec<_>>, gap: Option<u64>, unc: Option<Rational>| {
+        TimedMonitorPlan::new(
+            plan.subject().clone(),
+            plan.binding().clone(),
+            unc.unwrap_or_else(|| plan.uncertainty().clone()),
+            gap.unwrap_or(plan.max_reading_gap()),
+            plan.program().clone(),
+            plan.intervals().to_vec(),
+            buffers.unwrap_or_else(|| plan.buffers().to_vec()),
+            plan.rate_limit().clone(),
+        )
+    };
+    let tampered = [
+        rebuild(Some(vec![(plan.buffers()[0].0, 99)]), None, None),
+        rebuild(None, Some(7), None),
+        rebuild(None, None, Some(ratio(3, 1))),
+    ];
+    for candidate in &tampered {
+        assert_ne!(candidate.id(), plan.id());
+        assert_eq!(
+            admit(&package, library(), clause, &target, candidate),
+            Err(PlanAdmissionRefusal::NotDerivedFromSelection)
+        );
+    }
+    let other_target = MonitorTarget { max_reading_gap: 7, ..base_target() };
+    let other = premise_plan(formula, &other_target);
+    assert_ne!(other.id(), plan.id());
+    assert!(admit(&package, library(), clause, &other_target, &other).is_ok());
+}
