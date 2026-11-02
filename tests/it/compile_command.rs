@@ -784,6 +784,59 @@ fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     assert_eq!(output.stdout, compiled.package().bytes());
 }
 
+/// FR-147-AC-10 (TC-552): an internal-list defect is attributed to the
+/// unit's value or to the supplied library's own value, including when the
+/// library is not imported by the unit.
+#[test]
+#[trace("TC-552", "FR-147-AC-10")]
+fn refinement_internal_list_defects_keep_their_input_owner() {
+    let unit = tempfile::tempdir().unwrap();
+    spine_request(
+        unit.path(),
+        format!("{SPINE_HEADER}function u using v(): Boolean pure {{ true }}\n").as_bytes(),
+    );
+    let path = unit.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["refinement_internals"] =
+        json!([{"refinement":"NoSuchRefinement","internal":[]}]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(unit.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "missing_declaration", "{failure}");
+    assert!(!failure.to_string().contains("compile request"));
+
+    let library = tempfile::tempdir().unwrap();
+    spine_request(
+        library.path(),
+        format!("{SPINE_HEADER}function u using v(): Boolean pure {{ true }}\n").as_bytes(),
+    );
+    std::fs::write(
+        library.path().join("geometry.native"),
+        format!("{SPINE_HEADER}{GEOMETRY}"),
+    )
+    .unwrap();
+    let path = library.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["libraries"] = json!([{"identity":"test/geometry","source":{
+        "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
+        "revision_namespace":"fixture","revision":"fixture:1",
+        "document":"Geometry","formal_revision":1},
+        "refinement_internals":[{"refinement":"NoSuchRefinement","internal":[]}] }]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(library.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "missing_declaration", "{failure}");
+    assert!(failure.to_string().contains("test/geometry"), "{failure}");
+    assert!(
+        !failure.to_string().contains("compile request"),
+        "{failure}"
+    );
+}
+
 /// FR-027-AC-10 (TC-446 step 7): a library with an empty identity or a
 /// `version` member, and any library beside a `0-draft` program, refuse
 /// `invalid-request` with nothing written.

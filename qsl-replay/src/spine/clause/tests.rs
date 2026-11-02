@@ -39,7 +39,9 @@ use super::{
     admit_clause_observations, run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
     ClauseRunRefusal, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
 };
-use crate::spine::{default_accounting, ComposedUnit, DependencyInput, SpineLimits};
+use crate::spine::{
+    default_accounting, CompileRefusal, ComposedUnit, DependencyInput, SpineLimits, SuppliedLibrary,
+};
 
 // Keep the oracle where the private fixture's actual package input is owned.
 // Original refusals remain typed refusals; only a successful public S4 emission
@@ -4831,6 +4833,68 @@ fn s4_state_package_reads_back_through_i2() {
     )
     .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
     let _ = view;
+}
+
+/// FR-147-AC-16 (TC-552 step 16): a dependency whose own protocol check
+/// refuses prevents the importing unit from reaching S3.
+#[trace("TC-552", "FR-147-AC-16")]
+#[test]
+fn a_refused_dependency_protocol_precedes_the_importing_units_s3_check() {
+    let document = domain_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+        .expect("the dependency domain package is admitted");
+    let dependency = SuppliedLibrary {
+        identity: "test/protocol-dependency".to_owned(),
+        source: qsl_foundation::SourceIdentity::new(
+            "agent-ix",
+            "test:protocol-dependency",
+            "fixture",
+            "fixture:1",
+        ),
+        path: "dependency.native".to_owned(),
+        bytes: format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
+             profile p = \"quire.protocol.finite-global/v1\";\n\
+             model M = {PACKAGE_IDENTITY:?};\n\
+             protocol Twice using p over (input: M::Node) on origin {{\n\
+             role w on M::NoSuchType;\n\
+             run sequence Main {{ }}\n\
+             finish Done as (d: Boolean) {{ true }};\n\
+             }}\n"
+        )
+        .into_bytes(),
+    };
+    let dependencies = DependencyInput::new(vec![dependency]).expect("one dependency is supplied");
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         import \"test/protocol-dependency\" as lib;\n\
+         model Spec = {PACKAGE_IDENTITY:?};\n\
+         refinement CasTwice using inf abstract Spec::Twice concrete Spec {{}}\n"
+    );
+    let refusal = compose(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:importer", "fixture", "fixture:1"),
+        "importer.native",
+        unit.as_bytes(),
+        &packages,
+        &dependencies,
+        SpineLimits::default(),
+    )
+    .expect_err("dependency compilation refuses before the importer is checked");
+    let CompileRefusal::Dependency { path, refusal } = *refusal else {
+        panic!("the library refusal is wrapped as a dependency: {refusal:?}");
+    };
+    assert_eq!(
+        path.iter().map(|name| name.as_str()).collect::<Vec<_>>(),
+        ["test/protocol-dependency"]
+    );
+    assert!(
+        matches!(refusal.as_ref(), CompileRefusal::Check { .. }),
+        "{refusal:?}"
+    );
 }
 
 mod call_site;

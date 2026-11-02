@@ -27,12 +27,13 @@
 //! the caller passes the systems of an already-checked package.
 
 use qsl_eval::simulation::model::{ModelFinding, TimedSystem};
-use qsl_eval::simulation::Limits;
+use qsl_eval::simulation::{Limits, TransitionSystem};
 use qsl_semantics::model::state::ModelState;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::FairnessKind;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::certificate::simulation::CertifiedEdge;
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{
     CounterexampleKind, Lasso, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
@@ -43,9 +44,11 @@ use crate::model_check::replay::{
     timed_prefix, unfair_constraint, ModelTraceRefusal, Position,
 };
 use crate::refinement::{
-    abstract_classes, check_initial, check_step, initial_history, map_state, step_history,
-    stop_verdict, ConcreteStep, RefinementFailure, RefinementPosition, RefinementSystems,
-    StepVerdict, Taken,
+    abstract_classes, check_initial, check_protocol_initial, check_protocol_state_relations,
+    check_protocol_step, check_step, initial_history, map_state, step_history, stop_verdict,
+    AssumptionSide, AssumptionTarget, ConcreteStep, ProtocolAssumptionReason,
+    ProtocolAssumptionWitness, ProtocolRelationError, ProtocolStateRelation, RefinementFailure,
+    RefinementPosition, RefinementSystems, StepVerdict, Taken,
 };
 use crate::result::DisagreementCause;
 use crate::timed::explore::{explore, widen, Closure};
@@ -68,6 +71,597 @@ pub enum RefinementTraceSettlement {
     /// A run budget stopped the replay: V-7 with the limit and its value
     /// (FR-145-AC-6), never `ReplayParity`.
     Stopped(ReachedLimit),
+}
+
+/// FR-145's settlement of an assumption-relation witness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProtocolAssumptionReplaySettlement {
+    /// The paired prefix or lasso and its source-side predicates reproduced.
+    Reproduced,
+    /// Replay disagreed with the typed witness.
+    Inconclusive(DisagreementCause),
+    /// A replay expansion reached a caller limit.
+    Stopped(ReachedLimit),
+}
+
+/// FR-145: replay one typed FR-148 assumption-relation witness over the same
+/// admitted concrete and protocol systems used by the checker. The replay
+/// re-executes both sides of every paired edge, checks the recorded loop
+/// closes, and rechecks the checked predicate locus for a finite
+/// undetermined-relation witness.
+pub fn replay_protocol_assumption_witness(
+    refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    witness: &ProtocolAssumptionWitness,
+) -> Result<ProtocolAssumptionReplaySettlement, ReplayRefusal> {
+    let Some(protocol) = systems.abstract_protocol.as_ref() else {
+        return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+            disagreement(Category::Success),
+        ));
+    };
+    if !assumption_sources_match(refinement, protocol, &witness.identities)? {
+        return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+            disagreement(Category::Success),
+        ));
+    }
+    let Some(mut concrete) = systems.concrete.initial().into_iter().find(|state| {
+        systems
+            .concrete
+            .state_key(state)
+            .is_ok_and(|(_, key)| key == witness.path.concrete_initial)
+    }) else {
+        return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+            disagreement(Category::Success),
+        ));
+    };
+    let Some((mut candidate, initial_closure)) = protocol_initial_closure(
+        refinement,
+        systems,
+        protocol,
+        &concrete,
+        &witness.path.protocol_initial,
+    )?
+    else {
+        return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+            disagreement(Category::Success),
+        ));
+    };
+
+    let mut paired_keys = vec![(
+        systems
+            .concrete
+            .state_key(&concrete)
+            .map_err(|_| fault("assumption-replay-concrete-state-has-a-key"))?
+            .1,
+        protocol
+            .state_key(&candidate)
+            .map_err(|_| fault("assumption-replay-protocol-state-has-a-key"))?
+            .0,
+    )];
+    let mut concrete_states = vec![concrete.clone()];
+    let mut protocol_states = vec![candidate.clone()];
+    let mut paired_transitions =
+        Vec::with_capacity(witness.path.steps.len() + initial_closure.len());
+    for (transition, next) in initial_closure {
+        paired_transitions.push((None, Some(transition)));
+        concrete_states.push(concrete.clone());
+        candidate = next;
+        protocol_states.push(candidate.clone());
+        paired_keys.push((
+            systems
+                .concrete
+                .state_key(&concrete)
+                .map_err(|_| fault("assumption-replay-concrete-state-has-a-key"))?
+                .1,
+            protocol
+                .state_key(&candidate)
+                .map_err(|_| fault("assumption-replay-protocol-state-has-a-key"))?
+                .0,
+        ));
+    }
+    let initial_closure_len = paired_transitions.len();
+    for step in &witness.path.steps {
+        let concrete_transition = step.concrete.clone();
+        if let Some(transition) = &step.concrete {
+            let expansion = systems
+                .concrete
+                .successors(&concrete)
+                .map_err(|_| fault("assumption-replay-concrete-expansion-succeeds"))?;
+            let Some((_, next)) = expansion.successors.into_iter().find(|(enabled, next)| {
+                enabled == transition
+                    && systems
+                        .concrete
+                        .state_key(next)
+                        .is_ok_and(|(_, key)| key == step.concrete_post)
+            }) else {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            };
+            concrete = next;
+        } else if systems
+            .concrete
+            .state_key(&concrete)
+            .map_or(true, |(_, key)| key != step.concrete_post)
+        {
+            return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                disagreement(Category::Success),
+            ));
+        }
+
+        if let Some(identity) = &step.protocol {
+            let expansion = protocol
+                .successors(&candidate)
+                .map_err(|_| fault("assumption-replay-protocol-expansion-succeeds"))?;
+            let Some((_, next)) = expansion.successors.into_iter().find(|(transition, next)| {
+                protocol
+                    .transition_key(transition)
+                    .is_ok_and(|key| key == *identity)
+                    && protocol
+                        .state_key(next)
+                        .is_ok_and(|(key, _)| key == step.protocol_post)
+            }) else {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            };
+            candidate = next;
+        } else if protocol
+            .state_key(&candidate)
+            .map_or(true, |(key, _)| key != step.protocol_post)
+        {
+            return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                disagreement(Category::Success),
+            ));
+        }
+        let protocol_transition = step.protocol.as_ref().and_then(|identity| {
+            // The transition has already been selected by identity above.
+            protocol_states
+                .last()
+                .and_then(|before| protocol.successors(before).ok())
+                .and_then(|expansion| {
+                    expansion
+                        .successors
+                        .into_iter()
+                        .find_map(|(transition, next)| {
+                            (protocol.transition_key(&transition).ok().as_ref() == Some(identity)
+                                && protocol
+                                    .state_key(&next)
+                                    .is_ok_and(|(key, _)| key == step.protocol_post))
+                            .then_some(transition)
+                        })
+                })
+        });
+        if step.protocol.is_some() && protocol_transition.is_none() {
+            return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                disagreement(Category::Success),
+            ));
+        }
+        paired_transitions.push((concrete_transition, protocol_transition));
+        concrete_states.push(concrete.clone());
+        protocol_states.push(candidate.clone());
+        paired_keys.push((
+            systems
+                .concrete
+                .state_key(&concrete)
+                .map_err(|_| fault("assumption-replay-concrete-state-has-a-key"))?
+                .1,
+            protocol
+                .state_key(&candidate)
+                .map_err(|_| fault("assumption-replay-protocol-state-has-a-key"))?
+                .0,
+        ));
+    }
+
+    match witness.reason {
+        ProtocolAssumptionReason::Strengthened => {
+            let Some(loop_entry) = witness.path.loop_entry else {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            };
+            let loop_entry = loop_entry.saturating_add(initial_closure_len);
+            if paired_keys.get(loop_entry) != paired_keys.last() {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            }
+            let loop_end = paired_transitions.len();
+            if loop_entry >= loop_end
+                || !assumption_lasso_matches(
+                    refinement,
+                    systems,
+                    protocol,
+                    &witness.identities,
+                    &concrete_states,
+                    &protocol_states,
+                    &paired_transitions,
+                    loop_entry,
+                    loop_end,
+                )?
+            {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            }
+            Ok(ProtocolAssumptionReplaySettlement::Reproduced)
+        }
+        ProtocolAssumptionReason::RelationUndetermined => {
+            if witness.path.loop_entry.is_some() {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            }
+            let Some(locus) = witness.undecided_locus.as_deref() else {
+                return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ));
+            };
+            let reproduced =
+                if let Some(expected) = locus.strip_prefix("ProtocolContractUndetermined:") {
+                    let expansion = protocol.successors(&candidate).map_err(|_| {
+                        fault("assumption-replay-protocol-undetermined-expansion-succeeds")
+                    })?;
+                    expansion.findings.iter().any(|finding| {
+                    matches!(finding, ModelFinding::ContractUndetermined { transition, clause, .. }
+                        if expected == format!("{clause}:{}", transition.operation()))
+                })
+                } else {
+                    let expansion = systems
+                        .concrete
+                        .successors(&concrete)
+                        .map_err(|_| fault("assumption-replay-undetermined-expansion-succeeds"))?;
+                    expansion.findings.iter().any(|finding| {
+                        matches!(finding, ModelFinding::ContractUndetermined { clause, .. }
+                        if locus == format!("ContractUndetermined:{clause}"))
+                    })
+                };
+            if reproduced {
+                Ok(ProtocolAssumptionReplaySettlement::Reproduced)
+            } else {
+                Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
+                    disagreement(Category::Success),
+                ))
+            }
+        }
+    }
+}
+
+fn assumption_sources_match(
+    refinement: &CheckedRefinement,
+    protocol: &crate::refinement::AbstractProtocolSystem<'_>,
+    identities: &[crate::refinement::AssumptionIdentity],
+) -> Result<bool, ReplayRefusal> {
+    for identity in identities {
+        if identity.granularity == quire_semantic_value::fairness::FairnessGranularity::Each
+            && identity.selected.is_none()
+        {
+            return Ok(false);
+        }
+        let matches = match (&identity.side, &identity.target) {
+            (AssumptionSide::Implementation, AssumptionTarget::Model(assumption)) => {
+                identity.origin == crate::refinement::AssumptionOrigin::Authored
+                    && identity.kind == assumption.kind()
+                    && identity.granularity == assumption.granularity()
+                    && refinement
+                        .concrete_operation_fairness()
+                        .any(|checked| checked == assumption)
+            }
+            (AssumptionSide::Specification, AssumptionTarget::Protocol(assumption)) => {
+                let expected_origin = match assumption.origin() {
+                    qsl_eval::simulation::protocol::FairnessOrigin::Authored => {
+                        crate::refinement::AssumptionOrigin::Authored
+                    }
+                    qsl_eval::simulation::protocol::FairnessOrigin::Scheduler => {
+                        crate::refinement::AssumptionOrigin::Scheduler
+                    }
+                    qsl_eval::simulation::protocol::FairnessOrigin::Memory => {
+                        crate::refinement::AssumptionOrigin::Memory
+                    }
+                };
+                identity.origin == expected_origin
+                    && identity.kind == assumption.kind()
+                    && identity.granularity == assumption.granularity()
+                    && protocol
+                        .environment_fairness()
+                        .map_err(|_| fault("assumption-replay-protocol-fairness-resolves"))?
+                        .contains(assumption)
+            }
+            (
+                AssumptionSide::Specification,
+                AssumptionTarget::RequiredTemporal {
+                    clause,
+                    constraint,
+                    fairness,
+                },
+            ) => {
+                identity.origin == crate::refinement::AssumptionOrigin::Authored
+                    && identity.kind == constraint.kind()
+                    && identity.granularity == constraint.granularity()
+                    && fairness.origin() == qsl_eval::simulation::protocol::FairnessOrigin::Authored
+                    && protocol
+                        .required_temporal_fairness()
+                        .iter()
+                        .any(|required| {
+                            required.clause == *clause && required.constraint == *constraint
+                        })
+                    && protocol
+                        .assumption_fairness()
+                        .map_err(|_| fault("assumption-replay-protocol-fairness-resolves"))?
+                        .iter()
+                        .any(|member| {
+                            member.required_temporal.as_ref().is_some_and(|required| {
+                                required.clause == *clause
+                                    && required.constraint == *constraint
+                                    && member.fairness == *fairness
+                            })
+                        })
+            }
+            _ => false,
+        };
+        if !matches {
+            return Ok(false);
+        }
+    }
+    Ok(!identities.is_empty())
+}
+
+fn protocol_initial_closure(
+    refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    protocol: &crate::refinement::AbstractProtocolSystem<'_>,
+    concrete: &qsl_eval::simulation::model::ModelSimState,
+    target: &[u8],
+) -> Result<
+    Option<(
+        crate::refinement::ProtocolCandidate,
+        Vec<(
+            qsl_eval::simulation::protocol::ProtocolTransition,
+            crate::refinement::ProtocolCandidate,
+        )>,
+    )>,
+    ReplayRefusal,
+> {
+    use std::collections::{BTreeSet, VecDeque};
+
+    let history = initial_history(refinement, &systems.concrete, concrete.state());
+    let Ok(mapped) = map_state(
+        refinement,
+        &systems.concrete,
+        &systems.abstract_system,
+        concrete.state(),
+        &history,
+    ) else {
+        return Ok(None);
+    };
+    let mut visible = mapped.visible;
+    for objects in visible.populations.values_mut() {
+        for object in objects.values_mut() {
+            if let Some(row) = refinement
+                .objects()
+                .iter()
+                .find(|row| row.abstract_type == object.type_identity)
+            {
+                for field in &row.hidden {
+                    object.fields.remove(field);
+                }
+            }
+        }
+    }
+    let (mapped_key, _) = systems
+        .abstract_system
+        .state_key_of(&visible)
+        .map_err(|_| fault("assumption-replay-mapped-initial-has-a-key"))?;
+    let internal: BTreeSet<_> = refinement
+        .abstract_internal()
+        .iter()
+        .map(|class| class.spelling())
+        .collect();
+    let mut queue = VecDeque::new();
+    let mut seen = BTreeSet::new();
+    for root in protocol.initial() {
+        let Some(model) = protocol.model_state(&root) else {
+            continue;
+        };
+        let mut root_visible = model.state().clone();
+        for objects in root_visible.populations.values_mut() {
+            for object in objects.values_mut() {
+                if let Some(row) = refinement
+                    .objects()
+                    .iter()
+                    .find(|row| row.abstract_type == object.type_identity)
+                {
+                    for field in &row.hidden {
+                        object.fields.remove(field);
+                    }
+                }
+            }
+        }
+        let Ok((key, _)) = systems.abstract_system.state_key_of(&root_visible) else {
+            continue;
+        };
+        if key != mapped_key {
+            continue;
+        }
+        let Ok((protocol_key, _)) = protocol.state_key(&root) else {
+            continue;
+        };
+        if !seen.insert(protocol_key) {
+            continue;
+        }
+        queue.push_back((root.clone(), root, Vec::new()));
+    }
+    let mut expanded = 0_u64;
+    while let Some((root, state, path)) = queue.pop_front() {
+        let (key, _) = protocol
+            .state_key(&state)
+            .map_err(|_| fault("assumption-replay-protocol-state-has-a-key"))?;
+        if key == target {
+            return Ok(Some((root, path)));
+        }
+        let expansion = protocol
+            .successors(&state)
+            .map_err(|_| fault("assumption-replay-protocol-initial-expands"))?;
+        for (transition, next) in expansion.successors {
+            let Some(class) = crate::refinement::protocol_transition_class(protocol, &transition)
+            else {
+                continue;
+            };
+            if !internal.contains(class.as_str()) {
+                continue;
+            }
+            let (next_key, _) = protocol
+                .state_key(&next)
+                .map_err(|_| fault("assumption-replay-protocol-state-has-a-key"))?;
+            if !seen.insert(next_key) {
+                continue;
+            }
+            expanded = expanded.saturating_add(1);
+            if expanded > protocol.model().max_candidates() {
+                return Ok(None);
+            }
+            let mut next_path = path.clone();
+            next_path.push((transition, next.clone()));
+            queue.push_back((root.clone(), next, next_path));
+        }
+    }
+    Ok(None)
+}
+
+fn assumption_lasso_matches(
+    refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    protocol: &crate::refinement::AbstractProtocolSystem<'_>,
+    identities: &[crate::refinement::AssumptionIdentity],
+    concrete_states: &[qsl_eval::simulation::model::ModelSimState],
+    protocol_states: &[crate::refinement::ProtocolCandidate],
+    transitions: &[(
+        Option<ModelTransition>,
+        Option<qsl_eval::simulation::protocol::ProtocolTransition>,
+    )],
+    loop_entry: usize,
+    loop_end: usize,
+) -> Result<bool, ReplayRefusal> {
+    let mut implementation = false;
+    // An empty protocol environment-assumption set is vacuously satisfied.
+    let mut specification = true;
+    for identity in identities {
+        let (enabled, taken) = match (&identity.side, &identity.target) {
+            (AssumptionSide::Implementation, AssumptionTarget::Model(assumption)) => {
+                if !refinement
+                    .concrete_operation_fairness()
+                    .any(|checked| checked == assumption)
+                {
+                    return Ok(false);
+                }
+                let operation = assumption.operation();
+                let Some(text) = systems
+                    .concrete
+                    .operation_text(operation.declaring_type(), operation.name())
+                else {
+                    return Ok(false);
+                };
+                let mut enabled = Vec::new();
+                let mut taken = false;
+                for index in loop_entry..loop_end {
+                    let Some(state) = concrete_states.get(index) else {
+                        return Ok(false);
+                    };
+                    let expansion = systems
+                        .concrete
+                        .successors(state)
+                        .map_err(|_| fault("assumption-replay-concrete-lasso-expands"))?;
+                    enabled.push(expansion.successors.iter().any(|(transition, _)| {
+                        transition.operation() == text
+                            && (identity.granularity
+                                == quire_semantic_value::fairness::FairnessGranularity::Whole
+                                || matches!(identity.selected,
+                                    Some(crate::refinement::AssumptionSelectedMember::Model(ref selected))
+                                        if selected == transition))
+                    }));
+                    taken |= transitions.get(index).is_some_and(|(edge, _)| {
+                        edge.as_ref().is_some_and(|transition| {
+                            transition.operation() == text
+                                && (identity.granularity
+                                    == quire_semantic_value::fairness::FairnessGranularity::Whole
+                                    || matches!(identity.selected,
+                                        Some(crate::refinement::AssumptionSelectedMember::Model(ref selected))
+                                            if selected == transition))
+                        })
+                    });
+                }
+                (enabled, taken)
+            }
+            (
+                AssumptionSide::Specification,
+                AssumptionTarget::Protocol(assumption)
+                | AssumptionTarget::RequiredTemporal {
+                    fairness: assumption,
+                    ..
+                },
+            ) => {
+                if !protocol
+                    .assumption_fairness()
+                    .map_err(|_| fault("assumption-replay-protocol-fairness-resolves"))?
+                    .iter()
+                    .any(|member| member.fairness == *assumption)
+                {
+                    return Ok(false);
+                }
+                let mut enabled = Vec::new();
+                let mut taken = false;
+                for index in loop_entry..loop_end {
+                    let Some(state) = protocol_states.get(index) else {
+                        return Ok(false);
+                    };
+                    let expansion = protocol
+                        .successors(state)
+                        .map_err(|_| fault("assumption-replay-protocol-lasso-expands"))?;
+                    enabled.push(expansion.successors.iter().any(|(transition, _)| {
+                        assumption.class_of(transition).is_some_and(|class| {
+                            identity.granularity
+                                == quire_semantic_value::fairness::FairnessGranularity::Whole
+                                || matches!(identity.selected,
+                                    Some(crate::refinement::AssumptionSelectedMember::Protocol(ref selected))
+                                        if selected == &class)
+                        })
+                    }));
+                    taken |= transitions.get(index).is_some_and(|(_, edge)| {
+                        edge.as_ref().is_some_and(|transition| {
+                            assumption.class_of(transition).is_some_and(|class| {
+                                identity.granularity
+                                    == quire_semantic_value::fairness::FairnessGranularity::Whole
+                                    || matches!(identity.selected,
+                                        Some(crate::refinement::AssumptionSelectedMember::Protocol(ref selected))
+                                            if selected == &class)
+                            })
+                        })
+                    });
+                }
+                (enabled, taken)
+            }
+            _ => return Ok(false),
+        };
+        let satisfied = match identity.kind {
+            FairnessKind::Weak => !enabled.iter().all(|enabled| *enabled) || taken,
+            FairnessKind::Strong => !enabled.iter().any(|enabled| *enabled) || taken,
+        };
+        match identity.side {
+            AssumptionSide::Implementation => {
+                implementation = true;
+                if satisfied {
+                    return Ok(false);
+                }
+            }
+            AssumptionSide::Specification => {
+                specification = true;
+                if !satisfied {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    Ok(implementation && specification)
 }
 
 /// What running the checks along the prefix found.
@@ -201,26 +795,55 @@ fn settle_positions(
                 let Some(taken) = payload.prefix.get(step) else {
                     return Err(fault("a-position-has-a-step"));
                 };
-                check_step(
+                let step = ConcreteStep {
+                    position: u64::try_from(index).unwrap_or(u64::MAX),
+                    transition: Some(&taken.transition),
+                    post: &position.state,
+                };
+                match systems.abstract_protocol.as_ref() {
+                    Some(protocol) => {
+                        check_protocol_step(
+                            refinement,
+                            &systems.concrete,
+                            &systems.abstract_system,
+                            protocol,
+                            pre,
+                            &step,
+                        )
+                        .verdict
+                    }
+                    None => {
+                        check_step(
+                            refinement,
+                            &systems.concrete,
+                            &systems.abstract_system,
+                            pre,
+                            &step,
+                        )
+                        .verdict
+                    }
+                }
+            }
+            _ => match systems.abstract_protocol.as_ref() {
+                Some(protocol) => {
+                    check_protocol_initial(
+                        refinement,
+                        &systems.concrete,
+                        &systems.abstract_system,
+                        protocol,
+                        payload.initial_state,
+                        position.state.state(),
+                    )
+                    .verdict
+                }
+                None => check_initial(
                     refinement,
                     &systems.concrete,
                     &systems.abstract_system,
-                    pre,
-                    &ConcreteStep {
-                        position: u64::try_from(index).unwrap_or(u64::MAX),
-                        transition: Some(&taken.transition),
-                        post: &position.state,
-                    },
-                )
-                .verdict
-            }
-            _ => check_initial(
-                refinement,
-                &systems.concrete,
-                &systems.abstract_system,
-                payload.initial_state,
-                position.state.state(),
-            ),
+                    payload.initial_state,
+                    position.state.state(),
+                ),
+            },
         };
         match verdict {
             StepVerdict::Passes { post, taken } => {
@@ -229,7 +852,55 @@ fn settle_positions(
                 if index > 0 {
                     taken_by.push(taken);
                 }
-                previous = Some(post);
+                previous = Some(post.clone());
+                if let Some(protocol) = systems.abstract_protocol.as_ref() {
+                    let state_edges = match protocol_relation_edges(
+                        refinement,
+                        systems,
+                        &post,
+                        &position.state,
+                        u64::try_from(index).unwrap_or(u64::MAX),
+                    )? {
+                        Ok(edges) => edges,
+                        Err(relation_found) => {
+                            found = relation_found;
+                            break;
+                        }
+                    };
+                    match check_protocol_state_relations(
+                        refinement,
+                        &systems.concrete,
+                        protocol,
+                        &post,
+                        &position.state,
+                        &state_edges,
+                        u64::try_from(index).unwrap_or(u64::MAX),
+                    ) {
+                        Ok(ProtocolStateRelation::Decided {
+                            failure: Some(failure),
+                            ..
+                        }) => {
+                            found = Found::Failed(failure);
+                            break;
+                        }
+                        Ok(ProtocolStateRelation::Undetermined { .. }) => {
+                            found = Found::Undetermined;
+                            break;
+                        }
+                        Ok(ProtocolStateRelation::Decided { failure: None, .. }) => {}
+                        Err(ProtocolRelationError::Expansion(stop)) => {
+                            match stop_verdict(protocol.model(), stop) {
+                                StepVerdict::Stopped(reached) => found = Found::Stopped(reached),
+                                StepVerdict::Undetermined(_) => found = Found::Undetermined,
+                                _ => return Err(fault("protocol-relation-expansion")),
+                            }
+                            break;
+                        }
+                        Err(ProtocolRelationError::Fault(_)) => {
+                            return Err(fault("protocol-state-relation"));
+                        }
+                    }
+                }
             }
             StepVerdict::Fails(failure) => {
                 found = Found::Failed(failure);
@@ -267,7 +938,7 @@ fn settle_positions(
                 found = Found::Undefined(Box::new(evaluation));
                 break;
             }
-            StepVerdict::Undetermined(_) => {
+            StepVerdict::Undetermined(_) | StepVerdict::ProtocolContractUndetermined { .. } => {
                 found = Found::Undetermined;
                 break;
             }
@@ -279,6 +950,15 @@ fn settle_positions(
         }
     }
     if let Some(lasso) = payload.lasso {
+        if let Some(RefinementFailure::Divergence {
+            protocol_class: Some(class),
+            ..
+        }) = payload.refinement.as_ref()
+        {
+            return replay_protocol_divergence(
+                refinement, systems, payload, lasso, positions, mapped, class,
+            );
+        }
         let walk = Walk {
             positions,
             trail,
@@ -317,6 +997,78 @@ fn settle_positions(
     })
 }
 
+/// Recompute the outgoing edges needed by FR-148's state-level relation at
+/// one replay position. The product checker only runs these relations after
+/// every outgoing step rule has passed, so replay applies the same ordering.
+fn protocol_relation_edges(
+    refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    position: &RefinementPosition,
+    concrete_state: &qsl_eval::simulation::model::ModelSimState,
+    position_index: u64,
+) -> Result<Result<Vec<CertifiedEdge>, Found>, ReplayRefusal> {
+    let Some(protocol) = systems.abstract_protocol.as_ref() else {
+        return Ok(Ok(Vec::new()));
+    };
+    let expansion = match systems.concrete.successors(concrete_state) {
+        Ok(expansion) => expansion,
+        Err(stop) => {
+            return Ok(match stop_verdict(&systems.concrete, stop) {
+                StepVerdict::Stopped(reached) => Err(Found::Stopped(reached)),
+                StepVerdict::Undetermined(_) => Err(Found::Undetermined),
+                _ => return Err(fault("protocol-replay-concrete-expansion")),
+            });
+        }
+    };
+    if expansion
+        .findings
+        .iter()
+        .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+    {
+        return Ok(Err(Found::Undetermined));
+    }
+    let mut edges = Vec::with_capacity(expansion.successors.len().max(1));
+    for (transition, post) in expansion.successors {
+        let verdict = check_protocol_step(
+            refinement,
+            &systems.concrete,
+            &systems.abstract_system,
+            protocol,
+            position,
+            &ConcreteStep {
+                position: position_index.saturating_add(1),
+                transition: Some(&transition),
+                post: &post,
+            },
+        )
+        .verdict;
+        match verdict {
+            StepVerdict::Passes { taken, .. } => edges.push(CertifiedEdge {
+                transition: Some(transition),
+                post: 0,
+                taken,
+            }),
+            StepVerdict::Fails(failure) => return Ok(Err(Found::Failed(failure))),
+            StepVerdict::Undefined(evaluation) => {
+                return Ok(Err(Found::Undefined(Box::new(evaluation))));
+            }
+            StepVerdict::Undetermined(_) | StepVerdict::ProtocolContractUndetermined { .. } => {
+                return Ok(Err(Found::Undetermined))
+            }
+            StepVerdict::Stopped(reached) => return Ok(Err(Found::Stopped(reached))),
+            StepVerdict::Fault(_) => return Err(fault("protocol-replay-step")),
+        }
+    }
+    if edges.is_empty() {
+        edges.push(CertifiedEdge {
+            transition: None,
+            post: 0,
+            taken: Taken::Stutter,
+        });
+    }
+    Ok(Ok(edges))
+}
+
 /// What replay recomputed along a lasso's prefix and one pass of its loop.
 struct Walk<'p> {
     /// The concrete positions, re-executed.
@@ -350,7 +1102,10 @@ fn replay_lasso(
         }
         Found::Stopped(reached) => return Ok(RefinementTraceSettlement::Stopped(reached)),
     }
-    let (Some(RefinementFailure::Divergence { constraint })
+    let (Some(RefinementFailure::Divergence {
+        constraint: Some(constraint),
+        protocol_class: None,
+    })
     | Some(RefinementFailure::AbstractUnfair { constraint })) = payload.refinement.as_ref()
     else {
         return Err(refused(ModelTraceRefusal::NoRefinementFailure));
@@ -382,7 +1137,10 @@ fn replay_lasso(
                 return Ok(RefinementTraceSettlement::Stopped(reached))
             }
             StepVerdict::Fault(_) => return Err(fault("refinement-step")),
-            StepVerdict::Fails(_) | StepVerdict::Undefined(_) | StepVerdict::Undetermined(_) => {
+            StepVerdict::Fails(_)
+            | StepVerdict::Undefined(_)
+            | StepVerdict::Undetermined(_)
+            | StepVerdict::ProtocolContractUndetermined { .. } => {
                 return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
                     Category::Violation,
                 )))
@@ -450,6 +1208,8 @@ fn replay_lasso(
         .chain(loop_taken.iter().flat_map(|taken| match taken {
             Taken::Abstract(transitions) => transitions.as_slice(),
             Taken::Stutter => &[],
+            Taken::Protocol(_) => &[],
+            Taken::ProtocolTraces(_) => &[],
         }))
         .cloned()
         .collect();
@@ -478,6 +1238,178 @@ fn replay_lasso(
     })
 }
 
+/// Replay FR-148's fairness-independent observable divergence check over the
+/// same protocol candidate sets and the concrete lasso.
+fn replay_protocol_divergence(
+    _refinement: &CheckedRefinement,
+    systems: &RefinementSystems<'_>,
+    payload: &TemporalCounterexample,
+    lasso: Lasso,
+    positions: &[Position],
+    mapped: Vec<ModelState>,
+    class: &str,
+) -> Result<RefinementTraceSettlement, ReplayRefusal> {
+    close_loop(&systems.concrete, positions, lasso)?;
+    let (
+        Some(protocol),
+        Some(RefinementFailure::Divergence {
+            protocol_class: Some(_),
+            ..
+        }),
+    ) = (
+        systems.abstract_protocol.as_ref(),
+        payload.refinement.as_ref(),
+    )
+    else {
+        return Err(fault("a-protocol-divergence-has-an-admitted-protocol"));
+    };
+    let start = lasso.entry;
+    let end = positions.len();
+    if start >= end {
+        return Err(fault("a-protocol-divergence-loop-has-a-step"));
+    }
+    let loop_taken = payload
+        .prefix
+        .get(start..)
+        .ok_or_else(|| fault("a-lasso-loop-is-in-the-prefix"))?;
+    let terminal = usize::from(lasso.terminal_stutter);
+    if loop_taken.len().saturating_add(terminal)
+        != end.saturating_sub(start + 1).saturating_add(terminal)
+    {
+        return Err(fault("a-protocol-divergence-loop-aligns-with-positions"));
+    }
+    // Replay has already recomputed every protocol candidate in `trail`.
+    // Reconstruct them once more from the concrete prefix for explicit class
+    // enabledness and require the loop to contain only internal stutters.
+    let mut trail = Vec::new();
+    let mut previous: Option<RefinementPosition> = None;
+    let mut taken_by = Vec::new();
+    for (index, position) in positions.iter().enumerate() {
+        let checked = if let Some(pre) = &previous {
+            let Some(step) = payload.prefix.get(index - 1) else {
+                return Err(fault("a-protocol-divergence-position-has-a-step"));
+            };
+            check_protocol_step(
+                _refinement,
+                &systems.concrete,
+                &systems.abstract_system,
+                protocol,
+                pre,
+                &ConcreteStep {
+                    position: u64::try_from(index).unwrap_or(u64::MAX),
+                    transition: Some(&step.transition),
+                    post: &position.state,
+                },
+            )
+        } else {
+            check_protocol_initial(
+                _refinement,
+                &systems.concrete,
+                &systems.abstract_system,
+                protocol,
+                payload.initial_state,
+                position.state.state(),
+            )
+        };
+        match checked.verdict {
+            StepVerdict::Passes { post, taken } => {
+                previous = Some(post.clone());
+                trail.push(post);
+                if index > 0 {
+                    taken_by.push(taken);
+                }
+            }
+            StepVerdict::Stopped(reached) => {
+                return Ok(RefinementTraceSettlement::Stopped(reached))
+            }
+            StepVerdict::Fails(_)
+            | StepVerdict::Undefined(_)
+            | StepVerdict::Undetermined(_)
+            | StepVerdict::ProtocolContractUndetermined { .. } => {
+                return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+                    Category::Violation,
+                )))
+            }
+            StepVerdict::Fault(_) => return Err(fault("protocol-divergence-replay-step")),
+        }
+    }
+    if lasso.terminal_stutter {
+        let (Some(pre), Some(position)) = (trail.last(), positions.last()) else {
+            return Err(fault("a-terminal-stutter-has-a-position"));
+        };
+        let checked = check_protocol_step(
+            _refinement,
+            &systems.concrete,
+            &systems.abstract_system,
+            protocol,
+            pre,
+            &ConcreteStep {
+                position: u64::try_from(positions.len()).unwrap_or(u64::MAX),
+                transition: None,
+                post: &position.state,
+            },
+        );
+        match checked.verdict {
+            StepVerdict::Passes { post, taken } => {
+                trail.push(post);
+                taken_by.push(taken);
+            }
+            StepVerdict::Stopped(reached) => {
+                return Ok(RefinementTraceSettlement::Stopped(reached))
+            }
+            StepVerdict::Fault(_) => return Err(fault("protocol-terminal-stutter-replay")),
+            StepVerdict::Fails(_)
+            | StepVerdict::Undefined(_)
+            | StepVerdict::Undetermined(_)
+            | StepVerdict::ProtocolContractUndetermined { .. } => {
+                return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+                    Category::Violation,
+                )))
+            }
+        }
+    }
+    let loop_end = start
+        .saturating_add(loop_taken.len())
+        .saturating_add(terminal);
+    let loop_positions = trail
+        .get(start..loop_end)
+        .ok_or_else(|| fault("a-protocol-divergence-loop-is-in-the-trail"))?;
+    if taken_by
+        .get(start..)
+        .is_none_or(|steps| steps.iter().any(|taken| *taken != Taken::Stutter))
+    {
+        return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+            Category::Violation,
+        )));
+    }
+    for position in loop_positions {
+        for candidate in &position.abstract_protocol_states {
+            let expansion = protocol
+                .successors(candidate)
+                .map_err(|_| fault("protocol-divergence-expansion"))?;
+            if !expansion.successors.iter().any(|(transition, _)| {
+                crate::refinement::protocol_transition_class(protocol, transition).as_deref()
+                    == Some(class)
+                    && !_refinement
+                        .abstract_internal()
+                        .iter()
+                        .any(|internal| internal.spelling() == class)
+            }) {
+                return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
+                    Category::Success,
+                )));
+            }
+        }
+    }
+    Ok(RefinementTraceSettlement::Reproduced {
+        failure: payload
+            .refinement
+            .clone()
+            .ok_or_else(|| fault("a-protocol-divergence-has-a-failure"))?,
+        mapped,
+    })
+}
+
 /// Whether two refinement positions of one concrete state are one product
 /// state: equal history values and equal candidate sets.
 fn same_product_state(
@@ -498,9 +1430,21 @@ fn same_product_state(
             })
             .collect::<Result<Vec<_>, _>>()
     };
+    let protocol_candidates = |position: &RefinementPosition| {
+        let Some(protocol) = &systems.abstract_protocol else {
+            return Ok(Vec::new());
+        };
+        position
+            .abstract_protocol_states
+            .iter()
+            .map(|state| protocol.state_key(state).map(|(key, _)| key))
+            .collect::<Result<Vec<_>, _>>()
+    };
     Ok(left.history.key(&systems.concrete).map_err(encodes)?
         == right.history.key(&systems.concrete).map_err(encodes)?
-        && candidates(left).map_err(encodes)? == candidates(right).map_err(encodes)?)
+        && candidates(left).map_err(encodes)? == candidates(right).map_err(encodes)?
+        && protocol_candidates(left).map_err(encodes)?
+            == protocol_candidates(right).map_err(encodes)?)
 }
 
 /// What enabledness at a refinement position is.

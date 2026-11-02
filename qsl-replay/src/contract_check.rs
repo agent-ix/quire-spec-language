@@ -1295,6 +1295,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 concrete: state.state().clone(),
                 history,
                 abstract_states: vec![mapped.visible],
+                abstract_protocol_states: Vec::new(),
             },
             Err(failure) => {
                 evaluated.checks += 1;
@@ -1377,6 +1378,12 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
                 ));
             }
             StepVerdict::Undetermined(Undetermined::UndecidedSuccessor) => {
+                evaluated.undecided = true;
+            }
+            StepVerdict::Undetermined(Undetermined::ProtocolAssumptionNotEstablished(_)) => {
+                evaluated.undecided = true;
+            }
+            StepVerdict::ProtocolContractUndetermined { .. } => {
                 evaluated.undecided = true;
             }
             StepVerdict::Stopped(_) => {

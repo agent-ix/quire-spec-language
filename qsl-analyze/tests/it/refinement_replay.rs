@@ -90,6 +90,7 @@ fn outcome(subject: &Subject<'_>) -> RefinementOutcome {
             },
             abstract_package: subject.package,
             abstract_initial: vec![subject.abstract_initial.clone()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },
@@ -454,7 +455,7 @@ fn the_divergence_terminal_stutter_and_pair_lassos_replay() {
     let payload = lasso(outcome(&subject));
     let (failure, positions) = reproduced(replay(&subject, &payload));
     assert!(
-        matches!(&failure, RefinementFailure::Divergence { constraint }
+        matches!(&failure, RefinementFailure::Divergence { constraint: Some(constraint), .. }
         if constraint.operation().name() == "inc")
     );
     assert_eq!(Some(failure), payload.refinement);
@@ -498,7 +499,11 @@ fn a_lasso_of_another_kind_disagrees_and_an_unfair_lasso_is_refused() {
     let world = World::new(&divergence_refinement());
     let subject = cas(&world);
     let payload = lasso(outcome(&subject));
-    let Some(RefinementFailure::Divergence { constraint }) = payload.refinement.clone() else {
+    let Some(RefinementFailure::Divergence {
+        constraint: Some(constraint),
+        ..
+    }) = payload.refinement.clone()
+    else {
         panic!("a divergence");
     };
     let mut unfair = payload.clone();
@@ -539,7 +544,10 @@ fn a_lasso_of_another_kind_disagrees_and_an_unfair_lasso_is_refused() {
     else {
         panic!("an abstract unfairness");
     };
-    divergent.refinement = Some(RefinementFailure::Divergence { constraint });
+    divergent.refinement = Some(RefinementFailure::Divergence {
+        constraint: Some(constraint),
+        protocol_class: None,
+    });
     assert!(matches!(
         replay(&subject, &divergent),
         Ok(RefinementTraceSettlement::Inconclusive(_))
@@ -781,7 +789,10 @@ fn unfair(constraint: quire_semantic_value::fairness::FairnessConstraint) -> Ref
 }
 
 fn divergence(constraint: quire_semantic_value::fairness::FairnessConstraint) -> RefinementFailure {
-    RefinementFailure::Divergence { constraint }
+    RefinementFailure::Divergence {
+        constraint: Some(constraint),
+        protocol_class: None,
+    }
 }
 
 fn agrees(settlement: Result<RefinementTraceSettlement, ReplayRefusal>) -> bool {

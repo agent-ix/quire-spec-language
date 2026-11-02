@@ -238,21 +238,26 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: Some(payload),
+                    value: Some(payload.clone()),
                     enc: enc.clone(),
                 },
             );
-            let mut transition =
-                ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), enc)
-                    .recording(record)
-                    .flowing(QueueFlow {
-                        key: fifo_key,
-                        entry: appended,
-                        before: 0,
-                        displaced: displaced
-                            .as_ref()
-                            .map(|(entry, before)| (entry.bytes.clone(), *before)),
-                    });
+            let mut transition = ProtocolTransition::record(
+                StepKind::Send,
+                path.clone(),
+                text.clone(),
+                enc,
+                payload,
+            )
+            .recording(record)
+            .flowing(QueueFlow {
+                key: fifo_key,
+                entry: appended,
+                before: 0,
+                displaced: displaced
+                    .as_ref()
+                    .map(|(entry, before)| (entry.bytes.clone(), *before)),
+            });
             let dropped = match (outcome, &displaced) {
                 (SendOutcome::Lost, _) => Some(text.clone()),
                 (_, Some((entry, _))) => Some(self.program.text(entry.send)?.to_owned()),
@@ -325,27 +330,32 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: Some(payload),
+                    value: Some(payload.clone()),
                     enc: enc.clone(),
                 },
             );
             if let Some(carried) = &entry.carried {
                 next.memory = self.memory.receive(&next.memory, path, carried);
             }
-            let transition =
-                ProtocolTransition::record(StepKind::Receive, path.clone(), text.clone(), enc)
-                    .removing(QueueEvent {
-                        channel: channel.clone(),
-                        instance: ordinal,
-                        send: self.program.text(entry.send)?.to_owned(),
-                        removal: Removal::Received,
-                    })
-                    .flowing(QueueFlow {
-                        key: fifo_key,
-                        entry: entry.bytes.clone(),
-                        before,
-                        displaced: None,
-                    });
+            let transition = ProtocolTransition::record(
+                StepKind::Receive,
+                path.clone(),
+                text.clone(),
+                enc,
+                payload,
+            )
+            .removing(QueueEvent {
+                channel: channel.clone(),
+                instance: ordinal,
+                send: self.program.text(entry.send)?.to_owned(),
+                removal: Removal::Received,
+            })
+            .flowing(QueueFlow {
+                key: fifo_key,
+                entry: entry.bytes.clone(),
+                before,
+                displaced: None,
+            });
             if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
                 && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
             {

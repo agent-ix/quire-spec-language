@@ -1796,7 +1796,13 @@ fn protocol(g: &mut Grammar) {
     );
     g.insert(
         P::ProtocolRequirement,
-        s(vec![x("requires"), x("temporal"), ident(), x(";")]),
+        s(vec![
+            x("requires"),
+            x("temporal"),
+            ident(),
+            star(s(vec![x("::"), ident()])),
+            x(";"),
+        ]),
     );
     g.insert(
         P::NodeReference,

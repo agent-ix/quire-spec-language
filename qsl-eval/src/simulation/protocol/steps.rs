@@ -107,6 +107,57 @@ fn policy_holds(policy: &CheckedJoinPolicy, joined: usize, completed: usize) -> 
 }
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
+    /// FR-148/FR-379: classify one admitted protocol state using the same
+    /// bounded expansion and terminal predicate used by the ordinary
+    /// protocol subject interface.
+    pub fn terminal_class_for_state(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<crate::simulation::model::TerminalClass, ExpansionStop> {
+        self.successors_and_terminal(state)
+            .map(|(_, terminal)| terminal)
+    }
+
+    /// One bounded expansion and terminal classification of the same state,
+    /// so product relation checks account for exactly the successors they
+    /// inspect.
+    pub fn successors_and_terminal(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<
+        (
+            Expansion<ProtocolTransition, ProtocolState<M>, ModelFinding>,
+            crate::simulation::model::TerminalClass,
+        ),
+        ExpansionStop,
+    > {
+        let (expansion, cut) = self.expand_bounded(state)?;
+        let terminal = self.classify(state, &expansion, cut)?;
+        Ok((expansion, terminal))
+    }
+
+    /// The protocol transition's complete binder record in FR-181's typed
+    /// canonical JSON form. `None` means the transition has no record binder.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the admitted binder has no typed canonical
+    /// representation.
+    pub fn binder_record_json(
+        &self,
+        transition: &ProtocolTransition,
+    ) -> Result<Option<serde_json::Value>, ExpansionStop> {
+        let Some(record) = transition.binder_record() else {
+            return Ok(None);
+        };
+        let encoded = value_enc(record, self.model.typing());
+        let bytes = quire_canonical::to_vec(&encoded, quire_canonical::Limits::new(u64::MAX))
+            .map_err(|_| super::broken())?;
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|_| super::broken())
+    }
+
     /// Every enabled step of `state` with its successor, in ascending JCS
     /// bytes of its identity (FR-215 "The system"), and the state's
     /// findings: FR-120's invariant findings of its model state, then each
@@ -781,7 +832,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: Some(value),
+                    value: Some(value.clone()),
                     enc: enc.clone(),
                 },
             );
@@ -790,7 +841,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((
-                    ProtocolTransition::record(StepKind::Event, path.clone(), text.clone(), enc),
+                    ProtocolTransition::record(
+                        StepKind::Event,
+                        path.clone(),
+                        text.clone(),
+                        enc,
+                        value,
+                    ),
                     next,
                 ));
             }
@@ -1694,6 +1751,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     path.clone(),
                     finish.text.clone(),
                     value_enc(&record, self.model.typing()),
+                    record,
                 ),
                 next,
             ));

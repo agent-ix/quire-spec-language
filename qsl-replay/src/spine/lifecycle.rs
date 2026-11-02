@@ -537,10 +537,33 @@ pub fn check(
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
-    check_with_execution_points(
+    check_with_refinement_internals(
+        parsed,
+        package_name,
+        None,
+        models,
+        dependencies,
+        limits,
+        cancel,
+    )
+}
+
+/// S3 and S4 with the unit's unchecked internal-list value and each
+/// dependency library's own value carried to its source owner (FR-147/FR-099).
+pub fn check_with_refinement_internals(
+    parsed: &ParsedSource,
+    package_name: String,
+    refinement_internals: Option<serde_json::Value>,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    check_with_execution_points_and_refinement_internals(
         parsed,
         package_name,
         &BTreeMap::new(),
+        refinement_internals,
         models,
         dependencies,
         limits,
@@ -555,6 +578,30 @@ pub fn check_with_execution_points(
     parsed: &ParsedSource,
     package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    check_with_execution_points_and_refinement_internals(
+        parsed,
+        package_name,
+        execution_points,
+        None,
+        models,
+        dependencies,
+        limits,
+        cancel,
+    )
+}
+
+/// S3 and S4 with both the accepted execution points and unchecked
+/// refinement-internal-list value carried to the unit owner (FR-147/FR-099).
+pub fn check_with_execution_points_and_refinement_internals(
+    parsed: &ParsedSource,
+    package_name: String,
+    execution_points: &super::StateClauseExecutionPoints,
+    refinement_internals: Option<serde_json::Value>,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -592,7 +639,9 @@ pub fn check_with_execution_points(
             package_name.clone(),
             models.models.clone(),
             execution_points.clone(),
+            refinement_internals,
         )?;
+        resolution.check_unimported_refinement_values()?;
         *work = resolution.work;
         let mut library_packages = BTreeMap::new();
         let (library_names, libraries) = resolution
@@ -947,6 +996,8 @@ struct Frame {
     /// Accepted points supplied for the root unit. Library frames always
     /// carry an empty map because they compile independently.
     execution_points: super::StateClauseExecutionPoints,
+    /// The unchecked refinement-internal-list value owned by this source.
+    refinement_internals: Option<serde_json::Value>,
     /// The index of the import being resolved.
     next: usize,
     admitted: Vec<AdmittedImport>,
@@ -959,6 +1010,7 @@ impl Frame {
         package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
+        refinement_internals: Option<serde_json::Value>,
     ) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
@@ -967,6 +1019,7 @@ impl Frame {
             unit: parsed.unit.clone(),
             models,
             execution_points,
+            refinement_internals,
             next: 0,
             admitted: Vec::with_capacity(imports),
             links: Vec::with_capacity(imports),
@@ -1026,6 +1079,51 @@ fn unwind(libraries: &[Library], refusal: Box<CompileRefusal>) -> Box<CompileRef
 }
 
 impl<'a> Resolution<'a> {
+    /// Compile supplied libraries with their own internal-list input even
+    /// when the unit does not import them, so a malformed supplied value is
+    /// located at its source owner and refuses the whole compile (FR-147-AC-10).
+    fn check_unimported_refinement_values(&mut self) -> Result<(), Box<CompileRefusal>> {
+        let pending: Vec<_> = self
+            .dependencies
+            .refinement_internals
+            .keys()
+            .filter(|identity| !self.compiled.contains_key(*identity))
+            .cloned()
+            .collect();
+        for identity in pending {
+            let Some(supplied) = self.dependencies.libraries.get(&identity) else {
+                return Err(Box::new(CompileRefusal::DependencyInput(
+                    super::DependencyInputRefusal::UnknownRefinementInternals {
+                        identity: identity.as_str().to_owned(),
+                    },
+                )));
+            };
+            let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
+            let parsed = charged(cancel, &mut self.work.s1, || {
+                parse_unit(
+                    supplied.source.clone(),
+                    &supplied.path,
+                    &supplied.bytes,
+                    limits.source,
+                    cancel,
+                )
+            })?;
+            let models = charged(cancel, &mut self.work.i1, || {
+                select_models(&parsed, packages, limits.model, cancel)
+            })?;
+            let refinement_internals = self.dependencies.refinement_internals(&identity).cloned();
+            self.check_unit(
+                &parsed,
+                identity.as_str().to_owned(),
+                models,
+                super::StateClauseExecutionPoints::new(),
+                refinement_internals,
+            )
+            .map_err(|refusal| wrap(&identity, refusal))?;
+        }
+        Ok(())
+    }
+
     /// One library through S1 and I1, ready to resolve its own imports.
     fn begin_library(
         &mut self,
@@ -1055,6 +1153,7 @@ impl<'a> Resolution<'a> {
                 identity.as_str().to_owned(),
                 models,
                 super::StateClauseExecutionPoints::new(),
+                self.dependencies.refinement_internals(&identity).cloned(),
             ),
         })
     }
@@ -1112,6 +1211,9 @@ impl<'a> Resolution<'a> {
                 refusal,
             })
         })?;
+        if let Some(value) = frame.refinement_internals.clone() {
+            declarations = declarations.with_refinement_internals(value);
+        }
         // FR-302: link the dispatch table of each family a dispatched call's
         // member name may name, under the caller's model normalization
         // limits, before `check` types the calls against them. A family
@@ -1165,8 +1267,15 @@ impl<'a> Resolution<'a> {
         package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
+        refinement_internals: Option<serde_json::Value>,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
-        let mut root = Frame::new(parsed, package_name, models, execution_points);
+        let mut root = Frame::new(
+            parsed,
+            package_name,
+            models,
+            execution_points,
+            refinement_internals,
+        );
         let mut libraries: Vec<Library> = Vec::new();
         loop {
             let frame = current(&mut root, &mut libraries);

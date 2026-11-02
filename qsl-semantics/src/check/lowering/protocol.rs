@@ -2168,6 +2168,10 @@ impl Lowering<'_> {
         class: &RefinementCatalogClass,
         location: &Location,
     ) -> Result<Option<KeyedCatalogClass>, CheckRefusal> {
+        let dependency = match class.node() {
+            Some(RefinementCatalogNode::Imported { package, .. }) => Some(package.clone()),
+            _ => None,
+        };
         if let Some(model) = class.memory_model() {
             // A memory class keys on its typed step kind (FR-375-AC-23,
             // #1718), matched exhaustively: `flush` is a `tso` class only.
@@ -2200,6 +2204,7 @@ impl Lowering<'_> {
                     None => return Ok(None),
                 }
             }
+            Some(RefinementCatalogNode::Imported { node, .. }) => node.clone(),
             Some(RefinementCatalogNode::Channel { protocol, channel }) => {
                 match self
                     .protocol_members
@@ -2228,19 +2233,24 @@ impl Lowering<'_> {
             }
             None => return Err(catalog_fault(location, "declared-catalog-class-has-node")),
         };
-        let binder_types = class
-            .binder_types()
-            .iter()
-            .map(|value_type| {
-                let key = self.type_node(value_type, location)?;
-                self.generated_at(key.clone(), location);
-                Ok(key)
-            })
-            .collect::<Result<_, CheckRefusal>>()?;
+        let binder_types = if let Some(exact) = class.binder_type_nodes() {
+            exact.to_vec()
+        } else {
+            class
+                .binder_types()
+                .iter()
+                .map(|value_type| {
+                    let key = self.type_node(value_type, location)?;
+                    self.generated_at(key.clone(), location);
+                    Ok(key)
+                })
+                .collect::<Result<_, CheckRefusal>>()?
+        };
         Ok(Some(KeyedCatalogClass::Declared {
             class: class.class().to_owned(),
             node,
             binder_types,
+            dependency,
         }))
     }
 }
@@ -2300,9 +2310,10 @@ mod requirement_key_tests {
         Location::root(Origin::Expression)
     }
 
-    /// FR-383-AC-17: a required clause no emitted node carries refuses
-    /// `missing-name` naming the clause, never an internal fault.
-    #[ix_trace_rs::trace("FR-383-AC-17", "TC-1063")]
+    /// FR-383-AC-17 / FR-148-AC-13: the S3-bound requirement index has no
+    /// emitted temporal node at S4, so compilation refuses before a product
+    /// can be constructed.
+    #[ix_trace_rs::trace("FR-383-AC-17", "FR-148-AC-13", "TC-1063")]
     #[test]
     fn a_required_temporal_without_a_key_is_missing_name() {
         let Err(refusal) = resolve_temporal_requirement_keys(
@@ -2313,6 +2324,10 @@ mod requirement_key_tests {
         ) else {
             panic!("an unkeyed, unrefused required clause refuses");
         };
+        assert_eq!(
+            refusal.cause.code(),
+            qsl_foundation::Code::MissingDeclaration
+        );
         assert_eq!(refusal.cause, CheckCause::MissingName("Due".to_owned()));
     }
 

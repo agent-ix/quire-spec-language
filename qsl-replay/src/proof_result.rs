@@ -824,6 +824,10 @@ pub enum InconclusiveCause {
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
+    /// FR-148's typed product-level environment-assumption relation could not
+    /// be established. This remains inconclusive and is never a QSpec
+    /// `RefinementFailure`.
+    ProtocolAssumptionNotEstablished(crate::refinement::ProtocolAssumptionWitness),
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {
         /// The check rule that failed.
@@ -1034,6 +1038,7 @@ impl InconclusiveCause {
             Self::MatchUndetermined => "match-undetermined",
             Self::VacuousMatch => "vacuous-match",
             Self::MappingUndetermined => "mapping-undetermined",
+            Self::ProtocolAssumptionNotEstablished(_) => "protocol-assumption-not-established",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => REPLAY_PARITY_KIND,
             Self::ReplayRefused(_) => REPLAY_REFUSED_KIND,
@@ -1070,6 +1075,7 @@ impl InconclusiveCause {
             | Self::MatchUndetermined
             | Self::VacuousMatch
             | Self::MappingUndetermined
+            | Self::ProtocolAssumptionNotEstablished(_)
             | Self::SufficientTestFailed
             | Self::NoAdmittedBehaviour
             | Self::LassoNotConcretized

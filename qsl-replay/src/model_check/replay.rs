@@ -984,7 +984,7 @@ impl ProtocolReplay<'_> {
                     let Some(states) = loop_states_of(system, payload, &positions, lasso)? else {
                         return Ok(Err(no_value()));
                     };
-                    if let Some(constraint) = unfair_member(&states, lasso, &fairness)? {
+                    if let Some(constraint) = unfair_member(system, &states, lasso, &fairness)? {
                         return Err(refused(ModelTraceRefusal::UnfairProtocolLasso {
                             constraint: Box::new(constraint),
                         }));
@@ -1924,22 +1924,29 @@ pub(super) fn unfair_constraint(
 
 /// FR-217: the first member of a protocol fairness set that the lasso's
 /// loop is unfair under, over FR-212's classes (ADR-027 PA-1, PA-2).
-fn unfair_member(
+fn unfair_member<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
     states: &[LoopState<ProtocolTransition>],
     lasso: Lasso,
     fairness: &[ProtocolFairness],
 ) -> Result<Option<ProtocolFairness>, ReplayRefusal> {
-    let mut numbered: BTreeMap<&ProtocolTransition, Identity> = BTreeMap::new();
+    let mut numbered: BTreeMap<Vec<u8>, (Identity, ProtocolTransition)> = BTreeMap::new();
     for state in states {
         for transition in state.enabled.iter().chain(std::iter::once(&state.taken)) {
+            let key = system
+                .transition_key(transition)
+                .map_err(|_| fault("every-loop-transition-encodes"))?;
             let next = Identity::new(u64::try_from(numbered.len()).unwrap_or(u64::MAX));
-            numbered.entry(transition).or_insert(next);
+            numbered.entry(key).or_insert((next, transition.clone()));
         }
     }
     let identity = |transition: &ProtocolTransition| {
+        let key = system
+            .transition_key(transition)
+            .map_err(|_| fault("every-loop-transition-encodes"))?;
         numbered
-            .get(transition)
-            .copied()
+            .get(&key)
+            .map(|(identity, _)| *identity)
             .ok_or_else(|| fault("every-loop-transition-is-numbered"))
     };
     let mut steps = Vec::new();
@@ -1957,7 +1964,10 @@ fn unfair_member(
             EdgeLabel::Transition(identity(&state.taken)?),
         ));
     }
-    let transitions: Vec<ProtocolTransition> = numbered.keys().map(|t| (*t).clone()).collect();
+    let transitions: Vec<ProtocolTransition> = numbered
+        .values()
+        .map(|(_, transition)| transition.clone())
+        .collect();
     let (members, constraints): (Vec<usize>, Vec<Constraint>) =
         protocol_constraints(fairness, &transitions, identity)?
             .into_iter()

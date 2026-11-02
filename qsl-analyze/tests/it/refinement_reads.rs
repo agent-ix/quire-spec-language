@@ -149,6 +149,7 @@ fn verdict(
         history: initial_history(world.refinement(), &systems.concrete, &pre),
         concrete: pre,
         abstract_states: vec![systems.abstract_system.initial_states()[0].state().clone()],
+        abstract_protocol_states: Vec::new(),
     };
     let (concrete, abstracted) = if swap {
         (&systems.abstract_system, &systems.concrete)

@@ -257,6 +257,19 @@ pub struct Variant {
     /// FR-315-AC-6's `CasRefinesCounterAdd`: `Spec::Counter` gains
     /// `add(n: Bit)` and `Impl::Counter` gains `bump()` with an empty frame.
     pub add: bool,
+    /// Whether the concrete model exposes its stuttering `peek` operation.
+    pub peek: bool,
+    /// Whether neither worker can begin a transaction.
+    pub disable_begin: bool,
+    /// Whether value 2 is an intended concrete terminal state.
+    pub intended_terminal: bool,
+    /// Add the no-contract `tick()` operation used to exercise protocol
+    /// store-buffer fairness.
+    pub tick: bool,
+    /// Add the no-op concrete `inc()` operation used by that fairness case.
+    pub inc: bool,
+    /// Replace the CAS operations with the two-state tick/inc fairness model.
+    pub fairness_toggle: bool,
 }
 
 impl Variant {
@@ -266,6 +279,12 @@ impl Variant {
         sub_counter: false,
         concrete_value: 0,
         add: false,
+        peek: true,
+        disable_begin: false,
+        intended_terminal: false,
+        tick: false,
+        inc: false,
+        fairness_toggle: false,
     };
     /// The lost-update model.
     pub const LOST_UPDATE: Self = Self {
@@ -281,8 +300,20 @@ impl Variant {
 
 /// `Counter { value: Int[0, 2] }` with `inc()`, and `add(n: Bit)` when
 /// `add`, under the package identity `package`.
-fn spec_document(package: &str, add: bool) -> Vec<u8> {
+fn spec_document(package: &str, add: bool, tick: bool, fairness_toggle: bool) -> Vec<u8> {
     let mut operations = vec![operation(package, "inc", &["value"])];
+    let mut fields = vec![field(package, "value", &ident(package, "Level"))];
+    if fairness_toggle {
+        operations.push(operation(package, "tick0", &["value"]));
+        operations.push(operation(package, "tick1", &["value"]));
+    }
+    if tick {
+        let mut tick = operation(package, "tick", &["value"]);
+        tick["frame"]["modifies_receiver"] = tick["frame"]["modifies"].clone();
+        tick["frame"]["modifies"] = serde_json::json!([]);
+        operations.push(tick);
+        fields.push(field(package, "id", &ident(package, "Level")));
+    }
     if add {
         operations.push(operation_with(
             package,
@@ -291,45 +322,61 @@ fn spec_document(package: &str, add: bool) -> Vec<u8> {
             &["value"],
         ));
     }
-    document_with(
-        package,
-        vec![field(package, "value", &ident(package, "Level"))],
-        operations,
-        false,
-        add,
-    )
+    document_with(package, fields, operations, false, add)
 }
 
 /// The compare-and-set counter of ADR-020 §8.
 fn cas_document(variant: Variant) -> Vec<u8> {
     let level = ident(CAS, "Level");
     let step = |name: &str, modifies: &[&str]| operation(CAS, name, modifies);
-    let mut operations = vec![
-        step("beginA", &["tmpA", "busyA"]),
-        step("commitA", &["value", "busyA"]),
-        step("beginB", &["tmpB", "busyB"]),
-        step("commitB", &["value", "busyB"]),
-        step("peek", &[]),
-    ];
-    if !variant.lost_update {
+    let mut operations = if variant.fairness_toggle {
+        vec![
+            step("tick0", &["value"]),
+            step("tick1", &["value"]),
+            step("inc", &[]),
+        ]
+    } else if variant.tick {
+        Vec::new()
+    } else {
+        vec![
+            step("beginA", &["tmpA", "busyA"]),
+            step("commitA", &["value", "busyA"]),
+            step("beginB", &["tmpB", "busyB"]),
+            step("commitB", &["value", "busyB"]),
+        ]
+    };
+    if variant.peek {
+        operations.push(step("peek", &[]));
+    }
+    if !variant.lost_update && !variant.fairness_toggle {
         operations.push(step("retryA", &["busyA"]));
         operations.push(step("retryB", &["busyB"]));
     }
     if variant.add {
         operations.push(step("bump", &[]));
     }
-    document(
-        CAS,
+    if variant.inc && !variant.fairness_toggle {
+        operations.push(step("inc", &[]));
+    }
+    if variant.tick {
+        operations.push(step("tick", &["value"]));
+    }
+    let mut fields = if variant.fairness_toggle {
+        vec![field(CAS, "value", &level)]
+    } else {
         vec![
             field(CAS, "value", &level),
             field(CAS, "tmpA", &level),
             field(CAS, "busyA", BOOLEAN),
             field(CAS, "tmpB", &level),
             field(CAS, "busyB", BOOLEAN),
-        ],
-        operations,
-        variant.sub_counter,
-    )
+        ]
+    };
+    if variant.tick {
+        fields.push(field(CAS, "id", &level));
+        fields.push(field(CAS, "w", &level));
+    }
+    document(CAS, fields, operations, variant.sub_counter)
 }
 
 /// The contracts of one worker (`A` or `B`) of the compare-and-set model.
@@ -347,8 +394,13 @@ fn worker(name: &str, variant: Variant) -> String {
              post Retry{name}Post using v on Impl::Counter::retry{name} {{ not self.busy{name} }}\n"
         )
     };
+    let begin = if variant.disable_begin {
+        "false".to_owned()
+    } else {
+        format!("not self.busy{name}")
+    };
     format!(
-        "pre Begin{name}Pre using v on Impl::Counter::begin{name} {{ not self.busy{name} }}\n\
+        "pre Begin{name}Pre using v on Impl::Counter::begin{name} {{ {begin} }}\n\
          post Begin{name}Post using v on Impl::Counter::begin{name} {{ self.busy{name} and self.tmp{name} = pre(self.value) }}\n\
          pre Commit{name}Pre using v on Impl::Counter::commit{name} {{ {commit} }}\n\
          post Commit{name}Post using v on Impl::Counter::commit{name} {{ pre(self.tmp{name}) < 2 and self.value = pre(self.tmp{name}) + 1 and not self.busy{name} }}\n\
@@ -434,6 +486,11 @@ pub fn unit_text(
             .sum::<usize>();
         refinement.split_at(split)
     };
+    let workers = if variant.tick || variant.fairness_toggle {
+        String::new()
+    } else {
+        format!("{}{}", worker("A", variant), worker("B", variant))
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
@@ -441,11 +498,45 @@ pub fn unit_text(
          {profiles}model Spec = \"{SPEC}\";\n\
          model Impl = \"{CAS}\";\n\
          model Third = \"{THIRD}\";\n\
-         pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
-         post Inc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
-         {}{}{}{refinement}\n",
-        worker("A", variant),
-        worker("B", variant),
+         {}\
+         {}\
+         {}{}{}{}{refinement}\n",
+        workers,
+        if variant.fairness_toggle {
+            "pre CanInc using v on Spec::Counter::inc { self.value = 1 }\n\
+             post Inc using v on Spec::Counter::inc { self.value = pre(self.value) }\n\
+             pre SpecTick0Ready using v on Spec::Counter::tick0 { self.value = 0 }\n\
+             post SpecTick0Result using v on Spec::Counter::tick0 { self.value = 1 }\n\
+             pre SpecTick1Ready using v on Spec::Counter::tick1 { self.value = 1 }\n\
+             post SpecTick1Result using v on Spec::Counter::tick1 { self.value = 0 }\n"
+        } else {
+            "pre CanInc using v on Spec::Counter::inc { self.value < 2 }\n\
+             post Inc using v on Spec::Counter::inc { pre(self.value) < 2 and self.value = pre(self.value) + 1 }\n"
+        },
+        if variant.tick {
+            "pre TickReady using v on Impl::Counter::tick { self.value < 2 }\n\
+             post TickOne using v on Impl::Counter::tick { self.value = 1 }\n"
+        } else {
+            ""
+        },
+        if variant.fairness_toggle {
+            "pre IncReady using v on Impl::Counter::inc { self.value = 1 }\n\
+             post IncStays using v on Impl::Counter::inc { self.value = pre(self.value) }\n\
+             pre ConcreteTick0Ready using v on Impl::Counter::tick0 { self.value = 0 }\n\
+             post ConcreteTick0Result using v on Impl::Counter::tick0 { self.value = 1 }\n\
+             pre ConcreteTick1Ready using v on Impl::Counter::tick1 { self.value = 1 }\n\
+             post ConcreteTick1Result using v on Impl::Counter::tick1 { self.value = 0 }\n"
+        } else if variant.inc {
+            "pre IncReady using v on Impl::Counter::inc { self.value = 1 }\n\
+             post IncStays using v on Impl::Counter::inc { self.value = pre(self.value) }\n"
+        } else {
+            ""
+        },
+        if variant.intended_terminal {
+            "terminal ImplDone using v on Impl when { self.value = 2 };\n"
+        } else {
+            ""
+        },
         if variant.add {
             "pre CanAdd using v on Spec::Counter::add { self.value + n <= 2 }\n\
              post Add using v on Spec::Counter::add { pre(self.value) < 2 and self.value = pre(self.value) + n }\n"
@@ -458,15 +549,24 @@ pub fn unit_text(
 /// The two domain packages' documents, by identity.
 pub fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
-        spec_document(SPEC, variant.add).as_slice(),
+        spec_document(SPEC, variant.add, variant.tick, variant.fairness_toggle).as_slice(),
         cas_document(variant).as_slice(),
-        spec_document(THIRD, false).as_slice(),
+        spec_document(THIRD, false, false, false).as_slice(),
     ])
     .unwrap()
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
 pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String> {
+    check_with_internals(variant, refinement, None)
+}
+
+/// The checked graph with the compilation's protocol refinement internals.
+pub fn check_with_internals(
+    variant: Variant,
+    refinement: &str,
+    internals: Option<serde_json::Value>,
+) -> Result<CheckedGraph, String> {
     let documents = packages(variant);
     let text = unit_text(&documents, refinement, variant);
     let parsed = qsl_cst::parse(
@@ -496,8 +596,11 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
         Vec::new(),
     )
     .expect("the unit assembles");
+    let declarations = match internals {
+        Some(internals) => declarations.with_refinement_internals(internals),
+        None => declarations.with_unwritten_refinements(),
+    };
     declarations
-        .with_unwritten_refinements()
         .check(CheckingLimits::default())
         .map_err(|refusals| format!("{refusals:?}"))
 }
@@ -546,6 +649,7 @@ pub struct World {
     snapshots: qsl_semantics::model::observation::DocumentProvision,
     spec_initial: DocumentRef,
     spec_one: DocumentRef,
+    spec_two: DocumentRef,
     cas_initial: DocumentRef,
     third_initial: DocumentRef,
 }
@@ -561,25 +665,53 @@ impl World {
         Self::with_keys(variant, refinement, &["c"])
     }
 
+    /// The world of the compare-and-set unit with an authored refinement
+    /// internal-class binding.
+    pub fn with_internals(
+        variant: Variant,
+        refinement: &str,
+        internals: serde_json::Value,
+    ) -> Self {
+        Self::with_keys_and_internals(variant, refinement, &["c"], Some(internals))
+    }
+
     /// The world of the unit of `variant` with `refinement`, whose
     /// populations hold one counter per key of `keys` (TC-900's
     /// `CasRefinesCounter2` holds `c0` and `c1`).
     pub fn with_keys(variant: Variant, refinement: &str, keys: &[&str]) -> Self {
+        Self::with_keys_and_internals(variant, refinement, keys, None)
+    }
+
+    fn with_keys_and_internals(
+        variant: Variant,
+        refinement: &str,
+        keys: &[&str],
+        internals: Option<serde_json::Value>,
+    ) -> Self {
         let keys: Vec<String> = keys.iter().map(|key| (*key).to_owned()).collect();
-        let graph = check(variant, refinement).unwrap_or_else(|refusals| {
-            panic!("{refinement}: the unit checks: {refusals}");
-        });
+        let graph =
+            check_with_internals(variant, refinement, internals).unwrap_or_else(|refusals| {
+                panic!("{refinement}: the unit checks: {refusals}");
+            });
         let mut snapshots = BTreeMap::new();
-        let spec_initial = snapshot(
-            SPEC,
-            (json!({"value": {"integer": "0"}}), &keys),
-            &mut snapshots,
-        );
-        let spec_one = snapshot(
-            SPEC,
-            (json!({"value": {"integer": "1"}}), &keys),
-            &mut snapshots,
-        );
+        let spec_initial_value = if variant.tick {
+            json!({"value": {"integer": "0"}, "id": {"integer": "0"}})
+        } else {
+            json!({"value": {"integer": "0"}})
+        };
+        let spec_initial = snapshot(SPEC, (spec_initial_value, &keys), &mut snapshots);
+        let spec_one_value = if variant.tick {
+            json!({"value": {"integer": "1"}, "id": {"integer": "0"}})
+        } else {
+            json!({"value": {"integer": "1"}})
+        };
+        let spec_one = snapshot(SPEC, (spec_one_value, &keys), &mut snapshots);
+        let spec_two_value = if variant.tick {
+            json!({"value": {"integer": "2"}, "id": {"integer": "0"}})
+        } else {
+            json!({"value": {"integer": "2"}})
+        };
+        let spec_two = snapshot(SPEC, (spec_two_value, &keys), &mut snapshots);
         let third_initial = snapshot(
             THIRD,
             (json!({"value": {"integer": "0"}}), &keys),
@@ -588,11 +720,22 @@ impl World {
         let cas_initial = snapshot(
             CAS,
             (
-                json!({
+                if variant.fairness_toggle {
+                    json!({"value": {"integer": "0"}})
+                } else if variant.tick {
+                    json!({
+                        "value": {"integer": variant.concrete_value.to_string()},
+                        "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
+                        "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
+                        "id": {"integer": "0"}, "w": {"integer": "0"},
+                    })
+                } else {
+                    json!({
                     "value": {"integer": variant.concrete_value.to_string()},
                     "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
                     "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
-                }),
+                    })
+                },
                 &keys,
             ),
             &mut snapshots,
@@ -604,6 +747,7 @@ impl World {
             snapshots,
             spec_initial,
             spec_one,
+            spec_two,
             cas_initial,
             third_initial,
         }
@@ -642,6 +786,11 @@ impl World {
     /// An abstract initial snapshot whose counter's `value` is 1 (FR-144-AC-5).
     pub fn abstract_initial_one(&self) -> DocumentRef {
         self.spec_one.clone()
+    }
+
+    /// An abstract initial snapshot whose counter's `value` is 2.
+    pub fn abstract_initial_two(&self) -> DocumentRef {
+        self.spec_two.clone()
     }
 
     /// The request that builds the system over `model` with `initial`

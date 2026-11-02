@@ -58,6 +58,7 @@ fn run(world: &World) -> SafetyOutcome {
             },
             abstract_package: world.package(),
             abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: None,
             max_depth: None,
             limits: ModelCheckLimits::default(),
         },
@@ -319,6 +320,8 @@ fn each_corrupted_field_is_rejected() {
             tampered.successors[at][number].taken = match edge.taken {
                 Taken::Stutter => Taken::Abstract(Vec::new()),
                 Taken::Abstract(_) => Taken::Stutter,
+                Taken::Protocol(_) => Taken::Stutter,
+                Taken::ProtocolTraces(_) => Taken::Stutter,
             };
             let (rule, _) = rejected(check(&world, &tampered));
             assert_eq!(rule, CertificateRule::PostDiffers);
@@ -388,6 +391,7 @@ fn listed(world: &World) -> SimulationCertificate {
             .expect("the state maps")
             .visible,
         ],
+        abstract_protocol_states: Vec::new(),
     };
     let certified = |position: &RefinementPosition| CertifiedPosition {
         concrete: state_key(concrete, &position.concrete),
@@ -692,6 +696,7 @@ fn run_to(world: &World, max_depth: Option<usize>) -> SafetyOutcome {
             },
             abstract_package: world.package(),
             abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: None,
             max_depth,
             limits: ModelCheckLimits::default(),
         },

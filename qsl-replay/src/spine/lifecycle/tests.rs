@@ -28,9 +28,9 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
-    check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
-    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
-    ParsedSource,
+    check, check_with_refinement_internals, execute, failure_of, package, parse, refusal_or_fault,
+    select, AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure,
+    PackageLimits, ParseRequest, ParsedSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -905,6 +905,58 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     .unwrap_or_else(|failure| panic!("the importing unit compiles: {failure:?}"));
     assert_eq!(importing.checked.libraries().len(), 1);
     read_back(&importing, &BTreeMap::new(), "fixture");
+}
+
+/// FR-147-AC-10 (TC-552): a supplied library's malformed internal-list
+/// value is checked at that library's source even when the unit does not
+/// import it.
+#[trace("TC-552", "FR-147-AC-10")]
+#[test]
+fn an_unimported_library_internal_list_defect_refuses_the_compile_at_its_owner() {
+    let dependencies = DependencyInput::new([geometry()])
+        .expect("the library input is admissible")
+        .with_refinement_internals([(
+            "test/geometry".to_owned(),
+            serde_json::json!([{"refinement":"NoSuchRefinement","internal":[]}]),
+        )])
+        .expect("the value belongs to the supplied library");
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(&request(FIXTURE.as_bytes()), limits.source, &cancel)
+        .expect("the root unit parses")
+        .into_value();
+    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("the root unit has no model selections")
+        .into_value();
+    let failure = check_with_refinement_internals(
+        &parsed,
+        "fixture".to_owned(),
+        None,
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .expect_err("the unimported library value is still checked");
+    let refusal = refusal_or_fault(failure).expect("this is a typed refusal");
+    let CompileRefusal::Dependency { path, refusal } = *refusal else {
+        panic!("the refusal names its supplied library owner: {refusal:?}");
+    };
+    assert_eq!(path[0].as_str(), "test/geometry");
+    let CompileRefusal::Check { region, refusals } = *refusal else {
+        panic!("the library's S3 list defect is located: {refusal:?}");
+    };
+    assert!(region.is_none(), "a value pointer is not a source span");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one typed library-value refusal: {refusals:?}");
+    };
+    let qsl_semantics::check::CheckCause::Refinement(refusal) = &refusal.cause else {
+        panic!("the internal-list defect is typed: {refusal:?}");
+    };
+    let qsl_semantics::check::RefinementCause::InternalList(defect) = &refusal.cause else {
+        panic!("the refusal identifies the list locus: {:?}", refusal.cause);
+    };
+    assert_eq!(defect.pointer, "/0/refinement");
 }
 
 /// `chain`'s emitted bytes through the I2 reader, as `identity` (the name the package was checked under).

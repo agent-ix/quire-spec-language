@@ -39,6 +39,9 @@ pub(super) struct CompileRequest {
     pub models: Vec<Model>,
     #[serde(deserialize_with = "from_object")]
     pub program: Program,
+    /// FR-147/FR-099: the unit's unchecked internal-list value.
+    #[serde(default, deserialize_with = "present_json_value")]
+    pub refinement_internals: Option<serde_json::Value>,
     /// A `1-draft` program's supplied libraries (FR-027, ADR-015 D-1); none
     /// when absent.
     #[serde(default, deserialize_with = "deserialize_objects")]
@@ -50,8 +53,17 @@ pub(super) struct CompileRequest {
 #[serde(deny_unknown_fields)]
 pub(super) struct Library {
     pub identity: String,
+    /// FR-147/FR-099: this library's unchecked internal-list value.
+    #[serde(default, deserialize_with = "present_json_value")]
+    pub refinement_internals: Option<serde_json::Value>,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
+}
+
+fn present_json_value<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(decoder).map(Some)
 }
 
 #[derive(Deserialize)]

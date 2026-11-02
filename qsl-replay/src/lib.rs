@@ -228,10 +228,13 @@ pub use model_check::outcome::{
     MemoryCause, ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause,
 };
 pub use model_check::refinement_replay::{
-    replay_refinement_trace, replay_timed_refinement_trace, RefinementTraceSettlement,
+    replay_protocol_assumption_witness, replay_refinement_trace, replay_timed_refinement_trace,
+    ProtocolAssumptionReplaySettlement, RefinementTraceSettlement,
 };
 pub use model_check::refinement_settle::{
-    settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
+    settle_refinement, settle_refinement_refusal, settle_refinement_safety,
+    settle_refinement_safety_with_assumption_replay, settle_refinement_with_assumption_replay,
+    RefinementRecord,
 };
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -277,12 +280,18 @@ pub use refinement_query::{
 };
 
 pub use refinement::{
-    abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
-    step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
-    LivenessHalf, MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey,
-    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome,
-    SafetyUndecided, StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken,
-    Undetermined,
+    abstract_classes, check_initial, check_protocol_initial, check_protocol_state_relations,
+    check_protocol_step, check_step, initial_history, map_state, open_protocol_systems,
+    open_systems, protocol_observation_label, protocol_transition_class, step_history,
+    AbstractClass, AbstractProtocolSystem, AssumptionIdentity, AssumptionOrigin,
+    AssumptionSelectedMember, AssumptionSide, AssumptionTarget, ConcreteStep, EvalFailure,
+    HiddenSlot, HistoryValues, LivenessHalf, MappedState, MappingFailure, MappingRowRef,
+    MappingUndetermined, ObjectKey, ObservationField, ObservationLabel, PairedAssumptionPath,
+    PairedAssumptionStep, ProtocolAssumptionFairness, ProtocolAssumptionReason,
+    ProtocolAssumptionWitness, ProtocolCandidate, ProtocolRelationError, ProtocolStateRelation,
+    ProtocolTrace, RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems,
+    RequiredTemporalFairness, SafetyOutcome, SafetyUndecided, StepArgument, StepRejection,
+    StepResult, StepVerdict, SubjectRefusal, Taken, TerminalSuccessDirection, Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

@@ -44,6 +44,13 @@ pub enum RefinementCatalogNode {
     },
     /// The `activate` class declared by a protocol's `on each` trigger.
     Trigger(String),
+    /// A node already keyed by the imported package that owns the protocol.
+    Imported {
+        /// The imported library identity that owns the protocol node.
+        package: String,
+        /// The exact structural identity from the imported checked graph.
+        node: NodeKey,
+    },
 }
 
 /// The unique, ordered catalog key: (`class`, `memory_model`) compared as
@@ -56,6 +63,9 @@ pub struct RefinementCatalogClass {
     class: String,
     node: Option<RefinementCatalogNode>,
     binder_types: Vec<ValueType>,
+    /// Exact checked binder type identities for dependency-owned protocol
+    /// classes, when imported from the owner graph's protocol binder table.
+    binder_type_nodes: Option<Vec<NodeKey>>,
     memory_model: Option<MemoryModelName>,
     memory_step: Option<MemoryStepKind>,
 }
@@ -78,6 +88,11 @@ impl RefinementCatalogClass {
     /// The checked parameter or node-binder types, in declaration order.
     pub fn binder_types(&self) -> &[ValueType] {
         &self.binder_types
+    }
+
+    /// The owner graph's exact binder type identities for an imported class.
+    pub(crate) fn binder_type_nodes(&self) -> Option<&[NodeKey]> {
+        self.binder_type_nodes.as_deref()
     }
 
     /// The sole drain operation of a `memory drain` class (FR-375-AC-23):
@@ -118,6 +133,7 @@ impl RefinementCatalogClass {
             class,
             node: Some(node),
             binder_types,
+            binder_type_nodes: None,
             memory_model: None,
             memory_step: None,
         }
@@ -131,9 +147,15 @@ impl RefinementCatalogClass {
             class: format!("memory {}", kind.label()),
             node: None,
             binder_types: Vec::new(),
+            binder_type_nodes: None,
             memory_model: Some(memory_model),
             memory_step: Some(kind),
         }
+    }
+
+    pub(super) fn with_binder_type_nodes(mut self, nodes: Vec<NodeKey>) -> Self {
+        self.binder_type_nodes = Some(nodes);
+        self
     }
 }
 
@@ -179,6 +201,8 @@ pub enum KeyedCatalogClass {
         node: NodeKey,
         /// The binder types' node keys.
         binder_types: Vec<NodeKey>,
+        /// True when the class node belongs to an imported package.
+        dependency: Option<String>,
     },
     /// A source-default memory class, which has no node.
     Memory(KeyedMemoryClass),
@@ -191,11 +215,13 @@ impl std::fmt::Debug for KeyedCatalogClass {
                 class,
                 node,
                 binder_types,
+                dependency,
             } => f
                 .debug_struct("Declared")
                 .field("class", &class)
                 .field("node", &NodeKeyDebug(node))
                 .field("binder_types", &NodeList(binder_types.iter()))
+                .field("dependency", &dependency)
                 .finish(),
             Self::Memory(value0) => f.debug_tuple("Memory").field(&value0).finish(),
         }
@@ -250,8 +276,22 @@ impl KeyedClassCatalog {
             .chain(&self.abstract_side)
             .flat_map(|class| match class {
                 KeyedCatalogClass::Declared {
-                    node, binder_types, ..
-                } => std::iter::once(node).chain(binder_types.iter()).collect(),
+                    node,
+                    binder_types,
+                    dependency,
+                    ..
+                } => dependency
+                    .is_none()
+                    .then_some(node)
+                    .into_iter()
+                    .chain(
+                        dependency
+                            .is_none()
+                            .then_some(binder_types.iter())
+                            .into_iter()
+                            .flatten(),
+                    )
+                    .collect(),
                 KeyedCatalogClass::Memory(_) => Vec::new(),
             })
             .collect();
@@ -448,6 +488,7 @@ pub(super) fn build(
                                 | RefinementCatalogNode::Channel { .. }
                                 | RefinementCatalogNode::Role { .. }
                                 | RefinementCatalogNode::Trigger(_)
+                                | RefinementCatalogNode::Imported { .. }
                         )
                     )
             });

@@ -437,9 +437,11 @@ pub(crate) enum NodeClass {
 
 /// The step classes of one checked protocol clause, which an internal list
 /// entry and a step row's `node` right side resolve against.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct ProtocolClasses {
     pub(crate) protocol: String,
+    pub(crate) node_keys: Option<super::super::protocol_clause::CheckedProtocolNodeKeys>,
+    pub(crate) dependency: Option<String>,
     nodes: BTreeMap<String, NodeClass>,
     node_ids: BTreeMap<String, ProtocolNodeId>,
     /// The binder record of each node that has one (QSpec FR-432 "The
@@ -464,6 +466,20 @@ pub(crate) struct ProtocolClasses {
     /// The names of the protocol's own state: its binders, nodes and
     /// channels (queues), which no object row's field names.
     state_names: BTreeSet<String>,
+    /// Exact owner-graph binder type identities, keyed by the static node
+    /// that introduced each binder. Populated only for imported clauses.
+    pub(crate) binder_type_nodes: Option<BTreeMap<ProtocolNodeId, Vec<quire_exact::NodeKey>>>,
+    /// Exact trigger binder type identity for an imported `on each` clause.
+    pub(crate) trigger_type_nodes: Option<Vec<quire_exact::NodeKey>>,
+}
+
+/// The checked class view retained with a package so a dependent refinement
+/// can resolve a protocol without reparsing its source.
+#[derive(Clone, Debug)]
+pub(crate) struct ImportedProtocolClasses {
+    pub(crate) classes: ProtocolClasses,
+    pub(crate) model_selections: BTreeSet<String>,
+    pub(crate) object_types: BTreeSet<quire_exact::EffectiveId>,
 }
 
 impl ProtocolClasses {
@@ -598,7 +614,11 @@ impl ProtocolClasses {
             .collect();
         Self {
             protocol: form.name.name.clone(),
+            node_keys: None,
+            dependency: None,
             state_names,
+            binder_type_nodes: None,
+            trigger_type_nodes: None,
             nodes,
             node_ids,
             records,
@@ -642,32 +662,43 @@ impl ProtocolClasses {
                 ));
             };
             let binder_types = self.records.get(name).cloned().unwrap_or_default();
-            let mut add_node = |spelling: String, binder_types: Vec<ValueType>| {
-                classes.insert(
-                    spelling.clone(),
-                    RefinementCatalogClass::declared(
-                        spelling,
-                        RefinementCatalogNode::ProtocolNode {
-                            protocol: self.protocol.clone(),
-                            node,
-                        },
-                        binder_types,
-                    ),
-                );
-            };
+            let mut add_node =
+                |spelling: String,
+                 binder_types: Vec<ValueType>|
+                 -> Result<(), quire_semantic_value::catalog::InternalFault> {
+                    let entry = RefinementCatalogClass::declared(
+                        spelling.clone(),
+                        self.protocol_node(node),
+                        binder_types.clone(),
+                    );
+                    let entry = if let Some(nodes) = &self.binder_type_nodes {
+                        let exact = nodes.get(&node).cloned().unwrap_or_default();
+                        if exact.len() != binder_types.len() {
+                            return Err(quire_semantic_value::catalog::InternalFault::new(
+                                "check.refinement-class-catalog",
+                                "imported-protocol-node-binder-types-match-exact-keys",
+                            ));
+                        }
+                        entry.with_binder_type_nodes(exact)
+                    } else {
+                        entry
+                    };
+                    classes.insert(spelling, entry);
+                    Ok(())
+                };
             // An `effect` or `commit` node is an `event`-kind class spelled
             // by its bare path, with its binder record; an `await` node's
             // class is its `timeout` (FR-426, FR-432).
             match class_kind {
-                NodeClass::Bare(_) => add_node(format!("{}::{name}", self.protocol), binder_types),
+                NodeClass::Bare(_) => add_node(format!("{}::{name}", self.protocol), binder_types)?,
                 NodeClass::Parallel => {
-                    add_node(format!("fork {}::{name}", self.protocol), Vec::new());
-                    add_node(format!("join {}::{name}", self.protocol), Vec::new());
+                    add_node(format!("fork {}::{name}", self.protocol), Vec::new())?;
+                    add_node(format!("join {}::{name}", self.protocol), Vec::new())?;
                 }
                 // FR-375-AC-28: the template's `cend` has no binder types.
                 NodeClass::Template => {
-                    add_node(format!("{}::{name}", self.protocol), binder_types);
-                    add_node(format!("cend {}::{name}", self.protocol), Vec::new());
+                    add_node(format!("{}::{name}", self.protocol), binder_types)?;
+                    add_node(format!("cend {}::{name}", self.protocol), Vec::new())?;
                 }
             }
         }
@@ -679,10 +710,7 @@ impl ProtocolClasses {
                         class.clone(),
                         RefinementCatalogClass::declared(
                             class,
-                            RefinementCatalogNode::Channel {
-                                protocol: self.protocol.clone(),
-                                channel: channel.clone(),
-                            },
+                            self.channel_node(channel),
                             Vec::new(),
                         ),
                     );
@@ -695,14 +723,7 @@ impl ProtocolClasses {
                     let class = format!("{prefix} {}::{role}", self.protocol);
                     classes.insert(
                         class.clone(),
-                        RefinementCatalogClass::declared(
-                            class,
-                            RefinementCatalogNode::Role {
-                                protocol: self.protocol.clone(),
-                                role: role.clone(),
-                            },
-                            Vec::new(),
-                        ),
+                        RefinementCatalogClass::declared(class, self.role_node(role), Vec::new()),
                     );
                 }
             }
@@ -715,14 +736,23 @@ impl ProtocolClasses {
                 ));
             };
             let class = format!("activate {}", self.protocol);
-            classes.insert(
+            let entry = RefinementCatalogClass::declared(
                 class.clone(),
-                RefinementCatalogClass::declared(
-                    class,
-                    RefinementCatalogNode::Trigger(self.protocol.clone()),
-                    trigger.clone(),
-                ),
+                self.trigger_node(),
+                trigger.clone(),
             );
+            let entry = if let Some(nodes) = &self.trigger_type_nodes {
+                if nodes.len() != trigger.len() {
+                    return Err(quire_semantic_value::catalog::InternalFault::new(
+                        "check.refinement-class-catalog",
+                        "imported-protocol-trigger-binder-types-match-exact-keys",
+                    ));
+                }
+                entry.with_binder_type_nodes(nodes.clone())
+            } else {
+                entry
+            };
+            classes.insert(class, entry);
         }
         let mut memory = Vec::new();
         for model in &self.memory_models {
@@ -736,6 +766,58 @@ impl ProtocolClasses {
     /// What the node `name` is, when it has a step class.
     pub(crate) fn node(&self, name: &str) -> Option<NodeClass> {
         self.nodes.get(name).copied()
+    }
+
+    fn protocol_node(&self, node: ProtocolNodeId) -> RefinementCatalogNode {
+        self.node_keys
+            .as_ref()
+            .and_then(|keys| keys.nodes.get(&node))
+            .cloned()
+            .map(|node| self.imported_node(node))
+            .unwrap_or_else(|| RefinementCatalogNode::ProtocolNode {
+                protocol: self.protocol.clone(),
+                node,
+            })
+    }
+
+    fn channel_node(&self, channel: &str) -> RefinementCatalogNode {
+        self.node_keys
+            .as_ref()
+            .and_then(|keys| keys.channels.get(channel))
+            .cloned()
+            .map(|node| self.imported_node(node))
+            .unwrap_or_else(|| RefinementCatalogNode::Channel {
+                protocol: self.protocol.clone(),
+                channel: channel.to_owned(),
+            })
+    }
+
+    fn role_node(&self, role: &str) -> RefinementCatalogNode {
+        self.node_keys
+            .as_ref()
+            .and_then(|keys| keys.roles.get(role))
+            .cloned()
+            .map(|node| self.imported_node(node))
+            .unwrap_or_else(|| RefinementCatalogNode::Role {
+                protocol: self.protocol.clone(),
+                role: role.to_owned(),
+            })
+    }
+
+    fn trigger_node(&self) -> RefinementCatalogNode {
+        self.node_keys
+            .as_ref()
+            .and_then(|keys| keys.clause.as_ref())
+            .cloned()
+            .map(|node| self.imported_node(node))
+            .unwrap_or_else(|| RefinementCatalogNode::Trigger(self.protocol.clone()))
+    }
+
+    fn imported_node(&self, node: quire_exact::NodeKey) -> RefinementCatalogNode {
+        RefinementCatalogNode::Imported {
+            package: self.dependency.clone().unwrap_or_default(),
+            node,
+        }
     }
 
     /// The class `spelling` names, when the clause has it.
@@ -817,6 +899,8 @@ mod tests {
     fn an_each_clause_without_its_trigger_binder_is_an_internal_fault() {
         let classes = ProtocolClasses {
             protocol: "Local".to_owned(),
+            node_keys: None,
+            dependency: None,
             nodes: BTreeMap::new(),
             node_ids: BTreeMap::new(),
             records: BTreeMap::new(),
@@ -827,6 +911,8 @@ mod tests {
             memory: BTreeSet::new(),
             memory_models: BTreeSet::new(),
             state_names: BTreeSet::new(),
+            binder_type_nodes: None,
+            trigger_type_nodes: None,
         };
         assert_eq!(
             classes.catalog_classes().expect_err("a broken invariant"),

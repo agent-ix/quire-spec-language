@@ -75,6 +75,7 @@ fn cas_refines_counter() -> String {
 
 /// One refusal of a check, and the text it is located at when it has a
 /// source region (a defect of the internal list has none).
+#[derive(Debug)]
 struct Found {
     refusal: CheckRefusal,
     at: Option<String>,
@@ -266,12 +267,9 @@ const MALFORMED: Catalog = (Code::InvalidModelBinding, Some("malformed-declarati
 const CONFLICTING: Catalog = (Code::InvalidModelBinding, Some("conflicting-binding"));
 const UNSUPPORTED: Catalog = (Code::UnsupportedConstruct, Some("not-yet-implemented"));
 
-/// Part of FR-147-AC-1 (TC-552 step 1; tagged TC-only while the requirement
-/// record is unbuilt): `CasTwice` checks with the protocol side
-/// naming `Twice` and the alias-free `abstract_internal = [Twice::Done]`; a
-/// row `commitA -> node Spec::Twice::a1(self)` checks, naming node `a1`. The
-/// requirement record is S4's and not tested.
-#[trace("TC-552")]
+/// FR-147-AC-1 (TC-552 step 1): the checked refinement selects the protocol
+/// side and resolves its internal abstract step class.
+#[trace("TC-552", "FR-147-AC-1")]
 #[test]
 fn a_refinement_over_a_protocol_checks_with_its_internal_list() {
     let graph = checked(&cas_twice(), internal(&["Spec::Twice::Done"]));
@@ -284,7 +282,6 @@ fn a_refinement_over_a_protocol_checks_with_its_internal_list() {
     );
     assert_eq!(refinement.abstract_model(), "Spec");
     assert_eq!(spellings(refinement), ["Twice::Done"]);
-
     let row = mutated(
         &cas_twice(),
         "step Impl::Counter::commitA -> Spec::Counter::inc(self);",
@@ -391,6 +388,56 @@ fn each_refusal_of_the_protocol_side_is_located() {
     let not_a_node = only(&found);
     assert_eq!(not_a_node.code_and_cause(), MISSING);
     assert_eq!(not_a_node.at.as_deref(), Some("Spec::Twice::par"));
+}
+
+/// FR-148-AC-13 (TC-553): a protocol cannot select an undeclared temporal
+/// requirement by an unqualified or model-alias-qualified name.
+#[trace("TC-553", "FR-148-AC-13")]
+#[test]
+fn an_invalid_protocol_temporal_requirement_refuses_during_s3() {
+    let temporal = "temporal Left using inf over (k: Spec::Counter) clock \"model-steps\" on origin { eventually holds(k.value >= 0) }\n";
+    let unit = cas_twice().replace("protocol Twice", &format!("{temporal}protocol Twice")).replace(
+        "channel ch from w to w carries Boolean ordering unordered delivery unknown capacity 2 overflow block;\n",
+        "",
+    );
+    for (requested, missing) in [("Missing", "Missing"), ("Spec::Left", "Spec")] {
+        let source = unit.replace(
+            "role w on Spec::Counter;",
+            &format!("role w on Spec::Counter;\nrequires temporal {requested};"),
+        );
+        let found = refused(&source, None, RefinementSupport::BUILD);
+        let refusal = found
+            .iter()
+            .find(|refusal| refusal.code_and_cause() == MISSING)
+            .unwrap_or_else(|| panic!("the unresolved temporal name refuses: {found:?}"));
+        assert_eq!(refusal.at.as_deref(), Some(missing));
+        assert!(found
+            .iter()
+            .all(|refusal| { !matches!(refusal.refusal.cause, CheckCause::Refinement(_)) }));
+    }
+}
+
+/// FR-147-AC-16 (TC-552): a local protocol whose role acts on the concrete
+/// model cannot be selected as the abstract subject of a refinement over
+/// the other model.
+#[trace("TC-552", "FR-147-AC-16")]
+#[test]
+fn a_protocol_over_the_concrete_model_is_not_an_abstract_subject() {
+    let protocol = twice("Spec")
+        .replace("protocol Twice", "protocol OnImpl")
+        .replace("over (c: Spec::Counter)", "over (c: Impl::Counter)")
+        .replace("role w on Spec::Counter;", "role w on Impl::Counter;");
+    let refinement = cas_twice().replace("abstract Spec::Twice", "abstract Spec::OnImpl");
+    let found = refused(
+        &format!("{protocol}{refinement}"),
+        None,
+        RefinementSupport::BUILD,
+    );
+    let refusal = found
+        .iter()
+        .find(|refusal| refusal.code_and_cause() == MALFORMED)
+        .unwrap_or_else(|| panic!("the invalid protocol subject refuses: {found:?}"));
+    assert_eq!(refusal.at.as_deref(), Some("OnImpl"));
 }
 
 /// FR-147-AC-4 (TC-552 step 4): with `Done` out of the list the refinement

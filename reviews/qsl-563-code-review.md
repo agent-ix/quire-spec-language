@@ -1,96 +1,167 @@
 ---
-id: SR-13657
-title: "Code review of quire-spec-language PR #1137: QSL-563 protocol refinement rows, the S3 half of FR-214"
+id: SR-202610310155
+title: "Code review — QSL-563 protocol refinement"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@c63e977a4; PR #1137 (git diff origin/main...c63e977a4): qsl-semantics/src/check/{mod,refinement,step_simulation}.rs, qsl-semantics/src/check/refinement/{protocol,step_label}.rs, qsl-semantics/src/check/refinement/protocol/tests.rs, qsl-semantics/src/check/lowering/protocol.rs, qsl-semantics/tests/it/refinement_declarations.rs, qsl-analyze/src/model_check/{check,refine}.rs, qsl-analyze/tests/it/{main,refinement_protocol}.rs, qsl-replay/src/certificate/{closure,simulation}.rs, qsl-replay/src/refinement/{step,subject}.rs, tests/support/refinement_cas.rs"
+scope: "agent-ix/quire-spec-language; qsl-analyze/src/model_check/refine.rs; qsl-replay/src/model_check/refinement_replay.rs; qsl-replay/src/refinement/failure.rs; qsl-replay/src/refinement/protocol_system.rs; qsl-replay/src/refinement/step.rs; qsl-analyze/tests/it/refinement_protocol.rs; FR-148-AC-12; FR-142-AC-7"
 review_set: subset
-relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-136
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-214
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-135
-    type: reviews
 ---
-# SR-13657: Code review of quire-spec-language PR #1137: QSL-563 protocol refinement rows, the S3 half of FR-214
 
 ## Summary
 
-Ticket: QSL-563 (first slice: FR-214's S3 half). This is the code review, with the rust-review lane folded in.
-
-Gates run at c63e977a4 in a fresh clone with its own `CARGO_TARGET_DIR`. I did not run `make ci`. Every gate passed (5,547 tests passed, 0 failed):
-
-- `cargo fmt --all -- --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test -p qsl-eval -p qsl-replay -p qsl-analyze -p qsl-semantics -p qsl-cst -p qsl-forms -p qsl-package`
-- root `cargo test --test it`
-- `make string-edge`
-- `make arch-lint-api-surface-qsl`, `make arch-lint-canonical-encoder`, `make arch-lint-qualified-core`
-
-The existing model-subject refinement tests (qsl-semantics `refinement_declarations`, qsl-replay, qsl-analyze) all pass, so the two-pass split keeps model-subject verdicts. Diff review of the split: a model subject is still checked and refused at its old place, and its refusal still stops the unit at the same points. Two model-subject changes remain: a keyworded or unknown-middle-segment row now refuses at a segment, not the whole name (FND-004), and the classify refusals are pushed before the operation-row refusals.
-
-Independent oracle. I wrote my own generator and oracle from the merged FR-136 text: random protocols with 0 to 2 channels of each delivery policy, 0 to 2 replicated roles of each lifetime (`workflow`, `scope`, `until`), `on origin` or `on each`, an optional compensation template (with its effect and commit), events, attempts of both operations, and `parallel` nodes under none, `sc`, `tso` and `ra`, some with a nested `parallel`. For each one it draws random row subsets: the class rows, operation rows, `-> any` duplicates, invalid rows (a `lose` on an `at-least-once` channel, `retire` on a non-`until` role, `fork`/`join` on an attempt or sequence, `cend` on an attempt, `activate` on an `on origin` clause, `memory flush` without `tso`, `memory nope`), in random order. The clause is placed before or after the refinement. About 1 case in 15 drops every row that names the clause, which gives a model subject. For each case the oracle derives the full multiset of (code, cause, located text, missing-row name) and compares it with the checker's. 7,800 cases over six seeds agreed exactly, with 0 invalid generated protocols: 423 checked, 7,377 refused, 536 model subjects, 1,938 with a template.
-
-Mutation testing: 55 mutants against the PR's own tests (qsl-semantics `check::refinement::protocol::tests`, plus qsl-analyze `refinement_protocol` for the engine arm). 50 were killed and 5 survived. Killed: class derivation per node kind (event, effect, commit, send, receive, await, fork, join, finish, trigger, template cattempt and cend), each delivery rule for `duplicate` and `lose`, spawn, retire-only-for-`until` both ways, `ra` and `tso` memory kinds, ignoring the memory model, first parallel only, operation-row coverage both ways, operation rows required under a protocol, selection and conflict-once, malformed-once, conflict naming itself, `acts_on` always true, refusal locations (segment offset, whole name, missing row at first row), types-first classification, coverage over a refused clause, a refused clause dropping pending refusals, class conflict, `memory` deferral under a model subject, `concrete_protocol` unset, missing-selection dropped, ambiguity ignored, the three observation arms, the `open_systems` arm and the `step_row_refs` arm. The survivors:
-
-- M06 (all `parallel` nodes instead of the outermost) is equivalent, because a nested `parallel` cannot differ from its outermost one's model (the clause refuses that).
-- M28 (no source sort of `steps`) is not required by the spec, since `CheckedRefinement.steps` may keep source order.
-- M33, M34 and M47 are real gaps (FND-003).
-
-Spot probes: FND-001 reproduced. Also run: the FR-136-AC-4 scenario as written (the gap-analysis), a `fence` with and without a row (the gap-analysis), a mix of malformed and conflicting protocols (correct), and a keyworded row naming a type (FND-004).
-
-Rename `StepRowOverflow` to `StepRowRefusal`: this is justified, because the error gains a second cause. Every caller is updated (two test call sites; there is no production caller). No spec text names the old type, and there is no compat alias. The engine arms refuse with typed causes (`SubjectRefusal::ProtocolSubject` maps to `ModelCheckRefusal::ProtocolRefinement` and `ClosureRefusal::ProtocolRefinement`; `StepRowRefusal::ProtocolSubject`), with no panic. No new production `unwrap`, `expect` or `panic`. The slice indexing in `classify` and `NameSegments::span` is bounded by the slice pattern that precedes it. No dead code found.
+Reviewed the Rust implementation diff for QSL-563 PR #2034, including the protocol assumption-relation and replay paths. One high-severity FR-148 gap remains: protocol-side undetermined fairness is returned as a generic undecided-successor result rather than the required typed relation witness.
 
 ## Verdict
 
-**Not mergeable as it stands.** FND-001 is a real defect, and FND-002's tags misstate coverage. The rest of the slice is sound: the coverage rule matches an independent oracle over 7,800 random cases, and 50 of 55 mutants are killed.
-
-- **FND-001 (medium).** A protocol refinement's own refusals are lost when the unit stops at the refusal check before the protocols loop.
-- **FND-002 (medium).** Five tests carry FR-136 AC tags whose text they do not assert.
-- **FND-003 (low).** Three code paths have no killing test.
-- **FND-004 to FND-008 (low).** Diagnostic location, an honest-but-premature refusal, a duplicated keyword table, an AC-led doc comment, and a broadened shared fixture.
+**FAIL** — FR-148-AC-12's protocol-side `ContractUndetermined` case loses its exact fairness identities and paired finite witness, so it cannot be replayed as specified.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | A protocol refinement's own refusals are dropped when the unit stops before the protocols loop. `check_refinement` keeps a protocol subject's refusals in the pending `ProtocolRefinement`, not in `refusals`. But `if !refusals.is_empty() { return Err(refusals); }` at mod.rs:1738 returns as soon as any other refusal exists, such as a model-subject refinement's or an FR-218 repeated reference. The pending refusals are then never reported. Reproduced: a unit with `OverFill` (rows of `Fill` with `step M::Node::step -> A::Acc::add(self, 1);`) reports `ill_typed`/`operator-ineligible` alone. Add a refinement `OverModel` (model subject, missing the `undo` row), in either order, and the unit reports only `OverModel`'s `missing-name`: the `operator-ineligible` refusal disappears. FR-136 requires every refinement's header, population, object and operation rows to be checked "wherever the refinement is reached", and FR-136-AC-8 that "a refusal of a row not drawn from the clause is still reported". The `cancel` return at mod.rs:2044 drops them the same way. Fix: drain `protocol_refinements`' refusals into `refusals` before each early return after the refinements loop (or keep the refusals in `refusals` and the pending state alone in the slot), and add a test with a refusing model subject beside a refusing protocol subject. | qsl-semantics/src/check/mod.rs:1738, qsl-semantics/src/check/mod.rs:2044, qsl-semantics/src/check/refinement.rs:1003-1013 |
-| FND-002 | medium | Five tests carry FR-136 AC tags whose text they do not assert. FR-136-AC-4 states fork-first refusal order, the attempt-node row `-> any` taking precedence, and two `join` rows conflicting, over incA/incB. But `a_cattempt_is_covered_by_its_operations_row_or_its_templates` (:917), `a_replicated_role_needs_a_spawn_row_and_an_until_role_a_retire_row` (:1045), `a_send_and_a_receive_need_node_rows` (:1221) and `an_await_needs_a_timeout_row_and_its_matched_event_a_row` (:1256) test cattempt, spawn/retire, send/receive and timeout coverage, which no FR-136 AC states (gap-analysis FND-004). `a_row_naming_no_class_of_the_clause_refuses_at_its_name` (:948) is tagged FR-136-AC-6 but tests judgement call 3 (a `fork` of an attempt, a `spawn` of a static role, an `activate` of an `on origin` clause), which AC-6 does not state. The assertions AC-4 does state are made in `a_missing_or_doubled_row_refuses` and `an_attempt_node_row_takes_precedence_over_its_operation_row`, which carry only FR-214-AC-2 and FR-214-AC-3. Fix: tag the five with TC-541 alone, and add FR-136-AC-4 to the two tests that assert its text. | qsl-semantics/src/check/refinement/protocol/tests.rs:917, :948, :1045, :1221, :1256, :427, :516 |
-| FND-003 | low | Three code paths have no killing test (mutants M33, M34, M47 survive). (a) A protocol row whose target is an abstract node (`StepTargetForm::Node`, malformed while the abstract side is a model subject) can be accepted as `stutter` with every test green. (b) An application target on a protocol row (`UnsupportedFeature::ProtocolStepApplication`) can be accepted as `any` with every test green. (c) `complete` can be handed the first checked clause instead of the selected one (`checked_protocols.get(place)` to `.get(0)`). It survives because the only two-protocol test, `each_refinement_records_the_node_of_its_own_clause`, uses two clauses of the same shape. Fix: a test per refusal, and a two-clause test whose clauses need different rows. | qsl-semantics/src/check/refinement/protocol.rs:679-697, qsl-semantics/src/check/mod.rs:2063 |
-| FND-004 | low | Under a model subject, the new classification moves some refusals to a misleading segment. `step fork M::Node::step -> stutter;`, in a unit with no protocol named `Node`, refuses `missing-name` at `Node`, which is an existing object type. Before this PR the refusal was at the whole name. `step M::Nope::step` now refuses at `Nope`, but FR-136's model-subject bullet says 'a row whose left side names no concrete operation SHALL refuse `missing_declaration`/`missing-name` at its span'. Fix: when the middle segment resolves to a concrete type, refuse a keyworded row at the whole name (or as malformed). Ask /specify which location wins for an unknown middle segment under a model subject. | qsl-semantics/src/check/refinement/protocol.rs:165-182, qsl-semantics/src/check/refinement/protocol.rs:193-196 |
-| FND-005 | low | An application on an attempt-node row or a template (cattempt) row refuses `unsupported_construct`/`not-yet-implemented` (`ProtocolStepApplication`). FR-136 'Right sides' types an application 'with `self` bound to the concrete receiver, the concrete step's arguments in scope by parameter name'. For an attempt or a cattempt the concrete step is an application of a known operation, so that context exists. Only event, control, channel, role, trigger and memory rows lack one. The refusal is honest, but it refuses a spelling the spec admits. Fix: type attempt-node and template rows as their operation's row is typed, or record the restriction as remaining work on QSL-563. | qsl-semantics/src/check/refinement/protocol.rs:685-697 |
-| FND-006 | low | The step-keyword spelling is written twice. `spelled` maps `StepClassKeyword` to `fork`, `join`, `cend` and the rest by hand, beside qsl-forms' parse table (`b"duplicate" => StepClassKeyword::Duplicate`, …). A keyword added to one place can silently miss the other. Fix: one `StepClassKeyword::as_str` in qsl-forms, used by both. | qsl-semantics/src/check/refinement/protocol.rs:537-546, qsl-forms/src/refinement.rs:430-445 |
-| FND-007 | low | A doc comment opens with an AC id: `/// FR-214-AC-1's refinement of `A::Acc::add` by `Fill`, …` on the `refinement` helper. Fix: open with what the helper builds, and cite the AC later in the sentence. | qsl-semantics/src/check/refinement/protocol/tests.rs:272 |
-| FND-008 | low | The shared CAS fixture now selects the protocol profile (`profile pp = "quire.protocol.finite-global/v1"`) for every unit it builds, so every CAS-based model-subject test (qsl-semantics, qsl-replay, qsl-analyze and root) runs under a profile that only `refinement_protocol.rs` needs. Fix: add the profile in `protocol_refinement()`'s unit, or as a fixture option. | tests/support/refinement_cas.rs:371 |
+| FND-001 | high | Protocol-side undetermined fairness is collapsed to generic `UndecidedSuccessor`, omitting the typed relation witness and replay data required by FR-148-AC-12 | qsl-analyze/src/model_check/refine.rs:682-689 |
 
-## New findings (disposition pass 1)
+## Review detail
 
-| ID | Severity | Summary | Refs |
-| --- | --- | --- | --- |
-| FND-009 | medium | The fix for FND-005 types an application on an attempt-node or template row in pass 2, but builds both sides as `Side { alias: "", model }`. `Side::populations` names each population `format!("{}::{segment}", self.alias)`, so in pass 2 the concrete populations are `::nodes`, not `M::nodes`, and FR-139's population-valued forms do not resolve. Reproduced at 3d0c48058: `step M::Node::step -> A::Acc::addBy(self, count(x in M::nodes where x.total = 0));` checks, but the same argument on `step M::Fill::A -> …` refuses `missing_declaration`/`missing-name` 'M::nodes'. A `pre(self.total)` argument and a type mismatch behave the same on both rows, so only the population scope differs. FR-136 'Right sides' puts 'population-valued forms (FR-139)' in scope for every application. Fix: build the pass-2 sides with the real aliases (`checked.abstract_model` and `checked.concrete_model`), and add a population-valued argument to `an_application_on_an_attempt_or_template_row_is_typed_over_its_operation`. | qsl-semantics/src/check/refinement/protocol.rs:651-657, qsl-semantics/src/check/refinement.rs:716-731 |
+The code and Rust lanes covered the checked protocol adapter, candidate-specific protocol product, refusal and terminal-success relation, assumption-relation search, replay validation, and the AC-linked integration fixtures. No applicable AssuranceProfile covers these changes; AD-001 concerns the shared evaluation-core interface and is outside this diff. The feature does not alter CI workflow gates.
+
+`protocol_divergence` returns `SafetyUndecided::Undetermined(UndecidedSuccessor)` whenever a protocol successor expansion contains `ContractUndetermined` (lines 682-689). `protocol_assumption_strengthening` makes the same conversion (lines 877-884). The specification requires the protocol-class case, like the concrete-class case, to return `ProtocolAssumptionNotEstablished{reason: relation-undetermined}` with exact identities and both finite prefixes, and for replay to recompute the predicate. The sole AC-12 test exercises a concrete assumption predicate. A protocol-side fairness predicate therefore never reaches the typed witness/replay path.
+
+## Coverage
+
+- Code review and Rust review: ran together in this artifact.
+- Static checks independently run: `cargo fmt --all -- --check` and `git diff --check` passed.
+- Coder-reported evidence: `refinement_protocol::` 23/23, required-clause subset 2/2, and `cargo check --no-default-features -p qsl-analyze -p qsl-replay` passed. I did not run those builds independently.
+- Aggregate `make ci` was not run in this review pass; the code-lead's gate order runs it after review findings are fixed.
+- No CI workflow files changed. No applicable AssuranceProfile was found.
+
+## Findings data
+
+```yaml
+clean: false
+scope:
+- id: FR-148-AC-12
+  path: spec/functional/FR-148-decide-steps-against-an-abstract-protocol.md
+  role: examined
+  excerpt: 'When an identified concrete or protocol fairness class has ContractUndetermined
+    enabledness at a reachable paired state and no violating paired lasso is available,
+    the product returns ProtocolAssumptionNotEstablished{reason: relation-undetermined}
+    with the exact checked identities and both finite prefixes to the undecided state;
+    FR-145 replay reproduces the same undecided predicate.'
+- id: FR-142-AC-7
+  path: spec/functional/FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md
+  role: context_only
+  excerpt: CasRefinesCounter with a true poll returns Stopped{Cancelled, None}.
+- id: protocol-assumption-relation
+  path: qsl-analyze/src/model_check/refine.rs
+  role: examined
+  excerpt: Protocol-side ContractUndetermined findings currently return generic UndecidedSuccessor
+    from protocol_divergence and protocol_assumption_strengthening.
+- id: protocol-assumption-witness
+  path: qsl-replay/src/refinement/failure.rs
+  role: examined
+  excerpt: ProtocolAssumptionWitness carries a typed reason, exact source assumptions,
+    paired path, and optional undecided predicate locus.
+- id: protocol-assumption-replay
+  path: qsl-replay/src/model_check/refinement_replay.rs
+  role: examined
+  excerpt: replay_protocol_assumption_witness recomputes the predicate and source
+    identities for relation-undetermined witnesses.
+- id: TC-553-AC-12-test
+  path: qsl-analyze/tests/it/refinement_protocol.rs
+  role: examined
+  excerpt: an_undetermined_assumption_predicate_has_a_typed_finite_witness covers
+    the concrete fairness class case.
+- id: FR-379-AC-8
+  path: quire-specification/spec/functional/analysis/FR-379-report-and-replay-refinement-counterexamples.md
+  role: context_only
+  excerpt: Over a protocol abstract subject, a stable concrete state that refuses
+    a label every stable member of the candidate set enables fails `RefusalNotPermitted{position,
+    label}` with `position` the prefix's step count, and the reported `label` is the
+    least qualifying label by canonical encoding.
+- id: FR-379-AC-9
+  path: quire-specification/spec/functional/analysis/FR-379-report-and-replay-refinement-counterexamples.md
+  role: context_only
+  excerpt: '`RefusalNotPermitted` is not reported when some stable member of the candidate
+    set refuses the label, when the candidate set has no stable member, when the concrete
+    state enables a `stutter` or `any` step, or when a concrete step visible with
+    the label is enabled.'
+- id: FR-379-AC-10
+  path: quire-specification/spec/functional/analysis/FR-379-report-and-replay-refinement-counterexamples.md
+  role: context_only
+  excerpt: 'A terminal-success concrete state with no terminal-success member of the
+    candidate set fails `TerminalSuccessMismatch{position, direction: concrete-only}`,
+    and a terminal non-intended concrete state with every member terminal success
+    fails it with `abstract-only`.'
+- id: FR-379-AC-11
+  path: quire-specification/spec/functional/analysis/FR-379-report-and-replay-refinement-counterexamples.md
+  role: context_only
+  excerpt: '`TerminalSuccessMismatch` is not reported when some member of the candidate
+    set is terminal success (`concrete-only`), when some member is not (`abstract-only`),
+    or when the concrete state enables a step.'
+- id: FR-379-AC-12
+  path: quire-specification/spec/functional/analysis/FR-379-report-and-replay-refinement-counterexamples.md
+  role: context_only
+  excerpt: A failing step rule on the incoming step is reported instead of a protocol
+    relation failure at its post-state, and where both relation kinds fail at one
+    state `RefusalNotPermitted` is reported; a model abstract subject never yields
+    either kind.
+- id: FR-379-AC-13
+  path: quire-specification/spec/functional/analysis/FR-379-report-and-replay-refinement-counterexamples.md
+  role: context_only
+  excerpt: Replay of `RefusalNotPermitted` or `TerminalSuccessMismatch` recomputes
+    the candidate set and the classifications at the prefix's last state and settles
+    `reproduced-with-evaluated-witness` and the item `refuted` when the recorded failure
+    holds; a recorded `position` that differs from the prefix's step count, a label
+    no stable member enables or the concrete state does not refuse, a `direction`
+    that does not hold, or no recomputed failure settles `inconclusive`, cause `replay-parity`;
+    a loop on these kinds is refused `invalid_runtime_input`/`inva
+- id: TC-318
+  path: quire-specification/spec/test-cases/TC-318-protocol-refinement-step-rules.md
+  role: context_only
+  excerpt: Case 4 refusal, case 5 permitted refusal, cases 6-7 terminal mismatch,
+    case 9 replay parity; each settles FR-379-AC-8 to AC-13.
+findings:
+- fnd: FND-001
+  severity: high
+  confidence: high
+  method: code-review
+  check: soundness
+  artifact_id: FR-148-AC-12
+  related_ids:
+  - FR-145
+  - FR-148
+  path: qsl-analyze/src/model_check/refine.rs
+  lines: 682-689
+  excerpt: 'When an identified concrete or protocol fairness class has ContractUndetermined
+    enabledness at a reachable paired state and no violating paired lasso is available,
+    the product returns ProtocolAssumptionNotEstablished{reason: relation-undetermined}
+    with the exact checked identities and both finite prefixes to the undecided state;
+    FR-145 replay reproduces the same undecided predicate.'
+  finding: Both protocol_divergence and protocol_assumption_strengthening convert
+    a protocol successor's ContractUndetermined finding to the generic UndecidedSuccessor
+    result. This omits the exact fairness identity and paired finite prefixes required
+    for a typed relation-undetermined witness, so FR-145 cannot reproduce this protocol-side
+    AC-12 case. The only AC-12 fixture currently covers the concrete-side predicate.
+bindings: []
+```
 
 ## Dispositions
 
-Round 1, head 3d0c48058 (fix commit 3d0c48058 over merge 59007c2e8).
-
-Gates at 3d0c48058: fmt, clippy `-D warnings`, root `cargo test --test it`, `make string-edge` and the three arch-lint targets pass. The seven-crate `cargo test` fails only on qsl-package's `conformance_c14_source_map_lookup_over_qspec_positive_fixtures` and `conformance_i2_read_over_qspec_checked_package_v2_fixtures`. Those two read the live QSpec checkout (`QSPEC_DIR`) and fail the same way on origin/main 8fae9fe55. They are environment-only, and this PR touches no qsl-package file. The 7,800-case oracle still agrees exactly. Mutation: 60 mutants (the 55 of the review pass, re-anchored, plus M52 to M56 for the new code), 58 killed. M06 (equivalent) and M28 (source sort, not required) survive, as before. The new FND-001 test fails on c63e977a4 and passes on 3d0c48058.
-
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | The pending refusals are appended on the refusal gate (mod.rs:1746), each model-conformance and type-admission stage failure, and the protocols-loop cancellation (mod.rs:2067). `a_protocol_subjects_refusals_survive_another_refinements_refusal` fails on c63e977a4 and passes here, and mutant M54 is killed. |
-| FND-002 | fixed | :920, :951, :1048, :1225 and :1260 are TC-541 only. `a_missing_or_doubled_row_refuses` and the attempt-precedence test carry FR-136-AC-4. |
-| FND-003 | fixed | M33, M34 and M47 are killed by `a_protocol_row_refuses_a_node_target_and_an_application_without_an_operation` and `a_refinement_is_covered_against_the_clause_it_selects`. |
-| FND-004 | fixed | A model subject refuses `step fork M::Node::step` at `M::Node::step` and `M::Nope::x` at `M::Nope::x`; a protocol subject still refuses at the segment. M55 and M56 are killed. |
-| FND-005 | fixed | Attempt-node and cattempt rows are typed over the applied operation (`applied_operation`, `Checker::application`), and M52 and M53 are killed. The fix introduced FND-009. |
-| FND-006 | fixed | One table: `StepClassKeyword::as_str` and `of_spelling` in qsl-forms, used by the parser and by `spelled`. |
-| FND-007 | fixed | The helper doc opens 'The refinement of `A::Acc` by `Fill` that ADR-027 §7 gives (FR-214's first example)'. |
-| FND-008 | fixed | The profile line moved into `protocol_refinement()`. `unit_text` hoists leading `profile ` lines into the header, and no other caller's refinement text starts with one, so the other fixtures are unchanged. |
+| FND-001 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
 
-Round 2, head f0a588a50 (fix commit f0a588a50; merge 3600ac7fd of origin/main 15e011cca, whose tree equals an automatic `git merge-tree` of its parents, so it carries no manual resolution; record commit f4fe3e7a7).
+### FND-001 after excerpt
 
-Gates at f0a588a50: fmt, clippy `-D warnings`, root `cargo test --test it`, `make string-edge` and the three arch-lint targets pass. The seven-crate `cargo test`, run with `--no-fail-fast`, gives 4,602 passed and 2 failed. The two failures are the qsl-package `conformance_c14_source_map_lookup_over_qspec_positive_fixtures` and `conformance_i2_read_over_qspec_checked_package_v2_fixtures` tests. They read the live QSpec checkout and fail the same way on origin/main 8fae9fe55, so they come from the environment, not from this PR. (Round 1's crate run was fail-fast and stopped at qsl-package; this run covers every crate.) The 7,800-case oracle still agrees exactly. Mutation: 61 mutants (round 1's 60 plus M57, the empty pass-2 alias), 59 killed. M06 (equivalent) and M28 (source sort, not required) survive.
-
-| FND | outcome | reason |
-| --- | --- | --- |
-| FND-009 | fixed | `side_of(models, alias)` builds each pass-2 side with its real alias. Probe: a population-valued argument `count(x in M::nodes where x.total = 0)` now checks on an attempt-node row as on an operation row. `an_application_on_an_attempt_or_template_row_is_typed_over_its_operation` asserts it, and mutant M57 is killed. |
+```text
+if let Some(witness) = self.protocol_contract_undetermined_witness(
+    node_index, candidate, protocol, &transition, &clause, None, None,
+)? {
+    return Err(End::Undecided(SafetyUndecided::ProtocolAssumptionNotEstablished(
+        Box::new(witness),
+    )));
+}
+// an_undetermined_protocol_assumption_has_a_typed_finite_witness asserts
+// RelationUndetermined, selected RequiredTemporal identity, and replay Reproduced.
+```

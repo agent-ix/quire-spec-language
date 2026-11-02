@@ -1352,6 +1352,12 @@ impl Scope {
         self.imports.get(qualifier)
     }
 
+    /// Every admitted import, for typed consumers that resolve declarations
+    /// by their selected model identity rather than the library alias.
+    pub(crate) fn imported_packages(&self) -> impl Iterator<Item = &super::AdmittedImport> {
+        self.imports.values()
+    }
+
     /// Every type `name` binds -- an alias, composite, enum or object type --
     /// in resolution order. Empty when `name` binds no type.
     pub(crate) fn named_types(&self, name: &str) -> &[ValueType] {

@@ -645,6 +645,14 @@ fn complete(
                 bytes: read.source().text().as_bytes().to_vec(),
             }
         }))
+        .and_then(|dependencies| {
+            dependencies.with_refinement_internals(libraries.iter().filter_map(|(library, _)| {
+                library
+                    .refinement_internals
+                    .clone()
+                    .map(|value| (library.identity.clone(), value))
+            }))
+        })
         .map_err(|refusal| {
             spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
         })?;
@@ -670,9 +678,10 @@ fn complete(
     let models = qsl_replay::spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(failure)?
         .into_value();
-    let checked = qsl_replay::spine::check(
+    let checked = qsl_replay::spine::check_with_refinement_internals(
         &parsed,
         package_name(source.identity()),
+        request.refinement_internals.clone(),
         &models,
         &dependencies,
         limits,

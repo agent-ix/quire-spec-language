@@ -25,6 +25,9 @@ pub enum SafetyUndecided {
     /// (`mapping-undetermined`), or a contract conjunction of either model
     /// was undecided (`undecided-successor`).
     Undetermined(Undetermined),
+    /// A protocol refinement could not establish its environment-assumption
+    /// implication (FR-148); it is never a refutation or proof.
+    ProtocolAssumptionNotEstablished(Box<super::failure::ProtocolAssumptionWitness>),
 }
 
 impl SafetyUndecided {
@@ -33,6 +36,9 @@ impl SafetyUndecided {
         match self {
             Self::NoInitialState => InconclusiveCause::NoInitialState,
             Self::Undetermined(undetermined) => undetermined.cause(),
+            Self::ProtocolAssumptionNotEstablished(witness) => {
+                InconclusiveCause::ProtocolAssumptionNotEstablished((**witness).clone())
+            }
         }
     }
 }
@@ -46,6 +52,14 @@ pub enum SafetyOutcome {
         /// The simulation relation the product found, for the core to check
         /// (FR-149).
         certificate: Box<SimulationCertificate>,
+        /// The run's counts.
+        stats: RunStats,
+    },
+    /// Every reachable product state was examined and every initial state
+    /// and step passed for a protocol refinement. The proof is deliberately
+    /// uncertified because the core simulation-certificate checker covers
+    /// model subjects only (FR-148, ADR-020 CT-4).
+    HoldsUncertified {
         /// The run's counts.
         stats: RunStats,
     },

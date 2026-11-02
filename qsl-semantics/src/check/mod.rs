@@ -751,6 +751,8 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// Checked protocol classes retained for importing refinements (FR-147).
+    protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
     /// checked protocol declaration and slot rows.
     protocol_node_keys: BTreeMap<String, CheckedProtocolNodeKeys>,
@@ -865,6 +867,7 @@ impl fmt::Debug for CheckedGraph {
                     model_names,
                     abstraction,
                     protocols,
+                    protocol_classes,
                     protocol_node_keys,
                     temporal_clauses,
                     hyper_nodes,
@@ -946,6 +949,7 @@ impl fmt::Debug for CheckedGraph {
                     .field("model_names", &model_names)
                     .field("abstraction", &abstraction)
                     .field("protocols", &protocols)
+                    .field("protocol_classes", &protocol_classes)
                     .field("protocol_node_keys", &protocol_node_keys)
                     .field("temporal_clauses", &temporal_clauses)
                     .field("hyper_nodes", &hyper_nodes)
@@ -4980,14 +4984,35 @@ impl PackageDeclarations {
         // protocol clause node. Resolve it after dependency-ordered protocol
         // lowering (and after attempt-bearing clauses receive their nodes).
         for checked in &mut refinements {
-            let AbstractSide::Protocol { clause } = &checked.abstract_side else {
+            let AbstractSide::Protocol { clause, dependency } = &checked.abstract_side else {
                 continue;
             };
-            checked.abstract_protocol = self
-                .protocols
-                .iter()
-                .position(|protocol| protocol.name.name == *clause)
-                .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok());
+            checked.abstract_protocol = if let Some(dependency) = dependency {
+                scope
+                    .imported_packages()
+                    .find(|import| import.identity == *dependency)
+                    .and_then(|import| import.graph.protocol_clause_key(clause))
+                    .cloned()
+            } else {
+                self.protocols
+                    .iter()
+                    .position(|protocol| protocol.name.name == *clause)
+                    .and_then(|index| lowering.protocol_key(index, &root(Origin::Expression)).ok())
+            };
+            if let Some(dependency) = dependency {
+                checked.abstract_external_subject_node = scope
+                    .imported_packages()
+                    .find(|import| import.identity == *dependency)
+                    .and_then(|import| {
+                        import
+                            .graph
+                            .model_roots()
+                            .find(|(selection, _)| {
+                                selection.identity == checked.abstract_model_selection.identity
+                            })
+                            .map(|(_, root)| root)
+                    });
+            }
         }
         // QSpec FR-368: each clause's own node, its subject's derived-item
         // anchor; a clause with no node keeps none.
@@ -6114,6 +6139,58 @@ impl PackageDeclarations {
         if !unwritten.is_empty() {
             return Err(unwritten);
         }
+        let protocol_classes = self
+            .protocols
+            .iter()
+            .zip(&protocol_bindings)
+            .zip(&checked_protocols)
+            .map(|((form, attempts), checked)| {
+                let mut classes =
+                    refinement::ProtocolClasses::of(form, checked, attempts, scope.types());
+                if let Some(keys) = lowered_protocol_members
+                    .iter()
+                    .find(|(name, _)| *name == &form.name.name)
+                    .map(|(_, keys)| keys)
+                {
+                    let mut binder_type_nodes = BTreeMap::new();
+                    for binder in &keys.binders {
+                        if let Some(introducing) = binder.introducing {
+                            binder_type_nodes
+                                .entry(introducing)
+                                .or_insert_with(Vec::new)
+                                .push(binder.semantic_type.clone());
+                        }
+                    }
+                    classes.binder_type_nodes = Some(binder_type_nodes);
+                    classes.trigger_type_nodes = match &form.activation {
+                        qsl_forms::ActivationForm::Each { parameter, .. } => Some(
+                            keys.binders
+                                .iter()
+                                .filter(|binder| binder.name == parameter.name.name)
+                                .map(|binder| binder.semantic_type.clone())
+                                .collect(),
+                        ),
+                        qsl_forms::ActivationForm::Origin => None,
+                    };
+                }
+                (
+                    form.name.name.clone(),
+                    refinement::ImportedProtocolClasses {
+                        classes,
+                        model_selections: checked
+                            .roles
+                            .iter()
+                            .filter_map(|role| role.model_selection.clone())
+                            .collect(),
+                        object_types: checked
+                            .roles
+                            .iter()
+                            .filter_map(|role| role.context.clone())
+                            .collect(),
+                    },
+                )
+            })
+            .collect();
         let mut graph = CheckedGraph {
             source,
             package_name,
@@ -6154,6 +6231,7 @@ impl PackageDeclarations {
             refinements,
             abstractions: self.abstractions,
             model_names,
+            protocol_classes,
             protocols: checked_protocols,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
@@ -6662,6 +6740,22 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
+    /// The checked protocol-class view imported refinements use to resolve
+    /// one of this package's protocol clauses by name.
+    pub(crate) fn imported_protocol_classes(
+        &self,
+        name: &str,
+    ) -> Option<&refinement::ImportedProtocolClasses> {
+        self.protocol_classes.get(name)
+    }
+
+    /// The exact lowering-owned clause key for an imported protocol name.
+    pub(crate) fn protocol_clause_key(&self, name: &str) -> Option<&quire_exact::NodeKey> {
+        self.protocol_node_keys
+            .get(name)
+            .and_then(|keys| keys.clause.as_ref())
+    }
+
     /// QSL's typed equality facts, keyed by their lowered application node
     /// and source occurrence. Distinct occurrences may share a structural
     /// node key while retaining different authored conversion decisions.

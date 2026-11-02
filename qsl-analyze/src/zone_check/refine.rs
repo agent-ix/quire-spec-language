@@ -262,6 +262,7 @@ pub fn check_timed_refinement<S>(
     let RefinementSystems {
         concrete,
         abstract_system,
+        ..
     } = open_systems(
         refinement,
         &request.concrete,
@@ -840,6 +841,14 @@ impl Product<'_, '_> {
             StepVerdict::Undetermined(undetermined) => {
                 Judgement::Ends(TimedSafetyOutcome::Undecided {
                     cause: TimedRefinementUndecided::Undetermined(undetermined),
+                    stats: run.stats(),
+                })
+            }
+            StepVerdict::ProtocolContractUndetermined { .. } => {
+                Judgement::Ends(TimedSafetyOutcome::Undecided {
+                    cause: TimedRefinementUndecided::Undetermined(
+                        qsl_replay::Undetermined::UndecidedSuccessor,
+                    ),
                     stats: run.stats(),
                 })
             }

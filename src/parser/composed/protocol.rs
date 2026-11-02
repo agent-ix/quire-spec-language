@@ -41,10 +41,25 @@ impl Parser {
                 self.charge(self.peek().span)?;
                 let start = self.take().span.start;
                 self.expect(K::Temporal)?;
-                let name = self.identifier()?;
+                let first = self.identifier()?;
+                let mut name = first.value;
+                let mut end = first.span.end;
+                while self.is(K::Qualify) {
+                    self.take();
+                    let segment = self.identifier()?;
+                    name.push_str("::");
+                    name.push_str(&segment.value);
+                    end = segment.span.end;
+                }
                 self.expect(K::Semicolon)?;
                 requirements.push(ProtocolRequirement::Temporal {
-                    name,
+                    name: Spanned {
+                        value: name,
+                        span: Span {
+                            start: first.span.start,
+                            end,
+                        },
+                    },
                     span: self.range_from(start),
                 });
             }
