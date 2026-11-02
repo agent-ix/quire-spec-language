@@ -242,10 +242,11 @@ pub enum Written<C> {
 }
 
 /// ADR-027 SE-1: the memory model a `parallel` runs under, through its
-/// eight members.
-pub trait MemoryModel {
+/// eight members. A model and its states are shareable across threads, so
+/// a protocol system's state space can be explored in parallel.
+pub trait MemoryModel: Sync {
     /// (a) The memory state, a member of the state key.
-    type Component: Clone + Eq + std::fmt::Debug + Encode;
+    type Component: Clone + Eq + std::fmt::Debug + Encode + Send + Sync;
 
     /// The resolved models (FR-219) this memory model implements: a
     /// protocol subject whose `parallel` resolves to another is refused.
