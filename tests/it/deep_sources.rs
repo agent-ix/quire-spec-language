@@ -17,6 +17,9 @@ const DEPTH: usize = 100_000;
 
 const HISTORICAL_HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\n";
 
+const CST_HEADER: &str =
+    "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+
 const COMPOSED_HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "quire.state.graph/v1";
 model M = "test:orders-and-refunds";
@@ -212,13 +215,21 @@ fn admit_namespace_uses_raised_parser_limits_as_given() {
     assert!(namespace.units()[0].expressions().len() >= 2 * DEPTH - 1);
 }
 
-/// `quire-spec parse` takes the three limits from its command line.
+/// `quire-spec parse` takes the four `s1.*` limits from its command line and
+/// runs them through `qsl_cst::parse` (FR-002, FR-256-AC-5).
 #[trace("TC-750", "FR-256-AC-5")]
 #[test]
 fn cli_parse_takes_caller_limits() {
     let temp = tempfile::tempdir().expect("temp dir");
     let file = temp.path().join("deep.native");
-    std::fs::write(&file, historical(&brackets())).expect("write source");
+    std::fs::write(
+        &file,
+        format!(
+            "{CST_HEADER}function f using v(): Boolean pure {{ {} }}\n",
+            brackets()
+        ),
+    )
+    .expect("write source");
     let parse = |extra: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_quire-spec"))
             .args(["parse", "test", "test:deep", "test", "1"])
@@ -240,11 +251,18 @@ fn cli_parse_takes_caller_limits() {
         "--tokens",
         "1000000",
         "--nodes",
-        "1000000",
+        "10000000",
+        "--work-units",
+        "256",
     ]);
     assert_eq!(parsed.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&parsed.stdout).contains(r#""status":"parsed""#));
-    for extra in [&["--tokens"][..], &["--tokens", "many"], &["--depth", "9"]] {
+    assert!(String::from_utf8_lossy(&parsed.stdout).contains(r#""category":"success""#));
+    for extra in [
+        &["--tokens"][..],
+        &["--tokens", "many"],
+        &["--depth", "9"],
+        &["--work-units"],
+    ] {
         assert_eq!(parse(extra).status.code(), Some(20), "{extra:?}");
     }
 }
