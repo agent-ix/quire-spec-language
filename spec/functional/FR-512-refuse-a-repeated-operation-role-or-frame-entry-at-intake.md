@@ -42,9 +42,9 @@ records which one is satisfied by construction.
 - **Context is a mapped object.** The intake reader SHALL refuse, as
   `invalid_model_binding`/`malformed-declaration` at the owner reference, an
   operation record whose owner names a declaration that is not an object type
-  or process of the package (FR-103 already assigns the operation to its owner; this states the refusal.)
-- **Unique by (owner, name).** Two operations of one owner with equal names
-  SHALL refuse `ambiguous_declaration`/`ambiguous-name` at the second,
+  or process of the package. FR-103 already assigns the operation to its owner; this clause states the refusal.
+- **Unique by (owner, name).** Intake SHALL refuse the second of two operations
+  of one owner with equal names as `ambiguous_declaration`/`ambiguous-name`,
   naming both. An operation of a subtype with the name of an inherited one is
   not a repeat; it is a redefinition (FR-081, FR-103-AC-10).
 - **Distinct parameters.** Two parameters of one operation with equal names,
@@ -56,7 +56,7 @@ records which one is satisfied by construction.
   check guarded a separate role inventory, which the spine does not have).
 - **Frame entries unique.** After FR-103 resolves the entries of `modifies`,
   then `creates`, then `deletes`, a repeated entry within one list (the same
-  resolved declaration-and-field pair and scope in `modifies`; the same
+  resolved declaration-and-field pair in `modifies`, with the same `modifies` scope that FR-154 reads for the entry; the same
   resolved declaration in `creates` or in `deletes`) SHALL refuse
   `invalid_model_binding`/`malformed-declaration` at the second entry, naming
   both positions, retaining the operation's IR node identity, the artifact id

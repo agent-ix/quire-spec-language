@@ -42,6 +42,9 @@ type shares one bound by construction and a disagreement is a refusal.
   `constraints` hold `minNumerator`, `maxNumerator`, `minDenominator` and
   `maxDenominator`, each once, in any order. Each constraint's `appliesTo` is
   the value type itself and its `operands.value` is a JSON integer.
+- Optionally a `unit` member on the value type, as FR-154 reads it for a
+  quantity: the legacy rational scalar carried an authored unit (dimensionless
+  or one named unit), which this requirement keeps.
 - Fields, parameters, results, aliases and option or sequence items whose
   `typeRef` or `target` names that value type.
 
@@ -76,6 +79,14 @@ type shares one bound by construction and a disagreement is a refusal.
   float, an exponent spelling or a fraction spelling refuses at the reader of
   item 1's row as `invalid_model_binding`/`malformed-declaration` and is never
   rounded, widened or repaired (FR-041 "Behavior", inherited).
+- The intake reader SHALL keep the value type's `unit`: absent means
+  dimensionless, and a named unit that is not a unit of the unit namespace
+  refuses `missing_declaration`/`missing-name` at the `unit` member. The
+  checked type of a site is `Rational[...]` with that declared unit, and two
+  value types equal in bounds and different in unit are two different types
+  (the legacy rule that equal representations cannot merge different nominal
+  units). Unit arithmetic and conversion over a Rational carrier are FR-497's;
+  see Dependencies.
 - Every site typed by one Rational value type SHALL have exactly that type's
   bounds. A site cannot restate or narrow them: a field of that type that
   carries its own `constraints` refuses `invalid_model_binding`/
@@ -102,8 +113,11 @@ type shares one bound by construction and a disagreement is a refusal.
 | FR-505-AC-4 | A field of type `Ratio` that adds its own `maxDenominator` constraint, and an alias of `Ratio` that carries a constraint, each refuse `invalid_model_binding`/`malformed-declaration` at the field's `Field.constraints` and at the alias; a plain alias of `Ratio` admits and has the type `Rational[-3, 7; 1, 12]`. Two sites typed by two value types that differ only in `maxDenominator` (12 and 13) stay two distinct types. | Test (TC-1300) |
 | FR-505-AC-5 | A snapshot supplying `7/12`, `-3/1` and `0/1` to a `Ratio` field is admitted; `8/1`, `1/13`, `2/4` (unreduced), `-4/1` and the float `0.5` each refuse `invalid_runtime_input`/`invalid-value` naming the member path, and no value is reduced or rounded. | Test (TC-1300) |
 | FR-505-AC-6 | A field typed bare `ix://quire/native/Rational` admits and its use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1300) |
+| FR-505-AC-7 | `Ratio` with `unit` `m` (metre) and `Ratio` with no unit give two distinct types for otherwise equal bounds; a field typed by the metre one has declared unit `m`; `unit` `nosuch` refuses `missing_declaration`/`missing-name` at the `unit` member; two value types with equal bounds and equal units are the same checked type. | Test (TC-1300) |
 
 ## Dependencies
+
+- **Unit carrier:** FR-497 admits only `Int` and `Decimal` carriers in `Quantity<u, C>`; arithmetic and conversion of a Rational with a unit needs FR-497 (and QSpec FR-142) to admit a Rational carrier. Until then a unit-bearing Rational type is declared and compared, and any arithmetic on it refuses `ill_typed`/`operator-ineligible` as for a bare native Rational.
 
 - **Upstream:** FR-056 (Text value type, intake order), FR-106 (value
   admission), FR-041-AC-2 (the legacy behavior this succeeds).

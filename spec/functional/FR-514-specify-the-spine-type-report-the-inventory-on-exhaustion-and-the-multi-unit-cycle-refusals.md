@@ -91,10 +91,11 @@ observable obligation of each FR-362 and FR-480 criterion.
 ### Unit and dimension cycles across source units (FR-480-AC-6)
 
 - A refusal for an FR-142 unit-graph defect found in the assembler SHALL carry
-  the code and cause FR-091's unit-graph topology row gives it: a unit target
-  cycle (row 6) and a dimension cycle `invalid_package`/`definition-cycle`
-  with the dependency edges as payload; a zero scale (row 1) and a second
-  root (row 5) `invalid_package`/`invalid-value`; an unresolved name
+  the code and cause FR-091's unit-graph topology row gives it, with the row
+  numbers of QSpec FR-142's unit-graph table (checked against it): a unit
+  target cycle (FR-142 row 6) and a dimension cycle `invalid_package`/`definition-cycle`
+  with the dependency edges as payload; a zero scale (FR-142 row 1) and a second
+  root (FR-142 row 5) `invalid_package`/`invalid-value`; an unresolved name
   `missing_declaration`/`missing-name`.
 - The refusal SHALL locate the defect at the declaration in its own document,
   naming that document's source reference and the declaration span, and SHALL
@@ -106,8 +107,8 @@ FR-480's criteria belong to four pieces of work (QSL-1508):
 
 | Piece | Criteria |
 | --- | --- |
-| (a) admission layer: the unit list, source and header admission | FR-480-AC-4; the library-conflict sentence of FR-480-AC-2 |
-| (b) multi-unit assembler: cross-unit declarations, types, cycles, type reports | FR-480-AC-2 (types and ambiguity), AC-5 (ownership of nodes), AC-6, AC-8 |
+| (a) admission layer: the unit list, source and header admission | FR-480-AC-4; FR-480-AC-2, its library-conflict sentences (the dependency input that also supplies a library with a unit's authority and identity, and `import A` of an unsupplied library) |
+| (b) multi-unit assembler: cross-unit declarations, types, cycles, type reports | FR-480-AC-2, its cross-unit type and ambiguity sentences (the `[B, A]` list and the duplicate `Point`); AC-5 (ownership of nodes), AC-6, AC-8 |
 | (c) cross-unit dispatch, linking and ownership | FR-480-AC-1, AC-3 |
 | (d) FR-098 multi-source replay | FR-480-AC-7 |
 
@@ -120,7 +121,7 @@ FR-480's criteria belong to four pieces of work (QSL-1508):
 | FR-514-AC-3 | With `s3.work_units` set one below the unit's measured need, `check` returns the stage limit outcome and `qsl_inventory` returns `Incomplete` with one requirement row per requirement form, no obligation row and cause (S3, work budget, `s3.work_units`); with `s1.nodes` set to stop S1, `Incomplete` with zero rows and cause (S1, node count, `s1.nodes`); with the unit refused `ill_typed`, an error and no rows; with sufficient limits, `Complete`. | Test (TC-1309) |
 | FR-514-AC-4 | `qsl_inventory` over one source with formal identities `F1` and `F2` gives two inventories with different identities, and over `Incomplete` and `Complete` outcomes of one source and `F1` the same identity; no `check*` signature has a formal-identity parameter and `CheckedUnit` has no such member. | Test (TC-1309) |
 | FR-514-AC-5 | The FR-480-AC-6 documents give, for `[1, 2]`, `invalid_package`/`invalid-value` at `z` in document 1; for `[2, 1]`, `invalid_package`/`definition-cycle` at `u_self` in document 2 with edge `u_self` to `u_self`; a two-unit cycle `z`, `z2` across documents gives `invalid_package`/`definition-cycle` with both edges; a dimension cycle across documents gives the same code; each names the document's source reference. | Test (TC-1309) |
-| FR-514-AC-6 | Every FR-480 criterion appears in exactly one row of the pieces table, and the Linear tickets of pieces (a) to (d) each cite their criteria. | Inspection |
+| FR-514-AC-6 | A consistency test over this requirement and FR-480 finds every `FR-480-AC-n` id of FR-480 in the pieces table; only FR-480-AC-2 appears in two rows, and the two rows quote disjoint sentences of it. | Test (TC-1309) |
 
 ## Dependencies
 

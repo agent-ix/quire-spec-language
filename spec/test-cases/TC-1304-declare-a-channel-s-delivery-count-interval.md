@@ -28,7 +28,7 @@ is substituted per row; the smallest valid body sends and receives on `ch`.
 | 6 | emit rows 1 and a variant with `[0,4]`, and each policy word | delivery texts `[0,3]`, `[0,4]`, and the four words; all read back through I2 |
 | 7 | `fifo`, capacity 2, `delivery [2,2]`: `send P; receive R1 of P; receive R2 of P; receive R3 of P` | R1, R2 complete in every execution; R3 stops `empty-queue` |
 | 8 | capacity 2, `delivery [0,1]`: `send P; receive R1 of P` | one execution stops `empty-queue` at R1, one completes |
-| 9 | capacity 2, `overflow reject`, `delivery [1,3]`: `send P` | the executions with d = 1 and 2 enqueue; d = 3 follows `reject` for the third entry |
+| 9 | capacity 2, `overflow block`, `delivery [1,3]`: `send P` | executions d = 1 and d = 2 enqueue; the execution d = 3 stops `full-queue` at the send |
 | 10 | `delivery [1,2]` in a unit with no temporal profile and no clock | checks and emits |
 
 Tag the test `#[trace("FR-509-AC-1", "FR-509-AC-2", "FR-509-AC-3", "FR-509-AC-4", "FR-509-AC-5", "FR-509-AC-6", "TC-1304")]`.

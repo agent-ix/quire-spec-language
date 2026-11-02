@@ -38,16 +38,27 @@ static subject.
 - `StaticSubject`: six components, each an ordered list of values:
   1. **sources**: the unit's source reference (authority, identity) and the
      content identity of the unit and of each resolved library, in canonical
-     order;
+     order. A *resolved* library is one the check reached through the unit's
+     imports, transitively (`CheckedUnit::libraries()`); a supplied library
+     the imports never reach is not resolved and is not in the subject;
   2. **language**: the edition the headers agree on;
   3. **profiles**: each header profile alias with its resolved identity, in
-     source order;
+     source order, and, for each declaration, the profile closure it is
+     checked under;
   4. **models**: each selected domain package: alias, package identity,
      version, content identity;
   5. **dependencies**: each resolved library: identity and the declaration
-     kinds the unit refers to;
+     kinds the unit refers to, and each resolved reference to a predicate,
+     operation contract or temporal obligation, with its referring
+     declaration and its target;
   6. **roles**: each declaration-owned binding role: owner declaration,
      spelling, kind, anchor and type identity.
+The legacy components are carried as follows: the legacy profile component
+(each declaration's root definition and closure) is component 3, and the
+legacy dependency component (resolved predicate, operation-contract and
+temporal-obligation references) is component 5; the library list in
+component 5 is added because the spine, unlike the composed lane, imports
+libraries (FR-099). This is intended.
 - `BuildProvenance`: the `SpineLimits` and the usage of the producing run.
 - `differences(&other) -> Vec<ComponentKind>`: the components that differ.
 
@@ -75,7 +86,7 @@ static subject.
 | FR-510-AC-3 | Changing only a header profile's identity (`quire.value.complete/v1` to `quire.state.core/v1` where the source still checks) gives `differences` = [profiles]; changing only the selected domain package's version gives [models]; changing only the unit's source text gives [sources]; adding an unrelated unused library that the unit does not reach gives [] and one the unit imports gives [sources, dependencies]. | Test (TC-1305) |
 | FR-510-AC-4 | Two declarations that each bind a role spelled `x` give two role entries with different owners; renaming one declaration's role changes [roles] only. | Test (TC-1305) |
 | FR-510-AC-5 | A source that fails to check yields no subject: the check returns its refusal and no `StaticSubject` value can be built for it. | Test (TC-1305) |
-| FR-510-AC-6 | `StaticSubject` has no accessor or conversion yielding a checked-package identity or the emitted bytes, and its documentation states that equality is component-wise only. | Inspection |
+| FR-510-AC-6 | A downstream crate that calls a method on `StaticSubject` to obtain a checked-package identity or the emitted bytes, or that converts it into either, does not compile (compile-fail test); the only comparison it offers is component-wise equality and `differences`. | Test (TC-1305) |
 
 ## Dependencies
 

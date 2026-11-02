@@ -12,7 +12,7 @@ relationships:
 
 Verify the Rational value type of FR-505: shared bounds across sites, the
 ordered reader refusals, alias and site restatement, value admission and the
-unchanged bare native. Scope: FR-505-AC-1 to FR-505-AC-6.
+unchanged bare native. Scope: FR-505-AC-1 to FR-505-AC-7.
 
 ## Test Procedure
 
@@ -46,9 +46,10 @@ Value rows, over row 1's package, as `level` in a snapshot:
 | Row | Value | Expected |
 | --- | --- | --- |
 | 18 | `7/12`, `-3/1`, `0/1` | admitted |
+| 20 | `Ratio` with `unit` `m` beside `Ratio` without; `unit` `nosuch`; two equal-bounds equal-unit types | two distinct types, field has declared unit `m`; `missing_declaration`/`missing-name` at `unit`; one type |
 | 19 | `8/1`, `1/13`, `2/4`, `-4/1`, float `0.5` | each `invalid_runtime_input`/`invalid-value` naming the member path |
 
-Tag the test `#[trace("FR-505-AC-1", "FR-505-AC-2", "FR-505-AC-3", "FR-505-AC-4", "FR-505-AC-5", "FR-505-AC-6", "TC-1300")]`.
+Tag the test `#[trace("FR-505-AC-1", "FR-505-AC-2", "FR-505-AC-3", "FR-505-AC-4", "FR-505-AC-5", "FR-505-AC-6", "FR-505-AC-7", "TC-1300")]`.
 
 ## Expected Results
 

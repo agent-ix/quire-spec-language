@@ -63,7 +63,7 @@ channel and states what it means; the four policy words keep their meaning.
 - Exploration of a channel's queue (the semantics TC-383 states for the named
   policies) SHALL let one send enqueue any count `d` with `lo <= d <= hi` of
   deliverable entries, each occupying one place of the channel's capacity and
-  each subject to its overflow policy; a receive removes one entry.
+  each subject to its overflow policy; a receive removes one entry. An interval channel enables exactly the executions its counts give and adds no separate `lose` or `duplicate` nondeterminism (FR-211-AC-5 applies to the named policies only).
   `[0,1]` therefore offers the executions of a send with no delivery and with
   one delivery, and `[2,2]` offers only the execution with two deliveries.
 - The interval SHALL NOT be read as time: no clock, unit or timed profile is
@@ -77,7 +77,7 @@ channel and states what it means; the four policy words keep their meaning.
 | FR-509-AC-2 | `delivery [4,3]` refuses `ill_typed`/`type-mismatch` at the interval naming 4 and 3; `delivery [-1,3]`, `delivery [0.5,3]` and `delivery [0,18446744073709551616]` each refuse `invalid_syntax` at the offending token; `delivery [2,2]` and `delivery [0,0]` admit. | Test (TC-1304) |
 | FR-509-AC-3 | Channels with `delivery [1,1]` and with `delivery exactly-once-premise`, otherwise equal, are two different checked channels, and neither changes the other's recorded capacity, overflow or ordering. | Test (TC-1304) |
 | FR-509-AC-4 | The emitted package holds the delivery text `[0,3]` for AC-1's channel, a different text `[0,4]` when only `hi` changes, the unchanged word text for each policy word, and reads back through the I2 reader. | Test (TC-1304) |
-| FR-509-AC-5 | On a `fifo` channel of capacity 2 with `delivery [2,2]`, `send P; receive R1 of P; receive R2 of P` completes in every execution and a third receive stops `empty-queue`; with `[0,1]` the executions include one where `receive R1 of P` stops `empty-queue` and one where it completes; with `[1,3]` and capacity 2, a send whose third delivery would exceed capacity follows the channel's overflow policy for that entry. | Test (TC-1304) |
+| FR-509-AC-5 | On a `fifo` channel of capacity 2 with `delivery [2,2]`, `send P; receive R1 of P; receive R2 of P` completes in every execution and a third receive stops `empty-queue`; with `[0,1]` the executions include one where `receive R1 of P` stops `empty-queue` and one where it completes; with `[1,3]`, capacity 2 and `overflow block`, `send P` has the executions d = 1 and d = 2 that enqueue, and one (d = 3) that stops `full-queue` at the send; on a `[1,1]` channel no execution loses or duplicates the message (FR-211-AC-5's `lose` and `duplicate` stay disabled), and on a `[0,1]` channel the only losing execution is d = 0. | Test (TC-1304) |
 | FR-509-AC-6 | A `delivery [1,2]` channel in a unit whose header selects no temporal profile and no clock checks and emits; the interval reads no clock. | Test (TC-1304) |
 
 ## Dependencies
@@ -91,7 +91,9 @@ channel and states what it means; the four policy words keep their meaning.
   Contract IR owner filed with this batch).
 - **Upstream:** FR-048-AC-2 (the legacy behavior), FR-218 (channel premises),
   TC-383 (queue semantics).
-- **Fixture note:** `tests/fixtures/composed-choreography.native` is refused by
-  the spine today because of its composed profile header and its `delivery
-  [0,3]`; TC-885 asserts that refusal. After this requirement the refusal's
-  cause changes to the header cause alone; the fixture is not edited.
+- **Fixture note:** `tests/fixtures/composed-choreography.native` is refused
+  by the spine today, and TC-885 asserts that refusal (a refusal that is not
+  an incomplete outcome). The fixture also uses composed-only forms (`on
+  each`, capture, role and relationship forms), so the refusal stays after
+  this requirement; its cause is not promised to change. The fixture is not
+  edited.

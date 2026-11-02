@@ -33,7 +33,7 @@ smallest valid body for the site.
 | 7 | `check C using pp`; `check C using e` | each `unknown_profile`/`wrong-selection-role` at the alias |
 | 8 | `protocol P using f` where `f` is a function name | `MissingProfile` only |
 | 9 | wrong-kind protocol alias and wrong-kind check alias in one protocol | two refusals in source order; no package |
-| 10 | `protocol P using pp` beside `function f using v` | admitted; package equals the package of the same unit before FR-508 |
+| 10 | `protocol P using pp` beside `function f using v` | admitted; the package holds one `protocol` node, one function node and the profile selections of `pp` and `v` |
 
 Tag the test `#[trace("FR-508-AC-1", "FR-508-AC-2", "FR-508-AC-3", "FR-508-AC-4", "FR-508-AC-5", "FR-508-AC-6", "TC-1303")]`.
 

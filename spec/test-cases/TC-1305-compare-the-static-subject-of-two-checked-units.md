@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the static subject of FR-510. Scope: FR-510-AC-1 to FR-510-AC-5
-(AC-6 is by inspection).
+(AC-6 is a compile-fail test).
 
 ## Test Procedure
 
@@ -31,8 +31,9 @@ is the subject of checking `Z0` under default limits.
 | 7 | the unit imports a second library | [sources, dependencies] |
 | 8 | two declarations each bind a role `x`; then rename one | two role entries with different owners; then [roles] |
 | 9 | a unit that fails S3 | the refusal; no subject exists |
+| 10 | compile-fail: obtain a package identity or bytes from `StaticSubject` | does not compile |
 
-Tag the test `#[trace("FR-510-AC-1", "FR-510-AC-2", "FR-510-AC-3", "FR-510-AC-4", "FR-510-AC-5", "TC-1305")]`.
+Tag the test `#[trace("FR-510-AC-1", "FR-510-AC-2", "FR-510-AC-3", "FR-510-AC-4", "FR-510-AC-5", "FR-510-AC-6", "TC-1305")]`.
 
 ## Expected Results
 

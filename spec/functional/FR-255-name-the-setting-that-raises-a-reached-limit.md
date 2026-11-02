@@ -79,7 +79,7 @@ caller gets when it does not configure the limit (ADR-014 §2, "inherited").
 Every limit has no ceiling: a caller raises or lowers it, and the value is
 used as given. The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-297 (`inspect.*`), FR-298 (`render.*`),
-NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
+NFR-012 and FR-506 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
 FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). Analysis
 engine limits and the typed inspection operation's limit have their own table
@@ -100,7 +100,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |
 | `intake.input_bytes` | I1 semantic-IR intake | input bytes | the intake limits' document bytes | 67108864 bytes |
 | `model.declaration_records` | model normalization | node count | `ModelNormalizationLimitsV1` declaration_records | 100000 records |
-| `model.sequence_maximum` | model intake | collection maximum | the largest declared collection maximum (FR-506) | 10000 items |
+| `model.sequence_maximum` | model intake | collection maximum | the largest declared collection maximum model intake admits (FR-506) | 10000 items |
 | `model.derivation_facts` | model normalization | node count | `ModelNormalizationLimitsV1` derivation_facts | 1600000 facts |
 | `model.effective_declarations` | model normalization | node count | `ModelNormalizationLimitsV1` effective_declarations | 1600000 declarations |
 | `model.dispatch_candidates` | model normalization | node count | `ModelNormalizationLimitsV1` dispatch_candidates | 1600000 candidates |

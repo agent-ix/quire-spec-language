@@ -58,8 +58,14 @@ The kind each site requires is:
 - An alias that names no profile SHALL keep its existing refusal
   (`MissingProfile`) and not the new one.
 - The identity `quire.temporal.infinite-trace/v1` is not admitted at `await` or
-  `compensate`, which settle over a finite window (the composed lane admitted
-  only the finite profiles).
+  `compensate`, whose deadline is a finite interval over finite positions or
+  stamps; the composed lane's registry admitted only EventPosition,
+  FixedSample and TimestampedWindow. `quire.temporal.timed/v1` is admitted
+  because an `await ... clock "c" within [lo, hi]` reads a dense-time interval
+  (FR-234), which the composed registry did not have. The refusal of
+  infinite-trace is stated and tested (FR-508-AC-3, TC-1303 row 5) so that
+  nothing stops being admitted silently; the planner has confirmed this
+  disposition.
 - A refusal produces no checked package and no bytes (FR-110).
 - A unit that selects the protocol profile under one alias and a value layer
   under another SHALL admit `protocol P using pp` and `function f using v`.
@@ -73,12 +79,18 @@ The kind each site requires is:
 | FR-508-AC-3 | An `await` and a `compensate` `using` an alias that selects each of the four admitted temporal identities admit; `using pp` (protocol profile), `using v` (value layer) and `using i` (`quire.temporal.infinite-trace/v1`) each refuse `unknown_profile`/`wrong-selection-role` at the alias. | Test (TC-1303) |
 | FR-508-AC-4 | A `check` `using` each of the six admitted layers admits; `using pp` and `using t` (any temporal profile) refuse `unknown_profile`/`wrong-selection-role` at the alias. | Test (TC-1303) |
 | FR-508-AC-5 | A protocol whose `using` alias is not a profile alias (a function name) keeps `MissingProfile` and not `wrong-selection-role`; a protocol with a wrong-kind `protocol` alias and a wrong-kind `check` alias reports both refusals in source order and produces no package. | Test (TC-1303) |
-| FR-508-AC-6 | A unit selecting `pp` and `v` admits `protocol P using pp` beside `function f using v`, and its checked package is equal to the package of the same unit before this requirement. | Test (TC-1303) |
+| FR-508-AC-6 | A unit selecting `pp` and `v` admits `protocol P using pp` beside `function f using v`, and its checked package holds one `protocol` node, one function node and the profile selections of `pp` and `v`. | Test (TC-1303) |
 
 ## Dependencies
 
 - **Upstream:** FR-110 (refusal vocabulary), FR-218 (protocol clause forms).
-- **Consequence for existing fixtures:** spine tests that write `protocol X
-  using v` with a value profile `v` (for example the refinement fixtures)
-  must select the protocol profile for that alias; that is a fixture change,
-  not a behavior change.
+- **Existing fixtures (part of the coding ticket's scope):** every spine
+  source that writes `protocol X using v` with `v` a value or model layer must
+  select the protocol profile for that alias. The code has about 99 such
+  sites in at least 12 files (qsl-semantics refinement and protocol_slots
+  tests, qsl-package emit tests, qsl-forms, qsl-analyze, qsl-eval), and the
+  spec vector TC-1252 (amended in this change: `protocol Flow using p`, which
+  also keeps FR-484-AC-11's package checking). The rewrite of all of them is
+  in the scope of the ticket that implements this requirement; a fixture left
+  on a value profile fails with `unknown_profile`/`wrong-selection-role`,
+  which is the intended behavior change, not a regression.

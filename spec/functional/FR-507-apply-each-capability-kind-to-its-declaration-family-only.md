@@ -58,9 +58,10 @@ node, spelled as FR-290 spells it. The applicable family of each kind is:
 | `probabilistic-satisfaction` | the probabilistic claim form (FR-186), family `probabilistic` |
 | `schedulability` | the task-set and schedulability claim forms (FR-246), family `real-time` |
 
-This table replaces the two `none` rows of FR-057's applicability table: since
-FR-186 and FR-246 exist, the probabilistic and real-time families have
-declaration forms.
+This table supersedes FR-057's applicability table, which this batch amends
+to agree (FR-057's two `none` rows and FR-057-AC-11 now name the probabilistic
+claim and task-set claim forms): since FR-186 and FR-246 exist, the
+probabilistic and real-time families have declaration forms.
 
 - `analyze` SHALL check each item's kind against its claim's family before
   negotiation consumes the item, and SHALL settle an item whose kind does not

@@ -58,15 +58,23 @@ spine equivalent, the declared collection maximum.
   each declared type, field, operation, operation parameter, operation result
   and frame entry (`modifies`, `creates`, `deletes`), so that an entry
   counted by the legacy `entries` limit is counted here.
+- `model.sequence_maximum` is a member of QSL's model intake limits, a QSL-owned
+  member beside the intake limits type of FR-260 (not a field of QSpec's
+  `ModelNormalizationLimitsV1`, which QSL cannot extend), set through the library
+  limits builder method of that name, the replay request's `stage_limits`
+  entry `model.sequence_maximum` and the settings operation operand
+  `model.sequence_maximum=<value>` (FR-255-AC-4).
 - Intake SHALL refuse a declared collection maximum above
-  `model.sequence_maximum` (default 10,000, used as given, raisable and
-  lowerable by the caller, never disabled by zero) with `resource_exhausted`
-  naming the setting `model.sequence_maximum`, its value and the declared
-  maximum, before any declaration is published. The limit applies to every
+  `model.sequence_maximum` (default 10,000; a `u32` that the caller raises or
+  lowers and that is used as given, so its bound is `u32::MAX`, the width of
+  a declared collection maximum; never disabled by zero) with
+  `resource_exhausted`/`intake-limit-exceeded`, carrying `kind`, `bound` (the
+  setting), `actual` (the declared maximum) and `setting`
+  `model.sequence_maximum` as FR-255 Behavior 1 states for an intake size
+  ceiling, before any declaration is published. The limit applies to every
   collection wrapper in used or unused declarations, including nested options
   and sequences, and is independent of any runtime length (FR-015's wording,
-  kept). The refusal is a stage limit outcome (FR-255 Behavior 1) and exits 22
-  (FR-285).
+  kept). The refusal exits 22 (FR-285).
 - Intake SHALL refuse a Text value type whose `maxLength` exceeds 1,048,576
   scalars (the Contract IR text ceiling) with
   `unsupported_construct`/`declaration-form` naming the bound; the ceiling is
@@ -84,13 +92,22 @@ spine equivalent, the declared collection maximum.
 | FR-506-AC-4 | A Text value type with `maxLength` 1,048,576 admits and with 1,048,577 refuses `unsupported_construct`/`declaration-form` naming the bound, whatever the limits. | Test (TC-1301) |
 | FR-506-AC-5 | At each of `intake.input_bytes` (document bytes), `s3.nodes` (formal nodes) and `identity.input_bytes` (identity preimage bytes), a model whose usage equals the setting admits, usage plus one refuses at that setting naming it, and zero refuses; none of the legacy messages (`model roles limit exceeded`, `model entries limit exceeded`, `model nodes limit exceeded`) is produced. | Test (TC-1301) |
 | FR-506-AC-6 | A model nested 200 levels deep in option and sequence value types admits under default limits (ADR-030 D-1: depth is not a limit). | Test (TC-1301) |
+| FR-506-AC-7 | `model.sequence_maximum` set to 3 through the library limits builder, through a replay request's `stage_limits` entry and through the settings operand `model.sequence_maximum=3` each refuse a declared maximum 4 with `resource_exhausted`/`intake-limit-exceeded` carrying `kind`, `bound` 3, `actual` 4 and `setting` `model.sequence_maximum`, and each admits maximum 3. | Test (TC-1301) |
 
 ## Dependencies
 
 - **Upstream:** FR-255 (setting table; this requirement adds the row
   `model.sequence_maximum`), FR-056, ADR-030 D-1, ADR-014 B-6 (the fixed
   native-v1 ceiling that this requirement ports as a setting).
+- **Loosened hard caps (planner confirmation item):** the deleted code clamped
+  roles, entries and nodes at 10,000 and nesting depth at 64, and bounded the
+  artifact at 1 MiB, each as a hard maximum a caller could only lower. On the
+  spine the equivalent limits are `model.declaration_records` (100,000),
+  `s3.nodes` (100,000), `intake.input_bytes` (64 MiB) and
+  `identity.input_bytes`, all raisable without ceiling (FR-255), and depth is
+  no limit (ADR-030 D-1). This requirement therefore loosens those legacy hard
+  caps; the planner is asked to confirm.
 - **Spec/code note:** FR-015's text says the sequence limit is `resource_exhausted`
   and raisable; the deleted code refused with `unrepresentable_constraint` at
-  exit 20, not raisable. This requirement keeps FR-015's text. Planner
-  confirmation requested.
+  exit 20, not raisable. This requirement keeps FR-015's text and amends FR-015 to the setting name
+  `model.sequence_maximum`. Planner confirmation requested.
