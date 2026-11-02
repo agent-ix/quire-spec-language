@@ -340,7 +340,7 @@ impl AdmissionChargePoint {
 /// The exact incomplete record: `incomplete { limit_kind, limit, consumed,
 /// next_charge, charge_point }`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct AdmissionNormalizationIncomplete {
+pub struct AdmissionIncomplete {
     /// First unavailable counter in `PopulationAdmissionLimitsV1` field order.
     pub limit_kind: AdmissionLimitKind,
     /// That counter's configured limit.
@@ -353,7 +353,7 @@ pub struct AdmissionNormalizationIncomplete {
     pub charge_point: AdmissionChargePoint,
 }
 
-impl AdmissionNormalizationIncomplete {
+impl AdmissionIncomplete {
     /// This stop as the caller-budget denial FR-255 Behavior 1 describes
     /// (`resource_exhausted`/`insufficient-next-charge`).
     pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
@@ -467,8 +467,8 @@ impl AdmissionMeter {
         kind: AdmissionLimitKind,
         next: u64,
         point: AdmissionChargePoint,
-    ) -> AdmissionNormalizationIncomplete {
-        AdmissionNormalizationIncomplete {
+    ) -> AdmissionIncomplete {
+        AdmissionIncomplete {
             limit_kind: kind,
             limit: kind.limit(&self.limits),
             consumed: self.consumed(kind),
@@ -1848,7 +1848,7 @@ impl ReferenceSet {
 
 /// The outcome of one [`all_instances`] evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubtypeClosureNormalizationIncomplete {
+pub struct SubtypeClosureIncomplete {
     /// The type queried by `allInstances<T>`.
     pub queried_type: DeclarationKey,
     /// The queried type, which conforms to no declared population member
@@ -1909,12 +1909,10 @@ pub fn all_instances(
         }
     }
     if !covered {
-        return AllInstancesOutcome::IncompleteSubtypeClosure(
-            SubtypeClosureNormalizationIncomplete {
-                queried_type: t.clone(),
-                missing_types: vec![t.clone()],
-            },
-        );
+        return AllInstancesOutcome::IncompleteSubtypeClosure(SubtypeClosureIncomplete {
+            queried_type: t.clone(),
+            missing_types: vec![t.clone()],
+        });
     }
 
     let mut selected: BTreeSet<ReferenceKey> = BTreeSet::new();

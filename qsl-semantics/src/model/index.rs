@@ -384,15 +384,13 @@ impl ModelIndex {
             }
             for general in &self.records.generals[current.0] {
                 if consumed == limit {
-                    return Err(
-                        crate::model::accounting::NormalizationNormalizationIncomplete {
-                            limit_kind: crate::model::accounting::LimitKind::AncestorSteps,
-                            limit,
-                            consumed,
-                            next_charge: 1,
-                            charge_point: crate::model::accounting::ChargePoint::ModelAncestorEdge,
-                        },
-                    );
+                    return Err(crate::model::accounting::NormalizationIncomplete {
+                        limit_kind: crate::model::accounting::LimitKind::AncestorSteps,
+                        limit,
+                        consumed,
+                        next_charge: 1,
+                        charge_point: crate::model::accounting::ChargePoint::ModelAncestorEdge,
+                    });
                 }
                 consumed += 1;
                 if self.records.key(*general) == t {

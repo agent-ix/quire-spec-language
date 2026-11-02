@@ -364,7 +364,7 @@ impl ChargePoint {
 /// The exact incomplete record: `incomplete { limit_kind, limit, consumed,
 /// next_charge, charge_point }`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct NormalizationNormalizationIncomplete {
+pub struct NormalizationIncomplete {
     /// First unavailable counter in `ModelNormalizationLimitsV1` field order.
     pub limit_kind: LimitKind,
     /// That counter's configured limit.
@@ -377,7 +377,7 @@ pub struct NormalizationNormalizationIncomplete {
     pub charge_point: ChargePoint,
 }
 
-impl NormalizationNormalizationIncomplete {
+impl NormalizationIncomplete {
     /// This stop as the caller-budget denial FR-255 Behavior 1 describes
     /// (`resource_exhausted`/`insufficient-next-charge`): the counter's
     /// setting, effective limit, prior usage, the denied amount and the
@@ -520,8 +520,8 @@ impl Meter {
         kind: LimitKind,
         next: u64,
         point: ChargePoint,
-    ) -> NormalizationNormalizationIncomplete {
-        NormalizationNormalizationIncomplete {
+    ) -> NormalizationIncomplete {
+        NormalizationIncomplete {
             limit_kind: kind,
             limit: kind.limit(&self.counters.limits),
             consumed: self.consumed(kind),
@@ -633,7 +633,7 @@ mod tests {
             .expect_err("11 of 10 declarations is denied");
         assert_eq!(
             denied,
-            NormalizationNormalizationIncomplete {
+            NormalizationIncomplete {
                 limit_kind: LimitKind::EffectiveDeclarations,
                 limit: 10,
                 consumed: 6,
