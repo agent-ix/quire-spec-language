@@ -2251,16 +2251,22 @@ mod tests {
         // expected O-16 category here before this test can pass.
         let qspec_dir = std::env::var_os("QSPEC_DIR")
             .map(std::path::PathBuf::from)
+            .or_else(|| {
+                let sibling = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../quire-specification");
+                sibling.is_dir().then_some(sibling)
+            })
             .unwrap_or_else(|| {
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../quire-specification")
+                panic!("FR-331 schema unavailable; set QSPEC_DIR to a quire-specification checkout")
             });
         let schema_path = qspec_dir.join("proposals/backend-provider-v1/schema.json");
-        let schema: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&schema_path)
-                .unwrap_or_else(|error| panic!("read FR-331 schema at {schema_path:?}: {error}")),
-        )
-        .unwrap_or_else(|error| panic!("parse FR-331 schema at {schema_path:?}: {error}"));
+        let schema_source = std::fs::read_to_string(&schema_path).unwrap_or_else(|error| {
+            panic!(
+                "read FR-331 schema at {schema_path:?} (set QSPEC_DIR to a quire-specification checkout): {error}"
+            )
+        });
+        let schema: serde_json::Value = serde_json::from_str(&schema_source)
+            .unwrap_or_else(|error| panic!("parse FR-331 schema at {schema_path:?}: {error}"));
         let schema_values: BTreeSet<&str> = schema["$defs"]["ResultValue"]["enum"]
             .as_array()
             .expect("FR-331 ResultValue is an enum")
