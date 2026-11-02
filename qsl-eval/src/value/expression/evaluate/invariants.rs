@@ -266,6 +266,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
             member: "step".to_owned(),
             parameters: vec![],
             result: ValueType::Boolean,
+            selected_operation_owner: owner.clone(),
+            selected_operation: "step".to_owned(),
             table: 0,
         }],
         dispatch_tables: vec![DispatchTable::new(

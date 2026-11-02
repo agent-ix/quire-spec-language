@@ -18,7 +18,7 @@ the V2 reader admits the emitted packages, and that every float source form
 (bit constructors, arithmetic, comparison operators, the reserved intrinsic
 calls and the conversions into and out of a float) checks, lowers and evaluates
 as FR-397 states, with the ill-formed inputs refused. Scope: FR-397-AC-1 to
-FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
+FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-24, FR-091-AC-48 and FR-091-AC-49
 (FR-397-AC-9 is TC-917's).
 
 ## Test Procedure
@@ -60,6 +60,9 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
 18. Compile `=` and `!=` over the `Set` and `Bag` parameters of FR-397-AC-23,
     read the `structural` nodes and their `["inner"]` leaf, read the package
     through the V2 reader, and run the set, bag and sequence vectors.
+19. Compile and run the TC-193 source forms of FR-397-AC-24 (F01, F02,
+    F02b, F04b, F05, F11, F20 and F34) through the run entry and the check
+    entry.
 
 ## Expected Results
 
@@ -109,3 +112,6 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
     mode `null`; the V2 reader admits the package; members match by bit
     identity, so every set and bag vector gives the listed Boolean, and the
     NaN sequence compares unequal to itself.
+19. Every listed bit pattern, flag and Boolean is produced; the F20 forms
+    refuse `ill_typed`/`type-mismatch` at check with no charge; F34 equals
+    step 9.

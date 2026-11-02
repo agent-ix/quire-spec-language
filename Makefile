@@ -295,9 +295,9 @@ ci-clean-build:
 # outside `#[cfg(feature = "std")]` fails here. Own target dir, so no other
 # lane's artifacts are reused (NFR-013).
 build-no-std:
-	rustup target add thumbv7em-none-eabi
-	cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
-	cargo clippy --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
+	rustup target add --toolchain 1.98 thumbv7em-none-eabi
+	rustup run 1.98 cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
+	rustup run 1.98 cargo clippy --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
 	cargo test --locked -p qsl-foundation --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 	cargo check --locked -p qsl-package --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 	cargo clippy --locked -p qsl-package --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings

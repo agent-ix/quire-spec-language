@@ -198,7 +198,7 @@ resource-incomplete or invalid/unsupported refusal without a partial admitted
 package.
 
 The executable recipe is
-[`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), supported by
+[`tests/compiled_protocol_v2.rs`](../tests/it/compiled_protocol_v2.rs), supported by
 [`tests/support/native_protocol/mod.rs`](../tests/support/native_protocol/mod.rs).
 It starts with real native compilation, reconstructs reader expectations from
 the original inputs rather than emitted wire, and covers cross-version offers,
@@ -276,7 +276,7 @@ The focused release-recipe control is the test
 `stripped_release_v2_producer_writes_the_independently_read_handoff` in
 [`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
 The non-release mutation controls remain in
-[`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), including
+[`tests/compiled_protocol_v2.rs`](../tests/it/compiled_protocol_v2.rs), including
 cross-version, every temporal selection family, artifact-reference and
 same-meaning recanonicalized-input substitutions. These controls qualify A's
 handoff only and do not assert B or campaign acceptance.
