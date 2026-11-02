@@ -13,8 +13,16 @@ use super::*;
 
 use crate::checked_v2::V2ReadRefusal;
 
+use super::abstraction::fixture as abstraction_fixture;
+use super::child_composite::fixture as ledger_fixture;
 #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 pub(super) mod fixture;
+#[path = "../../../../qsl-semantics/tests/support/tc235_k2.rs"]
+#[allow(
+    dead_code,
+    reason = "this focused test uses the model-form package records"
+)]
+mod k2_fixture;
 
 struct Emitted {
     wire: Value,
@@ -54,11 +62,21 @@ fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
 /// The package holding `operations` of `Counter` (each named by its own
 /// postcondition clause), with the frames of `overrides`.
 fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
-    let UnitParts {
-        unit,
-        document,
-        packages,
-    } = unit_of(operations, overrides);
+    let document = fixture::document(operations, overrides);
+    emit_document(document, operations)
+}
+
+fn emit_document(document: Value, operations: &[&str]) -> Emitted {
+    let document = serde_json::to_vec(&document).expect("the fixture serializes");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         {posts}",
+        package = fixture::PACKAGE,
+        posts = fixture::posts(operations),
+    );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -73,6 +91,34 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
     evidence
         .insert_domain_package_document(package_identity(&document), document.as_slice())
         .expect("a fresh evidence key");
+    Emitted { wire, evidence }
+}
+
+fn emit_without_operation_posts(operations: &[&str]) -> Emitted {
+    let document =
+        serde_json::to_vec(&fixture::document(operations, &[])).expect("the fixture serializes");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         function marker using v(): Boolean pure {{ true }}",
+        package = fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
+        .expect("the selected model document is evidence");
     Emitted { wire, evidence }
 }
 
@@ -183,7 +229,480 @@ fn the_frame_bodies_of_scoped_entries_are_the_wire_vectors() {
             "{operation}"
         );
     }
+    let read = emitted.read();
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// FR-496-AC-1..3, FR-496-AC-5, TC-1286: operation frames flow to the optional checked
+/// package carrier with declared identities, complete empty rows, scoped
+/// entries, and canonical ordering. The IR v2 reader admits the same rows.
+#[trace("FR-496-AC-1", "FR-496-AC-2", "FR-496-AC-3", "FR-496-AC-5", "TC-1286")]
+#[test]
+fn selected_operation_effects_are_complete_canonical_and_readable() {
+    let created = json!({
+        "modifies": [fixture::id("Counter/value"), fixture::id("Counter/step")],
+        "creates": [fixture::id("Gauge")],
+        "deletes": [],
+    });
+    let operations = [
+        "bump", "merge", "noop", "own", "all", "same", "drop", "dispose",
+    ];
+    let emitted = emit(&operations, &[("same", created)]);
+    let rows = emitted.wire["operation_effects"]
+        .as_array()
+        .expect("the producer emits the carrier");
+    assert_eq!(
+        rows.len(),
+        operations.len(),
+        "one row per declared operation"
+    );
+    let admitted = match emitted.read() {
+        Read::Verified { admitted, .. } => admitted,
+        other => panic!("IR admits the emitted effect rows: {other:?}"),
+    };
+    let admitted_rows = admitted
+        .operation_effects()
+        .expect("IR retains the admitted operation effects")
+        .collect::<Vec<_>>();
+    assert_eq!(admitted_rows.len(), operations.len());
+    assert_eq!(
+        admitted_rows[0].operation(),
+        rows[0]["operation"].as_str().unwrap()
+    );
+
+    let document = package_identity(
+        &serde_json::to_vec(&fixture::document(
+            &operations,
+            &[(
+                "same",
+                json!({
+                    "modifies": [fixture::id("Counter/value"), fixture::id("Counter/step")],
+                    "creates": [fixture::id("Gauge")],
+                    "deletes": [],
+                }),
+            )],
+        ))
+        .unwrap(),
+    );
+    assert!(rows.iter().all(|row| row["document"] == document));
+    assert!(rows.windows(2).all(|pair| {
+        pair[0]["declaring"] == pair[1]["declaring"]
+            && pair[0]["operation"].as_str() < pair[1]["operation"].as_str()
+    }));
+    for row in rows {
+        let name = row["operation"].as_str().unwrap();
+        assert_eq!(
+            row["provenance"],
+            json!({
+                "origin": "model_document_operation_frame",
+                "member": fixture::id(&format!("Counter/{name}")),
+            })
+        );
+        assert!(row["effect"].get("modifies").is_some());
+        assert!(row["effect"].get("creates").is_some());
+        assert!(row["effect"].get("deletes").is_some());
+        assert!(row["effect"].get("deletes_scoped").is_some());
+    }
+    let noop = rows.iter().find(|row| row["operation"] == "noop").unwrap();
+    assert_eq!(
+        noop["effect"],
+        json!({"modifies": [], "creates": [], "deletes": [], "deletes_scoped": []})
+    );
+    let merge = rows.iter().find(|row| row["operation"] == "merge").unwrap();
+    assert_eq!(
+        merge["effect"]["deletes_scoped"],
+        json!([
+            {"kind": "receiver"}, {"kind": "parameter", "name": "a"},
+            {"kind": "parameter", "name": "b"}
+        ])
+    );
+    let same = rows.iter().find(|row| row["operation"] == "same").unwrap();
+    assert_eq!(same["effect"]["creates"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        same["effect"]["modifies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["step", "value"]
+    );
+    let mut without_carrier = emitted.wire.clone();
+    without_carrier
+        .as_object_mut()
+        .unwrap()
+        .remove("operation_effects");
+    assert_eq!(
+        without_carrier["semantic_graph"], emitted.wire["semantic_graph"],
+        "the optional carrier does not alter graph nodes or identities"
+    );
+
+    let reversed = operations.into_iter().rev().collect::<Vec<_>>();
+    let reordered = emit(
+        &reversed,
+        &[(
+            "same",
+            json!({
+                "modifies": [fixture::id("Counter/step"), fixture::id("Counter/value")],
+                "creates": [fixture::id("Gauge")],
+                "deletes": [],
+            }),
+        )],
+    );
+    assert_eq!(
+        reordered.wire["operation_effects"], emitted.wire["operation_effects"],
+        "model member declaration order does not change the carrier"
+    );
+}
+
+/// FR-496-AC-1, AC-2, AC-5: package-level rows keep their declaration
+/// witnesses in the semantic graph even when no unit clause names the
+/// operation or its owner.
+#[trace("FR-496-AC-1", "FR-496-AC-2", "FR-496-AC-5", "TC-1286")]
+#[test]
+fn selected_operation_effects_do_not_require_unit_operation_clauses() {
+    let emitted = emit_without_operation_posts(&["noop"]);
+    assert_eq!(
+        emitted.wire["operation_effects"].as_array().unwrap().len(),
+        1
+    );
+    let read = emitted.read();
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// FR-496-AC-1..5, TC-1286: the Ledger `pay` and `payTaxed` rows survive the
+/// emitted-package reader and the selected type projection preserves each
+/// operation's own effect, including the all-empty frame.
+#[trace("FR-496-AC-1", "FR-496-AC-2", "FR-496-AC-5", "TC-1286")]
+#[test]
+fn ledger_operation_effects_read_back_with_selected_type_projection() {
+    let mut document = ledger_fixture::document();
+    document["types"].as_array_mut().unwrap().retain(|ty| {
+        ["Money", "TaxedMoney", "Ledger"]
+            .iter()
+            .any(|name| ty["identity"] == ledger_fixture::id(name))
+    });
+    document["constructs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|construct| matches!(construct["kind"]["name"].as_str(), Some("money" | "thing")));
+    document["populations"] = json!([]);
+    let ledger = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|ty| ty["identity"] == ledger_fixture::id("Ledger"))
+        .expect("the selected document declares Ledger");
+    let pay = ledger["operations"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|operation| operation["name"] == "pay")
+        .expect("Ledger declares pay");
+    pay["frame"]["modifies"] = json!([ledger_fixture::id("Ledger/ledger_id")]);
+    let document = serde_json::to_vec(&document).expect("the fixture serializes");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         function marker using v(): Boolean pure {{ true }}",
+        package = ledger_fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let checked = CheckedPackage::link(graph);
+    let emission = emit_checked(&checked).expect("the package emits");
+    assert_eq!(emission.omitted(), []);
+    let mut evidence = super::read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(package_identity(&document), document.as_slice())
+        .expect("the selected model document is evidence");
+    let admitted = match read_v2(
+        emission.package().bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    ) {
+        Read::Verified { admitted, .. } => admitted,
+        other => panic!("IR admits the emitted Ledger operation effects: {other:?}"),
+    };
+    let rows = admitted
+        .operation_effects()
+        .expect("the reader retains the operation-effect carrier")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows.iter().map(|row| row.operation()).collect::<Vec<_>>(),
+        ["pay", "payTaxed"]
+    );
+    assert_eq!(rows[0].effect().modifies.len(), 1);
+    assert!(rows[1].effect().modifies.is_empty());
+    assert!(rows[1].effect().creates.is_empty());
+    assert!(rows[1].effect().deletes.is_empty());
+    assert!(rows[1].effect().deletes_scoped.is_empty());
+
+    let identities = checked
+        .graph()
+        .selected_exact_identities(&admitted)
+        .expect("selected declarations join the admitted model");
+    let projected = admitted
+        .project_selected_type_declarations(
+            &identities,
+            emission.selected_tuple_declaration_rows(),
+            emission.selected_source_unit_rows(),
+            10_000,
+        )
+        .expect("the selected type declaration projection succeeds");
+    let ledger = projected
+        .objects()
+        .iter()
+        .find(|object| object.original_identity() == ledger_fixture::id("Ledger"))
+        .expect("Ledger is projected");
+    assert_eq!(
+        ledger
+            .operations()
+            .iter()
+            .map(|operation| operation.name())
+            .collect::<Vec<_>>(),
+        ["pay", "payTaxed"]
+    );
+    assert_eq!(ledger.operations()[0].effect().modifies.len(), 1);
+    assert!(ledger.operations()[1].effect().modifies.is_empty());
+}
+
+/// FR-496-AC-1: relationship frames retain a relationship declaration as a
+/// relationship modification in the carrier and pass the strict IR join.
+#[trace("FR-496-AC-1", "TC-1286")]
+#[test]
+fn relationship_effects_reference_the_declared_relationship_node() {
+    let mut document = fixture::document(
+        &["all"],
+        &[(
+            "all",
+            json!({
+                "modifies": [fixture::id("relationship/owns")],
+                "creates": [],
+                "deletes": [],
+            }),
+        )],
+    );
+    document["types"][0]["relationships"] = json!([{
+        "identity": fixture::id("relationship/owns"),
+        "category": "structural",
+        "composite": false,
+        "direction": "source-to-target",
+        "origin": {"source": {
+            "sourceIdentity": fixture::id("spec"),
+            "path": "model.qspec",
+            "startLine": 1,
+            "startColumn": 1,
+        }},
+        "sourceEnd": {
+            "type": fixture::id("Counter"),
+            "role": "owner",
+            "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true},
+        },
+        "targetEnd": {
+            "type": fixture::id("Gauge"),
+            "role": "owned",
+            "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true},
+        },
+    }]);
+    let emitted = emit_document(document, &["all"]);
+    let row = &emitted.wire["operation_effects"][0];
+    assert_eq!(row["operation"], "all");
+    let declaration = row["effect"]["modifies"][0]["declaration"].clone();
+    assert_eq!(
+        row["effect"]["modifies"],
+        json!([{"kind": "relationship", "declaration": declaration}])
+    );
+    assert!(nodes(&emitted.wire)
+        .iter()
+        .any(|node| node["node_id"] == declaration));
     assert!(matches!(emitted.read(), Read::Verified { .. }));
+}
+
+/// FR-496-AC-2: a member with the same declared name under two owners and
+/// in a second selected document remains three separately keyed rows.
+#[trace("FR-496-AC-2", "TC-1286")]
+#[test]
+fn same_operation_name_keeps_its_document_and_declaring_identity() {
+    fn relabel(value: &mut Value, from: &str, to: &str) {
+        match value {
+            Value::String(text) => {
+                if let Some(suffix) = text.strip_prefix(&format!("ix://{from}/")) {
+                    *text = format!("ix://{to}/{suffix}");
+                }
+            }
+            Value::Array(values) => values.iter_mut().for_each(|value| relabel(value, from, to)),
+            Value::Object(values) => values
+                .values_mut()
+                .for_each(|value| relabel(value, from, to)),
+            _ => {}
+        }
+    }
+
+    let mut first = fixture::document(&["noop"], &[]);
+    first["types"][1]["operations"] = json!([{
+        "identity": fixture::id("Gauge/noop"),
+        "name": "noop",
+        "params": [],
+        "pre": [],
+        "post": [],
+        "frame": {"modifies": [], "creates": [], "deletes": []},
+        "origin": {"generated": {
+            "generatorIdentity": fixture::id("Gauge/noop"),
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [fixture::id("Gauge/noop")],
+        }},
+    }]);
+    let mut second = fixture::document(&["noop"], &[]);
+    relabel(&mut second, fixture::PACKAGE, "test/orders-secondary");
+    second["package"]["identity"] = json!("test/orders-secondary");
+    let first_bytes = serde_json::to_vec(&first).unwrap();
+    let second_bytes = serde_json::to_vec(&second).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([
+        first_bytes.as_slice(),
+        second_bytes.as_slice(),
+    ])
+    .unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model A = {first:?};\n\
+         model B = \"test/orders-secondary\";\n\
+         post CounterDone using v on A::Counter::noop {{ true }}\n\
+         post GaugeDone using v on A::Gauge::noop {{ true }}\n\
+         post SecondaryDone using v on B::Counter::noop {{ true }}\n",
+        first = fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("both selected packages assemble")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let rows = wire["operation_effects"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|row| row["operation"] == "noop"));
+    assert_eq!(
+        rows.iter()
+            .map(|row| row["document"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        2
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["document"] == fixture::PACKAGE)
+            .map(|row| row["declaring"].to_string())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        2
+    );
+
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence
+        .insert_domain_package_document(package_identity(&first_bytes), first_bytes.as_slice())
+        .unwrap();
+    evidence
+        .insert_domain_package_document(package_identity(&second_bytes), second_bytes.as_slice())
+        .unwrap();
+    let read = read_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    );
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// FR-496-AC-4: directly declared process and state-machine operations get
+/// rows, while persistence-interface operations are not frame declarations.
+#[trace("FR-496-AC-4", "TC-1286")]
+#[test]
+fn process_and_state_machine_operations_are_carried_without_persistence_rows() {
+    let mut document = k2_fixture::k2();
+    k2_fixture::type_named_mut(&mut document, "Fulfilment")["operations"] =
+        json!([k2_fixture::operation("Fulfilment", "start")]);
+    let document = serde_json::to_vec(&document).expect("the fixture serializes");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         function marker using v(): Boolean pure {{ true }}\n",
+        package = k2_fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let rows = wire["operation_effects"].as_array().unwrap();
+    let operations = rows
+        .iter()
+        .map(|row| row["operation"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(operations, ["cancel", "place", "start"].into());
+}
+
+/// FR-496-AC-4: an operation inherited by a subtype keeps the declaring
+/// base type's row and does not create a second row for the subtype.
+#[trace("FR-496-AC-4", "TC-1286")]
+#[test]
+fn inherited_operations_have_no_subtype_effect_row() {
+    let mut document = fixture::document(&["noop"], &[]);
+    document["types"][1]["supertypes"] = json!([fixture::id("Counter")]);
+    document["populations"][0]["members"] = json!([fixture::id("Counter")]);
+    let emitted = emit_document(document, &["noop"]);
+    let rows = emitted.wire["operation_effects"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["operation"], "noop");
+    let counter = super::owners::node_where(&emitted.wire, "model", "object_type")
+        .into_iter()
+        .find(|node| node["owner"]["node"] == fixture::id("Counter"))
+        .expect("the base object type is emitted");
+    assert_eq!(rows[0]["declaring"], counter["node_id"]);
+    assert!(matches!(emitted.read(), Read::Verified { .. }));
+}
+
+/// FR-496-AC-4: an inherited member and a directly declared systems-interface
+/// operation do not create rows; ordinary object declarations still do.
+#[trace("FR-496-AC-4", "TC-1286")]
+#[test]
+fn systems_interface_and_inherited_operations_are_not_effect_declarations() {
+    let document = abstraction_fixture::document();
+    let document = serde_json::to_vec(&document).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         post BaseDone using v on M::Base::op {{ true }}\n\
+         post VersionDone using v on M::ConfigVersion::attemptUpdate {{ true }}\n",
+        package = abstraction_fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let rows = wire["operation_effects"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter()
+            .map(|row| row["operation"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>(),
+        ["attemptUpdate", "op"].into()
+    );
 }
 
 /// FR-154-AC-7, FR-105 (TC-1043 steps 1 and 2): `own`, `all` and `drop` are
@@ -652,8 +1171,6 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
             parts.document.as_slice(),
         )
         .expect("a fresh evidence key");
-    assert!(matches!(
-        read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence,),
-        Read::Verified { .. }
-    ));
+    let read = read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }

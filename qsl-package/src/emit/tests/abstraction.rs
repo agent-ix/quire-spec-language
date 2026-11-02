@@ -20,7 +20,7 @@ use super::*;
     clippy::duplicate_mod,
     reason = "the export tests load the same fixture"
 )]
-mod fixture;
+pub(super) mod fixture;
 
 /// The unit: the `attemptUpdate` postcondition names `ConfigVersion`'s
 /// operation, so the package holds its object type, frame and anchor nodes.

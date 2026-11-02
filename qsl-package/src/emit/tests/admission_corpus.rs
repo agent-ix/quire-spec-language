@@ -1875,7 +1875,7 @@ fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
         node["body"]["class_catalog"]["abstract"][0]["node"],
         json!({
             "package": "test/protocol-dependency",
-            "node": root_ids.wire_value(*finish_key).unwrap()
+            "node": root_ids.wire_value(finish_key).unwrap()
         })
     );
     assert!(dependency_keys.iter().all(|dependency| {

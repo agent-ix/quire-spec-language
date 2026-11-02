@@ -709,6 +709,10 @@ pub struct CheckedGraph {
     ),
     /// Selected tuple declaration rows retained from model intake.
     selected_tuple_declaration_rows: Vec<quire_contract_model::SelectedTupleDeclarationRow>,
+    /// FR-496: the complete operation frame lift for each selected model
+    /// operation. `None` means there are no rows or the producer could not
+    /// form a complete carrier; empty effects remain rows when an operation exists.
+    operation_effects: Option<Vec<quire_contract_model::CheckedOperationEffectRow>>,
     /// FR-390: each checked population's exact declaration and effective
     /// member types, indexed by its canonical checked node.
     protocol_population_types: BTreeMap<
@@ -853,6 +857,7 @@ impl fmt::Debug for CheckedGraph {
                     model_selections,
                     selected_exact_identity_rows,
                     selected_tuple_declaration_rows,
+                    operation_effects,
                     protocol_population_types,
                     model_roots,
                     header_layers,
@@ -932,6 +937,7 @@ impl fmt::Debug for CheckedGraph {
                         "selected_tuple_declaration_rows",
                         &selected_tuple_declaration_rows,
                     )
+                    .field("operation_effects", &operation_effects)
                     .field(
                         "protocol_population_types",
                         &NodeMap(protocol_population_types.iter()),
@@ -2227,6 +2233,7 @@ impl PackageDeclarations {
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
+        let operation_effects = checked_model_operation_effects(&models);
         let model_inputs = self.model_inputs;
         let mut pending_types = self
             .pending_types
@@ -5304,8 +5311,12 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        lowering
+            .operation_effect_nodes()
+            .map_err(|refusal| vec![refusal])?;
+        let generated = lowering::generated_location();
         let lowered = lowering
-            .finish(&lowering::generated_location())
+            .finish(&generated)
             .map_err(|refusal| vec![refusal])?;
         // FR-380: a population node's `Type` occurrences take their ordinals
         // in ascending source order, whichever writer recorded one first.
@@ -6260,6 +6271,7 @@ impl PackageDeclarations {
             model_selections,
             selected_exact_identity_rows: self.selected_exact_identity_rows,
             selected_tuple_declaration_rows: self.selected_tuple_declaration_rows,
+            operation_effects,
             protocol_population_types,
             model_roots,
             header_layers,
@@ -6695,6 +6707,144 @@ pub struct CheckedPopulationBound {
     pub maximum: u64,
 }
 
+/// Build the QSpec FR-322 operation-effect projection from the exact
+/// admitted declaration records. Any missing source identity makes the whole
+/// optional carrier unavailable; partial rows are never retained.
+fn checked_model_operation_effects(
+    models: &[AdmittedModel],
+) -> Option<Vec<quire_contract_model::CheckedOperationEffectRow>> {
+    use quire_contract_model::{
+        CheckedFieldScope, CheckedFrameModification, CheckedOperationEffect,
+        CheckedOperationEffectOrigin, CheckedOperationEffectProvenance, CheckedOperationEffectRow,
+        CheckedScopedDeletion,
+    };
+
+    if models.is_empty() {
+        return None;
+    }
+    let ids = crate::check::wire_id::StructuralIds::default();
+    let mut rows = Vec::new();
+    for model in models {
+        let document = model.selected_document();
+        for (_owner_record, operation) in model.operation_effect_inputs() {
+            let declaring_key = model.model_node_key(&operation.owner)?;
+            let declaring = ids.id(&declaring_key);
+            let operation_name = model.original_member_name(&operation.key)?.to_owned();
+            let mut modifies = Vec::new();
+            for member in &operation.effect.modifies {
+                let record = model.declaration_record(member)?;
+                match record {
+                    crate::model::domain_package::DomainPackageRecord::Relationship(_) => {
+                        let declaration = model.model_node_key(member)?;
+                        modifies.push(CheckedFrameModification::Relationship {
+                            declaration: ids.id(&declaration),
+                        });
+                    }
+                    crate::model::domain_package::DomainPackageRecord::FieldMember(field) => {
+                        let name = model.original_member_name(member)?.to_owned();
+                        let declaration = model.model_node_key(&field.owner)?;
+                        modifies.push(CheckedFrameModification::Field {
+                            declaration: ids.id(&declaration),
+                            name: name.into(),
+                            scope: CheckedFieldScope::EveryObject,
+                        });
+                    }
+                    _ => return None,
+                }
+            }
+            for member in &operation.effect.receiver_modifies {
+                let crate::model::domain_package::DomainPackageRecord::FieldMember(field) =
+                    model.declaration_record(member)?
+                else {
+                    return None;
+                };
+                let name = model.original_member_name(member)?.to_owned();
+                let declaration = model.model_node_key(&field.owner)?;
+                modifies.push(CheckedFrameModification::Field {
+                    declaration: ids.id(&declaration),
+                    name: name.into(),
+                    scope: CheckedFieldScope::Receiver,
+                });
+            }
+            modifies.sort_by(|left, right| {
+                effect_modification_key(left).cmp(&effect_modification_key(right))
+            });
+            let mut creates = operation
+                .effect
+                .creates
+                .iter()
+                .map(|declaration| model.model_node_key(declaration).map(|key| ids.id(&key)))
+                .collect::<Option<Vec<_>>>()?;
+            creates.sort();
+            let mut deletes = operation
+                .effect
+                .deletes
+                .iter()
+                .map(|declaration| model.model_node_key(declaration).map(|key| ids.id(&key)))
+                .collect::<Option<Vec<_>>>()?;
+            deletes.sort();
+            let mut deletes_scoped = Vec::new();
+            if operation.effect.deletes_receiver {
+                deletes_scoped.push(CheckedScopedDeletion::Receiver);
+            }
+            let mut parameters = operation.effect.deletes_arguments.clone();
+            parameters.sort();
+            deletes_scoped.extend(
+                parameters
+                    .into_iter()
+                    .map(|name| CheckedScopedDeletion::Parameter { name: name.into() }),
+            );
+            let row = CheckedOperationEffectRow {
+                document: document.into(),
+                declaring,
+                operation: operation_name.into(),
+                effect: CheckedOperationEffect {
+                    modifies,
+                    creates,
+                    deletes,
+                    deletes_scoped,
+                },
+                provenance: CheckedOperationEffectProvenance {
+                    origin: CheckedOperationEffectOrigin::ModelDocumentOperationFrame,
+                    member: operation.key.node.as_str().into(),
+                },
+            };
+            rows.push((document.to_owned(), declaring_key, row));
+        }
+    }
+    rows.sort_by(
+        |(left_document, left_key, left), (right_document, right_key, right)| {
+            left_document
+                .as_bytes()
+                .cmp(right_document.as_bytes())
+                .then_with(|| left_key.cmp(right_key))
+                .then_with(|| left.operation.as_bytes().cmp(right.operation.as_bytes()))
+        },
+    );
+    (!rows.is_empty()).then(|| rows.into_iter().map(|(_, _, row)| row).collect())
+}
+
+fn effect_modification_key(
+    entry: &quire_contract_model::CheckedFrameModification,
+) -> (&quire_contract_model::CheckedNodeId, &str, u8) {
+    use quire_contract_model::{CheckedFieldScope, CheckedFrameModification};
+    match entry {
+        CheckedFrameModification::Relationship { declaration } => (declaration, "", 0),
+        CheckedFrameModification::Field {
+            declaration,
+            name,
+            scope,
+        } => (
+            declaration,
+            name.as_ref(),
+            match scope {
+                CheckedFieldScope::EveryObject => 0,
+                CheckedFieldScope::Receiver => 1,
+            },
+        ),
+    }
+}
+
 /// FR-380: each `bound` declaration the admitted models hold, ascending by
 /// label (a label names one bound, so the order depends on no declaration
 /// order).
@@ -6897,6 +7047,12 @@ impl CheckedGraph {
         &self,
     ) -> &[quire_contract_model::SelectedTupleDeclarationRow] {
         &self.selected_tuple_declaration_rows
+    }
+
+    /// FR-496: the complete selected-document operation effect carrier,
+    /// absent when no rows exist or a complete projection could not be formed.
+    pub fn operation_effects(&self) -> Option<&[quire_contract_model::CheckedOperationEffectRow]> {
+        self.operation_effects.as_deref()
     }
 
     /// Source-owned units whose declaration owner and Exact identity were
