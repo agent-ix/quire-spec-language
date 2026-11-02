@@ -514,6 +514,16 @@ impl<'a> ModelSystem<'a> {
         self.package
     }
 
+    /// The resolved identity of the one selected model this system is over.
+    ///
+    /// A system built over several selections has no single identity and
+    /// returns `None`. Timed task-search result identities use this value to
+    /// bind the result to the selected source model, rather than to its
+    /// authored alias.
+    pub fn over_identity(&self) -> Option<&str> {
+        self.over.as_deref()
+    }
+
     /// Every field some operation's frame grants: the fields it writes and
     /// every field of a type it creates.
     fn granted(&self) -> BTreeSet<DeclarationKey> {

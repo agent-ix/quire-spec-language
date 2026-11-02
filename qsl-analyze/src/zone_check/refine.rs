@@ -283,6 +283,8 @@ pub fn check_timed_refinement<S>(
         &[],
         request.limits,
         cancel,
+        None,
+        None,
     );
     let mut product = Product {
         refinement,
@@ -321,7 +323,7 @@ pub fn check_timed_refinement<S>(
         Ok(outcome) => outcome,
         Err(Halt::Refusal(refusal)) => return Err(refusal.into()),
         Err(Halt::Outcome(searched)) => match *searched {
-            Searched::Stopped { cause, stats } => TimedSafetyOutcome::Stopped {
+            Searched::Stopped { cause, stats, .. } => TimedSafetyOutcome::Stopped {
                 cause: TimedRefinementStop::Zone(cause),
                 stats,
             },
@@ -329,7 +331,10 @@ pub fn check_timed_refinement<S>(
                 cause: TimedRefinementUndecided::Zone(cause),
                 stats,
             },
-            Searched::Holds { .. } | Searched::HoldsReduced { .. } | Searched::Violated { .. } => {
+            Searched::Holds { .. }
+            | Searched::HoldsReduced { .. }
+            | Searched::Violated { .. }
+            | Searched::TaskViolated { .. } => {
                 return Err(ZoneCheckRefusal::Fault("refinement-halt").into())
             }
         },
@@ -410,7 +415,10 @@ fn liveness(
                 cause: TimedRefinementUndecided::Zone(cause),
                 stats,
             },
-            Searched::Holds { .. } | Searched::HoldsReduced { .. } | Searched::Violated { .. } => {
+            Searched::Holds { .. }
+            | Searched::HoldsReduced { .. }
+            | Searched::Violated { .. }
+            | Searched::TaskViolated { .. } => {
                 return Err(ZoneCheckRefusal::Fault("liveness-halt").into())
             }
         },
@@ -657,6 +665,8 @@ impl Product<'_, '_> {
                     from: node,
                     step: Some((successor.step, successor.part)),
                     piece: None,
+                    task_transition: successor.task_transition.clone(),
+                    task_subtractions: Vec::new(),
                 };
                 self.store(
                     run,
@@ -700,6 +710,8 @@ impl Product<'_, '_> {
                 from: node,
                 step: Some((successor.step, successor.part)),
                 piece: None,
+                task_transition: successor.task_transition.clone(),
+                task_subtractions: Vec::new(),
             };
             let (next, taken) = match judged.get(&successor.step) {
                 Some(Edge::Passes(next, taken)) => (*next, Some(taken.clone())),
@@ -912,6 +924,8 @@ impl Product<'_, '_> {
             piece: None,
             silent: false,
             fixed: None,
+            task_product_step: None,
+            task_subtractions: Vec::new(),
         });
         let mut targets = Vec::with_capacity(escape.to_quiescent.len());
         for path in &escape.to_quiescent {

@@ -106,6 +106,7 @@ impl Run<'_, '_, '_> {
             components: Some(components),
             divergence: None,
             admitted,
+            task_product: None,
         })
     }
 

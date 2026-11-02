@@ -860,7 +860,7 @@ impl Product<'_, '_> {
         let ceiling = run.timed.max_constant();
         Ok(run
             .timed_lasso(places, &ceiling, stem_stages, &cycle_stages)?
-            .map(|(prefix, entry)| {
+            .map(|(prefix, _, entry)| {
                 counterexample(
                     initial,
                     prefix,
@@ -990,6 +990,8 @@ fn stage(run: &mut Run<'_, '_, '_>, live: &mut Live, arc: usize) -> Result<Stage
                 position_resets: Vec::new(),
                 silent: false,
                 fixed: None,
+                task_product_step: None,
+                task_subtractions: Vec::new(),
             }
         }
         Via::Wait => Stage {
@@ -1003,6 +1005,8 @@ fn stage(run: &mut Run<'_, '_, '_>, live: &mut Live, arc: usize) -> Result<Stage
             position_resets: Vec::new(),
             silent: true,
             fixed: None,
+            task_product_step: None,
+            task_subtractions: Vec::new(),
         },
         Via::Diverge | Via::Stutter => return Err(ZoneCheckRefusal::Fault("stage-edge").into()),
     })

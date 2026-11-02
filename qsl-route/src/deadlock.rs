@@ -131,6 +131,10 @@ impl<S: Clone> ModelRefinementItem<'_, S> {
 pub enum ObligationKind {
     /// An authored claim, by its occurrence.
     Authored(OccurrenceKey),
+    /// An authored FR-249 schedulability claim, by its checked-package
+    /// occurrence. This remains distinct from temporal claims even though
+    /// both are authored at source nodes.
+    TaskSchedulability(OccurrenceKey),
     /// An authored claim over a protocol subject, by its occurrence and the
     /// subject's resolved models, which are part of the protocol subject
     /// (QSpec FR-425) and so of its identity.

@@ -159,6 +159,8 @@ pub enum DerivedLimit {
     MaxTransitions,
     /// `max_clocks`, the live clocks of a timed state (FR-415).
     MaxClocks,
+    /// `max_task_product_work`, task-product node expansions (FR-331).
+    MaxTaskProductWork,
     /// `max_store_buffer`, a weak `parallel`'s store buffer (FR-439).
     MaxStoreBuffer,
     /// `max_messages`, a weak `parallel`'s messages (FR-439).
@@ -173,10 +175,11 @@ pub enum DerivedLimit {
 
 impl DerivedLimit {
     /// Every limit a derived item may carry.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::MaxStates,
         Self::MaxTransitions,
         Self::MaxClocks,
+        Self::MaxTaskProductWork,
         Self::MaxStoreBuffer,
         Self::MaxMessages,
         Self::MaxLiveInstances,
@@ -190,6 +193,7 @@ impl DerivedLimit {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxClocks => "max_clocks",
+            Self::MaxTaskProductWork => "max_task_product_work",
             Self::MaxStoreBuffer => "max_store_buffer",
             Self::MaxMessages => "max_messages",
             Self::MaxLiveInstances => "max_live_instances",
@@ -1731,6 +1735,7 @@ mod tests {
     /// that carries `max_depth` is the reader's): a derived item's `limits`
     /// hold a caller's
     /// setting of `max_states`, `max_transitions`, `max_clocks`,
+    /// `max_task_product_work`,
     /// `max_store_buffer`, `max_messages`, `max_live_instances`,
     /// `max_solver_steps` and `max_solver_time` only; `max_automaton_states`,
     /// `max_walk_steps`, `max_witness_set` and `max_relation_tuples` are each
@@ -1743,6 +1748,7 @@ mod tests {
             "max_states",
             "max_transitions",
             "max_clocks",
+            "max_task_product_work",
             "max_store_buffer",
             "max_messages",
             "max_live_instances",

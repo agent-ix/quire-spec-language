@@ -112,6 +112,13 @@ impl TimeUnits {
         })
     }
 
+    /// Every source-owned nominal node retained for time-unit conversion.
+    pub(crate) fn source_nominal_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
+        self.nominal_nodes
+            .values()
+            .filter(|node| matches!(&node.origin, TimeNominalOrigin::Source { .. }))
+    }
+
     /// The time units of `graph`, whose dimension and unit node keys are
     /// those of `spans` (the assembler's `nominal_spans`, each node's own
     /// declaration span). The one place a

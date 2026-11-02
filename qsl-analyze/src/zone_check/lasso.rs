@@ -43,6 +43,8 @@ pub(super) struct LoopStage {
     pub resets: Vec<(usize, Rational)>,
     /// The step's simultaneous clock copies, destination and source place.
     pub carries: Vec<(usize, usize)>,
+    /// Exact task-service clock decrements at a completion edge.
+    pub task_subtractions: Vec<(usize, Rational)>,
     /// The time invariants after the position.
     pub target: Vec<PlaceConstraint>,
     /// A claim automaton's guard on its own clocks at the position, read
@@ -177,11 +179,18 @@ impl System<'_> {
     /// Clock `place`'s value just before position `k`'s step, after its
     /// delay.
     fn before(&self, place: usize, k: usize) -> Value {
+        self.before_seen(place, k, k, &mut BTreeSet::new())
+    }
+
+    fn before_seen(
+        &self,
+        mut clock: usize,
+        mut at: usize,
+        k: usize,
+        seen: &mut BTreeSet<(usize, usize)>,
+    ) -> Value {
         let m = self.m();
-        let mut clock = place;
-        let mut at = k;
         let mut distance = 0;
-        let mut seen = BTreeSet::new();
         loop {
             if !seen.insert((at, clock)) {
                 return Value::Above;
@@ -195,6 +204,19 @@ impl System<'_> {
                 .find(|(reset, _)| *reset == clock)
             {
                 return Value::Form(self.delays_back(distance, k).shifted(value));
+            }
+            if let Some((_, amount)) = self.stages[j]
+                .task_subtractions
+                .iter()
+                .find(|(subtracted, _)| *subtracted == clock)
+            {
+                return match self.before_seen(clock, j, k, seen) {
+                    Value::Form(value) => Value::Form(
+                        self.delays_back(distance, k)
+                            .plus(&value.shifted(&amount.neg())),
+                    ),
+                    Value::Above => Value::Above,
+                };
             }
             if let Some((_, source)) = self.stages[j]
                 .carries
@@ -218,13 +240,24 @@ impl System<'_> {
         {
             Some((_, value)) => Value::Form(Form::constant(self.m(), value.clone())),
             None => match self.stages[k]
-                .carries
+                .task_subtractions
                 .iter()
                 .rev()
-                .find(|(target, _)| *target == place)
+                .find(|(clock, _)| *clock == place)
             {
-                Some((_, source)) => self.before(*source, k),
-                None => self.before(place, k),
+                Some((_, amount)) => match self.before(place, k) {
+                    Value::Form(value) => Value::Form(value.shifted(&amount.neg())),
+                    Value::Above => Value::Above,
+                },
+                None => match self.stages[k]
+                    .carries
+                    .iter()
+                    .rev()
+                    .find(|(target, _)| *target == place)
+                {
+                    Some((_, source)) => self.before(*source, k),
+                    None => self.before(place, k),
+                },
             },
         }
     }
@@ -340,6 +373,14 @@ pub(super) fn solve_loop(
         system.push(delay.times(&one().neg()), false);
         if !stage.elapses {
             system.push(delay.clone(), false);
+        }
+        if stage.task_subtractions.iter().any(|(clock, _)| {
+            !stage.resets.iter().any(|(reset, _)| reset == clock)
+                && !stages
+                    .iter()
+                    .any(|candidate| candidate.resets.iter().any(|(reset, _)| reset == clock))
+        }) {
+            system.infeasible = true;
         }
         system.constraints(&stage.invariants, |system, place| system.start(place, k));
         system.constraints(&stage.invariants, |system, place| system.before(place, k));
@@ -481,6 +522,7 @@ mod tests {
             part,
             resets,
             carries: Vec::new(),
+            task_subtractions: Vec::new(),
             target: Vec::new(),
             position: Vec::new(),
             before: None,

@@ -67,12 +67,12 @@ pub struct ObligationIdentity(Box<ObligationParts>);
 struct ObligationParts {
     node: NodeKey,
     model: Option<ModelIdentity>,
-    ordinal: u32,
+    ordinal: u64,
 }
 
 impl ObligationIdentity {
     /// The obligation of `node` owned by `model` at occurrence `ordinal`.
-    pub fn new(node: NodeKey, model: Option<ModelIdentity>, ordinal: u32) -> Self {
+    pub fn new(node: NodeKey, model: Option<ModelIdentity>, ordinal: u64) -> Self {
         Self(Box::new(ObligationParts {
             node,
             model,
@@ -91,7 +91,7 @@ impl ObligationIdentity {
     }
 
     /// The occurrence ordinal.
-    pub fn ordinal(&self) -> u32 {
+    pub fn ordinal(&self) -> u64 {
         self.0.ordinal
     }
 }
@@ -361,5 +361,11 @@ mod tests {
             a,
             ObligationIdentity::new(node(7), Some(ModelIdentity::new("m")), 0)
         );
+    }
+
+    #[test]
+    fn obligation_identity_preserves_full_u64_ordinal() {
+        let identity = ObligationIdentity::new(crate::fixture_node(7), None, u64::MAX);
+        assert_eq!(identity.ordinal(), u64::MAX);
     }
 }

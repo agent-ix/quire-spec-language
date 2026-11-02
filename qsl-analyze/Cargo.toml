@@ -23,6 +23,7 @@ qsl-replay = { path = "../qsl-replay" }
 # EN-1 reads the checked temporal clause and the subject's admission
 # failure (layer 3), and the fairness set and property form (SV).
 qsl-semantics = { path = "../qsl-semantics" }
+quire-contract-model = { workspace = true }
 # FR-336-AC-4: the request writer (layer R) the EN-1 request path writes a
 # model subject's temporal items through.
 qsl-route = { path = "../qsl-route" }

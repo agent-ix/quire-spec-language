@@ -490,3 +490,54 @@ fn down_and_minus_agree_with_point_membership() {
         Err(ZoneError::MatrixShape { cells: 1, dim: 2 })
     );
 }
+
+#[trace("TC-371", "FR-418-AC-11")]
+#[test]
+fn bounded_subtraction_preserves_other_clock_relations() {
+    let mut zone = Zone::<Integer>::from_matrix(
+        3,
+        [
+            Some((Integer::from(0_i64), false)),
+            Some((Integer::from(0_i64), false)),
+            Some((Integer::from(0_i64), false)),
+            None,
+            Some((Integer::from(0_i64), false)),
+            None,
+            None,
+            None,
+            Some((Integer::from(0_i64), false)),
+        ],
+    )
+    .expect("nonnegative clock universe");
+    zone.constrain(1, 0, &Integer::from(5_i64), false)
+        .expect("x <= 5");
+    zone.constrain(0, 1, &Integer::from(-3_i64), false)
+        .expect("x >= 3");
+    zone.constrain(2, 0, &Integer::from(4_i64), false)
+        .expect("y <= 4");
+    zone.constrain(0, 2, &Integer::from(-4_i64), false)
+        .expect("y >= 4");
+    zone.subtract_bounded(1, &Integer::from(2_i64), &Integer::from(5_i64))
+        .expect("x := x - 2");
+
+    assert_eq!(
+        zone.bound(1, 0).expect("x upper"),
+        Some((Integer::from(3_i64), false))
+    );
+    assert_eq!(
+        zone.bound(0, 1).expect("x lower"),
+        Some((Integer::from(-1_i64), false))
+    );
+    assert_eq!(
+        zone.bound(1, 2).expect("x-y upper"),
+        Some((Integer::from(-1_i64), false))
+    );
+    assert_eq!(
+        zone.bound(2, 1).expect("y-x upper"),
+        Some((Integer::from(3_i64), false))
+    );
+    assert_eq!(
+        zone.bound(2, 0).expect("y remains 4"),
+        Some((Integer::from(4_i64), false))
+    );
+}

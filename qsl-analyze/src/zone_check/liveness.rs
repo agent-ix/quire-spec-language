@@ -44,7 +44,8 @@ use qsl_eval::simulation::model::{GuardedStep, ModelSimState, PlaceConstraint};
 use qsl_eval::simulation::Permutation;
 use qsl_eval::temporal::{AtomReading, CaptureReading, UndefinedCause};
 use qsl_replay::{
-    CounterexampleKind, FairnessMember, Lasso, ModelStep, TemporalCounterexample, UndefinedLocus,
+    CounterexampleKind, FairnessMember, Lasso, ModelStep, TaskSearchTransition,
+    TemporalCounterexample, UndefinedLocus,
 };
 use qsl_semantics::check::CaptureSite;
 use quire_exact::{Integer, Meter, Rational};
@@ -59,6 +60,8 @@ use super::search::{
 };
 use super::{Bound, Dbm, ZoneCheckRefusal};
 use crate::model_check::fair_walk::{fairness_constraints, FairModel};
+
+type TaskTimedLasso = (Vec<ModelStep>, Vec<ModelStep<TaskSearchTransition>>, usize);
 
 /// Where a clock lies against one constant of its state's cells.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1281,6 +1284,8 @@ impl Run<'_, '_, '_> {
                     position_resets,
                     silent: false,
                     fixed,
+                    task_product_step: None,
+                    task_subtractions: Vec::new(),
                 }
             }
             Via::Wait => Stage {
@@ -1294,6 +1299,8 @@ impl Run<'_, '_, '_> {
                 position_resets: Vec::new(),
                 silent: true,
                 fixed,
+                task_product_step: None,
+                task_subtractions: Vec::new(),
             },
             Via::Diverge | Via::Stutter => {
                 return Err(ZoneCheckRefusal::Fault("stage-edge").into());
@@ -1427,7 +1434,7 @@ impl Run<'_, '_, '_> {
             .unwrap_or_else(|| self.timed.max_constant());
         Ok(self
             .timed_lasso(places, &ceiling, stem, &cycle)?
-            .map(|(prefix, entry)| {
+            .map(|(prefix, _, entry)| {
                 counterexample(
                     initial,
                     prefix,
@@ -1450,7 +1457,7 @@ impl Run<'_, '_, '_> {
         ceiling: &Rational,
         mut stem_stages: Vec<Stage>,
         cycle: &[Stage],
-    ) -> Result<Option<(Vec<ModelStep>, usize)>, Halt> {
+    ) -> Result<Option<TaskTimedLasso>, Halt> {
         let dense = self.timed.tick_period().is_none();
         let mut loop_stages = Vec::with_capacity(cycle.len());
         for stage in cycle {
@@ -1482,6 +1489,7 @@ impl Run<'_, '_, '_> {
                 part,
                 resets,
                 carries,
+                task_subtractions: stage.task_subtractions,
                 target: stage.target,
                 position: stage.position,
                 before: stage.before,
@@ -1526,6 +1534,19 @@ impl Run<'_, '_, '_> {
                     *slot = Some(value.clone());
                 }
             }
+            for (place, amount) in &stage.task_subtractions {
+                if let Some(Some(value)) = values.get_mut(*place) {
+                    *value = value.sub(amount);
+                }
+            }
+        }
+        if loop_stages.iter().any(|stage| {
+            stage
+                .task_subtractions
+                .iter()
+                .any(|(place, _)| values.get(*place).is_some_and(Option::is_none))
+        }) {
+            return Ok(None);
         }
         let mut at_entry = Dbm::universe(places + 1);
         for (place, value) in values.iter().enumerate() {
@@ -1560,7 +1581,10 @@ impl Run<'_, '_, '_> {
             for _ in 1..count {
                 stages.extend(copy.iter().cloned());
             }
-            let positions = stages.iter().filter(|stage| stage.step.is_some()).count();
+            let positions = stages
+                .iter()
+                .filter(|stage| stage.step.is_some() || stage.task_product_step.is_some())
+                .count();
             let Some(last) = stages.last_mut() else {
                 // An empty stem: the loop enters at the initial state, whose
                 // clocks are 0, so every clock is one the loop resets to 0.
@@ -1568,7 +1592,7 @@ impl Run<'_, '_, '_> {
                 if values.iter().all(|value| value.as_ref() == Some(&zero)) {
                     if let Ok(concrete) = concretise(self.timed, places, &copy, &Target::Any, &fine)
                     {
-                        return Ok(Some((concrete.prefix, 0)));
+                        return Ok(Some((concrete.prefix, concrete.task_product_prefix, 0)));
                     }
                 }
                 continue;
@@ -1582,7 +1606,11 @@ impl Run<'_, '_, '_> {
             let Ok(concrete) = concretise(self.timed, places, &stages, &Target::Any, &fine) else {
                 continue;
             };
-            return Ok(Some((concrete.prefix, positions)));
+            return Ok(Some((
+                concrete.prefix,
+                concrete.task_product_prefix,
+                positions,
+            )));
         }
         Ok(None)
     }

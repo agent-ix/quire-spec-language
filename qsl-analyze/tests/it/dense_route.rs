@@ -238,6 +238,7 @@ fn analyzed(world: &World) -> qsl_analyze::analyze::AnalyzeRecord {
                 terminals: world.package.graph().terminal_keys(),
             })
         }),
+        task_replay: None,
     };
     let mut records = analyze_items(
         &Engines::qsl().expect("the layer-A manifests register"),

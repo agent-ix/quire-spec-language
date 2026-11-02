@@ -10,10 +10,12 @@
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
+use crate::certificate::zone_certificate::TaskSearchEvidence;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::hybrid_replay::{HybridTrace, ReplayRecord};
+use crate::identity::ObligationIdentity;
 use crate::model_check::limits::ModelCheckLimit;
 use crate::model_check::state_graph::{StateGraphPropertyForm, WitnessSource};
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
@@ -468,6 +470,9 @@ pub enum IncompleteCause {
         /// The value the run used for it.
         value: u64,
     },
+    /// FR-331: bounded task analysis stopped at an unresolved continuous
+    /// successor before exhausting a configured limit.
+    BoundedSearchIncomplete,
     /// FR-203: dyadic refinement exhausted its precision while the initial
     /// value still straddled the claim threshold.
     PrecisionBudget {
@@ -485,6 +490,7 @@ impl IncompleteCause {
             Self::TimedOut => "timed-out",
             Self::Cancelled { .. } => "cancelled",
             Self::ResourceExhausted | Self::LimitReached { .. } => "limit-reached",
+            Self::BoundedSearchIncomplete => "bounded-search-incomplete",
             Self::PrecisionBudget { .. } => "precision-budget",
         }
     }
@@ -1346,6 +1352,8 @@ pub struct TerminalRecord {
     /// `runtime_invariant`/`established-invariant-broken`, or an expansion
     /// stop's own cause).
     diagnostic: Option<CatalogCode>,
+    /// FR-331's replayable frontier for an incomplete bounded task search.
+    task_search: Option<TaskSearchEvidence<ObligationIdentity>>,
 }
 
 impl TerminalRecord {
@@ -1420,6 +1428,7 @@ impl TerminalRecord {
             value: TerminalValue::Refuted,
             replay: Some(replay.clone()),
             diagnostic: None,
+            task_search: None,
         })
     }
 
@@ -1514,6 +1523,7 @@ impl TerminalRecord {
             value: TerminalValue::Declined { cause, code },
             replay: None,
             diagnostic: Some(diagnostic),
+            task_search: None,
         }
     }
 
@@ -1539,6 +1549,7 @@ impl TerminalRecord {
             value: TerminalValue::Unsupported(cause),
             replay: None,
             diagnostic: Some(diagnostic),
+            task_search: None,
         }
     }
 
@@ -1551,6 +1562,7 @@ impl TerminalRecord {
             value: TerminalValue::Failed,
             replay: None,
             diagnostic: Some(diagnostic),
+            task_search: None,
         }
     }
 
@@ -1620,6 +1632,7 @@ impl TerminalRecord {
             value,
             replay: None,
             diagnostic: None,
+            task_search: None,
         }
     }
 
@@ -1637,7 +1650,34 @@ impl TerminalRecord {
             value,
             replay: None,
             diagnostic: None,
+            task_search: None,
         }
+    }
+
+    /// Attach FR-331's bounded task-search frontier to the matching
+    /// incomplete limit record. The frontier is never evidence for a proof.
+    pub fn with_task_search(
+        mut self,
+        evidence: TaskSearchEvidence<ObligationIdentity>,
+    ) -> Result<Self, TerminalRecordRefusal> {
+        let matches_cause = match (&self.value, evidence.limit.as_ref()) {
+            (
+                TerminalValue::Incomplete(IncompleteCause::LimitReached { limit, value }),
+                Some(effective),
+            ) => effective.value == *value && effective.kind.setting() == limit.setting(),
+            (TerminalValue::Incomplete(IncompleteCause::BoundedSearchIncomplete), None) => true,
+            _ => false,
+        };
+        if !matches_cause || !evidence.has_valid_shape() || evidence.identity.model().is_none() {
+            return Err(TerminalRecordRefusal::InvalidTaskSearchEvidence);
+        }
+        self.task_search = Some(evidence);
+        Ok(self)
+    }
+
+    /// The bounded task-search frontier, when this record carries one.
+    pub fn task_search(&self) -> Option<&TaskSearchEvidence<ObligationIdentity>> {
+        self.task_search.as_ref()
     }
 
     /// The `request_index` of the item this record was read for.
@@ -1690,6 +1730,14 @@ pub enum TerminalRecordRefusal {
     /// reproduced.
     #[error("a refuted value carries no reproduced counterexample")]
     RefutedWithoutCounterexample,
+    /// A task-search frontier was attached to a result other than an
+    /// incomplete result stopped by the same effective limit.
+    #[error("a task-search frontier requires its matching incomplete limit stop")]
+    TaskSearchWithoutLimitStop,
+    /// A task-search frontier has malformed structure or mismatched identity
+    /// and limit fields.
+    #[error("task-search frontier is malformed or does not match the stopped result")]
+    InvalidTaskSearchEvidence,
 }
 
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
@@ -1783,6 +1831,9 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
                     + record
                         .replay_result()
                         .map_or(0, crate::result::measured_encoded_bytes)
+                    + record
+                        .task_search()
+                        .map_or(0, crate::outcome::task_search_encoded_bytes)
             })
             .sum::<usize>()
 }

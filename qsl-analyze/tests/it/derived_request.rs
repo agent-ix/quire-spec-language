@@ -296,6 +296,7 @@ fn zone_run<'w>(
         },
         certificate_limits: CertificateCheckLimits::default(),
         replay: Box::new(|_| panic!("a proof has no counterexample to replay")),
+        task_replay: None,
     };
     derived_zone_item(derived, timed_item)
 }
@@ -818,6 +819,7 @@ fn a_derived_run_settles_only_through_its_joined_adapter() {
         },
         certificate_limits: CertificateCheckLimits::default(),
         replay: Box::new(|_| panic!("refused before it runs")),
+        task_replay: None,
     };
     assert_eq!(
         qsl_analyze::analyze::zone_item(index, zone).err(),

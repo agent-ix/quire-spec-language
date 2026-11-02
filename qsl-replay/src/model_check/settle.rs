@@ -683,6 +683,7 @@ impl Row {
                     IncompleteCause::TimedOut
                     | IncompleteCause::Cancelled { .. }
                     | IncompleteCause::ResourceExhausted
+                    | IncompleteCause::BoundedSearchIncomplete
                     | IncompleteCause::PrecisionBudget { .. } => None,
                 };
                 Self::incomplete(cause, limit_reached)

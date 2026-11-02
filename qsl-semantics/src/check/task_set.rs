@@ -30,8 +30,9 @@ use qsl_forms::{
     ArrivalForm, CriticalityForm, PolicyForm, ReleaseForm, ResponseForm, SchedulableForm,
     SignedQuantityForm, TaskForm, TasksetForm,
 };
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Integer, NodeKey, Origin, PathSegment, Rational, Role};
 
 use super::probabilistic::{exact_value, ExactFault};
 use super::refusal::{TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause};
@@ -245,11 +246,32 @@ pub struct CheckedScheduleClaim {
     pub task_set: String,
     /// The claim.
     pub claim: ScheduleClaim,
+    /// The checked-package `claim`/`schedulability` node identity derived
+    /// from the normalized claim body, when its task set fully converted.
+    pub node_id: Option<NodeKey>,
+    /// This declaration's `claim` occurrence ordinal on the shared body node.
+    pub occurrence: u64,
     /// The span of the declaration.
     pub span: Span,
 }
 
 impl CheckedScheduleClaim {
+    /// The checked-package node identity for this normalized claim body.
+    pub fn node_id(&self) -> Option<&NodeKey> {
+        self.node_id.as_ref()
+    }
+
+    /// The `claim` occurrence that distinguishes this declaration from
+    /// another declaration with the same normalized body.
+    pub fn occurrence(&self) -> Option<OccurrenceKey> {
+        self.node_id.as_ref().map(|node| {
+            OccurrenceKey::new(
+                node.clone(),
+                Origin::new(Role::new("claim"), self.occurrence),
+            )
+        })
+    }
+
     /// The scheduling policy: a `response` claim's is `fixed_priority`.
     pub fn policy(&self) -> SchedulingPolicy {
         match &self.claim {
@@ -648,6 +670,111 @@ fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
     })
 }
 
+fn rational_key(value: &Rational) -> String {
+    format!(
+        "{}/{}",
+        value.numerator().as_big(),
+        value.denominator().as_big()
+    )
+}
+
+/// Derive FR-482's node key from the normalized checked claim body. Claim and
+/// task-set names, source order and source spans are excluded; all semantic
+/// task premises are represented in fixed binding order.
+fn claim_node_id(package: &str, task_set: &TaskSet, claim: &ScheduleClaim) -> Option<NodeKey> {
+    let unit_node = task_set.unit.as_ref()?.node.clone();
+    let mut operands = Vec::new();
+    macro_rules! text {
+        ($value:expr) => {
+            operands.push(PathSegment::Text($value.into()))
+        };
+    }
+    macro_rules! quantity {
+        ($value:expr) => {{
+            operands.push(PathSegment::Text(rational_key($value)));
+            operands.push(PathSegment::Node(unit_node.clone()));
+        }};
+    }
+    text!("kind");
+    match claim {
+        ScheduleClaim::Schedulable(_) => text!("schedulable"),
+        ScheduleClaim::Response { .. } => text!("response"),
+    }
+    text!("policy");
+    text!(match claim {
+        ScheduleClaim::Schedulable(SchedulingPolicy::FixedPriority)
+        | ScheduleClaim::Response { .. } => "fixed-priority",
+        ScheduleClaim::Schedulable(SchedulingPolicy::Edf) => "edf",
+        ScheduleClaim::Schedulable(SchedulingPolicy::Amc) => "amc",
+    });
+    text!("task");
+    match claim {
+        ScheduleClaim::Response { task, .. } => text!(task.clone()),
+        ScheduleClaim::Schedulable(_) => {}
+    }
+    text!("bound");
+    match claim {
+        ScheduleClaim::Response { bound, .. } => quantity!(bound),
+        ScheduleClaim::Schedulable(_) => {}
+    }
+    text!("tasks");
+    let mut tasks: Vec<_> = task_set.tasks.iter().collect();
+    tasks.sort_by(|left, right| left.name.cmp(&right.name));
+    for task in tasks {
+        text!("task");
+        text!("name");
+        text!(task.name.clone());
+        text!("arrival");
+        let interarrival = match &task.arrival {
+            Arrival::Periodic { period } => {
+                text!("periodic");
+                period
+            }
+            Arrival::Sporadic { min_interarrival } => {
+                text!("sporadic");
+                min_interarrival
+            }
+        };
+        text!("period");
+        quantity!(interarrival);
+        text!("deadline");
+        quantity!(&task.deadline);
+        text!("bcet");
+        quantity!(&task.bcet);
+        text!("wcet");
+        let (wcet, wcet_hi) = match &task.wcet {
+            Wcet::Single(wcet) => (wcet, None),
+            Wcet::Dual { lo, hi } => (lo, Some(hi)),
+        };
+        quantity!(wcet);
+        text!("wcet_hi");
+        if let Some(wcet_hi) = wcet_hi {
+            quantity!(wcet_hi);
+        }
+        text!("criticality");
+        text!(match task.criticality {
+            Criticality::Lo => "lo",
+            Criticality::Hi => "hi",
+        });
+        text!("priority");
+        if let Some(priority) = task.priority {
+            text!(priority.to_string());
+        }
+        text!("jitter");
+        quantity!(&task.jitter);
+        text!("blocking");
+        quantity!(&task.blocking);
+    }
+    super::derived_node_key(
+        package,
+        super::NodeTag::Claim,
+        "schedulability",
+        operands,
+        0,
+    )
+    .ok()
+}
+
 /// One claim over `info`: its checked form, when its bound converts, and its
 /// own defects.
 fn check_claim(
@@ -784,6 +911,8 @@ fn check_claim(
             name: name.clone(),
             task_set: set.to_owned(),
             claim,
+            node_id: None,
+            occurrence: 0,
             span,
         }),
         findings,
@@ -805,10 +934,12 @@ pub(super) fn check(
     declarations: &[TaskSetDeclaration],
     units: &TimeUnits,
     rational_bits: u64,
+    package_name: &str,
 ) -> Checked {
     let mut model = CheckedTaskSets::default();
     let mut findings = Vec::new();
     let mut first_of: BTreeMap<&str, Span> = BTreeMap::new();
+    let mut claim_ordinals: BTreeMap<NodeKey, u64> = BTreeMap::new();
     for declaration in declarations {
         let TaskSetDeclaration::Taskset(form) = declaration else {
             continue;
@@ -829,7 +960,8 @@ pub(super) fn check(
             first_of.insert(form.name.name.as_str(), form.name.span);
         }
         findings.append(&mut own);
-        model.task_sets.extend(built(&info));
+        let checked_set = built(&info);
+        model.task_sets.extend(checked_set.clone());
         if duplicate.is_some() {
             // Its claims resolve to the first task set of the name.
             continue;
@@ -847,8 +979,16 @@ pub(super) fn check(
                 | TaskSetDeclaration::Response(_)
                 | TaskSetDeclaration::Release(_) => continue,
             };
-            let (checked, mut defects) = check_claim(claim, &info, units, rational_bits);
+            let (mut checked, mut defects) = check_claim(claim, &info, units, rational_bits);
             findings.append(&mut defects);
+            if let (Some(claim), Some(task_set)) = (&mut checked, checked_set.as_ref()) {
+                claim.node_id = claim_node_id(package_name, task_set, &claim.claim);
+                if let Some(node_id) = &claim.node_id {
+                    let ordinal = claim_ordinals.entry(node_id.clone()).or_default();
+                    claim.occurrence = *ordinal;
+                    *ordinal = ordinal.saturating_add(1);
+                }
+            }
             model.claims.extend(checked);
         }
     }

@@ -29,12 +29,16 @@ use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::model::observation::AdmissionFailure;
-use quire_exact::{CancelCause, NodeKey};
+use quire_exact::{CancelCause, NodeKey, Rational};
 use quire_semantic_value::catalog::Category;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::certificate::zone_certificate::{
+    TaskSearchEdge, TaskSearchEvidence, TaskSearchFrontier, TaskSearchLimitKind, TaskSearchNode,
+    TaskSearchOpen, TaskSearchStopReason, TaskSearchTransition,
+};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
@@ -401,6 +405,153 @@ impl From<&quire_semantic_value::model_transition::ModelTransition> for TimedTra
     }
 }
 
+impl From<&TaskSearchEvidence<crate::identity::ObligationIdentity>> for TaskSearchWire {
+    fn from(evidence: &TaskSearchEvidence<crate::identity::ObligationIdentity>) -> Self {
+        Self {
+            kind: "task-search-frontier",
+            identity: TaskSearchIdentityWire {
+                node_id: evidence.identity.node().to_string(),
+                model: evidence
+                    .identity
+                    .model()
+                    .expect("task-search identity has a checked source model")
+                    .as_str()
+                    .to_owned(),
+                ordinal: evidence.identity.ordinal(),
+            },
+            nodes: evidence.nodes.iter().map(Into::into).collect(),
+            edges: evidence.edges.iter().map(Into::into).collect(),
+            frontier: evidence.frontier.iter().map(Into::into).collect(),
+            limit: evidence.limit.as_ref().map(|limit| TaskSearchLimitWire {
+                kind: "limit-reached",
+                limit: limit.kind.limit_name(),
+                value: limit.value,
+                setting: limit.kind.setting(),
+            }),
+        }
+    }
+}
+
+impl From<&TaskSearchNode> for TaskSearchNodeWire {
+    fn from(node: &TaskSearchNode) -> Self {
+        let dimension = node.zone.dim();
+        let zone = (0..dimension)
+            .map(|i| {
+                (0..dimension)
+                    .map(
+                        |j| match node.zone.bound(i, j).expect("in-range zone cell") {
+                            None => TaskSearchBoundWire::Infinity("infinity"),
+                            Some((bound, strict)) => TaskSearchBoundWire::Bound {
+                                bound: bound.to_string(),
+                                strict,
+                            },
+                        },
+                    )
+                    .collect()
+            })
+            .collect();
+        Self {
+            state: (&node.state).into(),
+            depth: node.depth,
+            zone,
+            expanded: node.expanded,
+        }
+    }
+}
+
+impl From<&TaskSearchEdge> for TaskSearchEdgeWire {
+    fn from(edge: &TaskSearchEdge) -> Self {
+        Self {
+            node: edge.node,
+            transition: (&edge.transition).into(),
+            target: edge.target,
+        }
+    }
+}
+
+impl From<&TaskSearchTransition> for TaskSearchTransitionWire {
+    fn from(transition: &TaskSearchTransition) -> Self {
+        match transition {
+            TaskSearchTransition::Source(transition) => {
+                let wire = TimedTransitionWire::from(transition);
+                Self::Source {
+                    operation: wire.operation,
+                    receiver: wire.receiver,
+                    arguments: wire.arguments,
+                }
+            }
+            TaskSearchTransition::Task(identity) => Self::Task {
+                action: identity.action.as_str(),
+                taskset: identity.taskset.clone(),
+                task: identity.task.clone(),
+                job: identity.job,
+                slot: identity.slot,
+                generation: identity.generation,
+                release: Box::new((&identity.release).into()),
+                source_transition: identity
+                    .source_transition
+                    .as_ref()
+                    .map(|transition| Box::new(transition.into())),
+                demand: Box::new((&identity.demand).into()),
+                jitter: Box::new((&identity.jitter).into()),
+                deadline: Box::new((&identity.deadline).into()),
+                priority: identity.priority,
+                budget_delta: identity
+                    .budget_delta
+                    .as_ref()
+                    .map(|delta| Box::new(delta.into())),
+            },
+        }
+    }
+}
+
+impl From<&Rational> for RationalWire {
+    fn from(value: &Rational) -> Self {
+        Self {
+            numerator: value.numerator().to_string(),
+            denominator: value.denominator().to_string(),
+        }
+    }
+}
+
+impl From<&TaskSearchFrontier> for TaskSearchFrontierWire {
+    fn from(frontier: &TaskSearchFrontier) -> Self {
+        Self {
+            node: frontier.node,
+            reason: match frontier.reason {
+                TaskSearchStopReason::StateLimit => "state-limit",
+                TaskSearchStopReason::TransitionLimit => "transition-limit",
+                TaskSearchStopReason::ClockLimit => "clock-limit",
+                TaskSearchStopReason::DepthLimit => "depth-limit",
+                TaskSearchStopReason::WorkLimit => "work-limit",
+                TaskSearchStopReason::UnresolvedChoice => "unresolved-choice",
+            },
+            open: frontier
+                .open
+                .iter()
+                .map(|open| match open {
+                    TaskSearchOpen::Successors => "successors",
+                    TaskSearchOpen::Delay => "delay",
+                    TaskSearchOpen::Demand => "demand",
+                    TaskSearchOpen::BudgetChange => "budget-change",
+                    TaskSearchOpen::Queue => "queue",
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TaskSearchLimitKind {
+    fn limit_name(self) -> &'static str {
+        match self {
+            Self::States => "max_symbolic_states",
+            Self::Transitions => "max_symbolic_transitions",
+            Self::Clocks => "max_clocks",
+            Self::Work => "max_task_product_work",
+        }
+    }
+}
+
 /// A stale identity on the terminal wire. The explicit discriminator keeps
 /// the identity kinds distinct while sharing one cause shape.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -702,6 +853,9 @@ pub struct OutcomeItem {
     /// The state-graph limit reached, when the run stopped at one.
     #[serde(skip_serializing_if = "Option::is_none")]
     limit_reached: Option<ReachedLimitWire>,
+    /// FR-331's replayable bounded task-search frontier, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_search: Option<TaskSearchWire>,
     #[serde(serialize_with = "category_str")]
     category: Category,
 }
@@ -712,6 +866,104 @@ struct ReachedLimitWire {
     limit: &'static str,
     value: u64,
     setting: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TaskSearchWire {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    identity: TaskSearchIdentityWire,
+    nodes: Vec<TaskSearchNodeWire>,
+    edges: Vec<TaskSearchEdgeWire>,
+    frontier: Vec<TaskSearchFrontierWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<TaskSearchLimitWire>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TaskSearchIdentityWire {
+    node_id: String,
+    model: String,
+    ordinal: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TaskSearchNodeWire {
+    state: TimedStateWire,
+    depth: u64,
+    zone: Vec<Vec<TaskSearchBoundWire>>,
+    expanded: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+enum TaskSearchBoundWire {
+    Infinity(&'static str),
+    Bound { bound: String, strict: bool },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TaskSearchEdgeWire {
+    node: usize,
+    transition: TaskSearchTransitionWire,
+    target: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type")]
+enum TaskSearchTransitionWire {
+    #[serde(rename = "transition")]
+    Source {
+        operation: serde_json::Value,
+        receiver: Option<serde_json::Value>,
+        arguments: Vec<serde_json::Value>,
+    },
+    #[serde(rename = "task-transition")]
+    Task {
+        action: &'static str,
+        taskset: String,
+        task: String,
+        job: u64,
+        slot: u64,
+        generation: u64,
+        release: Box<TimedTransitionWire>,
+        source_transition: Option<Box<TimedTransitionWire>>,
+        demand: Box<RationalWire>,
+        jitter: Box<RationalWire>,
+        deadline: Box<RationalWire>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        priority: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        budget_delta: Option<Box<RationalWire>>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct RationalWire {
+    numerator: String,
+    denominator: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TaskSearchFrontierWire {
+    node: usize,
+    reason: &'static str,
+    open: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TaskSearchLimitWire {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    limit: &'static str,
+    value: u64,
+    setting: &'static str,
+}
+
+pub(crate) fn task_search_encoded_bytes(
+    evidence: &TaskSearchEvidence<crate::identity::ObligationIdentity>,
+) -> usize {
+    serde_json::to_vec(&TaskSearchWire::from(evidence)).map_or(usize::MAX, |bytes| bytes.len())
 }
 
 /// The catalogued reason of an undefined value: the kernel's own spelling,
@@ -838,6 +1090,9 @@ impl OutcomeItem {
                         item.lower = Some((**lower).clone());
                         item.upper = Some((**upper).clone());
                     }
+                    IncompleteCause::BoundedSearchIncomplete => {
+                        item.cause = Some("unresolved-dynamics".to_owned());
+                    }
                     IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
                 }
                 Some(item)
@@ -892,6 +1147,7 @@ impl OutcomeItem {
             witness_samples: None,
             limits: None,
             limit_reached: None,
+            task_search: record.task_search().map(Into::into),
             category: value.category(),
         }
     }
@@ -940,6 +1196,7 @@ impl OutcomeItem {
             witness_samples: None,
             limits: None,
             limit_reached: None,
+            task_search: None,
             category: Category::Violation,
         }
     }

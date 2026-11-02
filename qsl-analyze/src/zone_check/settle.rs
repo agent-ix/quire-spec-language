@@ -10,10 +10,10 @@
 
 use qsl_replay::{
     CertificateRejection, CounterexampleKind, IncompleteCause, InconclusiveCause, ModelCheckLimit,
-    ModelTraceReplayResult, ModelTraceSettlement, ProofBasis, ReachedLimit,
-    RefinementTraceSettlement, ReplayRefusal, ResultLabel, SettlementBasis, TemporalCounterexample,
-    TerminalValue, Truth, UnavailabilityCause, ZoneCertificate, ZoneCertificateRefusal,
-    ZoneCertificateVerdict,
+    ModelTraceReplayResult, ModelTraceSettlement, ObligationIdentity, ProofBasis, ReachedLimit,
+    RefinementTraceSettlement, ReplayRefusal, ResultLabel, SettlementBasis, TaskSearchEvidence,
+    TaskSearchTransition, TemporalCounterexample, TerminalValue, Truth, UnavailabilityCause,
+    ZoneCertificate, ZoneCertificateRefusal, ZoneCertificateVerdict,
 };
 use qsl_replay::{Certification, Execution};
 use qsl_route::deadlock::ItemObligation;
@@ -62,6 +62,10 @@ pub struct ZoneCheckRecord {
     /// The counterexample a `refuted` record carries, which replay
     /// reproduced.
     pub counterexample: Option<TemporalCounterexample>,
+    /// The task-derived prefix of a refuted schedulability claim.
+    pub task_counterexample: Option<TemporalCounterexample<TaskSearchTransition>>,
+    /// FR-331's replayable stopped-search evidence for a bounded task item.
+    pub task_search: Option<TaskSearchEvidence<ObligationIdentity>>,
 }
 
 impl ZoneCheckRecord {
@@ -81,6 +85,8 @@ impl ZoneCheckRecord {
             method: ZONE_CERTIFIED,
             limit_reached: None,
             counterexample: None,
+            task_counterexample: None,
+            task_search: None,
         }
     }
 
@@ -103,6 +109,7 @@ impl ZoneCheckRecord {
             IncompleteCause::TimedOut
             | IncompleteCause::Cancelled { .. }
             | IncompleteCause::ResourceExhausted
+            | IncompleteCause::BoundedSearchIncomplete
             | IncompleteCause::PrecisionBudget { .. } => None,
         };
         Self {
@@ -162,6 +169,51 @@ pub fn settle_zone_check<S>(
     ) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<S>>>,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ZoneCheckRecord {
+    settle_zone_check_inner(
+        item,
+        cancel,
+        check,
+        replay,
+        None::<
+            fn(
+                &TemporalCounterexample<TaskSearchTransition>,
+            ) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+        >,
+    )
+}
+
+/// Settle EN-6 with both the ordinary model-trace reader and the task-product
+/// reader. A task deadline miss is refuted only when the latter replays the
+/// typed source/task path and validates its divergent continuation.
+pub fn settle_zone_check_with_task_replay<S>(
+    item: ZoneItem<'_, S>,
+    cancel: &Cancel,
+    check: impl FnOnce(
+        &ZoneCertificate<ItemObligation<S>>,
+    ) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<S>>>,
+    replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+    task_replay: impl FnOnce(
+        &TemporalCounterexample<TaskSearchTransition>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+) -> ZoneCheckRecord {
+    settle_zone_check_inner(item, cancel, check, replay, Some(task_replay))
+}
+
+fn settle_zone_check_inner<S, R, T>(
+    item: ZoneItem<'_, S>,
+    cancel: &Cancel,
+    check: impl FnOnce(
+        &ZoneCertificate<ItemObligation<S>>,
+    ) -> Result<ZoneCertificateVerdict, ZoneCertificateRefusal<ItemObligation<S>>>,
+    replay: R,
+    task_replay: Option<T>,
+) -> ZoneCheckRecord
+where
+    R: FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+    T: FnOnce(
+        &TemporalCounterexample<TaskSearchTransition>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+{
     let outcome = match item {
         ZoneItem::Unsupported(disposed) => {
             return ZoneCheckRecord::row(
@@ -213,7 +265,44 @@ pub fn settle_zone_check<S>(
         ZoneCheckOutcome::Undecided { cause, .. } => {
             ZoneCheckRecord::inconclusive(undecided_cause(cause))
         }
-        ZoneCheckOutcome::Stopped { cause, .. } => stopped(*cause, cancel),
+        ZoneCheckOutcome::Stopped {
+            cause, task_search, ..
+        } => stopped(*cause, cancel, task_search.clone()),
+        ZoneCheckOutcome::TaskViolated { counterexample, .. } => {
+            let Some(replay) = task_replay else {
+                return ZoneCheckRecord::failed();
+            };
+            match replay(counterexample) {
+                Ok(ModelTraceReplayResult {
+                    settlement: ModelTraceSettlement::Reproduced { .. },
+                    ..
+                }) => ZoneCheckRecord {
+                    task_counterexample: Some(counterexample.as_ref().clone()),
+                    ..ZoneCheckRecord::row(
+                        TerminalValue::Refuted,
+                        ResultLabel::Refuted,
+                        SettlementBasis::DecisiveCounterexample,
+                        Execution::Completed,
+                        Truth::Violated,
+                    )
+                },
+                Ok(ModelTraceReplayResult {
+                    settlement: ModelTraceSettlement::Inconclusive(cause),
+                    ..
+                }) => ZoneCheckRecord::inconclusive(InconclusiveCause::ReplayParity(cause)),
+                Ok(ModelTraceReplayResult {
+                    settlement: ModelTraceSettlement::Stopped { reached, .. },
+                    ..
+                }) => ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
+                    limit: reached.limit,
+                    value: reached.value,
+                }),
+                Err(refusal) => match TerminalValue::from_replay_refusal(&refusal) {
+                    TerminalValue::Inconclusive(cause) => ZoneCheckRecord::inconclusive(cause),
+                    _ => ZoneCheckRecord::failed(),
+                },
+            }
+        }
         ZoneCheckOutcome::Violated { counterexample, .. } => match replay(counterexample) {
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
@@ -278,8 +367,12 @@ fn undecided_cause(cause: &ZoneUndecided) -> InconclusiveCause {
 }
 
 /// The V-7 record of an EN-6 run that `cause` stopped.
-fn stopped(cause: ZoneStop, cancel: &Cancel) -> ZoneCheckRecord {
-    match cause {
+fn stopped(
+    cause: ZoneStop,
+    cancel: &Cancel,
+    task_search: Option<Box<TaskSearchEvidence<ObligationIdentity>>>,
+) -> ZoneCheckRecord {
+    let mut record = match cause {
         ZoneStop::LimitReached(limit) => {
             let (limit, value) = match limit {
                 ZoneCheckLimit::MaxSymbolicStates(value) => {
@@ -293,14 +386,22 @@ fn stopped(cause: ZoneStop, cancel: &Cancel) -> ZoneCheckRecord {
                 }
                 ZoneCheckLimit::MaxZoneBytes(value) => (ModelCheckLimit::ZoneMaxZoneBytes, value),
                 ZoneCheckLimit::MaxClocks(value) => (ModelCheckLimit::MaxClocks, value),
+                ZoneCheckLimit::TaskProductWork(value) => {
+                    (ModelCheckLimit::ZoneMaxTaskProductWork, value)
+                }
             };
             ZoneCheckRecord::incomplete(IncompleteCause::LimitReached { limit, value })
+        }
+        ZoneStop::TaskProductUnresolved => {
+            ZoneCheckRecord::incomplete(IncompleteCause::BoundedSearchIncomplete)
         }
         ZoneStop::Cancelled => match cancel.cause() {
             Some(source) => ZoneCheckRecord::incomplete(IncompleteCause::Cancelled { source }),
             None => ZoneCheckRecord::failed(),
         },
-    }
+    };
+    record.task_search = task_search.map(|evidence| *evidence);
+    record
 }
 
 /// FR-235's rows for a `Holds` by what FR-245's checker returned for its
@@ -484,7 +585,7 @@ fn undecided(cause: &TimedRefinementUndecided) -> ZoneCheckRecord {
 /// the cancellation.
 fn timed_stopped(cause: TimedRefinementStop, cancel: &Cancel) -> ZoneCheckRecord {
     match cause {
-        TimedRefinementStop::Zone(zone) => stopped(zone, cancel),
+        TimedRefinementStop::Zone(zone) => stopped(zone, cancel, None),
         TimedRefinementStop::Step(reached) => {
             ZoneCheckRecord::incomplete(IncompleteCause::LimitReached {
                 limit: reached.limit,

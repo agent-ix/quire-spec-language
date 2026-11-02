@@ -792,8 +792,7 @@ fn operation_site(
     let model_identity = graph
         .model_package_identity(model.as_str())
         .ok_or_else(|| fault("frame-model-has-a-package-selection"))?;
-    let ordinal = u32::try_from(frame.frame_origin().ordinal())
-        .map_err(|_| fault("frame-occurrence-ordinal-fits-obligation-identity"))?;
+    let ordinal = frame.frame_origin().ordinal();
     Ok(OperationSite {
         frame_operation: FrameOperation {
             object,

@@ -41,7 +41,7 @@ use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
-use qsl_replay::{CounterexampleKind, TemporalCounterexample};
+use qsl_replay::{CounterexampleKind, TaskSearchTransition, TemporalCounterexample};
 use qsl_replay::{
     DeclineCode, IncompleteCause, ModelCheckRecord, OutcomeItem, ProofRefusalCause, TerminalRecord,
     TerminalValue, UnavailabilityCause, UndefinedEvaluation,
@@ -621,6 +621,13 @@ impl AnalyzeRecord {
             .and_then(|record| record.counterexample.as_ref())
     }
 
+    /// The task-derived counterexample of a refuted schedulability item.
+    pub fn task_counterexample(&self) -> Option<&TemporalCounterexample<TaskSearchTransition>> {
+        self.zone_check
+            .as_ref()
+            .and_then(|record| record.task_counterexample.as_ref())
+    }
+
     /// The outcome item (FR-286) this record writes. An item refuted by a
     /// claim evaluation undefined at a state is `refuted`, category
     /// violation, with cause `undefined-evaluation` naming that state and
@@ -962,12 +969,24 @@ fn settle(
             // A refuted value without its reproduced counterexample is an
             // engine fault, never a verdict.
             settlement: terminal(
-                TerminalRecord::of_model_settlement(
-                    index,
-                    backend.clone(),
-                    zone.value.clone(),
-                    zone.counterexample.as_ref(),
-                )
+                match zone.task_counterexample.as_ref() {
+                    Some(counterexample) => TerminalRecord::of_model_settlement(
+                        index,
+                        backend.clone(),
+                        zone.value.clone(),
+                        Some(counterexample),
+                    ),
+                    None => TerminalRecord::of_model_settlement(
+                        index,
+                        backend.clone(),
+                        zone.value.clone(),
+                        zone.counterexample.as_ref(),
+                    ),
+                }
+                .and_then(|record| match zone.task_search.clone() {
+                    Some(evidence) => record.with_task_search(evidence),
+                    None => Ok(record),
+                })
                 .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
             ),
             model_check: None,

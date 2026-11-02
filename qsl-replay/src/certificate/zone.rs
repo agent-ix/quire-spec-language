@@ -191,6 +191,12 @@ pub enum ZoneError {
         /// The zone's clock count.
         clocks: usize,
     },
+    /// A bounded subtraction names the reference clock or an invalid
+    /// amount/ceiling pair.
+    #[error(
+        "bounded subtraction requires a non-reference clock and 0 <= amount <= positive ceiling"
+    )]
+    InvalidSubtractionRange,
 }
 
 /// `(c, <=)` encoded.
@@ -492,6 +498,47 @@ impl<W: Exact> Zone<W> {
             }
         }
         self.close();
+        Ok(())
+    }
+
+    /// Apply the task-product bounded diagonal update `x := x - amount`.
+    /// The update is enabled only when `amount <= x <= ceiling`; all other
+    /// clocks and differences between them are preserved. This is separate
+    /// reader arithmetic from the analyzer DBM implementation.
+    pub fn subtract_bounded(
+        &mut self,
+        clock: usize,
+        amount: &W,
+        ceiling: &W,
+    ) -> Result<(), ZoneError> {
+        self.check_clock(clock)?;
+        if clock == 0 || amount < &W::of(0) || ceiling <= &W::of(0) || amount > ceiling {
+            return Err(ZoneError::InvalidSubtractionRange);
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        let mut enabled = self.clone();
+        enabled.constrain(0, clock, &amount.negated(), false)?;
+        enabled.constrain(clock, 0, ceiling, false)?;
+        if enabled.is_empty() {
+            *self = enabled;
+            return Ok(());
+        }
+        let before = enabled.clone();
+        let shift = amount.plus(amount);
+        for i in 0..self.dim {
+            for j in 0..self.dim {
+                let value = match (i == clock, j == clock) {
+                    (true, false) => before.cell(i, j).as_ref().map(|bound| bound.minus(&shift)),
+                    (false, true) => before.cell(i, j).as_ref().map(|bound| bound.plus(&shift)),
+                    _ => before.cell(i, j).clone(),
+                };
+                enabled.cells[i * self.dim + j] = value;
+            }
+        }
+        enabled.close();
+        *self = enabled;
         Ok(())
     }
 

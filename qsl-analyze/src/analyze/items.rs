@@ -13,8 +13,9 @@ use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, Su
 use qsl_replay::{
     check_zone_certificate, settle_hyper_form, CertificateCheckLimits, CertificateRequest,
     DeclineCode, ModelTraceRefusal, ModelTraceReplayResult, ProofRefusalCause,
-    RefinementTraceSettlement, ReplayRefusal, SubjectRefusal, TemporalCounterexample,
-    TerminalValue, UnavailabilityCause, ZoneCertificateRequest,
+    RefinementTraceSettlement, ReplayRefusal, SubjectRefusal, TaskSearchTransition,
+    TemporalCounterexample, TerminalValue, UnavailabilityCause, ZoneCertificate,
+    ZoneCertificateRequest,
 };
 use qsl_replay::{ModelCheckItem, ModelCheckLimits, ProtocolCertificateRequest, SubjectIdentity};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
@@ -33,8 +34,9 @@ use crate::model_check::{
 use crate::statistical::{check_statistical, manifest as en4, StatisticalRequest};
 use crate::zone_check::{
     certificate_item, check_timed_model, check_timed_refinement, manifest as en6,
-    settle_timed_refinement, settle_zone_check, TimedRefinementRefusal, TimedRefinementRequest,
-    ZoneCheckItem, ZoneCheckLimits, ZoneCheckRefusal, ZoneCheckRequest, ZoneItem,
+    settle_timed_refinement, settle_zone_check, settle_zone_check_with_task_replay,
+    TimedRefinementRefusal, TimedRefinementRequest, ZoneCheckItem, ZoneCheckLimits,
+    ZoneCheckRefusal, ZoneCheckRequest, ZoneItem,
 };
 
 /// The FR-396/FR-399 negotiation seam for a routed hyper item. HP-4 calls
@@ -81,6 +83,12 @@ pub struct ModelItem<'a> {
 /// The replay of an EN-1 counterexample (FR-128).
 pub type CounterexampleReplayFn<'a> =
     dyn FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal> + 'a;
+
+/// The independent task-product reader supplied to an EN-6 adapter.
+pub type TaskCounterexampleReplayFn<'a> = dyn FnOnce(
+        &TemporalCounterexample<TaskSearchTransition>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal>
+    + 'a;
 
 /// The `temporal-satisfaction` item that runs `item` on EN-1 and settles it
 /// by `settle_model_check` (FR-127). It is `Supported(EN-1)` until the
@@ -246,6 +254,8 @@ pub struct TimedItem<'a, S> {
     pub certificate_limits: CertificateCheckLimits,
     /// Replays the run's counterexample.
     pub replay: Box<CounterexampleReplayFn<'a>>,
+    /// Replays a task-product deadline miss, when this is a task item.
+    pub task_replay: Option<Box<TaskCounterexampleReplayFn<'a>>>,
 }
 
 /// The `temporal-satisfaction` item that runs `item` on EN-6 and settles it
@@ -263,7 +273,9 @@ pub fn zone_item<'a, S: Clone + Eq + 'a>(
     item: TimedItem<'a, S>,
 ) -> Result<AnalyzeItem<'a>, DerivedItemMismatch> {
     match item.request.item {
-        ZoneCheckItem::Clause { .. } => Ok(run_zone_item(index, item)),
+        ZoneCheckItem::Clause { .. } | ZoneCheckItem::TaskSchedulability { .. } => {
+            Ok(run_zone_item(index, item))
+        }
         ZoneCheckItem::DeadlockFreedom | ZoneCheckItem::TimeLockFreedom => {
             Err(DerivedItemMismatch::DerivedRun { index })
         }
@@ -286,13 +298,12 @@ fn run_zone_item<'a, S: Clone + Eq + 'a>(
                 certificate,
                 certificate_limits,
                 replay,
+                task_replay,
             } = item;
             let obligation = request.obligation.clone();
             match check_timed_model(request, cancel) {
-                Ok(outcome) => EngineReport::Zone(Box::new(settle_zone_check(
-                    ZoneItem::Outcome(&outcome),
-                    cancel,
-                    |proof| {
+                Ok(outcome) => {
+                    let check = |proof: &ZoneCertificate<ItemObligation<S>>| {
                         check_zone_certificate(
                             certificate,
                             &obligation,
@@ -301,9 +312,21 @@ fn run_zone_item<'a, S: Clone + Eq + 'a>(
                             certificate_limits,
                             cancel,
                         )
-                    },
-                    replay,
-                ))),
+                    };
+                    let settled = match task_replay {
+                        Some(task_replay) => settle_zone_check_with_task_replay(
+                            ZoneItem::Outcome(&outcome),
+                            cancel,
+                            check,
+                            replay,
+                            task_replay,
+                        ),
+                        None => {
+                            settle_zone_check(ZoneItem::Outcome(&outcome), cancel, check, replay)
+                        }
+                    };
+                    EngineReport::Zone(Box::new(settled))
+                }
                 Err(refusal) => EngineReport::Refused(zone_refusal(&refusal)),
             }
         },
@@ -669,6 +692,11 @@ pub fn derived_zone_item<'a, S: Clone + Eq + 'a>(
         DerivedLimit::MaxTransitions,
         defaults.max_symbolic_transitions,
     );
+    item.request.limits.max_task_product_work = derived_limit(
+        limits,
+        DerivedLimit::MaxTaskProductWork,
+        defaults.max_task_product_work,
+    );
     Ok(run_zone_item(index, item))
 }
 
@@ -747,7 +775,9 @@ pub(super) fn zone_refusal(refusal: &ZoneCheckRefusal) -> Refusal {
             Refusal::Unsupported(NOT_YET)
         }
         // A request defect: an obligation that is not the item's.
-        ZoneCheckRefusal::ObligationMismatch => Refusal::Failed(INVALID_VALUE),
+        ZoneCheckRefusal::ObligationMismatch | ZoneCheckRefusal::TaskProductSubject(_) => {
+            Refusal::Failed(INVALID_VALUE)
+        }
         // Engine defects, and refusals whose types name no catalog code:
         // `failed` with the broken-invariant diagnostic.
         ZoneCheckRefusal::Extent(_)

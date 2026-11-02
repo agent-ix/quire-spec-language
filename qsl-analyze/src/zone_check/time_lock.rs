@@ -398,6 +398,8 @@ impl Run<'_, '_, '_> {
             piece: None,
             silent: false,
             fixed: None,
+            task_product_step: None,
+            task_subtractions: Vec::new(),
         });
         Ok(
             concretise(self.timed, self.dim() - 1, &stages, target, &self.scale)

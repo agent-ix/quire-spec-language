@@ -468,6 +468,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::MissingImport => Code::MissingImport,
         CheckedPackageRefusalCode::UnknownProfile => Code::UnknownProfile,
         CheckedPackageRefusalCode::UnsupportedConstruct => Code::UnsupportedConstruct,
+        CheckedPackageRefusalCode::InvalidTimedModel => Code::InvalidTimedModel,
     }
 }
 

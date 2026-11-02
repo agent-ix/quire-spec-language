@@ -493,6 +493,7 @@ fn summary(outcome: &Outcome) -> &'static str {
         ZoneCheckOutcome::HoldsReduced { .. } => "HoldsReduced",
         ZoneCheckOutcome::Reduction { .. } => "Reduction",
         ZoneCheckOutcome::Violated { .. } => "Violated",
+        ZoneCheckOutcome::TaskViolated { .. } => "TaskViolated",
         ZoneCheckOutcome::Undecided { .. } => "Undecided",
         ZoneCheckOutcome::Stopped { .. } => "Stopped",
     }

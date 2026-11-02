@@ -16,9 +16,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigInt;
+use num_integer::Integer as NumInteger;
 use qsl_replay::{
     CertEdge, CertNode, CertificateItem, CertificateTransition, Components, DivergenceWitness,
-    DivergentTarget, LuBounds, Zone, ZoneCertificate,
+    DivergentTarget, LuBounds, TaskArrivalKind, TaskClosureMethod, TaskDiagonalConstraint,
+    TaskDiagonalOperator, TaskProductAbstraction, TaskProductCertificate, TaskProductStateKey,
+    TaskQueueBound, TaskTimeProgress, TaskTimeProgressMethod, Zone, ZoneCertificate,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use quire_exact::Integer;
@@ -32,6 +35,9 @@ use super::{Bound, Dbm, ZoneCheckRefusal};
 pub fn certificate_item<S>(obligation: &ItemObligation<S>) -> CertificateItem<'_> {
     match &obligation.kind {
         ObligationKind::Authored(occurrence) => CertificateItem::Clause(occurrence),
+        ObligationKind::TaskSchedulability(occurrence) => {
+            CertificateItem::TaskSchedulability(occurrence)
+        }
         ObligationKind::DeadlockFreedom => CertificateItem::DeadlockFreedom,
         ObligationKind::TimeLockFreedom => CertificateItem::TimeLockFreedom,
         ObligationKind::Refinement {
@@ -59,6 +65,7 @@ pub(super) struct Proof {
     pub(super) components: Option<Components>,
     pub(super) divergence: Option<Vec<DivergenceWitness>>,
     pub(super) admitted: DivergenceWitness,
+    pub(super) task_product: Option<TaskProductCertificate>,
 }
 
 impl Proof {
@@ -78,7 +85,7 @@ impl Proof {
             divergence: self.divergence,
             admitted: self.admitted,
             refinement: None,
-            task_product: None,
+            task_product: self.task_product,
         }
     }
 }
@@ -106,11 +113,22 @@ impl Run<'_, '_, '_> {
     ) -> Result<Proof, Halt> {
         let mut nodes = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
-            let (_, state_key) = self
+            let (_, source_state_key) = self
                 .timed
                 .system()
                 .state_key(&node.state)
                 .map_err(|_| Halt::Refusal(ZoneCheckRefusal::Fault("state-key")))?;
+            let state_key = match &node.task_state {
+                Some(scheduler) => TaskProductStateKey::new(
+                    source_state_key,
+                    scheduler
+                        .canonical_control_key()
+                        .map_err(|_| Halt::Refusal(ZoneCheckRefusal::Fault("task-state-key")))?,
+                )
+                .into_state_key()
+                .map_err(|_| Halt::Refusal(ZoneCheckRefusal::Fault("task-state-key")))?,
+                None => source_state_key,
+            };
             nodes.push(CertNode {
                 state_key,
                 automaton_state: node.q,
@@ -128,10 +146,11 @@ impl Run<'_, '_, '_> {
                 to,
                 step,
                 piece,
+                task_template,
                 ..
             } = self.edges[edge].clone();
-            let (transition, part) = match step {
-                Some((step, part)) => {
+            let (transition, part) = match (step, task_template) {
+                (Some((step, part)), _) => {
                     let transition = self
                         .steps_of(from)?
                         .get(step)
@@ -140,7 +159,8 @@ impl Run<'_, '_, '_> {
                         .clone();
                     (Some(CertificateTransition::Source(transition)), Some(part))
                 }
-                None => (None, None),
+                (None, Some(task)) => (Some(CertificateTransition::Task(Box::new(task))), None),
+                (None, None) => (None, None),
             };
             let horizon = match piece {
                 Some(piece) => Some(
@@ -181,6 +201,7 @@ impl Run<'_, '_, '_> {
         } else {
             None
         };
+        let task_product = self.task_product_certificate()?;
         let integers = |bounds: &[Option<BigInt>]| {
             bounds
                 .iter()
@@ -199,7 +220,153 @@ impl Run<'_, '_, '_> {
             components: None,
             divergence,
             admitted: witnessed,
+            task_product,
         })
+    }
+
+    fn task_product_certificate(&self) -> Result<Option<TaskProductCertificate>, Halt> {
+        let Some(subject) = &self.task_subject else {
+            return Ok(None);
+        };
+        let product = match subject.route() {
+            super::task_product::TaskProductRoute::Exact(product) => product,
+            super::task_product::TaskProductRoute::Bounded(_)
+            | super::task_product::TaskProductRoute::NoRelease => {
+                let no_release = self.nodes.iter().all(|node| {
+                    node.task_state.as_ref().is_some_and(|state| {
+                        state.jobs().is_empty() && state.pending_releases().is_empty()
+                    })
+                }) && self.edges.iter().all(|edge| edge.task_transition.is_none());
+                if !no_release {
+                    return Err(Halt::Refusal(ZoneCheckRefusal::Fault(
+                        "bounded-task-product-proof",
+                    )));
+                }
+                let queue_bounds = subject
+                    .task_set()
+                    .tasks
+                    .iter()
+                    .map(|task| {
+                        let (arrival, interarrival) = match &task.arrival {
+                            qsl_semantics::check::Arrival::Periodic { period } => {
+                                (TaskArrivalKind::Periodic, period.clone())
+                            }
+                            qsl_semantics::check::Arrival::Sporadic { min_interarrival } => {
+                                (TaskArrivalKind::Sporadic, min_interarrival.clone())
+                            }
+                        };
+                        let work_upper = match &task.wcet {
+                            qsl_semantics::check::Wcet::Single(value) => value.clone(),
+                            qsl_semantics::check::Wcet::Dual { hi, .. } => hi.clone(),
+                        };
+                        let ratio = task.deadline.div(&interarrival).ok_or(Halt::Refusal(
+                            ZoneCheckRefusal::Fault("task-queue-bound-ratio"),
+                        ))?;
+                        let jobs = ratio
+                            .numerator()
+                            .as_big()
+                            .div_ceil(ratio.denominator().as_big());
+                        let max_jobs = Integer::from_big(jobs)
+                            .add(&Integer::one())
+                            .to_u64()
+                            .filter(|value| *value > 0)
+                            .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault(
+                                "task-queue-bound-cap",
+                            )))?;
+                        Ok(TaskQueueBound {
+                            taskset: subject.task_set().name.clone(),
+                            task: task.name.clone(),
+                            arrival,
+                            interarrival,
+                            relative_deadline: task.deadline.clone(),
+                            max_jitter: task.jitter.clone(),
+                            work_lower: task.bcet.clone(),
+                            work_upper,
+                            max_jobs,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, Halt>>()?;
+                return Ok(Some(TaskProductCertificate {
+                    abstraction: TaskProductAbstraction::BoundedSubtractionDiagonalV1,
+                    queue_bounds,
+                    clock_ceilings: Vec::new(),
+                    diagonal_constraints: Vec::new(),
+                    subtractions: Vec::new(),
+                    time_progress: TaskTimeProgress {
+                        method: TaskTimeProgressMethod::ClosedNoReleaseProductV1,
+                        live_job_cap: 0,
+                        closure: TaskClosureMethod::RecomputeAllSourceSuccessorsNoTaskReleaseV1,
+                    },
+                }));
+            }
+        };
+        let layout = self
+            .task_clock_layout
+            .as_ref()
+            .ok_or(Halt::Refusal(ZoneCheckRefusal::Fault("task-clock-layout")))?;
+        let queue_bounds = product
+            .tasks
+            .iter()
+            .map(|task| TaskQueueBound {
+                taskset: task.task_set.clone(),
+                task: task.task.clone(),
+                arrival: match task.arrival {
+                    super::task_product::FixedWorkArrival::Periodic => TaskArrivalKind::Periodic,
+                    super::task_product::FixedWorkArrival::Sporadic => TaskArrivalKind::Sporadic,
+                },
+                interarrival: task.interarrival.clone(),
+                relative_deadline: task.relative_deadline.clone(),
+                max_jitter: task.max_jitter.clone(),
+                work_lower: task.work.clone(),
+                work_upper: task.work.clone(),
+                max_jobs: task.max_jobs,
+            })
+            .collect();
+        let mut diagonal_constraints = Vec::new();
+        for left_task in &product.tasks {
+            for left_slot in 0..left_task.max_jobs {
+                let left = format!(
+                    "task:{}:{}:slot{}:service",
+                    left_task.task_set, left_task.task, left_slot
+                );
+                for right_task in &product.tasks {
+                    for right_slot in 0..right_task.max_jobs {
+                        let right = format!(
+                            "task:{}:{}:slot{}:service",
+                            right_task.task_set, right_task.task, right_slot
+                        );
+                        if left != right {
+                            diagonal_constraints.push(TaskDiagonalConstraint {
+                                left: left.clone(),
+                                operator: TaskDiagonalOperator::Less,
+                                right,
+                                constant: Integer::from_big(self.scaled(&left_task.work)),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        let mut subtractions = Vec::new();
+        for edge in &self.edges {
+            for subtraction in &edge.task_subtractions {
+                if !subtractions.contains(subtraction) {
+                    subtractions.push(subtraction.clone());
+                }
+            }
+        }
+        Ok(Some(TaskProductCertificate {
+            abstraction: TaskProductAbstraction::BoundedSubtractionDiagonalV1,
+            queue_bounds,
+            clock_ceilings: layout.ceilings().to_vec(),
+            diagonal_constraints,
+            subtractions,
+            time_progress: TaskTimeProgress {
+                method: TaskTimeProgressMethod::ClosedFiniteProductV1,
+                live_job_cap: product.live_job_cap,
+                closure: TaskClosureMethod::RecomputeAllReachableSuccessorsV1,
+            },
+        }))
     }
 }
 

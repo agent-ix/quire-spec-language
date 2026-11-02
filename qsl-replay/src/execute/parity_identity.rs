@@ -115,7 +115,7 @@ pub fn parity_obligation(
     Ok(ObligationIdentity::new(
         preimage.node.clone(),
         None,
-        ordinal_of(&preimage.occurrence)?,
+        u64::from(ordinal_of(&preimage.occurrence)?),
     ))
 }
 
@@ -176,7 +176,7 @@ pub(crate) fn process_provider_obligation(
     Ok(ObligationIdentity::new(
         node.clone(),
         None,
-        ordinal_of(occurrence)?,
+        u64::from(ordinal_of(occurrence)?),
     ))
 }
 

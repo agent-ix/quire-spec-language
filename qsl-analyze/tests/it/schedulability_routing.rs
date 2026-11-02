@@ -20,6 +20,8 @@ fn claim(name: &str, policy: SchedulingPolicy) -> CheckedScheduleClaim {
         name: name.to_owned(),
         task_set: "Ctl".to_owned(),
         claim: ScheduleClaim::Schedulable(policy),
+        node_id: None,
+        occurrence: 0,
         span: Span { start: 0, end: 1 },
     }
 }

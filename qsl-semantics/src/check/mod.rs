@@ -143,6 +143,7 @@ mod state_graph_claim;
 mod state_model;
 mod step_simulation;
 mod sum_case;
+pub mod task_product;
 mod task_set;
 mod temporal_clause;
 mod terminal;
@@ -158,6 +159,9 @@ pub use probabilistic::{
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
+pub use task_product::{
+    TaskAction, TaskSubtraction, TaskTransitionIdentity, TaskTransitionTemplate,
+};
 pub use task_set::{
     Arrival, CheckedScheduleClaim, CheckedTaskSets, Criticality, Release, ScheduleClaim,
     SchedulingPolicy, Task, TaskSet, TaskSetDeclaration, TaskSetUnit, Wcet,
@@ -1770,7 +1774,12 @@ impl PackageDeclarations {
                     &self.source,
                     &self.package_name,
                 );
-                let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
+                let checked = task_set::check(
+                    &self.task_set_forms,
+                    &units,
+                    limits.rational_bits(),
+                    &self.package_name,
+                );
                 for finding in checked.findings {
                     refusals.push(CheckRefusal {
                         location: root(Origin::Expression),
@@ -6768,6 +6777,12 @@ impl CheckedGraph {
     /// retained during checking.
     pub fn source_unit_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
         self.time_units.source_units()
+    }
+
+    /// Source-owned time dimensions and units required by retained
+    /// schedulability claim literals.
+    pub fn source_time_nominal_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
+        self.time_units.source_nominal_nodes()
     }
 
     /// The checked declaration and effective member types for a population

@@ -15,9 +15,11 @@ use num_integer::Integer as _;
 use qsl_eval::simulation::model::{
     ClockValuation, GuardedStep, PlaceConstraint, TimedState, TimedSystem,
 };
-use qsl_replay::ModelStep;
+use qsl_eval::simulation::StateKey;
+use qsl_replay::{ModelStep, TaskAction, TaskSearchTransition, TaskTransitionIdentity};
 use qsl_semantics::check::ClockOp;
 use quire_exact::{Integer, Rational};
+use std::collections::BTreeMap;
 
 use super::search::scaled;
 use super::{Bound, Dbm, DbmError};
@@ -57,6 +59,11 @@ pub(super) struct Stage {
     /// copies repeat the loop's solved delays (FR-241), in units of the
     /// concretisation's scale.
     pub fixed: Option<BigInt>,
+    /// The exact source/task transition and joint post-state key when this
+    /// stage belongs to a task-product witness.
+    pub task_product_step: Option<(TaskSearchTransition, StateKey)>,
+    /// Exact task-service clock decrements at a task completion edge.
+    pub task_subtractions: Vec<(usize, Rational)>,
 }
 
 /// Where the path's last valuation must lie.
@@ -72,6 +79,8 @@ pub(super) struct Concrete {
     /// Its steps, each with its delay and post-state key; a stutter
     /// position adds none.
     pub prefix: Vec<ModelStep>,
+    /// The same path with task scheduler edges retained explicitly.
+    pub task_product_prefix: Vec<ModelStep<TaskSearchTransition>>,
     /// Its last clock valuation, every place in order.
     pub last_clocks: Vec<Rational>,
     /// The time stamp of its last position.
@@ -241,6 +250,12 @@ pub(super) fn concretise(
                 *slot = (at, zero.clone());
             }
         }
+        for (clock, amount) in &stage.task_subtractions {
+            let Some((_, value)) = resets.0.get_mut(*clock) else {
+                return Err(NotConcretised::Infeasible);
+            };
+            *value = value.sub(amount);
+        }
         if let Some(piece) = &stage.piece {
             resets.within(&mut times, at, piece, scale)?;
         }
@@ -258,6 +273,8 @@ pub(super) fn concretise(
     let mut unit = scale.clone();
     let mut stamps = vec![zero.clone()];
     let mut prefix = Vec::with_capacity(stages.len());
+    let mut task_product_prefix = Vec::new();
+    let mut task_identities = TaskWitnessIdentityState::default();
     let mut values = vec![zero.clone(); places];
     let mut reset_values = vec![zero.clone(); places];
     let mut last_reset = vec![0_usize; places];
@@ -296,6 +313,7 @@ pub(super) fn concretise(
         }
         let delay = Rational::new(Integer::from_big(delay), Integer::from_big(unit.clone()))
             .map_err(|_| NotConcretised::Infeasible)?;
+        let task_delay = delay.clone();
         let stamp = stamps[index].add(&delay);
         stamps.push(stamp.clone());
         for (place, value) in values.iter_mut().enumerate() {
@@ -308,7 +326,26 @@ pub(super) fn concretise(
                 last_reset[clock] = at;
             }
         }
+        for (clock, amount) in &stage.task_subtractions {
+            let Some(value) = values.get_mut(*clock) else {
+                return Err(NotConcretised::Infeasible);
+            };
+            *value = value.sub(amount);
+            if let Some(reset_value) = reset_values.get_mut(*clock) {
+                reset_value.clone_from(value);
+            }
+            if let Some(reset) = last_reset.get_mut(*clock) {
+                *reset = at;
+            }
+        }
         let Some((step, _)) = &stage.step else {
+            if let Some((transition, post_state)) = &stage.task_product_step {
+                task_product_prefix.push(ModelStep {
+                    transition: concrete_task_transition(transition, &stamp, &mut task_identities)?,
+                    post_state: post_state.clone(),
+                    delay: Some(task_delay),
+                });
+            }
             if stage.silent {
                 waited = waited.add(&delay);
             }
@@ -348,13 +385,107 @@ pub(super) fn concretise(
             .map_err(|_| NotConcretised::Digest)?;
         prefix.push(ModelStep {
             transition: step.transition().clone(),
-            post_state,
-            delay: Some(delay),
+            post_state: post_state.clone(),
+            delay: Some(delay.clone()),
         });
+        if let Some((transition, task_post_state)) = &stage.task_product_step {
+            task_product_prefix.push(ModelStep {
+                transition: concrete_task_transition(transition, &stamp, &mut task_identities)?,
+                post_state: task_post_state.clone(),
+                delay: Some(task_delay),
+            });
+        }
     }
     Ok(Concrete {
         prefix,
+        task_product_prefix,
         last_clocks: values,
         last_stamp: stamps.last().cloned().unwrap_or(zero),
     })
+}
+
+#[derive(Default)]
+struct TaskWitnessIdentityState {
+    next_job: BTreeMap<(String, String), u64>,
+    next_generation: BTreeMap<(String, String, u64), u64>,
+    active: Vec<(TaskTransitionIdentity, TaskTransitionIdentity)>,
+}
+
+fn concrete_task_transition(
+    transition: &TaskSearchTransition,
+    stamp: &Rational,
+    identities: &mut TaskWitnessIdentityState,
+) -> Result<TaskSearchTransition, NotConcretised> {
+    let TaskSearchTransition::Task(identity) = transition else {
+        return Ok(transition.clone());
+    };
+    let mut concrete = identity.as_ref().clone();
+    if concrete.action == TaskAction::Activate {
+        let task = (concrete.taskset.clone(), concrete.task.clone());
+        let slot = (
+            concrete.taskset.clone(),
+            concrete.task.clone(),
+            concrete.slot,
+        );
+        concrete.job = *identities.next_job.entry(task).or_default();
+        let next_job = identities
+            .next_job
+            .entry((concrete.taskset.clone(), concrete.task.clone()))
+            .or_default();
+        *next_job = next_job.checked_add(1).ok_or(NotConcretised::Infeasible)?;
+        concrete.generation = *identities.next_generation.entry(slot).or_default();
+        // The search key quotients concrete activations by capture-avoiding
+        // slot renaming. Restore the concrete job/generation for this path
+        // before exposing the witness identity.
+        concrete.deadline = stamp.add(&identity.deadline);
+        identities
+            .active
+            .push((identity.as_ref().clone(), concrete.clone()));
+    } else {
+        let active = identities
+            .active
+            .iter()
+            .position(|(symbolic, _)| same_task_job(symbolic, &concrete))
+            .or_else(|| {
+                identities.active.iter().position(|(_, actual)| {
+                    actual.taskset == concrete.taskset
+                        && actual.task == concrete.task
+                        && actual.slot == concrete.slot
+                        && actual.release == concrete.release
+                })
+            });
+        let Some(active) = active else {
+            return Err(NotConcretised::Infeasible);
+        };
+        let (_, actual) = identities
+            .active
+            .get(active)
+            .ok_or(NotConcretised::Infeasible)?;
+        concrete.job = actual.job;
+        concrete.generation = actual.generation;
+        concrete.deadline = actual.deadline.clone();
+        if matches!(
+            concrete.action,
+            TaskAction::Complete | TaskAction::DeadlineMiss
+        ) {
+            let actual = identities.active.remove(active).1;
+            identities.next_generation.insert(
+                (actual.taskset.clone(), actual.task.clone(), actual.slot),
+                actual
+                    .generation
+                    .checked_add(1)
+                    .ok_or(NotConcretised::Infeasible)?,
+            );
+        }
+    }
+    Ok(TaskSearchTransition::Task(Box::new(concrete)))
+}
+
+fn same_task_job(left: &TaskTransitionIdentity, right: &TaskTransitionIdentity) -> bool {
+    left.taskset == right.taskset
+        && left.task == right.task
+        && left.job == right.job
+        && left.slot == right.slot
+        && left.generation == right.generation
+        && left.release == right.release
 }

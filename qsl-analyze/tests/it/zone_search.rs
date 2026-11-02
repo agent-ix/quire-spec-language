@@ -448,7 +448,8 @@ fn budgets_and_cancellation_stop_the_search() {
         max_symbolic_states: 2,
         ..ZoneCheckLimits::default()
     };
-    let ZoneCheckOutcome::Stopped { cause, stats } = claim(&world, limits, &Cancel::new()) else {
+    let ZoneCheckOutcome::Stopped { cause, stats, .. } = claim(&world, limits, &Cancel::new())
+    else {
         panic!("a budget of 2 stops");
     };
     assert_eq!(
@@ -1051,20 +1052,15 @@ fn source_only_reader_does_not_reinterpret_a_task_edge_as_a_source_step() {
         .expect("a source operation edge")
         .clone();
     certificate.edges[0].transition = Some(qsl_replay::CertificateTransition::Task(Box::new(
-        qsl_replay::TaskTransitionIdentity {
+        qsl_replay::TaskTransitionTemplate {
             action: qsl_replay::TaskAction::Activate,
             taskset: "Ctl".to_owned(),
             task: "a".to_owned(),
-            job: 0,
+            job_rank: 0,
             slot: 0,
-            generation: 0,
             release: source.clone(),
             source_transition: Some(source),
-            demand: Rational::from_integer(Integer::from(1_i64)),
-            jitter: Rational::from_integer(Integer::from(0_i64)),
-            deadline: Rational::from_integer(Integer::from(4_i64)),
             priority: None,
-            budget_delta: None,
         },
     )));
 
