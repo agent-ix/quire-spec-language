@@ -90,6 +90,7 @@ fn type_nodes(
         scope,
         owner,
         &[],
+        &[],
         scope.types().units().clone(),
         None,
         0,
@@ -1154,6 +1155,7 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
     let mut lowering = Lowering::new(
         &scope,
         &owner,
+        &[],
         &[],
         scope.types().units().clone(),
         None,

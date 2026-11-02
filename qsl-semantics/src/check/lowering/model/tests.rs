@@ -419,6 +419,7 @@ fn lower_with_occurrences<T>(
         &scope,
         &owner,
         models,
+        &[],
         units,
         None,
         0,
