@@ -14,9 +14,9 @@
 
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{
-    emit_checked_with_cancel, read_import_view, resolve_clause_root, resolve_hyper_root,
-    resolve_state_graph_root, AdmittedPackages, CheckedPackage, ClauseRootUnresolved, EmitRefusal,
-    V2ReadLimits,
+    emit_checked_with_temporal_selections_and_cancel, read_import_view, resolve_clause_root,
+    resolve_hyper_root, resolve_state_graph_root, AdmittedPackages, CheckedPackage,
+    ClauseRootUnresolved, EmitRefusal, TemporalClockSelection, V2ReadLimits,
 };
 use qsl_semantics::check::{
     CheckedHyperClause, CheckedStateGraphClaim, CheckedTemporalClause, TemporalClauseNode,
@@ -66,6 +66,7 @@ impl ClauseIdentity {
         package: &CheckedPackage,
         domain_packages: &qsl_semantics::model::intake::PackageInput,
         clause: &CheckedTemporalClause,
+        temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
         let node = package
@@ -77,7 +78,8 @@ impl ClauseIdentity {
                 name: clause.name().to_owned(),
             })?;
         let triple = node_occurrence(node);
-        let (admitted, library) = read_back(package, domain_packages, cancel)?;
+        let (admitted, library) =
+            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
@@ -94,9 +96,15 @@ impl ClauseIdentity {
 fn read_back(
     package: &CheckedPackage,
     domain_packages: &qsl_semantics::model::intake::PackageInput,
+    temporal_clock_selections: &[TemporalClockSelection],
     cancel: &Cancel,
 ) -> Result<(AdmittedPackages, LibraryName), ClauseRootRefusal> {
-    let emission = emit_checked_with_cancel(package, cancel).map_err(|refusal| match refusal {
+    let emission = emit_checked_with_temporal_selections_and_cancel(
+        package,
+        temporal_clock_selections,
+        cancel,
+    )
+    .map_err(|refusal| match refusal {
         EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
         other => ClauseRootRefusal::Package(other.to_string()),
     })?;
@@ -149,6 +157,7 @@ impl StateGraphIdentity {
         package: &CheckedPackage,
         domain_packages: &qsl_semantics::model::intake::PackageInput,
         claim: &CheckedStateGraphClaim,
+        temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
         let triple = claim
@@ -156,7 +165,8 @@ impl StateGraphIdentity {
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: claim.name().to_owned(),
             })?;
-        let (admitted, library) = read_back(package, domain_packages, cancel)?;
+        let (admitted, library) =
+            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
@@ -193,6 +203,7 @@ impl HyperIdentity {
         package: &CheckedPackage,
         domain_packages: &qsl_semantics::model::intake::PackageInput,
         clause: &CheckedHyperClause,
+        temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
         let assembled = package
@@ -211,7 +222,8 @@ impl HyperIdentity {
                 name: clause.name().to_owned(),
             }
         })?;
-        let (admitted, library) = read_back(package, domain_packages, cancel)?;
+        let (admitted, library) =
+            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;

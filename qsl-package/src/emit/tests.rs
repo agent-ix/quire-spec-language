@@ -292,9 +292,8 @@ fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
 
 /// Reads each emitted equality through IR's admitted-equality accessor using
 /// the exact producer application, occurrence, and stage rows retained by the
-/// emitter. Supported scalar and integer-range Plan schedules materialize;
-/// unsupported Plan types and Text, Enum, and Quantity schedules retain their
-/// typed missing-witness results until IR consumes their per-fact rows.
+/// emitter. Fact rows for nodes outside the emitted package are omitted because
+/// the typed reader admits only package-local structural facts.
 fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
     let wire = wire(emission);
     let Some(decisions) = wire["checked_term_data"]["equality_decisions"].as_array() else {
@@ -325,6 +324,149 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
         })
         .collect::<Vec<_>>();
     assert_eq!(selected_rows.len(), decisions.len());
+    let selected_fact_rows = emission
+        .equality_fact_witness_rows()
+        .iter()
+        .filter(|row| row.checked_application().package == row.structural_node().package)
+        .filter(|row| {
+            wire["semantic_graph"]["nodes"]
+                .as_array()
+                .is_some_and(|nodes| {
+                    nodes.iter().any(|node| {
+                        node["node_id"] == serde_json::to_value(row.structural_node()).unwrap()
+                    })
+                })
+        })
+        .map(|row| {
+            use quire_contract_model::{
+                EqualityFactWitness as IrFact, EqualityOperandTypeRole as IrOperandRole,
+                EqualityUnitRole as IrUnitRole,
+            };
+
+            let fact = match row.fact() {
+                EqualityFactWitness::OperandType { position, role } => IrFact::OperandType {
+                    position: *position,
+                    role: match role {
+                        EqualityOperandTypeRole::Source => IrOperandRole::Source,
+                        EqualityOperandTypeRole::ConversionTarget => {
+                            IrOperandRole::ConversionTarget
+                        }
+                    },
+                },
+                EqualityFactWitness::Unit {
+                    unit_id,
+                    quantity_type,
+                    operand_position,
+                    role,
+                } => IrFact::Unit {
+                    unit_id: unit_id.clone(),
+                    quantity_type: quantity_type.clone(),
+                    operand_position: *operand_position,
+                    role: match role {
+                        EqualityUnitRole::Source => IrUnitRole::Source,
+                        EqualityUnitRole::ConversionTarget => IrUnitRole::ConversionTarget,
+                    },
+                },
+                EqualityFactWitness::DimensionDeclaration {
+                    unit_id,
+                    operand_position,
+                    role,
+                    ordinal,
+                } => IrFact::DimensionDeclaration {
+                    unit_id: unit_id.clone(),
+                    operand_position: *operand_position,
+                    role: match role {
+                        qsl_semantics::check::EqualityDimensionRole::UnitDimension => {
+                            quire_contract_model::EqualityDimensionRole::UnitDimension
+                        }
+                        qsl_semantics::check::EqualityDimensionRole::ConversionDimension => {
+                            quire_contract_model::EqualityDimensionRole::ConversionDimension
+                        }
+                        qsl_semantics::check::EqualityDimensionRole::CompoundBase => {
+                            quire_contract_model::EqualityDimensionRole::CompoundBase
+                        }
+                        qsl_semantics::check::EqualityDimensionRole::BaseDimension => {
+                            quire_contract_model::EqualityDimensionRole::BaseDimension
+                        }
+                    },
+                    ordinal: *ordinal,
+                },
+                EqualityFactWitness::DimensionTerm {
+                    unit_id,
+                    operand_position,
+                    ordinal,
+                    base,
+                    base_node,
+                    exponent,
+                } => IrFact::DimensionTerm {
+                    unit_id: unit_id.clone(),
+                    operand_position: *operand_position,
+                    ordinal: *ordinal,
+                    base: base.clone(),
+                    base_node: base_node.clone(),
+                    exponent: exponent.clone(),
+                },
+                EqualityFactWitness::ConversionEdge {
+                    unit_id,
+                    operand_position,
+                    ordinal,
+                    target,
+                    target_node,
+                    scale,
+                    offset,
+                } => IrFact::ConversionEdge {
+                    unit_id: unit_id.clone(),
+                    operand_position: *operand_position,
+                    ordinal: *ordinal,
+                    target: target.clone(),
+                    target_node: target_node.clone(),
+                    scale: scale.clone(),
+                    offset: offset.clone(),
+                },
+                EqualityFactWitness::TextPlanType { position, role } => IrFact::TextPlanType {
+                    position: *position,
+                    role: match role {
+                        EqualityOperandTypeRole::Source => IrOperandRole::Source,
+                        EqualityOperandTypeRole::ConversionTarget => {
+                            IrOperandRole::ConversionTarget
+                        }
+                    },
+                },
+                EqualityFactWitness::EnumMember {
+                    source_declaration,
+                    source_declaration_node,
+                    declaration,
+                    declaration_node,
+                    member,
+                    member_node,
+                    case,
+                    ordinal,
+                    ordered,
+                } => IrFact::EnumMember {
+                    source_declaration: source_declaration.clone(),
+                    source_declaration_node: source_declaration_node.clone(),
+                    declaration: declaration.clone(),
+                    declaration_node: declaration_node.clone(),
+                    member: member.clone(),
+                    member_node: member_node.clone(),
+                    case: case.clone(),
+                    ordinal: *ordinal,
+                    ordered: *ordered,
+                },
+            };
+            quire_contract_model::SelectedEqualityFactRow {
+                application: row.application().clone(),
+                checked_application: row.checked_application().clone(),
+                occurrence: row.occurrence().clone(),
+                source_map_entry: row.source_map_entry().clone(),
+                structural_key: row.structural_key().clone(),
+                structural_node: row.structural_node().clone(),
+                owner: row.owner().cloned(),
+                value_type: row.value_type().cloned(),
+                fact,
+            }
+        })
+        .collect::<Vec<_>>();
 
     for (index, decision) in decisions.iter().enumerate() {
         let row = emission
@@ -339,17 +481,25 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
             row.checked_node(),
             row.occurrence(),
             &selected_rows,
+            &selected_fact_rows,
             emission.selected_source_unit_rows(),
             1_000_000,
         ) {
             Ok(equality) => {
-                assert_eq!(decision["schedule"], "plan");
-                assert!(decision["units"].as_array().unwrap().is_empty());
-                assert!(decision["enum_members"].as_array().unwrap().is_empty());
-                assert_eq!(
-                    equality.schedule(),
-                    quire_semantic_value::declaration::EqualitySchedule::Plan
-                );
+                let expected_schedule = match decision["schedule"].as_str() {
+                    Some("plan") => quire_semantic_value::declaration::EqualitySchedule::Plan,
+                    Some("text") => quire_semantic_value::declaration::EqualitySchedule::Text,
+                    Some("enum") => quire_semantic_value::declaration::EqualitySchedule::Enum,
+                    Some("quantity") => {
+                        quire_semantic_value::declaration::EqualitySchedule::Quantity
+                    }
+                    other => panic!("unexpected equality schedule: {other:?}"),
+                };
+                assert_eq!(equality.schedule(), expected_schedule);
+                if expected_schedule == quire_semantic_value::declaration::EqualitySchedule::Plan {
+                    assert!(decision["units"].as_array().unwrap().is_empty());
+                    assert!(decision["enum_members"].as_array().unwrap().is_empty());
+                }
             }
             Err(error) => {
                 assert_eq!(
@@ -375,10 +525,13 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
                             source_type.clone(),
                         )
                     }
-                    Some("enum") if !decision["enum_members"].as_array().unwrap().is_empty() => (
-                        quire_contract_model::EqualityWitnessKind::EnumMember,
-                        decision["enum_members"][0]["member"].clone(),
-                    ),
+                    Some("enum") if !decision["enum_members"].as_array().unwrap().is_empty() => {
+                        let source_type = &decision["left"]["source_type"];
+                        (
+                            quire_contract_model::EqualityWitnessKind::EnumDeclaration,
+                            source_type.clone(),
+                        )
+                    }
                     Some("enum") => (
                         quire_contract_model::EqualityWitnessKind::EnumDeclaration,
                         decision["left"]["source_type"].clone(),
@@ -1470,6 +1623,10 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         RefinementIdentityEncoding,
         RefinementNotEmitted,
         UnlocatedRefinementDeclaration,
+        MissingTemporalClockSelection,
+        SurplusTemporalClockSelection,
+        DuplicateTemporalClockSelection,
+        TemporalClockProfileMismatch,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1488,6 +1645,18 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
             }
+            Err(EmitRefusal::MissingTemporalClockSelection { .. }) => {
+                Seen::MissingTemporalClockSelection
+            }
+            Err(EmitRefusal::SurplusTemporalClockSelection { .. }) => {
+                Seen::SurplusTemporalClockSelection
+            }
+            Err(EmitRefusal::DuplicateTemporalClockSelection { .. }) => {
+                Seen::DuplicateTemporalClockSelection
+            }
+            Err(EmitRefusal::TemporalClockProfileMismatch { .. }) => {
+                Seen::TemporalClockProfileMismatch
+            }
             Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
             }
@@ -1499,6 +1668,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::MissingDispatchIdentityContext { .. }) => {
                 panic!("every dispatched call retains its exact producer decision")
+            }
+            Err(EmitRefusal::ForeignDimensionOperand { .. }) => {
+                panic!("the fixture set declares no cross-package dimension equivalence")
             }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
@@ -3844,4 +4016,42 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
     )
     .expect("the root links");
     assert!(unemitted.remembered_emission().is_some());
+}
+
+/// QSL-1448: a dimension equivalence operand from another package is not
+/// minted as a Local id (FR-322-AC-299); a same-package pair is.
+#[ix_trace_rs::trace("QSL-1448", "FR-322-AC-299")]
+#[test]
+fn dimension_equivalence_refuses_a_foreign_package_operand_and_keeps_local_ones() {
+    use qsl_semantics::value::nominal_payload::{DimensionEquivalencePayload, NominalPayload};
+    use quire_exact::{Integer, Rational};
+
+    let key = |package: &str, name: &str| {
+        NodeKey::new(package, vec![PathSegment::Text(name.to_owned())], 0)
+            .expect("a fixture dimension has a structural declaration key")
+    };
+    let scale = || Rational::from_integer(Integer::one());
+    let equivalence = key("pkg", "equivalence");
+    let ids = StructuralIds::default();
+
+    let foreign = NominalPayload::DimensionEquivalence(DimensionEquivalencePayload::new(
+        [key("pkg", "Time"), key("other", "Time")],
+        scale(),
+    ));
+    match nominal_term(&ids, &equivalence, &foreign) {
+        Err(EmitRefusal::ForeignDimensionOperand { node, operand }) => {
+            assert_eq!(node.package.as_ref(), "pkg");
+            assert_eq!(operand.package.as_ref(), "other");
+        }
+        other => panic!("a foreign dimension operand must refuse, got {other:?}"),
+    }
+
+    let local = NominalPayload::DimensionEquivalence(DimensionEquivalencePayload::new(
+        [key("pkg", "Length"), key("pkg", "Time")],
+        scale(),
+    ));
+    assert!(
+        nominal_term(&ids, &equivalence, &local).is_ok(),
+        "same-package operands stay Local"
+    );
 }

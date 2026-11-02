@@ -48,11 +48,16 @@ pub use checked_v2::{
 };
 #[cfg(feature = "std")]
 pub use emit::{
-    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package, emit_timed_models,
-    Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault,
+    checked_occurrence, emit_checked, emit_checked_with_cancel,
+    emit_checked_with_temporal_selections, emit_checked_with_temporal_selections_and_cancel,
+    emit_package, emit_package_with_temporal_selections, emit_timed_models, Emission, EmitRefusal,
+    OmissionCause, OmittedNode, TemporalClockSelection, TimedOrderFault,
 };
 pub use evaluation_view::{AdmittedEvaluationView, AdmittedProtocolObservation};
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+
+#[cfg(feature = "std")]
+pub use quire_contract_model::ClockConfiguration;
 
 // The FR-105-AC-6 fault-injection seam. Public only under
 // `test-support` (see `emit.rs`'s doc comments and this crate's

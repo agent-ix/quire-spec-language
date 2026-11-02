@@ -104,6 +104,7 @@ fn run(
 ) -> Outcome {
     check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: world.subject(UNLIMITED),
             item: ModelCheckItem::Clause {
                 clause: &world.clauses[0],

@@ -806,6 +806,15 @@ pub(crate) fn admit_clause_observations(
 
 /// FR-109: `qsl_replay::spine::run_clause`.
 pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRunRefusal> {
+    run_clause_with_temporal_selections(request, &[])
+}
+
+/// [`run_clause`] with explicit clock configurations for checked temporal
+/// declarations in the selected source and its resolved libraries.
+pub fn run_clause_with_temporal_selections(
+    request: ClauseRunRequest,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+) -> Result<ClauseRunReport, ClauseRunRefusal> {
     let unit = request.source.unit();
     if unit.bytes.is_empty() {
         return Err(ClauseRunRefusal::EmptySource);
@@ -841,16 +850,23 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
         .into_value();
         let models = front_end::select(&parsed, &request.packages, request.limits.model, &cancel)?
             .into_value();
-        let checked = front_end::check(
+        let checked = front_end::check_with_temporal_selections_and_execution_points(
             &parsed,
             request.package_name.clone(),
+            &crate::spine::StateClauseExecutionPoints::new(),
+            temporal_selections,
             &models,
             &request.dependencies,
             request.limits,
             &cancel,
         )?
         .into_value();
-        front_end::package(&checked, front_end::PackageLimits::default(), &cancel)?;
+        front_end::package_with_temporal_selections(
+            &checked,
+            temporal_selections,
+            front_end::PackageLimits::default(),
+            &cancel,
+        )?;
         Ok(checked)
     };
     let checked = match front_end() {

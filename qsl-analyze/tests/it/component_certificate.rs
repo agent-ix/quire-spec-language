@@ -82,6 +82,7 @@ fn config_request<'a>(
     meter: ScalarLimits,
 ) -> CertificateRequest<'a> {
     CertificateRequest {
+        temporal_clock_selections: &[],
         subject: world.subject(meter),
         item: ModelCheckItem::Clause {
             clause: &world.clauses[0],
@@ -394,6 +395,7 @@ fn unit_check(
     check(
         &CertificateRequest {
             subject,
+            temporal_clock_selections: &[],
             item: ModelCheckItem::Clause {
                 clause: fixture.clause(0),
                 letters: &letters,
@@ -698,6 +700,7 @@ impl<'p> Production<'p> {
     /// The checker's request for the clause read through `letters`.
     fn request(&self, letters: &'p dyn ModelLetters) -> CertificateRequest<'p> {
         CertificateRequest {
+            temporal_clock_selections: &[],
             subject: self.world.unlimited(),
             item: ModelCheckItem::Clause {
                 clause: self.node.clause(),
@@ -733,6 +736,7 @@ fn guarded_proof(world: &World) -> (ComponentCertificate, RunStats) {
         let request = production.request(production.letters);
         held(check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: request.subject,
                 item: request.item,
                 max_depth: None,

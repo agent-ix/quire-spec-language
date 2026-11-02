@@ -362,6 +362,10 @@ impl World {
         }
     }
 
+    pub(crate) fn packages(&self) -> &qsl_semantics::model::intake::PackageInput {
+        &self.packages
+    }
+
     /// Recompile and replay one state-graph witness through FR-170.
     pub(crate) fn replay_witness(
         &self,
@@ -430,9 +434,15 @@ impl World {
                 max_candidates: 1_000_000,
             },
         };
+        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&self.package);
         let ReplayResult::ModelGraph(replayed) =
-            qsl_replay::replay_model_graph(wire, &subject, ReplayLimits::default())
-                .expect("the state-graph witness replays")
+            qsl_replay::replay_model_graph_with_temporal_selections(
+                wire,
+                &subject,
+                &temporal_clock_selections,
+                ReplayLimits::default(),
+            )
+            .expect("the state-graph witness replays")
         else {
             panic!("state-graph replay returns its typed result arm")
         };
@@ -477,6 +487,7 @@ impl World {
     ) -> StateGraphRequest<'w> {
         StateGraphRequest {
             subject: self.subject(keys, UNLIMITED),
+            temporal_clock_selections: crate::fill::tcb_01_event_position_selection(&self.package),
             items,
             reductions: Default::default(),
             deadlock_freedom: false,
@@ -535,6 +546,18 @@ pub(crate) const CONFIG_CONTRACT: &str =
 /// §7.1's claims.
 pub(crate) const REACHES_TWO: &str =
     "possible ReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n";
+
+/// A state-graph claim and configured temporal clause in the same package.
+pub(crate) fn temporal_config_world() -> World {
+    let profile = "profile t = \"quire.temporal.event-position.false-extension/v1\";\n";
+    let temporal = "temporal TemporalProgress using t over (c: Config::ConfigVersion) \
+                    clock \"model-steps\" on origin { eventually[0,2] holds(true) }\n";
+    let hyper = "hyper HyperProgress using t over behaviours (c: Config::ConfigVersion) \
+                 exists trace a of Config { always holds(true) }\n";
+    let body = format!("{CONFIG_CONTRACT}{REACHES_TWO}{temporal}{hyper}");
+    let objects: [Object<'_>; 1] = [("a", &[("versionNumber", 0)])];
+    World::with_profiles(config_version(), profile, &body, &[&objects])
+}
 pub(crate) const REACHES_THREE: &str =
     "possible ReachesThree using v over (c: Config::ConfigVersion) { c.versionNumber = 3 }\n";
 /// FR-166-AC-5's and FR-168-AC-5's target with no value at `versionNumber`

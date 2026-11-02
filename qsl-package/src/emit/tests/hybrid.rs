@@ -107,11 +107,30 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     .expect("the unit assembles")
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let selections = graph
+        .temporal_clauses()
+        .iter()
+        .filter(|temporal| {
+            temporal.clause().profile()
+                == qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
+        })
+        .map(|temporal| crate::emit::TemporalClockSelection {
+            source: graph.source().clone(),
+            declaration_span: temporal.clause().span(),
+            clock: quire_contract_model::ClockConfiguration::EventPosition {
+                sequence_authority: "test-hybrid-events".into(),
+            },
+        })
+        .collect::<Vec<_>>();
     let checked = Checked {
         models: graph.hybrid_models().to_vec(),
         claims: graph.hybrid_claims().to_vec(),
     };
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .expect("the package emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     (emission, wire, checked)

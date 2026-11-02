@@ -47,8 +47,9 @@ use quire_semantic_value::declaration::StorageUnit;
 mod lifecycle;
 pub use lifecycle::{
     check, check_with_execution_points, check_with_execution_points_and_refinement_internals,
-    check_with_refinement_internals, package, parse, refusal_or_fault, select, AdmittedModels,
-    CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
+    check_with_refinement_internals, check_with_temporal_selections_and_execution_points, package,
+    package_with_temporal_selections, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit,
+    EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
 
 /// Accepted execution points keyed by the exact authored state-clause name
@@ -75,11 +76,12 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
-    ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState,
-    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
+    run_clause, run_clause_with_temporal_selections, ClauseArgument, ClauseArgumentValue,
+    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
+    ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
+    ConsequentSourceEvents, ConsequentState, OperationName, OverObject, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TraceInput,
 };
 mod refinement;
 pub use refinement::{

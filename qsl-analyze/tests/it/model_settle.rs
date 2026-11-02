@@ -65,6 +65,7 @@ impl Case {
     pub(crate) fn model_item(&self) -> qsl_analyze::analyze::ModelItem<'_> {
         qsl_analyze::analyze::ModelItem {
             request: ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: subject(
                     &self.checked,
                     &self.documents,
@@ -86,6 +87,7 @@ impl Case {
     /// subject.
     pub(crate) fn request(&self) -> CertificateRequest<'_> {
         CertificateRequest {
+            temporal_clock_selections: &[],
             subject: subject(
                 &self.checked,
                 &self.documents,
@@ -111,6 +113,7 @@ pub(crate) fn case(body: &str, values: &[i64]) -> Case {
         .collect();
     let outcome = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: subject(&checked, &documents, initial.clone(), &["c"], UNLIMITED),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,

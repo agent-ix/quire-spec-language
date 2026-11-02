@@ -49,7 +49,8 @@ use serde_json::Value;
 
 use crate::fill::{
     attempt, contracts, document, fill_unit, instance, package_with, package_with_name, protocol,
-    reachable, sc_system, subject, unit_text, universe, v, Documents,
+    reachable, sc_system, subject, tcb_01_event_position_selection, unit_text, universe, v,
+    Documents,
 };
 use crate::model_settle::{envelope_at, request_named};
 
@@ -202,6 +203,7 @@ impl Chatter {
     fn check(&self) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
         check_protocol(
             ProtocolCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(),
                 item: self.item(),
                 max_depth: None,
@@ -264,6 +266,7 @@ impl Chatter {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(),
                 item: self.item(),
                 max_store_buffer: None,
@@ -624,8 +627,10 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
         member.target(),
         ProtocolTarget::Branch { parallel: path, branch } if path == "Both" && branch == "s"
     )));
+    let branch_selections = tcb_01_event_position_selection(&branch.checked);
     let branch_emission =
-        qsl_package::emit_checked(&branch.checked).expect("typed branch fairness emits");
+        qsl_package::emit_checked_with_temporal_selections(&branch.checked, &branch_selections)
+            .expect("typed branch fairness emits with its selected TCB-01 clock");
     let branch_wire = branch_emission.package().bytes();
     assert!(String::from_utf8_lossy(branch_wire).contains("parallel_branch"));
 
@@ -659,8 +664,10 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
         member.target(),
         ProtocolTarget::AttemptNode { node } if node == "Both/s/Sender/Done"
     )));
+    let attempt_selections = tcb_01_event_position_selection(&attempt.checked);
     let attempt_emission =
-        qsl_package::emit_checked(&attempt.checked).expect("typed attempt fairness emits");
+        qsl_package::emit_checked_with_temporal_selections(&attempt.checked, &attempt_selections)
+            .expect("typed attempt fairness emits with its selected TCB-01 clock");
     let attempt_wire = attempt_emission.package().bytes();
     assert!(String::from_utf8_lossy(attempt_wire).contains("attempt_node"));
     let missing = check_refusal(&with_constraint("", "fair weak Missing;"));
@@ -743,7 +750,9 @@ fn interleaved_operation_and_protocol_fairness_preserves_source_order() {
         ),
         &IS_ONE,
     );
-    let emitted = qsl_package::emit_checked(&chatter.checked).expect("mixed fairness emits");
+    let selections = tcb_01_event_position_selection(&chatter.checked);
+    let emitted = qsl_package::emit_checked_with_temporal_selections(&chatter.checked, &selections)
+        .expect("mixed fairness emits with its selected TCB-01 clock");
     let wire: Value = serde_json::from_slice(emitted.package().bytes()).expect("wire JSON");
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
@@ -816,7 +825,9 @@ fn compensation_fairness_target_emits_and_covers_transitions() {
         member.target(),
         ProtocolTarget::CompensationTemplate { template } if template == "Pay::Refund"
     ) && member.origin() == FairnessOrigin::Scheduler));
-    let emission = qsl_package::emit_checked(&checked).expect("typed compensation fairness emits");
+    let selections = tcb_01_event_position_selection(&checked);
+    let emission = qsl_package::emit_checked_with_temporal_selections(&checked, &selections)
+        .expect("typed compensation fairness emits with its selected TCB-01 clock");
     let wire = emission.package().bytes();
     let wire: Value = serde_json::from_slice(wire).expect("emitted checked-package JSON");
     let nodes = wire["semantic_graph"]["nodes"]
@@ -893,6 +904,7 @@ fn authored_compensation_fairness_filters_and_replay_rejects_a_lasso() {
     let run_clause = |clause: &CheckedTemporalClause| {
         check_protocol(
             ProtocolCheckRequest {
+                temporal_clock_selections: &[],
                 subject: subject(&checked, &documents, initial.clone(), "Pay", "c"),
                 item: ModelCheckItem::Clause {
                     clause,
@@ -1039,6 +1051,7 @@ fn liveness_over_an_ra_parallel_refuses() {
     .expect("the selection resolves");
     let refusal = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject,
             item: chatter.item(),
             max_depth: None,

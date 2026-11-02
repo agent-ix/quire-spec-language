@@ -73,8 +73,10 @@ fn run_letters(
     limits: ModelCheckLimits,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let clause = &world.clauses[index];
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&world.package);
     check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &temporal_clock_selections,
             subject: world.subject(keys, UNLIMITED),
             item: ModelCheckItem::Clause { clause, letters },
             max_depth: None,
@@ -494,6 +496,9 @@ fn the_production_letters_read_the_counter_guard_and_its_footprint() {
             .expect("the guard has a footprint");
         let outcome = check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &crate::fill::tcb_01_event_position_selection(
+                    &world.package,
+                ),
                 subject: world.subject(&["c"], UNLIMITED),
                 item: ModelCheckItem::Clause {
                     clause: node.clause(),
@@ -553,6 +558,7 @@ fn production_letters_decide_each_guard_row_and_include_guard_only_por_visibilit
             .expect("the production letters build");
         let outcome = check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: world.subject(&["c"], UNLIMITED),
                 item: ModelCheckItem::Clause {
                     clause: node.clause(),
@@ -871,6 +877,9 @@ fn a_denied_letter_or_guard_charge_stops_with_the_accounting_setting() {
         }
         let outcome = check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &crate::fill::tcb_01_event_position_selection(
+                    &world.package,
+                ),
                 subject: world.subject(&["c"], meter),
                 item: ModelCheckItem::Clause {
                     clause: &world.clauses[0],
@@ -1000,6 +1009,7 @@ fn a_partial_order_run_reads_the_guards_footprint() {
             .guarded(value(|v| Some(v >= 1)), reads);
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: world.subject(&["c"], UNLIMITED),
                 item: ModelCheckItem::Clause {
                     clause: &world.clauses[0],

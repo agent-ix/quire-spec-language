@@ -133,8 +133,10 @@ impl Fixture {
 #[test]
 fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
     let fixture = Fixture::new();
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&fixture.checked);
     let outcome = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &temporal_clock_selections,
             subject: fixture.subject(),
             item: fixture.item(),
             max_depth: None,
@@ -155,6 +157,7 @@ fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
         panic!("expected the fair load-until-seen proof, got {outcome:?}");
     };
     let request = ProtocolCertificateRequest {
+        temporal_clock_selections: &temporal_clock_selections,
         subject: fixture.subject(),
         item: fixture.item(),
         max_store_buffer: None,
@@ -191,6 +194,7 @@ fn a_repeat_guard_reads_its_latest_attempt_and_settles_certified() {
     let pretest = Fixture::pretest();
     let outcome = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject: pretest.subject(),
             item: pretest.item(),
             max_depth: None,
@@ -218,6 +222,7 @@ fn a_guard_over_an_entry_binder_is_pre_test_and_skips_the_body() {
     let fixture = Fixture::entry_guard();
     let outcome = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject: fixture.subject(),
             item: fixture.item(),
             max_depth: None,

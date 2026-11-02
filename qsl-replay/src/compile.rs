@@ -9,7 +9,8 @@ use qsl_semantics::model::intake::package_input;
 
 use crate::bounds::ReplayLimits;
 use crate::execute::{
-    request_limits, run_spine_with_execution_points, Recompiled, ReplayRefusal, SpineUnit,
+    request_limits, run_spine_with_temporal_selections_and_execution_points, Recompiled,
+    ReplayRefusal, SpineUnit,
 };
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
@@ -72,7 +73,7 @@ pub fn compile_package<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
-    compile_package_with_execution_points(
+    compile_package_with_temporal_selections_and_execution_points(
         unit.source,
         unit.package_name,
         unit.path,
@@ -80,6 +81,34 @@ pub fn compile_package<'a>(
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
+        &[],
+        limits,
+        replay_limits,
+    )
+}
+
+/// Compile with explicit per-declaration temporal clock selections.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "compile inputs plus temporal selections"
+)]
+pub fn compile_package_with_temporal_selections<'a>(
+    unit: CompileUnit<'_>,
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<CompiledPackage, ReplayRefusal> {
+    compile_package_with_temporal_selections_and_execution_points(
+        unit.source,
+        unit.package_name,
+        unit.path,
+        unit.bytes,
+        packages,
+        dependencies,
+        &spine::StateClauseExecutionPoints::new(),
+        temporal_selections,
         limits,
         replay_limits,
     )
@@ -105,7 +134,7 @@ pub fn compile_package_with_execution_points<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
-    let compiled = recompile_unit_with_execution_points(
+    compile_package_with_temporal_selections_and_execution_points(
         source,
         package_name,
         path,
@@ -113,6 +142,39 @@ pub fn compile_package_with_execution_points<'a>(
         packages,
         dependencies,
         execution_points,
+        &[],
+        limits,
+        replay_limits,
+    )
+}
+
+/// [`compile_package_with_execution_points`] with an explicit per-declaration
+/// temporal clock selection table.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "compile inputs plus temporal selections"
+)]
+pub fn compile_package_with_temporal_selections_and_execution_points<'a>(
+    source: SourceIdentity,
+    package_name: String,
+    path: &str,
+    bytes: &[u8],
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    execution_points: &spine::StateClauseExecutionPoints,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<CompiledPackage, ReplayRefusal> {
+    let compiled = recompile_unit_with_temporal_selections_and_execution_points(
+        source,
+        package_name,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        execution_points,
+        temporal_selections,
         limits,
         replay_limits,
     )?;
@@ -128,7 +190,25 @@ pub(crate) fn recompile_unit<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
-    recompile_unit_with_execution_points(
+    recompile_unit_with_temporal_selections(
+        unit,
+        packages,
+        dependencies,
+        &[],
+        limits,
+        replay_limits,
+    )
+}
+
+pub(crate) fn recompile_unit_with_temporal_selections<'a>(
+    unit: CompileUnit<'_>,
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<Recompiled, ReplayRefusal> {
+    recompile_unit_with_temporal_selections_and_execution_points(
         unit.source,
         unit.package_name,
         unit.path,
@@ -136,6 +216,7 @@ pub(crate) fn recompile_unit<'a>(
         packages,
         dependencies,
         &spine::StateClauseExecutionPoints::new(),
+        temporal_selections,
         limits,
         replay_limits,
     )
@@ -145,7 +226,7 @@ pub(crate) fn recompile_unit<'a>(
     clippy::too_many_arguments,
     reason = "recompile_unit's arguments plus the accepted points"
 )]
-fn recompile_unit_with_execution_points<'a>(
+fn recompile_unit_with_temporal_selections_and_execution_points<'a>(
     source: SourceIdentity,
     package_name: String,
     path: &str,
@@ -153,6 +234,7 @@ fn recompile_unit_with_execution_points<'a>(
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
@@ -165,7 +247,7 @@ fn recompile_unit_with_execution_points<'a>(
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;
     let package = LibraryName::new(package_name).map_err(ReplayRefusal::InvalidPackageName)?;
-    run_spine_with_execution_points(
+    run_spine_with_temporal_selections_and_execution_points(
         SpineUnit {
             identity: &source,
             package: &package,
@@ -176,6 +258,7 @@ fn recompile_unit_with_execution_points<'a>(
             .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?,
         dependencies,
         execution_points,
+        temporal_selections,
         limits.spine,
     )
 }
