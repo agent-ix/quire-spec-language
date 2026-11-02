@@ -76,11 +76,12 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
-    ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState,
-    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
-    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
+    run_clause, run_clause_with_temporal_selections, ClauseArgument, ClauseArgumentValue,
+    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
+    ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
+    ConsequentSourceEvents, ConsequentState, OperationName, OverObject, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TraceInput,
 };
 mod refinement;
 pub use refinement::{

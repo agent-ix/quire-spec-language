@@ -1039,7 +1039,21 @@ pub fn replay(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
 ) -> Result<ReplayResult, ReplayRefusal> {
-    replay_with_cancel(wire, replay_limits, &Cancel::new())
+    replay_with_temporal_selections(wire, &[], replay_limits)
+}
+
+/// [`replay`] with explicit clock configurations for checked temporal clauses.
+pub fn replay_with_temporal_selections(
+    wire: ReplayRequestWire,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    replay_limits: ReplayLimits,
+) -> Result<ReplayResult, ReplayRefusal> {
+    replay_with_cancel_and_temporal_selections(
+        wire,
+        temporal_selections,
+        replay_limits,
+        &Cancel::new(),
+    )
 }
 
 /// [`replay`] under the caller's original [`Cancel`] handle (ADR-029,
@@ -1062,6 +1076,17 @@ pub fn replay_with_cancel(
     replay_limits: ReplayLimits,
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
+    replay_with_cancel_and_temporal_selections(wire, &[], replay_limits, cancel)
+}
+
+/// [`replay_with_cancel`] with explicit clock configurations for checked
+/// temporal clauses.
+pub fn replay_with_cancel_and_temporal_selections(
+    wire: ReplayRequestWire,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     if matches!(request.source(), ReplaySource::ModelGraph(_)) {
         return Err(ReplayRefusal::WrongModelGraphEntry);
@@ -1078,7 +1103,7 @@ pub fn replay_with_cancel(
         request.accounting_limits(),
         replay_limits,
     )?;
-    let compiled = recompile(&request, &caller)?;
+    let compiled = recompile_with_temporal_selections(&request, &caller, temporal_selections)?;
     let package = compiled.checked.package();
     if let ReplaySource::ObservedTemporal(_) = request.source() {
         return replay_observed_temporal(request, compiled, caller, cancel);
