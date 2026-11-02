@@ -1660,7 +1660,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#7663c499934a5040c2ef2cd450ed93544b33151c"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#71c68a8d7c617cba708dca593ad2c24b3db69b56"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1696,7 +1696,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#87e40238870b80ec4fd1bf17a69aeb8edec5d1ae"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#a3052598dac0aa7275f03c260a6cd1b043c45f1d"
 dependencies = [
  "allocator-api2",
  "arrayvec",

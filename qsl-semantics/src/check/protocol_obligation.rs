@@ -160,6 +160,12 @@ pub enum CheckedCommit {
 pub struct CheckedCompensation {
     /// The template's name.
     pub name: String,
+    /// The span of the whole `compensate` template: the exact locus an
+    /// explicit clock selection names (QSpec FR-322-AC-305).
+    pub span: Span,
+    /// The clock text the template reads (`clock "<string>"`), the
+    /// `clock_name` of its temporal binding row (QSpec FR-466 argument 5).
+    pub clock: String,
     /// The temporal profile selected by the template's `using` alias, for
     /// the package lock row required when this template is emitted.
     pub temporal_profile: Option<super::profile::TemporalProfile>,
@@ -1000,6 +1006,8 @@ impl Checker<'_, '_> {
                 .collect::<Vec<_>>();
             let compensation = CheckedCompensation {
                 name: name.to_owned(),
+                span: form.span,
+                clock: form.clock.text.clone(),
                 temporal_profile: None,
                 effect: effect?,
                 role: role?,
