@@ -2006,6 +2006,7 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
     let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
+    clauses.member.insert(b.clone(), "size".to_owned());
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
@@ -2191,9 +2192,6 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         view_type(&view, "model.D"),
     );
     let mut clauses = bridge_clauses(a_type.clone());
-    clauses
-        .member
-        .insert(DeclarationKey::fixture("model.B.size"), "size".to_owned());
     let mut normalization_meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations_a = checked_dispatch_operation(
