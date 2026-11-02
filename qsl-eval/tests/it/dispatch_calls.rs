@@ -1668,7 +1668,7 @@ fn self_recursive_precondition() -> Expression {
 /// `A`'s own precondition dispatches back into `A.size` itself
 /// (`self.size() >= 0`); `B` declares no own precondition. The static
 /// FR-146 ancestry the bridge builds gives exactly one cycle edge,
-/// `model.A.size.precondition -> model.A.size.precondition`.
+/// `model.A/size.precondition -> model.A/size.precondition`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-3")]
 #[test]
 fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
@@ -1693,9 +1693,9 @@ fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
 }
 
 /// D08, with `B` also declaring its own precondition (`false`): this forces
-/// the "own OR ancestor" combinator (`model.B.size.precondition.effective`)
+/// the "own OR ancestor" combinator (`model.B/size.precondition.effective`)
 /// the bridge only builds for a genuine multi-term disjunction. The cycle
-/// is still exactly `model.A.size.precondition -> model.A.size.precondition`
+/// is still exactly `model.A/size.precondition -> model.A/size.precondition`
 /// — `B`'s combinator dispatches into the same family but never back into
 /// itself, so it never joins the cycle. This case is the one that
 /// regresses if `DispatchTable::callees` ever goes back to reading
