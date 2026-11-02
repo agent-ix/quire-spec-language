@@ -1181,6 +1181,34 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         emit_checked(&combined_package),
         Err(EmitRefusal::ProtocolResultsRequired)
     ));
+    for (entrypoint, result) in [
+        (
+            "emit_checked_with_cancel",
+            emit_checked_with_cancel(&combined_package, &quire_exact::Cancel::new()),
+        ),
+        (
+            "emit_checked_with_temporal_selections",
+            emit_checked_with_temporal_selections(&combined_package, &[]),
+        ),
+        (
+            "emit_checked_with_temporal_selections_and_cancel",
+            emit_checked_with_temporal_selections_and_cancel(
+                &combined_package,
+                &[],
+                &quire_exact::Cancel::new(),
+            ),
+        ),
+        ("emit_package", emit_package(&combined_package, whole_unit)),
+        (
+            "emit_package_with_temporal_selections",
+            emit_package_with_temporal_selections(&combined_package, whole_unit, &[]),
+        ),
+    ] {
+        assert!(
+            matches!(result, Err(EmitRefusal::ProtocolResultsRequired)),
+            "{entrypoint} must require the per-protocol result API: {result:?}"
+        );
+    }
     assert!(combined_package.remembered_emission().is_none());
 
     let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(

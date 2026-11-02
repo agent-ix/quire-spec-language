@@ -3523,6 +3523,14 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
     }
 }
 
+fn require_protocol_results_for_refusals(package: &CheckedPackage) -> Result<(), EmitRefusal> {
+    if package.graph().protocol_refusals().is_empty() {
+        Ok(())
+    } else {
+        Err(EmitRefusal::ProtocolResultsRequired)
+    }
+}
+
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
@@ -3532,9 +3540,7 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// package does not change, so a dependency reached again, or a caller that
 /// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
-    if !package.graph().protocol_refusals().is_empty() {
-        return Err(EmitRefusal::ProtocolResultsRequired);
-    }
+    require_protocol_results_for_refusals(package)?;
     if let Some(emission) = package.remembered_emission() {
         return Ok(emission.clone());
     }
@@ -3712,6 +3718,7 @@ pub fn emit_checked_with_temporal_selections_and_cancel(
     selections: &[TemporalClockSelection],
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     let graph = package.graph();
     emit_package_inner(
         package,
@@ -4708,9 +4715,7 @@ pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
-    if !package.graph().protocol_refusals().is_empty() {
-        return Err(EmitRefusal::ProtocolResultsRequired);
-    }
+    require_protocol_results_for_refusals(package)?;
     let emission = emit_checked_uncached(package, cancel)?;
     package.remember_emission(&emission);
     Ok(emission)
@@ -4724,6 +4729,7 @@ pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes, &[])
 }
 
@@ -4735,6 +4741,7 @@ pub fn emit_package_with_temporal_selections(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     selections: &[TemporalClockSelection],
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     emit_package_inner(
         package,
         regions,
@@ -4761,6 +4768,7 @@ fn emit_package_with_fault(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes, &[])
 }
 
@@ -4790,6 +4798,7 @@ pub fn emit_checked_with_fault(
     package: &CheckedPackage,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     let graph = package.graph();
     emit_package_with_fault(package, graph.memoized_regions(), fault)
 }
