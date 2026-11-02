@@ -2179,8 +2179,8 @@ impl Run<'_, '_> {
             }))
         };
         match verdict {
-            StepVerdict::Passes { post, taken } => Ok((post, taken)),
-            StepVerdict::Fails(failure) => Err(failed(failure, CounterexampleKind::Formula)),
+            StepVerdict::Passes { post, taken } => Ok((*post, *taken)),
+            StepVerdict::Fails(failure) => Err(failed(*failure, CounterexampleKind::Formula)),
             StepVerdict::Undefined(evaluation) => {
                 let row = match &evaluation.site.locus {
                     qsl_replay::UndefinedLocus::Mapping(site) => site.row.clone(),

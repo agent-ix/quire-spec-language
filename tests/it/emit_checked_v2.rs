@@ -419,6 +419,16 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
 
 /// The package re-encoded by IR's public typed writer.
 fn encode(read: &CheckedPackageV2) -> Vec<u8> {
+    let operation_effects = read.operation_effects().map(|rows| {
+        rows.map(|row| quire_contract_model::CheckedOperationEffectRow {
+            document: row.document().into(),
+            declaring: row.declaring().clone(),
+            operation: row.operation().into(),
+            effect: row.effect().clone(),
+            provenance: row.provenance().clone(),
+        })
+        .collect::<Vec<_>>()
+    });
     quire_contract_model::encode_checked_package_v2(
         read.name(),
         read.lock(),
@@ -430,6 +440,7 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
         CheckedPackageSidecarsRef {
             checked_term_data: None,
             temporal_bindings: None,
+            operation_effects: operation_effects.as_deref(),
         },
         read.capability_report(),
         read.diagnostics(),

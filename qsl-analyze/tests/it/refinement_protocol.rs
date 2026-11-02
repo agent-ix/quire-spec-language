@@ -2031,7 +2031,7 @@ fn an_any_row_can_take_a_visible_protocol_transition() {
     };
     let (position, concrete_state, _) = apply(&position, &initial_state, "beginA", 1);
     let (post, _concrete_state, taken) = apply(&position, &concrete_state, "commitA", 2);
-    let transitions: Vec<_> = match &taken {
+    let transitions: Vec<_> = match &*taken {
         qsl_replay::Taken::Protocol(transitions) => transitions.iter().collect(),
         qsl_replay::Taken::ProtocolTraces(paths) => paths
             .iter()
@@ -2118,7 +2118,7 @@ fn a_node_row_matches_the_attempt_identity_and_binder() {
     let (position, concrete_state, _) = apply(&position, &initial_state, "beginA", 1);
     let (post, _, taken) = apply(&position, &concrete_state, "commitA", 2);
     assert!(matches!(
-        taken,
+        *taken,
         qsl_replay::Taken::Protocol(_) | qsl_replay::Taken::ProtocolTraces(_)
     ));
     assert_eq!(counter_value(&post.abstract_states[0]), 1);
