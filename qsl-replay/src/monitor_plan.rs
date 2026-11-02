@@ -327,6 +327,7 @@ pub struct PlanId {
     guard_slots: Option<usize>,
     intervals: Vec<(SubformulaId, TickInterval)>,
     buffers: Vec<(SubformulaId, u64)>,
+    activation_capacity: u64,
 }
 
 /// The clause activation as part of a plan identity.
@@ -352,6 +353,7 @@ pub struct TimedMonitorPlan {
     intervals: Vec<(SubformulaId, TickInterval)>,
     buffers: Vec<(SubformulaId, u64)>,
     rate_limit: Rational,
+    activation_capacity: u64,
 }
 
 impl TimedMonitorPlan {
@@ -366,6 +368,7 @@ impl TimedMonitorPlan {
         intervals: Vec<(SubformulaId, TickInterval)>,
         buffers: Vec<(SubformulaId, u64)>,
         rate_limit: Rational,
+        activation_capacity: u64,
     ) -> Self {
         Self {
             subject,
@@ -376,7 +379,12 @@ impl TimedMonitorPlan {
             intervals,
             buffers,
             rate_limit,
+            activation_capacity,
         }
+    }
+    /// The plan's `activation_capacity` premise.
+    pub fn activation_capacity(&self) -> u64 {
+        self.activation_capacity
     }
     /// The exact checked clause occurrence.
     pub fn subject(&self) -> &MonitorSubject {
@@ -440,6 +448,7 @@ impl TimedMonitorPlan {
             guard_slots: program.guard().map(|(_, slots)| slots),
             intervals: self.intervals.clone(),
             buffers: self.buffers.clone(),
+            activation_capacity: self.activation_capacity,
         }
     }
 }
@@ -548,6 +557,9 @@ pub struct MonitorTarget {
     pub max_event_rate: Option<Rational>,
     /// Required maximum tick gap between readings.
     pub max_reading_gap: u64,
+    /// The bound on live obligation instances of unbounded operators
+    /// (`monitor.max_activations`, QSpec FR-487 `activation_capacity`).
+    pub max_activations: u64,
 }
 
 /// Generate FR-252's two per-plan obligations.
@@ -572,7 +584,7 @@ pub fn plan_obligations(
 
 /// The binding names of the `temporal`/`monitor_plan` node, in body order
 /// (QSpec FR-487 "body").
-pub const PLAN_ROOT_BINDINGS: [&str; 16] = [
+pub const PLAN_ROOT_BINDINGS: [&str; 17] = [
     "clause",
     "state",
     "inputs",
@@ -589,6 +601,7 @@ pub const PLAN_ROOT_BINDINGS: [&str; 16] = [
     "tick_unit",
     "uncertainty",
     "on_gap",
+    "activation_capacity",
 ];
 
 /// `value` in the canonical rational spelling of QSpec FR-322-AC-114:
@@ -617,6 +630,8 @@ pub struct PlanRootPremises {
     pub uncertainty: Rational,
     /// `buffers`: capacity per buffered subformula, ascending by subformula.
     pub buffers: Vec<(SubformulaId, u64)>,
+    /// `activation_capacity` (member 16), at least 0.
+    pub activation_capacity: u64,
 }
 
 /// The first premise a reader would refuse (QSpec FR-487 reader order,
@@ -685,6 +700,7 @@ impl TimedMonitorPlan {
             max_event_rate: self.rate_limit.clone(),
             uncertainty: self.uncertainty.clone(),
             buffers: self.buffers.clone(),
+            activation_capacity: self.activation_capacity,
         }
     }
 }

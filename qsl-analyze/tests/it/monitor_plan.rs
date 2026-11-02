@@ -107,6 +107,7 @@ fn producer_keeps_checked_formula_atoms_and_converts_intervals_to_ticks() {
         uncertainty: ratio(0, 1),
         max_event_rate: Some(ratio(2, 1)),
         max_reading_gap: 100,
+        max_activations: 8,
     };
     let (plan, obligations) = produce(
         &package,
@@ -144,6 +145,7 @@ fn producer_sizes_the_ten_millisecond_past_window_as_twenty_one_events() {
         uncertainty: ratio(0, 1),
         max_event_rate: Some(ratio(2, 1)),
         max_reading_gap: 100,
+        max_activations: 8,
     };
     let (plan, _) = produce(
         &package,
@@ -169,6 +171,7 @@ fn producer_converts_the_default_one_per_microsecond_rate_to_target_units() {
         uncertainty: ratio(0, 1),
         max_event_rate: None,
         max_reading_gap: 100,
+        max_activations: 8,
     };
     let (plan, _) = produce(
         &package,
@@ -194,6 +197,7 @@ fn producer_refuses_a_gap_at_least_one_full_counter_wrap() {
         uncertainty: ratio(0, 1),
         max_event_rate: None,
         max_reading_gap: 65_536,
+        max_activations: 8,
     };
     assert_eq!(
         produce(
@@ -232,6 +236,7 @@ fn base_target() -> MonitorTarget {
         uncertainty: ratio(0, 1),
         max_event_rate: Some(ratio(2, 1)),
         max_reading_gap: 100,
+        max_activations: 8,
     }
 }
 
@@ -404,6 +409,7 @@ fn admission_refuses_a_plan_with_one_component_replaced() {
             plan.intervals().to_vec(),
             buffers.unwrap_or_else(|| plan.buffers().to_vec()),
             plan.rate_limit().clone(),
+            plan.activation_capacity(),
         )
     };
     let tampered = [

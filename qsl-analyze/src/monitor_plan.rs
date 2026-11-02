@@ -180,6 +180,7 @@ pub fn produce(
         intervals,
         buffers,
         rate_limit,
+        target.max_activations,
     );
     plan.root_premises()
         .validate()
