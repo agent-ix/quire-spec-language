@@ -105,7 +105,10 @@ fn type_nodes(
                 .expect("the type keys")
         })
         .collect();
-    (lowering.finish(&location).graph, keys)
+    (
+        lowering.finish(&location).expect("lowering finishes").graph,
+        keys,
+    )
 }
 
 /// One node key as its own package, path and ordinal, each nested key

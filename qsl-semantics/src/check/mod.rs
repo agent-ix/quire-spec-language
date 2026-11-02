@@ -2451,7 +2451,10 @@ impl PackageDeclarations {
                     }
                 }
             }
-            let nodes = sealing.finish(&lowering::generated_location()).composites;
+            let nodes = sealing
+                .finish(&lowering::generated_location())
+                .map_err(|refusal| vec![refusal])?
+                .composites;
             if !sealed_refusals.is_empty() {
                 return Err(sealed_refusals);
             }
@@ -5288,7 +5291,9 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
-        let lowered = lowering.finish(&lowering::generated_location());
+        let lowered = lowering
+            .finish(&lowering::generated_location())
+            .map_err(|refusal| vec![refusal])?;
         // FR-380: a population node's `Type` occurrences take their ordinals
         // in ascending source order, whichever writer recorded one first.
         occurrences.order_by(
