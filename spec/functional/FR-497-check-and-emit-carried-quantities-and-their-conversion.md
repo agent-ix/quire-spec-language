@@ -57,12 +57,16 @@ states only how `check`, lowering and the kernel realize them, and invents none.
   `Rational[..]`, a `Text[..]` or a record carrier `ill_typed`/`type-mismatch`
   at `C`, and a carrier with `lo > hi` or `smin > smax` as FR-140 refuses its
   `Decimal[..]` (QSpec FR-142).
+- **Expression grammar.** The QSL source grammar does not define exponentiation.
+  The source parser SHALL reject an expression written with `**`, such as
+  `a ** 2`, before semantic checking, regardless of operand type; this syntax
+  rejection does not produce an `ill_typed` type-mismatch refusal.
 - **Type identity.** `Quantity<u, C>` is a distinct checked type from
   `Quantity<u>` and from every carried type that differs in unit, carrier
   bound, scale range or mode. `check` SHALL NOT convert one to another
   implicitly. A carried quantity as an operand of quantity addition,
-  subtraction, negation, multiplication, division, power, equality or ordering,
-  or where `Quantity<u>` or another carried type is required, refuses
+  subtraction, negation, multiplication, division, equality or ordering, or
+  where `Quantity<u>` or another carried type is required, refuses
   `ill_typed`/`type-mismatch` at the expression before any charge. A carried
   quantity is not an element of `collection.sum.quantity`, which is defined over
   `Quantity<u>` only; it is converted back
@@ -114,7 +118,7 @@ states only how `check`, lowering and the kernel realize them, and invents none.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-497-AC-1 | With `dimension Length;` and `unit m : Length = rational(1, 1);`, `Quantity<m, Decimal[-100, 100; 2, 2; exact]>`, `Quantity<m, Int[-2, 2]>` and `Quantity<m, Int[-2, 2; nearest-even]>` each check as a type; the three lower to three distinct `scalar_type`/`carried_quantity` nodes with `unit`, `carrier` and `rounding` bindings (`exact` for the omitted `Int` mode), and two uses of one form share one node (QSpec `CQ-W01` to `CQ-W04`). A bare `Integer`, a bare `Decimal`, `Rational[0, 9; 1, 9]`, `Text[0, 8; nfc]`, a record carrier, and `Int[2, -2]` refuse as AC-2 states. | Test (TC-1287) |
-| FR-497-AC-2 | A non-bounded-`Int`/`Decimal` carrier refuses `ill_typed`/`type-mismatch` at the carrier; a carrier with `lo > hi` or `smin > smax` refuses as FR-140 refuses its `Decimal[..]`; a carried quantity where `Quantity<u>` or a different carried type is required, and as an operand of `+`, `-`, unary `-`, `*`, `/`, `**`, `=` and `<`, refuses `ill_typed`/`type-mismatch` at the expression with no charge; `convert<Quantity<m'>>` of a carried quantity of the same dimension checks, and of another dimension refuses `ill_typed` for incompatible dimensions (TC-187 U41; `CQ-W13` for the dimension refusal, `CQ-W15` for the carried-to-carried conversion). | Test (TC-1287) |
+| FR-497-AC-2 | A non-bounded-`Int`/`Decimal` carrier refuses `ill_typed`/`type-mismatch` at the carrier; a carrier with `lo > hi` or `smin > smax` refuses as FR-140 refuses its `Decimal[..]`; a carried quantity where `Quantity<u>` or a different carried type is required, and as an operand of `+`, `-`, unary `-`, `*`, `/`, `=` and `<`, refuses `ill_typed`/`type-mismatch` at the expression with no charge; `a ** 2` is rejected by the source parser before semantic checking, not as a carried-quantity type mismatch; `convert<Quantity<m'>>` of a carried quantity of the same dimension checks, and of another dimension refuses `ill_typed` for incompatible dimensions (TC-187 U41; `CQ-W13` for the dimension refusal, `CQ-W15` for the carried-to-carried conversion). | Test |
 | FR-497-AC-3 | `convert<Quantity<m, Decimal[-100, 100; 2, 2; exact]>>(1 in)` lowers to one `quire.op.quantity.convert` application whose `result_type` is the carried node and whose `mode` is `{kind: rounding, value: exact}`; the same conversion into a carrier whose mode is `nearest-even` carries `nearest-even`; no lowering carries a `mode` other than the result node's `rounding` or `null` (`CQ-W09`, `CQ-W10`). | Test (TC-1287) |
 | FR-497-AC-4 | Under `CheckMode::Kernel`, `1 in` into `Decimal[-100, 100; 2, 2]` (exact) refuses `inexact_conversion`/`inexact-conversion` at the convert node with `expected` that carrier and no value, before `unit.target-domain`, and `25 cm` converts to `(25, 2) m`; `1 in` into `Int[-2, 2]` refuses likewise and `2 m` converts; the same inexact refusal holds after one read, one edge and two rational events under work limit six and under work limit four, where it is a refusal and not `incomplete` (U07, U16, U29; `CQ-E01`, `CQ-E02`, `CQ-E07`, `CQ-E08`, `CQ-E12`, `CQ-E13`, and `CQ-E20` for a carrier with `smin` below `smax`). | Test (TC-1287) |
 | FR-497-AC-5 | `-2 m` and `2 m` into `Decimal[-2, 2; 0, 0]` succeed and `-3 m` and `3 m` refuse `decimal_out_of_domain`/`outside-domain` after `unit.target-domain` and before `unit.result-retain`; `3 m` into `Decimal[-2, 2; 0, 0]` refuses by membership under work limit two and is `incomplete` at `unit.target-domain` under work limit one; `1 m` into `Decimal[0, 1; 0, 4294967295]` is `incomplete` at `unit.target-domain` for `decimal_digits` with the retained coefficient never materialized; `3 m` into `Int[-2, 2]` refuses `integer_out_of_domain`; an inexact value that is also out of bounds refuses `inexact_conversion` (U08, U17, U18, U29; QSpec FR-142-AC-29). | Test (TC-1287) |
