@@ -1435,6 +1435,16 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
+        if !expression.is_from_graph(self.graph()) {
+            return Err(protocol_slot::resolve::refused(
+                "invalid_runtime_input",
+                "foreign-checked-expression",
+                CallAdmissionLocus::Member {
+                    name: "checked-expression".to_owned(),
+                    index: None,
+                },
+            ));
+        }
         let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
             .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
         admit_arguments(
