@@ -746,3 +746,92 @@ bindings:
   ac_id: FR-214-AC-5
   trace: correct
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-001 after excerpt
+
+```text
+#[trace("TC-552", "FR-147-AC-1")]
+fn a_refinement_over_a_protocol_checks_with_its_internal_list()
+```
+| FND-002 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-002 after excerpt
+
+```text
+#[trace("TC-552", "FR-147-AC-3")]
+fn a_protocol_refinement_with_hidden_fairness_state_reports_unsupported_liveness()
+```
+| FND-003 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-003 after excerpt
+
+```text
+#[trace("FR-375-AC-12", "FR-147-AC-9", "TC-310", "TC-552")]
+fn the_internal_list_order_does_not_change_the_refinement_node()
+```
+| FND-004 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-004 after excerpt
+
+```text
+#[trace("TC-552", "FR-147-AC-10")]
+fn refinement_internal_list_defects_keep_their_input_owner()
+```
+| FND-005 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-005 after excerpt
+
+```text
+#[trace("TC-552", "FR-147-AC-15", "FR-147-AC-16")]
+fn a_protocol_refinement_selects_a_dependency_protocol_by_identity()
+```
+| FND-006 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-006 after excerpt
+
+```text
+#[trace("TC-552", "FR-147-AC-16")]
+fn a_protocol_over_the_concrete_model_is_not_an_abstract_subject()
+```
+| FND-007 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-007 after excerpt
+
+```text
+#[trace("TC-553", "FR-148-AC-13")]
+fn a_required_temporal_clause_without_fairness_adds_no_authored_constraint()
+```
+| FND-008 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-008 after excerpt
+
+```text
+#[trace("TC-553", "FR-148-AC-14")]
+fn a_satisfied_ensure_does_not_change_the_assumption_relation()
+```
+| FND-009 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-009 after excerpt
+
+```text
+/// FR-148-AC-1 (TC-553): a node row compares its expression with the
+/// attempt's typed receiver binder before accepting the protocol node.
+#[trace("TC-553", "FR-148-AC-1")]
+fn a_node_row_matches_the_attempt_identity_and_binder()
+```
+| FND-010 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-010 after excerpt
+
+```text
+/// FR-148-AC-1 (TC-553): `any` admits the union of internal stutter and visible
+/// protocol matches; this `commitA` takes the visible `a1` branch.
+#[trace("TC-553", "FR-148-AC-1")]
+fn an_any_row_can_take_a_visible_protocol_transition()
+```

@@ -145,3 +145,23 @@ findings:
     AC-12 case. The only AC-12 fixture currently covers the concrete-side predicate.
 bindings: []
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Rechecked at d4f1c44dcafda8546eef4c0a074f5820be82111e. |
+
+### FND-001 after excerpt
+
+```text
+if let Some(witness) = self.protocol_contract_undetermined_witness(
+    node_index, candidate, protocol, &transition, &clause, None, None,
+)? {
+    return Err(End::Undecided(SafetyUndecided::ProtocolAssumptionNotEstablished(
+        Box::new(witness),
+    )));
+}
+// an_undetermined_protocol_assumption_has_a_typed_finite_witness asserts
+// RelationUndetermined, selected RequiredTemporal identity, and replay Reproduced.
+```
