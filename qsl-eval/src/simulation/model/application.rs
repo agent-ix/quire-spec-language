@@ -207,6 +207,18 @@ impl<'a> ModelSystem<'a> {
         budget: &mut Budget,
     ) -> Result<Applications, ExpansionStop> {
         let walk = walk_of(self, observed, None)?;
+        self.apply_walk(&walk, operation, select, selected_transitions, budget)
+    }
+
+    /// [`Self::apply_operation_matching`] over the walk `walk`.
+    fn apply_walk(
+        &self,
+        walk: &Walk<'_, '_>,
+        operation: &OperationRef<'_>,
+        select: &dyn Fn(NodeKey) -> bool,
+        selected_transitions: Option<&std::collections::BTreeSet<ModelTransition>>,
+        budget: &mut Budget,
+    ) -> Result<Applications, ExpansionStop> {
         let mut contract = Vec::new();
         let mut successors = Vec::new();
         for row in &walk.rows {
@@ -215,7 +227,7 @@ impl<'a> ModelSystem<'a> {
             };
             let clauses = walk.selected(row, application, select);
             frames::apply(
-                &walk,
+                walk,
                 row,
                 application,
                 &clauses,
@@ -235,18 +247,18 @@ impl<'a> ModelSystem<'a> {
         })
     }
 
-    /// FR-220 MA-1: the enabled transition identities at `observed`, checking
-    /// only candidate identities in `selected_transitions` when supplied.
-    /// Candidate enumeration and budget charges still cover the full domain.
-    pub(crate) fn enabled_transitions_matching(
+    /// FR-220 MA-1: the enabled transition identities over the walk `walk`,
+    /// checking only candidate identities in `selected_transitions` when
+    /// supplied. Candidate enumeration and budget charges still cover the
+    /// full domain.
+    fn enabled_walk(
         &self,
-        observed: &ModelSimState,
+        walk: &Walk<'_, '_>,
         operation: &OperationRef<'_>,
         select: &dyn Fn(NodeKey) -> bool,
         selected_transitions: Option<&std::collections::BTreeSet<ModelTransition>>,
         budget: &mut Budget,
     ) -> Result<Vec<ModelTransition>, ExpansionStop> {
-        let walk = walk_of(self, observed, None)?;
         let mut contract = Vec::new();
         let mut successors = Vec::new();
         let mut transitions = Vec::new();
@@ -256,7 +268,7 @@ impl<'a> ModelSystem<'a> {
             };
             let clauses = walk.selected(row, application, select);
             frames::apply(
-                &walk,
+                walk,
                 row,
                 application,
                 &clauses,
@@ -322,6 +334,13 @@ impl Observed<'_> {
     pub(crate) fn state(&self) -> &ModelSimState {
         &self.state
     }
+
+    /// Keep the observation `walk` synthesized of this state, so a body read
+    /// over it later does not synthesize it again.
+    fn keep_observation(&self, walk: Walk<'_, '_>) {
+        let Walk { observation, .. } = walk;
+        self.observation.get_or_init(|| observation);
+    }
 }
 
 /// What one attempt's application of an observed state came to, beside the
@@ -351,7 +370,7 @@ pub(crate) struct AppliedMemo {
     applied: Mutex<AppliedByObservation>,
 }
 
-impl ModelSystem<'_> {
+impl<'a> ModelSystem<'a> {
     /// `state` as an observation the application memo identifies by its
     /// model key bytes and anchor.
     pub(crate) fn observed<'s>(&self, state: Cow<'s, ModelSimState>) -> Observed<'s> {
@@ -368,6 +387,29 @@ impl ModelSystem<'_> {
             state,
             identity,
             observation: OnceCell::new(),
+        }
+    }
+
+    /// The walk of `observed`, over the observation it already holds or a
+    /// newly synthesized one.
+    ///
+    /// # Errors
+    ///
+    /// As [`walk_of`].
+    fn walk_observed<'s>(
+        &'s self,
+        observed: &'s Observed<'_>,
+    ) -> Result<Walk<'s, 'a>, ExpansionStop> {
+        match observed.observation.get() {
+            Some(observation) => Ok(Walk {
+                system: self,
+                state: observed.state(),
+                observation: observation.clone(),
+                rows: rows_of(self, &observed.state().state)?,
+                enforcement: None,
+                post_presence: None,
+            }),
+            None => walk_of(self, observed.state(), None),
         }
     }
 
@@ -410,13 +452,10 @@ impl ModelSystem<'_> {
             return Ok(found);
         }
         let before = budget.used();
-        let applications = self.apply_operation_matching(
-            observed.state(),
-            operation,
-            select,
-            selected_transitions,
-            budget,
-        )?;
+        let walk = self.walk_observed(observed)?;
+        let applications = self.apply_walk(&walk, operation, select, selected_transitions, budget);
+        observed.keep_observation(walk);
+        let applications = applications?;
         self.remember(
             &observed.identity,
             at,
@@ -426,12 +465,12 @@ impl ModelSystem<'_> {
         Ok(applications)
     }
 
-    /// [`Self::enabled_transitions_matching`] for the attempt `attempt`,
+    /// FR-220 MA-1: the enabled transition identities of the attempt `attempt`,
     /// remembered per observed state.
     ///
     /// # Errors
     ///
-    /// As [`Self::enabled_transitions_matching`].
+    /// As [`Self::apply_operation_matching`].
     pub(crate) fn enabled_attempt(
         &self,
         attempt: &str,
@@ -449,13 +488,10 @@ impl ModelSystem<'_> {
             return Ok(found);
         }
         let before = budget.used();
-        let enabled = self.enabled_transitions_matching(
-            observed.state(),
-            operation,
-            select,
-            selected_transitions,
-            budget,
-        )?;
+        let walk = self.walk_observed(observed)?;
+        let enabled = self.enabled_walk(&walk, operation, select, selected_transitions, budget);
+        observed.keep_observation(walk);
+        let enabled = enabled?;
         self.remember(
             &observed.identity,
             at,

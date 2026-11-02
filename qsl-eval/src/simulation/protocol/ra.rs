@@ -54,7 +54,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{AccessClass, AccessOrdering};
@@ -146,15 +145,15 @@ struct Views {
 struct Shared {
     cell: Cell,
     messages: Vec<Message>,
-    /// The location's typed canonical form, found once and shared by every
-    /// member of the key that names it.
-    key: Arc<Enc>,
+    /// The location's typed canonical form, an [`Enc::Shared`] found and
+    /// written once for every key and member that names it.
+    key: Enc,
 }
 
 impl Shared {
     /// The location's typed canonical form.
     fn enc(&self) -> Enc {
-        Enc::Shared(Arc::clone(&self.key))
+        self.key.clone()
     }
 }
 
@@ -587,11 +586,11 @@ impl RaComponent {
             self.shared.insert(
                 cell.location.clone(),
                 Shared {
-                    key: Arc::new(location_enc(cell.location, Some(cell.cell))),
+                    key: Enc::shared(location_enc(cell.location, Some(cell.cell))),
                     cell: cell.cell.clone(),
                     messages: vec![Message {
                         id,
-                        enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
+                        enc: Enc::shared(value.as_ref().map_or(Enc::Null, untyped_value_enc)),
                         value,
                         view: View::default(),
                         attached: false,
@@ -709,7 +708,7 @@ impl RaComponent {
                 slot,
                 Message {
                     id,
-                    enc: value.as_ref().map_or(Enc::Null, untyped_value_enc),
+                    enc: Enc::shared(value.as_ref().map_or(Enc::Null, untyped_value_enc)),
                     value,
                     view: View::default(),
                     attached,

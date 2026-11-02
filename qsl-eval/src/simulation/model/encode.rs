@@ -40,9 +40,10 @@ pub(crate) enum Enc {
     Effective(EffectiveId),
     /// Members in any order: the writer sorts them (RFC 8785 section 3.2.3).
     Object(Vec<(&'static str, Enc)>),
-    /// A value many members of one key share: written as the value it holds,
-    /// and by [`Canonicalizer`] once per key however often it occurs.
-    Shared(Arc<Enc>),
+    /// A value many members and keys share, with its RFC 8785 bytes found
+    /// once when it was made ([`Enc::shared`]): written as the value it
+    /// holds, and by [`Canonicalizer`] as those bytes.
+    Shared(Arc<SharedEnc>),
     /// A declaration's identity text ([`declaration_text`]) as a string.
     Declaration(DeclarationKey),
     /// FR-181's `map`, `{"type":"map","entries":[{"key":..,"value":..}, ...]}`,
@@ -73,7 +74,7 @@ impl Encode for Enc {
                 write_json(writer, &json)
             }
             Self::Effective(id) => write_effective(writer, id),
-            Self::Shared(value) => value.encode_into(writer),
+            Self::Shared(shared) => shared.value.encode_into(writer),
             Self::Declaration(key) => match declaration_text(key, Limits::new(u64::MAX)) {
                 Ok(text) => writer.string(&text),
                 Err(_) => Err(unencodable(UNENCODABLE_DECLARATION)),
@@ -190,14 +191,6 @@ impl Out {
     }
 }
 
-/// The bytes of each [`Enc::Shared`] value one call has written, by the
-/// value's address. Each entry holds its value, so no address is reused
-/// while it is remembered.
-#[derive(Default)]
-struct Scope {
-    shared: HashMap<usize, (Arc<Enc>, Arc<[u8]>)>,
-}
-
 /// One member's value: a typed canonical form, or RFC 8785 bytes already
 /// written.
 enum Member<'m> {
@@ -227,7 +220,7 @@ impl Canonicalizer {
     /// The refusal `quire_canonical::to_vec(value, limits)` gives.
     pub(crate) fn to_vec(&self, value: &Enc, limits: Limits) -> Result<Vec<u8>, Error> {
         let mut out = Out::new(limits.max_bytes());
-        self.write(value, &mut out, &mut Scope::default())?;
+        self.write(value, &mut out)?;
         Ok(out.bytes)
     }
 
@@ -249,11 +242,11 @@ impl Canonicalizer {
             .iter()
             .map(|(name, value)| (*name, Member::Enc(value)))
             .chain(std::iter::once((name, Member::Bytes(bytes))));
-        self.object(members, &mut out, &mut Scope::default())?;
+        self.object(members, &mut out)?;
         Ok(out.bytes)
     }
 
-    fn write(&self, value: &Enc, out: &mut Out, scope: &mut Scope) -> Result<(), Error> {
+    fn write(&self, value: &Enc, out: &mut Out) -> Result<(), Error> {
         match value {
             Enc::Null => out.push(b"null"),
             Enc::Bool(true) => out.push(b"true"),
@@ -265,7 +258,7 @@ impl Canonicalizer {
                     if index > 0 {
                         out.push(b",")?;
                     }
-                    self.write(item, out, scope)?;
+                    self.write(item, out)?;
                 }
                 out.push(b"]")
             }
@@ -279,15 +272,17 @@ impl Canonicalizer {
                 || Enc::Declaration(key.clone()),
                 out,
             ),
-            Enc::Shared(value) => self.shared(value, out, scope),
+            Enc::Shared(shared) => match &shared.bytes {
+                Some(bytes) => out.push(bytes),
+                None => self.write(&shared.value, out),
+            },
             Enc::Object(members) => self.object(
                 members
                     .iter()
                     .map(|(name, value)| (*name, Member::Enc(value))),
                 out,
-                scope,
             ),
-            Enc::Map(entries) => self.map(entries, out, scope),
+            Enc::Map(entries) => self.map(entries, out),
             Enc::Unencodable(what) => Err(unencodable(what)),
         }
     }
@@ -334,28 +329,11 @@ impl Canonicalizer {
         out.push(&bytes)
     }
 
-    /// A shared value's bytes, written on its first occurrence in this call
-    /// and copied after.
-    fn shared(&self, value: &Arc<Enc>, out: &mut Out, scope: &mut Scope) -> Result<(), Error> {
-        let address = Arc::as_ptr(value).addr();
-        if let Some((_, bytes)) = scope.shared.get(&address) {
-            return out.push(bytes);
-        }
-        let mut own = Out::new(out.bound);
-        self.write(value, &mut own, scope)?;
-        out.push(&own.bytes)?;
-        scope
-            .shared
-            .insert(address, (Arc::clone(value), own.bytes.into()));
-        Ok(())
-    }
-
     /// The members written in the order held, then arranged by name.
     fn object<'m>(
         &self,
         members: impl Iterator<Item = (&'static str, Member<'m>)>,
         out: &mut Out,
-        scope: &mut Scope,
     ) -> Result<(), Error> {
         out.push(b"{")?;
         let start = out.bytes.len();
@@ -368,7 +346,7 @@ impl Canonicalizer {
             Self::string(name, out)?;
             out.push(b":")?;
             match value {
-                Member::Enc(value) => self.write(value, out, scope)?,
+                Member::Enc(value) => self.write(value, out)?,
                 Member::Bytes(bytes) => out.push(bytes)?,
             }
             spans.push((name, from, out.bytes.len()));
@@ -403,11 +381,11 @@ impl Canonicalizer {
 
     /// FR-181's `map`: every key's bytes first, then the entries ascending
     /// by them. A key with no encoding refuses before any value is written.
-    fn map(&self, entries: &[(Enc, Enc)], out: &mut Out, scope: &mut Scope) -> Result<(), Error> {
+    fn map(&self, entries: &[(Enc, Enc)], out: &mut Out) -> Result<(), Error> {
         let mut keyed = Vec::with_capacity(entries.len());
         for (key, value) in entries {
             let mut bytes = Out::new(out.bound);
-            self.write(key, &mut bytes, scope)?;
+            self.write(key, &mut bytes)?;
             keyed.push((bytes.bytes, value));
         }
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
@@ -420,14 +398,30 @@ impl Canonicalizer {
             })?;
             out.push(key)?;
             out.push(b",\"value\":")?;
-            self.write(value, out, scope)?;
+            self.write(value, out)?;
             out.push(b"}")?;
         }
         out.push(b"],\"type\":\"map\"}")
     }
 }
 
+/// The value of an [`Enc::Shared`] and its RFC 8785 bytes, `None` when it
+/// has no encoding (writing it then refuses as the value does).
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct SharedEnc {
+    value: Enc,
+    bytes: Option<Vec<u8>>,
+}
+
 impl Enc {
+    /// `value` as an [`Enc::Shared`], its bytes written once now.
+    pub(crate) fn shared(value: Enc) -> Self {
+        let bytes = Canonicalizer::default()
+            .to_vec(&value, Limits::new(u64::MAX))
+            .ok();
+        Self::Shared(Arc::new(SharedEnc { value, bytes }))
+    }
+
     pub(crate) fn text(value: impl Into<String>) -> Self {
         Self::Str(value.into())
     }
