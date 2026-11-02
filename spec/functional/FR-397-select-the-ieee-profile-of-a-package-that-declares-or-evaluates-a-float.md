@@ -146,19 +146,18 @@ into a float. Model float fields are refused at intake (FR-091).
   - **Evaluate once.** The evaluator SHALL evaluate each operand of an ordering
     composition (`<`, `<=`, `>`, `>=`) exactly one time per evaluation of the
     comparison, whatever number of parts of the composition read it, and SHALL
-    share its value among `N(a)`, `N(b)`, `totalOrder` and `numericEqual`: the four reads of
-    `a` and of `b` in `a < b` are one evaluation each, never four. The charge of
-    the comparison is the operands' own spend, once, plus one `compare_ieee`
-    charge (QSpec FR-148) for the `totalOrder` part when the composition reaches
-    it. The `numericEqual` parts of the composition, `N(a)`, `N(b)` and
-    `numericEqual(a, b)`, are computed inline from the evaluated operand bits and
-    charge nothing, and the composition charges `compare_ieee` at most once. A
-    `bitIdentical(a, b)` call charges one `compare_ieee` for its two operands.
-    The charge of `=` and `!=` and of the `numericEqual` and `totalOrder` calls
-    is unchanged.
-  - The checker SHALL refuse a comparison whose operands are of unlike float
-    widths, of unlike rounding modes, or a float and an exact type, as
-    `ill_typed`/`type-mismatch` at the operator.
+    share its value among `N(a)`, `N(b)`, `totalOrder` and `numericEqual`: the
+    four reads of `a` and of `b` in `a < b` are one evaluation each, never four.
+    The charge of the comparison is the operands' own spend, once, plus at most
+    one `compare_ieee` charge (QSpec FR-148, its operand and result charge
+    points) for the `totalOrder` part, charged only when the composition reaches
+    that part. The `numericEqual` parts of the composition, `N(a)`, `N(b)` and
+    `numericEqual(a, b)`, are computed inline from the evaluated operand bits,
+    SHALL NOT be routed through `compare_ieee`, and charge nothing, although a
+    standalone `quire.op.ieee.numeric_equal` node (`a = b`, the `numericEqual`
+    call) charges as before. A `bitIdentical(a, b)` call charges one
+    `compare_ieee`. The charge of `=` and `!=` and of the `numericEqual` and
+    `totalOrder` calls is unchanged.
   - `=` and `!=` also apply to an option, record, tuple, union or collection
     whose type reaches a float at any depth (QSpec FR-149 "IEEE relations").
     They lower to `quire.op.structural.eq` and `.ne` (FR-093), whose leaves
@@ -203,7 +202,7 @@ into a float. Model float fields are refused at intake (FR-091).
     `bitIdentical()`) is refused by the parser, which keeps its grammar: it is
     `invalid_syntax`/`unexpected-token` at the closing `)`, before the checker
     runs, and so before any profile or type refusal.
-  - Once the profile is admitted, the checker SHALL refuse a call to an
+  - When the profile is admitted, the checker SHALL refuse a call to an
     intrinsic with one or more arguments whose count is not its arity, with an
     argument that is not a float, with arguments of unlike widths or rounding
     modes, or with a float and an exact type, as `ill_typed`/`type-mismatch` at
@@ -299,7 +298,7 @@ into a float. Model float fields are refused at intake (FR-091).
 | FR-397-AC-23 | Over `Set<Float64[nearest-even]>[0, 2]` parameters, `=` lowers to one `quire.op.structural.eq` node and `!=` to `quire.op.structural.ne`, each with leaves `operand:0` listing the float leaf at the path `["inner"]` with the law `ieee_profile` and mode `null`. Set members match by bit identity and leaves compare by `numericEqual`: with `p0`, `n0`, `qnan` and `qnan2` of FR-397-AC-22, `set[qnan] = set[qnan]` is true, `set[p0] = set[n0]` is false and its `!=` is true, `set[p0, n0] = set[n0, p0]` is true, and `set[qnan] = set[qnan2]` is false; over `Bag<Float64[nearest-even]>[0, 2]`, `bag[qnan] = bag[qnan]` is true and `bag[p0] = bag[n0]` is false; `sequence[qnan] = sequence[qnan]` over `Sequence<Float64[nearest-even]>[0, 2]` stays false. | Test (TC-1091) |
 | FR-397-AC-24 | Source forms (intrinsic names unqualified after `quire::value::ieee::` as in FR-397-AC-7) for the QSpec TC-193 rows that need the callable relations, the fused multiply-add and the ordering operators (QSL-1388; the callable surface is intended-present, not admission-only). With `HEADER` as in FR-397-AC-1 and `p0` `float32(bits: 0x00000000)`, `n0` `0x80000000`: F01 `p0 = n0` is `true`, `quire::value::ieee::bitIdentical(n0, p0)` is `false`, `totalOrder(n0, p0)` is `true` and `totalOrder(p0, n0)` is `false`. F02 over `0x7fc00001` and `0x7fc00002`: `a = a` is `false`, `bitIdentical(a, a)` is `true`, `totalOrder(a, b)` is `true` and `totalOrder(b, a)` is `false`. F02b: `totalOrder(0xffc00002, 0xffc00001)` and `totalOrder(0x7f800001, 0x7fc00001)` are `true`, each with the operands exchanged `false`. F04b over `Float32[nearest-even]` results: `float32(bits: 0x7fc00012) + float32(bits: 0xff800021)` and `fma(float32(bits: 0x3f800000), float32(bits: 0x7fc00012), float32(bits: 0xff800021))` each evaluate to `0x7fc00012` with the `invalid` flag. F05 over `0xff800000`, `0xff7fffff`, `0x7f7fffff` and `0x7f800000`: each ascending pair (`0xff800000` to `0xff7fffff`, `0xff7fffff` to `0x7f7fffff`, `0x7f7fffff` to `0x7f800000`) satisfies `<`, `<=` and `totalOrder` and fails `numericEqual`, the exchanged pair fails `<` and `<=`, `bitIdentical(0x7f800000, 0x7f800000)` is `true` and `bitIdentical(0x7f800000, 0xff800000)` is `false`. F11 `fma(float32(bits: 0x3f800001), float32(bits: 0x3f7ffffe), float32(bits: 0xbf800000))` over a `Float32[nearest-even]` result is `0xa8800000`, while the separately rounded `a * b + c` is `0x00000000`. F20: `numericEqual`, `totalOrder` and `bitIdentical` over a `Float32` and a `Float64`, `a + b` over the same pair, `a + i` over a `Float32[nearest-even]` and an `Int[0, 10]` parameter, and `convert<Decimal[0, 10; 0, 0; nearest-even]>(a)` and `convert<Int[0, 1]>(a)` over a `Float32[nearest-even]` parameter each refuse `ill_typed`/`type-mismatch` at check, so no charge is made. F34 is FR-397-AC-13 at both widths. | Test (TC-1091) |
 | FR-397-AC-25 | In a unit whose only parameters are `i: Int[0, 10]` and `a: Boolean` (no float form), `quire::value::ieee::sqrt(i)`, `sqrt(i, i)` and `numericEqual(i)` each refuse `invalid_package` with the cause `IeeeProfileNotAdmitted` at the call, and not `ill_typed`/`type-mismatch`; adding one parameter `f: Float64[nearest-even]` to the unit makes `sqrt(i)` and `sqrt(i, i)` refuse `ill_typed`/`type-mismatch` as FR-397-AC-16 states; `sqrt()` refuses `invalid_syntax`/`unexpected-token` at `)` in both units. | Test (TC-1091) |
-| FR-397-AC-26 | Over `p: Float64[nearest-even]` and `q: Float64[nearest-even]` in a function `g using v(p, q)` whose body is `sqrt(p) < sqrt(q)`, `sqrt(p) <= sqrt(q)`, `sqrt(p) > sqrt(q)` and `sqrt(p) >= sqrt(q)`, the meter spend of each evaluation equals the spend of evaluating `sqrt(p)` once plus `sqrt(q)` once plus the spend of the same comparison over the parameters `p < q` (and so of one `compare_ieee`), exactly; under a work limit one unit below that spend each is `incomplete` and at that limit each completes with the FR-397-AC-13 Boolean; an evaluator that evaluates an operand more than once exceeds the limit, spends more, or fails the equality. The same bodies over an operand that is a NaN give false at the same spend, and `numericEqual` parts add no charge. | Test (TC-1091) |
+| FR-397-AC-26 | Over `p: Float64[nearest-even]` and `q: Float64[nearest-even]`, let `spend(e)` be the meter spend of evaluating the body `e` alone. For each of `sqrt(p) < sqrt(q)`, `sqrt(p) <= sqrt(q)`, `sqrt(p) > sqrt(q)` and `sqrt(p) >= sqrt(q)` and its parameter counterpart (`p < q`, `p <= q`, `p > q`, `p >= q`), `spend(sqrt(p) < sqrt(q)) = spend(p < q) + (spend(sqrt(p)) - spend(p)) + (spend(sqrt(q)) - spend(q))` exactly, so each operand is evaluated once and adds its own extra spend once; under a work limit equal to `spend(sqrt(p) < sqrt(q))` each completes with the FR-397-AC-13 Boolean and one unit below it each is `incomplete`; an evaluator that evaluates an operand more than once adds that extra spend more than once and fails the equality or the limit. With an operand that is a NaN each body gives false, evaluates each operand once and charges `compare_ieee` at most once; no `numericEqual` part of an ordering adds a charge. | Test (TC-1091) |
 
 ## Dependencies
 

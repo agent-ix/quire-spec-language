@@ -67,9 +67,10 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-26, FR-091-AC-48 and FR-091-AC-49
     parameter, then in the same unit with one `Float64[nearest-even]`
     parameter added; check `sqrt()` and `bitIdentical()` in both.
 21. Run the four ordering comparisons of FR-397-AC-26 over `sqrt(p)` and
-    `sqrt(q)` with an unlimited meter and read the spend, then run each under
-    a work limit equal to and one below that spend, and read the spend of
-    `p < q` over the parameters for the difference.
+    `sqrt(q)` and over `p` and `q` with an unlimited meter, read each spend and
+    the spend of `sqrt(p)`, `sqrt(q)`, `p` and `q` alone, check the equality of
+    FR-397-AC-26, then run each sqrt body under a work limit equal to and one
+    below its spend; repeat with a NaN operand.
 
 ## Expected Results
 
@@ -126,6 +127,7 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-26, FR-091-AC-48 and FR-091-AC-49
     `IeeeProfileNotAdmitted`; with one, `sqrt(i)` and `sqrt(i, i)` refuse
     `ill_typed`/`type-mismatch`; `sqrt()` refuses `invalid_syntax`/
     `unexpected-token` at `)` in both.
-21. The spend equals the two operand spends plus the spend of `p < q`; at the
-    limit each completes, one below it each is `incomplete`; a double evaluation
-    of an operand fails the equality and the limit.
+21. The spend equals the parameter comparison's spend plus each operand's extra
+    spend once; at the limit each completes, one below it each is `incomplete`;
+    a double evaluation of an operand fails the equality and the limit; a NaN
+    operand gives false with at most one `compare_ieee` charge.
