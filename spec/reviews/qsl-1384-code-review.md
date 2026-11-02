@@ -93,3 +93,9 @@ No applicable AssuranceProfile was found under `spec/` for the changed code.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | `StateGraphIdentity::resolve` and `HyperIdentity::resolve` pass `&[]` to `read_back`, which emits the entire checked package through the selection-aware writer. For packages containing a clock-configured temporal declaration and a state-graph or hyper claim, readback fails with `MissingTemporalClockSelection` despite a supplied selection; thread selections through these identity/replay paths and cover this combination. | qsl-replay/src/model_check/identity.rs:164,219 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit `fb02235ec86055c6f86ac3360521879f1f91ae1f` threads explicit selections through `StateGraphIdentity`, `HyperIdentity`, settlement and graph replay. The mixed-package regression exercises both identity paths: without a selection each refuses for the missing binding; with the selection each advances beyond that error to the already known `OperationMemberMismatch` temporal-reader boundary. That downstream refusal is outside FND-001. After excerpt: `read_back(package, domain_packages, temporal_clock_selections, cancel)?;` |
