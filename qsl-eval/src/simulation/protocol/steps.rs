@@ -15,6 +15,7 @@
 //! is then a function of what the protocol can still do (PS-8).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use qsl_semantics::check::{
     AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
@@ -40,14 +41,15 @@ use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::footprint::Location;
 use crate::simulation::model::encode::{reference_enc, value_enc, Enc};
 use crate::simulation::model::{
-    Applied, Budget, FirstApplication, ModelFinding, ModelSimState, Observed, OperationRef, Verdict,
+    Applied, Budget, FirstApplication, ModelFinding, ModelSimState, Observed, ObservedIdentities,
+    OperationRef, Verdict,
 };
 use crate::simulation::subject::Cut;
 
 /// One application of an attempt, the observation it was applied over and
 /// the message it read there (FR-229).
 struct Observation<'o, 's> {
-    applied: Applied,
+    applied: &'o Applied,
     observed: &'o Observed<'s>,
     read: Option<ReadChoice>,
 }
@@ -165,7 +167,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         state: &ProtocolState<M>,
     ) -> Result<(ProtocolExpansion<M>, Cut), ExpansionStop> {
         let mut budget = self.model.budget();
-        let accesses = self.state_accesses(state, &mut budget)?;
+        let identities = ObservedIdentities::new(&state.model);
+        let accesses = self.state_accesses_observing(state, &mut budget, &identities)?;
         if let Some(shape) = self.state_access_shape(state, &accesses)? {
             return Ok((
                 Expansion {
@@ -243,6 +246,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 },
                                 Cursor::Exit(node),
                                 &accesses,
+                                &identities,
                                 gathered,
                             )
                         },
@@ -280,6 +284,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 },
                                 Cursor::Enter(awaited.then),
                                 &accesses,
+                                &identities,
                                 gathered,
                             )
                         },
@@ -382,6 +387,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         state: &ProtocolState<M>,
         budget: &mut Budget,
     ) -> Result<StateWeakAccesses, ExpansionStop> {
+        self.state_accesses_observing(state, budget, &ObservedIdentities::new(&state.model))
+    }
+
+    /// [`Self::state_accesses`], each observation of `state`'s model
+    /// identified through `identities`.
+    fn state_accesses_observing(
+        &self,
+        state: &ProtocolState<M>,
+        budget: &mut Budget,
+        identities: &ObservedIdentities<'_>,
+    ) -> Result<StateWeakAccesses, ExpansionStop> {
         let mut applications = Vec::new();
         let mut readers = Vec::new();
         let empty_transitions = BTreeSet::new();
@@ -448,11 +464,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     // Every attempt of the observation reads the same probe
                     // and the same messages of a location, so each is
                     // observed, and its memo identity encoded, once.
-                    let probe = self.model.observed(self.memory.observe(
-                        &state.memory,
-                        &observation_path,
-                        &state.model,
-                    ));
+                    let probe = self.model.observed_from(
+                        self.memory
+                            .observe(&state.memory, &observation_path, &state.model),
+                        identities,
+                    );
                     let mut reads_at: BTreeMap<&Location, Vec<Observed<'_>>> = BTreeMap::new();
                     for node in attempt_nodes.iter().copied() {
                         let Some(attempt) = self.program.attempts.get(&node) else {
@@ -487,7 +503,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                 location,
                                 reads
                                     .into_iter()
-                                    .map(|read| self.model.observed(read.observed))
+                                    .map(|read| self.model.observed_from(read.observed, identities))
                                     .collect(),
                             );
                         }
@@ -519,8 +535,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                             budget,
                                         )?
                                         .successors
-                                        .into_iter()
-                                        .map(|applied| (applied.transition, applied.result))
+                                        .iter()
+                                        .map(|applied| {
+                                            (applied.transition.clone(), applied.result.clone())
+                                        })
                                         .collect()
                                 } else {
                                     self.model
@@ -575,23 +593,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         continue;
                                     }
                                 }
-                                let footprint = self
-                                    .model
-                                    .footprint_selecting(&transition, Some(&attempt.contracts))
-                                    .map_err(|_| {
-                                        ProtocolRefusal::Unsupported(
-                                            super::Unsupported::AccessFootprint,
-                                        )
-                                    })?;
-                                let model_only =
-                                    |locations: BTreeSet<Location>| -> BTreeSet<Location> {
-                                        locations
-                                            .into_iter()
-                                            .filter(|location| {
-                                                !matches!(location, Location::Protocol(_))
-                                            })
-                                            .collect()
-                                    };
+                                let footprint = self.model_footprint(node, attempt, &transition)?;
                                 applications.push(EnabledApplication {
                                     key: ThreadAttempt {
                                         instance: *instance_ordinal,
@@ -599,8 +601,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         node,
                                     },
                                     transition,
-                                    reads: model_only(footprint.reads),
-                                    writes: model_only(footprint.writes),
+                                    reads: footprint.reads.clone(),
+                                    writes: footprint.writes.clone(),
                                 });
                             }
                         }
@@ -637,6 +639,42 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         .map_err(ExpansionStop::from)
     }
 
+    /// The model locations the application `transition` of the attempt
+    /// `node` reads and writes over the clauses its `contracts` select, its
+    /// protocol locations left out.
+    fn model_footprint(
+        &self,
+        node: ProtocolNodeId,
+        attempt: &super::program::Attempt<'_>,
+        transition: &ModelTransition,
+    ) -> Result<Arc<super::ModelFootprint>, ProtocolRefusal> {
+        let footprints = || {
+            self.model_footprints
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        };
+        let key = (node, transition.clone());
+        if let Some(footprint) = footprints().get(&key) {
+            return Ok(Arc::clone(footprint));
+        }
+        let footprint = self
+            .model
+            .footprint_selecting(transition, Some(&attempt.contracts))
+            .map_err(|_| ProtocolRefusal::Unsupported(super::Unsupported::AccessFootprint))?;
+        let model_only = |locations: BTreeSet<Location>| -> BTreeSet<Location> {
+            locations
+                .into_iter()
+                .filter(|location| !matches!(location, Location::Protocol(_)))
+                .collect()
+        };
+        let footprint = Arc::new(super::ModelFootprint {
+            reads: model_only(footprint.reads),
+            writes: model_only(footprint.writes),
+        });
+        footprints().insert(key, Arc::clone(&footprint));
+        Ok(footprint)
+    }
+
     /// The weak-parallel branch steps of one path, in path order. This
     /// context selects the statically indexed attempt nodes for an
     /// observation.
@@ -662,12 +700,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         step: ThreadStep<'_>,
         after: Cursor,
         accesses: &StateWeakAccesses,
+        identities: &ObservedIdentities<'_>,
         gathered: &mut Gathered<M>,
     ) -> Result<(), ExpansionStop> {
         match self.program.control(step.node)?.step {
             ControlStep::Attempt => {
                 if self.gate(state, step.path, GatedStep::Attempt) {
-                    self.attempt(state, step, after, accesses, gathered)?;
+                    self.attempt(state, step, after, accesses, identities, gathered)?;
                 }
             }
             ControlStep::Send => {
@@ -1213,6 +1252,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         step: ThreadStep<'_>,
         after: Cursor,
         accesses: &StateWeakAccesses,
+        identities: &ObservedIdentities<'_>,
         gathered: &mut Gathered<M>,
     ) -> Result<(), ExpansionStop> {
         let ThreadStep {
@@ -1229,11 +1269,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let operation = self.operation(node)?;
         let select = |clause| attempt.contracts.contains(&clause);
         let reading = self.reading(state, ordinal, path, node, accesses);
-        let probe = self
-            .model
-            .observed(self.memory.observe(&state.memory, path, &state.model));
+        let probe = self.model.observed_from(
+            self.memory.observe(&state.memory, path, &state.model),
+            identities,
+        );
         let attempt_tag = format!("{node:?}");
-        let applications = self.model.apply_attempt(
+        let probe_applications = self.model.apply_attempt(
             &attempt_tag,
             &probe,
             &operation,
@@ -1241,20 +1282,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             None,
             &mut gathered.budget,
         )?;
-        gathered.findings.extend(applications.findings);
-        let mut observations: Vec<Observation<'_, '_>> = applications
-            .successors
-            .into_iter()
-            .filter(|applied| {
-                self.loaded(ordinal, path, node, applied, accesses)
-                    .is_none_or(|at| !reading.contains_key(at))
-            })
-            .map(|applied| Observation {
-                applied,
-                observed: &probe,
-                read: None,
-            })
-            .collect();
+        gathered
+            .findings
+            .extend(probe_applications.findings.iter().cloned());
         // FR-229: a load or read-modify-write of a location the memory
         // model gives several messages is enabled by its precondition over
         // each message separately.
@@ -1263,11 +1293,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .map(|(location, reads)| {
                 let reads = reads
                     .into_iter()
-                    .map(|read| (self.model.observed(read.observed), read.choice))
+                    .map(|read| {
+                        (
+                            self.model.observed_from(read.observed, identities),
+                            read.choice,
+                        )
+                    })
                     .collect();
                 (location, reads)
             })
             .collect();
+        let mut read_applications = Vec::new();
         for (location, reads) in &reading {
             for (observed, choice) in reads {
                 let applications = self.model.apply_attempt(
@@ -1278,21 +1314,39 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     None,
                     &mut gathered.budget,
                 )?;
-                gathered.findings.extend(applications.findings);
-                observations.extend(
-                    applications
-                        .successors
-                        .into_iter()
-                        .filter(|applied| {
-                            self.loaded(ordinal, path, node, applied, accesses) == Some(location)
-                        })
-                        .map(|applied| Observation {
-                            applied,
-                            observed,
-                            read: Some(*choice),
-                        }),
-                );
+                gathered
+                    .findings
+                    .extend(applications.findings.iter().cloned());
+                read_applications.push((*location, observed, *choice, applications));
             }
+        }
+        let mut observations: Vec<Observation<'_, '_>> = probe_applications
+            .successors
+            .iter()
+            .filter(|applied| {
+                self.loaded(ordinal, path, node, applied, accesses)
+                    .is_none_or(|at| !reading.iter().any(|(location, _)| *location == at))
+            })
+            .map(|applied| Observation {
+                applied,
+                observed: &probe,
+                read: None,
+            })
+            .collect();
+        for (location, observed, choice, applications) in &read_applications {
+            observations.extend(
+                applications
+                    .successors
+                    .iter()
+                    .filter(|applied| {
+                        self.loaded(ordinal, path, node, applied, accesses) == Some(*location)
+                    })
+                    .map(|applied| Observation {
+                        applied,
+                        observed,
+                        read: Some(*choice),
+                    }),
+            );
         }
         let instance = state
             .instances
@@ -1351,9 +1405,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     ),
                 })
             });
-            let access = self.access(ordinal, path, node, &applied, observed.state(), accesses)?;
+            let access = self.access(ordinal, path, node, applied, observed.state(), accesses)?;
             let memory_access =
-                self.memory_access(node, &applied, observed.state(), access, accesses)?;
+                self.memory_access(node, applied, observed.state(), access, accesses)?;
             let written = self.memory.write(
                 &state.memory,
                 path,

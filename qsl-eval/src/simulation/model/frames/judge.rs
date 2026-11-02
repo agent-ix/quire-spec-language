@@ -312,6 +312,7 @@ impl ModelSystem<'_> {
             &application.name,
         );
         let mut judged = Vec::new();
+        let frames = super::ArgumentFrames::default();
         while let Some(digits) = arguments.next_digits() {
             let args = parameters
                 .iter()
@@ -340,6 +341,8 @@ impl ModelSystem<'_> {
                 transition_bytes: &transition_bytes,
                 postconditions: &postconditions,
                 footprint: None,
+                references: super::reference_arguments(&args),
+                frames: &frames,
             };
             let judgement = run.judge(&preconditions, request)?;
             judged.push(Judged {

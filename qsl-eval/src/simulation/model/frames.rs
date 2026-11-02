@@ -8,8 +8,10 @@
 //! choice is an odometer, so a candidate is built and dropped one at a time
 //! and a product too large to hold is never materialized.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
+use std::rc::Rc;
 
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::observation::{
@@ -184,12 +186,14 @@ pub(super) fn apply(
         mut enabled,
         mut enabled_transitions,
         selected_transitions,
+        mut charged,
     } = outputs;
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
     let preconditions = &clauses.preconditions;
     let postconditions = &clauses.postconditions;
 
+    let frames = ArgumentFrames::default();
     let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
     while let Some(digits) = arguments.next_digits() {
         let args = arguments_of(application, &domains, &digits)?;
@@ -260,14 +264,22 @@ pub(super) fn apply(
             transition_bytes: &transition_bytes,
             postconditions,
             footprint: footprint.as_ref(),
+            references: reference_arguments(&args),
+            frames: &frames,
         };
 
         // FR-220 access classification needs only whether this transition
         // completes when no attempt constraint reads a completed result. Keep
         // the transition only if at least one candidate post-state succeeds.
+        let before = budget.used();
         if let Some(transitions) = enabled_transitions.as_deref_mut() {
             let mut first_successor = Vec::new();
-            if application_run.first_candidate(budget, contract, &mut first_successor)? {
+            let completes =
+                application_run.first_candidate(budget, contract, &mut first_successor)?;
+            if let Some(charged) = charged.as_deref_mut() {
+                charged.push((transition.clone(), budget.used() - before));
+            }
+            if completes {
                 transitions.push(transition);
             }
             continue;
@@ -275,6 +287,9 @@ pub(super) fn apply(
 
         let first = successors.len();
         application_run.candidates(budget, contract, successors)?;
+        if let Some(charged) = charged.as_deref_mut() {
+            charged.push((transition.clone(), budget.used() - before));
+        }
         if let Some(enabled) = enabled.as_deref_mut() {
             enabled.push(EnabledVector {
                 receiver: row.reference.clone(),
@@ -386,6 +401,9 @@ pub(super) struct Outputs<'o> {
     /// An exact set of candidate transition identities to check. Candidate
     /// enumeration and its budget charges still cover the full domain.
     pub(super) selected_transitions: Option<&'o std::collections::BTreeSet<ModelTransition>>,
+    /// The candidates each enabled argument vector charged beyond its own
+    /// count, by transition identity, when the caller records them.
+    pub(super) charged: Option<&'o mut Vec<(ModelTransition, u64)>>,
 }
 
 /// One argument vector of an application whose effective precondition holds
@@ -470,7 +488,45 @@ struct Run<'w, 's, 'a> {
     /// The footprint the clauses are held to, when the expansion enforces
     /// footprints.
     footprint: Option<&'w Footprint>,
+    /// The argument vector's reference-valued arguments, by parameter name:
+    /// the only arguments the frame decision reads.
+    references: References,
+    /// What the frame decision found for the application's argument
+    /// vectors.
+    frames: &'w ArgumentFrames,
 }
+
+/// The reference-valued arguments of `args`, by parameter name.
+pub(super) fn reference_arguments(args: &[(String, Value)]) -> References {
+    args.iter()
+        .filter_map(|(name, value)| match value {
+            Value::Reference(bound) => Some((name.clone(), bound.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// What the frame decision found for one application at one state, by the
+/// reference-valued arguments of an argument vector (the only arguments it
+/// reads), so argument vectors that agree on them share it: the fields the
+/// frame lets the application write, and the decision for each population
+/// a candidate leaves as the state holds it.
+#[derive(Default)]
+pub(super) struct ArgumentFrames {
+    writable: RefCell<BTreeMap<References, Rc<WritableFields>>>,
+    unchanged: RefCell<UnchangedPopulations>,
+}
+
+/// An argument vector's reference-valued arguments, by parameter name.
+type References = Vec<(String, ObjectReference)>;
+
+/// The decision for each population a candidate leaves as the state holds
+/// it, by reference-valued arguments.
+type UnchangedPopulations = BTreeMap<(References, DeclarationKey), PopulationDecided>;
+
+/// The frame decision for one population: the keys the candidate creates
+/// and deletes there, or the refusal.
+type PopulationDecided = Result<(Vec<String>, Vec<String>), FrameRefused>;
 
 /// What one application's candidates share: the keys it may create objects
 /// under and the fields it may write.
@@ -525,6 +581,7 @@ impl Dimension<'_> {
 }
 
 /// A refusal by the frame decision, with its catalog code.
+#[derive(Clone)]
 struct FrameRefused(CatalogCode);
 
 /// A candidate's observation. Its state key is encoded only for a finding
@@ -655,7 +712,7 @@ impl Run<'_, '_, '_> {
     ) -> Result<(), ExpansionStop> {
         let deletable = self.deletable();
         let slots = self.slots();
-        let writable = self.writable_fields()?;
+        let writable = self.writable()?;
         let plan = Plan {
             slots: &slots,
             writable: &writable,
@@ -774,6 +831,20 @@ impl Run<'_, '_, '_> {
             }
         }
 
+        // The populations a candidate of this choice may differ from the
+        // state in; `build` changes no other.
+        let touched: BTreeSet<&DeclarationKey> = deleted
+            .iter()
+            .map(|(population, _)| *population)
+            .chain(
+                plan.slots
+                    .iter()
+                    .zip(created)
+                    .filter(|(_, choice)| **choice != 0)
+                    .map(|(slot, _)| &slot.population),
+            )
+            .chain(dimensions.iter().map(|dimension| &dimension.population))
+            .collect();
         let mut values = Odometer::new(dimensions.iter().map(Dimension::radix).collect());
         while let Some(digits) = values.next_digits() {
             budget.charge()?;
@@ -782,7 +853,7 @@ impl Run<'_, '_, '_> {
             if !is_closed(&candidate, &post_references) {
                 continue;
             }
-            let Ok(delta) = self.decide(&candidate)? else {
+            let Ok(delta) = self.decide_touched(&candidate, Some(&touched))? else {
                 // Candidates are built inside the frame, so a refusal here is
                 // a broken internal invariant.
                 return Err(stop(BROKEN));
@@ -877,7 +948,18 @@ impl Run<'_, '_, '_> {
     /// The frame decision for `candidate` against the state, per population
     /// in ascending order (FR-120 "Frame and observation seam").
     fn decide(&self, candidate: &ModelState) -> Result<Result<Delta, FrameRefused>, ExpansionStop> {
-        let system = self.walk.system;
+        self.decide_touched(candidate, None)
+    }
+
+    /// [`Self::decide`], where every population outside `touched`, when
+    /// given, is the state's own: its decision is the state's against
+    /// itself, made once per reference-valued arguments, and `candidate`
+    /// need not hold it.
+    fn decide_touched(
+        &self,
+        candidate: &ModelState,
+        touched: Option<&BTreeSet<&DeclarationKey>>,
+    ) -> Result<Result<Delta, FrameRefused>, ExpansionStop> {
         let pre = &self.walk.state.state;
         let empty = BTreeMap::new();
         let populations: BTreeSet<&DeclarationKey> = pre
@@ -891,78 +973,125 @@ impl Run<'_, '_, '_> {
         };
         for population in populations {
             let before = pre.populations.get(population).unwrap_or(&empty);
-            let after = candidate.populations.get(population).unwrap_or(&empty);
-            let created: Vec<String> = after
-                .keys()
-                .filter(|key| !before.contains_key(*key))
-                .cloned()
-                .collect();
-            let deleted: Vec<String> = before
-                .keys()
-                .filter(|key| !after.contains_key(*key))
-                .cloned()
-                .collect();
-            let arguments: Vec<(String, String)> = self
-                .args
-                .iter()
-                .filter_map(|(name, value)| match value {
-                    Value::Reference(bound)
-                        if before.get(bound.object().as_str()).is_some_and(|object| {
-                            system.model.type_identity(&object.type_identity).as_ref()
-                                == Some(bound.object_type())
-                        }) =>
-                    {
-                        Some((name.clone(), bound.object().as_str().to_owned()))
-                    }
-                    _ => None,
-                })
-                .collect();
-            let index = system
-                .model
-                .population_index(population)
-                .ok_or_else(|| stop(BROKEN))?;
-            let frame = FrameDecision {
-                index,
-                ancestor_steps: system.model.ancestor_steps(),
-                effect: self.effect(),
-                declared_created: &created,
-                declared_deleted: &deleted,
-                receiver: (self.row.population == *population).then_some(self.row.key.as_str()),
-                arguments: &arguments,
+            let decided = if touched.is_some_and(|touched| !touched.contains(population)) {
+                self.unchanged(population, before)?
+            } else {
+                let after = candidate.populations.get(population).unwrap_or(&empty);
+                self.decide_population(population, before, after)?
             };
-            let outcome = decide_frame(
-                &frame,
-                &frame_objects(before),
-                &frame_objects(after),
-                |_, left, right| match (left, right) {
-                    (None, None) => true,
-                    (Some(left), Some(right)) => values_equal(left, right),
-                    (Some(_), None) | (None, Some(_)) => false,
-                },
-                &mut |_| Ok::<(), Infallible>(()),
-            );
-            match outcome {
-                Err(FrameStop::Refused(refusal)) => {
-                    return Ok(Err(FrameRefused(refusal.catalog_code())))
-                }
-                Err(FrameStop::Denied(never)) => match never {},
-                Ok(found) => {
-                    delta.created.extend(
-                        found
-                            .created
-                            .into_iter()
-                            .map(|key| (population.clone(), key)),
-                    );
-                    delta.deleted.extend(
-                        found
-                            .deleted
-                            .into_iter()
-                            .map(|key| (population.clone(), key)),
-                    );
+            match decided {
+                Err(refused) => return Ok(Err(refused)),
+                Ok((created, deleted)) => {
+                    delta
+                        .created
+                        .extend(created.into_iter().map(|key| (population.clone(), key)));
+                    delta
+                        .deleted
+                        .extend(deleted.into_iter().map(|key| (population.clone(), key)));
                 }
             }
         }
         Ok(Ok(delta))
+    }
+
+    /// The decision for `population` left as the state holds it (`before`),
+    /// once per reference-valued arguments.
+    fn unchanged(
+        &self,
+        population: &DeclarationKey,
+        before: &BTreeMap<String, StateObject>,
+    ) -> Result<PopulationDecided, ExpansionStop> {
+        let key = (self.references.clone(), population.clone());
+        if let Some(decided) = self.frames.unchanged.borrow().get(&key) {
+            return Ok(decided.clone());
+        }
+        let decided = self.decide_population(population, before, before)?;
+        self.frames
+            .unchanged
+            .borrow_mut()
+            .insert(key, decided.clone());
+        Ok(decided)
+    }
+
+    /// The frame decision for `population` from `before` to `after`.
+    fn decide_population(
+        &self,
+        population: &DeclarationKey,
+        before: &BTreeMap<String, StateObject>,
+        after: &BTreeMap<String, StateObject>,
+    ) -> Result<PopulationDecided, ExpansionStop> {
+        let system = self.walk.system;
+        let created: Vec<String> = after
+            .keys()
+            .filter(|key| !before.contains_key(*key))
+            .cloned()
+            .collect();
+        let deleted: Vec<String> = before
+            .keys()
+            .filter(|key| !after.contains_key(*key))
+            .cloned()
+            .collect();
+        let arguments: Vec<(String, String)> = self
+            .args
+            .iter()
+            .filter_map(|(name, value)| match value {
+                Value::Reference(bound)
+                    if before.get(bound.object().as_str()).is_some_and(|object| {
+                        system.model.type_identity(&object.type_identity).as_ref()
+                            == Some(bound.object_type())
+                    }) =>
+                {
+                    Some((name.clone(), bound.object().as_str().to_owned()))
+                }
+                _ => None,
+            })
+            .collect();
+        let index = system
+            .model
+            .population_index(population)
+            .ok_or_else(|| stop(BROKEN))?;
+        let frame = FrameDecision {
+            index,
+            ancestor_steps: system.model.ancestor_steps(),
+            effect: self.effect(),
+            declared_created: &created,
+            declared_deleted: &deleted,
+            receiver: (self.row.population == *population).then_some(self.row.key.as_str()),
+            arguments: &arguments,
+        };
+        let outcome = decide_frame(
+            &frame,
+            &frame_objects(before),
+            &frame_objects(after),
+            |_, left, right| match (left, right) {
+                (None, None) => true,
+                (Some(left), Some(right)) => values_equal(left, right),
+                (Some(_), None) | (None, Some(_)) => false,
+            },
+            &mut |_| Ok::<(), Infallible>(()),
+        );
+        match outcome {
+            Err(FrameStop::Refused(refusal)) => Ok(Err(FrameRefused(refusal.catalog_code()))),
+            Err(FrameStop::Denied(never)) => match never {},
+            Ok(found) => Ok(Ok((
+                found.created.into_iter().collect(),
+                found.deleted.into_iter().collect(),
+            ))),
+        }
+    }
+
+    /// [`Self::writable_fields`], decided once per application for the
+    /// argument vectors that agree on their reference-valued arguments.
+    fn writable(&self) -> Result<Rc<WritableFields>, ExpansionStop> {
+        if let Some(writable) = self.frames.writable.borrow().get(&self.references) {
+            return Ok(Rc::clone(writable));
+        }
+        let writable = Rc::new(self.writable_fields()?);
+        self.frames
+            .writable
+            .borrow_mut()
+            .insert(self.references.clone(), Rc::clone(&writable));
+        Ok(writable)
     }
 
     /// Every (population, object, field) the frame lets this application
@@ -1012,12 +1141,14 @@ impl Run<'_, '_, '_> {
                 let Some(different) = different else {
                     continue;
                 };
-                let mut probe = pre.clone();
-                let object = probe
+                // The probe holds only the row's population, the one it
+                // changes; every other is decided as the state's own.
+                let mut objects = pre
                     .populations
-                    .get_mut(&row.population)
-                    .and_then(|objects| objects.get_mut(&row.key))
+                    .get(&row.population)
+                    .cloned()
                     .ok_or_else(|| stop(BROKEN))?;
+                let object = objects.get_mut(&row.key).ok_or_else(|| stop(BROKEN))?;
                 match different {
                     Some(value) => {
                         object.fields.insert(field.key.clone(), value);
@@ -1026,7 +1157,12 @@ impl Run<'_, '_, '_> {
                         object.fields.remove(&field.key);
                     }
                 }
-                if self.decide(&probe)?.is_ok() {
+                let probe = ModelState {
+                    populations: BTreeMap::from([(row.population.clone(), objects)]),
+                    extents: Vec::new(),
+                };
+                let touched = BTreeSet::from([&row.population]);
+                if self.decide_touched(&probe, Some(&touched))?.is_ok() {
                     writable.insert((row.population.clone(), row.key.clone(), field.key.clone()));
                 }
             }
