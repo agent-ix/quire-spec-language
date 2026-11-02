@@ -239,6 +239,127 @@ fn compile_cli_uses_fixed_byte_ceilings_and_rejects_limit_options() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("usage: quire-spec"));
 }
 
+/// Rewrite `compile.json` under `directory` through `change` and run `compile`.
+fn compile_changed(directory: &Path, change: impl FnOnce(&mut Value)) -> Output {
+    let path = directory.join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    change(&mut job);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    compile(directory)
+}
+
+/// Assert `output` is a refusal with `code` on stderr, `exit` as its status and
+/// no package bytes; return the stderr document.
+fn refusal(output: &Output, exit: i32, code: &str, label: &str) -> Value {
+    assert_eq!(output.status.code(), Some(exit), "{label}");
+    assert!(output.stdout.is_empty(), "{label}");
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], code, "{label}: {failure}");
+    failure
+}
+
+/// FR-027-AC-3 (TC-105): `compile` checks its arity before opening a request.
+#[test]
+#[trace("TC-105", "FR-027-AC-3")]
+fn compile_arity_is_checked_before_opening_any_request() {
+    for arguments in [vec!["compile"], vec!["compile", "missing.json", "extra"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(20));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            std::str::from_utf8(&output.stderr).unwrap(),
+            "usage: quire-spec compile <request-file>\n"
+        );
+    }
+}
+
+/// FR-027-AC-3 (TC-105): a package write that fails is a tool failure, exit 30.
+#[cfg(target_os = "linux")]
+#[test]
+#[trace("TC-105", "FR-027-AC-3")]
+fn failed_artifact_output_is_a_tool_failure_exit() {
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &std::fs::read(SPINE_FIXTURE).unwrap());
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("compile")
+        .arg(directory.path().join("compile.json"))
+        .stdout(std::process::Stdio::from(full))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(30));
+    assert!(std::str::from_utf8(&output.stderr)
+        .unwrap()
+        .starts_with("output failed:"));
+}
+
+/// FR-027-AC-3 (TC-105, TC-104, FR-026-AC-4): a compile request selecting more
+/// models than the shared file limit allows refuses `resource_exhausted`
+/// naming the `models` group before any file is read.
+#[test]
+#[trace("TC-105", "FR-027-AC-3", "TC-104", "FR-026-AC-4")]
+fn compile_file_count_refusal_names_the_models_group_before_file_io() {
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), b"never read");
+    let output = compile_changed(directory.path(), |job| {
+        let model = json!({"format":"semantic-ir/2.0.0","source":{
+            "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
+            "revision_namespace":"fixture","revision":"fixture:1",
+            "document":"M","formal_revision":1}});
+        job["request"]["models"] = json!(vec![model; 64]);
+        job["request"]["program"]["source"]["file"] = json!("missing.native");
+    });
+    let failure = refusal(&output, 22, "resource_exhausted", "models");
+    assert_eq!(
+        failure["details"],
+        json!({"limit":"selected files","category":"models",
+            "requested":64,"remaining":63,"maximum":64})
+    );
+}
+
+/// FR-026-AC-4 (TC-104): a clause run request selecting more observation files
+/// than the shared file limit allows refuses `resource_exhausted` with the
+/// category spelling `observations`, before any file is read.
+#[test]
+#[trace("TC-104", "FR-026-AC-4")]
+fn clause_run_file_count_refusal_names_the_observations_group() {
+    let directory = tempfile::tempdir().unwrap();
+    let observations: serde_json::Map<String, Value> = (0..64)
+        .map(|index| (format!("o{index}"), json!(format!("missing-{index}.json"))))
+        .collect();
+    let request = json!({"format":"native-run/1","request":{
+        "models":[],
+        "program":{"source":{"file":"missing.native","authority":"agent-ix",
+            "identity":"test:count","revision_namespace":"fixture","revision":"fixture:1",
+            "document":"Count","formal_revision":1}},
+        "clause":{"selection":{"clause":{"name":"C","observation":"o0",
+            "self":{"population":"ix://p/q","key":"k"},
+            "anchor":{"kind":"handler","name":"h"}}},
+            "observations":observations}}});
+    std::fs::write(
+        directory.path().join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("run")
+        .arg(directory.path().join("request.json"))
+        .output()
+        .unwrap();
+    let failure = refusal(&output, 22, "resource_exhausted", "observations");
+    assert_eq!(
+        failure["details"],
+        json!({"limit":"selected files","category":"observations",
+            "requested":64,"remaining":63,"maximum":64})
+    );
+}
+
 /// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
 /// unknown command that exits 20 without reading its operand.
 #[test]

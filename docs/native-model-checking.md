@@ -70,7 +70,7 @@ self/deref denote identity-bearing object access. Ordinary records remain
 structural records and ordinary enums remain enums. Reference carrier fields
 are not native field-access syntax: self.peer.id cannot bypass deref or expose
 an implicit record/reference conversion. The model defines ID representation
-and universe/type identity, while FR-007 will validate finite population membership.
+and universe/type identity, while FR-106 will validate finite population membership.
 
 An OperationRole declares a context record, operation SymbolName, AnchorName,
 source span, ordered parameter value names, optional result value name and Frame.
@@ -279,7 +279,7 @@ required observations/universes and operation/frame correspondence. Current
 invariants require current context; operations require the selected invocation
 and frame validation over pre/post, including post self even for a constant
 postcondition. All referenced observations remain tied to captured values.
-This records what FR-007 must validate; it asserts neither population closure
+This records what FR-106 must validate; it asserts neither population closure
 nor availability before those runtime inputs are supplied.
 
 ## Qualification

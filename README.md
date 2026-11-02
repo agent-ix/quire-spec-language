@@ -228,9 +228,37 @@ revision namespace, revision). Every diagnostic carries them.
 target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
 ```
 
-**Compile a rule.** `compile` accepts only `1-draft` sources and prints the
-checked package as `quire.checked-package/v2` JSON. Sources that declare any
-other edition, including `0-draft`, are refused with `unknown_edition`.
+**Run a rule against data.** The ConfigVersion example writes one directory per
+case, holding the unit from [A first rule](#a-first-rule), its domain model and
+a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json` request
+that checks one rule for the object keyed `child`:
+
+```sh
+cargo run --locked --example config_version_fixtures -- /tmp/config-version
+for case in healthy-parent violating-parent dangling-parent incomplete-population; do
+  examples/config-version/requests.sh /tmp/config-version/$case ParentOrder
+  target/debug/quire-spec run /tmp/config-version/$case/run.json; echo "exit $?"
+done
+```
+
+| Case | Data | Outcome | Exit |
+| --- | --- | --- | --- |
+| `healthy-parent` | parent version 1, child version 2 | the rule holds | 0 |
+| `violating-parent` | parent version 3, child version 2 | the rule is broken | 10 |
+| `dangling-parent` | the parent is not in the snapshot | refused | 20 |
+| `incomplete-population` | the snapshot's population is not complete | incomplete | 22 |
+
+`requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant; the
+`cycle` case breaks it (exit 10). Each result is one JSON document on stdout.
+
+**Compile a rule.** `requests.sh` also writes `compile.json`. `compile` accepts
+only `1-draft` sources and prints the checked package as
+`quire.checked-package/v2` JSON; a source that declares any other edition,
+including `0-draft`, is refused with `unknown_edition`:
+
+```sh
+target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
+```
 
 **Emit package bytes from a source file.** `compile` needs a request file with
 source labels. For a downstream reader that wants the bytes of one `1-draft`
@@ -279,8 +307,10 @@ empty object is refused rather than emitting point-free bytes, since passing
 the option means points are expected. In every refusal no bytes are written and
 the exit is nonzero. Without the option the clauses are point-free.
 
-`run` evaluates a `1-draft` function or state clause through the spine;
-[`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows those requests.
+The [ConfigVersion example](examples/config-version/README.md) lists all
+seventeen cases: parents, cycles, object identity, operation frames, and refused
+and incomplete runs. `run` can also evaluate one pure function;
+[`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows that request.
 
 **Optional features.**
 

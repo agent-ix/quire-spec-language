@@ -18,8 +18,6 @@ adoption and assurance remain explicit acceptance work.
 
 ## Delivery
 
-- [Task-023](tasks/Task-023-native-input-reader.md): selected snapshot/invocation
-  byte intake while earlier PRs await review.
 - [Task-024](tasks/Task-024-model-source-frontend.md): production rule-model
   source frontend and thin fixture callers, enabling the standalone CLI.
 - [Task-025](tasks/Task-025-standalone-command.md): bounded standalone file
@@ -30,10 +28,6 @@ adoption and assurance remain explicit acceptance work.
   extractor to mapped native compilation and runtime, preserving producer metadata.
 - [Task-031](tasks/Task-031-config-version.md): execute the concrete ConfigVersion
   parent, graph and update examples with real native and Markdown file requests.
-- [Task-035](tasks/Task-035-runtime-owned-wire.md): move native runtime decoding
-  constraints into their owning types, following PR #16's review under #27.
-- [Task-036](tasks/Task-036-runtime-input-schema.md): publish and exercise the
-  native runtime input schema, preserving the exact reader's authority.
 - [Task-037](tasks/Task-037-published-v2-handoff-addresses.md): publish the
   producer-owned `/2` handoff member and format addresses required by the
   independent Rust consumer.
