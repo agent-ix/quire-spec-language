@@ -462,7 +462,6 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         | CheckedPackageRefusalCode::UnknownMember
         | CheckedPackageRefusalCode::UnsupportedNodeTag
         | CheckedPackageRefusalCode::InvalidSemanticGraph
-        | CheckedPackageRefusalCode::InvalidTimedModel
         | CheckedPackageRefusalCode::InvalidPackage => Code::InvalidPackage,
         CheckedPackageRefusalCode::UnknownRequiredCapability => Code::UnknownRequiredFeature,
         CheckedPackageRefusalCode::InvalidSourceMap => Code::InvalidSourceMap,
