@@ -655,6 +655,8 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
         row(K::Model(ModelForm::ModelRoot), F::SpineModel),
+        row(K::Model(ModelForm::StateMachine), F::RefinementV2Empty),
+        row(K::Model(ModelForm::Process), F::VariantType),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
         row(K::Model(ModelForm::VariantType), F::VariantType),
         row(K::Model(ModelForm::RecordValueType), F::VariantType),
@@ -717,14 +719,9 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
             K::Expression(ExpressionForm::Reference),
             "a name read lowers to a reference term, not a node",
         ),
-        (
-            K::Model(ModelForm::StateMachine),
-            "a refinement binds its model's model_root node, not a state-machine declaration node (FR-375)",
-        ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
         (K::Model(ModelForm::EventType), NO_RECORD_FORM),
-        (K::Model(ModelForm::Process), NO_RECORD_FORM),
         (K::Model(ModelForm::PersistenceInterface), NO_RECORD_FORM),
         (K::Model(ModelForm::Namespace), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsPart), NO_RECORD_FORM),
@@ -986,12 +983,16 @@ fn every_emitted_node_family_is_admitted() {
 
     // No fixture emits a family without a row.
     let named: BTreeSet<CheckedNodeKind> = rows.iter().map(|row| row.family).collect();
-    let without_row: BTreeSet<_> = outcomes
-        .values()
-        .flatten()
-        .flat_map(|outcome| outcome.families.keys())
-        .filter(|family| !named.contains(family))
-        .collect();
+    let mut without_row: BTreeMap<CheckedNodeKind, BTreeSet<Fixture>> = BTreeMap::new();
+    for (fixture, fixture_outcomes) in &outcomes {
+        for family in fixture_outcomes
+            .iter()
+            .flat_map(|outcome| outcome.families.keys())
+            .filter(|family| !named.contains(family))
+        {
+            without_row.entry(*family).or_default().insert(*fixture);
+        }
+    }
     assert!(
         without_row.is_empty(),
         "emitted families with no row: {without_row:?}"
