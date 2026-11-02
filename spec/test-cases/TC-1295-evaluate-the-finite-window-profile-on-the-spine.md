@@ -51,14 +51,14 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 14 | `eventually[0,3] holds(q)` | stamps 0,3; q at 3; W 3; C(3) | `Completed(true)` |
 | 15 | same | stamps 0,4; q at 4; W 4; C(4) | `Completed(false)` |
 | 16 | `eventually[0,3] holds(p)` | stamp 0; p F; W 3; C(3); no later event | `Completed(false)` |
-| 17 | `holds(p) until[0,1] holds(q)` and `release`, `since`, `triggered` forms | stamps 0,1,1; no order keys | `invalid_runtime_input`/`invalid-value` at position 2; `eventually[0,1] holds(p)` evaluates |
+| 17 | `holds(p) until[0,1] holds(q)` and its `release` dual `on origin`; `holds(p) since[0,1] holds(q)` and its `triggered` dual `on each` (the anchor at position 2, where positions 1 and 2 participate) | stamps 0,1,1; no order keys | stage `evaluate`, `invalid_runtime_input`/`invalid-value` at position 2 each; `eventually[0,1] holds(p)` evaluates |
 | 18 | row 17 `until` | order keys, one authority; then two authorities; then trace reversed in insertion order, keys unchanged | evaluates; refuses; same result as the first |
-| 19 | `once[0,4] holds(p)` `on each`, activation at position 1 (future reach 0, established at W 4) | stamps 3,4; p F,F; W 4; C(4) | `HistoryCutoff`: `Indeterminate {MissingHistory}`; `AuthoritativeOrigin`: `Completed(false)`; p T at 3: `Completed(true)` for both |
+| 19 | `once[0,4] holds(p)` `on each`, activation at position 1 (future reach 0, established at W 4) | stamps 3,4; p F,F; W 4; C(4) | `HistoryCutoff`: `Indeterminate {MissingHistory}` with `where` 1; `AuthoritativeOrigin`: `Completed(false)`; p T at 3: `Completed(true)` for both |
 | 20 | `holds(req) implies eventually[0,3000] holds(ack)`, cover `Counter{u=0}` | req at 0; ack at 2998, 3000, 3001; W, C beyond 3001 | `Completed(true)`; `Indeterminate {StraddlesBound}`; `Completed(false)`; with `Exact` cover true, true, false |
-| 21 | same, `Counter{u=1}` and the same-tick pair | per QSpec `tick-cover-vectors.json` `TCV-01` to `TCV-15` | the file's verdict for each vector |
+| 21 | `holds(req) implies eventually[0,3000] holds(ack)`, `Counter{u=1}`, req at 0, ack at 2997, 2998, 3003; W and C beyond 3003 (`TCV-06` to `TCV-08`); and the comparison functions `within_bound` and `definitely_before` called directly on QSpec `tick-cover-vectors.json` `TCV-09` to `TCV-15` (the bounds 0, 1 and -1 of `TCV-13` to `TCV-15` and the `definitely_before` pairs are not clause intervals) | per the vectors | true, indeterminate (`StraddlesBound`), false for `TCV-06` to `TCV-08`; the file's expected value for each of `TCV-09` to `TCV-15` |
 | 22 | `eventually[0,2] holds(p)` `on each` | stamps 0,10; p F,F; W 10; C(10); then p T at 0 | `Completed(false)` at 0; then `Pending {where 1, deadline 12}` |
 | 23 | row 3's first clause, meter 6 then 7 | stamps 0,2,5; p F,T,F | `Incomplete` at `temporal.visit`; the verdict with 7 charges |
-| 24 | `run_clause` over rows 1, 3 first case, 6, 8 | as rows | `violation`/exit 10 pos 0; `success`/0; `inconclusive`/0; `indeterminate`/11 cause `MissingValuation`; no `unsupported_profile` |
+| 24 | `run_clause` over rows 1, 3 first case, 6, 8 | as rows | `violation`/exit 10 pos 0; `success`/0; `inconclusive` with FR-285's pending-clause exit; `indeterminate`/11 cause `MissingValuation`; no `unsupported_profile` |
 | 25 | the row 1 clause over `TraceInput::Finite`, and an event-position clause over `Timestamped` | none | stage `admit`, `invalid_runtime_input`/`invalid-value` each |
 | 26 | rows 1 to 22 run twice | same inputs | equal outcomes and one result identity |
 | 27 | row 20's clause, cover `Counter{u=1}`; then `Exact` | req at 0; no ack; W 3001, C(3002); W 3002, C(3002); then Exact W 3000, C(3000) | `Pending {deadline 3002}`; `Completed(false)`; `Completed(false)` |

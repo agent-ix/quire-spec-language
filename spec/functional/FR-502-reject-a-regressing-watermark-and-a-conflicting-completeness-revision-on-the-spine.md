@@ -43,9 +43,10 @@ progress and leaves every earlier result as it was.
   clock binding name and the selected profile identity.
 - A progress assertion in a `TraceInput::Timestamped` trace (FR-330, FR-501): a
   watermark `W`, a completeness assertion, the decision-scope closure and the
-  surrounding-execution closure. The `Timestamped` trace is the only spine trace
-  shape that carries progress; the `Finite`, `Lasso` and `Model` traces carry no
-  watermark and their closure is the trace itself (FR-327, FR-328, FR-329).
+  surrounding-execution closure. `TraceInput::Progressed` (FR-504) carries the same assertion for
+  event-position and fixed-sample clauses; the `Lasso` and `Model` traces and a
+  `Finite` trace without `progress` carry none, and their closure is the trace
+  itself (FR-327, FR-328, FR-329).
 
 ## Outputs
 
@@ -83,16 +84,23 @@ no truth value, and the ledger unchanged.
   result.
 - When the inputs of a result reported before the contradiction are evaluated
   again, the evaluator SHALL reproduce that result byte for byte.
-- When a request supplies a `ledger` with a `Finite`, `Lasso` or `Model` trace,
-  or with a clause under a profile other than the finite-window profile, the
-  evaluator SHALL refuse it at stage `admit`, `invalid_runtime_input`/
-  `invalid-value`, because those traces carry no progress assertion. FR-043's
-  fixed-sample watermark settlement and event-position watermark premise
-  (FR-043-AC-11) have no spine carrier; they stay with FR-043 as a GAP row of
-  FR-499 until a requirement defines a progress carrier for those traces.
-- When a call supplies no ledger, the evaluator SHALL stand on the trace's own
-  assertions and detect no contradiction across calls.
-
+- The ledger SHALL apply to every trace shape that carries progress:
+  `TraceInput::Timestamped` (FR-501) and `TraceInput::Progressed` (FR-504). An
+  event-position watermark is retained and settles nothing, but its regression
+  is refused like any other.
+- When a request supplies a `ledger` with a `Finite` trace without progress, a
+  `Lasso`, a `Model`, or an infinite-trace clause, the evaluator SHALL refuse it
+  at stage `admit`, `invalid_runtime_input`/`invalid-value`. Those traces carry
+  no progress assertion: a lasso is the whole infinite behavior, and a finite
+  prefix under infinite-trace is `Pending` by construction (FR-328).
+- The covered position set SHALL be bounded by the ledger capacity, the FR-255
+  setting `progress.covered_positions`. When recording a position would exceed
+  it, the evaluator SHALL return `Incomplete(LimitReached{limit, value,
+  setting})` naming that setting, and the ledger is unchanged.
+- A later trace that omits a position an earlier assertion covered is accepted:
+  the ledger keeps the omitted position as covered and does not treat its absence
+  as a contradiction; only a position that was not covered and now appears at or
+  before a retained `through` contradicts.
 - The evaluator SHALL derive the covered position set from the position
   identities of the trace in each accepted request, and the ledger returned for
   a request SHALL equal the ledger a later request carries.
@@ -117,6 +125,7 @@ no truth value, and the ledger unchanged.
 | FR-502-AC-2 | After `Complete { through: 100 }` is retained under B, `Complete { through: 60 }`, `Incomplete`, and an admitted position stamped 80 that the retained assertion did not cover are each refused with `contradicted_dimension` `Completeness` and leave the ledger unchanged; `Complete { through: 100 }` and `Complete { through: 140 }` are accepted. | Test (TC-1296) |
 | FR-502-AC-3 | After scope `Closed` is retained under B, an assertion `Open` is refused with `contradicted_dimension` `Closure`; asserting `Closed` with completeness `Incomplete` leaves completeness `Incomplete`, and asserting `Complete { through: 100 }` with scope `Open` leaves the scope `Open`. | Test (TC-1296) |
 | FR-502-AC-4 | A progress assertion under another package identity, another clause, another clock binding name or another profile identity, each varied alone from B, settles nothing for B (B's `Pending` outcome stays `Pending` and its entry is unchanged) and appears as its own ledger entry. | Test (TC-1296) |
-| FR-502-AC-5 | A request that supplies a `ledger` with a `Finite`, `Lasso` or `Model` trace, or with an event-position or fixed-sample clause, is refused at stage `admit`, `invalid_runtime_input`/`invalid-value`, and the ledger is unchanged; the same finite-window request with a `Timestamped` trace is accepted. | Test (TC-1296) |
+| FR-502-AC-5 | A request that supplies a `ledger` with a `Finite` trace without progress, a `Lasso`, a `Model` or an infinite-trace clause is refused at stage `admit`, `invalid_runtime_input`/`invalid-value` and the ledger is unchanged; the same ledger with a `Timestamped` trace (finite-window), a fixed-sample `Progressed` trace and an event-position `Progressed` trace is accepted, a fixed-sample watermark regression is refused `Watermark`, and an event-position watermark that advances leaves its `Pending` outcome `Pending`. | Test (TC-1296, TC-1299) |
 | FR-502-AC-6 | Evaluation with no ledger accepts a `W` 100 call followed by a `W` 60 call and reports each from its own trace; evaluation with a ledger refuses the second. The report of an accepted request returns the updated ledger, and passing it to the next request gives the same outcome as one request sequence replayed from the same initial ledger. | Test (TC-1296) |
 | FR-502-AC-7 | After a request retaining `Complete { through: 100 }` over positions 0 to 3, a later request whose trace adds a position stamped 80 that was not among positions 0 to 3 is refused `Completeness`, and one adding a position stamped 120 is accepted; the returned ledger lists positions 0 to 3 (and the new one) as covered. | Test (TC-1296) |
+| FR-502-AC-8 | With `progress.covered_positions` set to 3, a request covering 4 positions returns `Incomplete(LimitReached{limit: progress.covered_positions, value: 3, setting: progress.covered_positions})` and leaves the ledger unchanged; a later trace that omits two earlier covered positions and adds one new position beyond `through` is accepted and the ledger still lists the omitted positions as covered. | Test (TC-1296) |

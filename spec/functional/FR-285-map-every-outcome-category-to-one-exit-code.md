@@ -75,6 +75,12 @@ it exits 0.
 A multi-item outcome exits with the most severe code present, in the order
 30, 20, 21, 22, 10, 11, 0 (QSpec FR-301's order with 11 added below 10).
 
+A `StageFailure::Refused` or `StageFailure::Limit` that carries `protocol_results`
+(FR-503) takes its category from its own cause alone: the first `Refused` result
+in declaration order for `Refused`, and incomplete for `Limit`. The payload
+changes no category and no exit, and each `Refused` result is an item of the
+multi-item rule above.
+
 `StageFailure` maps to a category as follows: `Refused` takes the category of
 its cause, so a profile-gated construct is unsupported (21) and any other
 refusal is refusal (20); `Limit` and `Cancelled` are incomplete (22); `Fault`
@@ -120,6 +126,7 @@ One exit code.
 | FR-285-AC-5 | A `run` whose compile reaches a stage limit (the source byte limit set to 1, and `s3.nodes` set to 1) refuses with the `stage_limit_exceeded` code in category `incomplete`, exits 22 and not 20, and the refusal names the limits field and the configured bound. | Test (TC-769) |
 | FR-285-AC-6 | `CallFailure::Unsupported` with cause `NotSupplied` and with cause `Untranslatable` each exit 21, and `CallFailure::Limit` naming `prepare.compile_work_units` exits 22. | Test (TC-769) |
 | FR-285-AC-7 | A finite-window clause run (FR-330) whose result is FR-501's `Indeterminate` reports category `indeterminate`, keeps that label and the reason in its machine output, and exits 11; it does not exit 10 or 0. | Test (TC-769) |
+| FR-285-AC-8 | A `StageFailure::Refused` carrying `protocol_results` [W `Emitted`, X `Refused` with an `ill_typed` cause] exits 20, one whose first `Refused` result has a profile-gated cause exits 21, and a `StageFailure::Limit` carrying [W `Emitted`, Z `Incomplete`] exits 22; removing the payload from each changes neither category nor exit. | Test (TC-769) |
 
 ## Dependencies
 

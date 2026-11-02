@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-502-AC-1 to AC-7 and FR-052-AC-13: the spine ledger refuses a
+Verify FR-502-AC-1 to AC-8 and FR-052-AC-13: the spine ledger refuses a
 contradicting progress assertion, keeps the retained progress and earlier
 results unchanged, and keeps foreign bindings apart.
 
@@ -33,7 +33,9 @@ and the earlier result bytes.
 | 5 | retain scope `Closed`; assert `Open` | refused `Closure` |
 | 6 | scope `Closed` with `Inc`; scope `Open` with C(100) | completeness stays `Inc`; scope stays `Open` |
 | 7 | assert W 100 under a second package, a second clause, a second clock name, a second profile, each alone | B's `Pending` stays `Pending`, B's entry unchanged, four new entries |
-| 8 | a `ledger` with a `Finite`, `Lasso` and `Model` trace; with an event-position clause; with a fixed-sample clause | each refused at stage `admit`, `invalid_runtime_input`/`invalid-value`; ledger unchanged; the finite-window request with `Timestamped` accepted |
+| 8 | a `ledger` with a `Finite` trace without progress, a `Lasso`, a `Model` and an infinite-trace clause | each refused at stage `admit`, `invalid_runtime_input`/`invalid-value`; ledger unchanged |
+| 8b | the same ledger with a `Timestamped` finite-window trace, a fixed-sample `Progressed` trace and an event-position `Progressed` trace; then fixed-sample W 3 then W 1; event-position W 3 then W 9 | each accepted; `Watermark` contradiction; accepted with the `Pending` outcome unchanged |
+| 12 | `progress.covered_positions` 3, a request covering 4 positions; then a later trace omitting two covered positions and adding one beyond `through` | `Incomplete(LimitReached{...progress.covered_positions})`, ledger unchanged; accepted, omitted positions still listed covered |
 | 9 | W 100 then W 60 with no ledger | both evaluated from their own traces; with a ledger the second is refused; the returned ledger passed to the next request gives the outcomes of the same sequence replayed from the same initial ledger |
 | 10 | row 1 through `run_clause` with the ledger | stage `evaluate`, category `refusal`, same record |
 | 11 | retain C(100) over positions 0 to 3; add a position stamped 80 not among them; then one stamped 120 | refused `Completeness`; accepted; the returned ledger lists the covered positions |

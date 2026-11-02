@@ -104,6 +104,11 @@ adds the S2 boundary they will eventually cut over to.
 
 ### The forms core is QSL's E2 producer, together with family form builders
 
+The forms stage SHALL evaluate each protocol declaration's CST on its own: a
+recovery node inside one declaration's delimited span refuses that declaration
+only, carrying its source index and span, and every other declaration's form is
+built as FR-503 states.
+
 The `forms` core module and each family's own form builder SHALL together
 be the only producers of a parsed semantic form from a CST (ADR-011 §2.1 E2
 owner: "QSL `forms`; family form builders"); the core alone is not a

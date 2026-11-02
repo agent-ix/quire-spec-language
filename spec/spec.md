@@ -758,6 +758,10 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-502
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-503
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-504
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1297,6 +1301,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-498](functional/FR-498-carry-a-probabilistic-claim-s-checked-package-identity.md) | FR |
 | [FR-501](functional/FR-501-evaluate-a-temporal-clause-under-the-timestamped-event-finite-window-profile.md) | FR |
 | [FR-502](functional/FR-502-reject-a-regressing-watermark-and-a-conflicting-completeness-revision-on-the-spine.md) | FR |
+| [FR-503](functional/FR-503-confine-a-protocol-declaration-s-refusal-to-that-declaration-at-every-stage.md) | FR |
+| [FR-504](functional/FR-504-carry-progress-on-event-position-and-fixed-sample-traces.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

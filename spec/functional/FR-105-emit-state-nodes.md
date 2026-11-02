@@ -113,6 +113,10 @@ source map (FR-095).
   already refuses a compile with any omitted node
   (`qsl-replay/src/spine.rs:866-870`), and that rule SHALL hold for state
   nodes too.
+- The all-or-nothing rule is the unit's package: a unit with a refused protocol
+  produces no package, while the per-protocol results of the protocols that
+  emitted stay readable from the failure (FR-383 "Per-protocol results",
+  FR-503). The rule changes no state node's emission.
 - S4 SHALL emit one `state_clause` node per distinct clause node id. Two
   declarations that check to one node id (FR-104-AC-6) SHALL give one node
   with two `claim` occurrences, never two nodes with one id.

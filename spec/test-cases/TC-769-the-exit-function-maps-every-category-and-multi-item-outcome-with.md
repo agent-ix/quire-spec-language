@@ -22,6 +22,7 @@ Scope: FR-285-AC-1 to FR-285-AC-6.
 4. Render FR-100-AC-10's `sum-out-of-domain` evaluation through FR-100's outcome mapping.
 5. Run a source with the source byte limit set to 1, and with `s3.nodes` set to 1.
 6. Map `CallFailure::Unsupported` with cause `NotSupplied`, `CallFailure::Unsupported` with cause `Untranslatable`, and `CallFailure::Limit` naming `prepare.compile_work_units`.
+7. Map the three payload-carrying failures of FR-285-AC-8 with and without their `protocol_results`.
 
 Tag the tests `#[trace("TC-769", "<AC id>")]`.
 
@@ -33,3 +34,4 @@ Tag the tests `#[trace("TC-769", "<AC id>")]`.
 - Step 4: outcome `{"kind": "undefined", "reason": "sum-out-of-domain"}` with exit 10.
 - Step 5: each run refuses `stage_limit_exceeded` in category `incomplete`, exits 22, and names its limits field and configured bound.
 - Step 6: 21, 21, 22.
+- Step 7: 20, 21, 22, each equal with and without the payload.

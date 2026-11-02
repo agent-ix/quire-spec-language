@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-285
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-503
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-264
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-337
@@ -442,7 +444,7 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-28 | In AC-18's unit the diagnostics hold exactly one record, **X**'s, and none for **W**; the unit exits as FR-285-AC-2 gives for the items {0, 20}, which is 20, and never 0. Declaring **X** before **W** gives the same two results and the same records. A protocol **Y** whose predicate-join function names **X** is `Refused` `missing_declaration`/`missing-name` at the reference with `refused_dependency` naming **X** (`missing_declaration`/`missing-name`) and `consequence` true, **W** is unchanged, and the aggregate is `Refused` with **X**'s code, cause and locus as the `StageFailure::Refused` primary. | Test (TC-1297) |
 | FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte, and removing **W** changes **X**'s refusal record in no field; an `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
 | FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
-| FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. | Test (TC-1297) |
+| FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
 
 ## Dependencies
 

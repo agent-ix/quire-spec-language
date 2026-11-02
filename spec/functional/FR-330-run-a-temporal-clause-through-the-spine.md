@@ -50,7 +50,10 @@ FR-109's `ClauseRunRequest`, with the selection
 - `trace`: `TraceInput::Finite(Vec<DocumentRef>)`,
   `TraceInput::Lasso{prefix: Vec<DocumentRef>, loop: Vec<DocumentRef>}`, or
   `TraceInput::Model{initial: DocumentRef, universes, prefix:
-  Vec<ModelStep>, loop: Vec<ModelStep>}`, or `TraceInput::Timestamped{
+  Vec<ModelStep>, loop: Vec<ModelStep>}`, `TraceInput::Progressed{trace: Vec<DocumentRef>, progress}` (FR-504), the finite
+  trace of an event-position or fixed-sample clause with its watermark,
+  completeness, scope closure, surrounding-execution closure and lower boundary,
+  or `TraceInput::Timestamped{
   observations: Vec<{document: DocumentRef, stamp, order_key}>, watermark,
   completeness, scope, lower_boundary}` (FR-501), the trace of a clause under the
   timestamped-event finite-window profile, with an optional `ledger`
@@ -104,10 +107,14 @@ FR-267 writer writes these as the report holds them and derives none.
   reads under a bounded profile is not an input of this entry.
 - The entry SHALL evaluate a clause under the finite-window profile once
   through FR-501 over `TraceInput::Timestamped`.
+- The entry SHALL evaluate an event-position or fixed-sample clause over
+  `TraceInput::Progressed` once through FR-504, and SHALL refuse `Progressed`
+  for any other profile or trace shape at stage `admit`,
+  `invalid_runtime_input`/`invalid-value`.
 - The entry SHALL report a `Finite`, `Lasso` or `Model` trace for that profile, and a
   `Timestamped` trace for any other profile, at stage `admit`,
   `invalid_runtime_input`/`invalid-value`. FR-501's `Pending` reports
-  `inconclusive` (exit 0) and its `Indeterminate` reports `indeterminate` (exit 11)
+  `inconclusive` (the exit of FR-285's row for a supplied-trace clause pending when the trace ends) and its `Indeterminate` reports `indeterminate` (exit 11)
   with its reason as the cause, no `truth` and no counterexample. A progress
   contradiction (FR-502) reports stage `evaluate`, category `refusal`, with its
   record.
@@ -146,6 +153,7 @@ FR-267 writer writes these as the report holds them and derives none.
 | FR-330-AC-7 | From source, the `Counter` clause `always[0,1] holds(InUnit(c.value))` under event-position false-extension with `function InUnit using v(x: Int[0, 1]): Boolean pure { x >= 0 }`, whose `holds` condition completes for `c.value` 0 and, for `c.value` 2, refuses the `Coerce` of 2 into `Int[0, 1]` with kernel `integer_out_of_domain`/`outside-domain` and `expected` naming `Int[0, 1]` (FR-096-AC-8, TC-428), over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
 | FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, category `undefined`, exit 10, position 2, `count` 0 and `min_count` 1, and no `truth`, no counterexample and no `UndefinedEvaluation`. | Test (TC-847) |
 | FR-330-AC-9 | From source, a clause under the finite-window profile run over `TraceInput::Timestamped` reports the outcomes of FR-501-AC-11 and never `unsupported_profile` or `ProfileNotEvaluated`; the same clause over `Finite` reports stage `admit`, `invalid_runtime_input`/`invalid-value`, and `Bounded` (event-position) over `Timestamped` reports the same. A `ledger` holding binding B at watermark 100 and a second request under B with watermark 60 reports stage `evaluate`, category `refusal`, `contradicted_dimension` `Watermark`. | Test (TC-1295, TC-1296) |
+| FR-330-AC-10 | From source, an event-position clause and a fixed-sample clause run over `TraceInput::Progressed` report the outcomes of FR-504-AC-1 and AC-2, and return the updated `ledger`; a `Progressed` request for an infinite-trace clause, or over a `Lasso`, reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
 
 ## Dependencies
 
