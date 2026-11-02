@@ -1,0 +1,22 @@
+{
+  "license": "AGPL-3.0-only",
+  "package": "example/package-model",
+  "requirement": "PackageModel",
+  "revision": 1,
+  "scalars": [
+    {"name": "Id", "kind": "text", "max_scalars": 8}
+  ],
+  "records": [
+    {"name": "Node", "fields": []},
+    {"name": "NodeRef", "fields": [
+      {"name": "id", "type": {"kind": "scalar", "name": "Id"}}
+    ]}
+  ],
+  "values": [
+    {"name": "self", "kind": "state", "type": {"kind": "record", "name": "Node"}}
+  ],
+  "objects": [
+    {"record": "Node", "reference": "NodeRef", "identity_field": "id", "universe": "nodes"}
+  ],
+  "operations": []
+}

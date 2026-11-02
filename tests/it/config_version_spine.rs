@@ -281,6 +281,50 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
     }
 }
 
+/// FR-108-AC-1 (TC-469): the README walkthrough. `requests.sh` writes
+/// `run.json` and `compile.json` beside a generated case, and the `run`
+/// command's exit codes are the ones the README table states; `compile`
+/// prints the checked package.
+#[trace("TC-469", "FR-108-AC-1")]
+#[test]
+fn walkthrough_requests_reproduce_the_documented_exit_codes() {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/config-version/requests.sh");
+    let directory = tempfile::tempdir().unwrap();
+    for (case, clause, exit) in [
+        (Case::Healthy, "ParentOrder", 0),
+        (Case::Violating, "ParentOrder", 10),
+        (Case::Dangling, "ParentOrder", 20),
+        (Case::Incomplete, "ParentOrder", 22),
+        (Case::Cycle, "NoCycle", 10),
+    ] {
+        let path = directory.path().join(case.id());
+        spine::write(&path, case).unwrap();
+        let written = Command::new("sh")
+            .arg(&script)
+            .arg(&path)
+            .arg(clause)
+            .output()
+            .unwrap();
+        assert!(written.status.success(), "{}: {written:?}", case.id());
+        let run = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .arg("run")
+            .arg(path.join("run.json"))
+            .output()
+            .unwrap();
+        assert_eq!(run.status.code(), Some(exit), "{}: {run:?}", case.id());
+        if case.id() == "healthy-parent" {
+            let compiled = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+                .arg("compile")
+                .arg(path.join("compile.json"))
+                .output()
+                .unwrap();
+            assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
+            let package: Value = serde_json::from_slice(&compiled.stdout).unwrap();
+            assert_eq!(package["contract_version"], "quire.checked-package/v2");
+        }
+    }
+}
+
 /// FR-312-AC-2/AC-5: malformed clause routing fails at request intake,
 /// before it can turn into a compile, selection or admission report.
 #[trace("TC-891", "FR-312-AC-2", "FR-312-AC-5")]

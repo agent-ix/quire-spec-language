@@ -1120,7 +1120,11 @@ fn assembler_checked_owner_and_declaration_variants_keep_format_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
-    let fixtures: Vec<(String, Vec<u8>)> = vec![
+    let header = include_str!("../fixtures/native-package/header.native");
+    let prefix = format!("{header}model M = \"example/package-model\";\n");
+    let rule = "invariant Rule on M::Node at current { true }";
+    let second = "invariant Second on M::Node at current { false }";
+    let mut fixtures: Vec<(String, Vec<u8>)> = vec![
         (
             "composed-choreography.native".to_owned(),
             include_bytes!("../fixtures/composed-choreography.native").to_vec(),
@@ -1129,7 +1133,19 @@ fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
             "parent.native".to_owned(),
             include_bytes!("../fixtures/parent.native").to_vec(),
         ),
+        (
+            "native-package/header.native".to_owned(),
+            header.as_bytes().to_vec(),
+        ),
     ];
+    // The legacy native-package vectors, composed over their model.
+    for (name, source) in [
+        ("minimal", format!("{prefix}{rule}\n")),
+        ("controls", format!("{prefix}{rule}\n")),
+        ("multiple", format!("{prefix}{rule}\n{second}\n")),
+    ] {
+        fixtures.push((format!("native-package/{name}.native"), source.into_bytes()));
+    }
     for (path, bytes) in &fixtures {
         let path = path.as_str();
         let refusal = emitted(
