@@ -97,11 +97,12 @@ dependency; intervals and buffer capacities alone are not an executable plan.
 checked-package v2 wire: a `temporal`/`monitor_plan` node with sixteen ordered
 bindings (QSpec FR-487, FR-322-AC-308): `clause` (the clause the program
 monitors, whose `temporal_bindings` row is the plan's clock binding), `state`,
-`inputs`, `scope`, `results`, the entries `init`, `on_event`, `on_watermark` and
-`on_gap`, `counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
+`inputs`, `scope`, `results`, the entries `init`, `on_event` and `on_watermark`,
+`counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
 rational, events per tick), `buffers` (capacity per buffered subformula),
 `counter` (the counter's name), `tick_unit` (a `Time` unit node whose scale is
-the tick scale) and `uncertainty` (a rational at least 0, in ticks). Each
+the tick scale), `uncertainty` (a rational at least 0, in ticks) and, last (member
+15), the entry `on_gap`. Each
 premise, including the uncertainty, counter, tick unit, gap, rate and
 capacities, is part of the root's key (QSpec FR-487-AC-6), so changing one
 gives a different plan. The tick intervals of the logical fields above are
