@@ -61,6 +61,9 @@ pub struct TickMonitorSpec<'f> {
     pub max_reading_gap: u64,
     /// The buffer capacity of each buffered operator, by formula node index.
     pub capacities: BTreeMap<usize, u64>,
+    /// The bound on live activations of the root (`monitor.max_activations`);
+    /// an `on origin` root with capacity 0 is never started.
+    pub activation_capacity: u64,
 }
 
 /// One input of the reference evaluator.
@@ -121,6 +124,12 @@ pub enum TickOutcome {
     /// A buffer limit hid evidence; `capacity` is the buffer's capacity.
     Incomplete {
         /// The capacity that was reached.
+        capacity: u64,
+    },
+    /// The root activation exceeded the activation capacity and was not
+    /// started.
+    ActivationLimit {
+        /// The activation capacity.
         capacity: u64,
     },
     /// The instance was open across a reading-gap fault.
@@ -418,8 +427,13 @@ impl<'f> TickMonitorReference<'f> {
         let end = upto.map_or(self.events.len(), |last| last + 1);
         (from..end)
             .filter(|position| {
-                self.history_start
-                    .is_none_or(|start| self.events[*position].tick >= start)
+                // The marker hides history from a past-looking read only; a
+                // future-looking activation keeps the positions it already
+                // covers.
+                upto.is_none()
+                    || self
+                        .history_start
+                        .is_none_or(|start| self.events[*position].tick >= start)
             })
             .map(|position| Cell {
                 first: position,
@@ -638,7 +652,9 @@ impl<'f> TickMonitorReference<'f> {
                         ..Val::UNKNOWN
                     };
                     for lost_position in first..=position {
-                        self.settled.insert((node, lost_position), lost);
+                        // A settled result is final: losing the entry later does
+                        // not unsettle it.
+                        self.settled.entry((node, lost_position)).or_insert(lost);
                     }
                 }
             }
@@ -690,6 +706,15 @@ impl<'f> TickMonitorReference<'f> {
         out
     }
 
+    /// Whether the activation at (`node`, `position`) is the `on origin` root
+    /// and the activation capacity does not admit it.
+    fn refused_activation(&self, node: usize, position: usize) -> bool {
+        matches!(self.spec.activation, Activation::Origin)
+            && position == 0
+            && node == self.spec.formula.root().index()
+            && self.spec.activation_capacity == 0
+    }
+
     /// Settle what can no longer change and report. An instance is reported
     /// once when its outcome settles; the pending ones are reported again at
     /// every watermark step (FR-251-AC-14).
@@ -733,9 +758,14 @@ impl<'f> TickMonitorReference<'f> {
             if self.failed.contains(&(node, position)) {
                 continue;
             }
-            let outcome = self
-                .eval(node, position, &mut memo)
-                .outcome(&self.spec.capacities);
+            let outcome = if self.refused_activation(node, position) {
+                TickOutcome::ActivationLimit {
+                    capacity: self.spec.activation_capacity,
+                }
+            } else {
+                self.eval(node, position, &mut memo)
+                    .outcome(&self.spec.capacities)
+            };
             let changed = self.emitted.get(&(node, position)) != Some(&outcome);
             self.emitted.insert((node, position), outcome);
             let report = if outcome == TickOutcome::Pending {
@@ -760,7 +790,7 @@ impl<'f> TickMonitorReference<'f> {
         let mut memo = Memo::new();
         let mut open = Vec::new();
         for (node, position) in self.reported() {
-            if self.failed.contains(&(node, position)) {
+            if self.failed.contains(&(node, position)) || self.refused_activation(node, position) {
                 continue;
             }
             let outcome = self
@@ -808,6 +838,23 @@ impl<'f> TickMonitorReference<'f> {
     /// The current outcome of an instance, or `None` if it does not exist.
     pub fn outcome(&self, subformula: usize, position: usize) -> Option<TickOutcome> {
         self.emitted.get(&(subformula, position)).copied()
+    }
+
+    /// The outcome of an instance evaluated afresh from the current state.
+    pub fn current(&self, subformula: usize, position: usize) -> TickOutcome {
+        self.eval(subformula, position, &mut Memo::new())
+            .outcome(&self.spec.capacities)
+    }
+
+    /// The `(first tick, last tick, lost)` of each cell of a buffered
+    /// node's buffer, oldest first.
+    pub fn cells_of(&self, node: usize) -> Vec<(i128, i128, bool)> {
+        self.buffers.get(&node).map_or_else(Vec::new, |cells| {
+            cells
+                .iter()
+                .map(|cell| (cell.t_first, cell.t_last, cell.lost))
+                .collect()
+        })
     }
 
     /// The unwrapped time of the latest admitted reading.

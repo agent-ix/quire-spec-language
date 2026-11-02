@@ -30,6 +30,7 @@ pub(crate) fn deadline_spec() -> EntrySpec {
         subject: "C".to_owned(),
         max_reading_gap: 100,
         activation_capacity: 4,
+        root: None,
     }
 }
 
@@ -138,6 +139,7 @@ fn reference_code(outcome: TickOutcome) -> i64 {
         TickOutcome::Indeterminate => 4,
         TickOutcome::Incomplete { .. } => 5,
         TickOutcome::Failed { .. } => 6,
+        TickOutcome::ActivationLimit { .. } => 7,
     }
 }
 
@@ -168,13 +170,14 @@ fn reference_spec<'p>(plan: &'p TimedMonitorPlan) -> TickMonitorSpec<'p> {
             .iter()
             .map(|(id, c)| (id.index(), *c))
             .collect(),
+        activation_capacity: plan.activation_capacity(),
     }
 }
 
 /// Per input, the sorted `(origin, code)` results of the interval node.
 pub(crate) fn run_reference(
     plan: &TimedMonitorPlan,
-    node: usize,
+    nodes: &[usize],
     inputs: &[Input],
 ) -> Vec<Vec<(i128, i64)>> {
     let mut monitor = TickMonitorReference::new(reference_spec(plan));
@@ -196,8 +199,13 @@ pub(crate) fn run_reference(
                 .step(&step)
                 .expect("the step applies")
                 .into_iter()
-                .filter(|result| result.subformula == node)
-                .map(|result| (result.origin, reference_code(result.outcome)))
+                .filter(|result| nodes.contains(&result.subformula))
+                .map(|result| {
+                    (
+                        result.origin * 1000 + i128::try_from(result.subformula).unwrap(),
+                        reference_code(result.outcome),
+                    )
+                })
                 .collect();
             results.sort_unstable();
             results
@@ -258,6 +266,7 @@ pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<
             "let t{step_no} = {call} in let s{step_no} = t{step_no}.state in "
         );
         encoded.push(format!("encode(t{step_no}.results)"));
+        encoded.push(format!("dump(s{step_no})"));
         encoded.push("marker()".to_owned());
     }
     let joined = encoded
@@ -268,8 +277,9 @@ pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<
     let helpers = "function marker using v(): Sequence<Integer> pure { sequence[0 - 1] }\n\
         function pairInts using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Sequence<Integer>> pure { sequence[a, b] }\n\
         function cat using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Integer> pure { flatten(pairInts(a, b)) }\n\
-        function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): 5; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
-        function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: r.instance.origin_tick * 8 + code(r.outcome)) }\n";
+        function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else 5; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
+        function dump using v(s: State): Sequence<Integer> pure { map(x in s.buffer_0: 1000000000000 + x.tFirst * 10000 + x.tLast * 10 + (if x.lost then 1 else 0)) }\n\
+        function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: (r.instance.origin_tick * 1000 + r.instance.subformula) * 8 + code(r.outcome)) }\n";
     let package = package_of(&format!("{}\n{helpers}\n{body}", render(&spec)));
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
@@ -290,7 +300,11 @@ pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<
             panic!("integers")
         };
         let number: i128 = value.as_big().try_into().expect("small");
-        if number < 0 {
+        if number >= 1_000_000_000_000 {
+            if std::env::var("QSL_DUMP").is_ok() {
+                eprintln!("  entries cell {}", number - 1_000_000_000_000);
+            }
+        } else if number < 0 {
             steps.push(Vec::new());
         } else {
             steps
@@ -321,7 +335,7 @@ pub(crate) fn deadline_plan() -> TimedMonitorPlan {
 #[test]
 fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
     let plan = deadline_plan();
-    let node = spec_from_plan(&plan).unwrap().node.subformula;
+    let node = [spec_from_plan(&plan).unwrap().node.subformula];
     let atom = spec_from_plan(&plan).unwrap().atoms[0];
     let inputs = vec![
         Input::Reading(0, vec![(atom, false)]),
@@ -333,7 +347,7 @@ fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
     let _: Option<EntryRefusal> = None;
     assert_eq!(
         run_entries(&plan, &inputs),
-        run_reference(&plan, node, &inputs)
+        run_reference(&plan, &node, &inputs)
     );
 }
 
@@ -399,7 +413,9 @@ fn differential(formula: &str, target: qsl_replay::MonitorTarget, traces: u64) {
     for seed in 0..traces {
         let inputs = trace(seed * 7919 + 13, &spec.atoms, target.width_bits, 14);
         let entries = run_entries(&plan, &inputs);
-        let reference = run_reference(&plan, spec.node.subformula, &inputs);
+        let mut nodes = vec![spec.node.subformula];
+        nodes.extend(spec.root.as_ref().map(|root| root.index));
+        let reference = run_reference(&plan, &nodes, &inputs);
         assert_eq!(
             entries, reference,
             "{formula} {target:?} seed {seed}\n{inputs:#?}"
@@ -478,5 +494,48 @@ fn reading_gaps_fail_the_open_instances_the_same_way() {
             microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 1500),
             25,
         );
+    }
+}
+
+const ROOT_SHAPES: [&str; 5] = [
+    "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))",
+    "always once[0 ms, 3 ms] holds(c.versionNumber = 3)",
+    "eventually (holds(c.versionNumber = 2) and always[0 ms, 3 ms] holds(c.versionNumber = 3))",
+    "always (eventually[0 ms, 3 ms] holds(c.versionNumber = 3) implies holds(c.versionNumber = 2))",
+    "always historically[1 ms, 3 ms] holds(c.versionNumber = 3)",
+];
+
+#[test]
+fn unbounded_roots_fold_one_outcome_per_activation_like_the_reference() {
+    for shape in ROOT_SHAPES {
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600),
+            25,
+        );
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600),
+            25,
+        );
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(0, 1), 1, 12, 3600),
+            25,
+        );
+        differential(
+            shape,
+            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 1500),
+            25,
+        );
+    }
+}
+
+#[test]
+fn a_zero_activation_capacity_never_starts_the_root() {
+    let mut target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    target.max_activations = 0;
+    for shape in ROOT_SHAPES {
+        differential(shape, target.clone(), 10);
     }
 }

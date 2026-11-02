@@ -44,9 +44,38 @@ pub enum BoolExpr {
     Or(Box<BoolExpr>, Box<BoolExpr>),
     /// `implies`.
     Implies(Box<BoolExpr>, Box<BoolExpr>),
+    /// The value of the interval node at the same position (root bodies).
+    Node,
 }
 
 impl BoolExpr {
+    /// The expression in the value algebra over the inputs `input` and the
+    /// interval node's value `node`.
+    fn render_v(&self, input: &str, node: &str) -> String {
+        match self {
+            Self::Const(true) => "vTrue()".to_owned(),
+            Self::Const(false) => "vFalse()".to_owned(),
+            Self::Atom(index) => format!("vOf({input}.a{index})"),
+            Self::Node => node.to_owned(),
+            Self::Not(a) => format!("vNot({})", a.render_v(input, node)),
+            Self::And(a, b) => format!(
+                "vAnd({}, {})",
+                a.render_v(input, node),
+                b.render_v(input, node)
+            ),
+            Self::Or(a, b) => format!(
+                "vOr({}, {})",
+                a.render_v(input, node),
+                b.render_v(input, node)
+            ),
+            Self::Implies(a, b) => format!(
+                "vOr(vNot({}), {})",
+                a.render_v(input, node),
+                b.render_v(input, node)
+            ),
+        }
+    }
+
     /// The expression over the atom bit mask named `mask`.
     fn render(&self, mask: &str, bits: &[usize]) -> String {
         match self {
@@ -55,6 +84,7 @@ impl BoolExpr {
                 let _ = bits;
                 format!("{mask}.a{index}")
             }
+            Self::Node => "false".to_owned(),
             Self::Not(inner) => format!("(not {})", inner.render(mask, bits)),
             Self::And(a, b) => format!("({} and {})", a.render(mask, bits), b.render(mask, bits)),
             Self::Or(a, b) => format!("({} or {})", a.render(mask, bits), b.render(mask, bits)),
@@ -105,6 +135,18 @@ pub struct IntervalNode {
     pub subformula: usize,
 }
 
+/// An unbounded root `always`/`eventually` over the interval node
+/// (FR-251-AC-14): one constant-size accumulator per activation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootSpec {
+    /// `always` (true) or `eventually` (false).
+    pub always: bool,
+    /// The operand, with [`BoolExpr::Node`] standing for the interval node.
+    pub psi: BoolExpr,
+    /// The root's formula arena index, the activation's `subformula`.
+    pub index: usize,
+}
+
 /// Everything the source generator needs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntrySpec {
@@ -118,6 +160,8 @@ pub struct EntrySpec {
     pub max_reading_gap: u64,
     /// The plan's `activation_capacity`.
     pub activation_capacity: u64,
+    /// The unbounded root, when the clause has one.
+    pub root: Option<RootSpec>,
 }
 
 /// Why the entries cannot be generated for a clause.
@@ -209,16 +253,29 @@ fn temporal_free(nodes: &[FormulaNode], index: usize) -> Option<BoolExpr> {
 /// the generator does not cover.
 pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal> {
     let nodes = plan.program().formula().nodes();
+    let root_index = plan.program().root().index();
+    let has_interval = |index: usize| plan.intervals().iter().any(|(id, _)| id.index() == index);
+    // An unbounded root `always`/`eventually` wraps the interval node.
+    let root = match &nodes[root_index] {
+        FormulaNode::Unary {
+            operator: operator @ (UnaryTemporal::Always | UnaryTemporal::Eventually),
+            operand,
+            ..
+        } if !has_interval(root_index) => {
+            Some((matches!(operator, UnaryTemporal::Always), operand.index()))
+        }
+        _ => None,
+    };
     let temporal: Vec<usize> = (0..nodes.len())
         .filter(|index| {
             matches!(
                 nodes[*index],
                 FormulaNode::Unary { .. } | FormulaNode::Binary { .. }
-            )
+            ) && !(root.is_some() && *index == root_index)
         })
         .collect();
     for node in &temporal {
-        if !plan.intervals().iter().any(|(id, _)| id.index() == *node) {
+        if !has_interval(*node) {
             return Err(EntryRefusal::Unbounded { node: *node });
         }
     }
@@ -257,6 +314,15 @@ pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal
         _ => return Err(EntryRefusal::IntervalOperators { found: 0 }),
     };
     let psi = psi.ok_or(EntryRefusal::NestedTemporal { node })?;
+    let root = match root {
+        None => None,
+        Some((always, operand)) => Some(RootSpec {
+            always,
+            psi: with_node(nodes, operand, node)
+                .ok_or(EntryRefusal::NestedTemporal { node: root_index })?,
+            index: root_index,
+        }),
+    };
     let interval = plan
         .intervals()
         .iter()
@@ -292,6 +358,27 @@ pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal
         subject: plan.subject().clause_name().to_owned(),
         max_reading_gap: plan.max_reading_gap(),
         activation_capacity: plan.activation_capacity(),
+        root,
+    })
+}
+
+/// [`temporal_free`] with the interval node `node` read as [`BoolExpr::Node`].
+fn with_node(nodes: &[FormulaNode], index: usize, node: usize) -> Option<BoolExpr> {
+    if index == node {
+        return Some(BoolExpr::Node);
+    }
+    let child =
+        |id: qsl_semantics::check::FormulaNodeId| with_node(nodes, id.index(), node).map(Box::new);
+    Some(match &nodes[index] {
+        FormulaNode::Constant(value) => BoolExpr::Const(*value),
+        FormulaNode::Holds { .. } => BoolExpr::Atom(index),
+        FormulaNode::Not(a) => BoolExpr::Not(child(*a)?),
+        FormulaNode::And(a, b) => BoolExpr::And(child(*a)?, child(*b)?),
+        FormulaNode::Or(a, b) => BoolExpr::Or(child(*a)?, child(*b)?),
+        FormulaNode::Implies(a, b) => BoolExpr::Implies(child(*a)?, child(*b)?),
+        FormulaNode::Aggregate { .. } | FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => {
+            return None
+        }
     })
 }
 
@@ -311,6 +398,8 @@ pub mod code {
     pub const INCOMPLETE: i64 = 5;
     /// `Failed(ReadingGapExceeded)`.
     pub const FAILED: i64 = 6;
+    /// `Incomplete(LimitReached{activation})`.
+    pub const ACTIVATION: i64 = 7;
     /// Added to a code once the instance can no longer change.
     pub const SETTLED: i64 = 10;
 }
@@ -349,11 +438,93 @@ fn cell_literal(tick: &str, inputs: &str) -> String {
     format!("Cell {{ tFirst: {tick}, tLast: {tick}, lost: false, inputs: {inputs}, out: 0 }}")
 }
 
-fn state_with(now: &str, start: &str, cells: &str, spec: &EntrySpec) -> String {
-    let _ = spec;
+fn state_with(now: &str, start: &str, cells: &str, acts: &str, pos: &str) -> String {
     format!(
-        "{state} {{ now: {now}, history_start: {start}, buffer_0: {cells}, activations: s.activations }}",
+        "{state} {{ now: {now}, history_start: {start}, buffer_0: {cells}, activations: {acts}, event_position: {pos} }}",
         state = names::STATE,
+    )
+}
+
+/// The constants of an unbounded root's accumulator.
+struct RootConsts {
+    /// The identity of the root's connective.
+    ident: &'static str,
+    /// The connective.
+    op: &'static str,
+    /// The flags of an empty aggregate.
+    flags0: i64,
+    /// The root's future contribution.
+    future: &'static str,
+}
+
+fn root_consts(root: &RootSpec) -> RootConsts {
+    if root.always {
+        RootConsts {
+            ident: "vTrue()",
+            op: "vAnd",
+            flags0: 1,
+            future: "vNot(vFuture())",
+        }
+    } else {
+        RootConsts {
+            ident: "vFalse()",
+            op: "vOr",
+            flags0: 2,
+            future: "vFuture()",
+        }
+    }
+}
+
+/// The new state of the activation and its report, after the node's step.
+/// `flags1` and `pend` are the accumulator after folding; `watermark` is
+/// whether pending is reported.
+fn root_tail(spec: &EntrySpec, watermark: bool, creatable: bool) -> String {
+    let Some(root) = &spec.root else {
+        return String::new();
+    };
+    let created_check = if creatable { "live" } else { "created" };
+    format!(
+        "let rv = rootV(flags1, pend) in \
+         let rcode = codeOf(rv) in \
+         let rreport = {created_check} and not finalPrev and (if rcode = {pending} then {watermark} else rcode != lastcode) in \
+         let status2 = if finalPrev then act.status else flags1 + 8 * rcode in \
+         let acts = if {created_check} then oneAct(Activation {{ subformula: {root}, origin_tick: act.origin_tick, status: status2 }}) else s.activations in \
+         let rootRes = if rreport then oneResult(rootResultOf(act.origin_tick, rcode)) else {fail} in ",
+        pending = code::PENDING,
+        root = root.index,
+        fail = if creatable {
+            format!("if actFail then oneResult(rootResultOf(now2, {})) else noResults()", code::ACTIVATION)
+        } else {
+            "noResults()".to_owned()
+        },
+    )
+}
+
+/// The activation facts every root body starts from.
+fn root_head(spec: &EntrySpec, creatable: bool) -> String {
+    let Some(root) = &spec.root else {
+        return String::new();
+    };
+    let consts = root_consts(root);
+    let acap = spec.activation_capacity;
+    let origin = if creatable { "now2" } else { "0" };
+    let create = if creatable {
+        format!(
+            "let isFirst = not created and s.event_position = 0 in \
+             let live = created or (isFirst and {acap} >= 1) in \
+             let actFail = isFirst and {acap} < 1 in "
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "let created = size(s.activations) > 0 in {create}\
+         let act = if created then actOf(s.activations) else Activation {{ subformula: {index}, origin_tick: {origin}, status: {flags0} }} in \
+         let lastcode = codeOfStatus(act.status) in \
+         let finalPrev = lastcode = 1 or lastcode = 2 in \
+         let flags0 = flagsOfStatus(act.status) in ",
+        index = root.index,
+        flags0 = consts.flags0,
     )
 }
 
@@ -365,17 +536,73 @@ fn on_event_body(spec: &EntrySpec) -> String {
     let incomplete = code::INCOMPLETE;
     let settled = code::SETTLED;
     let c = cell_literal("now2", "i");
+    let head = root_head(spec, true);
+    let tail_root = root_tail(spec, false, true);
+    let acts = if spec.root.is_some() {
+        "acts"
+    } else {
+        "s.activations"
+    };
+    let (ident, op) = spec.root.as_ref().map_or(("vTrue()", "vAnd"), |root| {
+        (root_consts(root).ident, root_consts(root).op)
+    });
+    let _ = op;
     if !node.future {
+        let root_part = if spec.root.is_some() {
+            format!(
+                "let pv = evalAt(cells, size(cells) - 1, s.history_start) in \
+                 {head}\
+                 let flags1 = foldFlags(flags0, psiV(i, pv)) in \
+                 let pend = {ident} in \
+                 {tail_root}"
+            )
+        } else {
+            String::new()
+        };
+        let results = if spec.root.is_some() {
+            "flatten(tripleResults(oneResult(resultOf(now2, codeOf(pv))), rootRes, noResults()))"
+                .to_owned()
+        } else {
+            "oneResult(resultOf(now2, codeOf(evalAt(cells, size(cells) - 1, s.history_start))))"
+                .to_owned()
+        };
         return format!(
             "let now2 = s.now + delta in \
              let c = {c} in \
              let kept = filter(x in s.buffer_0: now2 - x.tLast < {none_hi}) in \
              let full = size(kept) >= {cap} in \
              let cells = if full then push(dropLast(kept), merged(lastOf(kept), c, {settled} + {incomplete})) else push(kept, c) in \
-             mk({state}, oneResult(resultOf(now2, codeOf(evalAt(cells, size(cells) - 1, s.history_start)))))",
-            state = state_with("now2", "s.history_start", "cells", spec),
+             {root_part}\
+             mk({state}, {results})",
+            state = state_with("now2", "s.history_start", "cells", acts, "s.event_position + 1"),
         );
     }
+    let flags_start = if spec.root.is_some() {
+        format!(
+            "{head}\
+             let flagsM = if full and live then foldFlags(foldFlags(flags0, psiV(i, vLost())), (if not last.lost and last.out < {settled} then psiV(last.inputs, vLost()) else {ident})) else flags0 in "
+        )
+    } else {
+        String::new()
+    };
+    let sweep_text = sweep(
+        "cells",
+        "now2",
+        false,
+        spec,
+        if spec.root.is_some() { "flagsM" } else { "0" },
+    );
+    let after = if spec.root.is_some() {
+        format!("let flags1 = sw.flags in let pend = sw.pend in {tail_root}")
+    } else {
+        String::new()
+    };
+    let results = if spec.root.is_some() {
+        "flatten(tripleResults(flatten(tripleResults(lostOld, lostNew, sw.results)), rootRes, noResults()))".to_owned()
+    } else {
+        "flatten(tripleResults(lostOld, lostNew, sw.results))".to_owned()
+    };
+    let _ = pending;
     format!(
         "let now2 = s.now + delta in \
          let c = {c} in \
@@ -384,29 +611,40 @@ fn on_event_body(spec: &EntrySpec) -> String {
          let cells = if full then push(dropLast(s.buffer_0), merged(last, c, {settled} + {incomplete})) else push(s.buffer_0, c) in \
          let lostNew = if full then oneResult(resultOf(now2, {incomplete})) else noResults() in \
          let lostOld = if full and not last.lost and last.out < {settled} then oneResult(resultOf(last.tFirst, {incomplete})) else noResults() in \
-         let sw = {sweep} in \
+         {flags_start}\
+         let sw = {sweep_text} in \
          let tail = pruned(sw.cells) in \
-         mk({state}, flatten(tripleResults(lostOld, lostNew, sw.results)))",
-        sweep = sweep("cells", "now2", false, spec, pending, settled),
-        state = state_with("now2", "s.history_start", "tail", spec),
+         {after}\
+         mk({state}, {results})",
+        state = state_with("now2", "s.history_start", "tail", acts, "s.event_position + 1"),
     )
 }
 
-/// The sweep over `cells` at `horizon`: re-evaluate every open instance and
-/// report the changed ones.
-fn sweep(
-    cells: &str,
-    horizon: &str,
-    watermark: bool,
-    spec: &EntrySpec,
-    pending: i64,
-    settled: i64,
-) -> String {
+/// The sweep over `cells` at `horizon`: re-evaluate every open instance,
+/// report the changed ones, and fold the settled ones into the root's
+/// accumulator starting from `flags0`.
+fn sweep(cells: &str, horizon: &str, watermark: bool, spec: &EntrySpec, flags0: &str) -> String {
     let node = &spec.node;
     let none_hi = sig(node.thresholds.none_hi);
+    let pending = code::PENDING;
+    let settled = code::SETTLED;
+    let (flags_step, pend_step, ident) = match &spec.root {
+        Some(root) => {
+            let consts = root_consts(root);
+            (
+                "if fin then foldFlags(a.flags, psiV(x.inputs, v)) else a.flags".to_owned(),
+                format!(
+                    "if fin then a.pend else {}(a.pend, psiV(x.inputs, v))",
+                    consts.op
+                ),
+                consts.ident,
+            )
+        }
+        None => ("a.flags".to_owned(), "a.pend".to_owned(), "vTrue()"),
+    };
     format!(
         "fold<Sweep>(a, x in {cells}: \
-            if x.lost or x.out >= {settled} then Sweep {{ j: a.j + 1, cells: push(a.cells, x), results: a.results }} \
+            if x.lost or x.out >= {settled} then Sweep {{ j: a.j + 1, cells: push(a.cells, x), results: a.results, flags: a.flags, pend: a.pend }} \
             else \
               let closed = {horizon} - x.tFirst >= {none_hi} in \
               let v = evalAt({cells}, a.j, closed) in \
@@ -415,52 +653,130 @@ fn sweep(
               let report = if code = {pending} then {watermark} else code != x.out in \
               Sweep {{ j: a.j + 1, \
                 cells: push(a.cells, Cell {{ tFirst: x.tFirst, tLast: x.tLast, lost: false, inputs: x.inputs, out: code + (if fin then {settled} else 0) }}), \
-                results: if report then push2(a.results, resultOf(x.tFirst, code)) else a.results }}, \
-            identity: Sweep {{ j: 0, cells: noCells(), results: noResults() }})"
+                results: if report then push2(a.results, resultOf(x.tFirst, code)) else a.results, \
+                flags: {flags_step}, pend: {pend_step} }}, \
+            identity: Sweep {{ j: 0, cells: noCells(), results: noResults(), flags: {flags0}, pend: {ident} }})"
     )
 }
 
 fn on_watermark_body(spec: &EntrySpec) -> String {
     let node = &spec.node;
     let none_hi = sig(node.thresholds.none_hi);
-    let settled = code::SETTLED;
-    let pending = code::PENDING;
+    let head = root_head(spec, false);
+    let tail_root = root_tail(spec, true, false);
+    let acts = if spec.root.is_some() {
+        "acts"
+    } else {
+        "s.activations"
+    };
+    let ident = spec
+        .root
+        .as_ref()
+        .map_or("vTrue()", |root| root_consts(root).ident);
     if !node.future {
+        let root_part = if spec.root.is_some() {
+            format!("{head}let flags1 = flags0 in let pend = {ident} in {tail_root}")
+        } else {
+            String::new()
+        };
+        let results = if spec.root.is_some() {
+            "rootRes"
+        } else {
+            "noResults()"
+        };
         return format!(
             "let hz = if s.now > boundary then s.now else boundary + 1 in \
-             mk({state}, noResults())",
+             {root_part}\
+             mk({state}, {results})",
             state = state_with(
                 "s.now",
                 "s.history_start",
-                &format!("filter(x in s.buffer_0: (if s.now > boundary then s.now else boundary + 1) - x.tLast < {none_hi})"),
-                spec
+                &format!("filter(x in s.buffer_0: hz - x.tLast < {none_hi})"),
+                acts,
+                "s.event_position"
             ),
         );
     }
+    let (head_part, after, results) = if spec.root.is_some() {
+        (
+            head,
+            format!("let flags1 = sw.flags in let pend = sw.pend in {tail_root}"),
+            "flatten(tripleResults(sw.results, rootRes, noResults()))".to_owned(),
+        )
+    } else {
+        (String::new(), String::new(), "sw.results".to_owned())
+    };
     format!(
         "let hz = if s.now > boundary then s.now else boundary + 1 in \
+         {head_part}\
          let sw = {sweep} in \
-         mk({state}, sw.results)",
-        sweep = sweep("s.buffer_0", "hz", true, spec, pending, settled),
-        state = state_with("s.now", "s.history_start", "pruned(sw.cells)", spec),
+         {after}\
+         mk({state}, {results})",
+        sweep = sweep(
+            "s.buffer_0",
+            "hz",
+            true,
+            spec,
+            if spec.root.is_some() { "flags0" } else { "0" }
+        ),
+        state = state_with(
+            "s.now",
+            "s.history_start",
+            "pruned(sw.cells)",
+            acts,
+            "s.event_position"
+        ),
     )
 }
 
 fn on_gap_body(spec: &EntrySpec) -> String {
     let pending = code::PENDING;
-    let results = if spec.node.future {
+    let settled = code::SETTLED;
+    let node_results = if spec.node.future {
         format!(
             "fold<Sweep>(a, x in s.buffer_0: \
-                if not x.lost and x.out = {pending} then Sweep {{ j: a.j + 1, cells: a.cells, results: push2(a.results, failedOf(x.tFirst, gap)) }} \
-                else Sweep {{ j: a.j + 1, cells: a.cells, results: a.results }}, \
-                identity: Sweep {{ j: 0, cells: noCells(), results: noResults() }}).results"
+                if not x.lost and x.out = {pending} then Sweep {{ j: a.j + 1, cells: a.cells, results: push2(a.results, failedOf(x.tFirst, gap)), flags: a.flags, pend: a.pend }} \
+                else Sweep {{ j: a.j + 1, cells: a.cells, results: a.results, flags: a.flags, pend: a.pend }}, \
+                identity: Sweep {{ j: 0, cells: noCells(), results: noResults(), flags: 0, pend: vTrue() }}).results"
         )
     } else {
         "noResults()".to_owned()
     };
+    let Some(root) = &spec.root else {
+        return format!(
+            "let now2 = s.now + gap in mk({state}, {node_results})",
+            state = state_with(
+                "now2",
+                "now2",
+                "noCells()",
+                "s.activations",
+                "s.event_position"
+            ),
+        );
+    };
+    let frozen = if spec.node.future {
+        format!(
+            "fold<FlagAcc>(a, x in s.buffer_0: \
+                if x.lost or x.out >= {settled} then FlagAcc {{ j: a.j + 1, flags: a.flags }} \
+                else FlagAcc {{ j: a.j + 1, flags: foldFlags(a.flags, psiV(x.inputs, if x.out = {incomplete} then vLost() else vUnknown())) }}, \
+                identity: FlagAcc {{ j: 0, flags: flagsOfStatus(act.status) }}).flags",
+            incomplete = code::INCOMPLETE,
+        )
+    } else {
+        "flagsOfStatus(act.status)".to_owned()
+    };
     format!(
-        "let now2 = s.now + gap in mk({state}, {results})",
-        state = state_with("now2", "now2", "noCells()", spec),
+        "let now2 = s.now + gap in \
+         let created = size(s.activations) > 0 in \
+         let act = actOf(s.activations) in \
+         let lastcode = codeOfStatus(act.status) in \
+         let failRoot = created and lastcode = {pending} in \
+         let frozen = {frozen} in \
+         let rootRes = if failRoot then oneResult(rootFailedOf(act.origin_tick, gap)) else noResults() in \
+         let acts = if failRoot then noActs() else if created then oneAct(Activation {{ subformula: {root}, origin_tick: act.origin_tick, status: frozen + 8 * lastcode }}) else s.activations in \
+         mk({state}, flatten(tripleResults({node_results}, rootRes, noResults())))",
+        root = root.index,
+        state = state_with("now2", "now2", "noCells()", "acts", "s.event_position"),
     )
 }
 
@@ -480,7 +796,7 @@ pub fn render(spec: &EntrySpec) -> String {
          record V {{ oT: Boolean; oF: Boolean; cT: Boolean; cF: Boolean; lost: Boolean; }}\n\
          record Cell {{ tFirst: Integer; tLast: Integer; lost: Boolean; inputs: {inputs}; out: Integer; }}\n\
          record Activation {{ subformula: Integer; origin_tick: Integer; status: Integer; }}\n\
-         record {state} {{ now: Integer; history_start: Integer; buffer_0: Cells; activations: Sequence<Activation>; }}\n\
+         record {state} {{ now: Integer; history_start: Integer; buffer_0: Cells; activations: Sequence<Activation>; event_position: Integer; }}\n\
          record {inputs} {{ {inputs_fields} }}\n\
          record {scope} {{ subject: Integer; }}\n\
          record Instance {{ subject: String; subformula: Integer; origin_tick: Integer; }}\n\
@@ -492,7 +808,9 @@ pub fn render(spec: &EntrySpec) -> String {
          tuple Step({state}, Results);\n\
          record StepR {{ state: {state}; results: Results; }}\n\
          record Acc {{ j: Integer; acc: V; pfx: V; }}\n\
-         record Sweep {{ j: Integer; cells: Cells; results: Results; }}\n\
+         record Sweep {{ j: Integer; cells: Cells; results: Results; flags: Integer; pend: V; }}\n\
+         record FlagAcc {{ j: Integer; flags: Integer; }}\n\
+         record LastAct {{ a: Activation; }}\n\
          record Keep {{ j: Integer; kept: Cells; }}",
         state = names::STATE,
         inputs = names::INPUTS,
@@ -565,7 +883,7 @@ pub fn render(spec: &EntrySpec) -> String {
         let _ = writeln!(
             w,
             "function evalAt using v(cells: Cells, k: Integer, start: Integer): V pure {{ \
-                let tk = tickAt(cells, k) in \
+                let tk = tickEndAt(cells, k) in \
                 let r = fold<Acc>(a, x in cells: \
                     if a.j > k then Acc {{ j: a.j + 1, acc: a.acc, pfx: a.pfx }} \
                     else Acc {{ j: a.j + 1, \
@@ -593,6 +911,7 @@ pub fn render(spec: &EntrySpec) -> String {
             else if c = {f} then {outcome}::False \
             else if c = {pend} then {outcome}::Pending \
             else if c = {inc} then {outcome}::Incomplete(LimitReached {{ limit: \"event_buffer\", amount: cap, setting: \"monitor.max_event_rate\" }}) \
+            else if c = {act} then {outcome}::Incomplete(LimitReached {{ limit: \"activation\", amount: {acap}, setting: \"monitor.max_activations\" }}) \
             else {outcome}::Indeterminate }}\n\
          function resultOf using v(tick: Integer, c: Integer): {result} pure {{ \
             {result} {{ instance: Instance {{ subject: \"{subject}\", subformula: {sub}, origin_tick: tick }}, outcome: outcomeOf(c, {cap}) }} }}\n\
@@ -610,7 +929,47 @@ pub fn render(spec: &EntrySpec) -> String {
         sub = node.subformula,
         cap = cap,
         gapmax = spec.max_reading_gap,
+        act = code::ACTIVATION,
+        acap = spec.activation_capacity,
     );
+    if let Some(root) = &spec.root {
+        let consts = root_consts(root);
+        let psi = root.psi.render_v("i", "nv");
+        let _ = writeln!(
+            w,
+            "function noActs using v(): Sequence<Activation> pure {{ sequence[] }}\n\
+             function oneAct using v(a: Activation): Sequence<Activation> pure {{ sequence[a] }}\n\
+             function actOf using v(s: Sequence<Activation>): Activation pure {{ \
+                fold<LastAct>(k, x in s: LastAct {{ a: x }}, \
+                    identity: LastAct {{ a: Activation {{ subformula: {index}, origin_tick: 0, status: {flags0} }} }}).a }}\n\
+             function codeOfStatus using v(s: Integer): Integer pure {{ \
+                if s >= 56 then 7 else if s >= 48 then 6 else if s >= 40 then 5 else if s >= 32 then 4 \
+                else if s >= 24 then 3 else if s >= 16 then 2 else if s >= 8 then 1 else 0 }}\n\
+             function flagsOfStatus using v(s: Integer): Integer pure {{ s - 8 * codeOfStatus(s) }}\n\
+             function flagT using v(f: Integer): Boolean pure {{ f = 1 or f = 3 or f = 5 or f = 7 }}\n\
+             function flagF using v(f: Integer): Boolean pure {{ f = 2 or f = 3 or f = 6 or f = 7 }}\n\
+             function accV using v(f: Integer): V pure {{ V {{ oT: flagT(f), oF: flagF(f), cT: flagT(f), cF: flagF(f), lost: f >= 4 }} }}\n\
+             function flagsOfV using v(a: V): Integer pure {{ (if a.oT then 1 else 0) + (if a.oF then 2 else 0) + (if a.lost then 4 else 0) }}\n\
+             function foldFlags using v(f: Integer, a: V): Integer pure {{ flagsOfV({op}(accV(f), a)) }}\n\
+             function psiV using v(i: {inputs}, nv: V): V pure {{ {psi} }}\n\
+             function rootV using v(f: Integer, pend: V): V pure {{ {op}({op}(accV(f), pend), {future}) }}\n\
+             function rootResultOf using v(tick: Integer, c: Integer): {result} pure {{ \
+                {result} {{ instance: Instance {{ subject: \"{subject}\", subformula: {index}, origin_tick: tick }}, outcome: outcomeOf(c, {cap}) }} }}\n\
+             function rootFailedOf using v(tick: Integer, gap: Integer): {result} pure {{ \
+                {result} {{ instance: Instance {{ subject: \"{subject}\", subformula: {index}, origin_tick: tick }}, \
+                    outcome: {outcome}::Failed(ReadingGapExceeded {{ gap: gap, max_reading_gap: {gapmax} }}) }} }}",
+            op = consts.op,
+            future = consts.future,
+            flags0 = consts.flags0,
+            index = root.index,
+            inputs = names::INPUTS,
+            result = names::RESULT,
+            outcome = names::OUTCOME,
+            subject = spec.subject,
+            cap = cap,
+            gapmax = spec.max_reading_gap,
+        );
+    }
     let zero_inputs = format!(
         "{} {{ {} }}",
         names::INPUTS,
@@ -624,7 +983,7 @@ pub fn render(spec: &EntrySpec) -> String {
     let _ = writeln!(
         w,
         "function {init} using v(): {state} pure {{ \
-            {state} {{ now: 0, history_start: 0 - 1, buffer_0: noCells(), activations: noActivations() }} }}",
+            {state} {{ now: 0, history_start: 0 - 1, buffer_0: noCells(), activations: noActivations(), event_position: 0 }} }}",
         init = names::INIT,
         state = names::STATE,
     );
@@ -644,6 +1003,10 @@ pub fn render(spec: &EntrySpec) -> String {
          function lastOf using v(s: Cells): Cell pure {{ \
             fold<Last>(a, x in s: Last {{ c: x }}, \
                 identity: Last {{ c: Cell {{ tFirst: 0, tLast: 0, lost: false, inputs: zeroInputs(), out: 0 }} }}).c }}\n\
+         function tickEndAt using v(s: Cells, k: Integer): Integer pure {{ \
+            fold<Idx>(a, x in s: \
+                if a.j = k then Idx {{ j: a.j + 1, ix: x.tLast }} else Idx {{ j: a.j + 1, ix: a.ix }}, \
+                identity: Idx {{ j: 0, ix: 0 }}).ix }}\n\
          function tickAt using v(s: Cells, k: Integer): Integer pure {{ \
             fold<Idx>(a, x in s: \
                 if a.j = k then Idx {{ j: a.j + 1, ix: x.tFirst }} else Idx {{ j: a.j + 1, ix: a.ix }}, \
