@@ -92,7 +92,7 @@ pub fn open_protocol_systems<'a>(
         abstract_initial,
         true,
     )?;
-    let AbstractSide::Protocol { clause } = refinement.abstract_side() else {
+    let AbstractSide::Protocol { clause, .. } = refinement.abstract_side() else {
         return Err(SubjectRefusal::ProtocolAbstractSide);
     };
     let protocol = abstract_package

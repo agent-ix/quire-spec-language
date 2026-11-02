@@ -46,7 +46,8 @@ use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 pub use lifecycle::{
-    check, check_with_execution_points, package, parse, refusal_or_fault, select, AdmittedModels,
+    check, check_with_execution_points, check_with_execution_points_and_refinement_internals,
+    check_with_refinement_internals, package, parse, refusal_or_fault, select, AdmittedModels,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
 
@@ -1558,6 +1559,9 @@ pub struct SuppliedLibrary {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DependencyInput {
     libraries: BTreeMap<LibraryName, SuppliedLibrary>,
+    /// FR-147/FR-099: each supplied library's own unchecked internal-list
+    /// value, keyed by the library identity that owns it.
+    refinement_internals: BTreeMap<LibraryName, serde_json::Value>,
 }
 
 /// Which source of a compile a [`DependencyInputRefusal`] names.
@@ -1613,6 +1617,12 @@ pub enum DependencyInputRefusal {
         /// The shared source identity.
         identity: String,
     },
+    /// An internal-list value names no supplied library.
+    #[error("invalid_request: refinement_internals names unsupplied library {identity}")]
+    UnknownRefinementInternals {
+        /// The unmatched library identity.
+        identity: String,
+    },
 }
 
 impl DependencyInputRefusal {
@@ -1621,6 +1631,7 @@ impl DependencyInputRefusal {
         match self {
             Self::EmptyIdentity { .. } => Code::InvalidIdentifier,
             Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => Code::InvalidPackage,
+            Self::UnknownRefinementInternals { .. } => Code::InvalidRequest,
         }
     }
 
@@ -1629,6 +1640,7 @@ impl DependencyInputRefusal {
         match self {
             Self::EmptyIdentity { .. } => Some(HostCause::SelectionIdentity),
             Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => None,
+            Self::UnknownRefinementInternals { .. } => Some(HostCause::SelectionIdentity),
         }
     }
 
@@ -1638,7 +1650,7 @@ impl DependencyInputRefusal {
             Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => {
                 Some("conflicting-definition")
             }
-            Self::EmptyIdentity { .. } => None,
+            Self::EmptyIdentity { .. } | Self::UnknownRefinementInternals { .. } => None,
         }
     }
 }
@@ -1677,7 +1689,38 @@ impl DependencyInput {
             }
             held.insert(identity, library);
         }
-        Ok(Self { libraries: held })
+        Ok(Self {
+            libraries: held,
+            refinement_internals: BTreeMap::new(),
+        })
+    }
+
+    /// The dependency input with unchecked internal-list values attached to
+    /// their supplied library identities (FR-147/FR-099).
+    pub fn with_refinement_internals(
+        mut self,
+        values: impl IntoIterator<Item = (String, serde_json::Value)>,
+    ) -> Result<Self, DependencyInputRefusal> {
+        for (identity, value) in values {
+            let name = LibraryName::new(&identity).map_err(|_| {
+                DependencyInputRefusal::UnknownRefinementInternals {
+                    identity: identity.clone(),
+                }
+            })?;
+            if !self.libraries.contains_key(&name) {
+                return Err(DependencyInputRefusal::UnknownRefinementInternals { identity });
+            }
+            self.refinement_internals.insert(name, value);
+        }
+        Ok(self)
+    }
+
+    /// The unchecked internal-list value owned by `identity`, if supplied.
+    pub(crate) fn refinement_internals(
+        &self,
+        identity: &LibraryName,
+    ) -> Option<&serde_json::Value> {
+        self.refinement_internals.get(identity)
     }
 
     /// Refuse a library whose source has the owner of `unit`, the unit

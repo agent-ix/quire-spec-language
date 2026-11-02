@@ -1364,22 +1364,14 @@ fn emit_with_internals(
     documents: &[Vec<u8>],
     internals: Option<Value>,
 ) -> BTreeMap<String, Value> {
-    let packages =
-        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
-    let mut declarations =
-        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
-    if let Some(value) = internals {
-        declarations = declarations.with_refinement_internals(value);
-    }
-    let graph = declarations
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
-    let names: Vec<String> = graph
+    let package = package_with_internals(unit, documents, internals);
+    let names: Vec<String> = package
+        .graph()
         .refinements()
         .iter()
         .map(|refinement| refinement.name().to_owned())
         .collect();
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let emission = emit_checked(&package).expect("the package emits");
     let wire = wire(&emission);
     let refinements: Vec<Value> = nodes(&wire)
         .iter()
@@ -1387,7 +1379,7 @@ fn emit_with_internals(
         .cloned()
         .collect();
     // Each refinement's node is located at its own declaration.
-    let by_name = names
+    names
         .into_iter()
         .map(|name| {
             let start = unit
@@ -1409,15 +1401,107 @@ fn emit_with_internals(
                 .clone();
             (name, node)
         })
-        .collect();
-    by_name
+        .collect()
+}
+
+fn package_with_internals(
+    unit: &str,
+    documents: &[Vec<u8>],
+    internals: Option<Value>,
+) -> CheckedPackage {
+    let packages =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
+    let mut declarations =
+        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
+    if let Some(value) = internals {
+        declarations = declarations.with_refinement_internals(value);
+    }
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
+fn counter_model_document(package: &str, operations: &[&str]) -> Vec<u8> {
+    let ident = |path: &str| format!("ix://{package}/{path}");
+    let origin = |path: &str| {
+        let identity = ident(path);
+        json!({"generated": {
+            "generatorIdentity": identity,
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [identity]
+        }})
+    };
+    let object_kind = "object_type";
+    let population_kind = "population";
+    let mut constructs = vec![object_kind, population_kind]
+        .into_iter()
+        .map(|name| {
+            json!({
+                "kind": {"module": package, "name": name},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none", "shape": "record", "members": {},
+                    "meaning": if name == object_kind {
+                        qsl_semantics::model::intake::meaning::OBJECT_TYPE
+                    } else {
+                        qsl_semantics::model::intake::meaning::POPULATION
+                    }
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let ops = operations
+        .iter()
+        .map(|name| {
+            let path = format!("Counter/{name}");
+            json!({
+                "identity": ident(&path), "name": name,
+                "params": [], "pre": [], "post": [],
+                "frame": {"modifies": [ident("Counter/value")], "creates": [], "deletes": []},
+                "origin": origin(&path)
+            })
+        })
+        .collect::<Vec<_>>();
+    let type_id = ident("Counter");
+    let field_id = ident("Counter/value");
+    let type_ref = "ix://quire/native/Integer";
+    let type_value = json!({
+        "identity": type_id, "displayName": "Counter",
+        "kind": {"module": package, "name": object_kind},
+        "roles": [], "origin": origin("Counter"),
+        "constraints": [], "extensions": [], "unknownPolicy": "reject",
+        "supertypes": [], "relationships": [],
+        "fields": [{
+            "identity": field_id, "name": "value", "typeRef": type_ref,
+            "presence": "required", "nullable": false, "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": origin("Counter/value")
+        }],
+        "operations": ops
+    });
+    constructs.shrink_to_fit();
+    serde_json::to_vec(&json!({
+        "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
+        "package": {"identity": package, "version": "1.0.0", "mappingVersions": [], "profileVersions": []},
+        "occurrences": [], "extensions": [], "constructs": constructs,
+        "types": [type_value],
+        "populations": [{
+            "identity": ident("counters"), "displayName": ident("counters"),
+            "kind": {"module": package, "name": population_kind},
+            "members": [ident("Counter")], "extent": "closed",
+            "origin": origin("counters")
+        }]
+    })).expect("counter model serializes")
 }
 
 /// QSpec FR-375-AC-12: the `refinement_internals` value is the only host of
 /// a protocol subject's internal list: `[{"refinement": "R", "internal":
 /// ["A::Local::Done"]}]` writes `abstract_internal` `["Local::Done"]`; the
 /// value absent, `[]` or naming only another refinement writes no member.
-#[trace("FR-375-AC-12", "TC-310")]
+#[trace("FR-375-AC-12", "FR-147-AC-9", "TC-310", "TC-552")]
 #[test]
 fn the_internal_list_value_hosts_abstract_internal() {
     let (unit, documents) = protocol_subject();
@@ -1435,6 +1519,8 @@ fn the_internal_list_value_hosts_abstract_internal() {
             "{value:?}"
         );
     }
+    let empty = emit_with_internals(&unit, &documents, Some(internal("R", &[])));
+    assert_ne!(listed["R"]["node_id"], empty["R"]["node_id"]);
     // A value naming only another refinement, the model subject `R2`.
     let two = format!("{unit}{MODEL_SUBJECT_R2}");
     let nodes = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
@@ -1442,10 +1528,612 @@ fn the_internal_list_value_hosts_abstract_internal() {
     assert!(nodes["R2"]["body"].get("abstract_internal").is_none());
 }
 
+/// FR-147-AC-1 (TC-552 step 1): protocol refinement emission owns one
+/// temporal-satisfaction record with the refinement form and emits no
+/// temporal-satisfaction record for the protocol declaration.
+#[trace("FR-147-AC-1", "TC-552")]
+#[test]
+fn a_protocol_refinement_writes_its_own_requirement_record() {
+    let (unit, documents) = protocol_subject();
+    let package = package_with_internals(
+        &unit,
+        &documents,
+        Some(json!([{"refinement":"R","internal":["A::Local::Done"]}])),
+    );
+    let graph = package.graph();
+    let refinement = graph
+        .refinements()
+        .iter()
+        .find(|refinement| refinement.name() == "R")
+        .expect("the protocol refinement is checked");
+    let occurrence = refinement
+        .requirement_occurrence()
+        .expect("the emitted refinement has its declaration occurrence");
+    let record = graph
+        .requirements()
+        .get(occurrence)
+        .expect("the refinement occurrence owns its record");
+    assert_eq!(
+        record.requirements().kind(),
+        qsl_semantics::check::Capability::TemporalSatisfaction
+    );
+    assert_eq!(
+        record.requirements().property_form(),
+        Some(quire_semantic_value::fairness::PropertyForm::Refinement { liveness: false })
+    );
+    assert_eq!(
+        graph
+            .requirements()
+            .values()
+            .filter(|record| {
+                record.requirements().kind()
+                    == qsl_semantics::check::Capability::TemporalSatisfaction
+            })
+            .count(),
+        1
+    );
+    assert!(graph.temporal_clauses().is_empty());
+}
+
+/// FR-147-AC-15 (TC-552): a protocol declared in an admitted dependency is
+/// selected by its structural identity, while the alias-free internal list
+/// and emitted refinement remain owned by the importing package.
+#[trace("TC-552", "FR-147-AC-15", "FR-147-AC-16")]
+#[test]
+fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
+    let (local_unit, documents) = protocol_subject();
+    let dependency_unit = local_unit
+        .replace(
+            "refinement R using inf abstract A::Local concrete C {}\n",
+            "",
+        )
+        .replace("model C = \"example/refinement-concrete\";\n", "")
+        .replace(
+            "model A = \"example/refinement-abstract\";",
+            "model Spec = \"example/refinement-abstract\";",
+        )
+        .replace("protocol Local", "protocol Twice")
+        .replace("A::Widget", "Spec::Widget");
+    let dependency_models =
+        qsl_semantics::model::intake::package_input(documents[..1].iter().map(Vec::as_slice))
+            .expect("dependency model package");
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new(
+            "agent-ix",
+            "test:protocol-dependency",
+            "fixture",
+            "fixture:1",
+        ),
+        "dependency.native",
+        dependency_unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("dependency unit parses");
+    let dependency_unit = qsl_forms::build_unit(&parsed).expect("dependency unit form");
+    let dependency_selections = qsl_semantics::model::intake::admit_unit(
+        &dependency_unit.selections().models,
+        &dependency_models,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("dependency model selection");
+    let dependency_declarations = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "test/protocol-dependency".to_owned(),
+        dependency_unit,
+        dependency_selections,
+        Vec::new(),
+    )
+    .expect("dependency assembles");
+    let dependency = std::sync::Arc::new(CheckedPackage::link(
+        dependency_declarations
+            .check(CheckingLimits::default())
+            .expect("dependency checks"),
+    ));
+    let dependency_emission = emit_checked(&dependency).expect("dependency emits");
+    assert!(dependency
+        .graph()
+        .protocol_node_keys("Twice")
+        .and_then(|keys| keys.clause.as_ref())
+        .is_some());
+    let library = qsl_semantics::library::LibraryName::new("test/protocol-dependency")
+        .expect("library identity");
+    let mut admitted = crate::checked_v2::AdmittedPackages::default();
+    let view = crate::checked_v2::read_import_view(
+        &dependency,
+        &dependency_emission,
+        library.clone(),
+        &dependency_models,
+        &mut admitted,
+        crate::checked_v2::V2ReadLimits::default(),
+    )
+    .expect("dependency import view is admitted");
+
+    let unit = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
+         import \"test/protocol-dependency\" as lib;\n\
+         model Spec = \"example/refinement-abstract\";\n\
+         model C = \"example/refinement-concrete\";\n\
+         protocol LocalTwice using p over (input: Spec::Widget) on origin {{\n\
+         role w on Spec::Widget;\n\
+         run sequence Main {{ }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         refinement R using inf abstract Spec::Twice concrete C {{
+         }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:root", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("unit parses");
+    assert_eq!(parsed.diagnostics(), []);
+    let raw = parsed.source().reference().clone();
+    let unit_form = qsl_forms::build_unit(&parsed).expect("unit form");
+    let root_models =
+        qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice))
+            .expect("concrete model package");
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit_form.selections().models,
+        &root_models,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("concrete model is admitted");
+    let mut declarations = qsl_semantics::check::PackageDeclarations::assemble(
+        raw,
+        "test/root".to_owned(),
+        unit_form,
+        models,
+        vec![qsl_semantics::check::AdmittedImport {
+            identity: library.clone(),
+            view: view.clone(),
+            graph: dependency.shared_graph(),
+        }],
+    )
+    .expect("dependency name resolution assembles");
+    declarations = declarations
+        .with_refinement_internals(json!([{"refinement":"R","internal":["Spec::Twice::Done"]}]));
+    let root = CheckedPackage::link_with(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("dependency protocol refinement checks"),
+        vec![crate::checked::Import {
+            identity: library.clone(),
+            package: std::sync::Arc::clone(&dependency),
+        }],
+    )
+    .expect("dependency graph links");
+    let checked = root
+        .graph()
+        .refinements()
+        .first()
+        .expect("checked refinement");
+    let qsl_semantics::check::AbstractSide::Protocol {
+        clause,
+        dependency: Some(dependency_id),
+    } = checked.abstract_side()
+    else {
+        panic!(
+            "dependency protocol identity is retained: {:?}",
+            checked.abstract_side()
+        );
+    };
+    assert_eq!(checked.abstract_internal().len(), 1);
+    assert_eq!(checked.abstract_internal()[0].spelling(), "Twice::Done");
+    assert_eq!(
+        dependency
+            .graph()
+            .protocol("Twice")
+            .expect("dependency protocol")
+            .node()
+            .as_ref()
+            .expect("emitted dependency protocol node"),
+        checked
+            .abstract_protocol()
+            .expect("resolved dependency protocol")
+    );
+    assert_eq!(clause, "Twice");
+    assert_eq!(dependency_id.as_str(), "test/protocol-dependency");
+    assert_eq!(
+        checked.abstract_model_selection().identity,
+        "example/refinement-abstract"
+    );
+    let occurrence = checked
+        .requirement_occurrence()
+        .expect("dependency refinement has its own requirement occurrence");
+    let requirement = root
+        .graph()
+        .requirements()
+        .get(occurrence)
+        .expect("dependency refinement requirement record");
+    assert_eq!(
+        requirement.requirements().kind(),
+        qsl_semantics::check::Capability::TemporalSatisfaction
+    );
+    assert_eq!(
+        requirement.requirements().property_form(),
+        Some(quire_semantic_value::fairness::PropertyForm::Refinement { liveness: false })
+    );
+    let local_unit = local_unit
+        .replace(
+            "model A = \"example/refinement-abstract\";",
+            "model Spec = \"example/refinement-abstract\";",
+        )
+        .replace("protocol Local", "protocol Twice")
+        .replace("A::Widget", "Spec::Widget")
+        .replace("abstract A::Local", "abstract Spec::Twice");
+    let local = package_with_internals(
+        &local_unit,
+        &documents,
+        Some(json!([{"refinement":"R","internal":["Spec::Twice::Done"]}])),
+    );
+    let local_occurrence = local
+        .graph()
+        .refinements()
+        .first()
+        .and_then(|refinement| refinement.requirement_occurrence())
+        .expect("local protocol refinement requirement occurrence");
+    assert_ne!(occurrence, local_occurrence);
+    let local_emission = emit_checked(&local).expect("local protocol refinement emits");
+    let root_emission = emit_checked(&root).expect("root emits");
+    let mut dependency_evidence = super::read_evidence(&dependency_emission);
+    dependency_evidence
+        .insert_domain_package_document(package_identity(&documents[0]), documents[0].clone())
+        .expect("dependency domain evidence");
+    let dependency_read = crate::checked_v2::read_checked_package_v2(
+        dependency_emission.package.bytes(),
+        library.clone(),
+        crate::checked_v2::V2ReadLimits::default(),
+        &dependency_evidence,
+    )
+    .expect("dependency emission reads back")
+    .into_value()
+    .admitted;
+    let mut root_evidence = super::read_evidence(&root_emission);
+    for document in &documents {
+        root_evidence
+            .insert_domain_package_document(package_identity(document), document.clone())
+            .expect("root domain evidence");
+    }
+    root_evidence
+        .insert_dependency_package(library.as_str(), dependency_read.clone())
+        .expect("dependency package evidence");
+    crate::checked_v2::read_checked_package_v2(
+        root_emission.package.bytes(),
+        qsl_semantics::library::LibraryName::new("test/root").unwrap(),
+        crate::checked_v2::V2ReadLimits::default(),
+        &root_evidence,
+    )
+    .expect("root dependency protocol refinement reads back");
+    let node = refinement_node(&root_emission);
+    assert_ne!(
+        node["node_id"],
+        refinement_node(&local_emission)["node_id"],
+        "dependency-owned protocol identity changes the refinement node id"
+    );
+    let root_wire = wire(&root_emission);
+    let root_ids = qsl_semantics::check::wire_id::WireGraph::of_package_value(&root_wire)
+        .expect("root structural ids");
+    let external_model_root = dependency
+        .graph()
+        .model_roots()
+        .find(|(selection, _)| selection.identity == checked.abstract_model_selection().identity)
+        .map(|(_, root)| root)
+        .expect("dependency graph retains the selected abstract model root");
+    assert_eq!(
+        node["body"]["abstract"],
+        json!({
+            "package": "test/protocol-dependency",
+            "node": root_ids.wire_value(&external_model_root).unwrap()
+        })
+    );
+    let protocol_key = checked.abstract_protocol().expect("protocol key");
+    assert_eq!(
+        node["body"]["protocol"],
+        json!({
+            "package":"test/protocol-dependency",
+            "node":root_ids.wire_value(protocol_key).unwrap()
+        })
+    );
+    let dependency_keys = dependency
+        .graph()
+        .protocol_node_keys("Twice")
+        .expect("dependency node keys");
+    let dependency_keys: Vec<_> = dependency_keys
+        .clause
+        .iter()
+        .chain(dependency_keys.nodes.values())
+        .chain(dependency_keys.channels.values())
+        .chain(dependency_keys.roles.values())
+        .collect();
+    let (finish_node, _) = dependency
+        .graph()
+        .protocol("Twice")
+        .and_then(|protocol| protocol.finish.clone())
+        .expect("dependency finish identity");
+    let finish_key = dependency_keys
+        .iter()
+        .find(|key| {
+            dependency
+                .graph()
+                .protocol_node_keys("Twice")
+                .and_then(|keys| keys.nodes.get(&finish_node))
+                == Some(*key)
+        })
+        .expect("dependency finish key");
+    let finish_id = node_id(*finish_key);
+    let finish_position = (0..dependency_read.node_kinds().len())
+        .find(|index| dependency_read.structural_key_at(*index) == Some(&finish_id))
+        .expect("dependency reader admits the exact finish identity");
+    assert!(matches!(
+        dependency_read.node_kinds()[finish_position],
+        CheckedNodeKind::Protocol(_)
+    ));
+    assert_eq!(
+        node["body"]["class_catalog"]["abstract"][0]["node"],
+        json!({
+            "package": "test/protocol-dependency",
+            "node": root_ids.wire_value(*finish_key).unwrap()
+        })
+    );
+    assert!(dependency_keys.iter().all(|dependency| {
+        !node["dependencies"]
+            .as_array()
+            .unwrap()
+            .contains(&root_ids.wire_value(dependency).unwrap())
+    }));
+
+    let wrong_owner = format!(
+        "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         import \"test/protocol-dependency\" as lib;\n\
+         model Spec = \"example/refinement-concrete\";\n\
+         model C = \"example/refinement-abstract\";\n\
+         refinement R using inf abstract Spec::Twice concrete C {{}}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:wrong-owner", "fixture", "fixture:1"),
+        "wrong-owner.native",
+        wrong_owner.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("wrong-owner unit parses");
+    let unit_form = qsl_forms::build_unit(&parsed).expect("wrong-owner unit form");
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit_form.selections().models,
+        &root_models,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("wrong-owner models are admitted");
+    let declarations = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "test/wrong-owner".to_owned(),
+        unit_form,
+        models,
+        vec![qsl_semantics::check::AdmittedImport {
+            identity: library.clone(),
+            view: view.clone(),
+            graph: dependency.shared_graph(),
+        }],
+    )
+    .expect("wrong-owner dependency assembles");
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("a dependency protocol over another model is refused");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            qsl_semantics::check::CheckCause::Refinement(refinement)
+                if matches!(
+                    &refinement.cause,
+                    qsl_semantics::check::RefinementCause::Malformed { name } if name == "Twice"
+                )
+        )),
+        "{refusals:?}"
+    );
+
+    for absent in ["Thrice", "Counter", "LocalTwice"] {
+        let missing_clause = unit.replace("Spec::Twice", &format!("Spec::{absent}"));
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new(
+                "agent-ix",
+                format!("test:missing-{absent}"),
+                "fixture",
+                "fixture:1",
+            ),
+            "missing.native",
+            missing_clause.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("missing-clause unit parses");
+        let unit_form = qsl_forms::build_unit(&parsed).expect("missing-clause unit form");
+        let models = qsl_semantics::model::intake::admit_unit(
+            &unit_form.selections().models,
+            &root_models,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        )
+        .expect("missing-clause models are admitted");
+        let declarations = qsl_semantics::check::PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            format!("test/missing-{absent}"),
+            unit_form,
+            models,
+            vec![qsl_semantics::check::AdmittedImport {
+                identity: library.clone(),
+                view: view.clone(),
+                graph: dependency.shared_graph(),
+            }],
+        )
+        .expect("missing-clause dependency assembles");
+        let refusals = declarations
+            .check(CheckingLimits::default())
+            .expect_err("an unknown dependency clause or type refuses");
+        assert!(refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            qsl_semantics::check::CheckCause::Refinement(refinement)
+                if matches!(
+                    &refinement.cause,
+                    qsl_semantics::check::RefinementCause::Unresolved { name, .. } if name == absent
+                )
+        )), "{absent}: {refusals:?}");
+    }
+}
+
+/// FR-147-AC-15 (TC-552): a dependency-owned `a1` row is checked against its
+/// admitted receiver binder, and a Boolean cannot substitute for that binder.
+#[trace("TC-552", "FR-147-AC-15", "FR-147-AC-14")]
+#[test]
+fn a_dependency_protocol_node_row_checks_its_receiver_argument() {
+    let dependency_model = counter_model_document("example/refinement-abstract", &["inc"]);
+    let concrete_model = counter_model_document("example/refinement-concrete", &["commitA"]);
+    let library = qsl_semantics::library::LibraryName::new("test/protocol-dependency")
+        .expect("library identity");
+    let dependency_unit = format!(
+        "{COMPLETE_V1_HEADER}profile p = \"quire.protocol.finite-global/v1\";\n\
+         model Spec = \"example/refinement-abstract\";\n\
+         protocol Twice using p over (c: Spec::Counter) on origin {{\n\
+         role w on Spec::Counter;\n\
+         run sequence Main {{ attempt a1 by w on Spec::Counter::inc contracts [] as (r: Boolean) {{ true }}; }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n"
+    );
+    let dependency_models =
+        qsl_semantics::model::intake::package_input([dependency_model.as_slice()])
+            .expect("dependency model package");
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:dep-protocol", "fixture", "1"),
+        "dependency.native",
+        dependency_unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("dependency unit parses");
+    let form = qsl_forms::build_unit(&parsed).expect("dependency unit form");
+    let selections = qsl_semantics::model::intake::admit_unit(
+        &form.selections().models,
+        &dependency_models,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("dependency selection");
+    let dependency = std::sync::Arc::new(CheckedPackage::link(
+        qsl_semantics::check::PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            "test/protocol-dependency".to_owned(),
+            form,
+            selections,
+            Vec::new(),
+        )
+        .expect("dependency assembles")
+        .check(CheckingLimits::default())
+        .expect("dependency checks"),
+    ));
+    let dependency_emission = emit_checked(&dependency).expect("dependency emits");
+    let mut admitted = crate::checked_v2::AdmittedPackages::default();
+    let view = crate::checked_v2::read_import_view(
+        &dependency,
+        &dependency_emission,
+        library.clone(),
+        &dependency_models,
+        &mut admitted,
+        crate::checked_v2::V2ReadLimits::default(),
+    )
+    .expect("dependency import view");
+    let unit = |target: &str| {
+        format!(
+            "{COMPLETE_V1_HEADER}profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+             import \"test/protocol-dependency\" as lib;\n\
+             model Spec = \"example/refinement-abstract\";\n\
+             model Impl = \"example/refinement-concrete\";\n\
+             refinement CasTwice using inf abstract Spec::Twice concrete Impl {{\n\
+             population Spec::counters from Impl::counters;\n\
+             object Spec::Counter from Impl::Counter {{ value = self.value; }}\n\
+             step Impl::Counter::commitA -> {target};\n\
+             }}\n"
+        )
+    };
+    let check = |source: &str| {
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:root", "fixture", "1"),
+            "root.native",
+            source.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("root unit parses");
+        let form = qsl_forms::build_unit(&parsed).expect("root unit form");
+        let models = qsl_semantics::model::intake::package_input([
+            dependency_model.as_slice(),
+            concrete_model.as_slice(),
+        ])
+        .expect("root models");
+        let selections = qsl_semantics::model::intake::admit_unit(
+            &form.selections().models,
+            &models,
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        )
+        .expect("root selections");
+        let declarations = qsl_semantics::check::PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            "test/root".to_owned(),
+            form,
+            selections,
+            vec![qsl_semantics::check::AdmittedImport {
+                identity: library.clone(),
+                view: view.clone(),
+                graph: dependency.shared_graph(),
+            }],
+        )
+        .expect("root assembles");
+        declarations.check(CheckingLimits::default())
+    };
+    let graph = check(&unit("node Spec::Twice::a1(self)")).expect("the dependency node row checks");
+    let checked = graph.refinements().first().expect("one checked refinement");
+    let nodes: Vec<_> = checked
+        .steps()
+        .iter()
+        .filter_map(|step| match &step.target {
+            qsl_semantics::check::StepTarget::Node { node, .. } => Some(node.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(nodes, ["a1"]);
+
+    let wrong_source = unit("node Spec::Twice::a1(true)");
+    let refusals = check(&wrong_source).expect_err("Boolean is not the admitted Counter receiver");
+    let refusal = refusals
+        .iter()
+        .find(|refusal| {
+            matches!(
+                &refusal.cause,
+                qsl_semantics::check::CheckCause::Refinement(refinement)
+                    if matches!(
+                        &refinement.cause,
+                        qsl_semantics::check::RefinementCause::NodeArgumentType {
+                            node,
+                            position: 0,
+                            expected,
+                            actual,
+                        } if node == "Spec::Twice::a1"
+                            && matches!(**expected, quire_exact::ValueType::Reference(_))
+                            && **actual == quire_exact::ValueType::Boolean
+                    )
+            )
+        })
+        .expect("typed receiver argument mismatch");
+    assert_eq!(refusal.cause.code(), qsl_foundation::Code::IllTyped);
+    assert_eq!(refusal.cause.cause(), Some("type-mismatch"));
+    let qsl_semantics::check::CheckCause::Refinement(refinement) = &refusal.cause else {
+        unreachable!("the selected refusal is a refinement mismatch")
+    };
+    assert_eq!(
+        &wrong_source[refinement.span.start..refinement.span.end],
+        "true"
+    );
+}
+
 /// QSpec FR-375-AC-13: reordering the value's objects or entries changes
 /// neither the refinement node nor its written internal list, nor does
 /// renaming the abstract alias with the value's spellings renamed to match.
-#[trace("FR-375-AC-13", "TC-310")]
+#[trace("FR-375-AC-13", "FR-147-AC-9", "TC-310", "TC-552")]
 #[test]
 fn the_internal_list_order_does_not_change_the_refinement_node() {
     let (unit, documents) = protocol_subject();

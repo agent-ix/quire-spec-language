@@ -1026,12 +1026,21 @@ fn protocol_closure_traces(
             let expansion = system
                 .successors(state)
                 .map_err(|stop| stop_verdict(system.model(), stop))?;
-            if expansion
-                .findings
-                .iter()
-                .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-            {
-                return Err(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor));
+            if let Some((transition, clause)) = expansion.findings.iter().find_map(|finding| {
+                let ModelFinding::ContractUndetermined {
+                    transition, clause, ..
+                } = finding
+                else {
+                    return None;
+                };
+                Some((transition.clone(), clause.clone()))
+            }) {
+                return Err(StepVerdict::ProtocolContractUndetermined {
+                    candidate: state.clone(),
+                    transition,
+                    clause,
+                    trace: path,
+                });
             }
             for (transition, post) in expansion.successors {
                 expanded = expanded.saturating_add(1);

@@ -364,6 +364,19 @@ pub enum StepVerdict {
     Undefined(UndefinedEvaluation),
     /// The check could not decide.
     Undetermined(Undetermined),
+    /// A protocol transition's checked contract was undetermined while
+    /// closing an admitted protocol step; retain the candidate-specific
+    /// trace so the product can build a paired relation witness.
+    ProtocolContractUndetermined {
+        /// The candidate whose successor contract could not be evaluated.
+        candidate: ProtocolCandidate,
+        /// The operation transition whose checked contract was undetermined.
+        transition: ModelTransition,
+        /// The exact checked contract clause that was undefined.
+        clause: String,
+        /// The candidate-specific path from the product's protocol candidate.
+        trace: ProtocolTrace,
+    },
     /// A run budget stopped the check: the evaluation meter, the candidate
     /// bound, or a result domain too large to order. It is no fault of QSL
     /// and no verdict; the run stops (FR-142).

@@ -153,6 +153,96 @@ fn a_twice_protocol_refinement_holds_uncertified() {
     assert_eq!(settled.basis, SettlementBasis::ClosedScope);
 }
 
+/// FR-147-AC-3 (TC-552 step 3): a requested fairness guarantee over a
+/// hidden abstract field leaves protocol safety available and marks only
+/// the liveness half unsupported.
+#[trace("TC-552", "FR-147-AC-3")]
+#[test]
+fn a_protocol_refinement_with_hidden_fairness_state_reports_unsupported_liveness() {
+    let source = cas_twice(false, false)
+        .replace(
+            "object Spec::Counter from Impl::Counter { value = self.value; }",
+            "object Spec::Counter from Impl::Counter { }",
+        )
+        .replace(
+            "step Impl::Counter::retryB -> stutter;",
+            "step Impl::Counter::retryB -> stutter;\nensure fair weak Spec::Counter::inc;",
+        );
+    let world = World::with_internals(
+        Variant {
+            peek: false,
+            intended_terminal: true,
+            ..Variant::CAS
+        },
+        &source,
+        serde_json::json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]),
+    );
+    let outcome = check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: Some(protocol_binding()),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the abstract protocol subject is admitted");
+    assert!(matches!(
+        outcome.safety,
+        SafetyOutcome::HoldsUncertified { .. }
+    ));
+    assert_eq!(
+        outcome.liveness,
+        Some(qsl_replay::LivenessHalf::Unsupported(
+            qsl_replay::UnavailabilityCause::HiddenFieldLiveness
+        ))
+    );
+}
+
+/// FR-148-AC-13 (TC-553): a uniquely admitted required clause with no
+/// fairness rows adds no authored specification assumption.
+#[trace("TC-553", "FR-148-AC-13")]
+#[test]
+fn a_required_temporal_clause_without_fairness_adds_no_authored_constraint() {
+    let source = cas_twice(false, false)
+        .replace(
+            "profile p = \"quire.protocol.finite-global/v1\";",
+            "profile p = \"quire.protocol.finite-global/v1\";\n\
+             temporal Left using inf over (k: Spec::Counter) clock \"model-steps\" on origin { eventually holds(k.value >= 0) }",
+        )
+        .replace(
+            "role w on Spec::Counter; scheduling adversarial;",
+            "role w on Spec::Counter; requires temporal Left; scheduling adversarial;",
+        );
+    let world = World::with_internals(
+        Variant {
+            peek: false,
+            intended_terminal: true,
+            ..Variant::CAS
+        },
+        &source,
+        serde_json::json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]),
+    );
+    let systems = open_protocol_systems(
+        world.refinement(),
+        &world.concrete_request(UNLIMITED),
+        world.package(),
+        vec![world.abstract_initial()],
+        protocol_binding().over,
+    )
+    .expect("the admitted protocol requirement opens");
+    let protocol = systems
+        .abstract_protocol
+        .expect("the protocol subject opens");
+    assert!(protocol.required_temporal_fairness().is_empty());
+}
+
 /// FR-148-AC-7 (TC-553): a protocol with adversarial scheduling cannot
 /// establish a concrete weak-fairness assumption that excludes a paired
 /// `peek` loop while a different concrete operation remains continuously
@@ -276,33 +366,6 @@ fn protocol_scheduler_fairness_can_imply_a_concrete_assumption() {
         "the protocol scheduler fairness establishes the concrete assumption: {:?}",
         outcome.safety
     );
-    let systems = open_protocol_systems(
-        world.refinement(),
-        &world.concrete_request(UNLIMITED),
-        world.package(),
-        vec![world.abstract_initial()],
-        protocol_binding().over,
-    )
-    .expect("the protocol systems open");
-    let left_key = world
-        .package()
-        .graph()
-        .temporal_clauses()
-        .iter()
-        .find(|clause| clause.clause().name() == "Left")
-        .expect("the required Left clause is admitted")
-        .identity();
-    assert!(systems
-        .abstract_protocol
-        .as_ref()
-        .expect("the selected protocol is open")
-        .required_temporal_fairness()
-        .iter()
-        .any(|required| required.clause == left_key
-            && required.constraint.kind() == quire_semantic_value::fairness::FairnessKind::Strong
-            && required.constraint.granularity()
-                == quire_semantic_value::fairness::FairnessGranularity::Each
-            && required.constraint.operation().name() == "inc"));
 }
 
 /// FR-148-AC-8 (TC-553): only the exact directly required temporal clause's
@@ -726,6 +789,87 @@ fn required_weak_whole_fairness_does_not_imply_concrete_strong_each() {
     );
 }
 
+/// FR-148-AC-14 (TC-553): a satisfied refinement `ensure` remains a
+/// guarantee and does not enter the implementation or protocol assumption
+/// sets used to decide the relation.
+#[trace("TC-553", "FR-148-AC-14")]
+#[test]
+fn a_satisfied_ensure_does_not_change_the_assumption_relation() {
+    let base = ac9_toggle_source("strong", "weak");
+    let with_ensure = base.replace(
+        "assume fair weak each Impl::Counter::inc;",
+        "assume fair weak each Impl::Counter::inc;\nensure fair weak whole Spec::Counter::inc;",
+    );
+    let run = |source: &str| {
+        let world = World::with_internals(
+            Variant {
+                peek: false,
+                fairness_toggle: true,
+                ..Variant::CAS
+            },
+            source,
+            serde_json::json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done","Spec::Twice::Select","Spec::Twice::Choose"]}]),
+        );
+        let outcome = check_refinement(
+            RefinementCheckRequest {
+                refinement: world.refinement(),
+                concrete: ModelSubject {
+                    simulation: world.concrete_request(UNLIMITED),
+                    proof_bounds: Vec::new(),
+                },
+                abstract_package: world.package(),
+                abstract_initial: vec![world.abstract_initial()],
+                abstract_protocol_binding: Some(protocol_binding()),
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("the abstract protocol subject is admitted");
+        assert!(matches!(
+            outcome.safety,
+            SafetyOutcome::HoldsUncertified { .. }
+        ));
+        let systems = open_protocol_systems(
+            world.refinement(),
+            &world.concrete_request(UNLIMITED),
+            world.package(),
+            vec![world.abstract_initial()],
+            protocol_binding().over,
+        )
+        .expect("the required clause source opens");
+        let authored_sources = systems
+            .abstract_protocol
+            .as_ref()
+            .expect("the abstract protocol opens")
+            .required_temporal_fairness()
+            .to_vec();
+        let implementation_assumptions: Vec<_> = world
+            .refinement()
+            .concrete_operation_fairness()
+            .cloned()
+            .collect();
+        let specification_guarantees: Vec<_> = world
+            .refinement()
+            .abstract_operation_fairness()
+            .cloned()
+            .collect();
+        (
+            outcome.safety,
+            implementation_assumptions,
+            specification_guarantees,
+            authored_sources,
+        )
+    };
+    let without = run(&base);
+    let with = run(&with_ensure);
+    assert_eq!(without.0, with.0);
+    assert_eq!(without.1, with.1);
+    assert_eq!(without.3, with.3);
+    assert_eq!(without.2.len(), 0);
+    assert_eq!(with.2.len(), 1);
+}
+
 /// FR-148-AC-10 (TC-553): a TSO flush fairness member participates in
 /// the assumption relation and its paired lasso replays.
 #[trace("TC-553", "FR-148-AC-10")]
@@ -1023,6 +1167,94 @@ fn an_undetermined_assumption_predicate_has_a_typed_finite_witness() {
     assert!(
         !matches!(settled.value, TerminalValue::Proved { .. }),
         "an undecided assumption relation cannot settle proved"
+    );
+}
+
+/// FR-148-AC-12 (TC-553): a protocol operation whose checked contract is
+/// undefined at a reachable paired state retains its required fairness
+/// source and replays the same finite predicate witness.
+#[trace("TC-553", "FR-148-AC-12")]
+#[test]
+fn an_undetermined_protocol_assumption_has_a_typed_finite_witness() {
+    let source = cas_twice(false, false)
+        .replace(
+            "protocol Twice",
+            "pre UnknownProtocol using v on Spec::Counter::inc { 6 mod (1 - self.value) >= 0 }\n\
+             temporal Left using inf over (k: Spec::Counter) clock \"model-steps\" on origin { fair weak whole Spec::Counter::inc; eventually holds(k.value >= 0) }\n\
+             protocol Twice",
+        )
+        .replace(
+            "attempt a2 by w on Spec::Counter::inc contracts []",
+            "attempt a2 by w on Spec::Counter::inc contracts [UnknownProtocol]",
+        )
+        .replace(
+            "role w on Spec::Counter; scheduling adversarial;",
+            "role w on Spec::Counter; requires temporal Left; scheduling adversarial;",
+        )
+        .replace("finish Done as (d: Boolean) { true };", "finish Done as (d: Boolean) { false };");
+    let world = World::with_internals(
+        Variant {
+            peek: false,
+            ..Variant::CAS
+        },
+        &source,
+        serde_json::json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done"]}]),
+    );
+    let initial = world.abstract_initial();
+    let outcome = check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![initial.clone()],
+            abstract_protocol_binding: Some(protocol_binding()),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the abstract protocol subject is admitted");
+    let SafetyOutcome::Undecided {
+        cause: qsl_replay::SafetyUndecided::ProtocolAssumptionNotEstablished(witness),
+        ..
+    } = &outcome.safety
+    else {
+        panic!(
+            "an unknown protocol predicate cannot prove refinement: {:?}",
+            outcome.safety
+        );
+    };
+    assert_eq!(
+        witness.reason,
+        qsl_replay::ProtocolAssumptionReason::RelationUndetermined
+    );
+    assert!(witness.path.loop_entry.is_none());
+    assert!(witness
+        .undecided_locus
+        .as_deref()
+        .is_some_and(|locus| locus.starts_with("ProtocolContractUndetermined:")));
+    assert!(witness.identities.iter().any(|identity| {
+        identity.side == qsl_replay::AssumptionSide::Specification
+            && matches!(
+                identity.target,
+                qsl_replay::AssumptionTarget::RequiredTemporal { .. }
+            )
+    }));
+    let systems = open_protocol_systems(
+        world.refinement(),
+        &world.concrete_request(UNLIMITED),
+        world.package(),
+        vec![initial],
+        protocol_binding().over,
+    )
+    .expect("the assumption witness replays over its admitted systems");
+    assert_eq!(
+        replay_protocol_assumption_witness(world.refinement(), &systems, witness)
+            .expect("typed protocol-side assumption witness replay runs"),
+        ProtocolAssumptionReplaySettlement::Reproduced
     );
 }
 
@@ -1729,7 +1961,7 @@ fn check_initial_and_steps_retain_protocol_control_candidates() {
         .any(|state| protocol.successors(state).unwrap().successors.is_empty()));
 }
 
-/// FR-148 (TC-553): `any` admits the union of internal stutter and visible
+/// FR-148-AC-1 (TC-553): `any` admits the union of internal stutter and visible
 /// protocol matches; this `commitA` takes the visible `a1` branch.
 #[trace("TC-553", "FR-148-AC-1")]
 #[test]
@@ -1817,7 +2049,7 @@ fn an_any_row_can_take_a_visible_protocol_transition() {
     assert_eq!(counter_value(&post.abstract_states[0]), 1);
 }
 
-/// FR-147/FR-148 (TC-553): a node row compares its expression with the
+/// FR-148-AC-1 (TC-553): a node row compares its expression with the
 /// attempt's typed receiver binder before accepting the protocol node.
 #[trace("TC-553", "FR-148-AC-1")]
 #[test]

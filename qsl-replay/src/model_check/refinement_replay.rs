@@ -297,14 +297,25 @@ pub fn replay_protocol_assumption_witness(
                     disagreement(Category::Success),
                 ));
             };
-            let expansion = systems
-                .concrete
-                .successors(&concrete)
-                .map_err(|_| fault("assumption-replay-undetermined-expansion-succeeds"))?;
-            let reproduced = expansion.findings.iter().any(|finding| {
-                matches!(finding, ModelFinding::ContractUndetermined { clause, .. }
-                    if locus == format!("ContractUndetermined:{clause}"))
-            });
+            let reproduced =
+                if let Some(expected) = locus.strip_prefix("ProtocolContractUndetermined:") {
+                    let expansion = protocol.successors(&candidate).map_err(|_| {
+                        fault("assumption-replay-protocol-undetermined-expansion-succeeds")
+                    })?;
+                    expansion.findings.iter().any(|finding| {
+                    matches!(finding, ModelFinding::ContractUndetermined { transition, clause, .. }
+                        if expected == format!("{clause}:{}", transition.operation()))
+                })
+                } else {
+                    let expansion = systems
+                        .concrete
+                        .successors(&concrete)
+                        .map_err(|_| fault("assumption-replay-undetermined-expansion-succeeds"))?;
+                    expansion.findings.iter().any(|finding| {
+                        matches!(finding, ModelFinding::ContractUndetermined { clause, .. }
+                        if locus == format!("ContractUndetermined:{clause}"))
+                    })
+                };
             if reproduced {
                 Ok(ProtocolAssumptionReplaySettlement::Reproduced)
             } else {
@@ -927,7 +938,7 @@ fn settle_positions(
                 found = Found::Undefined(Box::new(evaluation));
                 break;
             }
-            StepVerdict::Undetermined(_) => {
+            StepVerdict::Undetermined(_) | StepVerdict::ProtocolContractUndetermined { .. } => {
                 found = Found::Undetermined;
                 break;
             }
@@ -1041,7 +1052,9 @@ fn protocol_relation_edges(
             StepVerdict::Undefined(evaluation) => {
                 return Ok(Err(Found::Undefined(Box::new(evaluation))));
             }
-            StepVerdict::Undetermined(_) => return Ok(Err(Found::Undetermined)),
+            StepVerdict::Undetermined(_) | StepVerdict::ProtocolContractUndetermined { .. } => {
+                return Ok(Err(Found::Undetermined))
+            }
             StepVerdict::Stopped(reached) => return Ok(Err(Found::Stopped(reached))),
             StepVerdict::Fault(_) => return Err(fault("protocol-replay-step")),
         }
@@ -1124,7 +1137,10 @@ fn replay_lasso(
                 return Ok(RefinementTraceSettlement::Stopped(reached))
             }
             StepVerdict::Fault(_) => return Err(fault("refinement-step")),
-            StepVerdict::Fails(_) | StepVerdict::Undefined(_) | StepVerdict::Undetermined(_) => {
+            StepVerdict::Fails(_)
+            | StepVerdict::Undefined(_)
+            | StepVerdict::Undetermined(_)
+            | StepVerdict::ProtocolContractUndetermined { .. } => {
                 return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
                     Category::Violation,
                 )))
@@ -1306,7 +1322,10 @@ fn replay_protocol_divergence(
             StepVerdict::Stopped(reached) => {
                 return Ok(RefinementTraceSettlement::Stopped(reached))
             }
-            StepVerdict::Fails(_) | StepVerdict::Undefined(_) | StepVerdict::Undetermined(_) => {
+            StepVerdict::Fails(_)
+            | StepVerdict::Undefined(_)
+            | StepVerdict::Undetermined(_)
+            | StepVerdict::ProtocolContractUndetermined { .. } => {
                 return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
                     Category::Violation,
                 )))
@@ -1339,7 +1358,10 @@ fn replay_protocol_divergence(
                 return Ok(RefinementTraceSettlement::Stopped(reached))
             }
             StepVerdict::Fault(_) => return Err(fault("protocol-terminal-stutter-replay")),
-            StepVerdict::Fails(_) | StepVerdict::Undefined(_) | StepVerdict::Undetermined(_) => {
+            StepVerdict::Fails(_)
+            | StepVerdict::Undefined(_)
+            | StepVerdict::Undetermined(_)
+            | StepVerdict::ProtocolContractUndetermined { .. } => {
                 return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
                     Category::Violation,
                 )))

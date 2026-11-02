@@ -45,7 +45,7 @@ pub use catalog::{
 };
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
-pub(crate) use internal_list::{NodeClass, ParsedLists, ProtocolClasses};
+pub(crate) use internal_list::{ImportedProtocolClasses, NodeClass, ParsedLists, ProtocolClasses};
 pub use protocol::{ChannelStepKind, MemoryStepKind, ProtocolStepKind, RoleStepKind};
 pub(crate) use protocol::{ProtocolClause, ProtocolRefinement, SelectedProtocol};
 use qsl_forms::{
@@ -586,8 +586,8 @@ impl CheckedRefinement {
     pub fn v2_emission(&self) -> Result<RefinementV2Emission, RefinementV2EncodingError> {
         use quire_contract_model::{
             RefinementAssume, RefinementEnsure, RefinementField, RefinementKey, RefinementObject,
-            RefinementOpen, RefinementPopulation, RefinementStep, RefinementStepArgument,
-            RefinementStepTarget,
+            RefinementOpen, RefinementPackageNodeKey, RefinementPopulation, RefinementStep,
+            RefinementStepArgument, RefinementStepTarget,
         };
         let abstract_subject = self
             .abstract_subject_node
@@ -602,6 +602,25 @@ impl CheckedRefinement {
             .as_ref()
             .ok_or(RefinementV2EncodingError::MissingRows)?;
         let local = |key: &NodeKey| RefinementKey::Local(structural_id(key));
+        let selected = |key: &NodeKey, package: Option<&String>| match package {
+            Some(package) => RefinementKey::External(RefinementPackageNodeKey {
+                package: package.clone().into_boxed_str(),
+                node: structural_id(key),
+            }),
+            None => local(key),
+        };
+        let protocol_package = match &self.abstract_side {
+            AbstractSide::Protocol {
+                dependency: Some(dependency),
+                ..
+            } => Some(dependency.as_str().to_owned()),
+            _ => None,
+        };
+        let abstract_key = self
+            .abstract_external_subject_node
+            .as_ref()
+            .map(|node| selected(node, protocol_package.as_ref()))
+            .unwrap_or_else(|| local(abstract_subject));
         let term = leaf_checked_term;
         let arguments = |arguments: &[Option<crate::check::node_key::LeafTerm>]| {
             arguments
@@ -722,7 +741,7 @@ impl CheckedRefinement {
             })
             .collect();
         let body = quire_contract_model::CheckedTerm::Refinement {
-            abstract_key: Box::new(local(abstract_subject)),
+            abstract_key: Box::new(abstract_key),
             profile: quire_contract_model::CheckedArtifactRef {
                 authority: "agent-ix".into(),
                 identity: self.profile.identity.as_str().into(),
@@ -736,7 +755,7 @@ impl CheckedRefinement {
             protocol: self
                 .abstract_protocol
                 .as_ref()
-                .map(|clause| Box::new(local(clause))),
+                .map(|clause| Box::new(selected(clause, protocol_package.as_ref()))),
             abstract_internal: (!self.abstract_internal.is_empty()).then(|| {
                 self.abstract_internal
                     .iter()
@@ -746,8 +765,23 @@ impl CheckedRefinement {
             class_catalog: self.class_catalog_keys.as_ref().map(v2_class_catalog),
         };
         let identity = self.v2_identity(concrete_subject)?;
-        let mut dependencies: Vec<&NodeKey> = std::iter::once(abstract_subject)
-            .chain(self.abstract_protocol.as_ref())
+        let protocol_is_external = matches!(
+            self.abstract_side,
+            AbstractSide::Protocol {
+                dependency: Some(_),
+                ..
+            }
+        );
+        let mut dependencies: Vec<&NodeKey> = self
+            .abstract_external_subject_node
+            .is_none()
+            .then_some(abstract_subject)
+            .into_iter()
+            .chain(
+                self.abstract_protocol
+                    .as_ref()
+                    .filter(|_| !protocol_is_external),
+            )
             .chain(
                 self.class_catalog_keys
                     .iter()
@@ -950,13 +984,13 @@ pub enum RefinementV2EncodingError {
 }
 
 /// QSpec FR-375's `class_catalog` member: each declared class's node and
-/// binder types as local node references (the abstract side's as
-/// `RefinementKey::Local`, its model being selected by this package), and
-/// each memory class as its closed memory entry.
+/// binder types as local node references, or a selected-package reference
+/// for a dependency-owned abstract class node, and each memory class as its
+/// closed memory entry.
 fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::RefinementClassCatalog {
     use quire_contract_model::{
         RefinementAbstractClass, RefinementConcreteClass, RefinementDrain, RefinementKey,
-        RefinementMemoryClass, RefinementMemoryModel, RefinementTsoModel,
+        RefinementMemoryClass, RefinementMemoryModel, RefinementPackageNodeKey, RefinementTsoModel,
     };
     let memory = |class: KeyedMemoryClass| match class {
         KeyedMemoryClass::Drain(model) => RefinementMemoryClass::Drain {
@@ -971,6 +1005,13 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
             memory_model: RefinementTsoModel::Tso,
         },
     };
+    let selected = |node: &NodeKey, dependency: Option<&String>| match dependency {
+        Some(package) => RefinementKey::External(RefinementPackageNodeKey {
+            package: package.clone().into_boxed_str(),
+            node: structural_id(node),
+        }),
+        None => RefinementKey::Local(structural_id(node)),
+    };
     quire_contract_model::RefinementClassCatalog {
         concrete: catalog
             .concrete()
@@ -980,6 +1021,7 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     class,
                     node,
                     binder_types,
+                    ..
                 } => RefinementConcreteClass::Declared {
                     class: class.as_str().into(),
                     node: structural_id(node),
@@ -996,12 +1038,13 @@ fn v2_class_catalog(catalog: &KeyedClassCatalog) -> quire_contract_model::Refine
                     class,
                     node,
                     binder_types,
+                    dependency,
                 } => RefinementAbstractClass::Declared {
                     class: class.as_str().into(),
-                    node: RefinementKey::Local(structural_id(node)),
+                    node: selected(node, dependency.as_ref()),
                     binder_types: binder_types
                         .iter()
-                        .map(|key| RefinementKey::Local(structural_id(key)))
+                        .map(|key| selected(key, dependency.as_ref()))
                         .collect(),
                 },
                 KeyedCatalogClass::Memory(class) => RefinementAbstractClass::Memory(memory(*class)),
@@ -1479,6 +1522,10 @@ pub struct CheckedRefinement {
     /// The selected local state-machine nodes, filled from the checked model
     /// selections after protocol refinement resolution.
     pub(crate) abstract_subject_node: Option<NodeKey>,
+    /// Imported model root paired with a dependency-owned protocol subject,
+    /// so the checked package IR can validate the protocol and its class
+    /// catalog against the same selected package.
+    pub(crate) abstract_external_subject_node: Option<NodeKey>,
     pub(crate) concrete_subject_node: Option<NodeKey>,
     /// The declaring unit's package: the package of the refinement's own
     /// node (QSpec FR-322), whatever package its subjects belong to.
@@ -1522,6 +1569,7 @@ impl std::fmt::Debug for CheckedRefinement {
             concrete_protocol,
             abstract_protocol,
             abstract_subject_node,
+            abstract_external_subject_node,
             concrete_subject_node,
             package_name,
             declaration_span,
@@ -1560,6 +1608,10 @@ impl std::fmt::Debug for CheckedRefinement {
             .field(
                 "abstract_subject_node",
                 &abstract_subject_node.as_ref().map(NodeKeyDebug),
+            )
+            .field(
+                "abstract_external_subject_node",
+                &abstract_external_subject_node.as_ref().map(NodeKeyDebug),
             )
             .field(
                 "concrete_subject_node",
@@ -1835,6 +1887,9 @@ pub enum AbstractSide {
     Protocol {
         /// The protocol clause's declared name.
         clause: String,
+        /// The imported library identity when the clause comes from a
+        /// checked dependency package.
+        dependency: Option<crate::library::LibraryName>,
     },
 }
 
@@ -2295,6 +2350,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
             clause,
             &abstract_side,
             declarations.scope.types(),
+            declarations.scope,
         ),
     };
     let internal = internal_list(
@@ -2305,6 +2361,10 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         &subject,
     );
     let clause_refused = matches!(subject, ListSubject::Refused);
+    let abstract_dependency = match &subject {
+        ListSubject::Protocol { dependency, .. } => dependency.clone(),
+        _ => None,
+    };
     let mut checker = Checker {
         declarations,
         clock_reading: env.clock_reading,
@@ -2321,7 +2381,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         history: Vec::new(),
         protocol_subject: matches!(form.abstract_side, AbstractSideForm::Protocol { .. }),
         protocol: match subject {
-            ListSubject::Protocol(classes) => Some(*classes),
+            ListSubject::Protocol { classes, .. } => Some(*classes),
             _ => None,
         },
         internal,
@@ -2389,6 +2449,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
             AbstractSideForm::Model(_) => AbstractSide::Model,
             AbstractSideForm::Protocol { clause, .. } => AbstractSide::Protocol {
                 clause: clause.name.clone(),
+                dependency: abstract_dependency,
             },
         },
         abstract_internal: {
@@ -2425,6 +2486,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_protocol: None,
         abstract_protocol: None,
         abstract_subject_node: None,
+        abstract_external_subject_node: None,
         concrete_subject_node: None,
         package_name: None,
         requirement: None,
@@ -2515,7 +2577,10 @@ enum ListSubject {
     /// A model subject: a list is never resolved against a protocol.
     Model,
     /// A protocol subject whose clause resolved.
-    Protocol(Box<ProtocolClasses>),
+    Protocol {
+        classes: Box<ProtocolClasses>,
+        dependency: Option<crate::library::LibraryName>,
+    },
     /// A protocol subject whose clause did not resolve, or whose side the
     /// build has not built: it reported what it reports and its entries
     /// resolve against nothing.
@@ -2533,45 +2598,131 @@ fn resolve_protocol(
     clause: &qsl_forms::DeclaredName,
     abstract_side: &Side<'_>,
     types: &TypeEnvironment,
+    scope: &super::check::Scope,
 ) -> ListSubject {
     // A build that has not built the side refused it already and reports
     // nothing else about it.
     let report = env.support.protocol_abstract_side;
-    let Some(view) = env
-        .protocols
-        .iter()
-        .find(|view| view.form.name.name == clause.name)
-    else {
-        if report && !env.defer_abstract_protocol_resolution {
-            findings.unresolved(&clause.name, clause.span, None);
-        }
-        return ListSubject::Unresolved;
-    };
-    let Some(checked) = view.checked else {
-        return ListSubject::Refused;
-    };
-    let acts_on_abstract_model = {
-        let object_types = abstract_side.object_types(types).unwrap_or_default();
-        checked.roles.iter().any(|role| {
-            role.context
-                .as_ref()
-                .is_some_and(|context| object_types.iter().any(|object| object.id == *context))
-                || role.model_selection.as_deref()
-                    == Some(abstract_side.model.selection().identity.as_str())
+    let selected = abstract_side.model.selection().identity.as_str();
+    let dependency_models: Vec<_> = scope
+        .imported_packages()
+        .filter(|import| {
+            import
+                .graph
+                .model_selections()
+                .iter()
+                .any(|selection| selection.identity.as_str() == selected)
         })
-    };
-    if !acts_on_abstract_model {
-        if report {
-            findings.malformed(&clause.name, clause.span);
+        .collect();
+    if !dependency_models.is_empty() {
+        let mut named = false;
+        let object_types = abstract_side.object_types(types).unwrap_or_default();
+        let matches: Vec<_> = dependency_models
+            .iter()
+            .filter_map(|import| {
+                let classes = import.graph.imported_protocol_classes(&clause.name)?;
+                named = true;
+                (classes.model_selections.contains(selected)
+                    || classes
+                        .object_types
+                        .iter()
+                        .any(|context| object_types.iter().any(|object| object.id == *context)))
+                .then_some((import.identity.clone(), &classes.classes))
+            })
+            .collect();
+        if let [(dependency, classes)] = matches.as_slice() {
+            let mut classes = (*classes).clone();
+            classes.node_keys = dependency_models
+                .iter()
+                .find(|import| import.identity == *dependency)
+                .and_then(|import| import.graph.protocol_node_keys(&clause.name))
+                .cloned();
+            classes.dependency = Some(dependency.as_str().to_owned());
+            return ListSubject::Protocol {
+                classes: Box::new(classes),
+                dependency: Some(dependency.clone()),
+            };
+        }
+        if report && !env.defer_abstract_protocol_resolution {
+            if named {
+                findings.malformed(&clause.name, clause.span);
+            } else {
+                findings.unresolved(&clause.name, clause.span, None);
+            }
         }
         return ListSubject::Unresolved;
     }
-    ListSubject::Protocol(Box::new(ProtocolClasses::of(
-        view.form,
-        checked,
-        view.attempts,
-        types,
-    )))
+    if let Some(view) = env
+        .protocols
+        .iter()
+        .find(|view| view.form.name.name == clause.name)
+    {
+        let Some(checked) = view.checked else {
+            return ListSubject::Refused;
+        };
+        let acts_on_abstract_model = {
+            let object_types = abstract_side.object_types(types).unwrap_or_default();
+            checked.roles.iter().any(|role| {
+                role.context
+                    .as_ref()
+                    .is_some_and(|context| object_types.iter().any(|object| object.id == *context))
+                    || role.model_selection.as_deref()
+                        == Some(abstract_side.model.selection().identity.as_str())
+            })
+        };
+        if !acts_on_abstract_model {
+            if report {
+                findings.malformed(&clause.name, clause.span);
+            }
+            return ListSubject::Unresolved;
+        }
+        return ListSubject::Protocol {
+            classes: Box::new(ProtocolClasses::of(
+                view.form,
+                checked,
+                view.attempts,
+                types,
+            )),
+            dependency: None,
+        };
+    }
+    let selected = abstract_side.model.selection().identity.as_str();
+    let object_types = abstract_side.object_types(types).unwrap_or_default();
+    let mut named = false;
+    let matches: Vec<_> = scope
+        .imported_packages()
+        .filter_map(|import| {
+            let classes = import.graph.imported_protocol_classes(&clause.name)?;
+            named = true;
+            (classes.model_selections.contains(selected)
+                || classes
+                    .object_types
+                    .iter()
+                    .any(|context| object_types.iter().any(|object| object.id == *context)))
+            .then_some((import.identity.clone(), &classes.classes))
+        })
+        .collect();
+    if let [(dependency, classes)] = matches.as_slice() {
+        let mut classes = (*classes).clone();
+        classes.node_keys = scope
+            .imported_packages()
+            .find(|import| import.identity == *dependency)
+            .and_then(|import| import.graph.protocol_node_keys(&clause.name))
+            .cloned();
+        classes.dependency = Some(dependency.as_str().to_owned());
+        return ListSubject::Protocol {
+            classes: Box::new(classes),
+            dependency: Some(dependency.clone()),
+        };
+    }
+    if report && !env.defer_abstract_protocol_resolution {
+        if named {
+            findings.malformed(&clause.name, clause.span);
+        } else {
+            findings.unresolved(&clause.name, clause.span, None);
+        }
+    }
+    ListSubject::Unresolved
 }
 
 /// FR-147 "The refinement's internal list": the classes `form`'s list makes
@@ -2605,7 +2756,7 @@ fn internal_list(
         );
     };
     match subject {
-        ListSubject::Protocol(classes) => {
+        ListSubject::Protocol { classes, .. } => {
             let (resolved, missing) = classes.resolve_list(&alias.name, object);
             for pointer in &missing {
                 findings.list_defect(ListDefect {

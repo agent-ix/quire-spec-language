@@ -844,6 +844,14 @@ impl Product<'_, '_> {
                     stats: run.stats(),
                 })
             }
+            StepVerdict::ProtocolContractUndetermined { .. } => {
+                Judgement::Ends(TimedSafetyOutcome::Undecided {
+                    cause: TimedRefinementUndecided::Undetermined(
+                        qsl_replay::Undetermined::UndecidedSuccessor,
+                    ),
+                    stats: run.stats(),
+                })
+            }
             StepVerdict::Stopped(reached) => Judgement::Ends(TimedSafetyOutcome::Stopped {
                 cause: TimedRefinementStop::Step(reached),
                 stats: run.stats(),

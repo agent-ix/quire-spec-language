@@ -41,6 +41,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Vertex};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
+use qsl_eval::simulation::protocol::ProtocolTarget;
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -672,18 +673,36 @@ impl Run<'_, '_> {
             .map(|class| class.spelling())
             .collect();
         let mut common = Vec::with_capacity(self.nodes.len());
-        for node in &self.nodes {
+        for (node_index, node) in self.nodes.iter().enumerate() {
             self.poll()?;
             let mut each = None::<BTreeSet<String>>;
-            for candidate in &node.position.abstract_protocol_states {
+            let candidates = node.position.abstract_protocol_states.clone();
+            for candidate in &candidates {
                 let expansion = protocol
                     .successors(candidate)
                     .map_err(|stop| self.expansion_stop(stop))?;
-                if expansion
-                    .findings
-                    .iter()
-                    .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-                {
+                if let Some((transition, clause)) = expansion.findings.iter().find_map(|finding| {
+                    let ModelFinding::ContractUndetermined {
+                        transition, clause, ..
+                    } = finding
+                    else {
+                        return None;
+                    };
+                    Some((transition.clone(), clause.clone()))
+                }) {
+                    if let Some(witness) = self.protocol_contract_undetermined_witness(
+                        node_index,
+                        candidate,
+                        protocol,
+                        &transition,
+                        &clause,
+                        None,
+                        None,
+                    )? {
+                        return Err(End::Undecided(
+                            SafetyUndecided::ProtocolAssumptionNotEstablished(Box::new(witness)),
+                        ));
+                    }
                     return Err(End::Undecided(SafetyUndecided::Undetermined(
                         Undetermined::UndecidedSuccessor,
                     )));
@@ -874,11 +893,28 @@ impl Run<'_, '_> {
             let expansion = protocol
                 .successors(&node.candidate)
                 .map_err(|stop| self.expansion_stop(stop))?;
-            if expansion
-                .findings
-                .iter()
-                .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-            {
+            if let Some((transition, clause)) = expansion.findings.iter().find_map(|finding| {
+                let ModelFinding::ContractUndetermined {
+                    transition, clause, ..
+                } = finding
+                else {
+                    return None;
+                };
+                Some((transition.clone(), clause.clone()))
+            }) {
+                if let Some(witness) = self.protocol_contract_undetermined_witness(
+                    node.product,
+                    &node.candidate,
+                    protocol,
+                    &transition,
+                    &clause,
+                    None,
+                    None,
+                )? {
+                    return Err(End::Undecided(
+                        SafetyUndecided::ProtocolAssumptionNotEstablished(Box::new(witness)),
+                    ));
+                }
                 return Err(End::Undecided(SafetyUndecided::Undetermined(
                     Undetermined::UndecidedSuccessor,
                 )));
@@ -1396,12 +1432,28 @@ impl Run<'_, '_> {
     fn paired_assumption_prefix_to(
         &mut self,
         target_product: usize,
+        target_candidate: Option<&qsl_replay::ProtocolCandidate>,
         protocol: &AbstractProtocolSystem<'_>,
     ) -> Result<qsl_replay::PairedAssumptionPath, End> {
         let (candidates, initial) = self.candidate_graph()?;
+        let target_key = target_candidate
+            .map(|candidate| {
+                protocol
+                    .state_key(candidate)
+                    .map(|(key, _)| key)
+                    .map_err(|_| fault("undetermined-assumption-protocol-candidate-has-a-key"))
+            })
+            .transpose()?;
         let target = candidates
             .iter()
-            .position(|candidate| candidate.product == target_product)
+            .position(|candidate| {
+                candidate.product == target_product
+                    && target_key.as_ref().is_none_or(|key| {
+                        protocol
+                            .state_key(&candidate.candidate)
+                            .is_ok_and(|(candidate_key, _)| candidate_key == *key)
+                    })
+            })
             .ok_or_else(|| fault("undetermined-assumption-state-has-a-protocol-candidate"))?;
         let mut parent = BTreeMap::<usize, (usize, usize)>::new();
         let mut roots = BTreeMap::new();
@@ -1438,6 +1490,164 @@ impl Run<'_, '_> {
         }
         edges.reverse();
         self.paired_assumption_path(&candidates, root, edges, None, protocol)
+    }
+
+    /// Preserve the exact protocol-side fairness source and paired prefix
+    /// when a checked protocol operation's enabledness cannot be evaluated.
+    fn protocol_contract_undetermined_witness(
+        &mut self,
+        product: usize,
+        candidate: &qsl_replay::ProtocolCandidate,
+        protocol: &AbstractProtocolSystem<'_>,
+        transition: &ModelTransition,
+        clause: &str,
+        trace: Option<&qsl_replay::ProtocolTrace>,
+        concrete_edge: Option<(Option<&ModelTransition>, Vec<u8>)>,
+    ) -> Result<Option<qsl_replay::ProtocolAssumptionWitness>, End> {
+        let sources = protocol
+            .assumption_fairness()
+            .map_err(|_| fault("the-admitted-protocol-fairness-set-builds"))?;
+        let expansion = protocol
+            .successors(candidate)
+            .map_err(|stop| self.expansion_stop(stop))?;
+        let mut identities = Vec::new();
+        for source in sources {
+            let fairness = &source.fairness;
+            let selected = if fairness.granularity()
+                == quire_semantic_value::fairness::FairnessGranularity::Whole
+            {
+                vec![None]
+            } else {
+                let mut classes: BTreeSet<_> = expansion
+                    .successors
+                    .iter()
+                    .filter_map(|(enabled, _)| fairness.class_of(enabled))
+                    .collect();
+                if matches!(fairness.target(), ProtocolTarget::Operation { name }
+                    if name == transition.operation())
+                {
+                    classes.insert(qsl_eval::simulation::protocol::ProtocolClass::Application(
+                        transition.clone(),
+                    ));
+                }
+                classes
+                    .into_iter()
+                    .map(|class| Some(qsl_replay::AssumptionSelectedMember::Protocol(class)))
+                    .collect()
+            };
+            let origin = match fairness.origin() {
+                qsl_eval::simulation::protocol::FairnessOrigin::Authored => {
+                    qsl_replay::AssumptionOrigin::Authored
+                }
+                qsl_eval::simulation::protocol::FairnessOrigin::Scheduler => {
+                    qsl_replay::AssumptionOrigin::Scheduler
+                }
+                qsl_eval::simulation::protocol::FairnessOrigin::Memory => {
+                    qsl_replay::AssumptionOrigin::Memory
+                }
+            };
+            let target = source.required_temporal.as_ref().map_or_else(
+                || qsl_replay::AssumptionTarget::Protocol(fairness.clone()),
+                |required| qsl_replay::AssumptionTarget::RequiredTemporal {
+                    clause: required.clause.clone(),
+                    constraint: required.constraint.clone(),
+                    fairness: fairness.clone(),
+                },
+            );
+            identities.extend(selected.into_iter().map(|selected| {
+                qsl_replay::AssumptionIdentity {
+                    side: qsl_replay::AssumptionSide::Specification,
+                    origin,
+                    kind: fairness.kind(),
+                    granularity: fairness.granularity(),
+                    target: target.clone(),
+                    selected,
+                }
+            }));
+        }
+        if identities.is_empty() {
+            return Ok(None);
+        }
+        let path = if let Some(trace) = trace {
+            let mut path =
+                self.paired_assumption_prefix_to(product, Some(&trace.start), protocol)?;
+            let mut concrete_key = path
+                .steps
+                .last()
+                .map(|step| step.concrete_post.clone())
+                .unwrap_or_else(|| path.concrete_initial.clone());
+            let internal: BTreeSet<_> = self
+                .refinement
+                .abstract_internal()
+                .iter()
+                .map(|class| class.spelling())
+                .collect();
+            let mut concrete_attached = false;
+            for (protocol_transition, reached) in trace.transitions.iter().zip(&trace.candidates) {
+                let class = qsl_replay::protocol_transition_class(protocol, protocol_transition);
+                let visible = class.is_some_and(|class| !internal.contains(class.as_str()));
+                let concrete = if !concrete_attached && visible {
+                    concrete_edge
+                        .as_ref()
+                        .and_then(|(transition, _)| transition.cloned())
+                } else {
+                    None
+                };
+                let concrete_post = if concrete.is_some() {
+                    concrete_attached = true;
+                    concrete_edge
+                        .as_ref()
+                        .map(|(_, key)| {
+                            qsl_eval::simulation::StateKey::from_canonical_bytes(key.clone())
+                        })
+                        .unwrap_or_else(|| concrete_key.clone())
+                } else {
+                    concrete_key.clone()
+                };
+                let protocol_post = protocol
+                    .state_key(reached)
+                    .map_err(|_| fault("protocol-undetermined-trace-candidate-encodes"))?
+                    .0;
+                let protocol_key = protocol
+                    .transition_key(protocol_transition)
+                    .map_err(|_| fault("protocol-undetermined-trace-transition-encodes"))?;
+                path.steps.push(qsl_replay::PairedAssumptionStep {
+                    concrete,
+                    concrete_post: concrete_post.clone(),
+                    protocol: Some(protocol_key),
+                    protocol_post,
+                });
+                concrete_key = concrete_post;
+            }
+            if !concrete_attached {
+                if let Some((Some(transition), key)) = concrete_edge.as_ref() {
+                    let protocol_post = protocol
+                        .state_key(&trace.start)
+                        .map_err(|_| fault("protocol-undetermined-trace-start-encodes"))?
+                        .0;
+                    path.steps.push(qsl_replay::PairedAssumptionStep {
+                        concrete: Some((*transition).clone()),
+                        concrete_post: qsl_eval::simulation::StateKey::from_canonical_bytes(
+                            key.clone(),
+                        ),
+                        protocol: None,
+                        protocol_post,
+                    });
+                }
+            }
+            path
+        } else {
+            self.paired_assumption_prefix_to(product, Some(candidate), protocol)?
+        };
+        Ok(Some(qsl_replay::ProtocolAssumptionWitness {
+            reason: qsl_replay::ProtocolAssumptionReason::RelationUndetermined,
+            identities,
+            path,
+            undecided_locus: Some(format!(
+                "ProtocolContractUndetermined:{clause}:{}",
+                transition.operation()
+            )),
+        }))
     }
 
     fn protocol_divergence_counterexample(
@@ -1745,7 +1955,7 @@ impl Run<'_, '_> {
                         });
                     }
                 }
-                let path = self.paired_assumption_prefix_to(at, protocol)?;
+                let path = self.paired_assumption_prefix_to(at, None, protocol)?;
                 return Err(End::Undecided(
                     SafetyUndecided::ProtocolAssumptionNotEstablished(Box::new(
                         qsl_replay::ProtocolAssumptionWitness {
@@ -1831,6 +2041,29 @@ impl Run<'_, '_> {
                     },
                 ),
             };
+            if let StepVerdict::ProtocolContractUndetermined {
+                candidate,
+                transition: protocol_transition,
+                clause,
+                trace,
+            } = &verdict
+            {
+                if let Some(protocol) = self.abstract_protocol {
+                    if let Some(witness) = self.protocol_contract_undetermined_witness(
+                        at,
+                        candidate,
+                        protocol,
+                        protocol_transition,
+                        clause,
+                        Some(trace),
+                        Some((transition.as_ref(), key.clone())),
+                    )? {
+                        return Err(End::Undecided(
+                            SafetyUndecided::ProtocolAssumptionNotEstablished(Box::new(witness)),
+                        ));
+                    }
+                }
+            }
             self.transitions = self
                 .transitions
                 .saturating_add(usize::try_from(abstract_successors).unwrap_or(usize::MAX));
@@ -1959,6 +2192,9 @@ impl Run<'_, '_> {
             StepVerdict::Undetermined(undetermined) => {
                 Err(End::Undecided(SafetyUndecided::Undetermined(undetermined)))
             }
+            StepVerdict::ProtocolContractUndetermined { .. } => Err(End::Undecided(
+                SafetyUndecided::Undetermined(Undetermined::UndecidedSuccessor),
+            )),
             StepVerdict::Stopped(reached) => Err(End::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(reached),

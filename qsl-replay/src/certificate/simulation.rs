@@ -746,6 +746,11 @@ impl Run<'_, '_> {
                         undetermined,
                     ))));
                 }
+                StepVerdict::ProtocolContractUndetermined { .. } => {
+                    return Err(failed(FailedStep::Undetermined(UndeterminedStep::new(
+                        Undetermined::UndecidedSuccessor,
+                    ))));
+                }
                 StepVerdict::Stopped(reached) => return Err(stopped(reached.limit, reached.value)),
                 StepVerdict::Fault(_) => return Err(Self::fault("refinement-step")),
             };

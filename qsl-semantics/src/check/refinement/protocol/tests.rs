@@ -1910,7 +1910,8 @@ fn a_concrete_protocol_refines_an_abstract_protocol() {
     assert_eq!(
         refinement.abstract_side(),
         &AbstractSide::Protocol {
-            clause: "Seq".to_owned()
+            clause: "Seq".to_owned(),
+            dependency: None,
         }
     );
     assert!(refinement.concrete_protocol().is_some());

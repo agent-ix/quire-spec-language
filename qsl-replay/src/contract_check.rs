@@ -1383,6 +1383,9 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
             StepVerdict::Undetermined(Undetermined::ProtocolAssumptionNotEstablished(_)) => {
                 evaluated.undecided = true;
             }
+            StepVerdict::ProtocolContractUndetermined { .. } => {
+                evaluated.undecided = true;
+            }
             StepVerdict::Stopped(_) => {
                 return Err(Stop::Expansion(ExpansionStop {
                     cause: quire_semantic_value::catalog::CatalogCode::new(

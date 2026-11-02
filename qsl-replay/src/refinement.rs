@@ -18,8 +18,9 @@ mod subject;
 pub use failure::{
     AssumptionIdentity, AssumptionOrigin, AssumptionSelectedMember, AssumptionSide,
     AssumptionTarget, ObservationField, ObservationLabel, PairedAssumptionPath,
-    PairedAssumptionStep, ProtocolAssumptionReason, ProtocolAssumptionWitness, RefinementFailure,
-    StepRejection, StepResult, StepVerdict, Taken, TerminalSuccessDirection, Undetermined,
+    PairedAssumptionStep, ProtocolAssumptionReason, ProtocolAssumptionWitness, ProtocolTrace,
+    RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, TerminalSuccessDirection,
+    Undetermined,
 };
 pub use history::{initial_history, step_history, HistoryValues};
 pub use liveness::{abstract_classes, AbstractClass};

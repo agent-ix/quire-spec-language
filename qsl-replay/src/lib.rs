@@ -289,7 +289,7 @@ pub use refinement::{
     MappingUndetermined, ObjectKey, ObservationField, ObservationLabel, PairedAssumptionPath,
     PairedAssumptionStep, ProtocolAssumptionFairness, ProtocolAssumptionReason,
     ProtocolAssumptionWitness, ProtocolCandidate, ProtocolRelationError, ProtocolStateRelation,
-    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems,
+    ProtocolTrace, RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems,
     RequiredTemporalFairness, SafetyOutcome, SafetyUndecided, StepArgument, StepRejection,
     StepResult, StepVerdict, SubjectRefusal, Taken, TerminalSuccessDirection, Undetermined,
 };
