@@ -53,3 +53,13 @@ Spec lane: FR-265 and ADR-031 SW-2 do not state that a decision is recorded only
 ## Verdict (round 3)
 
 Not mergeable until FND-008 is fixed (derive_separating_witness must end the walk at a Synthesized connective, or otherwise not demand its decision, with a test deriving a clause whose body is a float ordering). Gate on this head, all green: cargo fmt --check, cargo check --workspace --all-targets, clippy -D warnings default and --no-default-features, arch-lint qualified-core, qsl-eval/qsl-replay/qsl-semantics tests (4414 passed, 0 failed), qsl-semantics --all-features tests. Lock moves legitimate: quire-eval and quire-checked to 4e59f729 (the merged ConnectiveOrigin commit), quire-semantic-value 3129a4cc (identical to that repo's main), quire-exact unchanged from main; no rev pins, Cargo.toml unchanged.
+
+## Dispositions (round 4)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-008 | fixed | Head 01b65d4f6: derive_separating_witness ends the walk with closed-scope at a Connective whose origin is Synthesized; an Authored connective still calls decision(node)?. Six new TC-740 / FR-265-AC-3 tests (float ordering as whole clause, under not, under let, as or operand, as and operand, as implies consequent) each assert the settled Boolean and closed-scope with no record. Mutation run by the reviewer: making the Synthesized arm unreachable and the other arm origin-blind (Synthesized connectives call decision(node)? again) turns all six red, so the new arm is not redundant with the catch-all; it is what keeps the Authored arm from faulting. Other decision consumers: qsl-replay spine/clause.rs reads evaluation.decision as an Option (None gives no skipped child), the only other reader of a recorded decision outside derivation.rs and tests, so it does not break on a Synthesized connective. |
+
+## Verdict (round 4)
+
+All eight findings are fixed. Mergeable. Gate on 01b65d4f6 (origin/main acf5cb518), all green: cargo fmt --check, cargo check --workspace --all-targets, clippy -D warnings default and --no-default-features, arch-lint qualified-core, qsl-eval/qsl-replay/qsl-semantics tests (4420 passed, 0 failed), qsl-semantics --all-features tests. Open item for the spec lane only: FR-265 and ADR-031 SW-2 still do not state the authored-versus-synthesized rule.
