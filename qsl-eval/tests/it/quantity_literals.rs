@@ -275,12 +275,51 @@ fn a_carried_quantity_is_not_an_arithmetic_operand() {
          function illegal_dimension using v(): Quantity<m, Int[-2, 2]> pure {{ convert<Quantity<m, Int[-2, 2]>>(1 ms) }}\n"
     );
     let refusals = package_with(&source).expect_err("carried arithmetic refuses during checking");
-    assert!(
-        refusals.iter().any(|refusal| matches!(
-            refusal.cause,
-            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
-        )),
-        "the expression is ill typed: {refusals:?}"
+    let prohibited = [
+        "illegal_add",
+        "illegal_subtract",
+        "illegal_negate",
+        "illegal_multiply",
+        "illegal_divide",
+        "illegal_equal",
+        "illegal_order",
+        "illegal_dimension",
+    ];
+    for function in prohibited {
+        let matching: Vec<_> = refusals
+            .iter()
+            .filter(|refusal| {
+                matches!(
+                    &refusal.location.origin,
+                    quire_semantic_value::location::Origin::Body { function: found, .. }
+                        if found == function
+                )
+            })
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "{function} has exactly one expression refusal: {refusals:?}"
+        );
+        let refusal = matching[0];
+        assert!(
+            matches!(
+                &refusal.cause,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+            ),
+            "{function} is refused as a type mismatch: {refusal:?}"
+        );
+        assert!(
+            refusal.location.path().is_empty(),
+            "{function} is refused at its root expression: {refusal:?}"
+        );
+    }
+    // The checker returns no package for any prohibited expression, so there
+    // is no evaluator to call and no runtime meter can be charged.
+    assert_eq!(
+        refusals.len(),
+        prohibited.len(),
+        "every invalid operation has one refusal and no extra diagnostics: {refusals:?}"
     );
 }
 
