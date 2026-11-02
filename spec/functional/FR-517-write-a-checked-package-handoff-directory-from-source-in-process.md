@@ -80,7 +80,7 @@ A new directory containing exactly:
 
 The sidecar holds, per temporal clause: the clause `NodeId`, declared name, the
 protocol requirement entries that name it (FR-449), its activation form
-(`origin` or `each`, with the trigger type and whether a guard is written), the
+(`origin` or `each`, with the trigger binder name, not a trigger type, because the type has no stable spelling, and whether a guard is written), the
 profile selection (identity and revision) of its law, the lock definition
 authority, and its expected `TemporalBinding` row (`clock_name` and clock
 configuration); and per package: the contract version, the read limits the
@@ -150,7 +150,7 @@ package of their clock kind.
 | FR-517-AC-7 | A request whose source the compiler refuses returns the compiler's refusal and writes nothing; a request whose emitted package the reader refuses, and a request for which `ReadBackDiffers` is injected, write nothing. | Test (TC-1312) |
 | FR-517-AC-8 | `checked_handoff` is behind the feature `checked-handoff`, adds no entry to `Cargo.lock`, and a downstream crate with only that feature enabled compiles `write` and `Selection::check` without building this crate's examples or dev-dependencies. | Test (TC-1312) |
 | FR-517-AC-9 | A package with one `temporal_bindings` clock value changed to another well-formed value is admitted by `read_checked_package` and refused by `Selection::check` naming its `SelectionAxis`; no function of the module parses a checked package except through `read_checked_package` (`git grep` finds no second reader). | Test (TC-1312) |
-| FR-517-AC-10 | Until FR-517-AC-1 to AC-9 and FR-518-AC-1 to AC-14 are green, `handoff::write_v1`, `write_v2`, the five `PUBLISHED_*` constants (`PUBLISHED_V1_OFFER_FILE`, `PUBLISHED_V1_SELECTION_FILE`, `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`, `PUBLISHED_MUTATION_MANIFEST_FILE`), the `handoff-writer` feature, the two examples and `examples/protocol-handoff` are present; the change that removes any of them cannot merge while FR-521 row 2 is not green. | Inspection (TC-1312, TC-1316) |
+| FR-517-AC-10 | Until FR-517-AC-1 to AC-9 and FR-518-AC-1 to AC-12 are green, `handoff::write_v1`, `write_v2`, the five `PUBLISHED_*` constants (`PUBLISHED_V1_OFFER_FILE`, `PUBLISHED_V1_SELECTION_FILE`, `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`, `PUBLISHED_MUTATION_MANIFEST_FILE`), the `handoff-writer` feature, the two examples and `examples/protocol-handoff` are present; the change that removes any of them cannot merge while FR-521 row 2 is not green. | Inspection (TC-1312, TC-1316) |
 
 ## Dependencies
 
