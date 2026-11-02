@@ -134,7 +134,7 @@ fn a_carried_quantity_conversion_returns_a_carried_value() {
         .expect("the checked function call runs");
     match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(quantity))) => {
-            assert_eq!(quantity.magnitude().to_string(), "2");
+            assert_eq!(quantity.magnitude().to_string(), "2/1");
         }
         other => panic!("a carried Int conversion, not {other:?}"),
     }
@@ -206,7 +206,7 @@ fn carried_quantity_rounding_refusal_and_back_conversion() {
     }
     match call("carried_back").outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(quantity))) => {
-            assert_eq!(quantity.magnitude().to_string(), "2");
+            assert_eq!(quantity.magnitude().to_string(), "2/1");
         }
         other => panic!("a carried-to-Quantity conversion, not {other:?}"),
     }
