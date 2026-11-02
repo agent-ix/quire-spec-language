@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the slot evaluation quire-protocol's compensation engine relies on.
-Scope: FR-520-AC-1 to FR-520-AC-10. **R** is the package of FR-517.
+Scope: FR-520-AC-1 to FR-520-AC-11. **R** is the package of FR-517.
 
 ## Test Procedure
 
@@ -27,9 +27,10 @@ Scope: FR-520-AC-1 to FR-520-AC-10. **R** is the package of FR-517.
 | 8 | 7 | three slot calls on one meter vs three on fresh meters; `retry.relation` at exact usage and one below | equal summed charge logs over the ten counters; completed / `Incomplete` |
 | 9 | 8 | `cargo tree` of qsl-eval and qsl-package evaluation path; run under a denied-syscall harness | no I/O dependency; completes |
 | 10 | 9 | each slot of both compensations, in-process and read back | equal results and charge logs |
-| 11 | 10 | search QSL exports for the four retired names; read the outcome map | none; the map states the loss |
+| 11 | 10 | search QSL exports for the four retired names | none |
+| 12 | 11 | a slot call over three binders, one `Unavailable`; the same call twice | per-binder entries for the binders read, none for the unread one; entries plus unattributed equal the total; equal logs; `accounting_version` present |
 
-Tag the test `#[trace("FR-520-AC-1", ..., "FR-520-AC-10", "TC-1315")]`; rows 1, 2, 8 also carry FR-390-AC-9 and AC-10.
+Tag the test `#[trace("FR-520-AC-1", ..., "FR-520-AC-11", "TC-1315")]`; rows 1, 2, 8 also carry FR-390-AC-9 and AC-10.
 
 ## Expected Results
 

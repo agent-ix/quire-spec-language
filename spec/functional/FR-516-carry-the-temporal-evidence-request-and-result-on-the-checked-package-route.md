@@ -62,7 +62,7 @@ result field:
 | Retired `v2::Input` field | Successor field | Note |
 | --- | --- | --- |
 | `trigger: SemanticTriggerIdentity` | `trigger: SemanticTriggerIdentity` (non-empty opaque bytes) | unchanged |
-| `correspondence: EvidenceRef` | `correspondence: EvidenceRef` | `EvidenceRef` keeps `identity`, `authority_identity`, `authority_revision`, `scope`, `population`; the `contract`, `schema_digest`, `digest` and `authority_digest` members end with the document contracts and the digests (QSL-1270) |
+| `correspondence: EvidenceRef` | `correspondence: EvidenceRef` | `EvidenceRef` keeps `identity`, `authority_identity`, `authority_revision`, `scope`, `population`, and carries `contract` (text), `schema_digest`, `digest` and `authority_digest` (byte strings) as opaque caller-supplied members: QSL does not compute, verify or interpret them (it does not authenticate observation evidence), echoes each byte for byte in the result's support references, and no truth, settlement or support value depends on them. Package content digests stay removed (QSL-1270); these are the observation owner's identifiers, not QSL's |
 | `positions: Vec<ObservedPosition>` | `positions` | each `{ observation: EvidenceRef, position }` |
 | `anchor` | `anchor` | the authored activation anchor |
 | `triggers: Vec<TriggerInput>` | `delivery: TriggerDelivery` | exactly one: `{ receipt, anchor, payload, guard: Option<bool>, captures }`; the retired vector admitted exactly one, and the type now states it |
@@ -90,22 +90,28 @@ instance is identified by the trigger identity (FR-053).
 | `settlement()` | `settlement: Option<Settlement>` = `ClosedScope`, `DecisiveWitness`, `DecisiveCounterexample`, `Unsettled`, `Unavailable` |
 | `support()` | `support: Vec<SupportRef>` (the fact references inside the decision support) |
 | `decision_progress()` … `surrounding_closure()`, `completeness()` | the four axes and the completeness record, echoed exactly |
-| `limits()` | `usage`: the meter charges of the call |
+| `limits()` | `usage`: the meter charges of the call, over the thirteen counters of the Work limits item |
 | `predecessor()`, `lineage()`, `relation_kind()` | `relation: Original | Superseding(prev) | Invalidating(prev)`; `lineage: u64` |
 | `request_identity()`, `subject_identity()`, `document().*` | `result_identity` as FR-043-AC-13 states it (an evaluator identity, not a digest); the rest end with the documents |
 
 Entry: `CheckedPackageEvaluation::evaluate_temporal_evidence(&self, clause:
 &CheckedNodeId, request: &EvidenceRequest, meter: &mut Meter) ->
-Result<EvidenceResult, CallFailure>`; selection or supply refused before S6a is
-`CallFailure::Admission`, as FR-390 gives it.
+Result<EvidenceResult, CallFailure>`; **Refusal has one outcome.** Every refusal of the call itself is
+`Err(CallFailure::Admission)`, nothing is charged and no result exists: a clause
+not held by the package or not a temporal clause, a request that fails
+construction (an empty trigger identity), a selection or supply refused before S6a
+(FR-390), and each lineage refusal below. `activation = Unavailable` is a result,
+not a refusal: the call ran and a fact the clause needs was withdrawn, or the
+obligation was never activated.
 
 ## Behavior
 
 - **Activation.** `Inactive` when no trigger was admitted within a closed,
   complete trigger scope; `Unknown` when the scope was open or trigger evidence
   was missing or refused; `Active` when one semantic trigger was admitted or the
-  whole-execution origin activated the obligation; `Unavailable` when the request
-  was refused or incomplete or the obligation was never activated. No other path
+  whole-execution origin activated the obligation; `Unavailable` when a fact the
+  clause needs was withdrawn from the request or the obligation was never
+  activated. No other path
   assigns an activation state (FR-044).
 - **No supplied truth.** The request has no truth, settlement or support field;
   the result's three are derived from the package and the evidence
@@ -120,13 +126,20 @@ Result<EvidenceResult, CallFailure>`; selection or supply refused before S6a is
   identity is the FR-044 contradiction (FR-053-AC-7 to AC-9).
 - **Lineage.** A superseding or invalidating result names its direct
   predecessor's `result_identity`; a self-edge, a predecessor of another
-  obligation and an identity mismatch are refused; the predecessor is unchanged
+  obligation and an identity mismatch are each `Err(CallFailure::Admission)`; the
+  predecessor is unchanged
   (FR-052-AC-12).
-- **Work limits.** The retired fourteen dimensions end or map as follows:
-  `input_bytes`, `output_bytes`, `json_depth`, `string_bytes` end with the JSON
-  documents; `formula_nodes`, `formula_depth`, `positions`, `valuations`,
+- **Work limits.** None of the retired fourteen dimensions is dropped. Four
+  bounded the JSON documents and become counters on the typed values:
+  `input_bytes` becomes `request_bytes` (the total of the request's opaque byte
+  members), `output_bytes` becomes `result_bytes` (the same over the result), and
+  `string_bytes` becomes `member_bytes` (the longest single opaque member).
+  `json_depth` has no successor counter because a typed value has the fixed
+  nesting its type gives, so there is no depth to bound. Ten
+  are carried unchanged: `formula_nodes`, `formula_depth`, `positions`, `valuations`,
   `captures`, `support`, `history_span`, `evaluation_steps`, `lineage`, `visited`
-  are named temporal work counters (QSL-1502, NFR-008); each completes at exactly
+  are named temporal work counters (QSL-1502, NFR-008). Each of the thirteen
+  counters completes at exactly
   its measured usage, and one below it returns `Incomplete` naming the counter
   with no partial truth.
 - **Contract ids.** The four contract strings have no producer after this
@@ -137,15 +150,15 @@ Result<EvidenceResult, CallFailure>`; selection or supply refused before S6a is
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-516-AC-1 | `EvidenceRequest` has exactly the fields of the Inputs table and no `truth`, `settlement`, `support`, `instance`, digest or document member; a compile-fail test that sets `truth` on it and a field-list test pass. | Test (TC-1311) |
-| FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with a refused request `Unavailable`. | Test (TC-1311) |
-| FR-516-AC-3 | With two requests identical except for `truth`-like caller data that the type cannot carry, and with one fact withdrawn (decision closure, completeness record, a support fact), the result truth, settlement and support are the FR-043 values of the remaining evidence, the withdrawn fact makes `settlement = Unavailable` or a `Missing` non-value, and no field defaults to false, closed, settled or complete. | Test (TC-1311) |
-| FR-516-AC-4 | Changing one byte of the trigger identity changes the `result_identity` or is refused, equal timestamps, receipts, payloads and captures under two identities give two instances, a repeated delivery with an equal payload gives the existing instance, a different payload under one identity is the FR-044 contradiction, and an empty identity is refused at construction. | Test (TC-1311) |
+| FR-516-AC-1 | A compile-fail test that sets `truth`, `settlement`, `support` or `instance` on `EvidenceRequest` fails to compile, and the type has no member holding a QSL document or a QSL-computed digest. | Test (TC-1311) |
+| FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with the decision closure withdrawn `Unavailable`; a request naming a clause the package does not hold returns `Err(CallFailure::Admission)` with an empty charge log and no result. | Test (TC-1311) |
+| FR-516-AC-3 | With one fact withdrawn from an otherwise Active request (decision closure, completeness record, a support fact), the result truth, settlement and support are the FR-043 values of the remaining evidence, the result carries a `Missing` non-value for the withdrawn fact, and no field defaults to false, closed, settled or complete. | Test (TC-1311) |
+| FR-516-AC-4 | Two requests that differ only in one byte of the trigger identity give two different `result_identity` values; equal timestamps, receipts, payloads and captures under two identities give two instances, a repeated delivery with an equal payload gives the existing instance, a different payload under one identity is the FR-044 contradiction, and an empty identity is refused at construction. | Test (TC-1311) |
 | FR-516-AC-5 | The decision and surrounding progress and closure axes, the trigger scope and the completeness record are each echoed in the result exactly as supplied, and changing one of them changes only its field and the derived truth where FR-043 says it does. | Test (TC-1311) |
-| FR-516-AC-6 | A superseding result carries its direct predecessor's `result_identity` and `lineage + 1`; a self-predecessor, a predecessor of another obligation and a mismatched identity each refuse, and the predecessor result is unchanged. | Test (TC-1311) |
-| FR-516-AC-7 | For each of the ten retained work counters, the call at exactly the measured usage completes and the call one below returns `Incomplete` naming that counter with `truth = None`; a sibling clause evaluated in the same package keeps its own result. | Test (TC-1311) |
+| FR-516-AC-6 | A superseding result carries its direct predecessor's `result_identity` and `lineage + 1`; a self-predecessor, a predecessor of another obligation and a mismatched identity each return `Err(CallFailure::Admission)` with an empty charge log, and the predecessor result is unchanged. | Test (TC-1311) |
+| FR-516-AC-7 | For each of the thirteen work counters (the ten carried and `request_bytes`, `result_bytes`, `member_bytes`), the call at exactly the measured usage completes and the call one below returns `Incomplete` naming that counter with `truth = None`; a sibling clause evaluated in the same package keeps its own result. | Test (TC-1311) |
 | FR-516-AC-8 | Over **R**'s timestamped-event clause, the request/result path of FR-501 and FR-502 (finite window, regressing watermark, conflicting completeness revision) returns the outcomes those requirements state through `evaluate_temporal_evidence`, and the result for the in-process package equals the result for the read-back package, charge log included. | Test (TC-1311) |
-| FR-516-AC-9 | Each field of the retired `v2::Input` and `ValidatedResult` accessor list has a row above or is listed as ended, and a test over the two tables fails if a public field of `EvidenceRequest` or `EvidenceResult` has no row. | Test (TC-1311) |
+| FR-516-AC-9 | A request whose `EvidenceRef` members `contract`, `schema_digest`, `digest` and `authority_digest` are arbitrary byte strings, including empty ones, is evaluated; the result echoes each byte for byte, and changing any one of them changes no truth, settlement, support or activation value, only the echoed member. | Test (TC-1311) |
 
 ## Dependencies
 

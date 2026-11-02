@@ -34,8 +34,8 @@ recovery predicate of each compensation, captures, and the activation guard. QSL
 deleted that module. The replacement is the qsl-eval entry points over a strictly
 read checked package (`docs/compiled-protocol-v2.md`): `CheckedPackageEvaluation::call`,
 `evaluate` and `evaluate_protocol_slot` (FR-390). They are not a drop-in: there is
-no caller-supplied artifact graph, no `StateView`, and no `EvaluationReport` with
-per-binder accounting; the artifact-graph path
+no caller-supplied artifact graph and no `StateView`; the per-binder accounting
+of `EvaluationReport` is carried by the charge log below; the artifact-graph path
 `state::Refusal::UnpublishedArtifact` is retired by design (FR-049).
 
 This requirement gives every behavior quire-protocol relies on a successor
@@ -75,7 +75,7 @@ A `CheckedPackageEvaluation` over the package read with
 | `Unsupported(report)` | `Evaluated` with the family's unsupported result (exit 21) |
 | resource-incomplete | `Evaluated(Incomplete)` naming the counter |
 | `Refusal::UnpublishedArtifact`, `state::Refusal` artifact-graph causes | retired (FR-049): no successor, and no call can name an artifact |
-| `EvaluationReport` per-binder accounting, `ACCOUNTING_VERSION` | the `Meter` charge log of the ten counters FR-255 names; no per-binder split |
+| `EvaluationReport` per-binder accounting, `ACCOUNTING_VERSION` | the `Meter` charge log of the ten counters FR-255 names, attributed per binder: every charge made while reading or evaluating a binder's supplied value is recorded under that binder's name, charges made by no binder are recorded under none, and the per-binder entries and the unattributed entry sum to the call's total; the log carries `accounting_version`, a constant that changes when the attribution rules change |
 | `StateView` (binders, populations, objects, authority adapter) | `ProtocolSupply { binders, observation }`; references and populations through `ObservationAdmission` and `ProtocolReferenceOccurrence` (FR-390) |
 | the registration and activation captures | `registration_captures` and `activation_captures` slots, one call each |
 
@@ -103,7 +103,8 @@ A `CheckedPackageEvaluation` over the package read with
 | FR-520-AC-7 | Three slot calls that share one `Meter` leave a charge log equal to the sum of the same three calls on fresh meters, over the ten counters of FR-255; the exact-usage and one-below vectors of FR-390-AC-9 and AC-10 hold for **R**'s `retry.relation`. | Test (TC-1315) |
 | FR-520-AC-8 | `evaluate_protocol_slot` and `call` perform no network, storage or business-operation I/O (FR-025 of quire-protocol): the evaluation crates have no I/O dependency (`cargo tree`) and a run under a denied-syscall harness completes. | Test (TC-1315) |
 | FR-520-AC-9 | The result for the in-process package equals the result for the package read back with the reader, charge log included, for each slot of **R**'s two compensations (FR-390's equality rule). | Test (TC-1315) |
-| FR-520-AC-10 | After QSL-834's deletion of `state::*`, no QSL export named `StateView`, `EvaluationReport`, `evaluate_v2` or `ACCOUNTING_VERSION` exists, and the outcome map above is the only place the loss of per-binder accounting is stated. | Inspection (TC-1315) |
+| FR-520-AC-10 | After QSL-834's deletion of `state::*`, no QSL export named `StateView`, `EvaluationReport`, `evaluate_v2` or `ACCOUNTING_VERSION` exists. | Inspection (TC-1315) |
+| FR-520-AC-11 | A slot call over three binders, one of them `Unavailable`, returns a charge log in which each binder that was read has its own entry, an unread binder has none, the entries plus the unattributed entry equal the total, equal supplies give equal logs, and the log carries `accounting_version`. | Test (TC-1315) |
 
 ## Dependencies
 
@@ -112,4 +113,4 @@ A `CheckedPackageEvaluation` over the package read with
 - **Downstream:** quire-protocol `src/compensation/graph.rs`,
   `tests/tc_003_graph_compensation.rs`, `tests/support/v2_state.rs` (QSL-1549),
   which keeps the same assertions on the engine behaviors it owns and moves the
-  report-based assertions onto the outcome map.
+  report-based assertions onto the outcome map and the per-binder charge log.

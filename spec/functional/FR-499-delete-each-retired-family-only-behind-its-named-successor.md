@@ -126,7 +126,7 @@ The per-criterion map of FR-042 is FR-500. Rows for the rest of the module:
 | `ArtifactKind`/`BindingKind` wire spellings (FR-049-AC-2, AC-5; TC-136) | none | PORT QSL-1506 |
 | `/3` authored control-temporal map (FR-054-AC-1 to AC-4) | FR-449, TC-1194 | PARTIAL: one legacy test (`compiled_protocol_v2.rs:1313`) tags AC-1 to AC-4; AC-2 to AC-4 PORT QSL-1506 |
 | Format identity constants `quire.compiled-protocol/1`, `/2`, media, schema strings | `quire.checked-package/v2` (Contract IR) | KEEP until FR-521 row 15 is green |
-| Handoff writer `write_v1`, `write_v2`, `PUBLISHED_*` files, `expected.json`, `expected-v2.json`, `mutations/manifest.json`, the two examples, `examples/protocol-handoff`, feature `handoff-writer`, committed snapshots, writer errors | FR-517, FR-518 (TC-1312, TC-1313): the checked-package writer, selection sidecar and mutation manifest | KEEP until FR-521 row 2 is green and QSL-1549 has repointed quire-protocol (ruling 4); the writer is already its successor, so the legacy one is then deleted, not replaced |
+| Handoff writer `write_v1`, `write_v2`, `PUBLISHED_*` files, `expected.json`, `expected-v2.json`, `mutations/manifest.json`, the two examples, `examples/protocol-handoff`, feature `handoff-writer`, committed snapshots, writer errors | FR-517, FR-518 (TC-1312, TC-1313): the checked-package writer, selection sidecar and mutation manifest | KEEP until FR-521 row 2 is green; the writer is already its successor, so the legacy one is then deleted, not replaced |
 | `intake.rs` independent exact inventories (FR-042-AC-3, FR-050) | I2 evidence map | PARTIAL; one-axis rows in FR-500 |
 | Existing red test `tests/it/protocol_artifact.rs:777` (`Limits` default mismatch) | none | fix in QSL-838 before any deletion |
 

@@ -19,9 +19,9 @@ FR-521-AC-5.
 | --- | --- | --- | --- |
 | 1 | 1 | `quire validate` over FR-515 to FR-521; list `use quire_spec_language::...` items in quire-protocol's `src` and `tests` | every row's ids resolve; every imported item is named by a row |
 | 2 | 2 | `quire matrix` after the successors merge; delete the file carrying the only tag of FR-042-AC-10 in a fixture tree | none of the listed criteria untagged; the matrix test fails naming FR-042-AC-10 |
-| 3 | 3 | check out quire-protocol's default branch after QSL-1549; run `cargo check --locked --all-targets` and its tests with the QSL revision of the deleting change's parent | exit 0; no `handoff-writer` feature in `Cargo.toml`; tests green |
-| 4 | 4 | read FR-499's three rows and FR-500's AC-10, AC-15 rows | the stated wording |
-| 5 | 5 | read rows 11 and 13; search the deleting change for `work.rs` and the integrity lanes | defaults stated; neither removed while open |
+| 3 | 3 | read the merged QSL-1549 state of quire-protocol's default branch cited by the deleting change | QSL pin contains the successor; no `handoff-writer` feature in `Cargo.toml`; its recorded `cargo check --locked --all-targets` and tests exit 0 |
+| 4 | 4 | read FR-499's three rows and FR-500's AC-10, AC-15 rows | the stated wording; no other release condition |
+| 5 | 5 | read rows 11 and 13; search the deleting change for `work.rs` and the integrity lanes | a successor stated per dimension and lane; neither removed while a successor test is not green |
 
 Tag the matrix test `#[trace("FR-521-AC-2", "TC-1316")]`.
 
