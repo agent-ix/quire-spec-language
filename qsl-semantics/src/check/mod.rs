@@ -458,8 +458,8 @@ pub use refusal::{
     DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
     IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
-    ProtocolAnchorCause, ProtocolConstruct, ProtocolReferenceCause, ProvedInterval,
-    QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
+    ProtocolAnchorCause, ProtocolCheckRefusal, ProtocolConstruct, ProtocolReferenceCause,
+    ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
     StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
     TimedOmission, UnwrittenTimedMember,
 };
@@ -773,6 +773,9 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-383: protocol declarations refused by their own checks while
+    /// independent declarations continued through checking.
+    protocol_refusals: Vec<ProtocolCheckRefusal>,
     /// Checked protocol classes retained for importing refinements (FR-147).
     protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
@@ -903,6 +906,7 @@ impl DebugWith for CheckedGraph {
             model_names,
             abstraction,
             protocols,
+            protocol_refusals,
             protocol_classes,
             protocol_node_keys,
             temporal_clauses,
@@ -986,6 +990,7 @@ impl DebugWith for CheckedGraph {
             .field("model_names", &model_names)
             .field("abstraction", &Maybe(abstraction, table))
             .field("protocols", &Seq(protocols, table))
+            .field("protocol_refusals", protocol_refusals)
             .field(
                 "protocol_classes",
                 &ValueMap(protocol_classes.iter(), table),
@@ -1477,6 +1482,17 @@ impl PackageDeclarations {
         self.check_with_cancel(limits, &Cancel::new())
     }
 
+    /// Check the unit while preserving refusals that belong to individual
+    /// protocol declarations in the returned graph (FR-383 per-protocol
+    /// results). Unit-level refusals still prevent a graph from being
+    /// returned.
+    pub fn check_with_protocol_results(
+        self,
+        limits: CheckingLimits,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_with_protocol_results_and_cancel(limits, &Cancel::new())
+    }
+
     /// [`Self::check`] under a caller-owned [`Cancel`] handle (FR-276): the
     /// contract meter, the measure pass and the typer's node charge poll it
     /// at every charge, so a cancelled handle stops the check at its next
@@ -1484,6 +1500,25 @@ impl PackageDeclarations {
     /// refusal list like a reached work budget; a caller that holds the
     /// handle reads [`Cancel::tripped`] to tell the two apart.
     pub fn check_with_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        let graph = self.check_with_protocol_results_and_cancel(limits, cancel)?;
+        if graph.protocol_refusals.is_empty() {
+            Ok(graph)
+        } else {
+            Err(graph
+                .protocol_refusals
+                .iter()
+                .flat_map(|result| result.refusals.iter().cloned())
+                .collect())
+        }
+    }
+
+    /// [`Self::check_with_protocol_results`] under a caller-owned
+    /// [`Cancel`] handle.
+    pub fn check_with_protocol_results_and_cancel(
         mut self,
         limits: CheckingLimits,
         cancel: &Cancel,
@@ -3247,6 +3282,7 @@ impl PackageDeclarations {
         // protocol compiles only when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
+        let mut protocol_check_refusals = Vec::new();
         // The selected protocol profile, which the structural refusals of a
         // protocol's control tree name (FR-218, FR-381).
         let protocol_profile_identity = protocol_profile
@@ -3490,28 +3526,51 @@ impl PackageDeclarations {
                         }
                         Err(control_refusals) => refusals.extend(control_refusals),
                     }
-                    if refusals.len() > refusals_before {
+                    let protocol_refused = refusals.len() > refusals_before;
+                    if protocol_refused {
                         refused_protocols.insert(protocol.name.name.as_str());
+                        protocol_check_refusals.push(ProtocolCheckRefusal {
+                            declaration: protocol.name.name.clone(),
+                            refusals: refusals.split_off(refusals_before),
+                        });
+                        protocol_places.push(None);
+                    } else {
+                        protocol_bindings.push(bound);
+                        protocol_places.push(Some(checked_protocols.len()));
+                        checked_protocols.push(checked);
                     }
-                    protocol_bindings.push(bound);
-                    protocol_places.push(Some(checked_protocols.len()));
-                    checked_protocols.push(checked);
                 }
                 Err(protocol_refusals) => {
                     protocol_places.push(None);
-                    refusals.extend(protocol_refusals);
+                    let mut owned_refusals = protocol_refusals;
                     if let protocol_obligation::Obligations::Refused(obligation_refusals) =
                         obligations
                     {
-                        refusals.extend(obligation_refusals);
+                        owned_refusals.extend(obligation_refusals);
                     }
+                    protocol_check_refusals.push(ProtocolCheckRefusal {
+                        declaration: protocol.name.name.clone(),
+                        refusals: owned_refusals,
+                    });
                 }
             }
-            protocol_refused.push(refusals.len() > refusals_before);
+            protocol_refused.push(protocol_places.last().is_some_and(Option::is_none));
             if cancel.tripped().is_some() {
-                return Err(with_deferred(refusals, &deferred));
+                let mut cancelled = refusals;
+                cancelled.extend(
+                    protocol_check_refusals
+                        .iter()
+                        .flat_map(|result| result.refusals.iter().cloned()),
+                );
+                return Err(with_deferred(cancelled, &deferred));
             }
         }
+        let original_protocol_index = |checked_index: usize| {
+            protocol_places
+                .iter()
+                .position(|place| *place == Some(checked_index))
+                .unwrap_or(checked_index)
+        };
         // FR-147: the refinements whose abstract side is a protocol subject,
         // now that every protocol clause of the unit is checked (FR-136
         // "Order of the checks"). A clause refused by its own checks
@@ -4446,10 +4505,11 @@ impl PackageDeclarations {
             .iter()
             .enumerate()
             .map(|(protocol_index, bindings)| {
+                let source_protocol_index = original_protocol_index(protocol_index);
                 (0..bindings.len())
                     .map(|attempt_index| {
                         root(Origin::ProtocolAttempt {
-                            protocol: protocol_index,
+                            protocol: source_protocol_index,
                             attempt: attempt_index,
                         })
                     })
@@ -4460,9 +4520,13 @@ impl PackageDeclarations {
             .iter()
             .enumerate()
             .map(|(protocol_index, bindings)| {
+                let source_protocol_index = original_protocol_index(protocol_index);
                 (0..bindings.len())
                     .map(|attempt_index| {
-                        lowering::protocol_attempt_operation_location(protocol_index, attempt_index)
+                        lowering::protocol_attempt_operation_location(
+                            source_protocol_index,
+                            attempt_index,
+                        )
                     })
                     .collect()
             })
@@ -4593,10 +4657,11 @@ impl PackageDeclarations {
             .zip(&attempt_reference_locations)
             .enumerate()
         {
+            let source_protocol_index = original_protocol_index(protocol_index);
             for ((bound, location), reference) in bindings.iter().zip(locations).zip(references) {
                 let source_order = self
                     .protocols
-                    .get(protocol_index)
+                    .get(source_protocol_index)
                     .and_then(|protocol| protocol.declarations.get(bound.declaration))
                     .map_or(usize::MAX, |declaration| declaration.name.span.start);
                 source_ordered_anchors.push((
@@ -4782,9 +4847,10 @@ impl PackageDeclarations {
             .map(|(index, form)| (form.spans.declaration.start, Lowerable::Clause(index)))
             .collect();
         for (protocol_index, bindings) in protocol_bindings.iter().enumerate() {
+            let source_protocol_index = original_protocol_index(protocol_index);
             let declarations = self
                 .protocols
-                .get(protocol_index)
+                .get(source_protocol_index)
                 .map(|protocol| protocol.declarations.as_slice())
                 .unwrap_or_default();
             for (attempt_index, bound) in bindings.iter().enumerate() {
@@ -4796,9 +4862,10 @@ impl PackageDeclarations {
             }
         }
         for (protocol_index, checked) in checked_protocols.iter().enumerate() {
+            let source_protocol_index = original_protocol_index(protocol_index);
             let forms = self
                 .protocols
-                .get(protocol_index)
+                .get(source_protocol_index)
                 .map(|protocol| protocol.compensations.as_slice())
                 .unwrap_or_default();
             for template_index in 0..checked.obligations.compensations.len() {
@@ -5598,9 +5665,13 @@ impl PackageDeclarations {
             );
             let mut access_refusals = Vec::new();
             for (index, protocol) in self.protocols.iter().enumerate() {
-                let (Some(checked), Some(bound)) =
-                    (checked_protocols.get(index), protocol_bindings.get(index))
-                else {
+                let Some(checked_index) = protocol_places.get(index).copied().flatten() else {
+                    continue;
+                };
+                let (Some(checked), Some(bound)) = (
+                    checked_protocols.get(checked_index),
+                    protocol_bindings.get(checked_index),
+                ) else {
                     continue;
                 };
                 let classified = protocol_memory::classify(protocol, checked, bound, |binding| {
@@ -6255,9 +6326,16 @@ impl PackageDeclarations {
         let protocol_classes = self
             .protocols
             .iter()
-            .zip(&protocol_bindings)
-            .zip(&checked_protocols)
-            .map(|((form, attempts), checked)| {
+            .enumerate()
+            .filter_map(|(source_index, form)| {
+                let checked_index = protocol_places.get(source_index).copied().flatten()?;
+                Some((
+                    form,
+                    protocol_bindings.get(checked_index)?,
+                    checked_protocols.get(checked_index)?,
+                ))
+            })
+            .map(|(form, attempts, checked)| {
                 let mut classes =
                     refinement::ProtocolClasses::of(form, checked, attempts, scope.types());
                 if let Some(keys) = lowered_protocol_members
@@ -6348,6 +6426,7 @@ impl PackageDeclarations {
             model_names,
             protocol_classes,
             protocols: checked_protocols,
+            protocol_refusals: protocol_check_refusals,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
@@ -7455,6 +7534,11 @@ impl CheckedGraph {
     /// FR-113: the checked protocol declared `name`, or `None`.
     pub fn protocol(&self, name: &str) -> Option<&CheckedProtocol> {
         self.protocols.iter().find(|protocol| protocol.name == name)
+    }
+
+    /// FR-383: typed refusals attributed to individual protocol declarations.
+    pub fn protocol_refusals(&self) -> &[ProtocolCheckRefusal] {
+        &self.protocol_refusals
     }
 
     /// FR-390's keyed protocol member identities, read by the selected

@@ -3377,6 +3377,16 @@ pub struct CheckRefusal {
     pub cause: CheckCause,
 }
 
+/// Refusals owned by one protocol declaration while the rest of the unit
+/// continues checking (FR-383 per-protocol results).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ProtocolCheckRefusal {
+    /// The protocol declaration's authored name.
+    pub declaration: String,
+    /// Every typed refusal attributed to this declaration, in check order.
+    pub refusals: Vec<CheckRefusal>,
+}
+
 impl CheckRefusal {
     pub(crate) fn ill_typed(location: &Location, cause: IllTypedCause) -> Self {
         Self {
