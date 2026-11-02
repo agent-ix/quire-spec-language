@@ -15,7 +15,7 @@ with an S3 refusal emits no node of its own and no package for the unit while
 the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-37.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a
@@ -65,6 +65,17 @@ QSL's conformance run reads the QSpec protocol vectors file
 admits each positive package through QSL's I2 reader and refuses each
 mutation with the recorded code and locus. It copies no vector. The test is
 traced only once that file exists.
+
+### Protocol term locations
+
+| # | Unit or graph | Expected |
+| --- | --- | --- |
+| L1 | fixture E and protocol L (TC-1070) emitted and read through QSL's I2 reader | for every slot, the rows of its origin number the visits of each application in the slot walk, and no row names an application the walk does not visit; `Refund.retry.relation` has one `earlier.tally` node with two retry-origin rows, `Partial.retry.relation` one `partialEarlier.tally` node with two of its own |
+| L2 | row L1's package | each row's `Location` equals the in-process `Location` of the term at the position it numbers; the two `earlier.tally` rows differ |
+| L3 | a unit with no protocol slot expression; a package with no checked-term data | `protocol_locations` empty; `checked_term_data` absent |
+| L4 | row L1's package | no two slots share an origin |
+| L5 | row L1's package with the highest-index retry-origin `earlier.tally` row removed | admitted by the reader |
+| L6 | row L1's package with the ordinal-zero retry-origin `earlier.tally` row removed; with it duplicated; with the ordinals 0 and 2 only | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` for the missing predecessor and the gap, and at the first mismatching row under FR-322-AC-291 for the duplicate |
 
 ### Limits and nesting
 

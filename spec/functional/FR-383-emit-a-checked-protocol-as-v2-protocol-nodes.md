@@ -196,25 +196,54 @@ arguments. `P` is the protocol's qualified name.
 
 ### Protocol term locations
 
+A *slot walk* is the sequence of positions a pre-order walk visits in the
+checked expression tree of one protocol slot expression, from the slot's root.
+The tree is the in-process checked clause's: a node reached through two parents
+is one graph node but two positions, each walked in full. Children are taken in
+the operand order of the node's FR-400 `NodeKind` (a `let`'s value before its
+body, a conditional's condition, then-branch and else-branch, a case's scrutinee
+and then its arms in the emitted arm order), never in the order of the node's
+`dependencies` array. The walk takes every branch and arm whether or not any
+input evaluates it, so a branch a short-circuit never reaches still holds its
+positions. A reference to a `let` binder or other local (`Local`) is a leaf
+position and does not walk the bound application again; a literal is a leaf.
+A *term* is a position whose node is an application (every `NodeKind` other
+than `Literal` and `Local`), and its *visit number* `k` is the zero-based count
+of earlier positions of the same application in the walk.
+
 The emitter SHALL write, in the `checked_term_data.protocol_locations` array of
 QSpec FR-322, one row for every term of every protocol slot expression it
-emits that a reader can visit: for each (application node, occurrence) it
-writes the term's semantic location, the origin of the slot's site
-(`protocol_site`) and the child-index path the in-process checked term
-carries, with consecutive `term_ordinal` values from zero. An application the
-slot visits more than once has a row for each visit, so each visit has its own
-location. The emitter SHALL order those rows so that, among the rows of that
-application whose origin is the slot's site origin, ascending (occurrence,
-`term_ordinal`) order is the order of the visits in a left-to-right pre-order
-walk of the slot's expression tree from its root, the first row belonging to
-the first visit. In TC-1070 fixture E the retry relation of `Refund` visits the
-shared `earlier.tally` application twice, in `earlier.tally < 3` and in
-`earlier.tally + 1`, so it has two rows of the retry site's origin: the first
-carries the location of the term in `earlier.tally < 3` and the second that in
-`earlier.tally + 1`. The rows carry the locations the checker assigned and are neither
-derived from source regions, node order or operand position, nor defaulted. A
-unit with no protocol slot expression writes the array empty, and a package
-with no checked-term data keeps the sidecar absent as today.
+emits.
+
+Each row SHALL carry the application node, the term's semantic location as the
+checker assigned it to that position, the slot's origin (the `protocol_site`
+origin of QSpec FR-322, in its named type-declaration or protocol-attempt
+form), the child-index path of the position and a zero-based `term_ordinal`.
+
+The emitter SHALL give every protocol slot an origin that no other slot of the
+package shares, so the rows of one slot are separable from the rows of every
+other slot that holds the same application.
+
+The emitter SHALL order the rows of one application and one slot origin so that
+their ascending (occurrence ordinal, `term_ordinal`) order is the order of that
+application's visits in the slot walk: the row at index `k` of that order
+belongs to the visit numbered `k`. It SHALL assign `term_ordinal` values
+consecutive from zero in each (application, occurrence) group, as QSpec
+FR-322-AC-291 requires.
+
+The emitter SHALL NOT derive a row's location from a source region, a node
+order, an operand position or a default value.
+
+WHEN a unit holds no protocol slot expression, the emitter SHALL write the
+array empty; WHEN a package has no checked-term data, the emitter SHALL keep the
+sidecar absent as before.
+
+In TC-1070 fixture E the retry relation of `Refund` holds one `earlier.tally`
+application node reached at two positions, in `earlier.tally < 3` (visit 0) and
+in `earlier.tally + 1` (visit 1). It therefore has two rows of the retry site's
+origin: the first carries the location of the term in `earlier.tally < 3` and
+the second that in `earlier.tally + 1`. A literal or `Local` leaf is not an
+application, has no row, and takes its location from its own admitted node.
 
 ### Cyclic reference components
 
@@ -469,7 +498,12 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte, and removing **W** changes **X**'s refusal record in no field; an `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
 | FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
 | FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
-| FR-383-AC-32 | Reading **W**'s package and protocol L's (TC-1070 fixture L) through QSL's I2 reader returns a `protocol_locations` row for every term of every guard, constraint, condition, key, initializer and `until` expression the package holds, and each row's `Location` equals the `Location` of that term in the in-process checked clause, including the two visits of a shared application in one retry relation. A protocol with no slot expression writes the array empty, and a variant whose row is removed or duplicated is refused by the reader or by FR-390-AC-29. No row is derived from a source region or a node position. | Test (TC-1063) |
+| FR-383-AC-32 | For every protocol slot of **W** and of protocol L (TC-1070 fixture L), the `protocol_locations` rows of that slot's origin, grouped by application, number the visits of that application in the slot walk, and no row of that origin names an application the walk does not visit. In the retry relation of fixture E's `Refund`, one `earlier.tally` application node has exactly two rows of the retry origin and the `Partial` retry relation's `partialEarlier.tally` application exactly two of its own. | Test (TC-1063) |
+| FR-383-AC-33 | Each row of AC-32, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the in-process checked clause, and the two rows of `earlier.tally` carry different `Location` values, the first that of the term in `earlier.tally < 3`. | Test (TC-1063) |
+| FR-383-AC-34 | A unit with no protocol slot expression writes `protocol_locations` as an empty array, and a package with no checked-term data keeps `checked_term_data` absent; neither writes a row. | Test (TC-1063) |
+| FR-383-AC-35 | No two protocol slots of **W**, of fixture E or of protocol L carry the same origin, including the two retry relations and the trigger guard and recovery predicate of one compensation. | Test (TC-1063) |
+| FR-383-AC-36 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
+| FR-383-AC-37 | The mutated emitted package of fixture E with the highest-ordinal `earlier.tally` row of the retry origin removed is admitted by QSL's I2 reader; with the ordinal-zero row removed, with a row duplicated, or with an ordinal gap, the reader refuses at the QSpec FR-322-AC-291 code and locus (`invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` for the missing predecessor). | Test (TC-1063) |
 
 ## Dependencies
 

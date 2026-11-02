@@ -13,8 +13,8 @@ relationships:
 Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
-the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23,
-FR-390-AC-28 and FR-390-AC-29. The E-P procedure below verifies FR-390-AC-23 without
+the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
+FR-390-AC-39. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -164,6 +164,45 @@ Row 26's four refusals name `target`, the lowest source of each slot (its level
 is below the trigger's, the activation capture's and the recovery binder's).
 Case indexes name the emitted UTF-8 label order, so `no` is index 0 and `yes`
 is index 1 even though the source declares `yes` first.
+
+## Composed-root reader vectors
+
+These rows run over the emitted-and-admitted package of fixtures E, L and E-C
+through the reader view and compare with the same call over the checked
+package. They leave E and L's rows 1 to 33 unchanged. Rows are labelled `C`
+so they do not collide with E-P's rows 34 to 46.
+
+Fixture **E-C** is fixture E with `M` extended by the record `Mix{ready:
+Boolean, count: Int[0, 9], note: Option<Int[0, 9]>, items: Sequence<Int[0,
+9]>[0, 3]}` and the union `Choice` with the members `Left(Int[0, 9])` and
+`Right(Boolean)`, and the protocol `Composed` over `view: M::Node` whose slots
+have the checked-term shapes below. Shapes are written in checked-term form,
+not QSL surface syntax, and `m` is a `Mix` binder.
+
+| Slot | Shape | Walk positions of interest |
+| --- | --- | --- |
+| `Composed.let` | `let c = m.count in c + c` | `m.count` once; the two `c` are `Local` leaves, not visits |
+| `Composed.if` | `if m.ready then m.count else m.count + 1` | `m.count` three times (then-branch, and inside `+` in the else-branch); the else-branch holds visits when `m.ready` is true |
+| `Composed.case` | `case choice of Left(x) => x; Right(b) => if b then 1 else 0` | both arms walked, in emitted arm order |
+| `Composed.deref` | `deref(view).total` | the dereference and the field read |
+| `Composed.arith` | `-(m.count) + (m.count / 2)`, range-coerced to `Int[0, 9]` where the checker coerces | negate, divide, add and coerce |
+| `Composed.option` | `present(m.note) and value(m.note) >= 1` | `m.note` twice |
+| `Composed.coll` | `size(m.items) >= 1 and contains(m.items, m.count)` | `m.items` twice |
+| `Composed.record` | `Pair(m.count, m.ready).first` | constructor and field read |
+
+| # | Slot | Supply | Expected |
+| --- | --- | --- | --- |
+| C1 | each slot of AC-28 (fixtures E and L), rows 4 to 22 and 29 to 33 supplies | as in those rows | reader value, outcome category and ordered charge log equal the checked package's; `read_node` returns a `NodeRead` for every walk position |
+| C2 | `Refund.retry.relation`, handles of `earlier.tally` | row 8's supply | two distinct handles; their `Location` values equal the in-process `Location` of the term in `earlier.tally < 3` and in `earlier.tally + 1`, and differ |
+| C3 | `Refund.retry.relation` | `earlier` unavailable, `later = Attempt(tally 1)`, `target = 5`, `activated = false` | halts at the first `earlier.tally` visit; the reader result's `Location` equals the in-process one, that of the term in `earlier.tally < 3` |
+| C4 | `Refund.retry.relation` on the package of C3 with the two retry-origin `earlier.tally` rows' `Location` values swapped | C3's supply, then row 8's | C2's handles read the swapped locations; C3's halt reports the location of the term in `earlier.tally + 1`; row 8's value is unchanged |
+| C5 | package with the highest-index retry-origin `earlier.tally` row removed | any | `ViewFailure::Unsupported`/`MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, retry origin, visit number 1, two visits, one row; no meter charge; no view for any slot |
+| C6 | package with a retry-origin `earlier.tally` row appended; second package with a retry-origin row added for an application the relation does not hold | any | `MissingLocationProjection` at the `Node` locus of that application; no meter charge |
+| C7 | package with the ordinal-zero retry-origin `earlier.tally` row removed; second package with it duplicated | any | refused at I2 admission by the QSpec reader under FR-322-AC-291; view creation is not attempted |
+| C8 | package whose `Refund.recovery.predicate` slot descriptor holds the real `CheckedBody` of `Refund.retry.relation`, taken through the checked package's existing API | row 12's supply | the reader value, `NodeRead` values and charge log equal the unaltered view's |
+| C9 | package with one expression node's operation identity replaced by an identity FR-322 admits with no `NodeKind` mapping | any | `MissingOperationProjection` at that node's locus with package identity, node key, node location and the operation identity; no meter charge |
+| C10 | each `Composed` slot (E-C) | `m = Mix(ready true, count 4, note present 2, items [4])`, `choice = Left(3)`, `view = n5`; then the `ready false` and `Right(true)` variants | value and ordered charge log equal the checked package's; each position's `Location` equals the in-process one; the untaken arm and branch positions of `Composed.if` and `Composed.case` still hold rows and handles |
+| C11 | `Composed.let`, `Composed.if` | as C10 | `m.count` of `Composed.let` has one row and one visit; `Composed.if` has three visits and three rows of its origin; with the node ids renumbered and the `dependencies` arrays reordered (identities recomputed) every handle's `Location` is unchanged |
 
 ## Fixture E-P: reference-population provenance extension
 
