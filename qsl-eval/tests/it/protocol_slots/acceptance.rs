@@ -2250,11 +2250,6 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         .expect("reader view owns the root projection")
         .location()
         .clone();
-    let reader_location = selected
-        .reader_projection()
-        .expect("reader view owns the root projection")
-        .location()
-        .clone();
     let unavailable = reader_view
         .evaluate_protocol_slot(
             &capture,
@@ -2430,6 +2425,8 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
 /// QSL-emitted type is an unmet dependency, never a passing parity case).
 const UNMET_PROJECTION: &str = "reader-protocol-root-has-supported-plain-data-projection";
 
+type SlotValues<'p> = Box<dyn Fn(Option<&ObjectReference>) -> Vec<(&'static str, Value)> + 'p>;
+
 /// One TC-1070 slot compared across the checked and the strict-reader view.
 struct ParitySlot<'p> {
     name: &'static str,
@@ -2437,7 +2434,7 @@ struct ParitySlot<'p> {
     owner: &'static str,
     member: &'static str,
     index: Option<usize>,
-    values: Box<dyn Fn(Option<&ObjectReference>) -> Vec<(&'static str, Value)> + 'p>,
+    values: SlotValues<'p>,
     observed: bool,
     expected: Option<Value>,
     /// Whether the slot's root is a plain-data reader projection.
@@ -2972,6 +2969,73 @@ fn selection_refusals_match_across_the_checked_and_reader_views() {
             "{case:?}: reader meter unchanged"
         );
     }
+}
+
+/// FR-390-AC-19: a bare `view.total` read and an explicit `deref(view).total`
+/// read keep their own in-process charge logs through emitted-package
+/// admission, including FR-107's explicit-dereference charge.
+#[test]
+#[trace("TC-1073", "FR-390-AC-19", "FR-390-AC-15")]
+fn bare_and_explicit_dereference_reads_keep_their_charge_logs_through_the_reader() {
+    let mut model_logs = Vec::new();
+    for (replacement, expected) in [
+        (
+            "= view.total;",
+            vec![quire_exact::ChargePoint::ModelNavigate],
+        ),
+        (
+            "= deref(view).total;",
+            vec![
+                quire_exact::ChargePoint::ModelDeref,
+                quire_exact::ChargePoint::ModelNavigate,
+            ],
+        ),
+    ] {
+        let (package, model_view) =
+            fixture_from_source(&SOURCE.replace("= view.total;", replacement));
+        let read = read_checked_package(&package);
+        let reader_view = read.evaluation_view().expect("the read retains its view");
+        let (checked_observation, reference) = observation(&package, &model_view);
+        let (reader_observation, _) =
+            observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+        let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+        let values = |observation| {
+            supply(
+                &package,
+                "Refunds",
+                vec![("view", Value::Reference(reference.clone()))],
+                Some(observation),
+            )
+        };
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let checked = package
+            .evaluate_protocol_slot(&capture, &values(&checked_observation), &mut checked_meter)
+            .unwrap();
+        let reader = reader_view
+            .evaluate_protocol_slot(&capture, &values(&reader_observation), &mut reader_meter)
+            .expect("an attribute-rooted capture is reader-backed");
+        assert_value_eq!(completed(checked), int(5));
+        assert_value_eq!(completed(reader), int(5));
+        charges_and_usage_match(replacement, &checked_meter, &reader_meter);
+        let model_points: Vec<_> = reader_meter
+            .admitted_charges()
+            .iter()
+            .filter_map(|charge| {
+                matches!(
+                    charge.point,
+                    quire_exact::ChargePoint::ModelDeref | quire_exact::ChargePoint::ModelNavigate
+                )
+                .then_some(charge.point)
+            })
+            .collect();
+        assert_eq!(model_points, expected, "{replacement}");
+        model_logs.push(reader_meter.admitted_charges().to_vec());
+    }
+    assert_ne!(
+        model_logs[0], model_logs[1],
+        "the explicit dereference keeps its extra charge"
+    );
 }
 
 /// FR-390-AC-10 / AC-15: one meter passed to reader-backed slots in turn
