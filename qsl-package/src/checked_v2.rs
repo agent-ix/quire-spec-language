@@ -383,7 +383,7 @@ pub(crate) fn wire_graph(package: &CheckedPackageV2) -> Result<WireGraph, WireId
 
 /// ADR-013 O-12, C-14: the package source map of an admitted wire's
 /// `source_map`, keyed by the O-07 occurrence key.
-fn package_source_map(
+pub(crate) fn package_source_map(
     graph: &WireGraph,
     entries: &[CheckedSourceMapEntry],
 ) -> Result<PackageSourceMap, SourceMapDefect> {
