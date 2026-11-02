@@ -741,6 +741,38 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
     assert_eq!(sum.unit(), left.unit());
 }
 
+/// TC-384 (FR-090-AC-3): a quantity whose unit the evaluating scope does not
+/// resolve is an S6a internal fault, never a refusal or a value, for both a
+/// quantity operation and a quantity ordering. The quantities carry unit ids
+/// declared by another unit table; the machine's own package declares no
+/// units. No caller input reaches this state: checking resolves every
+/// quantity type, admission matches argument units to parameter units, and
+/// an expression checked against another graph is refused before evaluation
+/// (FR-049-AC-1), so the probe drives the machine directly.
+#[test]
+#[trace("TC-384", "FR-090-AC-3")]
+fn an_unresolved_unit_past_admission_is_an_internal_fault() {
+    let units = quantity_units();
+    let metre = Value::Quantity(quire_exact::Quantity::new(
+        Rational::from_integer(Integer::one()),
+        units.ids().next().unwrap(),
+    ));
+    let node = body(|ids| NodeKind::Quantity(ArithmeticOperator::Add, ids[0], ids[1]));
+    probe!("quantity-unit-unresolved-past-admission", m, [], {
+        set_values(m, vec![metre.clone(), metre.clone()]);
+        m.apply(node.root())
+    });
+    probe!("quantity-unit-unresolved-past-admission", m, [], {
+        m.order(
+            OrderingOperator::Less,
+            OrderedKind::Quantities,
+            &metre,
+            &metre,
+        )
+        .map(|_| ())
+    });
+}
+
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantifier() {
