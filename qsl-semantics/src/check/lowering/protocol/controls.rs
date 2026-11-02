@@ -268,16 +268,9 @@ impl Lowering<'_> {
                 .and_then(key_of)
         };
         let binder = || {
-            controls
-                .own
-                .get(&node)
-                .ok_or_else(unchecked)
-                .and_then(|binder| {
-                    Ok(MemberTerm::bound(
-                        "binder",
-                        LeafTerm::reference_node(binder.parameter.clone()),
-                    ))
-                })
+            controls.own.get(&node).ok_or_else(unchecked).map(|binder| {
+                MemberTerm::bound("binder", LeafTerm::reference_node(binder.parameter.clone()))
+            })
         };
         let role = |name: Option<&str>| {
             let name = name.ok_or_else(unchecked)?;
