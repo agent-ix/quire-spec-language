@@ -81,6 +81,10 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-034 | fixed | round 7: every slot now has a type-declaration origin named by its site name. The FR-383 site-name table matches qsl-semantics lowering/protocol.rs protocol_site and check/mod.rs register_protocol_sites for every slot kind in FR-390's slot table (activation guard, capture initializer, five compensation stages with index, control body, related, decision, finish body, terminal body, role until, channel key). |
 | FND-035 | fixed | round 7: E-C Tried and Picked now declare result binders `(t: M::Mix)` and `(p: M::Mix)`. |
 | FND-036 | fixed | round 7: FR-383-AC-52 to 54 split the node-sharing, row-count and ordinal claims. Residual: FND-040. |
+| FND-037 | fixed | round 8: the stale sentence is replaced by "The emitter SHALL take each slot's origin name from the site at which the checker located that slot, and SHALL NOT invent a name"; grep of FR-383, FR-390, TC-1063 and TC-1070 finds no remaining attempt-origin wording; FR-383-AC-45 and the E-C text now say each slot has its own site name. |
+| FND-038 | fixed | round 8: invariant and variant are removed from the site table and FR-383 says they are not slots (FR-390) and get no row. |
+| FND-039 | fixed | round 8: the FR-096 citation is gone; the site-name rule is stated as this requirement's own. |
+| FND-040 | fixed | round 8: FR-383-AC-51/52 and AC-54/55 are split and FR-390-AC-52/53 and AC-55/56 are split; all renumbered consistently (FR-383-AC-32 to 56, FR-390-AC-28 to 58, TC-1063 L8a to L8g and L9, TC-1070 C-rows, scope lines). |
 
 ## New findings (disposition pass 2)
 
@@ -154,6 +158,18 @@ Head 1a4a945d2 on main 38f3020e8. quire validate: no errors. No id collision wit
 | FND-039 | low | other: FR-383 says FR-096 locates each slot expression at a site-name origin; FR-096 (stage limits and loci) does not state it | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 | FND-040 | low | compound: FR-383-AC-51 and AC-54 and FR-390-AC-52 each join ordinals with locations or a no-restart claim | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 
-## Verdict (disposition pass 7)
+## Verdict (disposition pass 7, superseded by pass 8)
 
 FND-034 to FND-036 are fixed and the fixture vectors are buildable against FR-322-AC-291 and I2 (checked by hand: ordinal removals, the 0-and-2 gap, the duplicate, the appended row, the added foreign-slot row, and the Picked-before-Tried byte order). No high finding. FND-037 is a medium contradiction inside FR-383; the PR is not mergeable until it is fixed, and must merge after QSpec PR 603.
+
+## New findings (disposition pass 8)
+
+Head ba7971190 on main 38f3020e8 (unchanged). quire validate: no errors. No id collision with main or open PRs. Every FR-390-AC-28 to 58 and FR-383-AC-32 to 56 has a TC row; scope lines match. A1 is now this requirement's own rule and depends only on FR-322-AC-291 (which refuses a non-application row today).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-041 | low | compound: FR-383-AC-39 joins the site-name origin, name uniqueness and the absence of protocol_attempt rows | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+
+## Verdict (disposition pass 8)
+
+FND-037 to FND-040 are fixed and the fixture vectors are buildable against FR-322-AC-291 and I2. No high or medium finding remains. Mergeable with the low FND-041. Known by design, not defects: the QSpec follow-up PR that makes FR-322 and vectors PL-01 and PL-02 state site-name type_declaration origins (until it lands, QSpec text and vectors do not state the rule this spec relies on); the code-lane premises (shared nodes, E-C surface syntax); the two-occurrence coverage gap in the PR body.
