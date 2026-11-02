@@ -932,7 +932,10 @@ fn tc134_timed_graph() -> qsl_semantics::check::CheckedGraph {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{TIMED_PROFILES_W}\
          model M = \"acme/orders\";\n{}\n",
-        tc134_source()
+        tc134_source().replace(
+            "on origin { always true }",
+            "on origin { always[0,3] true }"
+        )
     );
     assemble_with_models(source.as_bytes(), &packages)
         .expect("unit assembles")
@@ -977,20 +980,32 @@ fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back
     let bindings = wire["temporal_bindings"]
         .as_array()
         .expect("a timed subject carries temporal bindings");
-    assert_eq!(bindings.len(), selections.len(), "exactly one per selection");
+    assert_eq!(
+        bindings.len(),
+        selections.len(),
+        "exactly one per selection"
+    );
     for binding in bindings {
         assert_eq!(
             binding["clock"],
             json!({"kind": "event_position", "sequence_authority": "tc134-order-events"})
         );
         assert!(
-            nodes(&wire).iter().any(|node| node["node_id"] == binding["declaration"]),
+            nodes(&wire)
+                .iter()
+                .any(|node| node["node_id"] == binding["declaration"]),
             "the binding is tagged to an emitted declaration"
         );
     }
-    let declarations: std::collections::BTreeSet<String> =
-        bindings.iter().map(|b| b["declaration"].to_string()).collect();
-    assert_eq!(declarations.len(), bindings.len(), "no declaration is bound twice");
+    let declarations: std::collections::BTreeSet<String> = bindings
+        .iter()
+        .map(|b| b["declaration"].to_string())
+        .collect();
+    assert_eq!(
+        declarations.len(),
+        bindings.len(),
+        "no declaration is bound twice"
+    );
     assert!(
         wire["lock"]["profile_selections"]
             .as_array()
@@ -1014,13 +1029,17 @@ fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back
         quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
         other => panic!("strict v2 read admits the timed package: {other:?}"),
     };
+    assert!(
+        wire.to_string().contains("refund-clock"),
+        "the compensation's own clock name stays in the emitted package"
+    );
     let read_bindings = admitted
         .temporal_bindings()
         .expect("the admitted package retains its temporal bindings");
     assert_eq!(read_bindings.len(), bindings.len());
     for read in read_bindings {
         assert_eq!(read.clock, tc134_clock());
-        assert_eq!(read.clock_name, "refund-clock");
+        assert_eq!(&*read.clock_name, "model-steps");
     }
 }
 
@@ -1037,21 +1056,33 @@ fn tc134_timed_compensation_refuses_each_unfit_clock_selection() {
         crate::emit::emit_checked_with_temporal_selections(&package, s)
     };
 
-    assert!(matches!(emit(&[]), Err(R::MissingTemporalClockSelection { .. })));
+    assert!(matches!(
+        emit(&[]),
+        Err(R::MissingTemporalClockSelection { .. })
+    ));
     let mut duplicate = selections.clone();
     duplicate.push(selections[0].clone());
-    assert!(matches!(emit(&duplicate), Err(R::DuplicateTemporalClockSelection { .. })));
+    assert!(matches!(
+        emit(&duplicate),
+        Err(R::DuplicateTemporalClockSelection { .. })
+    ));
     let mut surplus = selections.clone();
     surplus.push(crate::emit::TemporalClockSelection {
         declaration_span: qsl_foundation::Span { start: 0, end: 1 },
         ..selections[0].clone()
     });
-    assert!(matches!(emit(&surplus), Err(R::SurplusTemporalClockSelection { .. })));
+    assert!(matches!(
+        emit(&surplus),
+        Err(R::SurplusTemporalClockSelection { .. })
+    ));
     let mut incompatible = selections.clone();
     incompatible[0].clock = quire_contract_model::ClockConfiguration::TimestampedEvent {
         timestamp_unit: "tc134-rfc3339".into(),
     };
-    assert!(matches!(emit(&incompatible), Err(R::TemporalClockProfileMismatch { .. })));
+    assert!(matches!(
+        emit(&incompatible),
+        Err(R::TemporalClockProfileMismatch { .. })
+    ));
 }
 
 /// FR-048-AC-8: `/1` stays strict. The reader refuses a `/1` contract
