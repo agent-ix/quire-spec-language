@@ -1842,31 +1842,18 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     "reader-protocol-root-has-supported-plain-data-projection",
                 )));
             };
-            let root = body.root();
-            let quire_checked::node::NodeKind::Attribute {
-                field,
-                optional,
-                derefed,
-                ..
-            } = root.kind()
-            else {
-                return Err(CallFailure::Fault(InternalFault::new(
-                    "FR-390",
-                    "reader-protocol-root-has-supported-plain-data-projection",
-                )));
-            };
             Some(quire_checked::NodeRead {
                 operation: quire_checked::NodeKind::Attribute {
                     reference: projection.slot(),
                     field: quire_semantic_value::declaration::FieldRef::new(
-                        field.owner.clone(),
+                        projection.owner(),
                         projection.field(),
                     ),
-                    optional: *optional,
-                    derefed: *derefed,
+                    optional: projection.optional(),
+                    derefed: projection.derefed(),
                 },
-                value_type: root.value_type(),
-                location: root.location(),
+                value_type: projection.value_type(),
+                location: projection.location(),
             })
         } else {
             None

@@ -945,8 +945,7 @@ impl AdmittedPackageRead<'_> {
         &self,
         node: &NodeKey,
         binders: &[Option<NodeKey>],
-        projected_field: &str,
-    ) -> Result<Option<(usize, String)>, InternalFault> {
+    ) -> Result<Option<crate::evaluation_view::ReaderProtocolProjection>, InternalFault> {
         let graph = wire_graph(&self.read.admitted).map_err(|_| {
             InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
         })?;
@@ -963,6 +962,7 @@ impl AdmittedPackageRead<'_> {
         let quire_contract_model::CheckedTerm::Application {
             operation,
             arguments,
+            result_type,
             ..
         } = &selected.body
         else {
@@ -971,15 +971,17 @@ impl AdmittedPackageRead<'_> {
         if operation.identity() != Some("quire.op.record.project") {
             return Ok(None);
         }
-        let Some((_, field)) = operation
-            .projection_field()
-            .map_err(|_| InternalFault::new("FR-390", "reader-projection-field-is-admitted"))?
+        let admitted_operation = operation
+            .read()
+            .map_err(|_| InternalFault::new("FR-390", "reader-projection-field-is-admitted"))?;
+        let Some(quire_contract_model::CheckedOperationMember::Field {
+            declaration,
+            name: field,
+            read_form,
+        }) = admitted_operation.member
         else {
             return Ok(None);
         };
-        if field != projected_field {
-            return Ok(None);
-        }
         let mut pending = arguments
             .iter()
             .flat_map(quire_contract_model::CheckedTerm::reference_targets)
@@ -994,7 +996,62 @@ impl AdmittedPackageRead<'_> {
                 .iter()
                 .position(|binder| binder.as_ref() == Some(&key))
             {
-                return Ok(Some((index, field.to_owned())));
+                let identities = self
+                    .source
+                    .graph()
+                    .selected_exact_identities(&self.read.admitted)
+                    .map_err(|_| {
+                        InternalFault::new("FR-390", "reader-selected-identities-are-admitted")
+                    })?;
+                let owner = identities
+                    .declaration_rows()
+                    .find(|row| row.structural_node == *declaration)
+                    .and_then(|row| match &row.exact_identity {
+                        quire_contract_model::SelectedExactIdentity::Object(identity) => {
+                            Some(identity.clone())
+                        }
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        InternalFault::new("FR-390", "reader-field-owner-is-selected")
+                    })?;
+                let fields = self
+                    .read
+                    .admitted
+                    .model_object_fields(declaration)
+                    .map_err(|_| {
+                        InternalFault::new("FR-390", "reader-field-declaration-is-admitted")
+                    })?;
+                let member_type = fields
+                    .field(field)
+                    .ok_or_else(|| InternalFault::new("FR-390", "reader-field-member-is-admitted"))?
+                    .member_type();
+                let optional = matches!(
+                    member_type,
+                    Some(quire_contract_model::CheckedMemberType::Option(_))
+                );
+                let value_type = self
+                    .read
+                    .admitted
+                    .project_exact_type(result_type, &identities, self.read.effective_limits.work)
+                    .map_err(|_| InternalFault::new("FR-390", "reader-result-type-is-admitted"))?
+                    .value_type()
+                    .clone();
+                let location = quire_semantic_value::location::Location::root(
+                    quire_semantic_value::location::Origin::Expression,
+                );
+                return Ok(Some(crate::evaluation_view::ReaderProtocolProjection {
+                    slot: index,
+                    field: field.to_string(),
+                    owner,
+                    optional,
+                    derefed: matches!(
+                        read_form,
+                        Some(quire_contract_model::CheckedFieldReadForm::ExplicitDeref)
+                    ),
+                    value_type,
+                    location,
+                }));
             }
             if !visited.insert(target.clone()) {
                 continue;

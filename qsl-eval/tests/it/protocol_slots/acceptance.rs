@@ -2344,37 +2344,18 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         );
         if expected_code == "dangling_reference" {
             assert_eq!(
-                record.record.fields.get("object").map(String::as_str),
-                Some("ghost")
-            );
-            assert_eq!(
-                record.record.fields.get("population").map(String::as_str),
-                Some(model::id("nodes").as_str())
+                record.record.fields,
+                std::collections::BTreeMap::from([
+                    ("object", "ghost".to_owned()),
+                    ("population", model::id("nodes")),
+                ])
             );
         } else {
             let required = independent_universe_hex(reference.universe());
             let supplied = independent_universe_hex(value.universe());
             assert_eq!(
-                Some(
-                    record
-                        .record
-                        .fields
-                        .get("required")
-                        .expect("foreign-universe refusal includes required identity")
-                        .as_str()
-                ),
-                Some(required.as_str())
-            );
-            assert_eq!(
-                Some(
-                    record
-                        .record
-                        .fields
-                        .get("supplied")
-                        .expect("foreign-universe refusal includes supplied identity")
-                        .as_str()
-                ),
-                Some(supplied.as_str())
+                record.record.fields,
+                std::collections::BTreeMap::from([("required", required), ("supplied", supplied),])
             );
         }
     }

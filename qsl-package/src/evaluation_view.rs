@@ -139,21 +139,14 @@ impl<'package> AdmittedEvaluationView<'package> {
         }
         #[cfg(feature = "std")]
         let reader_projection = if let Some(reader) = self.reader {
-            let quire_checked::node::NodeKind::Attribute { field, .. } = body.root().kind() else {
-                return Err(SlotSelectionFailure::Fault(InternalFault::new(
-                    "FR-390",
-                    "reader-protocol-root-has-supported-plain-data-projection",
-                )));
-            };
             let binders = frame
                 .iter()
                 .map(|source| source.node.clone())
                 .collect::<Vec<_>>();
             Some(
                 reader
-                    .protocol_reference_slot(&root_node, &binders, &field.name)
+                    .protocol_reference_slot(&root_node, &binders)
                     .map_err(SlotSelectionFailure::Fault)?
-                    .map(|(slot, field)| ReaderProtocolProjection { slot, field })
                     .ok_or_else(|| {
                         SlotSelectionFailure::Fault(InternalFault::new(
                             "FR-390",
@@ -377,8 +370,13 @@ impl SelectedProtocolTerm<'_, '_> {
 /// A protocol slot's reader-derived field and supplied local slot.
 #[cfg(feature = "std")]
 pub struct ReaderProtocolProjection {
-    slot: usize,
-    field: String,
+    pub(crate) slot: usize,
+    pub(crate) field: String,
+    pub(crate) owner: quire_exact::EffectiveId,
+    pub(crate) optional: bool,
+    pub(crate) derefed: bool,
+    pub(crate) value_type: quire_exact::ValueType,
+    pub(crate) location: quire_semantic_value::location::Location,
 }
 
 #[cfg(feature = "std")]
@@ -386,6 +384,31 @@ impl ReaderProtocolProjection {
     /// The selected expression's field name admitted by the reader.
     pub fn field(&self) -> &str {
         &self.field
+    }
+
+    /// The declaring object identity admitted by the reader.
+    pub fn owner(&self) -> quire_exact::EffectiveId {
+        self.owner.clone()
+    }
+
+    /// Whether the admitted field member type is optional.
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+
+    /// Whether the admitted operation retained an explicit dereference.
+    pub fn derefed(&self) -> bool {
+        self.derefed
+    }
+
+    /// The selected expression result type projected from the admitted graph.
+    pub fn value_type(&self) -> &quire_exact::ValueType {
+        &self.value_type
+    }
+
+    /// The selected expression's reader-derived root location.
+    pub fn location(&self) -> &quire_semantic_value::location::Location {
+        &self.location
     }
 
     /// The selected expression's supplied frame slot admitted by the reader.
