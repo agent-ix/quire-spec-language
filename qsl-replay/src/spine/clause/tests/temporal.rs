@@ -1469,18 +1469,17 @@ fn finite_window_report_preserves_pending_and_indeterminate_exit_classes() {
     assert_eq!(indeterminate.category_label(), "indeterminate");
     assert_eq!(exit_code(&indeterminate), 11);
 
-    let outcomes = [
-        TemporalVerdict::Pending,
-        TemporalVerdict::Indeterminate {
-            at: 0,
-            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+    let indeterminate = TemporalVerdict::Indeterminate {
+        at: 0,
+        reason: crate::spine::TemporalIndeterminateReason::MissingValuation {
+            position: 1,
+            atom: "holds-node@1".to_owned(),
         },
-    ];
-    assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 11);
-    let outcomes = [TemporalVerdict::Holds, TemporalVerdict::Violated { at: 0 }];
+    };
+    let outcomes = [indeterminate.clone(), TemporalVerdict::Violated { at: 0 }];
     assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 10);
-    let outcomes = [TemporalVerdict::Pending, TemporalVerdict::Holds];
-    assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 0);
+    let outcomes = [indeterminate, TemporalVerdict::Holds];
+    assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 11);
 }
 
 /// FR-501-AC-9 (TC-1295): counter-tick cover comparisons preserve the
@@ -1659,6 +1658,7 @@ fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
         "{:?}",
         six.disposition
     );
+    assert_eq!(six.usage.temporal_visits, 6);
 
     let mut seven = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
     seven.accounting.work_units = work;
