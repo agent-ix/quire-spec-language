@@ -1408,23 +1408,19 @@ mod tests {
 
     use super::*;
     use crate::simulation::expansion::ExpansionLimit;
-    use crate::simulation::model::BROKEN;
+    use crate::simulation::model::{BROKEN, EXHAUSTED};
 
     /// A classification stop on a caller-raisable budget stops construction
     /// with that stop; one that broke an invariant stays a fault.
-    #[trace("TC-665", "FR-120", "FR-220")]
+    #[trace("TC-665", "FR-220-AC-16")]
     #[test]
     fn a_budget_stop_is_a_stop_and_a_broken_one_a_fault() {
-        let exhausted = quire_semantic_value::catalog::CatalogCode::new(
-            "resource_exhausted",
-            "insufficient-next-charge",
-        );
         for limit in [
             ExpansionLimit::MaxCandidates,
             ExpansionLimit::EvaluationMeter(LimitKind::WorkUnits),
         ] {
             let stop = ExpansionStop {
-                cause: exhausted,
+                cause: EXHAUSTED,
                 limit: Some(limit),
             };
             let refusal = classification_stop(stop);

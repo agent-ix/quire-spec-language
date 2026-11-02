@@ -810,22 +810,7 @@ pub fn check_protocol(
             })
         }
     };
-    match built {
-        Ok(outcome) => outcome,
-        // FR-220 "Access shape": the pre-check settles V-8 before any state
-        // is explored.
-        Err(ProtocolRefusal::WeakAccessShape(shape)) => Ok(ModelCheckOutcome::Memory {
-            cause: MemoryCause::WeakAccessShape(shape),
-            stats: RunStats::default(),
-        }),
-        // ADR-027 ST-12: the pre-check settles V-8 `RecoveryView` before any
-        // state is explored.
-        Err(ProtocolRefusal::RecoveryView { predicate }) => Ok(ModelCheckOutcome::RecoveryView {
-            predicate,
-            stats: RunStats::default(),
-        }),
-        Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
-    }
+    built.unwrap_or_else(|refusal| construction_refusal(refusal, &meter, max_candidates))
 }
 
 /// FR-126 and FR-212 for a liveness clause over a protocol subject
@@ -912,21 +897,43 @@ fn check_protocol_liveness(
             )
         }),
     };
-    match decided {
-        Ok(outcome) => outcome,
-        // FR-220 "Access shape": the pre-check settles V-8 before any state
-        // is explored.
-        Err(ProtocolRefusal::WeakAccessShape(shape)) => Ok(ModelCheckOutcome::Memory {
+    decided.unwrap_or_else(|refusal| {
+        construction_refusal(
+            refusal,
+            &subject.model.simulation.meter,
+            subject.model.simulation.expansion.max_candidates,
+        )
+    })
+}
+
+/// What a refusal of `ProtocolSystem::new` settles, before any state is
+/// explored. FR-220 "Access shape" and ADR-027 ST-12 settle V-8; a stop on
+/// a budget, while EN-1's classification expands the attempts at the
+/// initial state or while an initial state settles, is an FR-126 expansion
+/// stop and settles `Stopped` naming the limit and its configured value
+/// ([`expansion_stopped`]); every other refusal refuses.
+fn construction_refusal(
+    refusal: ProtocolRefusal,
+    meter: &quire_exact::ScalarLimits,
+    max_candidates: u64,
+) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    match refusal {
+        ProtocolRefusal::WeakAccessShape(shape) => Ok(ModelCheckOutcome::Memory {
             cause: MemoryCause::WeakAccessShape(shape),
             stats: RunStats::default(),
         }),
-        // ADR-027 ST-12: the pre-check settles V-8 `RecoveryView` before any
-        // state is explored.
-        Err(ProtocolRefusal::RecoveryView { predicate }) => Ok(ModelCheckOutcome::RecoveryView {
+        ProtocolRefusal::RecoveryView { predicate } => Ok(ModelCheckOutcome::RecoveryView {
             predicate,
             stats: RunStats::default(),
         }),
-        Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
+        ProtocolRefusal::InitialStop(stop) => expansion_stopped(stop, meter, max_candidates)
+            .map(|(cause, limit)| ModelCheckOutcome::Stopped {
+                cause,
+                limit,
+                stats: RunStats::default(),
+            })
+            .ok_or(ModelCheckRefusal::Protocol(refusal)),
+        refusal => Err(ModelCheckRefusal::Protocol(refusal)),
     }
 }
 
@@ -1016,6 +1023,30 @@ impl ProtocolRun<'_> {
         }
         run.decide(self.instances)
     }
+}
+
+/// FR-126: the `Stopped` cause and limit an expansion stop ends a run
+/// with, naming the limit it reached and that limit's configured value (the
+/// counter's bound in `meter`, or `max_candidates`); `None` for a stop that
+/// broke an invariant.
+fn expansion_stopped(
+    stop: ExpansionStop,
+    meter: &quire_exact::ScalarLimits,
+    max_candidates: u64,
+) -> Option<(IncompleteCause, Option<ReachedLimit>)> {
+    let limit = match stop.limit {
+        Some(ExpansionLimit::EvaluationMeter(counter)) => ReachedLimit {
+            limit: ModelCheckLimit::EvaluationMeter { counter },
+            value: qsl_replay::meter_bound(meter, counter),
+        },
+        Some(ExpansionLimit::MaxCandidates) => ReachedLimit {
+            limit: ModelCheckLimit::MaxCandidates,
+            value: max_candidates,
+        },
+        None if stop.is_internal_failure() => return None,
+        None => return Some((IncompleteCause::ResourceExhausted, None)),
+    };
+    Some((IncompleteCause::ResourceExhausted, Some(limit)))
 }
 
 /// An outcome the reduction pre-check settles, with no state explored.
@@ -2820,18 +2851,10 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// An expansion stop: a named budget settles V-7 naming it, a broken
     /// invariant refuses, any other stop settles V-7 with no limit.
     fn expansion_stop(&self, stop: ExpansionStop) -> Halt {
-        match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter(counter)) => Self::stopped(
-                ModelCheckLimit::EvaluationMeter { counter },
-                qsl_replay::meter_bound(&self.meter, counter),
-            )
-            .into(),
-            Some(ExpansionLimit::MaxCandidates) => {
-                Self::stopped(ModelCheckLimit::MaxCandidates, self.max_candidates).into()
-            }
-            None if stop.is_internal_failure() => fault("model-expansion-invariant").into(),
-            None => Finish::Stopped(IncompleteCause::ResourceExhausted, None).into(),
-        }
+        expansion_stopped(stop, &self.meter, self.max_candidates).map_or_else(
+            || fault("model-expansion-invariant").into(),
+            |(cause, limit)| Finish::Stopped(cause, limit).into(),
+        )
     }
 
     /// The canonical path to node `at`: its breadth-first tree path,
