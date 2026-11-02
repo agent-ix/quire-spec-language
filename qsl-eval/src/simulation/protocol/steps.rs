@@ -123,13 +123,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     pub fn successors_and_terminal(
         &self,
         state: &ProtocolState<M>,
-    ) -> Result<
-        (
-            Expansion<ProtocolTransition, ProtocolState<M>, ModelFinding>,
-            crate::simulation::model::TerminalClass,
-        ),
-        ExpansionStop,
-    > {
+    ) -> Result<super::ProtocolSuccessorsAndTerminal<M>, ExpansionStop> {
         let (expansion, cut) = self.expand_bounded(state)?;
         let terminal = self.classify(state, &expansion, cut)?;
         Ok((expansion, terminal))
