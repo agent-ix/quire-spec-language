@@ -1054,6 +1054,12 @@ impl<'a, 'm> Machine<'a, 'm> {
     ) -> Result<Evaluation, InternalFault> {
         self.tasks.push(initial);
         while let Some(task) = self.tasks.pop() {
+            // Reader-backed reads carry their own admitted root location.
+            // Never associate their halt path with the source CheckedBody.
+            let reader_location = match &task {
+                Task::ReaderRead(read) => Some(read.location.clone()),
+                _ => None,
+            };
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
             // one, never once per task.
@@ -1087,10 +1093,13 @@ impl<'a, 'm> Machine<'a, 'm> {
             );
             if let Err(halt) = self.step(task) {
                 let located = self.imported.first().copied().unwrap_or(located);
+                let reported_location = reader_location
+                    .as_ref()
+                    .unwrap_or_else(|| located.location());
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     Halt::Unavailable { binder, cause } => {
-                        self.unavailable_read = Some((binder, cause, located.location().clone()));
+                        self.unavailable_read = Some((binder, cause, reported_location.clone()));
                         Err(InternalFault::new(
                             "S6a",
                             "protocol-slot-unavailable-source-read",
@@ -1100,18 +1109,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                     // like a `Stop`, at the task that produced it.
                     Halt::Family(result) => Ok(Evaluation {
                         outcome: FamilyOutcome::FamilyEvaluated(result),
-                        location: Some(located.location().clone()),
+                        location: Some(reported_location.clone()),
                         losses: Vec::new(),
                     }),
-                    Halt::Stop(stop) => Self::stopped(stop, Some(located.location())),
+                    Halt::Stop(stop) => Self::stopped(stop, Some(reported_location)),
                     // An imported call site still locates at that call.
                     Halt::Located(at) => Self::stopped(
                         at.stop,
-                        Some(
-                            self.imported
-                                .first()
-                                .map_or(&at.location, |call| call.location()),
-                        ),
+                        Some(self.imported.first().map_or_else(
+                            || reader_location.as_ref().unwrap_or(&at.location),
+                            |call| call.location(),
+                        )),
                     ),
                 };
             } else if applied {

@@ -2238,6 +2238,43 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
     let mut meter = Meter::new(UNLIMITED);
 
+    let selected = reader_view
+        .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            capture.node.clone(),
+            capture.member.clone(),
+            capture.index,
+        ))
+        .expect("reader view selects the capture term");
+    let source_location = selected.checked_body().root().location().clone();
+    let reader_location = selected
+        .reader_projection()
+        .expect("reader view owns the root projection")
+        .location()
+        .clone();
+    assert_ne!(reader_location, source_location);
+    let unavailable = reader_view
+        .evaluate_protocol_slot(
+            &capture,
+            &ProtocolSupply {
+                binders: vec![(
+                    binder(&package, "Refunds", "view"),
+                    SuppliedValue::Unavailable(CatalogCode::new(
+                        "unavailable_observation",
+                        "missing-required-artifact",
+                    ))
+                    .into(),
+                )],
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect("unavailable supplied source is returned as a protocol outcome");
+    let ProtocolSlotEvaluation::Unavailable { location, .. } = unavailable else {
+        panic!("reader-backed unavailable source must halt at its read: {unavailable:?}");
+    };
+    assert_eq!(location, reader_location);
+    assert_ne!(location, source_location);
+
     let before = meter.clone();
     let mismatched = second_reader_view.evaluate_protocol_slot(
         &capture,
