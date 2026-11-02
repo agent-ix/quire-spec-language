@@ -19,11 +19,11 @@ use quire_contract_model::{
     CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
     CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
-    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedRational,
-    CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody, ProtocolForm,
-    StateForm, ValueForm,
+    CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2,
+    CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody,
+    ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -197,6 +197,13 @@ pub enum EmitRefusal {
         /// The exact checked application key retained by QSL lowering.
         application: NodeKey,
     },
+    /// A dispatch producer decision has no unique emitted call occurrence or
+    /// one of its exact model/function identities is not in the emitted graph.
+    #[error("dispatch producer decision for application {application:?} has no complete emitted identity context")]
+    MissingDispatchIdentityContext {
+        /// The exact checked application key retained by QSL lowering.
+        application: NodeKey,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -231,6 +238,7 @@ impl EmitRefusal {
             | Self::UnresolvedNodeReference
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
         }
     }
 
@@ -258,6 +266,7 @@ impl EmitRefusal {
             | Self::UnresolvedNodeReference
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => None,
+            Self::MissingDispatchIdentityContext { .. } => None,
         }
     }
 }
@@ -2564,6 +2573,147 @@ fn checked_equality_term_data(
     }))
 }
 
+/// Convert the retained FR-150 identity without looking up a display name or
+/// traversing the checked graph.
+fn checked_effective_id(
+    identity: &quire_exact::EffectiveId,
+) -> quire_contract_model::CheckedEffectiveId {
+    let mut current = None;
+    for original in identity.owner_chain() {
+        current = Some(quire_contract_model::CheckedEffectiveId {
+            owner_effective_type: current.map(Box::new),
+            original: quire_contract_model::CheckedOriginalDeclarationId {
+                package: original.package().into(),
+                node: original.node().into(),
+            },
+        });
+    }
+    current.expect("EffectiveId always has an original declaration")
+}
+
+/// Emit exact dispatch decisions retained while lowering each typed dispatch
+/// application. The only joins here are producer keys to their emitted ids
+/// and occurrence records.
+fn checked_dispatch_tables(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    source_map: &[CheckedSourceMapEntry],
+) -> Result<Vec<quire_contract_model::CheckedDispatchCandidateTable>, EmitRefusal> {
+    let mut rows = Vec::with_capacity(graph.dispatch_producer_decisions().len());
+    for ((application, location), decision) in graph.dispatch_producer_decisions() {
+        let refusal = || EmitRefusal::MissingDispatchIdentityContext {
+            application: application.clone(),
+        };
+        let checked_application = emitted_node_ids
+            .get(application)
+            .cloned()
+            .ok_or_else(refusal)?;
+        let mut occurrences = graph
+            .occurrences()
+            .filter(|(node, _, found_location)| node == application && *found_location == location);
+        let Some((_, origin, _)) = occurrences.next() else {
+            return Err(refusal());
+        };
+        if occurrences.next().is_some() {
+            return Err(refusal());
+        }
+        let occurrence = checked_occurrence(&origin).ok_or_else(refusal)?;
+        let mut source_rows = source_map.iter().filter(|entry| {
+            entry.node_id == checked_application
+                && entry.role == occurrence.role
+                && entry.ordinal == occurrence.ordinal
+        });
+        let Some(source_row) = source_rows.next() else {
+            return Err(refusal());
+        };
+        if source_rows.next().is_some()
+            || source_row.regions.is_empty()
+            || source_row
+                .regions
+                .iter()
+                .any(|region| region.source != source_artifact(graph.source()))
+        {
+            return Err(refusal());
+        }
+        let operation = quire_contract_model::CheckedSelectedOperationWitness {
+            declaring: emitted_node_ids
+                .get(&decision.declaring_node)
+                .cloned()
+                .ok_or_else(refusal)?,
+            operation: decision.operation.selected_operation.as_str().into(),
+        };
+        let context = emitted_node_ids
+            .get(&decision.context_node)
+            .cloned()
+            .ok_or_else(refusal)?;
+        let mut candidates = Vec::with_capacity(decision.table.entries().len());
+        for (selection_key, candidate) in decision.table.entries() {
+            let operation_body = graph
+                .function_identity_at(candidate.body)
+                .and_then(|identity| emitted_node_ids.get(&identity).cloned())
+                .ok_or_else(refusal)?;
+            let effective_precondition = candidate
+                .precondition
+                .map(|index| {
+                    graph
+                        .function_identity_at(index)
+                        .and_then(|identity| emitted_node_ids.get(&identity).cloned())
+                        .ok_or_else(refusal)
+                })
+                .transpose()?;
+            candidates.push(quire_contract_model::CheckedDispatchCandidate {
+                selected_operation: operation.clone(),
+                selection_key: checked_effective_id(selection_key),
+                operation_body,
+                effective_precondition,
+            });
+        }
+        rows.push(quire_contract_model::CheckedDispatchCandidateTable {
+            application: checked_application,
+            occurrence,
+            operation,
+            context,
+            candidates,
+        });
+    }
+    rows.sort_by(|left, right| {
+        left.application
+            .package
+            .cmp(&right.application.package)
+            .then_with(|| left.application.path.cmp(&right.application.path))
+            .then_with(|| left.application.ordinal.cmp(&right.application.ordinal))
+            .then_with(|| left.occurrence.cmp(&right.occurrence))
+    });
+    Ok(rows)
+}
+
+/// Combine the independently retained producer decision families into the
+/// one FR-322 checked-term carrier.
+fn checked_term_data(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    selected_model_members: &[(
+        NodeKey,
+        NodeKey,
+        quire_contract_model::SelectedModelEnumMemberRow,
+    )],
+    equality_rows: &[EqualityProducerEmissionRow],
+    source_map: &[CheckedSourceMapEntry],
+) -> Result<Option<quire_contract_model::CheckedTermDataV2>, EmitRefusal> {
+    let mut term_data = checked_equality_term_data(
+        graph,
+        emitted_node_ids,
+        selected_model_members,
+        equality_rows,
+    )?
+    .unwrap_or_default();
+    term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
+    Ok((!term_data.equality_decisions.is_empty()
+        || !term_data.protocol_locations.is_empty()
+        || !term_data.dispatch_tables.is_empty())
+    .then_some(term_data))
+}
+
 fn equality_enum_members(
     graph_nodes: &HashMap<NodeKey, &qsl_semantics::check::SemanticNode>,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
@@ -3691,7 +3841,10 @@ pub fn emit_timed_models(
                 source_map: &source_map,
                 refinement_step_rows: None,
             },
-            None,
+            CheckedPackageSidecarsRef {
+                checked_term_data: None,
+                temporal_bindings: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,
@@ -4585,11 +4738,12 @@ fn emit_package_inner(
         &nodes,
         &equality_producer_identity_rows,
     )?;
-    let checked_equality_term_data = checked_equality_term_data(
+    let checked_term_data = checked_term_data(
         graph,
         &emitted_node_ids,
         &selected_model_enum_member_rows,
         &equality_producer_identity_rows,
+        &source_map,
     )?;
     let selected_operation_member_rows = selected_operation_member_rows
         .into_iter()
@@ -4675,7 +4829,10 @@ fn emit_package_inner(
                 source_map: &source_map,
                 refinement_step_rows: (!step_rows.is_empty()).then_some(step_rows.as_slice()),
             },
-            checked_equality_term_data.as_ref(),
+            CheckedPackageSidecarsRef {
+                checked_term_data: checked_term_data.as_ref(),
+                temporal_bindings: None,
+            },
             &capability_report,
             &diagnostics,
             crate::checked::EMIT_LIMITS,

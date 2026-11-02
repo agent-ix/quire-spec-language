@@ -2910,6 +2910,16 @@ pub enum KeyFault {
     InvalidGroup,
     /// A node names a draft that dependency order never keyed.
     UnresolvedDraft,
+    /// A checked dispatch call names no dispatch operation.
+    DispatchOperationOutOfRange {
+        /// The operation index carried by the checked call.
+        index: usize,
+    },
+    /// A checked dispatch operation names no linked table.
+    DispatchTableOutOfRange {
+        /// The table index carried by the checked operation.
+        index: usize,
+    },
     /// A record value's slots and its declaration's fields differ in
     /// number.
     RecordSlotCount,
@@ -2977,6 +2987,8 @@ impl KeyFault {
             Self::UnknownComposite(_) => "composite-declared",
             Self::InvalidGroup => "recursion-group-well-formed",
             Self::UnresolvedDraft => "draft-keyed-in-dependency-order",
+            Self::DispatchOperationOutOfRange { .. } => "dispatch-operation-index-in-range",
+            Self::DispatchTableOutOfRange { .. } => "dispatch-table-index-in-range",
             Self::RecordSlotCount => "record-slots-match-fields",
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::IeeeProfileAdmission(_) => "catalog-ieee-profile-admitted",

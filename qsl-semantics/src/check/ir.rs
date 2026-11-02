@@ -798,6 +798,19 @@ pub struct DispatchTable {
     candidate_count: u64,
 }
 
+/// The linked dispatch decision retained for one checked call occurrence.
+#[derive(Clone, Debug)]
+pub struct DispatchProducerDecision {
+    /// The exact checked operation selector used by this call.
+    pub operation: super::DispatchOperation,
+    /// The linked candidate sequence selected by that operation.
+    pub table: DispatchTable,
+    /// The selected operation owner's model node.
+    pub declaring_node: NodeKey,
+    /// The static receiver context's model node.
+    pub context_node: NodeKey,
+}
+
 impl DispatchTable {
     /// Build a table from its linked entries and total candidate count.
     pub fn new(entries: Vec<(EffectiveId, DispatchCandidate)>, candidate_count: u64) -> Self {
@@ -821,7 +834,7 @@ impl DispatchTable {
     }
 
     /// Every entry, in the order this table carries them.
-    pub(crate) fn entries(&self) -> &[(EffectiveId, DispatchCandidate)] {
+    pub fn entries(&self) -> &[(EffectiveId, DispatchCandidate)] {
         &self.entries
     }
 

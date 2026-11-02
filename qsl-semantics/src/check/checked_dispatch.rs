@@ -1181,6 +1181,9 @@ pub fn checked_dispatch_operation(
         .cloned()
         .ok_or_else(|| missing(&root.key, MissingClauseField::Member))?;
     let (parameters, result) = require_signature(clauses, &root.key)?;
+    let (selected_operation_owner, selected_operation) = model
+        .operation_anchor_declaration(&root.key)
+        .ok_or_else(|| missing(&root.key, MissingClauseField::Member))?;
     // `parameters` is receiver-first (see `OperationClauses::parameters`);
     // the call site's own argument types are everything after it.
     let call_arguments: Vec<ValueType> = parameters
@@ -1203,6 +1206,8 @@ pub fn checked_dispatch_operation(
             member: member.clone(),
             parameters: call_arguments.clone(),
             result: result.clone(),
+            selected_operation_owner: selected_operation_owner.clone(),
+            selected_operation: selected_operation.clone(),
             table: 0,
         })
         .collect();
