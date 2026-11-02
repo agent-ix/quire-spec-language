@@ -1408,54 +1408,58 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         emit_checked_with_protocol_results(&CheckedPackage::link(check(&dependent_source)))
             .expect("a refused predicate dependency retains the independent results");
     assert_eq!(dependent_results.diagnostics().count(), 2);
-    assert!(matches!(
-        dependent_results.results(),
-        [
-            ProtocolEmissionResult::Emitted {
-                declaration: first,
-                nodes: first_nodes,
-                ..
-            },
-            ProtocolEmissionResult::Refused {
-                declaration: refused,
-                refusal: primary,
-                ..
-            },
-            ProtocolEmissionResult::Refused {
-                declaration: dependent_name,
-                refusal: dependent_refusal,
-                ..
-            }
-        ] if first == "Flow"
-            && refused == "Broken"
-            && dependent_name == "Dependent"
-            && first_nodes == baseline
-            && matches!(
-                &dependent_results.aggregate(),
-                ProtocolEmissionAggregate::Refused { primary: aggregate_primary }
-                    if aggregate_primary == primary
-            )
-            && matches!(
-                &dependent_refusal.cause,
-                qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
-                    if matches!(
-                        cause.as_ref(),
-                        qsl_semantics::check::ProtocolAnchorCause::RefusedDependency {
-                            function,
-                            refused_dependency,
-                            consequence: true,
-                            span,
-                        } if function == "Broken"
-                            && refused_dependency.declaration == "Broken"
-                            && refused_dependency.code == qsl_foundation::diagnostic::Code::MissingDeclaration
-                            && refused_dependency.cause == "missing-name"
-                            && span.start == dependent_reference_start
-                            && span.end == dependent_reference_start + "Broken".len()
-                    )
-            )
-            && dependent_refusal.cause.code() == qsl_foundation::diagnostic::Code::MissingDeclaration
-            && dependent_refusal.cause.cause() == Some("missing-name")
-    ));
+    assert!(
+        matches!(
+            dependent_results.results(),
+            [
+                ProtocolEmissionResult::Emitted {
+                    declaration: first,
+                    nodes: first_nodes,
+                    ..
+                },
+                ProtocolEmissionResult::Refused {
+                    declaration: refused,
+                    refusal: primary,
+                    ..
+                },
+                ProtocolEmissionResult::Refused {
+                    declaration: dependent_name,
+                    refusal: dependent_refusal,
+                    ..
+                }
+            ] if first == "Flow"
+                && refused == "Broken"
+                && dependent_name == "Dependent"
+                && first_nodes == baseline
+                && matches!(
+                    &dependent_results.aggregate(),
+                    ProtocolEmissionAggregate::Refused { primary: aggregate_primary }
+                        if aggregate_primary == primary
+                )
+                && matches!(
+                    &dependent_refusal.cause,
+                    qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+                        if matches!(
+                            cause.as_ref(),
+                            qsl_semantics::check::ProtocolAnchorCause::RefusedDependency {
+                                function,
+                                refused_dependency,
+                                consequence: true,
+                                span,
+                            } if function == "Broken"
+                                && refused_dependency.declaration == "Broken"
+                                && refused_dependency.code == qsl_foundation::diagnostic::Code::MissingDeclaration
+                                && refused_dependency.cause == "missing-name"
+                                && span.start == dependent_reference_start
+                                && span.end == dependent_reference_start + "Broken".len()
+                        )
+                )
+                && dependent_refusal.cause.code() == qsl_foundation::diagnostic::Code::MissingDeclaration
+                && dependent_refusal.cause.cause() == Some("missing-name")
+        ),
+        "dependent result and expected span {dependent_reference_start}: {:?}",
+        dependent_results.results()
+    );
 }
 
 /// FR-383-AC-30 (TC-1297 rows 9–10): the shared S3 work budget is consumed in
