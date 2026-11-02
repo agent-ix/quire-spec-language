@@ -194,7 +194,11 @@ pub use model_check::counterexample::{
     TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
-pub use model_check::graph_replay::{replay_model_graph, replay_model_graph_with_cancel};
+pub use model_check::graph_replay::{
+    replay_model_graph, replay_model_graph_with_cancel,
+    replay_model_graph_with_cancel_and_temporal_selections,
+    replay_model_graph_with_temporal_selections,
+};
 pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
     StateGraphRecord,
@@ -214,7 +218,7 @@ pub use model_check::hyper_smt_query::{
     encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };
 pub use model_check::identity::{
-    node_occurrence, ClauseIdentity, ClauseRootRefusal, StateGraphIdentity,
+    node_occurrence, ClauseIdentity, ClauseRootRefusal, HyperIdentity, StateGraphIdentity,
 };
 pub use model_check::item::{
     Instance, ItemRefusal, LivenessTranslation, ModelCheckItem, Translation,

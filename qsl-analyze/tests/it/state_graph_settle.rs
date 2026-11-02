@@ -21,10 +21,11 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{
     settle_state_graph, AppliedReduction, CertificateLocus, CertificateRule, Certification,
     DisagreementCause, Execution, GraphReplayResult, GraphReplaySettlement, GraphWitness,
-    IncompleteCause, InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelPath, OpenCause,
-    ProofBasis, ReachedLimit, ResultLabel, RunEnd, SettlementBasis, StateGraphCertificate,
-    StateGraphInstanceOutcome, StateGraphMethod, StateGraphOutcome, StateGraphRecord,
-    TerminalValue, Truth, Verdict, WitnessSource, DEFAULT_WITNESS_SEED, EXPLICIT_STATE,
+    HyperIdentity, IncompleteCause, InconclusiveCause, ModelCheckLimit, ModelCheckLimits,
+    ModelPath, OpenCause, ProofBasis, ReachedLimit, ResultLabel, RunEnd, SettlementBasis,
+    StateGraphCertificate, StateGraphIdentity, StateGraphInstanceOutcome, StateGraphMethod,
+    StateGraphOutcome, StateGraphRecord, TerminalValue, Truth, Verdict, WitnessSource,
+    DEFAULT_WITNESS_SEED, EXPLICIT_STATE,
 };
 use quire_exact::{Cancel, CancelCause};
 use quire_semantic_value::catalog::Category;
@@ -82,6 +83,7 @@ fn settle_with(
         &settling.method,
         &subject,
         world.claim(claim),
+        &crate::fill::tcb_01_event_position_selection(&world.package),
         &settling.cancel,
         |_| {
             *replays += 1;
@@ -173,6 +175,7 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
     let world = config_world(REACHES_TWO, &[(0, 0)]);
     let request = StateGraphRequest {
         subject: world.subject(AB, UNLIMITED),
+        temporal_clock_selections: Vec::new(),
         items: vec![StateGraphItem::new(world.claim("ReachesTwo"))],
         reductions: Default::default(),
         deadlock_freedom: false,
@@ -202,6 +205,68 @@ fn the_state_graph_pipeline_runs_and_settles_each_instance() {
     assert!(settled.records[0]
         .iter()
         .all(|record| record.method == EXPLICIT_STATE));
+}
+
+/// FR-050-AC-6: state-graph identity read-back emits the whole package, so a
+/// configured temporal clause in the same package requires the fixture's
+/// independently selected typed clock row.
+#[trace("FR-050-AC-6")]
+#[test]
+fn state_graph_identity_readback_uses_the_explicit_temporal_selection() {
+    let world = crate::graph_world::temporal_config_world();
+    let claim = world.claim("ReachesTwo");
+    let mut selections = crate::fill::tcb_01_event_position_selection(&world.package);
+    let hyper = &world.package.graph().hyper_clauses()[0];
+    selections.push(qsl_package::TemporalClockSelection {
+        source: world.package.graph().source().clone(),
+        declaration_span: hyper.span(),
+        clock: qsl_package::ClockConfiguration::EventPosition {
+            sequence_authority: "test-hyper-events".into(),
+        },
+    });
+
+    let without_selection =
+        StateGraphIdentity::resolve(&world.package, world.packages(), claim, &[], &Cancel::new())
+            .expect_err("whole-package read-back refuses to omit the configured binding");
+    assert!(
+        format!("{without_selection}").contains("no selected clock configuration"),
+        "unexpected refusal: {without_selection:?}"
+    );
+
+    // This mixed fixture currently reaches the existing temporal formula
+    // reader's OperationMemberMismatch after the selected sidecar has been
+    // emitted. Pin that downstream boundary so the regression distinguishes
+    // table propagation from the earlier missing-selection refusal.
+    let selected_readback = StateGraphIdentity::resolve(
+        &world.package,
+        world.packages(),
+        claim,
+        &selections,
+        &Cancel::new(),
+    );
+    assert!(
+        format!("{selected_readback:?}").contains("OperationMemberMismatch"),
+        "explicit selection should advance to the known temporal formula reader limit: {selected_readback:?}"
+    );
+
+    let without_selection =
+        HyperIdentity::resolve(&world.package, world.packages(), hyper, &[], &Cancel::new())
+            .expect_err("hyper whole-package read-back also requires the configured binding");
+    assert!(
+        format!("{without_selection}").contains("no selected clock configuration"),
+        "unexpected refusal: {without_selection:?}"
+    );
+    let hyper_readback = HyperIdentity::resolve(
+        &world.package,
+        world.packages(),
+        hyper,
+        &selections,
+        &Cancel::new(),
+    );
+    assert!(
+        format!("{hyper_readback:?}").contains("OperationMemberMismatch"),
+        "explicit selection should advance to the known temporal formula reader limit: {hyper_readback:?}"
+    );
 }
 
 /// FR-169-AC-17 (TC-594 step 7): the state-graph engine's reduced outcomes
@@ -1411,6 +1476,7 @@ fn a_claim_the_request_package_does_not_hold_settles_failed() {
         &method(ModelCheckLimits::default()),
         &foreign_subject,
         world.claim("ReachesTwo"),
+        &[],
         &Cancel::new(),
         |_| {
             replays += 1;

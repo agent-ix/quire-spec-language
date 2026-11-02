@@ -157,6 +157,7 @@ impl StateGraphIdentity {
         package: &CheckedPackage,
         domain_packages: &qsl_semantics::model::intake::PackageInput,
         claim: &CheckedStateGraphClaim,
+        temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
         let triple = claim
@@ -164,7 +165,8 @@ impl StateGraphIdentity {
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: claim.name().to_owned(),
             })?;
-        let (admitted, library) = read_back(package, domain_packages, &[], cancel)?;
+        let (admitted, library) =
+            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
@@ -201,6 +203,7 @@ impl HyperIdentity {
         package: &CheckedPackage,
         domain_packages: &qsl_semantics::model::intake::PackageInput,
         clause: &CheckedHyperClause,
+        temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
     ) -> Result<Self, ClauseRootRefusal> {
         let assembled = package
@@ -219,7 +222,8 @@ impl HyperIdentity {
                 name: clause.name().to_owned(),
             }
         })?;
-        let (admitted, library) = read_back(package, domain_packages, &[], cancel)?;
+        let (admitted, library) =
+            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;

@@ -328,6 +328,7 @@ impl World {
         let run = check_state_graph(
             StateGraphRequest {
                 subject: self.subject(&package, universes),
+                temporal_clock_selections: Vec::new(),
                 items: vec![StateGraphItem::new(claim)],
                 reductions: Default::default(),
                 deadlock_freedom: false,
