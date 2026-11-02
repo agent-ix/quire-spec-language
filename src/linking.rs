@@ -1013,7 +1013,7 @@ mod profile_tests {
     use crate::checking::{check, CheckBindings, CheckLimits};
     use crate::formal_source::FormalSource;
     use crate::native_model::ModelLimits;
-    use crate::runtime_test_setup::native_rule_model;
+    use crate::native_rule_model_test_support as native_rule_model;
     use crate::{parse, Limits};
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;

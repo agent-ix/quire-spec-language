@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-026/027: local file orchestration around the existing native compiler and runtime.
+//! Local orchestration for the `1-draft` spine compiler and runner.
 
 mod clause;
-mod compilation;
 mod output;
 mod wire;
 
 pub use output::NativeResult;
 
 use crate::formal_source::FormalSource;
-use crate::model_source::ModelSourceError;
-use crate::package::PackageError;
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::{Code, Diagnostic, Source};
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
@@ -26,7 +23,7 @@ const REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_BYTES: usize = 8_388_608;
 const FILES: usize = 64;
 
-/// Caller byte ceilings for one `run` invocation (FR-026/FR-312).
+/// Caller byte ceilings for one `run` invocation (FR-312).
 #[derive(Clone, Copy, Debug)]
 pub struct RunLimits {
     /// Maximum bytes in the request file.
@@ -52,23 +49,17 @@ pub enum FileCategory {
     Program,
     /// Rule-model sources.
     Model,
-    /// Snapshot artifacts.
-    Snapshot,
-    /// Invocation artifacts.
-    Invocation,
-    /// Selected compiled package artifacts.
-    Package,
+    /// Clause observation artifacts.
+    Observation,
 }
 
 impl FileCategory {
-    /// Stable category spelling in native intake diagnostics.
+    /// Stable category spelling in command intake diagnostics.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Program => "programs",
             Self::Model => "models",
-            Self::Snapshot => "snapshots",
-            Self::Invocation => "invocations",
-            Self::Package => "packages",
+            Self::Observation => "observations",
         }
     }
 }
@@ -76,9 +67,7 @@ impl FileCategory {
 struct FileCounts {
     programs: usize,
     models: usize,
-    snapshots: usize,
-    invocations: usize,
-    packages: usize,
+    observations: usize,
 }
 
 /// Command intake ceiling that stopped selected-file processing.
@@ -116,7 +105,7 @@ pub enum LimitKind {
 }
 
 impl LimitKind {
-    /// Stable field spelling retained for native result compatibility.
+    /// Stable field spelling in command results.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::FileBytes => "file bytes",
@@ -186,18 +175,6 @@ pub enum RunCause {
     /// Existing source/parser/profile failure with no linking or checking context.
     #[error("{0}")]
     Native(#[from] Box<Diagnostic>),
-    /// Existing formal-environment linking failure.
-    #[error("{0}")]
-    Linking(#[from] Box<crate::linking::LinkingError>),
-    /// Existing native constraint/proof checking failure.
-    #[error("{0}")]
-    Checking(#[from] Box<crate::checking::CheckingError>),
-    /// Existing model frontend/admission failure.
-    #[error("{0}")]
-    Model(#[from] Box<ModelSourceError>),
-    /// Existing native package failure.
-    #[error("{0}")]
-    Package(#[from] Box<PackageError>),
     /// A `1-draft` program's request selects what spine compile does not
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
@@ -215,12 +192,6 @@ pub enum RunCause {
     /// FR-100: the spine run entry refused, at its own stage and cause code.
     #[error("{0}")]
     SpineRun(Box<qsl_replay::spine::RunRefusal>),
-    /// FR-026: a `0-draft` (or no-edition) program requires `clauses`,
-    /// which a `1-draft` program never reaches this refusal for (`run_complete`/
-    /// `complete` refuse it before native package construction is ever
-    /// attempted).
-    #[error("a 0-draft program requires clause bindings")]
-    MissingClauses,
 }
 
 /// A request selection FR-100 does not admit for a `1-draft` program's
@@ -228,20 +199,6 @@ pub enum RunCause {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum CompleteRunSelection {
-    /// The request selects an execution selection.
-    Selection,
-    /// The request selects a snapshot artifact.
-    Snapshots,
-    /// The request selects an invocation artifact.
-    Invocations,
-    /// The request selects a compiled package artifact.
-    Package,
-    /// The request sets a `validation_work` limit.
-    ValidationWorkLimit,
-    /// The request sets an `expression_steps` limit.
-    ExpressionStepsLimit,
-    /// The program carries clause bindings.
-    Clauses,
     /// The request selects a model source in a native rule-model format.
     NativeModel,
     /// The request carries no `call`.
@@ -251,13 +208,6 @@ pub enum CompleteRunSelection {
 impl std::fmt::Display for CompleteRunSelection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Selection => "an execution selection",
-            Self::Snapshots => "a snapshot artifact",
-            Self::Invocations => "an invocation artifact",
-            Self::Package => "a compiled package artifact",
-            Self::ValidationWorkLimit => "a validation_work limit",
-            Self::ExpressionStepsLimit => "an expression_steps limit",
-            Self::Clauses => "clause bindings",
             Self::NativeModel => "a native rule-model source",
             Self::NoCall => "no call",
         })
@@ -296,14 +246,9 @@ impl RunCause {
             Self::Limit(_) => Code::ResourceExhausted,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
-            Self::Linking(error) => error.diagnostic.code,
-            Self::Checking(error) => error.diagnostic.code,
-            Self::Model(error) => error.code(),
-            Self::Package(error) => error.code,
-            Self::CompleteSelection(_)
-            | Self::Libraries(_)
-            | Self::CompleteRunSelection(_)
-            | Self::MissingClauses => Code::InvalidRequest,
+            Self::CompleteSelection(_) | Self::Libraries(_) | Self::CompleteRunSelection(_) => {
+                Code::InvalidRequest
+            }
             Self::Spine(failure) => failure.refusal.code(),
             Self::SpineRun(refusal) => refusal.code(),
         }
@@ -464,35 +409,24 @@ pub fn read_clause_run_request(
             FileCounts {
                 programs: request.libraries.len().saturating_add(1),
                 models: request.models.len(),
-                snapshots: clause
+                observations: clause
                     .observations
                     .values()
                     .collect::<std::collections::BTreeSet<_>>()
                     .len(),
-                invocations: 0,
-                packages: 0,
             },
         )?;
         let source = intake.source(&request.program.source)?;
-        if !matches!(Edition::of(source.source())?, Edition::Complete) {
-            return Err(RunCause::ClauseRequest {
-                member: "edition".to_owned(),
-                reason: "native run is retired".to_owned(),
-            });
-        }
+        require_complete_edition(source.source())?;
         clause::read(&mut intake, &request, clause, source)
     })
 }
 
-/// Compile a native-compile/1 source-only job (FR-027). The program source's
-/// declared edition selects the compiler: `1-draft` compiles through the
-/// spine into `quire.checked-package/v2` bytes, `0-draft` into the
-/// native-linked-package/1 bytes. No runtime artifact is read or executed;
-/// failures expose no partial artifact.
+/// Compile a `1-draft` source-only job through the spine (FR-027).
+/// Failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
-        compilation::source_only(&request.program)?;
         let mut intake = intake(
             directory,
             FileCounts {
@@ -500,9 +434,7 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
                 // imports, and counts toward the same file limits (FR-027).
                 programs: request.libraries.len().saturating_add(1),
                 models: request.models.len(),
-                snapshots: 0,
-                invocations: 0,
-                packages: 0,
+                observations: 0,
             },
         )?;
         // The edition is decided before any model is read: a `1-draft`
@@ -510,27 +442,9 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
         // native rule model for it refuses whatever state the model files
         // are in.
         let source = intake.source(&request.program.source)?;
-        match Edition::of(source.source())? {
-            Edition::Complete => complete(&request, &mut intake, source.source()),
-            Edition::Native if !request.libraries.is_empty() => {
-                Err(RunCause::Libraries(LibrarySelection::NativeProgram))
-            }
-            Edition::Native => {
-                let models = compilation::models(&mut intake, &request.models)?;
-                Ok(compilation::package_of(source, &request.program, &models)?
-                    .bytes()
-                    .to_vec())
-            }
-        }
+        require_complete_edition(source.source())?;
+        complete(&request, &mut intake, source.source())
     })
-}
-
-/// The compiler a program source's declared edition selects.
-enum Edition {
-    /// `1-draft`: the spine, S1 to S4 (ADR-011 §7.3 M-6a).
-    Complete,
-    /// `0-draft`, or a source whose header the native parser reports on.
-    Native,
 }
 
 /// Whether a request's selected model declares the one supported domain-package
@@ -541,32 +455,27 @@ fn is_domain_package(model: &wire::Model) -> bool {
     model.format == DOMAIN_PACKAGE_PROFILE
 }
 
-impl Edition {
-    /// Read `source`'s header once. A declared edition neither compiler
-    /// reads refuses as `unknown_edition` at its literal.
-    #[ix_trace_rs::string_edge]
-    fn of(source: &Source) -> Result<Self> {
-        let Some(declared) = qsl_cst::declared_edition(source.text()) else {
-            return Ok(Self::Native);
-        };
-        match declared.edition.as_str() {
-            qsl_cst::EDITION => Ok(Self::Complete),
-            crate::syntax::EDITION => Ok(Self::Native),
-            other => Err(RunCause::Native(qsl_foundation::diagnostic::error(
+/// Refuse an edition the spine does not admit at the declared token.
+#[ix_trace_rs::string_edge]
+fn require_complete_edition(source: &Source) -> Result<()> {
+    if let Some(declared) = qsl_cst::declared_edition(source.text()) {
+        if declared.edition != qsl_cst::EDITION {
+            return Err(RunCause::Native(qsl_foundation::diagnostic::error(
                 source,
                 Code::UnknownEdition,
                 qsl_foundation::Phase::Profile,
                 declared.span.start,
                 declared.span.end,
                 format!(
-                    "{} declares edition {other:?}; compile reads {:?} and {:?}",
+                    "{} declares edition {:?}; compile reads {:?}",
                     source.path(),
-                    qsl_cst::EDITION,
-                    crate::syntax::EDITION
+                    declared.edition,
+                    qsl_cst::EDITION
                 ),
-            ))),
+            )));
         }
     }
+    Ok(())
 }
 
 /// Spine-compile a `1-draft` program. Each selected model is a domain
@@ -585,9 +494,6 @@ fn complete(
 ) -> Result<Vec<u8>> {
     if request.models.iter().any(|model| !is_domain_package(model)) {
         return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
-    }
-    if request.program.clauses.is_some() {
-        return Err(RunCause::CompleteSelection(CompleteSelection::Clauses));
     }
     let documents = request
         .models
@@ -711,35 +617,27 @@ fn library_sources<'r>(
 pub enum CompleteSelection {
     /// The request selects a model source in a native rule-model format.
     NativeModels,
-    /// The program selects clause bindings.
-    Clauses,
 }
 
 impl std::fmt::Display for CompleteSelection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::NativeModels => "native rule-model sources",
-            Self::Clauses => "clause bindings",
         })
     }
 }
 
-/// Why a native-compile/1 request's `libraries` refuse (FR-027).
+/// Why a `1-draft` request's `libraries` refuse (FR-027).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum LibrarySelection {
-    /// A `0-draft` program takes no library.
-    NativeProgram,
     /// A library has an empty identity.
     EmptyIdentity,
 }
 
 impl std::fmt::Display for LibrarySelection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::NativeProgram => "a 0-draft program takes no library",
-            Self::EmptyIdentity => "a library has an empty identity",
-        })
+        f.write_str("a library has an empty identity")
     }
 }
 
@@ -787,9 +685,7 @@ fn check_file_count(counts: FileCounts) -> Result<()> {
     for (category, requested) in [
         (FileCategory::Program, counts.programs),
         (FileCategory::Model, counts.models),
-        (FileCategory::Snapshot, counts.snapshots),
-        (FileCategory::Invocation, counts.invocations),
-        (FileCategory::Package, counts.packages),
+        (FileCategory::Observation, counts.observations),
     ] {
         remaining_files = remaining_files
             .checked_sub(requested)
@@ -833,29 +729,21 @@ fn run_bytes(directory: &Path, bytes: &[u8], dependent_bytes: usize) -> Result<R
             // mirroring FR-027).
             programs: request.libraries.len().saturating_add(1),
             models: request.models.len(),
-            snapshots: request.snapshots.as_ref().map_or(0, Vec::len)
-                + request.clause.as_ref().map_or(0, |clause| {
-                    clause
-                        .observations
-                        .values()
-                        .collect::<std::collections::BTreeSet<_>>()
-                        .len()
-                }),
-            invocations: request.invocations.as_ref().map_or(0, Vec::len),
-            packages: usize::from(request.package.is_some()),
+            observations: request.clause.as_ref().map_or(0, |clause| {
+                clause
+                    .observations
+                    .values()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+            }),
         },
         dependent_bytes,
     )?;
     // The program source is read exactly once; its declared edition decides
     // the runner before any model or library source is read (FR-100).
     let source = intake.source(&request.program.source)?;
-    match Edition::of(source.source())? {
-        Edition::Native => Err(RunCause::ClauseRequest {
-            member: "edition".to_owned(),
-            reason: "native run is retired".to_owned(),
-        }),
-        Edition::Complete => run_complete(&mut intake, &request, source),
-    }
+    require_complete_edition(source.source())?;
+    run_complete(&mut intake, &request, source)
 }
 
 /// FR-100: run a `1-draft` program's named function through the spine.
@@ -873,41 +761,6 @@ fn run_complete(
             });
         }
         return clause::run(intake, request, clause, source);
-    }
-    if request.selection.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::Selection,
-        ));
-    }
-    if request.snapshots.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::Snapshots,
-        ));
-    }
-    if request.invocations.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::Invocations,
-        ));
-    }
-    if request.package.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::Package,
-        ));
-    }
-    if request.limits.validation_work.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::ValidationWorkLimit,
-        ));
-    }
-    if request.limits.expression_steps.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::ExpressionStepsLimit,
-        ));
-    }
-    if request.program.clauses.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::Clauses,
-        ));
     }
     if request.models.iter().any(|model| !is_domain_package(model)) {
         return Err(RunCause::CompleteRunSelection(

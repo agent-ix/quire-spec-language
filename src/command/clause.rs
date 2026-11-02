@@ -35,14 +35,6 @@ pub(super) fn read(
     clause: &wire::ClauseRun,
     source: FormalSource,
 ) -> Result<ClauseRunRequest> {
-    if request.selection.is_some()
-        || request.snapshots.is_some()
-        || request.invocations.is_some()
-        || request.package.is_some()
-        || request.program.clauses.is_some()
-    {
-        return Err(invalid("clause", "legacy run members are forbidden"));
-    }
     if request
         .models
         .iter()

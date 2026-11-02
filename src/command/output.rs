@@ -29,14 +29,6 @@ impl std::fmt::Display for NativeResult {
     }
 }
 
-fn source(value: &FormalSource) -> types::Source<'_> {
-    types::Source {
-        identity: value.source().identity(),
-        path: value.source().path(),
-        formal: value.identity(),
-    }
-}
-
 fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
     types::Diagnostic {
         phase: value.phase.as_str(),
@@ -49,19 +41,6 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         identity: value
             .identity_cause()
             .and_then(SourceReadCause::identity_fields),
-    }
-}
-
-/// A native diagnostic retained by a higher-layer wrapper (`LinkingError`,
-/// `CheckingError`), carrying its own structured upstream refusal separate
-/// from the shared [`Diagnostic`] shape (ADR-011 §6.1).
-fn diagnostic_with_upstream<'a>(
-    value: &'a Diagnostic,
-    upstream: Option<&'a ir::Diagnostic>,
-) -> types::Diagnostic<'a> {
-    types::Diagnostic {
-        upstream,
-        ..diagnostic(value)
     }
 }
 
@@ -127,36 +106,9 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Native(error.phase),
             types::Details::Native(diagnostic(error)),
         ),
-        RunCause::Linking(error) => (
-            types::Stage::Native(error.diagnostic.phase),
-            types::Details::Native(diagnostic_with_upstream(
-                &error.diagnostic,
-                error.upstream.as_deref(),
-            )),
-        ),
-        RunCause::Checking(error) => (
-            types::Stage::Native(error.diagnostic.phase),
-            types::Details::Native(diagnostic_with_upstream(
-                &error.diagnostic,
-                error.upstream.as_deref(),
-            )),
-        ),
-        RunCause::Model(error) => (
-            types::Stage::Model,
-            types::Details::Model {
-                source: source(error.source()),
-            },
-        ),
-        RunCause::Package(error) => (
-            types::Stage::Package,
-            types::Details::Package {
-                stage: error.stage.to_string(),
-            },
-        ),
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
-        | RunCause::CompleteRunSelection(_)
-        | RunCause::MissingClauses => (types::Stage::Request, types::Details::None),
+        | RunCause::CompleteRunSelection(_) => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
             types::Details::Spine {

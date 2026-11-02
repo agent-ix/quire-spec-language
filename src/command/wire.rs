@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026–028, FR-031: closed records; existing constructors own identifier validity.
 
-use crate::checking::ClauseBinding;
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use qsl_foundation::AccountingSetting;
 use quire_contract_model as ir;
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
@@ -69,23 +67,10 @@ fn present_json_value<'de, D: serde::Deserializer<'de>>(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Request {
-    #[serde(default, deserialize_with = "selected_package")]
-    pub package: Option<SelectedPackage>,
     #[serde(deserialize_with = "deserialize_objects")]
     pub models: Vec<Model>,
     #[serde(deserialize_with = "from_object")]
     pub program: Program,
-    // FR-026's native-only members. A `0-draft` program (or one declaring
-    // no edition) requires each; a `1-draft` program admits none of them
-    // (FR-100), so each is optional here and the edition-specific
-    // requirement is applied after the program's declared edition is read
-    // (`RunSelection::new`/`native_only`).
-    #[serde(default, deserialize_with = "deserialize_objects_opt")]
-    pub snapshots: Option<Vec<FileSelection>>,
-    #[serde(default, deserialize_with = "deserialize_objects_opt")]
-    pub invocations: Option<Vec<FileSelection>>,
-    #[serde(default, deserialize_with = "from_object_opt")]
-    pub selection: Option<Selection>,
     #[serde(default, deserialize_with = "from_object")]
     pub limits: Limits,
     /// FR-100: a `1-draft` program's named call. Absent for a `0-draft`
@@ -96,9 +81,15 @@ pub(super) struct Request {
     #[serde(default, deserialize_with = "from_object_opt")]
     pub clause: Option<ClauseRun>,
     /// FR-100/ADR-015 D-1: a `1-draft` program's supplied libraries; none
-    /// when absent. A `0-draft` program admits none (FR-026).
+    /// when absent.
     #[serde(default, deserialize_with = "deserialize_objects")]
     pub libraries: Vec<Library>,
+}
+
+fn from_object_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
+    decoder: D,
+) -> Result<Option<T>, D::Error> {
+    from_object(decoder).map(Some)
 }
 
 /// FR-312's closed clause-run selection and observation file table.
@@ -115,21 +106,6 @@ pub(super) struct ClauseRun {
     pub accounting: Accounting,
     #[serde(default, deserialize_with = "from_object_opt")]
     pub observation_limits: Option<qsl_replay::spine::ObservationLimitsWire>,
-}
-
-// Present only when the field itself is present; `#[serde(default)]` alone
-// supplies `None` when the JSON key is absent (`from_object`/
-// `deserialize_objects` are only ever invoked for a present key).
-fn from_object_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
-    decoder: D,
-) -> Result<Option<T>, D::Error> {
-    from_object(decoder).map(Some)
-}
-
-fn deserialize_objects_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
-    decoder: D,
-) -> Result<Option<Vec<T>>, D::Error> {
-    deserialize_objects(decoder).map(Some)
 }
 
 /// The `call` member of a `1-draft` native-run/1 request (FR-100): which
@@ -219,23 +195,6 @@ pub(super) struct Argument {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(
-    dead_code,
-    reason = "decoded only to reject retired native run selection"
-)]
-pub(super) struct SelectedPackage {
-    pub file: String,
-}
-
-// Omission selects compilation; an explicitly supplied value must be an object.
-fn selected_package<'de, D: serde::Deserializer<'de>>(
-    decoder: D,
-) -> Result<Option<SelectedPackage>, D::Error> {
-    from_object(decoder).map(Some)
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct SourceFile {
     pub file: String,
     #[serde(flatten)]
@@ -255,11 +214,6 @@ pub(super) struct Model {
 pub(super) struct Program {
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
-    /// A `0-draft` program's authored clause bindings, required (FR-026); a
-    /// `1-draft` program carries none (FR-100), so any presence at all --
-    /// including an empty array -- is "carrying" `clauses` and refuses.
-    #[serde(default, deserialize_with = "deserialize_objects_opt")]
-    pub clauses: Option<Vec<Binding>>,
 }
 
 #[derive(Deserialize)]
@@ -290,101 +244,9 @@ impl Identity {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(
-    dead_code,
-    reason = "decoded only to reject retired native run artifacts"
-)]
-pub(super) struct FileSelection {
-    pub file: String,
-    #[serde(deserialize_with = "from_object")]
-    pub reference: IgnoredAny,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Owner {
-    pub package: String,
-    pub requirement: String,
-    pub revision: u64,
-}
-
-impl Owner {
-    pub fn bind(&self) -> Result<ir::RequirementRef, ir::Diagnostic> {
-        ir::RequirementRef::parse(&self.package, &self.requirement, self.revision)
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Point {
-    Initialization { name: String },
-    Handler { name: String },
-    Pre { operation: String },
-    Post { operation: String },
-}
-
-impl Point {
-    fn bind(&self) -> Result<ir::ExecutionPoint, ir::Diagnostic> {
-        Ok(match self {
-            Self::Initialization { name } => ir::ExecutionPoint::Initialization {
-                name: ir::AnchorName::new(name)?.into(),
-            },
-            Self::Handler { name } => ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new(name)?.into(),
-            },
-            Self::Pre { operation } => ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new(operation)?.into(),
-            },
-            Self::Post { operation } => ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new(operation)?.into(),
-            },
-        })
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Binding {
-    pub name: String,
-    #[serde(deserialize_with = "from_object")]
-    pub owner: Owner,
-    pub clause: String,
-    #[serde(deserialize_with = "from_object")]
-    pub point: Point,
-}
-
-impl Binding {
-    pub fn bind(&self) -> Result<ClauseBinding, ir::Diagnostic> {
-        Ok(ClauseBinding {
-            name: self.name.clone(),
-            requirement: self.owner.bind()?,
-            clause: ir::ClauseId::new(&self.clause)?,
-            execution_point: self.point.bind()?,
-        })
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(
-    dead_code,
-    reason = "decoded only to reject retired native run selection"
-)]
-pub(super) struct Selection {
-    #[serde(deserialize_with = "from_object")]
-    pub owner: Owner,
-    pub clause: String,
-    #[serde(deserialize_with = "from_object")]
-    pub observation: IgnoredAny,
-}
-
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Limits {
-    pub validation_work: Option<usize>,
-    pub expression_steps: Option<usize>,
     /// QSpec FR-323 `limits.supplied`: the supplied-value helper ceilings.
     /// Absent resolves to each published default; a present object is closed
     /// and complete with each ceiling an exact `u64`, or the request is

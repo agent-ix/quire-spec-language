@@ -184,8 +184,8 @@ checks every package against that list.
 </picture>
 
 **Editions.** This README covers the `1-draft` edition, the complete version-1
-language. The older `0-draft` edition remains for historical fixtures and is
-being removed. Do not write new rules in it.
+language. The retired `0-draft` edition is refused by `compile`; its historical
+parser is being removed separately. Do not write new rules in it.
 
 ## Compiler stages
 
@@ -195,7 +195,7 @@ so unchecked input cannot reach an evaluator or backend.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.svg">
-  <img alt="QSL compiles source through a lossless syntax tree and parsed forms into a checked graph, resolving names against domain models and dependency packages, then links a checked package. The package goes three ways: to the reference evaluator, to native model checking, or as checked-package/v2 bytes to Contract IR and proof backends. A counterexample from any engine is replayed through the same compiler and evaluator to confirm it." src="docs/images/pipeline-light.svg">
+<img alt="QSL compiles source through a lossless syntax tree and parsed forms into a checked graph, resolving names against domain models and dependency packages, then links a checked package. It can be evaluated by the reference evaluator or emitted as checked-package/v2 bytes for Contract IR and proof backends. A counterexample from an engine is replayed through the same compiler and evaluator to confirm it." src="docs/images/pipeline-light.svg">
 </picture>
 
 | Stage | Guarantees |
@@ -228,36 +228,9 @@ revision namespace, revision). Every diagnostic carries them.
 target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
 ```
 
-**Run a rule against data.** The ConfigVersion example writes one directory per
-case, holding the unit from [A first rule](#a-first-rule), its domain model and
-a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json` request
-that checks one rule for the object keyed `child`:
-
-```sh
-cargo run --locked --example config_version_fixtures -- /tmp/config-version
-for case in healthy-parent violating-parent dangling-parent incomplete-population; do
-  examples/config-version/requests.sh /tmp/config-version/$case ParentOrder
-  target/debug/quire-spec run /tmp/config-version/$case/run.json; echo "exit $?"
-done
-```
-
-| Case | Data | Outcome | Exit |
-| --- | --- | --- | --- |
-| `healthy-parent` | parent version 1, child version 2 | the rule holds | 0 |
-| `violating-parent` | parent version 3, child version 2 | the rule is broken | 10 |
-| `dangling-parent` | the parent is not in the snapshot | refused | 20 |
-| `incomplete-population` | the snapshot's population is not complete | incomplete | 22 |
-
-`requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant; the
-`cycle` case breaks it (exit 10). Each result is one JSON document on stdout
-that names its source, model and snapshot.
-
-**Compile a package.** `requests.sh` also writes `compile.json`. `compile`
-prints the checked package as `quire.checked-package/v2` JSON:
-
-```sh
-target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
-```
+**Compile a rule.** `compile` accepts only `1-draft` sources and prints the
+checked package as `quire.checked-package/v2` JSON. Sources that declare any
+other edition, including `0-draft`, are refused with `unknown_edition`.
 
 **Emit package bytes from a source file.** `compile` needs a request file with
 source labels. For a downstream reader that wants the bytes of one `1-draft`
@@ -306,10 +279,8 @@ empty object is refused rather than emitting point-free bytes, since passing
 the option means points are expected. In every refusal no bytes are written and
 the exit is nonzero. Without the option the clauses are point-free.
 
-The [ConfigVersion example](examples/config-version/README.md) lists all
-seventeen cases: parents, cycles, object identity, operation frames, and refused
-and incomplete runs. `run` can also evaluate one pure function;
-[`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows that request.
+`run` evaluates a `1-draft` function or state clause through the spine;
+[`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows those requests.
 
 **Optional features.**
 
@@ -390,7 +361,7 @@ Other directories:
 - [`docs/`](docs/): reference pages, including the
   [library notes](docs/library-notes.md),
   [diagnostic codes](docs/native-error-codes.md),
-  [run and compile requests](docs/native-standalone.md) and the
+  [diagnostic codes](docs/native-error-codes.md) and the
   [compiled protocol wire format](docs/compiled-protocol-v2.md).
 
 ## Contributing
