@@ -4,9 +4,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::{Activation, CheckedBody, CheckedFormula};
+use qsl_semantics::check::{
+    Activation, BinaryTemporal, CheckedBody, CheckedFormula, FormulaNode, FormulaNodeId,
+    UnaryTemporal,
+};
 use qsl_semantics::library::LibraryName;
-use quire_exact::{NodeKey, Rational};
+use quire_exact::{Integer as ExactInteger, NodeKey, Rational};
 
 /// The exact checked subject a monitor plan evaluates.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -236,7 +239,80 @@ impl MonitorProgram {
     }
 }
 
+/// One checked formula node reduced to the facts that select its meaning:
+/// the operator, its ordered operands and the atom it reads. Intervals are
+/// in [`PlanId`] by their tick bounds.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum FormulaToken {
+    /// `true` or `false`.
+    Constant(bool),
+    /// A `holds` atom.
+    Holds(AtomId),
+    /// An aggregate atom.
+    Aggregate,
+    /// `not`.
+    Not(SubformulaId),
+    /// `and`.
+    And(SubformulaId, SubformulaId),
+    /// `or`.
+    Or(SubformulaId, SubformulaId),
+    /// `implies`.
+    Implies(SubformulaId, SubformulaId),
+    /// A unary temporal operator, by name.
+    Unary(&'static str, SubformulaId),
+    /// A binary temporal operator, by name.
+    Binary(&'static str, SubformulaId, SubformulaId),
+}
+
+impl FormulaToken {
+    fn of(node: &FormulaNode, index: usize) -> Self {
+        let id = |node: FormulaNodeId| SubformulaId::new(node.index());
+        match node {
+            FormulaNode::Constant(value) => Self::Constant(*value),
+            FormulaNode::Holds { .. } => Self::Holds(AtomId::new(index)),
+            FormulaNode::Aggregate { .. } => Self::Aggregate,
+            FormulaNode::Not(operand) => Self::Not(id(*operand)),
+            FormulaNode::And(a, b) => Self::And(id(*a), id(*b)),
+            FormulaNode::Or(a, b) => Self::Or(id(*a), id(*b)),
+            FormulaNode::Implies(a, b) => Self::Implies(id(*a), id(*b)),
+            FormulaNode::Unary {
+                operator, operand, ..
+            } => Self::Unary(
+                match operator {
+                    UnaryTemporal::Eventually => "eventually",
+                    UnaryTemporal::Always => "always",
+                    UnaryTemporal::Once => "once",
+                    UnaryTemporal::Historically => "historically",
+                },
+                id(*operand),
+            ),
+            FormulaNode::Binary {
+                operator,
+                left,
+                right,
+                ..
+            } => Self::Binary(
+                match operator {
+                    BinaryTemporal::Until => "until",
+                    BinaryTemporal::Release => "release",
+                    BinaryTemporal::Since => "since",
+                    BinaryTemporal::Triggered => "triggered",
+                },
+                id(*left),
+                id(*right),
+            ),
+        }
+    }
+}
+
 /// The unique key for one immutable plan in its driver's ownership scope.
+///
+/// It covers everything the plan fixes (FR-251 "Build inputs and identity"):
+/// the subject (whose checked clause key is content-keyed, so it selects the
+/// atom bodies, the activation guard and the captures), the formula
+/// topology and root, the activation, each atom's admitted input slots, the
+/// tick intervals, the buffer capacities and every target premise. Changing
+/// any one yields a different `PlanId`; no new digest is minted.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PlanId {
     subject: MonitorSubject,
@@ -244,25 +320,25 @@ pub struct PlanId {
     uncertainty: Rational,
     max_reading_gap: u64,
     rate_limit: Rational,
+    root: SubformulaId,
+    topology: Vec<FormulaToken>,
+    activation: ActivationToken,
+    atoms: Vec<(AtomId, usize)>,
+    guard_slots: Option<usize>,
+    intervals: Vec<(SubformulaId, TickInterval)>,
+    buffers: Vec<(SubformulaId, u64)>,
 }
 
-impl PlanId {
-    /// Construct the structural identity; no new digest is minted.
-    pub fn new(
-        subject: MonitorSubject,
-        binding: ClockBindingKey,
-        uncertainty: Rational,
-        max_reading_gap: u64,
-        rate_limit: Rational,
-    ) -> Self {
-        Self {
-            subject,
-            binding,
-            uncertainty,
-            max_reading_gap,
-            rate_limit,
-        }
-    }
+/// The clause activation as part of a plan identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ActivationToken {
+    /// `on origin`.
+    Origin,
+    /// `on each`, with or without a guard.
+    Each {
+        /// Whether a `when` guard selects activating events.
+        guarded: bool,
+    },
 }
 
 /// FR-251: a tick-based monitor plan derived from a checked timed clause.
@@ -334,15 +410,37 @@ impl TimedMonitorPlan {
     pub fn rate_limit(&self) -> &Rational {
         &self.rate_limit
     }
-    /// Structural identity used by FR-252 obligations.
+    /// The identity of the complete immutable plan, used by FR-252
+    /// obligations and by driver admission.
     pub fn id(&self) -> PlanId {
-        PlanId::new(
-            self.subject.clone(),
-            self.binding.clone(),
-            self.uncertainty.clone(),
-            self.max_reading_gap,
-            self.rate_limit.clone(),
-        )
+        let program = &self.program;
+        PlanId {
+            subject: self.subject.clone(),
+            binding: self.binding.clone(),
+            uncertainty: self.uncertainty.clone(),
+            max_reading_gap: self.max_reading_gap,
+            rate_limit: self.rate_limit.clone(),
+            root: program.root(),
+            topology: program
+                .formula()
+                .nodes()
+                .iter()
+                .enumerate()
+                .map(|(index, node)| FormulaToken::of(node, index))
+                .collect(),
+            activation: match program.activation() {
+                Activation::Origin => ActivationToken::Origin,
+                Activation::Each { guarded } => ActivationToken::Each { guarded },
+            },
+            atoms: program
+                .atoms()
+                .iter()
+                .map(|atom| (atom.id(), atom.slots()))
+                .collect(),
+            guard_slots: program.guard().map(|(_, slots)| slots),
+            intervals: self.intervals.clone(),
+            buffers: self.buffers.clone(),
+        }
     }
 }
 
@@ -430,6 +528,9 @@ pub enum MonitorPlanRefusal {
     /// The interval could not be converted exactly.
     #[error("timed interval conversion failed")]
     IntervalConversion,
+    /// A premise the plan-root node carries would be refused by its reader.
+    #[error("plan-root premise refused: {0}")]
+    Premise(PremiseDefect),
 }
 
 /// FR-251's target input, before unit scales are resolved from the package.
@@ -467,4 +568,123 @@ pub fn plan_obligations(
             rate: plan.rate_limit.clone(),
         },
     ]
+}
+
+/// The binding names of the `temporal`/`monitor_plan` node, in body order
+/// (QSpec FR-487 "body").
+pub const PLAN_ROOT_BINDINGS: [&str; 16] = [
+    "clause",
+    "state",
+    "inputs",
+    "scope",
+    "results",
+    "init",
+    "on_event",
+    "on_watermark",
+    "counter_width_bits",
+    "max_reading_gap",
+    "max_event_rate",
+    "buffers",
+    "counter",
+    "tick_unit",
+    "uncertainty",
+    "on_gap",
+];
+
+/// `value` in the canonical rational spelling of QSpec FR-322-AC-114:
+/// reduced, the denominator omitted when it is 1.
+pub fn canonical_rational(value: &Rational) -> String {
+    if value.is_integer() {
+        value.numerator().to_string()
+    } else {
+        format!("{}/{}", value.numerator(), value.denominator())
+    }
+}
+
+/// The identity-bearing premises of a plan, as the plan-root node carries
+/// them (QSpec FR-487 "body": `counter_width_bits` to `uncertainty`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanRootPremises {
+    /// `counter`: the counter's name.
+    pub counter: String,
+    /// `counter_width_bits`.
+    pub counter_width_bits: u32,
+    /// `max_reading_gap`.
+    pub max_reading_gap: u64,
+    /// `max_event_rate`, events per tick.
+    pub max_event_rate: Rational,
+    /// `uncertainty`, in ticks.
+    pub uncertainty: Rational,
+    /// `buffers`: capacity per buffered subformula, ascending by subformula.
+    pub buffers: Vec<(SubformulaId, u64)>,
+}
+
+/// The first premise a reader would refuse (QSpec FR-487 reader order,
+/// steps 4 and 5), in body order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PremiseDefect {
+    /// `counter_width_bits` outside 1 to 64.
+    #[error("counter width outside 1 to 64")]
+    CounterWidth,
+    /// `max_reading_gap` not below `2^counter_width_bits`.
+    #[error("maximum reading gap not below 2^width")]
+    MaxReadingGap,
+    /// `max_event_rate` not above 0.
+    #[error("maximum event rate not above 0")]
+    MaxEventRate,
+    /// A `capacity` below 1.
+    #[error("buffer capacity below 1")]
+    Capacity,
+    /// An empty `counter`.
+    #[error("empty counter name")]
+    Counter,
+    /// A negative `uncertainty`.
+    #[error("negative uncertainty")]
+    Uncertainty,
+    /// `buffers` not strictly ascending by subformula.
+    #[error("buffers not strictly ascending")]
+    BufferOrder,
+}
+
+impl PlanRootPremises {
+    /// Check the premises in the reader's order.
+    pub fn validate(&self) -> Result<(), PremiseDefect> {
+        let zero = Rational::from_integer(ExactInteger::from(0_i64));
+        if !(1..=64).contains(&self.counter_width_bits) {
+            return Err(PremiseDefect::CounterWidth);
+        }
+        if u128::from(self.max_reading_gap) >= (1_u128 << self.counter_width_bits) {
+            return Err(PremiseDefect::MaxReadingGap);
+        }
+        if self.max_event_rate <= zero {
+            return Err(PremiseDefect::MaxEventRate);
+        }
+        if self.buffers.iter().any(|(_, capacity)| *capacity < 1) {
+            return Err(PremiseDefect::Capacity);
+        }
+        if self.counter.is_empty() {
+            return Err(PremiseDefect::Counter);
+        }
+        if self.uncertainty < zero {
+            return Err(PremiseDefect::Uncertainty);
+        }
+        if self.buffers.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+            return Err(PremiseDefect::BufferOrder);
+        }
+        Ok(())
+    }
+}
+
+impl TimedMonitorPlan {
+    /// The premises the plan-root node carries.
+    pub fn root_premises(&self) -> PlanRootPremises {
+        PlanRootPremises {
+            counter: self.binding.counter().to_owned(),
+            counter_width_bits: self.binding.width_bits(),
+            max_reading_gap: self.max_reading_gap,
+            max_event_rate: self.rate_limit.clone(),
+            uncertainty: self.uncertainty.clone(),
+            buffers: self.buffers.clone(),
+        }
+    }
 }

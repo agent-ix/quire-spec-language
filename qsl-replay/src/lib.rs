@@ -275,8 +275,9 @@ pub use model_check::step_settle::{
 };
 pub use model_check::subject_identity::SubjectIdentity;
 pub use monitor_plan::{
-    plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
-    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
+    canonical_rational, plan_obligations, ActivationToken, AtomId, ClockBindingKey, FormulaToken,
+    MonitorAtom, MonitorPlanRefusal, MonitorProgram, MonitorSubject, MonitorTarget, PlanId,
+    PlanRootPremises, PremiseDefect, SubformulaId, PLAN_ROOT_BINDINGS, TickInterval, TimedMonitorPlan,
     TimingObligation, TimingObligationSettings,
 };
 
