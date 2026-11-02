@@ -5611,6 +5611,19 @@ fn temporal_binding_rows(
     // and shares the one array with the clause rows. Its profile is the one
     // its `using` alias selects; a node of a profile that is not a
     // clock-configured one writes no row.
+    let compensation_nodes: HashMap<Vec<&str>, &CheckedNodeId> = nodes
+        .iter()
+        .filter(|node| is_compensation_node(node))
+        .filter_map(|node| {
+            let declaration = node.declaration.as_ref()?;
+            let path = declaration
+                .qualified_name
+                .iter()
+                .map(AsRef::as_ref)
+                .collect();
+            Some((path, &node.node_id))
+        })
+        .collect();
     for protocol in graph.protocols() {
         for template in &protocol.obligations.compensations {
             let Some(profile) = template.temporal_profile else {
@@ -5625,19 +5638,7 @@ fn temporal_binding_rows(
                 continue;
             }
             let path = [protocol.name.as_str(), "compensate", template.name.as_str()];
-            let Some(declaration) = nodes
-                .iter()
-                .find(|node| {
-                    is_compensation_node(node)
-                        && node.declaration.as_ref().is_some_and(|declaration| {
-                            declaration
-                                .qualified_name
-                                .iter()
-                                .map(AsRef::as_ref)
-                                .eq(path)
-                        })
-                })
-                .map(|node| node.node_id.clone())
+            let Some(declaration) = compensation_nodes.get(path.as_slice()).copied().cloned()
             else {
                 // The protocol's controls are not written, so the template
                 // has no node to bind; a selection naming it is surplus.

@@ -925,6 +925,12 @@ fn tc134_clock() -> quire_contract_model::ClockConfiguration {
 }
 
 fn tc134_timed_graph() -> qsl_semantics::check::CheckedGraph {
+    tc134_timed_graph_with(|source| source)
+}
+
+fn tc134_timed_graph_with(
+    edit: impl FnOnce(String) -> String,
+) -> qsl_semantics::check::CheckedGraph {
     let domain = document();
     let packages =
         qsl_semantics::model::intake::package_input([domain.as_slice()]).expect("model intake");
@@ -932,10 +938,10 @@ fn tc134_timed_graph() -> qsl_semantics::check::CheckedGraph {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{TIMED_PROFILES_W}\
          model M = \"acme/orders\";\n{}\n",
-        tc134_source().replace(
+        edit(tc134_source().replace(
             "on origin { always true }",
             "on origin { always[0,3] true }"
-        )
+        ))
     );
     assemble_with_models(source.as_bytes(), &packages)
         .expect("unit assembles")
@@ -1217,6 +1223,81 @@ fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
         ),
         "a compensation clock of another kind than its profile refuses"
     );
+}
+
+/// FR-322-AC-305: a `compensate` template whose profile selects no clock
+/// writes no row, so a selection naming its window is surplus rather than
+/// consumed, while the other window still binds.
+#[trace("FR-322-AC-305", "TC-134")]
+#[test]
+fn tc134_template_without_a_clock_profile_writes_no_row() {
+    use crate::emit::EmitRefusal as R;
+    let graph = tc134_timed_graph_with(|source| {
+        source.replacen(
+            "using T clock \"refund-clock\" {\ncapture partialSaved",
+            "using P clock \"refund-clock\" {\ncapture partialSaved",
+            1,
+        )
+    });
+    let unprofiled = graph.protocols()[0]
+        .obligations
+        .compensations
+        .iter()
+        .find(|template| template.name == "PartialRefund")
+        .expect("the partial window");
+    assert_eq!(unprofiled.temporal_profile, None);
+    let span = unprofiled.span;
+    let selections = tc134_selections(&graph);
+    let package = CheckedPackage::link(graph);
+    assert!(matches!(
+        crate::emit::emit_checked_with_temporal_selections(&package, &selections),
+        Err(R::SurplusTemporalClockSelection { span: surplus, .. }) if surplus == span
+    ));
+    let without: Vec<_> = selections
+        .into_iter()
+        .filter(|selection| selection.declaration_span != span)
+        .collect();
+    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &without)
+        .expect("the unprofiled window needs no selection");
+    let wire = wire(&emission);
+    let rows = wire["temporal_bindings"].as_array().expect("bindings");
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["clock_name"] == "refund-clock")
+            .count(),
+        1
+    );
+}
+
+/// FR-322-AC-305: a template with a clock profile but no written node has
+/// nothing to bind, so it needs no selection and a selection naming its
+/// window is surplus. The unit carries no timed clause, so the only
+/// candidates are the two `compensate` windows, and no node is written.
+#[trace("FR-322-AC-305", "TC-134")]
+#[test]
+fn tc134_template_without_a_written_node_writes_no_row() {
+    use crate::emit::EmitRefusal as R;
+    let graph = tc134_timed_graph_with(|source| {
+        let start = source.find("temporal OrderClosureBounded").expect("clause");
+        let end = source[start..]
+            .find("protocol OrderFlow")
+            .expect("protocol")
+            + start;
+        let mut source = source;
+        source.replace_range(start..end, "");
+        source.replacen("  requires temporal OrderClosureBounded;\n", "", 1)
+    });
+    assert!(graph.temporal_clauses().is_empty());
+    let selections = tc134_selections(&graph);
+    assert_eq!(selections.len(), 2, "one selection per refund window");
+    let none = std::collections::HashMap::new();
+    let rows = crate::emit::temporal_binding_rows(&graph, &none, &[], &[])
+        .expect("no written node needs no selection");
+    assert!(rows.is_empty());
+    assert!(matches!(
+        crate::emit::temporal_binding_rows(&graph, &none, &[], &selections),
+        Err(R::SurplusTemporalClockSelection { span, .. }) if selections.iter().any(|s| s.declaration_span == span)
+    ));
 }
 
 /// FR-048-AC-8: `/2` bytes carrying clock bindings whose `contract_version`
