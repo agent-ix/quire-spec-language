@@ -26,7 +26,7 @@ optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8,
 FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-AC-31,
-FR-093-AC-32, FR-093-CON-1.
+FR-093-AC-32, FR-093-AC-51, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -100,6 +100,9 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     equality nodes and their argument positions, read each package back
     through IR's v2 reader, and evaluate each equality. Check the guards of
     FR-093-AC-32.
+14. Lower the `fma` calls of FR-093-AC-51 over `Float64` and `Float32`, read
+    each node's `operator`, identity, law, mode, `result_type` and arguments;
+    check the wrong-arity and wrong-width calls.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
@@ -154,3 +157,8 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   the converted type with the convert node at the converted operand's
   position, each package reads back Verified, and each evaluation equals the
   comparison of the converted values. The conversion guards check.
+- Step 14: each `fma` lowers to one `call` node with identity
+  `quire.op.ieee.float64.fma` (`float32` for `Float32`), law `ieee_profile`,
+  mode `rounding` `nearest-even` and the three arguments in call order; the
+  wrong-arity and wrong-width calls refuse `ill_typed`/`type-mismatch` and
+  emit no node.
