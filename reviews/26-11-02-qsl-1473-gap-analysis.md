@@ -36,3 +36,9 @@ Full computed matrix and Quoin gap-analysis were unavailable; this is a scoped m
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-001 | medium | The required 1/2/4/all-cores interleaved baseline/candidate results, with `other_busy`, lane and profile method, plus a profile-based scaling explanation, are absent. Without these results QSL-1473 AC-2 and the ticket's scaling conclusion remain unverified; the PR description confirms this work is pending. | QSL-1473 AC-2; qsl-analyze/tests/it/rc11_oracle.rs:167-235 | correct-requirement-no-evidence |
+
+## Disposition
+
+| Finding | Outcome | Evidence and limitation |
+| --- | --- | --- |
+| FND-001 | Verified fixed | The required 1/2/4/14-worker baseline/candidate measurements and profile-based scaling discussion are recorded in [QSL-1473 measurement comment 51387245](https://linear.app/agent-ix/issue/QSL-1473/make-lt-16-explorer-worker-count-configurable-and-measure-multi-core#comment-51387245), and summarized in PR #2151 at head `126da8f`. Each run passed the exact 7,607-state / 19,574-edge oracle. All measurements had `other_busy=1`, so they are contended and do not support an isolated performance attribution. The reviewer disposition report for PR #2151 records FND-001 as verified fixed. |
