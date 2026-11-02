@@ -848,27 +848,26 @@ fn quantified_clock_guards_emit_ordered_slot_binders() {
     }
 }
 
-/// FR-230-AC-50: element-presence reads remain unavailable in timed guards,
-/// invariants and urgency predicates until their quantified wire form is
-/// admitted. Each model refuses as a whole instead of emitting a guard with
+/// FR-230-AC-55, FR-230-AC-56, FR-230-AC-53: element-presence reads remain
+/// unavailable in timed guards, invariants and urgency predicates until their
+/// quantified wire form is admitted. Each model refuses as a whole instead of emitting a guard with
 /// the presence requirement missing.
-#[trace("TC-685", "FR-230-AC-50")]
+#[trace("TC-685", "FR-230-AC-53", "FR-230-AC-55", "FR-230-AC-56")]
 #[test]
 fn element_presence_in_timed_predicates_refuses_without_emitting_partial_nodes() {
     use qsl_semantics::check::UnwrittenTimedMember as Member;
 
     let quantifier = "forall(e in self.q: present(e))";
-    let (member, text) = unwritten(
-        &slot_presence_document(),
-        &format!(
-            "pre HasElement using v on Config::ConfigVersion::attemptUpdate {{ \
-             self.x >= 1 ms and {quantifier} }}\n"
-        ),
+    let guard = format!(
+        "pre HasElement using v on Config::ConfigVersion::attemptUpdate {{ \
+         self.x >= 1 ms and {quantifier} }}"
     );
+    let (member, text) = unwritten(&slot_presence_document(), &format!("{guard}\n"));
     assert_eq!(
         (member, text.as_str()),
-        (Member::QuantifiedClause, quantifier),
-        "a quantified guard cannot be written without its binder form"
+        (Member::ElementPresence, guard.as_str()),
+        "FR-230-AC-55: a quantified guard that reads element presence is refused at \
+         the owning guard as ElementPresence"
     );
 
     let invariant =
