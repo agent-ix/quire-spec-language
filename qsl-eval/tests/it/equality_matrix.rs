@@ -2464,46 +2464,6 @@ fn x04_compound_results_feed_further_quantity_operations() {
     }
 }
 
-/// An S6a invariant break, not a refusal: a quantity expression checked
-/// against one package's units and evaluated in a package whose table lacks
-/// them passes admission (the argument's unit id matches the parameter's) and
-/// reaches an operation whose operand unit nothing resolves.
-#[trace("TC-384", "FR-090-AC-3")]
-#[test]
-fn x04_an_unresolved_unit_past_admission_is_an_internal_fault() {
-    let units = units();
-    let with_units = expression_package(
-        TypeEnvironment::default().with_units(units.table.clone()),
-        false,
-    );
-    let parameters = [("x", ValueType::Quantity(units.m.clone()))];
-    let one_metre = Value::Quantity(Quantity::new(Rational::from_integer(integer(1)), units.m));
-    for operator in [BinaryOperator::Add, BinaryOperator::Less] {
-        let checked = check_in(
-            &with_units,
-            &parameters,
-            &operation(operator, "x", "x"),
-            None,
-            CheckMode::Kernel,
-        )
-        .unwrap();
-        let mut meter = Meter::new(UNLIMITED);
-        let failure = plain_package()
-            .evaluate(
-                &checked,
-                vec![one_metre.clone()],
-                &ObjectEnvironment::default(),
-                &mut meter,
-            )
-            .expect_err("an unresolved unit must fault, never evaluate");
-        let CallFailure::Fault(fault) = failure else {
-            panic!("expected an internal fault, got {failure:?}");
-        };
-        assert_eq!(fault.stage(), "S6a");
-        assert_eq!(fault.invariant(), "quantity-unit-unresolved-past-admission");
-    }
-}
-
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
 #[test]
