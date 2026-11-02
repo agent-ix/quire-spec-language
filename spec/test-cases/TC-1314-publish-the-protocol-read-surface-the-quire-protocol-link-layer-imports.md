@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the causal relation, the protocol view and the record-to-node map.
-Scope: FR-519-AC-1 to FR-519-AC-10. **R** is the package of FR-517.
+Scope: FR-519-AC-1 to FR-519-AC-13. **R** is the package of FR-517.
 
 ## Test Procedure
 
@@ -27,8 +27,11 @@ Scope: FR-519-AC-1 to FR-519-AC-10. **R** is the package of FR-517.
 | 8 | 8 | for each view function over a node, lock or source map, a copy with the member removed | `ViewRefusal` naming the member; no partial value |
 | 9 | 9 | compile-fail use of `ExportRef`, `ArtifactKind`, `Revision`, `Language`, `Definition` | none resolves |
 | 10 | 10 | compile a test that passes a `CheckedPackageV2` and a `CheckedNodeId` to `protocol_view`, `causal_relation` and `binder`; read the returned ids | compiles; the ids are `CheckedNodeId` |
+| 11 | 11 | read `R`'s `semantic_type` nodes and literal and reference terms through `CheckedPackageV2::term` | equal to the in-memory values; numbers in the FR-322 encoding |
+| 12 | 12 | select the model's population declaration node from `R`'s package by node id | equal to the in-memory node |
+| 13 | 13 | compile-fail `use qsl_package::protocol_view::Window` | does not resolve |
 
-Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-7", "TC-1314")]`; row 1 also carries FR-383-AC-16.
+Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-13", "TC-1314")]`; row 1 also carries FR-383-AC-16.
 
 ## Expected Results
 

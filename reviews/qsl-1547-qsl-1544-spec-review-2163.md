@@ -56,3 +56,23 @@ real defects to fix in the same PR. The remaining checks passed: AC-8..10 and TC
 the code; FR-519 vocabulary, ordering, EdgeKinds and view function list match #2158; AC-7 of FR-519
 and TC row 7 (QSL-1546/1547/1548) agree; renumbering of FR-515 ACs 1..14 and FR-519 ACs 1..9 is
 consistent between FR, TC scope lines and trace tags; FR-509-AC-7 and TC-1304 trace tag agree.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-009 | low | FR-515 `source_span` is specified per leaf kind, but only `HoldsLeaf` (AC-4) and `ActivationGuard` (AC-16) have a criterion; the `ClauseLeaf` rule (entry inside the formula root's regions) is asserted by none. | spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md:126 | missing-requirement |
+| FND-010 | low | FR-519 map rows consumed by name (`Type`/`Value`/`Number`, `BindingKind::Population`) and the `Window` row (no QSL view) have no criterion; AC-5 covers the view-read rows and AC-10 only `Package` and `Handle`. | spec/functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md:125-131 | missing-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The three FR-265 bullets are back (visit each node at most once; settle decisive-counterexample or decisive-witness; build the record from the stop report) beside the connective bullets; the diff against main now deletes no FR-265 line. |
+| FND-002 | fixed | TC-1304 row 11 is three cells: parse a channel clause with `delivery [0,3]` (CST only, no check); the AC is FR-509-AC-7, expected parses with no syntax error. |
+| FND-003 | fixed | FR-515 now reads "until the Contract IR decision (IR-1279, FR-515-AC-13) lands". |
+| FND-004 | fixed | `requirements` is in AC-1's accessor list, and new FR-515-AC-15 and TC-1310 row 15 assert it (empty for an unnamed clause, the protocol clause id for a named one). |
+| FND-005 | fixed | Every map row has a disposition: Package and Handle consumed by name (AC-10, TC-1314 row 10), Declaration/Body read by protocol_view and declaration, ActivationMapping by protocol_view, BindingKind::Clock by temporal_binding (AC-5), Window no QSL view. |
+| FND-006 | fixed | The predicate source() row states the rule per kind: HoldsLeaf and ClauseLeaf inside the formula root's regions, ActivationGuard an entry of the guard node (AC-16, TC-1310 row 16). |
+| FND-007 | fixed | AC-6 uses a second package emitted from the same source; AC-9 says neither module path resolves, with a compile-fail use of each (TC row 9 matches). |
+| FND-008 | fixed | TC-740 step 10 uses an `and` whose left operand is `true`; the Authored tree records decision `true`, the Synthesized tree none. |

@@ -153,6 +153,9 @@ node, lock or source map they read.
 | FR-519-AC-8 | For each view function that takes a node, a lock or a source map, a copy of that value with the member the view reads removed is refused with a `ViewRefusal` that names the member and returns no partial value. An admitted package never lacks a member, so the removal is made on the value the view reads and not on an admitted package. | Test (TC-1314) |
 | FR-519-AC-9 | No QSL export names a record the map marks Ended after QSL-838; a compile-fail use of each of `ExportRef`, `ArtifactKind`, `Revision`, `Language` and `Definition` through `qsl_package` fails to resolve. | Test (TC-1314) |
 | FR-519-AC-10 | Each of `protocol_view`, `causal_relation` and `binder` takes `&CheckedPackageV2`, and every node reference a view or relation returns is a `CheckedNodeId`; a test that passes a `CheckedPackageV2` and a `CheckedNodeId` to each compiles. | Test (TC-1314) |
+| FR-519-AC-11 | For **R**, the `semantic_type` nodes and the literal and reference terms that stand for `Type`, `Value` and `Number` records are read through `CheckedPackageV2::term` and equal the values the checked clause holds in memory, with numbers in the FR-322 encoding. | Test (TC-1314) |
+| FR-519-AC-12 | For **R**, the population declaration node of the model, selected from the `CheckedPackageV2` by its node id, equals the node the checked clause holds in memory. | Test (TC-1314) |
+| FR-519-AC-13 | `qsl_package::protocol_view` exports no item for a window binding; a compile-fail `use` of `qsl_package::protocol_view::Window` fails to resolve. | Test (TC-1314) |
 
 ## Dependencies
 

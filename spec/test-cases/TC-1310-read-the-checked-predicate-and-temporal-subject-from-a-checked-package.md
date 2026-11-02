@@ -12,7 +12,7 @@ relationships:
 
 Verify the two checked-package views that succeed the retired
 `checked_predicate` and `temporal_subject` modules. Scope: FR-515-AC-1 to
-FR-515-AC-16. **R** is the package FR-517 emits from the ported IT-001 recipe.
+FR-515-AC-17. **R** is the package FR-517 emits from the ported IT-001 recipe.
 
 ## Test Procedure
 
@@ -34,8 +34,9 @@ FR-515-AC-16. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 14 | 14 | a reader that implements IR-1278; `name()` | the declared name, equal to the sidecar's; gated on IR-1278 |
 | 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
 | 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
+| 17 | 17 | `checked_predicate` of a `ClauseLeaf` that is neither a `holds` operand nor the guard | `source_span` inside the formula root's source regions |
 
-Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-16", "TC-1310")]` for the criteria each row covers.
+Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-17", "TC-1310")]` for the criteria each row covers.
 
 ## Expected Results
 
