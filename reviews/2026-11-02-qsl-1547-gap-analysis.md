@@ -29,3 +29,13 @@ Verification run: `cargo check --workspace --all-targets --locked` green; `cargo
 ## Verdict
 
 PARTIAL: AC-1, AC-3, AC-4 covered; AC-2, AC-5, AC-6 partial; AC-7 outside the PR. No reverse gap: the extra helpers (`ControlOperation`, `Scheduling`, `Delivery`, `QueueCapacity`, `Binder`) are read views of node members FR-519's map lists (operation identities, scheduling, delivery text with FR-509's `[lo,hi]` form, queue bounds, binder levels).
+
+## Dispositions
+
+Round 1, against head 45ec3ccd5fd6b5a43db3a47abf71ef676b567b1b; the verification runs are listed in the code review's Dispositions of SR-2026110215471.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | Spec-lane: FR-519-AC-2 and its false "exists only in emit tests" premise; the tag is removed and the PR body states AC-2 is unchecked. |
+| FND-002 | deferred | Spec-lane: AC-5 defines no view for Type, Value, Number, Population, Window, ArtifactRef and removal is untestable on an admitted package; the PR body lists it. |
+| FND-003 | fixed | The AC-6 test now walks the Cargo.lock closure; arch-lint direction passes over fresh clones. |

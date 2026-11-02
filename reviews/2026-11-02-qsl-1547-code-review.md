@@ -31,3 +31,17 @@ Ticket: QSL-1547. Head 6523d4a2c, base main 1d2a256d4. The causal relation is de
 ## Verdict
 
 Mergeable after FND-001 and FND-002 are closed with small tests (a partial-join `parallel` in the fixture; an await anchored at a compensation built by editing the fixture node). The derivation itself is correct; no high finding. FND-003 is a spec defect to route to the spec lane, not a code change.
+
+## Dispositions
+
+Round 1, against head 45ec3ccd5fd6b5a43db3a47abf71ef676b567b1b. Mutations rerun by the reviewer on that head: join-any (constant true join condition) turns `a_parallel_joins_only_the_branches_its_join_names` red; AwaitAnchor moved to the forward effect's exit port turns `an_await_after_a_compensation_is_anchored_at_the_forward_effect` red; removing the visited-set refusal turns `a_control_held_twice_is_refused_not_listed_twice` red; asserting a known transitive crate (serde_json) absent from the Cargo.lock closure turns the AC-6 test red, so the closure walk reaches transitive packages (a literal quire-protocol lock edit cannot be run under `--locked`, cargo rewrites it). Whole-workspace check, clippy -D warnings, fmt, no-std, full qsl-package suite (544 passed, 2 ignored, plus 3 and 27), arch-lint qualified-core, api-surface --qsl-only and direction over fresh shallow clones of IR, runtime and codegen all pass.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | New partial-join test `a_parallel_joins_only_the_branches_its_join_names` (`join any [a]`, asserts one Join edge and equality with the checked relation); join-any mutation is red. |
+| FND-002 | fixed | New test `an_await_after_a_compensation_is_anchored_at_the_forward_effect` over an edited fixture await node, asserting the forward effect's enter port; anchor-exit mutation is red. |
+| FND-003 | deferred | Spec-lane item: FR-519-AC-2's premise is false (the relation is also derived in qsl-semantics graph.rs); the AC-2 tag is removed from the test and the PR body states AC-2 is unchecked. |
+| FND-004 | fixed | The AC-6 test now parses Cargo.lock and walks the resolved closure of qsl-package for quire-protocol; arch-lint direction passes over fresh clones. |
+| FND-005 | fixed | Compensations compare to the in-process obligations, controls compare to an in-process layout in order, activation compares the whole row, `source` takes an identity, `definition` is replaced by `selection` over profile selections compared to the wire, and `dependency` is read from a real two-package closure. |
+| FND-006 | accepted-no-change | A compiling control doctest was added, which rules out a path typo as the cause of the E0432 failures; the Ended-name doctests still cannot detect a re-export, which the spec's own "compile-fail use of each" wording asks for. |
+| FND-007 | fixed | `control_tree` refuses a control held twice with MalformedMember on `run`; test `a_control_held_twice_is_refused_not_listed_twice`; removing the refusal turns it red. |
