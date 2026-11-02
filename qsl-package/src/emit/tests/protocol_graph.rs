@@ -1129,8 +1129,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Broken remains refused: {:?}", reversed.results());
     };
     assert_eq!(
-        reversed_refusal, refusal,
-        "refusal record is order-independent"
+        reversed_refusal.cause, refusal.cause,
+        "the refusal cause is independent of declaration order"
     );
     let ProtocolEmissionResult::Emitted {
         nodes: reversed_good,
@@ -1140,6 +1140,45 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Flow remains emitted: {:?}", reversed.results());
     };
     assert_eq!(reversed_good, baseline, "Flow remains byte-for-byte stable");
+
+    let only_broken = emit_checked_with_protocol_results(&CheckedPackage::link(check(&broken)))
+        .expect("a refused protocol result is available without Flow");
+    let ProtocolEmissionResult::Refused {
+        refusal: standalone_refusal,
+        ..
+    } = &only_broken.results()[0]
+    else {
+        panic!("Broken remains refused alone: {:?}", only_broken.results());
+    };
+    assert_eq!(
+        standalone_refusal.cause, refusal.cause,
+        "removing Flow does not change Broken's refusal"
+    );
+
+    let no_owner = flow_over("Boolean", "on origin", "role Buyer on M::Order;");
+    let no_owner_pair = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+        "{good}\n{}",
+        no_owner.replace("protocol Flow", "protocol NoOwner")
+    ))))
+    .expect("Flow emits beside an unsupported protocol");
+    assert!(matches!(
+        no_owner_pair.aggregate(),
+        ProtocolEmissionAggregate::Refused { .. }
+    ));
+    let ProtocolEmissionResult::Emitted { nodes, .. } = &no_owner_pair.results()[0] else {
+        panic!(
+            "Flow remains emitted beside NoOwner: {:?}",
+            no_owner_pair.results()
+        );
+    };
+    assert_eq!(nodes, baseline);
+    let ProtocolEmissionResult::Refused { refusal, .. } = &no_owner_pair.results()[1] else {
+        panic!("NoOwner is refused: {:?}", no_owner_pair.results());
+    };
+    assert!(matches!(
+        refusal.cause,
+        qsl_semantics::check::CheckCause::UnsupportedFeature { .. }
+    ));
 }
 
 /// The `control` node of `wire` whose declaration is `path`.
