@@ -1,46 +1,28 @@
 ---
-id: SR-202611020540
-title: "Gap analysis — QSL-1461 explicit Text literals"
+id: SR-202611021111
+title: "Fresh gap analysis - QSL-1461 explicit Text literals"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; repository Test Matrix, code-to-spec reverse coverage, and QSL-1461 changed paths"
+scope: "agent-ix/quire-spec-language; PR #2084 head ecb0d795b; FR-056-AC-51/52, FR-091-AC-69, FR-093-AC-50, TC-1052 steps 7-9"
 review_set: subset
-relationships:
-  - target: ix://agent-ix/quire-spec-language/spec/spec
-    type: references
 ---
 
 ## Summary
 
-Attempted the repository's computed Test Matrix and inspected the QSL-1461 changed paths for unowned behavior and stubs. The optional semantic review was not requested and was skipped; the planless audit does not assess plan completion.
+Ticket: QSL-1461. Planless manual criteria-to-test check (Quoin matrix not run). Plan completion: not assessed. FR-056-AC-51/52 and FR-093-AC-50 (value half) have value-asserting tagged tests; FR-091-AC-69 has no tagged test; FR-093-AC-50's equality-lowering half is untested.
 
 ## Verdict
 
-**CONDITIONAL** — the Quoin matrix did not return in the review window; manual criteria-to-test inspection found missing evidence for Text evaluation and required refusal vectors.
+**NOT MERGEABLE** until FND-001 and FND-002 are closed.
 
 ## Findings
 
-| ID      | Severity | Summary | Refs |
-| ------- | -------- | ------- | ---- |
-| FND-001 | medium | Text evaluation and required refusal vectors lack tests; the Quoin matrix could not complete in this review window. | FR-056-AC-51, FR-056-AC-52, TC-1052 |
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | FR-091-AC-69 is traced by no test. Its distinct vectors are unasserted: S2 builds a Call named `Text` with one Expression::String argument; `Text("\ud800")` refuses invalid_syntax/invalid-escape; a unit declaring `function Text` makes `Text("abc")` refuse ambiguous_declaration/ambiguous-name. Only the arity/argument/bounds refusals are covered, under other tags. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:1168 |
+| FND-002 | medium | FR-093-AC-50 second half is unasserted: the equality `x = Text("é")` lowers to one text equality with law and mode `text_profile` nfc and arguments [ref(x), ref(literal)]; `Text("é")` and `Text("é")` lowering to the same single node; literal `semantic_type` equal to the body `type`. Tests check only the value set and that body type is a text_bounds node. | qsl-package/src/emit/tests.rs:2402; qsl-semantics/tests/it/native_literals.rs:355 |
+| FND-003 | low | FR-056-AC-52 result positions Integer and UUID, and FR-056-AC-51 `Text[0, 2; binary-utf8]` admitting U+00E9, are not exercised by name (binary is covered only through vector TX-12/13). | qsl-semantics/tests/it/native_literals.rs:441 |
 
-## Coverage
+## Review Evidence
 
-- Matrix: `quoin matrix --repo . --json` and retry with `--no-project-config` both produced no output through the review window; interrupted at lead handoff, so matrix status is unavailable. Manual acceptance-to-test check completed: the traced integration test checks the checked graph but does not evaluate Text; the bound-refusal cases omit `Text("")` below a positive minimum and `Text(5)`.
-- Reverse coverage and stubs: inspected changed production code and its requirement references; no unowned behavior or stub found.
-- Semantic review: skipped (optional; no opt-in).
-- Plan completion: not assessed.
-
-
-## Dispositions
-
-| FND | Outcome | Reason |
-| --- | ------- | ------ |
-| FND-001 | fixed | New replay evaluation coverage and both omitted refusal vectors directly address the manual criteria-to-test gap. |
-
-### Round 1 evidence
-
-- `qsl-replay/tests/it/compile_text_literals.rs::explicit_text_bodies_evaluate_with_profile_normalization_and_equality` now compiles source Text calls and evaluates retained values and equality for nfc and unicode-scalars.
-- `qsl-semantics/tests/it/native_literals.rs` adds the empty literal below a positive minimum and `Text(5)`, checking the typed refusal and body location.
-- Focused locked replay evaluation test passed (1/1); focused locked `native_literals` tests passed (12/12). Formatting and diff checks passed.
-- Historical limitation: Quoin matrix did not return during the initial review window; the disposition is based on the specific manual acceptance-to-test finding, not a claim that the original matrix completed.
+Covered with value assertions: AC-51 evaluation (replay compile_text_literals), r1 retained U+00E9, binary-utf8 two-byte refusal; AC-52 TextLiteralOutsideBounds payload (argument, min, max, profile, retained_length), call origin, empty path, String result and String peer, Text(x), Text(5), Text(), two arguments; AC-41 non-regression; FR-322-AC-304 vectors via emit and strict reader.

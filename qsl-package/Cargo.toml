@@ -64,7 +64,6 @@ thiserror = { version = "2.0.20", default-features = false, optional = true }
 # declarations are layer-2 parsed forms. Layer 2 is below this crate, so the
 # edge closes no cycle; TC-390 admits it in this table only.
 qsl-forms = { path = "../qsl-forms" }
-unicode-normalization = "0.1.25"
 # The S1 -> S2 -> S3 -> S4 round trip (FR-091) parses its unit with S1.
 qsl-cst = { path = "../qsl-cst" }
 # FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this

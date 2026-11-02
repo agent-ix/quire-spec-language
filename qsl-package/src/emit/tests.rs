@@ -28,7 +28,6 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use serde_json::{json, Value};
-use unicode_normalization::UnicodeNormalization;
 
 use super::*;
 
@@ -2497,48 +2496,80 @@ fn try_package_from_text(declarations: &str) -> Result<CheckedPackage, Vec<Check
         .map(CheckedPackage::link)
 }
 
+/// The number of cases in the QSpec text-literal vector file (TX-01..TX-14
+/// and TX-13s).
+const TEXT_VECTOR_CASES: usize = 15;
+
+/// What emitting a vector's value as a source `Text(...)` literal yields.
+enum Emitted {
+    /// Admitted, retaining this sequence.
+    Retained(String),
+    /// Refused with `TextLiteralOutsideBounds`.
+    Refused,
+}
+
 /// FR-056-AC-51/52, FR-093-AC-50, QSpec FR-322-AC-304 (TX-01..TX-14): every
 /// vector's value, written as a source `Text(...)` literal, is normalized
 /// under the vector's profile at the checker, refused with
 /// `TextLiteralOutsideBounds` when its retained length leaves the bounds, and
-/// otherwise emits and reads back Verified with the retained sequence.
+/// otherwise emits and reads back Verified with the retained sequence. A
+/// vector marked `normalized` is retained unchanged and decides as its
+/// `expected` says; the three not-normalized ones carry the sequence the
+/// profile must produce, written out here.
 #[trace("FR-056-AC-51", "FR-056-AC-52", "FR-093-AC-50", "TC-1052")]
 #[test]
 fn every_text_literal_vector_emits_normalized_or_is_refused_at_the_call() {
     let vectors = text_literal_vectors();
-    for case in vectors["cases"].as_array().unwrap() {
+    let cases = vectors["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), TEXT_VECTOR_CASES);
+    for case in cases {
         let id = case["id"].as_str().unwrap();
         let spec = &vectors["types"][case["type"].as_str().unwrap()];
         let text_type = vector_text_type(spec);
         let value = case["value"].as_str().unwrap();
         let profile = spec["text_profile"].as_str().unwrap();
-        let retained: String = match profile {
-            "nfc" => value.nfc().collect(),
-            "nfd" => value.nfd().collect(),
-            _ => value.to_owned(),
-        };
-        let length = if profile == "binary-utf8" {
-            retained.len()
+        let raw_length = if profile == "binary-utf8" {
+            value.len()
         } else {
-            retained.chars().count()
+            value.chars().count()
         } as u64;
-        let in_bounds =
-            (spec["min"].as_u64().unwrap()..=spec["max"].as_u64().unwrap()).contains(&length);
-        match try_package_from_text(&text_function(&text_type, value)) {
-            Err(refusals) => {
-                assert!(!in_bounds, "{id}: in-bounds retained value was refused");
+        let normalized = case["normalized"].as_bool().unwrap();
+        if normalized {
+            assert_eq!(raw_length, case["length"].as_u64().unwrap(), "{id}: length");
+        }
+        let expected = match (id, normalized) {
+            ("TX-06", false) => Emitted::Retained("\u{e9}b".to_owned()),
+            ("TX-07", false) => Emitted::Refused,
+            ("TX-09", false) => Emitted::Retained("e\u{301}".to_owned()),
+            (_, true) if case["expected"] == "admitted" => Emitted::Retained(value.to_owned()),
+            (_, true) => Emitted::Refused,
+            _ => panic!("{id}: a not-normalized vector with no written expectation"),
+        };
+        match (
+            try_package_from_text(&text_function(&text_type, value)),
+            expected,
+        ) {
+            (Err(refusals), Emitted::Refused) => {
                 assert_eq!(refusals.len(), 1, "{id}: {refusals:?}");
-                assert!(
-                    matches!(
-                        refusals[0].cause,
-                        qsl_semantics::check::CheckCause::TextLiteralOutsideBounds { .. }
-                    ),
-                    "{id}: {:?}",
-                    refusals[0].cause
-                );
+                let qsl_semantics::check::CheckCause::TextLiteralOutsideBounds {
+                    argument,
+                    min,
+                    max,
+                    retained_length,
+                    ..
+                } = &refusals[0].cause
+                else {
+                    panic!("{id}: {:?}", refusals[0].cause);
+                };
+                assert_eq!(argument, value, "{id}");
+                assert_eq!(*min, spec["min"].as_u64().unwrap(), "{id}");
+                assert_eq!(*max, spec["max"].as_u64().unwrap(), "{id}");
+                assert!(!(*min..=*max).contains(retained_length), "{id}");
+                if normalized {
+                    assert_eq!(*retained_length, case["length"].as_u64().unwrap(), "{id}");
+                }
             }
-            Ok(package) => {
-                assert!(in_bounds, "{id}: out-of-bounds value was admitted");
+            (Ok(package), Emitted::Retained(retained)) => {
                 let emission = emit_checked(&package).expect("the package emits");
                 let wire = wire(&emission);
                 let literal = nodes(&wire)
@@ -2553,6 +2584,10 @@ fn every_text_literal_vector_emits_normalized_or_is_refused_at_the_call() {
                     "{id}: the strict reader did not verify"
                 );
             }
+            (Ok(_), Emitted::Refused) => panic!("{id}: an out-of-bounds value was admitted"),
+            (Err(refusals), Emitted::Retained(_)) => {
+                panic!("{id}: an in-bounds value was refused: {refusals:?}")
+            }
         }
     }
 }
@@ -2564,7 +2599,9 @@ fn every_text_literal_vector_emits_normalized_or_is_refused_at_the_call() {
 #[test]
 fn the_strict_reader_decides_every_text_literal_vector_as_specified() {
     let vectors = text_literal_vectors();
-    for case in vectors["cases"].as_array().unwrap() {
+    let cases = vectors["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), TEXT_VECTOR_CASES);
+    for case in cases {
         let id = case["id"].as_str().unwrap();
         let spec = &vectors["types"][case["type"].as_str().unwrap()];
         let (_, package) = package_from_text(&text_function(&vector_text_type(spec), "ab"));
@@ -2593,8 +2630,13 @@ fn the_strict_reader_decides_every_text_literal_vector_as_specified() {
             _ => match outcome {
                 Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
                     assert_eq!(
-                        refusal.code,
-                        quire_contract_model::CheckedPackageRefusalCode::IllTyped,
+                        serde_json::to_value(refusal.code).unwrap(),
+                        case["code"],
+                        "{id}"
+                    );
+                    assert_eq!(
+                        serde_json::to_value(refusal.cause).unwrap(),
+                        case["cause"],
                         "{id}"
                     );
                     let pointer = case["pointer"]

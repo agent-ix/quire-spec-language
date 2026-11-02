@@ -1389,12 +1389,7 @@ impl<'a> Typer<'a> {
                         frames,
                     ));
                 }
-                let native_constructor = if name.is_qualified() {
-                    None
-                } else {
-                    NativeConstructor::named(&name.name)
-                };
-                if let Some(constructor) = native_constructor {
+                if let Some(constructor) = NativeConstructor::named(&name.name) {
                     self.native_literal(
                         constructor,
                         &name.name,

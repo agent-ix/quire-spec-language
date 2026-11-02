@@ -10,8 +10,8 @@ use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
     ApplicationTerm, BodyTerm, CheckCause, CheckRefusal, CheckedGraph, I128Limit,
-    IntegerOutsideI128, IntegerSite, LeafTerm, LiteralValue, MemberTerm, NodeTag,
-    PackageDeclarations, SemanticNode,
+    IntegerOutsideI128, IntegerSite, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeTag,
+    OperationMode, PackageDeclarations, SemanticNode,
 };
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
@@ -378,6 +378,129 @@ fn text_literals_take_their_type_from_context_and_retain_under_its_profile() {
     }
 }
 
+/// QSL-1461, FR-091-AC-69: `Text` is a type keyword, so S1 refuses a unit
+/// that declares `function Text` before any call can become ambiguous
+/// (`invalid_syntax`/`unexpected-token` at the name). The ambiguity vector
+/// of FR-091-AC-69 for `UUID` has no `Text` counterpart that can be written.
+#[trace("FR-091-AC-69", "TC-1052")]
+#[test]
+fn a_function_cannot_be_named_text() {
+    let text = format!(
+        "{HEADER}function Text using v(): Boolean pure {{ true }}\n\
+         function f using v(): Text[0, 8; nfc] pure {{ Text(\"abc\") }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("test", "literals", "fixture", "fixture:1"),
+        "literals.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let first = parsed.diagnostics().first().expect("a diagnostic");
+    assert_eq!(
+        (first.code, first.cause),
+        (
+            qsl_cst::CompleteCode::InvalidSyntax,
+            qsl_cst::CompleteCause::UnexpectedToken
+        )
+    );
+}
+
+/// QSL-1461, FR-091-AC-69: only the unqualified spelling is the native
+/// constructor. A qualified `Z::Text`, `Z::UUID` or `Z::Timestamp` is an
+/// ordinary name and refuses as one, identically for all three.
+#[trace("FR-091-AC-69", "TC-1052")]
+#[test]
+fn a_qualified_constructor_name_is_an_ordinary_name() {
+    let mut causes = Vec::new();
+    for (result, body) in [
+        ("Text[0, 8; nfc]", "Z::Text(\"a\")".to_owned()),
+        ("UUID", format!("Z::UUID(\"{U1}\")")),
+        ("Timestamp", "Z::Timestamp(5)".to_owned()),
+    ] {
+        let refusal = refused(&format!("function f using v(): {result} pure {{ {body} }}"));
+        assert!(
+            matches!(
+                refusal.cause,
+                CheckCause::MissingQualifiedName(_) | CheckCause::MissingName(_)
+            ),
+            "{body}: {:?}",
+            refusal.cause
+        );
+        causes.push(std::mem::discriminant(&refusal.cause));
+    }
+    assert!(causes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+/// QSL-1461, FR-056-AC-51: under `binary-utf8` the length is the UTF-8 byte
+/// count, so U+00E9 (two bytes) fills `Text[0, 2; binary-utf8]` and is
+/// retained as written.
+#[trace("FR-056-AC-51", "TC-1052")]
+#[test]
+fn a_two_byte_scalar_fits_a_two_byte_binary_text() {
+    let graph = check("function f using v(): Text[0, 2; binary-utf8] pure { Text(\"\\u00e9\") }")
+        .expect("two bytes fit the maximum of two");
+    let all = nodes(&graph);
+    let texts = literals(&all, "text");
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].1, "\u{e9}");
+}
+
+/// QSL-1461, FR-093-AC-50, TC-1052 step 9: the literal's `semantic_type` is
+/// its body `type`; the precomposed and decomposed spellings under `nfc`
+/// lower to one node; `x = Text("é")` lowers to one text equality with the
+/// `text_profile` law, the `nfc` mode and arguments `[ref(x), ref(literal)]`.
+#[trace("FR-093-AC-50", "TC-1052")]
+#[test]
+fn text_literals_share_one_node_and_compare_by_the_profile_equality() {
+    let graph = check(
+        "function t1 using v(): Text[0, 8; nfc] pure { Text(\"e\\u0301\") }\n\
+         function t2 using v(): Text[0, 8; nfc] pure { Text(\"\\u00e9\") }\n\
+         function e3 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text(\"\\u00e9\") }",
+    )
+    .expect("the unit checks");
+    let all = nodes(&graph);
+    let texts = literals(&all, "text");
+    assert_eq!(texts.len(), 1, "both spellings lower to the same node");
+    let (literal, value) = &texts[0];
+    assert_eq!(value, "\u{e9}");
+    let BodyTerm::Leaf(LeafTerm::Literal { ty, .. }) = literal.body() else {
+        panic!("a literal body");
+    };
+    assert_eq!(
+        ty.admitted(),
+        literal.semantic_type().as_ref(),
+        "semantic_type is the body type"
+    );
+    let equalities: Vec<&ApplicationTerm> = all
+        .iter()
+        .filter_map(|node| match node.body() {
+            BodyTerm::Application(term) if term.operation.identity() == "quire.op.text.eq" => {
+                Some(term)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(equalities.len(), 1);
+    let operation = &equalities[0].operation;
+    assert_eq!(operation.laws().len(), 1);
+    assert_eq!(operation.laws()[0].role, LawRole::TextProfile);
+    assert_eq!(
+        operation.mode(),
+        Some(&OperationMode::TextProfile(quire_exact::TextProfile::Nfc))
+    );
+    let arguments = &equalities[0].arguments;
+    assert_eq!(arguments.len(), 2);
+    let MemberTerm::Leaf(LeafTerm::Reference { target }) = &arguments[1] else {
+        panic!("the second argument is a reference");
+    };
+    assert_eq!(target.admitted(), Some(&literal.key()));
+    let MemberTerm::Leaf(LeafTerm::Reference { target: first }) = &arguments[0] else {
+        panic!("the first argument is a reference");
+    };
+    assert_ne!(first.admitted(), Some(&literal.key()), "the parameter");
+}
+
 /// QSL-1461, FR-056-AC-52 / TC-1052: the retained sequence determines the
 /// Text bound refusal and its typed cause carries the declared profile data.
 #[trace("FR-056-AC-52", "TC-1052")]
@@ -447,6 +570,8 @@ fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
 fn text_literals_require_a_text_position_and_one_quoted_argument() {
     for (parameters, result, body, path) in [
         ("", "String", "Text(\"a\")", vec![]),
+        ("", "Integer", "Text(\"a\")", vec![]),
+        ("", "UUID", "Text(\"a\")", vec![]),
         ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0]),
         ("x: String", "Boolean", "x = Text(\"a\")", vec![1]),
         ("x: String", "Text[0, 8; nfc]", "Text(x)", vec![0]),
