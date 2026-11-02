@@ -1947,6 +1947,29 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
             }
         }
         ValueType::Quantity(unit) => format!("Quantity[{}]", unit_spelling(unit)),
+        ValueType::CarriedQuantity(carried) => {
+            use quire_exact::QuantityCarrier;
+            let carrier = match carried.carrier() {
+                QuantityCarrier::Decimal(decimal) => format!(
+                    "Decimal[{}, {}; {}, {}; {}]",
+                    decimal.lower(),
+                    decimal.upper(),
+                    decimal.min_scale(),
+                    decimal.max_scale(),
+                    decimal.rounding().as_str()
+                ),
+                QuantityCarrier::Integer { domain, rounding } => format!(
+                    "Int[{}, {}; {}]",
+                    domain.lower(),
+                    domain.upper(),
+                    rounding.as_str()
+                ),
+            };
+            format!(
+                "CarriedQuantity[{}; {carrier}]",
+                unit_spelling(carried.unit())
+            )
+        }
         ValueType::BoundedQuantity(bounded) => {
             format!("BoundedQuantity[{}]", unit_spelling(bounded.unit()))
         }

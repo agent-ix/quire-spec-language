@@ -358,6 +358,7 @@ pub(super) fn derive(
             | ValueType::String
             | ValueType::Text(_)
             | ValueType::Quantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Reference(_)
