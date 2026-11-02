@@ -20,6 +20,35 @@ fn assert_no_retired_names(path: &Path, names: &[String]) {
     }
 }
 
+fn assert_import_is_absent(
+    dependencies: &Path,
+    library: &Path,
+    probe: &str,
+    source_text: &str,
+    temporary: &Path,
+) {
+    let source = temporary.join(format!("{probe}.rs"));
+    std::fs::write(&source, source_text).unwrap();
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = std::process::Command::new(rustc)
+        .args(["--crate-name", probe, "--edition=2021", "--crate-type=lib"])
+        .arg("--extern")
+        .arg(format!("quire_spec_language={}", library.display()))
+        .arg("-L")
+        .arg(format!("dependency={}", dependencies.display()))
+        .arg(&source)
+        .arg("--out-dir")
+        .arg(temporary)
+        .output()
+        .expect("rustc runs for the downstream probe");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{probe} import compiled");
+    assert!(
+        stderr.contains("E0432") || stderr.contains("E0433"),
+        "{probe} failed for a reason other than an unresolved public import: {stderr}"
+    );
+}
+
 /// FR-493-AC-1: no source, test or schema keeps the native package/runtime
 /// wire or public API, and downstream Rust cannot import those APIs.
 #[trace("TC-1276", "FR-493-AC-1")]
@@ -80,35 +109,24 @@ fn native_package_and_runtime_surfaces_are_absent() {
         })
         .expect("the root library is built as an rlib for this integration test");
     let temporary = tempfile::tempdir().unwrap();
-    let source = temporary.path().join("lib.rs");
-    std::fs::write(
-        &source,
-        concat!(
-            "use quire_spec_language::package;\n",
-            "use quire_spec_language::runtime;\n",
-            "use quire_spec_language::Native",
-            "Package;\n",
-            "fn removed() { let _ = runtime::",
-            "execute; }\n",
+    for (probe, source) in [
+        (
+            "qsl_836_package_module_probe",
+            concat!("use quire_spec_language::", "package;\n"),
         ),
-    )
-    .unwrap();
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let output = std::process::Command::new(rustc)
-        .args([
-            "--crate-name",
-            "qsl_836_retired_api_probe",
-            "--edition=2021",
-            "--crate-type=lib",
-        ])
-        .arg("--extern")
-        .arg(format!("quire_spec_language={}", library.display()))
-        .arg("-L")
-        .arg(format!("dependency={}", dependencies.display()))
-        .arg(&source)
-        .arg("--out-dir")
-        .arg(temporary.path())
-        .output()
-        .expect("rustc runs for the downstream probe");
-    assert!(!output.status.success(), "retired API imports compiled");
+        (
+            "qsl_836_runtime_module_probe",
+            concat!("use quire_spec_language::", "runtime;\n"),
+        ),
+        (
+            "qsl_836_native_package_type_probe",
+            concat!("use quire_spec_language::package::", "Native", "Package;\n"),
+        ),
+        (
+            "qsl_836_runtime_execute_probe",
+            concat!("use quire_spec_language::runtime::", "execute;\n"),
+        ),
+    ] {
+        assert_import_is_absent(&dependencies, &library, probe, source, temporary.path());
+    }
 }

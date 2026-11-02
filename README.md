@@ -361,7 +361,6 @@ Other directories:
 - [`docs/`](docs/): reference pages, including the
   [library notes](docs/library-notes.md),
   [diagnostic codes](docs/native-error-codes.md),
-  [diagnostic codes](docs/native-error-codes.md) and the
   [compiled protocol wire format](docs/compiled-protocol-v2.md).
 
 ## Contributing
