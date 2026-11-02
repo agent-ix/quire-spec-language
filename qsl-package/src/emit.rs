@@ -3979,6 +3979,16 @@ pub fn emit_timed_models(
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
+    let operation_effects = base.operation_effects().map(|rows| {
+        rows.map(|row| quire_contract_model::CheckedOperationEffectRow {
+            document: row.document().into(),
+            declaring: row.declaring().clone(),
+            operation: row.operation().into(),
+            effect: row.effect().clone(),
+            provenance: row.provenance().clone(),
+        })
+        .collect::<Vec<_>>()
+    });
     let package = EmittedPackage::new(base.name(), |name| {
         encode_checked_package_v2(
             name,
@@ -3991,6 +4001,7 @@ pub fn emit_timed_models(
             CheckedPackageSidecarsRef {
                 checked_term_data: None,
                 temporal_bindings: base.temporal_bindings(),
+                operation_effects: operation_effects.as_deref(),
             },
             &capability_report,
             &diagnostics,
@@ -5009,6 +5020,7 @@ fn emit_package_inner(
                 checked_term_data: checked_term_data.as_ref(),
                 temporal_bindings: (!temporal_bindings.is_empty())
                     .then_some(temporal_bindings.as_slice()),
+                operation_effects: graph.operation_effects(),
             },
             &capability_report,
             &diagnostics,

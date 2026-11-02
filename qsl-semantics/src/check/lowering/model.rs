@@ -394,6 +394,55 @@ pub struct ForeignView {
 }
 
 impl AdmittedModel {
+    /// Each directly declared object, process or state-machine operation and
+    /// the exact record of its owner. Persistence-interface and
+    /// systems-interface operations are not FR-496 frame declarations. The
+    /// identity parser is the model intake parser used for every member
+    /// lookup; it does not select a declaration by ordering or display text.
+    pub(crate) fn operation_effect_inputs(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &DomainPackageRecord,
+            &crate::model::domain_package::OperationMemberRecord,
+        ),
+    > {
+        self.records.values().filter_map(|record| {
+            let DomainPackageRecord::OperationMember(operation) = record else {
+                return None;
+            };
+            let owner = self.records.get(&operation.owner)?;
+            let included = matches!(
+                owner,
+                DomainPackageRecord::ObjectType(object) if object.interface_features.is_none()
+            ) || matches!(
+                owner,
+                DomainPackageRecord::Process(_) | DomainPackageRecord::StateMachine(_)
+            );
+            included.then_some((owner, operation))
+        })
+    }
+
+    /// The declared member name carried by the selected source identity.
+    pub(crate) fn original_member_name<'a>(&self, key: &'a DeclarationKey) -> Option<&'a str> {
+        let owner = self.records.get(key).and_then(|record| match record {
+            DomainPackageRecord::OperationMember(operation) => Some(&operation.owner),
+            DomainPackageRecord::FieldMember(field) => Some(&field.owner),
+            _ => None,
+        })?;
+        crate::model::intake::member_identity_name(&owner.node, &key.node)
+    }
+
+    /// The selected document identity for this admitted model.
+    pub(crate) fn selected_document(&self) -> &str {
+        self.selection.identity.as_str()
+    }
+
+    /// A selected declaration record by its original key.
+    pub(crate) fn declaration_record(&self, key: &DeclarationKey) -> Option<&DomainPackageRecord> {
+        self.records.get(key)
+    }
+
     /// The original FCD identity of `case` under the selected enum record.
     pub(crate) fn variant_member_original_identity(
         &self,
@@ -1984,6 +2033,38 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
 }
 
 impl<'a> Lowering<'a> {
+    /// Add the selected model's declaration nodes when it declares an
+    /// operation whose effect is projected. The checked graph must retain
+    /// the complete declaration view independently of both authored clauses
+    /// and whether the optional sidecar can be formed; this also keeps graph
+    /// identities stable when FR-496's carrier is absent.
+    pub(crate) fn operation_effect_nodes(&mut self) -> Result<(), CheckRefusal> {
+        let mut declarations = BTreeMap::new();
+        for model in self.models {
+            let Some(alias) = model.alias() else {
+                continue;
+            };
+            let location = type_declaration(alias);
+            let has_projected_operations = model.operation_effect_inputs().next().is_some();
+            if has_projected_operations {
+                declarations.extend(
+                    model
+                        .record_keys()
+                        .filter(|declaration| model.model_node_key(declaration).is_some())
+                        .cloned()
+                        .map(|declaration| (declaration, location.clone())),
+                );
+            }
+        }
+        for (declaration, location) in declarations {
+            let key = self.model_node(&declaration, &location)?;
+            if !self.occurrences.has(key.clone()) {
+                self.record(key, OccurrenceRole::Generated, location);
+            }
+        }
+        Ok(())
+    }
+
     /// The `ModelOwner` of `declaration`: its admitted domain package's
     /// identity and its IR node identity.
     pub(super) fn model_owner(
