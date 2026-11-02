@@ -378,31 +378,23 @@ fn text_literals_take_their_type_from_context_and_retain_under_its_profile() {
     }
 }
 
-/// QSL-1461, FR-091-AC-69: `Text` is a type keyword, so S1 refuses a unit
-/// that declares `function Text` before any call can become ambiguous
-/// (`invalid_syntax`/`unexpected-token` at the name). The ambiguity vector
-/// of FR-091-AC-69 for `UUID` has no `Text` counterpart that can be written.
+/// QSL-1461, FR-091-AC-69: declaring `function Text` makes the explicit
+/// constructor and declaration ambiguous, naming both the use and declaration.
 #[trace("FR-091-AC-69", "TC-1052")]
 #[test]
-fn a_function_cannot_be_named_text() {
-    let text = format!(
-        "{HEADER}function Text using v(): Boolean pure {{ true }}\n\
-         function f using v(): Text[0, 8; nfc] pure {{ Text(\"abc\") }}\n"
+fn a_function_named_text_makes_the_constructor_call_ambiguous() {
+    let refusal = refused(
+        "function Text using v(): Boolean pure { true }\n\
+         function f using v(): Text[0, 8; nfc] pure { Text(\"abc\") }",
     );
-    let parsed = qsl_cst::parse(
-        SourceIdentity::new("test", "literals", "fixture", "fixture:1"),
-        "literals.native",
-        text.as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 reads the unit");
-    let first = parsed.diagnostics().first().expect("a diagnostic");
+    let CheckCause::AmbiguousName { name, loci } = &refusal.cause else {
+        panic!("ambiguous name: {:?}", refusal.cause);
+    };
+    assert_eq!(name, "Text");
+    assert_eq!(loci.len(), 2, "the use and the declaration");
     assert_eq!(
-        (first.code, first.cause),
-        (
-            qsl_cst::CompleteCode::InvalidSyntax,
-            qsl_cst::CompleteCause::UnexpectedToken
-        )
+        (refusal.cause.code().as_str(), refusal.cause.cause()),
+        ("ambiguous_declaration", Some("ambiguous-name"))
     );
 }
 

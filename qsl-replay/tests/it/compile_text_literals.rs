@@ -102,10 +102,14 @@ fn explicit_text_bodies_evaluate_with_profile_normalization_and_equality() {
          function nfc_decomposed using v(): Text[1, 1; nfc] pure {{ Text(\"e\\u0301\") }}\n\
          function scalars_composed using v(): Text[1, 1; unicode-scalars] pure {{ Text(\"\\u00e9\") }}\n\
          function scalars_decomposed using v(): Text[2, 2; unicode-scalars] pure {{ Text(\"e\\u0301\") }}\n\
+         function binary_composed using v(): Text[2, 2; binary-utf8] pure {{ Text(\"\\u00e9\") }}\n\
+         function binary_decomposed using v(): Text[3, 3; binary-utf8] pure {{ Text(\"e\\u0301\") }}\n\
          function nfc_eq_composed using v(x: Text[0, 8; nfc]): Boolean pure {{ x = Text(\"\\u00e9\") }}\n\
          function nfc_eq_decomposed using v(x: Text[0, 8; nfc]): Boolean pure {{ x = Text(\"e\\u0301\") }}\n\
          function scalars_eq_composed using v(x: Text[0, 8; unicode-scalars]): Boolean pure {{ x = Text(\"\\u00e9\") }}\n\
-         function scalars_eq_decomposed using v(x: Text[0, 8; unicode-scalars]): Boolean pure {{ x = Text(\"e\\u0301\") }}"
+         function scalars_eq_decomposed using v(x: Text[0, 8; unicode-scalars]): Boolean pure {{ x = Text(\"e\\u0301\") }}\n\
+         function binary_eq_composed using v(x: Text[0, 8; binary-utf8]): Boolean pure {{ x = Text(\"\\u00e9\") }}\n\
+         function binary_eq_decomposed using v(x: Text[0, 8; binary-utf8]): Boolean pure {{ x = Text(\"e\\u0301\") }}"
     );
     let compiled = compile(&source);
 
@@ -114,6 +118,8 @@ fn explicit_text_bodies_evaluate_with_profile_normalization_and_equality() {
         ("nfc_decomposed", "é"),
         ("scalars_composed", "é"),
         ("scalars_decomposed", "e\u{301}"),
+        ("binary_composed", "é"),
+        ("binary_decomposed", "e\u{301}"),
     ] {
         assert_eq!(
             evaluate_text(&compiled, function).retained(),
@@ -140,6 +146,8 @@ fn explicit_text_bodies_evaluate_with_profile_normalization_and_equality() {
             false,
             true,
         ),
+        ("binary_eq_composed", TextProfile::BinaryUtf8, true, false),
+        ("binary_eq_decomposed", TextProfile::BinaryUtf8, false, true),
     ] {
         assert_eq!(
             evaluate_bool(&compiled, function, composed, profile),
