@@ -3574,7 +3574,7 @@ fn append_schedulability_claims(
         });
         let body = nominal
             .nominal_payload()
-            .map(|payload| nominal_term(ids, payload))
+            .map(|payload| nominal_term(ids, &nominal.key, payload))
             .transpose()?
             .ok_or(EmitRefusal::SourceMapInvariant)?;
         let node = CheckedSemanticNodeV2 {
