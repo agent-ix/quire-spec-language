@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile t = "quire.temporal.timestamped-event.finite-window/v1";
+import "agent-ix/checked-handoff-library" as L;
+model M = "agent-ix/checked-handoff";
+
+temporal DueTimestamp using t over (view: M::Workflow) clock "timestamp-clock" on origin {
+    always[0,30] holds(L::Ready(view.ready))
+}

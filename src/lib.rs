@@ -2,6 +2,8 @@
 //! Native syntax, formatting and source diagnostics for the finite-state profile.
 //!
 //! Parsing does not establish model binding, type correctness or execution support.
+#[cfg(feature = "checked-handoff")]
+pub mod checked_handoff;
 pub mod checking;
 pub mod command;
 pub mod complete;
