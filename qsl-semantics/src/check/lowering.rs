@@ -651,7 +651,7 @@ pub(crate) struct Lowered {
     pub(crate) composites: BTreeMap<NodeKey, NodeKey>,
     /// The S4 identities of each protocol's clause and emitted members,
     /// retained for FR-390's checked-body selector.
-    pub(crate) protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
+    pub(crate) protocol_members: BTreeMap<String, protocol::AdmittedProtocolMembers>,
     /// QSL equality facts retained by the checked equality application's key
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
@@ -767,6 +767,8 @@ pub(crate) struct Lowering<'a> {
     /// What lowering holds for each checked protocol declaration, by its
     /// index in the unit's protocols (FR-092).
     protocol_keys: Vec<protocol::ProtocolKey>,
+    /// Protocol keys naming placeholders in the open function/protocol SCC.
+    unsettled_protocols: Vec<usize>,
     /// The member keys of each keyed protocol clause, by clause name: the
     /// nodes a refinement class catalog names (FR-375).
     protocol_members: BTreeMap<String, protocol::ProtocolMembers>,
@@ -1775,6 +1777,7 @@ impl<'a> Lowering<'a> {
             protocol_binder_keys: BTreeMap::new(),
             protocol_expression_binders: BTreeMap::new(),
             active_protocol: None,
+            unsettled_protocols: Vec::new(),
         }
     }
 
@@ -1795,7 +1798,7 @@ impl<'a> Lowering<'a> {
     /// The finished graph, its model correspondence and each
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
-    pub(crate) fn finish(mut self, root: &Location) -> Lowered {
+    pub(crate) fn finish(mut self, root: &Location) -> Result<Lowered, CheckRefusal> {
         self.graph.rank();
         let enclosing = enclosing_declarations(&self.graph, self.occurrences);
         for key in self.graph.nodes.keys() {
@@ -1827,7 +1830,12 @@ impl<'a> Lowering<'a> {
                     .map(|span| ((key, origin), span))
             })
             .collect();
-        Lowered {
+        let protocol_members = self
+            .protocol_members
+            .into_iter()
+            .map(|(name, members)| Ok((name, members.into_admitted(root)?)))
+            .collect::<Result<_, CheckRefusal>>()?;
+        Ok(Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
             functions: self
@@ -1850,11 +1858,11 @@ impl<'a> Lowering<'a> {
             )
             .into_iter()
             .collect(),
-            protocol_members: self.protocol_members,
+            protocol_members,
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,
             dispatch_producer_decisions: self.dispatch_producer_decisions,
-        }
+        })
     }
 
     /// Record an occurrence of `key`: a draft's waits until it is keyed.
@@ -3081,6 +3089,57 @@ impl<'a> Lowering<'a> {
         refusals
     }
 
+    /// Open every function and protocol name in a mixed recursion component
+    /// before any member is lowered, so protocol bodies and function bodies
+    /// can refer to one another through drafts.
+    pub(crate) fn begin_mixed_cycle(&mut self, protocols: &[usize], functions: &[usize]) {
+        self.functions_open = true;
+        for &index in protocols {
+            let placeholder = self.placeholder();
+            self.protocol_keys[index] = protocol::ProtocolKey::Keyed(placeholder);
+            self.unsettled_protocols.push(index);
+        }
+        for &index in functions {
+            let placeholder = self.placeholder();
+            if let Some(slot) = self.functions.get_mut(index) {
+                *slot = Some(placeholder);
+                self.unsettled_functions.push(index);
+            }
+        }
+    }
+
+    /// Lower one function group inside an already-open mixed cycle. Its
+    /// placeholders were installed by [`Self::begin_mixed_cycle`]; settlement
+    /// waits until all protocols and functions in the component are built.
+    pub(crate) fn function_group_in_cycle(
+        &mut self,
+        group: &FunctionGroup,
+        functions: &[FunctionInput<'_>],
+    ) -> Vec<CheckRefusal> {
+        let mut refusals = Vec::new();
+        for (index, function) in group.members.iter().zip(functions) {
+            let placeholder = self.functions.get(*index).cloned().flatten();
+            match self.function(*index, function) {
+                Ok(key) => {
+                    if let Some(NodeRef::Pending(placeholder)) = placeholder {
+                        if self.placeholders.contains_key(&placeholder) {
+                            self.placeholders.insert(placeholder, Some(key));
+                        }
+                    }
+                }
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        refusals
+    }
+
+    /// Settle the open mixed function/protocol component after all its
+    /// members have been lowered.
+    pub(crate) fn settle_mixed_cycle(&mut self) -> Result<(), CheckRefusal> {
+        self.functions_open = false;
+        self.settle()
+    }
+
     /// Key every draft (FR-092 "Recursion groups"), once nothing is open:
     /// each strongly connected component of the drafts' names, in
     /// dependency order, a single draft by its own preimage and a recursion
@@ -3093,6 +3152,7 @@ impl<'a> Lowering<'a> {
         let occurrences = std::mem::take(&mut self.draft_occurrences);
         let draft_binders = std::mem::take(&mut self.draft_binders);
         let unsettled_functions = std::mem::take(&mut self.unsettled_functions);
+        let unsettled_protocols = std::mem::take(&mut self.unsettled_protocols);
         let unsettled_composites = std::mem::take(&mut self.unsettled_composites);
         self.composite_placeholders.clear();
         let mut aliases = BTreeMap::new();
@@ -3257,6 +3317,17 @@ impl<'a> Lowering<'a> {
         // this one, so only the keys written since then can change.
         for index in unsettled_functions {
             if let Some(Some(node)) = self.functions.get_mut(index) {
+                *node = resolve(node).map_err(|()| unresolved(&root))?;
+            }
+        }
+        for index in unsettled_protocols {
+            if let Some(protocol::ProtocolKey::Keyed(key)) = self.protocol_keys.get_mut(index) {
+                *key = resolve(key).map_err(|()| unresolved(&root))?;
+            }
+        }
+        for members in self.protocol_members.values_mut() {
+            members.clause = resolve(&members.clause).map_err(|()| unresolved(&root))?;
+            for node in members.nodes.values_mut() {
                 *node = resolve(node).map_err(|()| unresolved(&root))?;
             }
         }
