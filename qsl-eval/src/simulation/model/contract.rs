@@ -533,6 +533,7 @@ impl<'a> ModelSystem<'a> {
                     enabled: Some(&mut enabled),
                     enabled_transitions: None,
                     selected_transitions: None,
+                    charged: None,
                 },
             )?;
         }

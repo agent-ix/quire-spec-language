@@ -922,6 +922,27 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     /// The instance bound of `activation on each` (ADR-027 AE-4).
     max_live_instances: u64,
     initial: Vec<ProtocolState<M>>,
+    /// The model locations each application of an attempt reads and
+    /// writes, by attempt node and transition identity: a function of the
+    /// two alone, derived once per run.
+    model_footprints: std::sync::Mutex<ModelFootprints>,
+}
+
+/// The model locations of each application of an attempt, by attempt node
+/// and transition identity.
+type ModelFootprints = BTreeMap<
+    (
+        qsl_semantics::check::ProtocolNodeId,
+        quire_semantic_value::model_transition::ModelTransition,
+    ),
+    std::sync::Arc<ModelFootprint>,
+>;
+
+/// The model locations one application of an attempt reads and writes, its
+/// protocol locations left out.
+struct ModelFootprint {
+    reads: BTreeSet<Location>,
+    writes: BTreeSet<Location>,
 }
 
 /// ADR-027 AE-4: the published default of `max_live_instances`.
@@ -1068,6 +1089,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             universes: Vec::new(),
             max_live_instances: DEFAULT_MAX_LIVE_INSTANCES,
             initial: Vec::new(),
+            model_footprints: std::sync::Mutex::default(),
         };
         system.universes = system.role_universes()?;
         system.initial = system.initial_states()?;
