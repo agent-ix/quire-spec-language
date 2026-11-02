@@ -472,6 +472,15 @@ fn the_node_id_follows_the_checked_premises_and_not_their_spelling() {
     let explicit = compile_ctl(&ctl(&[jittered, TASK_B, TASK_C], FP_CLAIM));
     assert_eq!(fp_id(&explicit), fp_id(&fp_only));
 
+    let bounded = "task a periodic 4 ms deadline 4 ms bcet 1 ms wcet 1 ms priority 1 lo;\n";
+    let best_case = compile_ctl(&ctl(&[bounded, TASK_B, TASK_C], FP_CLAIM));
+    assert_ne!(fp_id(&best_case), fp_id(&fp_only));
+    assert_ne!(best_case.package().bytes(), fp_only.package().bytes());
+
+    let zero_bcet = "task a periodic 4 ms deadline 4 ms bcet 0 ms wcet 1 ms priority 1 lo;\n";
+    let explicit_bcet = compile_ctl(&ctl(&[zero_bcet, TASK_B, TASK_C], FP_CLAIM));
+    assert_eq!(fp_id(&explicit_bcet), fp_id(&fp_only));
+
     let renamed = compile_ctl(
         &ctl(
             &[TASK_A, TASK_B, TASK_C],
