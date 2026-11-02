@@ -587,7 +587,8 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-56 | In fixture E-C the group of `order >= 0` holds exactly one row of the `Picked` constraint's origin (`protocol Composed run Main Picked body`) and one of the `Tried` constraint's origin (`protocol Composed run Main Tried body`). | Test (TC-1063) |
 | FR-383-AC-57 | In fixture E-C the `Picked` row of `order >= 0` has `term_ordinal` 0 and the `Tried` row `term_ordinal` 1 (`Picked` before `Tried` in UTF-8 byte order of the names). | Test (TC-1063) |
 | FR-383-AC-58 | For every application of **W** and fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of a slot's rows of that application, taken along the slot walk's visits, strictly increase. | Test (TC-1063) |
-| FR-383-AC-59 | In fixture E-C no `protocol_locations` row names a `Local` read (`x`, `b`, `c`), a literal, a `let`, a conditional or a case node, and each arm of `Composed.case` holds exactly one row (`x >= 1` and `not b`). | Test (TC-1063) |
+| FR-383-AC-59 | In fixture E-C no `protocol_locations` row names a `Local` read (`x`, `b`, `c`), a literal, a `let`, a conditional or a case node. | Test (TC-1063) |
+| FR-383-AC-60 | In fixture E-C each arm of `Composed.case` holds exactly one row (`x >= 1` and `not b`). | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.

@@ -15,7 +15,7 @@ with an S3 refusal emits no node of its own and no package for the unit while
 the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-59.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-60.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a
@@ -96,7 +96,8 @@ traced only once that file exists.
 | L8e | fixture E-C emitted | `order >= 0` is one node held by the constraints of `Tried` and `Picked` (AC-55) |
 | L8f | fixture E-C emitted | its group holds one row of `protocol Composed run Main Picked body` and one of `protocol Composed run Main Tried body` (AC-56) |
 | L8g | fixture E-C emitted | the `Picked` row has `term_ordinal` 0 and the `Tried` row 1 (AC-57) |
-| L7c | fixture E-C emitted | no row names a `Local` read, a literal, a `let`, a conditional or a case node; each arm of `Composed.case` holds exactly one row (AC-59) |
+| L7c | fixture E-C emitted | no row names a `Local` read, a literal, a `let`, a conditional or a case node (AC-59) |
+| L7d | fixture E-C emitted | each arm of `Composed.case` holds exactly one row (AC-60) |
 | L9 | **W**, fixtures E, L and E-C emitted | for every application and slot, the (occurrence ordinal, `term_ordinal`) pairs along the slot walk's visits strictly increase (AC-58) |
 
 ### Limits and nesting
