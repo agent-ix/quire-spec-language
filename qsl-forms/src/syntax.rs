@@ -4500,6 +4500,8 @@ pub struct TaskForm {
     pub interval: SignedQuantityForm,
     /// `deadline`.
     pub deadline: SignedQuantityForm,
+    /// `bcet`, when written: a lower bound on actual job demand.
+    pub bcet: Option<SignedQuantityForm>,
     /// `wcet`: `C`, or `C(LO)` for a `hi` task.
     pub wcet: SignedQuantityForm,
     /// `priority`, when written.

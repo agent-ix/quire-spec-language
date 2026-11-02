@@ -43,7 +43,7 @@ fn texts<'t>(parsed: &ParsedSource, text: &'t str, production: Production) -> Ve
 #[test]
 fn task_sets_and_schedulability_claims_parse_to_their_productions() {
     let tasks = [
-        "task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;",
+        "task a periodic 4 ms deadline 4 ms bcet 1 ms wcet 1 ms priority 1 lo;",
         "task b sporadic 6 ms deadline 6 ms wcet 2 ms priority 2 jitter 1 ms blocking 3 ms hi wcet_hi 3 ms;",
     ];
     let set = format!("taskset Ctl {{ {} {} }}", tasks[0], tasks[1]);
