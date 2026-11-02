@@ -40,6 +40,7 @@ Every behavior of a path to be deleted has exactly one disposition:
 - **PORT**: no successor exists; the behavior moves to the spine under the named
   ticket, which blocks the deletion ticket.
 - **KEEP**: the code or surface stays until the named consumer repoints.
+- **RETIRE**: the behavior ends with its retired carrier. Allowed only with a planner or owner ruling cited in the row; never for a behavior with a live consumer.
 
 A row SHALL NOT read "retired" without a named COVERED successor test. A
 behavior with no successor is never removed; the planner ruling on each such row
@@ -101,7 +102,7 @@ them at its pinned revision.
 | Behavior | Successor requirement and test | Disposition |
 | --- | --- | --- |
 | Operators, intervals, bounded truth (FR-043-AC-1, AC-4, AC-6) | FR-325 to FR-328; `qsl-eval/tests/it/temporal_trace.rs` | COVERED (FR-327-AC-4 and FR-329-AC-5 visit-meter tests at `temporal_trace.rs:659,938`) |
-| Lasso and fair lasso incl. `Lasso::Model` (FR-329) | FR-329 | PARTIAL: confirm a green `Lasso::Model` test before deletion (QSL-858 criterion) |
+| Lasso and fair lasso incl. `Lasso::Model` (FR-329) | FR-329 | PARTIAL: green `Lasso::Model` test required before deletion (QSL-858 criterion); QSL-1516 |
 | `on origin` / `on each` activation (FR-044-AC-8) | FR-327 | COVERED |
 | Profile and clock selected by identity (FR-043-AC-2) | FR-110, FR-326 | PARTIAL: header selection only; wrong-clock assertion is PORT QSL-1502 |
 | Trace clock/profile mismatch refusal (FR-043-AC-3), OrderKey tie refusal (AC-5), result identity (AC-13), authenticated clock report, whole-declaration vs per-instance stop | none (`TraceInput` carries documents only) | PORT QSL-1502 |
@@ -161,7 +162,7 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | --- | --- | --- |
 | Objects, roles, operations (FR-041 description) | FR-056, FR-084, FR-086, FR-120, FR-300, FR-303 | PARTIAL |
 | Bounded exact-rational scalar sites, consistent bounds across sites (FR-041-AC-2) | none: FR-056 states `Rational` has no bounds on the spine; FR-056-AC-6 is the `normalize.record` charge | PORT QSL-1505 |
-| `/1` versus `/2` profile-bearing identity (FR-041-AC-6) and the `native-state-model/1,2` strings | none; FR-110 is header selection | RETIRE-AFTER-GREEN with the carrier (approved, ruling 5); no successor claimed |
+| `/1` versus `/2` profile-bearing identity (FR-041-AC-6) and the `native-state-model/1,2` strings | none; FR-110 is header selection | RETIRE (planner decision 5: the identity strings die with the retired carrier); no successor claimed |
 | Roles, entries, nodes, depth, artifact-byte limits and their refusals (FR-041-AC-7, FR-015) | analogue for one counter only | PORT QSL-1505 unless the spine has an equivalent limit for the same resource |
 | FR-015-AC-1 to AC-4, AC-6 (TC-040 to TC-045), `link_native` conflicts | none | PORT/disposition QSL-1505 |
 | Function exclusion, integer overflow semantics gate, sequence ceiling 10_000 | none | PORT QSL-1505 (ADR-014 B-6 evidence cites the ceiling) |
