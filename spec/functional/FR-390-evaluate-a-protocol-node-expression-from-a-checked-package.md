@@ -568,8 +568,9 @@ the slot's walk with the row at index `k` of the rows of that application whose
 origin name is the slot's, taken in ascending (occurrence ordinal,
 `term_ordinal`) order and counting only rows of that origin (FR-383 defines the
 occurrence ordinal and that `term_ordinal` runs across origins). The `Location`
-of a literal or `Local` read is the one its own admitted node carries (FR-383
-assumption A1). A location SHALL NOT
+of a read that is not an application (a literal, a `Local` or other reference, a
+`let` or a conditional) is the one its own admitted node carries (FR-383
+assumption A1, QSpec FR-322-AC-310 to AC-312). A location SHALL NOT
 be taken from the source package, from a source region, or defaulted.
 
 View creation SHALL pair every slot of every protocol node of the package, and

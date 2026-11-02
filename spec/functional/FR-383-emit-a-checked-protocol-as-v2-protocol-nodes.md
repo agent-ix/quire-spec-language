@@ -207,17 +207,22 @@ and then its arms in the emitted arm order), never in the order of the node's
 input evaluates it, so a branch a short-circuit never reaches still holds its
 positions. A reference to a `let` binder or other local (`Local`) is a leaf
 position and does not walk the bound application again; a literal is a leaf.
-A *term* is a position whose node is an application (every `NodeKind` other
-than `Literal` and `Local`).
+A *term* is a position whose node is an `expression`/`application` node of QSpec
+FR-322-AC-291 (an application, such as a connective, comparison, arithmetic
+operation, field read, dereference, call or collection query). Every other
+position, namely a leaf (a literal, a `Local` or another reference) and an
+expression form FR-322 does not call an application (a `let`, a conditional),
+is not a term.
 
 The origin of a row is the closed origin of QSpec FR-322: a named type
 declaration (`kind` `type_declaration`, `name`) or a protocol attempt (`kind`
-`protocol_attempt`, `protocol` position, `attempt` position). This
-requirement places each slot expression of a protocol at the root of a
-type-declaration origin whose `name` is the slot's site name: a spaced string
-that names the protocol and the slot and so names no declared type, one distinct
-name per slot. The `protocol_attempt` origin names an attempt's operation
-reference and is the origin of no slot expression. The site names are:
+`protocol_attempt`, `protocol` position, `attempt` position). Every
+slot expression of a protocol is located at the root of a type-declaration
+origin whose `name` is the slot's site name, a spaced string that names the
+protocol and the slot, one distinct name per slot (QSpec FR-322-AC-313 to
+AC-318). A `protocol_attempt` origin identifies one attempt's own root and is the
+origin of no slot expression (FR-322-AC-316). The forms of QSpec FR-322's
+site-name registry that a slot expression can have are:
 
 | Slot | Site name |
 | --- | --- |
@@ -291,12 +296,16 @@ of each origin. In origin order the retry origin precedes the trigger-guard
 origin (`retry` before `trigger-guard`), so the retry row has `term_ordinal` 0
 and the trigger-guard row `term_ordinal` 1.
 
-Assumption A1 (leaf locations, one place): a literal or `Local` leaf is not an
-application, has no row, and takes its location from its own admitted node.
-`protocol_locations` holds application rows only, and a non-application leaf
-takes its location from its own admitted node, never from a row; a row that
-names a non-application node is refused by the reader under FR-322-AC-291. Every
-clause of this and the reader's text that depends on A1 refers to it.
+Assumption A1 (non-term locations, one place): a position that is not a term
+has no row and takes its location from its own admitted node. For a leaf this is
+QSpec FR-322-AC-310 to AC-312: `protocol_locations` is application-only, a leaf
+takes its location from its own admitted node and never from an enclosing
+application's row, and a row naming a leaf is refused `invalid_package`/
+`invalid-value` at the row's `application` member. A row naming any other
+non-application node stays under FR-322-AC-291. FR-322 states the leaf rule only;
+this text extends the same location source to a `let` and a conditional, which
+FR-322 does not call applications. Every clause of this and the reader's text
+that depends on A1 refers to it.
 
 ### Cyclic reference components
 
