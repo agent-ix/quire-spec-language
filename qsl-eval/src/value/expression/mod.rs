@@ -814,6 +814,7 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// Evaluate a slot already selected by one admitted evaluation view.
     fn evaluate_selected_protocol_slot(
         &self,
+        view: &qsl_package::AdmittedEvaluationView<'_>,
         selected: &qsl_package::SelectedProtocolTerm<'_, '_>,
         supply: &ProtocolSupply<'_>,
         meter: &mut Meter,
@@ -1093,7 +1094,7 @@ impl AdmittedEvaluationViewEvaluation for qsl_package::AdmittedEvaluationView<'_
         selected
             .root()
             .package()
-            .evaluate_selected_protocol_slot(&selected, supply, meter)
+            .evaluate_selected_protocol_slot(self, &selected, supply, meter)
     }
 }
 
@@ -1474,15 +1475,23 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let selected = view
             .select_protocol_slot(&descriptor)
             .map_err(protocol_slot::resolve::selection_failure)?;
-        self.evaluate_selected_protocol_slot(&selected, supply, meter)
+        self.evaluate_selected_protocol_slot(&view, &selected, supply, meter)
     }
 
     fn evaluate_selected_protocol_slot(
         &self,
+        view: &qsl_package::AdmittedEvaluationView<'_>,
         selected: &qsl_package::SelectedProtocolTerm<'_, '_>,
         supply: &ProtocolSupply<'_>,
         meter: &mut Meter,
     ) -> Result<ProtocolSlotEvaluation, CallFailure> {
+        if !view.is_for_package(self) || !view.is_same_view(selected.root().view()) {
+            return Err(protocol_slot::resolve::refused(
+                "invalid_model_binding",
+                "wrong-model-selection",
+                CallAdmissionLocus::Node(selected.root().node().clone()),
+            ));
+        }
         let sources = selected
             .sources()
             .iter()

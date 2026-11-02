@@ -2357,6 +2357,73 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     }
 }
 
+/// FR-390-AC-14: a selected opaque term cannot be evaluated against a
+/// different checked-package receiver, even when the checked graph shapes
+/// are equivalent.
+#[test]
+#[trace("FR-390-AC-14")]
+fn selected_protocol_term_is_bound_to_its_receiver_package_and_view() {
+    let first_package = fixture();
+    let first_view = first_package.evaluation_view();
+    let capture = slot(&first_package, "Refunds", "Refunds", "captures", Some(0));
+    let descriptor = qsl_package::ProtocolSlotDescriptor::new(
+        capture.node.clone(),
+        capture.member.clone(),
+        capture.index,
+    );
+    let selected = first_view
+        .select_protocol_slot(&descriptor)
+        .expect("the first view selects the checked capture expression");
+
+    let second_package = fixture();
+    let second_view = second_package.evaluation_view();
+    let supply = ProtocolSupply {
+        binders: Vec::new(),
+        observation: None,
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let before = meter.clone();
+    let alternate_view = first_package.evaluation_view();
+    let same_package_other_view = first_package.evaluate_selected_protocol_slot(
+        &alternate_view,
+        &selected,
+        &supply,
+        &mut meter,
+    );
+    assert_eq!(
+        meter, before,
+        "view ownership refusal is before all charges"
+    );
+    let Err(CallFailure::Admission(failure)) = same_package_other_view else {
+        panic!("another view of the same package must refuse: {same_package_other_view:?}");
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("view ownership is a typed refusal: {failure:?}");
+    };
+    assert_eq!(record.record.catalog.code(), "invalid_model_binding");
+    assert_eq!(record.record.catalog.cause(), "wrong-model-selection");
+
+    let result = second_package.evaluate_selected_protocol_slot(
+        &second_view,
+        &selected,
+        &supply,
+        &mut meter,
+    );
+    assert_eq!(meter, before, "ownership refusal is before all charges");
+    let Err(CallFailure::Admission(failure)) = result else {
+        panic!("a foreign selected term must refuse: {result:?}");
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("selected-term ownership is a typed refusal: {failure:?}");
+    };
+    assert_eq!(record.record.catalog.code(), "invalid_model_binding");
+    assert_eq!(record.record.catalog.cause(), "wrong-model-selection");
+    assert_eq!(
+        record.locus,
+        CallAdmissionLocus::Node(selected.root().node().clone())
+    );
+}
+
 fn independent_universe_hex(universe: &quire_exact::UniverseId) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let identity = qsl_foundation::node_wire::node_key_to_text(universe.root_type()).unwrap();

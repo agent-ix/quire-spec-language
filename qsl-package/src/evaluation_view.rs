@@ -178,6 +178,16 @@ impl<'package> AdmittedEvaluationView<'package> {
     pub fn is_reader_backed(&self) -> bool {
         self.reader.is_some()
     }
+
+    /// Whether two view values retain the same admission owner identity.
+    pub fn is_same_view(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.identity, &other.identity)
+    }
+
+    /// Whether this view belongs to `package`.
+    pub fn is_for_package(&self, package: &CheckedPackage) -> bool {
+        core::ptr::eq(self.package, package)
+    }
 }
 
 /// An opaque checked-node selection tied to one [`AdmittedEvaluationView`].
@@ -259,7 +269,7 @@ impl TermHandle<'_, '_> {
         self.view
     }
 
-    /// The structural identity selected through the view.
+    /// The structural node identity selected by this view.
     pub fn node(&self) -> &NodeKey {
         &self.node
     }
