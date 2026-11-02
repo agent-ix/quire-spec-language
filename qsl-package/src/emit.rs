@@ -5033,13 +5033,34 @@ fn emit_package_inner(
     })
 }
 
+fn temporal_clock_matches_profile(
+    profile: qsl_semantics::check::TemporalProfile,
+    clock: &quire_contract_model::ClockConfiguration,
+) -> bool {
+    use qsl_semantics::check::TemporalProfile;
+    use quire_contract_model::ClockConfiguration;
+
+    matches!(
+        (profile, clock),
+        (
+            TemporalProfile::EventPositionFalseExtension,
+            ClockConfiguration::EventPosition { .. }
+        ) | (
+            TemporalProfile::FixedSampleFalseExtension,
+            ClockConfiguration::FixedSample { .. }
+        ) | (
+            TemporalProfile::TimestampedEventFiniteWindow,
+            ClockConfiguration::TimestampedEvent { .. }
+        )
+    )
+}
+
 fn temporal_binding_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     selections: &[TemporalClockSelection],
 ) -> Result<Vec<quire_contract_model::TemporalBinding>, EmitRefusal> {
     use qsl_semantics::check::TemporalProfile;
-    use quire_contract_model::ClockConfiguration;
 
     let mut selected = BTreeMap::new();
     for selection in selections {
@@ -5061,21 +5082,6 @@ fn temporal_binding_rows(
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
         let profile = clause.profile();
-        let configuration_kind_matches = |clock: &ClockConfiguration| {
-            matches!(
-                (profile, clock),
-                (
-                    TemporalProfile::EventPositionFalseExtension,
-                    ClockConfiguration::EventPosition { .. }
-                ) | (
-                    TemporalProfile::FixedSampleFalseExtension,
-                    ClockConfiguration::FixedSample { .. }
-                ) | (
-                    TemporalProfile::TimestampedEventFiniteWindow,
-                    ClockConfiguration::TimestampedEvent { .. }
-                )
-            )
-        };
         if !matches!(
             profile,
             TemporalProfile::EventPositionFalseExtension
@@ -5092,7 +5098,7 @@ fn temporal_binding_rows(
                 span,
             });
         };
-        if !configuration_kind_matches(clock) {
+        if !temporal_clock_matches_profile(profile, clock) {
             return Err(EmitRefusal::TemporalClockProfileMismatch {
                 source_ref: source.clone(),
                 span,
@@ -5132,20 +5138,7 @@ fn temporal_binding_rows(
                 span,
             });
         };
-        let kind_matches = matches!(
-            (profile, clock),
-            (
-                TemporalProfile::EventPositionFalseExtension,
-                ClockConfiguration::EventPosition { .. }
-            ) | (
-                TemporalProfile::FixedSampleFalseExtension,
-                ClockConfiguration::FixedSample { .. }
-            ) | (
-                TemporalProfile::TimestampedEventFiniteWindow,
-                ClockConfiguration::TimestampedEvent { .. }
-            )
-        );
-        if !kind_matches {
+        if !temporal_clock_matches_profile(profile, clock) {
             return Err(EmitRefusal::TemporalClockProfileMismatch {
                 source_ref: source.clone(),
                 span,
