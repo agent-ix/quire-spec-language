@@ -14,22 +14,28 @@ use crate::checked_v2::{
     ClauseRootUnresolved, StateGraphKind, StateGraphRoot, V2ReadRefusal,
 };
 
-fn document() -> &'static [u8] {
+pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
 }
 
 /// A unit selecting the ConfigVersion model, then `declarations`.
-fn unit(declarations: &str) -> String {
+pub(super) fn unit(declarations: &str) -> String {
+    unit_after("", declarations)
+}
+
+/// [`unit`] with `prelude` declared before the model selection.
+pub(super) fn unit_after(prelude: &str, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         {prelude}\
          model Config = \"example/config-version\";\n\
          {declarations}\n"
     )
 }
 
-const REACHES_TWO: &str =
+pub(super) const REACHES_TWO: &str =
     "possible ReachesTwo using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }";
 const CAN_STILL_WIN: &str = "always possible CanStillWin using v over (c: Config::ConfigVersion) \
      from (c.versionNumber != 0) { c.versionNumber = 2 }";
@@ -41,12 +47,12 @@ const TRUE_FROM: &str = "always possible Open using v over (c: Config::ConfigVer
      from (true) { c.versionNumber = 2 }";
 const ANYTHING: &str = "possible Anything using v { true }";
 
-struct Compiled {
-    emission: Emission,
-    wire: Value,
+pub(super) struct Compiled {
+    pub(super) emission: Emission,
+    pub(super) wire: Value,
 }
 
-fn compile(unit: &str) -> Compiled {
+pub(super) fn compile(unit: &str) -> Compiled {
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -58,7 +64,7 @@ fn compile(unit: &str) -> Compiled {
     Compiled { emission, wire }
 }
 
-fn evidence(wire: &Value) -> CheckedPackageEvidence {
+pub(super) fn evidence(wire: &Value) -> CheckedPackageEvidence {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
@@ -74,7 +80,7 @@ fn read_bytes(bytes: &[u8], wire: &Value) -> Read {
 }
 
 /// QSL's full I2 read of `compiled`, and IR's admitted package.
-fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
+pub(super) fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
     crate::checked_v2::read_checked_package_v2(
         compiled.emission.package.bytes(),
         library(),
@@ -122,7 +128,7 @@ fn claim_nodes(wire: &Value) -> Vec<&Value> {
 }
 
 /// The one claim node of `wire` whose `kind` is `kind`.
-fn claim_of<'w>(wire: &'w Value, kind: &str) -> &'w Value {
+pub(super) fn claim_of<'w>(wire: &'w Value, kind: &str) -> &'w Value {
     let found: Vec<&Value> = claim_nodes(wire)
         .into_iter()
         .filter(|node| text(binding(&node["body"], "kind")) == kind)
@@ -133,7 +139,7 @@ fn claim_of<'w>(wire: &'w Value, kind: &str) -> &'w Value {
     node
 }
 
-fn key(wire: &Value, node: &Value) -> NodeKey {
+pub(super) fn key(wire: &Value, node: &Value) -> NodeKey {
     qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
         .unwrap()
         .key_of_value(&node["node_id"])

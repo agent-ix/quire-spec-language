@@ -3509,6 +3509,20 @@ fn schedulability_claim_body(
     ]))
 }
 
+/// The checked claims grouped by the node their normalized body keys. A
+/// checked claim without a node key would be silently unemitted, so it is
+/// refused as a broken invariant of the checker.
+fn claims_by_node(
+    claims: &[CheckedScheduleClaim],
+) -> Result<BTreeMap<NodeKey, Vec<&CheckedScheduleClaim>>, EmitRefusal> {
+    let mut by_node: BTreeMap<NodeKey, Vec<&CheckedScheduleClaim>> = BTreeMap::new();
+    for claim in claims {
+        let id = claim.node_id().ok_or(EmitRefusal::SourceMapInvariant)?;
+        by_node.entry(id.clone()).or_default().push(claim);
+    }
+    Ok(by_node)
+}
+
 fn append_schedulability_claims(
     ids: &StructuralIds,
     graph: &CheckedGraph,
@@ -3517,12 +3531,7 @@ fn append_schedulability_claims(
     nodes: &mut Vec<CheckedSemanticNodeV2>,
     source_map: &mut Vec<CheckedSourceMapEntry>,
 ) -> Result<Vec<quire_contract_model::CheckedSchedulabilityClaimRow>, EmitRefusal> {
-    let mut by_node: BTreeMap<NodeKey, Vec<&CheckedScheduleClaim>> = BTreeMap::new();
-    for claim in task_sets.claims() {
-        if let Some(id) = claim.node_id() {
-            by_node.entry(id.clone()).or_default().push(claim);
-        }
-    }
+    let by_node = claims_by_node(task_sets.claims())?;
     if by_node.is_empty() {
         return Ok(Vec::new());
     }
@@ -4313,7 +4322,6 @@ pub fn emit_timed_models(
                 temporal_bindings: base.temporal_bindings(),
                 operation_effects: operation_effects.as_deref(),
                 schedulability_claims: None,
-                operation_effects: None,
             },
             &capability_report,
             &diagnostics,
@@ -5348,7 +5356,6 @@ fn emit_package_inner(
                 operation_effects: graph.operation_effects(),
                 schedulability_claims: (!schedulability_claim_rows.is_empty())
                     .then_some(schedulability_claim_rows.as_slice()),
-                operation_effects: None,
             },
             &capability_report,
             &diagnostics,

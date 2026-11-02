@@ -744,8 +744,14 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
-        (K::Claim(ClaimForm::ProbabilisticClaim), NO_TAG),
-        (K::ScalarType(ScalarTypeForm::CarriedQuantity), NO_TAG),
+        (
+            K::Claim(ClaimForm::ProbabilisticClaim),
+            "lowering builds no probabilistic claim node yet",
+        ),
+        (
+            K::ScalarType(ScalarTypeForm::CarriedQuantity),
+            "lowering builds no carried-quantity scalar type node yet",
+        ),
         (K::Correspondence(CorrespondenceForm::SourceLocus), NO_TAG),
         (
             K::Correspondence(CorrespondenceForm::ModelCorrespondence),

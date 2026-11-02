@@ -35,6 +35,7 @@ use quire_exact::{NodeKey, Origin, Role};
 mod clause_root;
 mod hybrid;
 mod hyper_root;
+mod schedulability_root;
 mod state_graph_root;
 mod terminal;
 #[cfg(test)]
@@ -44,6 +45,9 @@ mod timed_model;
 pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
 pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
 pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnresolved};
+pub use schedulability_root::{
+    resolve_schedulability_root, schedulability_roots, SchedulabilityRoot,
+};
 pub use state_graph_root::{
     resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
 };
