@@ -34,10 +34,11 @@ use qsl_foundation::source::provenance::{
 use qsl_foundation::Code;
 use qsl_semantics::check::wire_id::StructuralIds;
 use qsl_semantics::check::{
-    AbstractionNodeRefusal, AbstractionNodes, BindingValue, BodyTerm, CheckedGraph,
-    CheckedRefinement, FrameDeletesScoped, FrameModifies, FrameScope, FrameTerm, GroupMember,
-    GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeRef, NodeTag, OperationLaw,
-    Operator, Owner, SemanticNode, TemporalProfile, TimeNominalOrigin, TupleMember, TupleTerm,
+    AbstractionNodeRefusal, AbstractionNodes, Arrival, BindingValue, BodyTerm, CheckedGraph,
+    CheckedRefinement, CheckedScheduleClaim, CheckedTaskSets, FrameDeletesScoped, FrameModifies,
+    FrameScope, FrameTerm, GroupMember, GroupTerm, LawRole, LeafTerm, LiteralValue, MemberTerm,
+    NodeRef, NodeTag, OperationLaw, Operator, Owner, ScheduleClaim, SchedulingPolicy, SemanticNode,
+    TemporalProfile, TimeNominalOrigin, TupleMember, TupleTerm, Wcet,
 };
 use qsl_semantics::value::nominal_payload::NominalPayload;
 use qsl_semantics::value::{
@@ -3405,6 +3406,324 @@ fn quantity_spelling(value: &quire_exact::Rational) -> String {
     format!("{}/{}", value.numerator(), value.denominator())
 }
 
+fn claim_binding(name: &str, value: CheckedTerm) -> CheckedTerm {
+    CheckedTerm::Binding {
+        name: name.into(),
+        value: Box::new(value),
+    }
+}
+
+fn claim_aggregate(members: Vec<CheckedTerm>) -> CheckedTerm {
+    CheckedTerm::Aggregate { members }
+}
+
+fn claim_literal(type_id: &CheckedNodeId, kind: LiteralKind, value: String) -> CheckedTerm {
+    CheckedTerm::Literal {
+        type_id: type_id.clone(),
+        value_kind: kind,
+        value: serde_json::Value::String(value),
+    }
+}
+
+fn claim_text(type_id: &CheckedNodeId, value: &str) -> CheckedTerm {
+    claim_literal(type_id, LiteralKind::Text, value.to_owned())
+}
+
+fn claim_quantity(type_id: &CheckedNodeId, value: &quire_exact::Rational) -> CheckedTerm {
+    claim_literal(type_id, LiteralKind::Quantity, quantity_spelling(value))
+}
+
+fn schedulability_claim_body(
+    ids: &StructuralIds,
+    task_set: &qsl_semantics::check::TaskSet,
+    claim: &CheckedScheduleClaim,
+    text_type: &CheckedNodeId,
+    integer_type: &CheckedNodeId,
+) -> Result<CheckedTerm, EmitRefusal> {
+    let unit = task_set
+        .unit
+        .as_ref()
+        .ok_or(EmitRefusal::SourceMapInvariant)?;
+    let unit_type = node_id(ids, &unit.node);
+    let (kind, policy, task, bound) = match &claim.claim {
+        ScheduleClaim::Schedulable(policy) => (
+            "schedulable",
+            *policy,
+            claim_aggregate(Vec::new()),
+            claim_aggregate(Vec::new()),
+        ),
+        ScheduleClaim::Response { task, bound } => (
+            "response",
+            SchedulingPolicy::FixedPriority,
+            claim_text(text_type, task),
+            claim_quantity(&unit_type, bound),
+        ),
+    };
+    let policy = match policy {
+        SchedulingPolicy::FixedPriority => "fixed-priority",
+        SchedulingPolicy::Edf => "edf",
+        SchedulingPolicy::Amc => "amc",
+    };
+    let mut tasks = task_set.tasks.iter().collect::<Vec<_>>();
+    tasks.sort_by(|left, right| left.name.cmp(&right.name));
+    let tasks = tasks
+        .into_iter()
+        .map(|task| {
+            let (arrival, period) = match &task.arrival {
+                Arrival::Periodic { period } => ("periodic", period),
+                Arrival::Sporadic { min_interarrival } => ("sporadic", min_interarrival),
+            };
+            let (wcet, wcet_hi) = match &task.wcet {
+                Wcet::Single(wcet) => (wcet, claim_aggregate(Vec::new())),
+                Wcet::Dual { lo, hi } => (lo, claim_quantity(&unit_type, hi)),
+            };
+            let criticality = match task.criticality {
+                qsl_semantics::check::Criticality::Lo => "lo",
+                qsl_semantics::check::Criticality::Hi => "hi",
+            };
+            let priority = task.priority.map_or_else(
+                || claim_aggregate(Vec::new()),
+                |value| claim_literal(integer_type, LiteralKind::Integer, value.to_string()),
+            );
+            Ok(claim_aggregate(vec![
+                claim_binding("name", claim_text(text_type, &task.name)),
+                claim_binding("arrival", claim_text(text_type, arrival)),
+                claim_binding("period", claim_quantity(&unit_type, period)),
+                claim_binding("deadline", claim_quantity(&unit_type, &task.deadline)),
+                claim_binding("bcet", claim_quantity(&unit_type, &task.bcet)),
+                claim_binding("wcet", claim_quantity(&unit_type, wcet)),
+                claim_binding("wcet_hi", wcet_hi),
+                claim_binding("criticality", claim_text(text_type, criticality)),
+                claim_binding("priority", priority),
+                claim_binding("jitter", claim_quantity(&unit_type, &task.jitter)),
+                claim_binding("blocking", claim_quantity(&unit_type, &task.blocking)),
+            ]))
+        })
+        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+    Ok(claim_aggregate(vec![
+        claim_binding("kind", claim_text(text_type, kind)),
+        claim_binding("policy", claim_text(text_type, policy)),
+        claim_binding("task", task),
+        claim_binding("bound", bound),
+        claim_binding("tasks", claim_aggregate(tasks)),
+    ]))
+}
+
+/// The checked claims grouped by the node their normalized body keys. A
+/// checked claim without a node key would be silently unemitted, so it is
+/// refused as a broken invariant of the checker.
+fn claims_by_node(
+    claims: &[CheckedScheduleClaim],
+) -> Result<BTreeMap<NodeKey, Vec<&CheckedScheduleClaim>>, EmitRefusal> {
+    let mut by_node: BTreeMap<NodeKey, Vec<&CheckedScheduleClaim>> = BTreeMap::new();
+    for claim in claims {
+        let id = claim.node_id().ok_or(EmitRefusal::SourceMapInvariant)?;
+        by_node.entry(id.clone()).or_default().push(claim);
+    }
+    Ok(by_node)
+}
+
+fn append_schedulability_claims(
+    ids: &StructuralIds,
+    graph: &CheckedGraph,
+    task_sets: &CheckedTaskSets,
+    source: &RawSourceRef,
+    nodes: &mut Vec<CheckedSemanticNodeV2>,
+    source_map: &mut Vec<CheckedSourceMapEntry>,
+) -> Result<Vec<quire_contract_model::CheckedSchedulabilityClaimRow>, EmitRefusal> {
+    let by_node = claims_by_node(task_sets.claims())?;
+    if by_node.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut nominal_nodes = graph.source_time_nominal_nodes().collect::<Vec<_>>();
+    nominal_nodes.sort_by(|left, right| left.key.cmp(&right.key));
+    for nominal in nominal_nodes {
+        let id = node_id(ids, &nominal.key);
+        if nodes.iter().any(|node| node.node_id == id) {
+            continue;
+        }
+        let span = nominal.name_span().ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = SourceRegion::new(source.clone(), span.start as u64, span.end as u64)
+            .map_err(encoding)?;
+        let owner = match &nominal.origin {
+            TimeNominalOrigin::Source { owner, .. } => CheckedNodeOwner::Source {
+                authority: owner.authority.as_str().into(),
+                identity: owner.identity.as_str().into(),
+            },
+            TimeNominalOrigin::Model(_) => return Err(EmitRefusal::SourceMapInvariant),
+        };
+        let declaration = nominal.declaration().map(|segments| CheckedDeclaration {
+            qualified_name: segments
+                .iter()
+                .map(|segment| segment.as_str().into())
+                .collect(),
+        });
+        let semantic_type = if nominal.form == "unit" {
+            nominal
+                .dependencies
+                .first()
+                .map(|key| node_id(ids, key))
+                .ok_or(EmitRefusal::SourceMapInvariant)?
+        } else {
+            id.clone()
+        };
+        let occurrence = CheckedOccurrence {
+            role: CheckedOccurrenceRole::Declaration,
+            ordinal: 0,
+        };
+        source_map.push(CheckedSourceMapEntry {
+            node_id: id.clone(),
+            role: occurrence.role.clone(),
+            ordinal: occurrence.ordinal,
+            regions: vec![CheckedSourceRegion {
+                source: source_artifact(source),
+                start: region.start(),
+                end: region.end(),
+            }],
+        });
+        let body = nominal
+            .nominal_payload()
+            .map(|payload| nominal_term(ids, &nominal.key, payload))
+            .transpose()?
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let node = CheckedSemanticNodeV2 {
+            owner_model: None,
+            node_id: id.clone(),
+            schema_version: GRAPH_V2.into(),
+            node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+            semantic_form: nominal.form.as_str().into(),
+            semantic_type,
+            dependencies: nominal
+                .dependencies
+                .iter()
+                .map(|key| node_id(ids, key))
+                .collect(),
+            occurrences: vec![occurrence],
+            recursion_group: None,
+            declaration,
+            owner: Some(owner),
+            body,
+        };
+        let at = nodes.partition_point(|existing| existing.node_id < node.node_id);
+        nodes.insert(at, node);
+    }
+    let package = by_node
+        .keys()
+        .next()
+        .ok_or(EmitRefusal::SourceMapInvariant)?
+        .package();
+    let text_type = node_id(
+        ids,
+        qsl_semantics::check::builtin_text_type_key(package).map_err(encoding)?,
+    );
+    let integer_type = node_id(
+        ids,
+        qsl_semantics::check::builtin_integer_type_key(package).map_err(encoding)?,
+    );
+    let boolean_key = NodeKey::new(
+        package,
+        vec![
+            PathSegment::Text("scalar_type".into()),
+            PathSegment::Text("boolean".into()),
+        ],
+        0,
+    )
+    .map_err(encoding)?;
+    let boolean_type = node_id(ids, boolean_key);
+    let span = by_node
+        .values()
+        .next()
+        .and_then(|claims| claims.first())
+        .ok_or(EmitRefusal::SourceMapInvariant)?
+        .span;
+    let generated_region =
+        SourceRegion::new(source.clone(), span.start as u64, span.end as u64).map_err(encoding)?;
+    let generated = CheckedSourceRegion {
+        source: source_artifact(source),
+        start: generated_region.start(),
+        end: generated_region.end(),
+    };
+    push_scalar_type(nodes, source_map, &text_type, "text", &generated);
+    push_scalar_type(nodes, source_map, &integer_type, "integer", &generated);
+    push_scalar_type(nodes, source_map, &boolean_type, "boolean", &generated);
+    let mut rows = Vec::new();
+    for (key, claims) in by_node {
+        let first = *claims.first().ok_or(EmitRefusal::SourceMapInvariant)?;
+        let task_set = task_sets
+            .task_set_of(first)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let id = node_id(ids, &key);
+        let mut occurrences = claims
+            .iter()
+            .map(|claim| {
+                claim
+                    .occurrence()
+                    .map(|occurrence| occurrence.origin().ordinal())
+                    .ok_or(EmitRefusal::SourceMapInvariant)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        occurrences.sort_unstable();
+        occurrences.dedup();
+        for ordinal in &occurrences {
+            let claim = claims
+                .iter()
+                .copied()
+                .find(|claim| {
+                    claim
+                        .occurrence()
+                        .is_some_and(|occurrence| occurrence.origin().ordinal() == *ordinal)
+                })
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            let region = SourceRegion::new(
+                source.clone(),
+                claim.span.start as u64,
+                claim.span.end as u64,
+            )
+            .map_err(encoding)?;
+            source_map.push(CheckedSourceMapEntry {
+                node_id: id.clone(),
+                role: CheckedOccurrenceRole::Claim,
+                ordinal: *ordinal,
+                regions: vec![CheckedSourceRegion {
+                    source: source_artifact(source),
+                    start: region.start(),
+                    end: region.end(),
+                }],
+            });
+            rows.push(quire_contract_model::CheckedSchedulabilityClaimRow {
+                declaration: id.clone(),
+                occurrence: *ordinal,
+            });
+        }
+        let node = CheckedSemanticNodeV2 {
+            owner_model: None,
+            node_id: id.clone(),
+            schema_version: GRAPH_V2.into(),
+            node_tag: CheckedNodeTag::Claim.as_wire().into(),
+            semantic_form: "schedulability".into(),
+            semantic_type: boolean_type.clone(),
+            dependencies: Vec::new(),
+            occurrences: occurrences
+                .iter()
+                .map(|ordinal| CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Claim,
+                    ordinal: *ordinal,
+                })
+                .collect(),
+            recursion_group: None,
+            declaration: None,
+            owner: None,
+            body: schedulability_claim_body(ids, task_set, first, &text_type, &integer_type)?,
+        };
+        let at = nodes.partition_point(|existing| existing.node_id < node.node_id);
+        nodes.insert(at, node);
+    }
+    rows.sort_by(|left, right| {
+        (&left.declaration, left.occurrence).cmp(&(&right.declaration, right.occurrence))
+    });
+    Ok(rows)
+}
+
 /// The wire comparison of a checked clock comparison.
 fn clock_comparison(op: qsl_semantics::check::ClockOp) -> ClockComparison {
     use qsl_semantics::check::ClockOp;
@@ -3972,7 +4291,7 @@ pub fn emit_timed_models(
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
-    write_index_segments(&mut nodes, &mut source_map, &mut [])?;
+    write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
@@ -4002,6 +4321,7 @@ pub fn emit_timed_models(
                 checked_term_data: None,
                 temporal_bindings: base.temporal_bindings(),
                 operation_effects: operation_effects.as_deref(),
+                schedulability_claims: None,
             },
             &capability_report,
             &diagnostics,
@@ -4373,7 +4693,7 @@ fn emit_package_inner(
         .filter(|(position, _)| !dropped.contains(position))
         .map(|(_, candidate)| candidate)
         .collect();
-    if kept.is_empty() && graph.refinements().is_empty() {
+    if kept.is_empty() && graph.refinements().is_empty() && graph.task_sets().claims().is_empty() {
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
@@ -4866,6 +5186,14 @@ fn emit_package_inner(
         &mut nodes,
         &mut source_map,
     );
+    let mut schedulability_claim_rows = append_schedulability_claims(
+        ids,
+        graph,
+        graph.task_sets(),
+        graph.source(),
+        &mut nodes,
+        &mut source_map,
+    )?;
     let (mut profile_selections, mut laws) = split_laws(&order);
     for refinement in emitted_refinements {
         let selection = CheckedSelection {
@@ -4911,7 +5239,12 @@ fn emit_package_inner(
         refinement_internals: None,
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
-    let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
+    let emitted_node_ids = write_index_segments(
+        &mut nodes,
+        &mut source_map,
+        &mut step_rows,
+        &mut schedulability_claim_rows,
+    )?;
     let temporal_bindings = temporal_binding_rows(graph, &emitted_node_ids, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
@@ -5021,6 +5354,8 @@ fn emit_package_inner(
                 temporal_bindings: (!temporal_bindings.is_empty())
                     .then_some(temporal_bindings.as_slice()),
                 operation_effects: graph.operation_effects(),
+                schedulability_claims: (!schedulability_claim_rows.is_empty())
+                    .then_some(schedulability_claim_rows.as_slice()),
             },
             &capability_report,
             &diagnostics,
@@ -5292,6 +5627,7 @@ fn write_index_segments(
     nodes: &mut [CheckedSemanticNodeV2],
     source_map: &mut [CheckedSourceMapEntry],
     step_rows: &mut [quire_contract_model::CheckedRefinementStepRowRegion],
+    schedulability_rows: &mut [quire_contract_model::CheckedSchedulabilityClaimRow],
 ) -> Result<HashMap<NodeKey, CheckedNodeId>, EmitRefusal> {
     use quire_contract_model::CheckedNodePathSegment as Segment;
     let is_operand = |segment: &Segment| matches!(segment, Segment::Node(_));
@@ -5373,6 +5709,9 @@ fn write_index_segments(
     }
     for row in step_rows.iter_mut() {
         sidecar(&mut row.node_id)?;
+    }
+    for row in schedulability_rows {
+        sidecar(&mut row.declaration)?;
     }
     Ok(graph_wire)
 }

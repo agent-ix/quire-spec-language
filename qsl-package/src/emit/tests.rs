@@ -68,6 +68,7 @@ mod reachability;
 mod receiver_frames;
 mod refinement_adverse;
 mod refinement_rows;
+mod schedulability_claims;
 mod selected_model_rows;
 mod source_map_debug;
 mod state_graph_claim;
@@ -892,7 +893,7 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
         .into_iter()
         .map(|candidate| candidate.wire_node(&StructuralIds::default()).unwrap())
         .collect();
-    write_index_segments(&mut nodes, &mut [], &mut []).expect("every operand is written");
+    write_index_segments(&mut nodes, &mut [], &mut [], &mut []).expect("every operand is written");
     nodes
         .iter()
         .map(|node| {

@@ -1809,7 +1809,12 @@ impl PackageDeclarations {
                     &self.source,
                     &self.package_name,
                 );
-                let checked = task_set::check(&self.task_set_forms, &units, limits.rational_bits());
+                let checked = task_set::check(
+                    &self.task_set_forms,
+                    &units,
+                    limits.rational_bits(),
+                    &self.package_name,
+                );
                 for finding in checked.findings {
                     refusals.push(CheckRefusal {
                         location: root(Origin::Expression),
@@ -7089,6 +7094,12 @@ impl CheckedGraph {
     /// retained during checking.
     pub fn source_unit_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
         self.time_units.source_units()
+    }
+
+    /// Source-owned time dimensions and units required by retained
+    /// schedulability claim literals.
+    pub fn source_time_nominal_nodes(&self) -> impl Iterator<Item = &TimeNominalNode> {
+        self.time_units.source_nominal_nodes()
     }
 
     /// The checked declaration and effective member types for a population

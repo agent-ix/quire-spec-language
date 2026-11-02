@@ -30,8 +30,9 @@ use qsl_forms::{
     ArrivalForm, CriticalityForm, PolicyForm, ReleaseForm, ResponseForm, SchedulableForm,
     SignedQuantityForm, TaskForm, TasksetForm,
 };
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Integer, NodeKey, Origin, PathSegment, Rational, Role};
 
 use super::probabilistic::{exact_value, ExactFault};
 use super::refusal::{TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause};
@@ -134,6 +135,8 @@ pub struct Task {
     pub arrival: Arrival,
     /// Its relative deadline.
     pub deadline: Rational,
+    /// Its best-case execution time, or zero when omitted (QSpec FR-419).
+    pub bcet: Rational,
     /// Its budgets.
     pub wcet: Wcet,
     /// Its priority, when it declares one; a smaller value is a higher one.
@@ -144,6 +147,29 @@ pub struct Task {
     pub jitter: Rational,
     /// Its blocking term, `0` when it declares none.
     pub blocking: Rational,
+}
+
+impl Task {
+    /// The exact job demand selected by this task's bounds, when the
+    /// FR-419 fixed-work premises hold. A `wcet` upper bound alone never
+    /// selects an exact demand.
+    pub fn fixed_work(&self) -> Option<&Rational> {
+        match (&self.wcet, self.criticality) {
+            (Wcet::Single(wcet), Criticality::Lo)
+                if self.bcet == *wcet && *wcet > Rational::from_integer(Integer::zero()) =>
+            {
+                Some(wcet)
+            }
+            (Wcet::Dual { lo, hi }, Criticality::Hi)
+                if self.bcet == *lo
+                    && lo == hi
+                    && *lo > Rational::from_integer(Integer::zero()) =>
+            {
+                Some(lo)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// A task set's unit: the time unit of its first time quantity.
@@ -220,11 +246,32 @@ pub struct CheckedScheduleClaim {
     pub task_set: String,
     /// The claim.
     pub claim: ScheduleClaim,
+    /// The checked-package `claim`/`schedulability` node identity derived
+    /// from the normalized claim body, when its task set fully converted.
+    pub node_id: Option<NodeKey>,
+    /// This declaration's `claim` occurrence ordinal on the shared body node.
+    pub occurrence: u64,
     /// The span of the declaration.
     pub span: Span,
 }
 
 impl CheckedScheduleClaim {
+    /// The checked-package node identity for this normalized claim body.
+    pub fn node_id(&self) -> Option<&NodeKey> {
+        self.node_id.as_ref()
+    }
+
+    /// The `claim` occurrence that distinguishes this declaration from
+    /// another declaration with the same normalized body.
+    pub fn occurrence(&self) -> Option<OccurrenceKey> {
+        self.node_id.as_ref().map(|node| {
+            OccurrenceKey::new(
+                node.clone(),
+                Origin::new(Role::new("claim"), self.occurrence),
+            )
+        })
+    }
+
     /// The scheduling policy: a `response` claim's is `fixed_priority`.
     pub fn policy(&self) -> SchedulingPolicy {
         match &self.claim {
@@ -322,6 +369,7 @@ impl Finding {
 struct Values {
     interval: Option<Rational>,
     deadline: Option<Rational>,
+    bcet: Option<Rational>,
     wcet: Option<Rational>,
     jitter: Option<Rational>,
     blocking: Option<Rational>,
@@ -399,6 +447,7 @@ fn members(task: &TaskForm) -> Vec<&SignedQuantityForm> {
     [
         Some(&task.interval),
         Some(&task.deadline),
+        task.bcet.as_ref(),
         Some(&task.wcet),
         task.jitter.as_ref(),
         task.blocking.as_ref(),
@@ -467,6 +516,7 @@ fn analyse<'f>(
         };
         let interval = value(Some(&task.interval));
         let deadline = value(Some(&task.deadline));
+        let bcet = value(task.bcet.as_ref());
         let wcet = value(Some(&task.wcet));
         let jitter = value(task.jitter.as_ref());
         let blocking = value(task.blocking.as_ref());
@@ -490,6 +540,7 @@ fn analyse<'f>(
         for (member, quantity, positive) in [
             (TaskTimeMember::Period, &interval, true),
             (TaskTimeMember::Deadline, &deadline, true),
+            (TaskTimeMember::Bcet, &bcet, false),
             (TaskTimeMember::Wcet, &wcet, true),
             (TaskTimeMember::WcetHi, &wcet_hi, true),
             (TaskTimeMember::Jitter, &jitter, false),
@@ -499,6 +550,7 @@ fn analyse<'f>(
             let span = match member {
                 TaskTimeMember::Period => task.interval.span,
                 TaskTimeMember::Deadline => task.deadline.span,
+                TaskTimeMember::Bcet => task.bcet.as_ref().map_or(task.span, |q| q.span),
                 TaskTimeMember::Wcet => task.wcet.span,
                 TaskTimeMember::WcetHi => task.wcet_hi.as_ref().map_or(task.span, |q| q.span),
                 TaskTimeMember::Jitter => task.jitter.as_ref().map_or(task.span, |q| q.span),
@@ -527,11 +579,26 @@ fn analyse<'f>(
             ),
             _ => {}
         }
+        if let Some(bcet) = &bcet {
+            let upper = match task.criticality {
+                CriticalityForm::Lo => wcet.as_ref(),
+                CriticalityForm::Hi => wcet_hi.as_ref().or(wcet.as_ref()),
+            };
+            if upper.is_some_and(|upper| bcet > upper) {
+                findings.push(invalid(
+                    set,
+                    &[name],
+                    TaskSetDefect::BcetExceedsBudget,
+                    task.bcet.as_ref().map_or(task.span, |q| q.span),
+                ));
+            }
+        }
         tasks.push(TaskInfo {
             form: task,
             values: Values {
                 interval,
                 deadline,
+                bcet,
                 wcet,
                 jitter,
                 blocking,
@@ -557,6 +624,7 @@ fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
             let wcet = values.wcet.clone()?;
             // A member that is written but did not convert is not defaulted.
             if (task.form.wcet_hi.is_some() && values.wcet_hi.is_none())
+                || (task.form.bcet.is_some() && values.bcet.is_none())
                 || (task.form.jitter.is_some() && values.jitter.is_none())
                 || (task.form.blocking.is_some() && values.blocking.is_none())
             {
@@ -581,6 +649,7 @@ fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
                     },
                 },
                 deadline: values.deadline.clone()?,
+                bcet: values.bcet.clone().unwrap_or_else(zero),
                 wcet,
                 priority: values.priority,
                 criticality,
@@ -599,6 +668,111 @@ fn built(info: &SetInfo<'_>) -> Option<TaskSet> {
         tasks,
         span: info.form.span,
     })
+}
+
+fn rational_key(value: &Rational) -> String {
+    format!(
+        "{}/{}",
+        value.numerator().as_big(),
+        value.denominator().as_big()
+    )
+}
+
+/// Derive FR-482's node key from the normalized checked claim body. Claim and
+/// task-set names, source order and source spans are excluded; all semantic
+/// task premises are represented in fixed binding order.
+fn claim_node_id(package: &str, task_set: &TaskSet, claim: &ScheduleClaim) -> Option<NodeKey> {
+    let unit_node = task_set.unit.as_ref()?.node.clone();
+    let mut operands = Vec::new();
+    macro_rules! text {
+        ($value:expr) => {
+            operands.push(PathSegment::Text($value.into()))
+        };
+    }
+    macro_rules! quantity {
+        ($value:expr) => {{
+            operands.push(PathSegment::Text(rational_key($value)));
+            operands.push(PathSegment::Node(unit_node.clone()));
+        }};
+    }
+    text!("kind");
+    match claim {
+        ScheduleClaim::Schedulable(_) => text!("schedulable"),
+        ScheduleClaim::Response { .. } => text!("response"),
+    }
+    text!("policy");
+    text!(match claim {
+        ScheduleClaim::Schedulable(SchedulingPolicy::FixedPriority)
+        | ScheduleClaim::Response { .. } => "fixed-priority",
+        ScheduleClaim::Schedulable(SchedulingPolicy::Edf) => "edf",
+        ScheduleClaim::Schedulable(SchedulingPolicy::Amc) => "amc",
+    });
+    text!("task");
+    match claim {
+        ScheduleClaim::Response { task, .. } => text!(task.clone()),
+        ScheduleClaim::Schedulable(_) => {}
+    }
+    text!("bound");
+    match claim {
+        ScheduleClaim::Response { bound, .. } => quantity!(bound),
+        ScheduleClaim::Schedulable(_) => {}
+    }
+    text!("tasks");
+    let mut tasks: Vec<_> = task_set.tasks.iter().collect();
+    tasks.sort_by(|left, right| left.name.cmp(&right.name));
+    for task in tasks {
+        text!("task");
+        text!("name");
+        text!(task.name.clone());
+        text!("arrival");
+        let interarrival = match &task.arrival {
+            Arrival::Periodic { period } => {
+                text!("periodic");
+                period
+            }
+            Arrival::Sporadic { min_interarrival } => {
+                text!("sporadic");
+                min_interarrival
+            }
+        };
+        text!("period");
+        quantity!(interarrival);
+        text!("deadline");
+        quantity!(&task.deadline);
+        text!("bcet");
+        quantity!(&task.bcet);
+        text!("wcet");
+        let (wcet, wcet_hi) = match &task.wcet {
+            Wcet::Single(wcet) => (wcet, None),
+            Wcet::Dual { lo, hi } => (lo, Some(hi)),
+        };
+        quantity!(wcet);
+        text!("wcet_hi");
+        if let Some(wcet_hi) = wcet_hi {
+            quantity!(wcet_hi);
+        }
+        text!("criticality");
+        text!(match task.criticality {
+            Criticality::Lo => "lo",
+            Criticality::Hi => "hi",
+        });
+        text!("priority");
+        if let Some(priority) = task.priority {
+            text!(priority.to_string());
+        }
+        text!("jitter");
+        quantity!(&task.jitter);
+        text!("blocking");
+        quantity!(&task.blocking);
+    }
+    super::derived_node_key(
+        package,
+        super::NodeTag::Claim,
+        "schedulability",
+        operands,
+        0,
+    )
+    .ok()
 }
 
 /// One claim over `info`: its checked form, when its bound converts, and its
@@ -737,6 +911,8 @@ fn check_claim(
             name: name.clone(),
             task_set: set.to_owned(),
             claim,
+            node_id: None,
+            occurrence: 0,
             span,
         }),
         findings,
@@ -758,10 +934,12 @@ pub(super) fn check(
     declarations: &[TaskSetDeclaration],
     units: &TimeUnits,
     rational_bits: u64,
+    package_name: &str,
 ) -> Checked {
     let mut model = CheckedTaskSets::default();
     let mut findings = Vec::new();
     let mut first_of: BTreeMap<&str, Span> = BTreeMap::new();
+    let mut claim_ordinals: BTreeMap<NodeKey, u64> = BTreeMap::new();
     for declaration in declarations {
         let TaskSetDeclaration::Taskset(form) = declaration else {
             continue;
@@ -782,7 +960,8 @@ pub(super) fn check(
             first_of.insert(form.name.name.as_str(), form.name.span);
         }
         findings.append(&mut own);
-        model.task_sets.extend(built(&info));
+        let checked_set = built(&info);
+        model.task_sets.extend(checked_set.clone());
         if duplicate.is_some() {
             // Its claims resolve to the first task set of the name.
             continue;
@@ -800,8 +979,16 @@ pub(super) fn check(
                 | TaskSetDeclaration::Response(_)
                 | TaskSetDeclaration::Release(_) => continue,
             };
-            let (checked, mut defects) = check_claim(claim, &info, units, rational_bits);
+            let (mut checked, mut defects) = check_claim(claim, &info, units, rational_bits);
             findings.append(&mut defects);
+            if let (Some(claim), Some(task_set)) = (&mut checked, checked_set.as_ref()) {
+                claim.node_id = claim_node_id(package_name, task_set, &claim.claim);
+                if let Some(node_id) = &claim.node_id {
+                    let ordinal = claim_ordinals.entry(node_id.clone()).or_default();
+                    claim.occurrence = *ordinal;
+                    *ordinal = ordinal.saturating_add(1);
+                }
+            }
             model.claims.extend(checked);
         }
     }
