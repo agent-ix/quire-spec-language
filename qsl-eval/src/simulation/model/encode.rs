@@ -778,13 +778,20 @@ pub(crate) fn untyped_value_enc(value: &Value) -> Enc {
 /// with the entries ascending by the key's RFC 8785 bytes.
 pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
     let limits = Limits::new(u64::MAX);
-    let mut keyed: Vec<(Vec<u8>, Enc, Enc)> = entries
-        .into_iter()
-        .map(|(key, value)| {
-            let bytes = quire_canonical::to_vec(&key, limits).unwrap_or_default();
-            (bytes, key, value)
-        })
-        .collect();
+    sorted_map_enc(
+        entries
+            .into_iter()
+            .map(|(key, value)| {
+                let bytes = quire_canonical::to_vec(&key, limits).unwrap_or_default();
+                (bytes, key, value)
+            })
+            .collect(),
+    )
+}
+
+/// [`map_enc`] of entries that carry their key's RFC 8785 bytes, so a caller
+/// that writes one key in many maps encodes it once.
+pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
     keyed.sort_by(|left, right| left.0.cmp(&right.0));
     Enc::tagged(
         "map",

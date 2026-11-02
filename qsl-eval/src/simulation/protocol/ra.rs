@@ -52,6 +52,7 @@
 //! frontier and of the SC event graph in the key is this module's (STD-241).
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::MemoryModelName;
@@ -73,7 +74,7 @@ use super::race::{
 };
 use super::tso::DEFAULT_MEMORY_BOUND;
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::{map_enc, untyped_value_enc, Enc};
+use crate::simulation::model::encode::{map_enc, sorted_map_enc, untyped_value_enc, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// A message's or an SC event's id: stable inside one state lineage, never
@@ -242,19 +243,61 @@ impl Encode for RaComponent {
     }
 }
 
-/// `values` as an array in ascending canonical bytes; one that does not
-/// encode makes the array unencodable, so the key refuses.
-fn sorted(values: Vec<Enc>) -> Enc {
-    let limits = Limits::new(u64::MAX);
+/// `values` as an array in ascending canonical bytes, each carrying its
+/// RFC 8785 bytes; one that does not encode (`None`) makes the array
+/// unencodable, so the key refuses.
+fn sorted_keyed(values: Vec<Canonical>) -> Enc {
     let mut keyed = Vec::with_capacity(values.len());
-    for value in values {
-        match quire_canonical::to_vec(&value, limits) {
-            Ok(bytes) => keyed.push((bytes, value)),
-            Err(_) => return Enc::Unencodable("an SC event or edge"),
-        }
+    for (bytes, value) in values {
+        let Some(bytes) = bytes else {
+            return Enc::Unencodable("an SC event or edge");
+        };
+        keyed.push((bytes, value));
     }
     keyed.sort_by(|left, right| left.0.cmp(&right.0));
     Enc::Array(keyed.into_iter().map(|(_, value)| value).collect())
+}
+
+/// A value with its RFC 8785 bytes, `None` when it does not encode.
+type Canonical = (Option<Vec<u8>>, Enc);
+
+/// `value`'s RFC 8785 bytes, `None` when it does not encode.
+fn canonical(value: &Enc) -> Option<Vec<u8>> {
+    quire_canonical::to_vec(value, Limits::new(u64::MAX)).ok()
+}
+
+/// The names one encoding of a component writes into many maps: each
+/// location's and each thread's form with the RFC 8785 bytes that order the
+/// maps they key, encoded once per encoding rather than once per map.
+#[derive(Default)]
+struct Names {
+    locations: RefCell<BTreeMap<Location, (Vec<u8>, Enc)>>,
+    threads: RefCell<BTreeMap<ThreadPath, (Vec<u8>, Enc)>>,
+}
+
+impl Names {
+    /// `location`'s map-key bytes and form, `named` by the component.
+    fn location(&self, location: &Location, named: impl FnOnce() -> Enc) -> (Vec<u8>, Enc) {
+        self.locations
+            .borrow_mut()
+            .entry(location.clone())
+            .or_insert_with(|| keyed(named()))
+            .clone()
+    }
+
+    /// `thread`'s map-key bytes and form.
+    fn thread(&self, thread: &ThreadPath) -> (Vec<u8>, Enc) {
+        self.threads
+            .borrow_mut()
+            .entry(thread.clone())
+            .or_insert_with(|| keyed(thread.enc()))
+            .clone()
+    }
+}
+
+/// A map key with the bytes [`map_enc`] orders it by.
+fn keyed(key: Enc) -> (Vec<u8>, Enc) {
+    (canonical(&key).unwrap_or_default(), key)
 }
 
 /// The depth of position `position` in a sequence of `len` messages.
@@ -1036,9 +1079,14 @@ impl RaComponent {
         )
     }
 
+    /// `location` as a map key of this component, through `names`.
+    fn location_name(&self, names: &Names, location: &Location) -> (Vec<u8>, Enc) {
+        names.location(location, || self.location_enc(location))
+    }
+
     /// A view as a map from location to message depth, and its frontier as
     /// the number of live events of each thread it covers.
-    fn view_enc(&self, view: &View) -> Enc {
+    fn view_enc(&self, view: &View, names: &Names) -> Enc {
         // Both maps are ordered by location. Walk them together so looking
         // up every view location does not perform a separate tree search in
         // `shared`.
@@ -1060,10 +1108,8 @@ impl RaComponent {
                     if let Some(position) =
                         cell.messages.iter().position(|message| message.id == **id)
                     {
-                        at.push((
-                            location_enc(location, Some(&cell.cell)),
-                            Enc::text(depth(len, position).to_string()),
-                        ));
+                        let (bytes, name) = self.location_name(names, location);
+                        at.push((bytes, name, Enc::text(depth(len, position).to_string())));
                     }
                     locations.next();
                     shared.next();
@@ -1079,25 +1125,32 @@ impl RaComponent {
                     .iter()
                     .filter(|(id, event)| event.thread == *thread && *id <= latest)
                     .count();
-                (covered > 0).then(|| (thread.enc(), Enc::text(covered.to_string())))
+                (covered > 0).then(|| {
+                    let (bytes, name) = names.thread(thread);
+                    (bytes, name, Enc::text(covered.to_string()))
+                })
             })
             .collect();
-        let mut members = vec![("at", map_enc(at)), ("frontier", map_enc(frontier))];
+        let mut members = vec![
+            ("at", sorted_map_enc(at)),
+            ("frontier", sorted_map_enc(frontier)),
+        ];
         if !self.races.is_empty() {
-            members.push(("race", self.race_enc(&view.race)));
+            members.push(("race", self.race_enc(&view.race, names)));
         }
         Enc::tagged("view", members)
     }
 
     /// A carrier's Booleans for every location with a race summary
     /// (QSpec FR-438).
-    fn race_enc(&self, race: &RaceMap) -> Enc {
-        map_enc(
+    fn race_enc(&self, race: &RaceMap, names: &Names) -> Enc {
+        sorted_map_enc(
             self.races
                 .iter()
                 .map(|(location, summary)| {
                     let bools = race.get(location).cloned().unwrap_or_default();
-                    (self.location_enc(location), bools.enc(summary))
+                    let (bytes, name) = self.location_name(names, location);
+                    (bytes, name, bools.enc(summary))
                 })
                 .collect(),
         )
@@ -1142,39 +1195,52 @@ impl RaComponent {
         Enc::Object(members)
     }
 
-    fn graph_enc(&self) -> Enc {
-        // An event is named once however many edges and sets mention it.
-        let named: std::cell::RefCell<BTreeMap<Id, Enc>> = std::cell::RefCell::new(BTreeMap::new());
+    fn graph_enc(&self, names: &Names) -> Enc {
+        // An event is named, and its bytes encoded, once however many edges
+        // and sets mention it. An edge's bytes are its array's: `[`, the two
+        // events' bytes joined by `,`, and `]` (RFC 8785).
+        let named: RefCell<BTreeMap<Id, Canonical>> = RefCell::new(BTreeMap::new());
         let event = |id: Id| {
             named
                 .borrow_mut()
                 .entry(id)
-                .or_insert_with(|| self.event_enc(id))
+                .or_insert_with(|| {
+                    let enc = self.event_enc(id);
+                    (canonical(&enc), enc)
+                })
                 .clone()
+        };
+        let edge = |(a, b): &(Id, Id)| {
+            let (a_bytes, a) = event(*a);
+            let (b_bytes, b) = event(*b);
+            let bytes = a_bytes.zip(b_bytes).map(|(a_bytes, b_bytes)| {
+                let mut bytes = Vec::with_capacity(a_bytes.len() + b_bytes.len() + 3);
+                bytes.push(b'[');
+                bytes.extend_from_slice(&a_bytes);
+                bytes.push(b',');
+                bytes.extend_from_slice(&b_bytes);
+                bytes.push(b']');
+                bytes
+            });
+            (bytes, Enc::Array(vec![a, b]))
         };
         Enc::Object(vec![
             (
                 "events",
-                sorted(self.events.keys().map(|id| event(*id)).collect()),
+                sorted_keyed(self.events.keys().map(|id| event(*id)).collect()),
             ),
-            (
-                "edges",
-                sorted(
-                    self.order
-                        .iter()
-                        .map(|(a, b)| Enc::Array(vec![event(*a), event(*b)]))
-                        .collect(),
-                ),
-            ),
+            ("edges", sorted_keyed(self.order.iter().map(edge).collect())),
             (
                 "owed",
-                map_enc(
+                sorted_map_enc(
                     self.owed
                         .iter()
                         .map(|(thread, events)| {
+                            let (bytes, name) = names.thread(thread);
                             (
-                                thread.enc(),
-                                sorted(events.iter().map(|id| event(*id)).collect()),
+                                bytes,
+                                name,
+                                sorted_keyed(events.iter().map(|id| event(*id)).collect()),
                             )
                         })
                         .collect(),
@@ -1182,13 +1248,15 @@ impl RaComponent {
             ),
             (
                 "summaries",
-                map_enc(
+                sorted_map_enc(
                     self.fronts
                         .iter()
                         .map(|(location, events)| {
+                            let (bytes, name) = self.location_name(names, location);
                             (
-                                self.location_enc(location),
-                                sorted(events.iter().map(|id| event(*id)).collect()),
+                                bytes,
+                                name,
+                                sorted_keyed(events.iter().map(|id| event(*id)).collect()),
                             )
                         })
                         .collect(),
@@ -1201,6 +1269,7 @@ impl RaComponent {
         if self.shared.is_empty() {
             return map_enc(Vec::new());
         }
+        let names = Names::default();
         let mut entries = Vec::new();
         for (location, shared) in &self.shared {
             entries.push((
@@ -1216,7 +1285,7 @@ impl RaComponent {
                                 .map(|message| {
                                     Enc::Object(vec![
                                         ("value", message.enc.clone()),
-                                        ("view", self.view_enc(&message.view)),
+                                        ("view", self.view_enc(&message.view, &names)),
                                         ("attached", Enc::Bool(message.attached)),
                                     ])
                                 })
@@ -1239,16 +1308,17 @@ impl RaComponent {
             entries.push((
                 Enc::tagged("views", vec![("thread", thread.enc())]),
                 Enc::Object(vec![
-                    ("cur", self.view_enc(&views.cur)),
-                    ("acq", self.view_enc(&views.acq)),
+                    ("cur", self.view_enc(&views.cur, &names)),
+                    ("acq", self.view_enc(&views.acq, &names)),
                     (
                         "rel",
-                        map_enc(
+                        sorted_map_enc(
                             views
                                 .rel
                                 .iter()
                                 .map(|(location, view)| {
-                                    (self.location_enc(location), self.view_enc(view))
+                                    let (bytes, name) = self.location_name(&names, location);
+                                    (bytes, name, self.view_enc(view, &names))
                                 })
                                 .collect(),
                         ),
@@ -1256,8 +1326,11 @@ impl RaComponent {
                 ]),
             ));
         }
-        entries.push((Enc::tagged("sc-view", Vec::new()), self.view_enc(&self.sc)));
-        entries.push((Enc::tagged("sc-graph", Vec::new()), self.graph_enc()));
+        entries.push((
+            Enc::tagged("sc-view", Vec::new()),
+            self.view_enc(&self.sc, &names),
+        ));
+        entries.push((Enc::tagged("sc-graph", Vec::new()), self.graph_enc(&names)));
         map_enc(entries)
     }
 
@@ -1676,7 +1749,7 @@ impl MemoryModel for Ra {
     }
 
     fn carried_key(&self, component: &RaComponent, carried: &CarriedView) -> CarriedKey {
-        CarriedKey(component.view_enc(&carried.0))
+        CarriedKey(component.view_enc(&carried.0, &Names::default()))
     }
 
     /// `ra` has no memory step.

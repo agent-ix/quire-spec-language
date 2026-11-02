@@ -72,7 +72,7 @@ use crate::simulation::sample::{sample_request, sample_request_until, SampleRequ
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
-pub(crate) use application::{FirstApplication, OperationRef};
+pub(crate) use application::{FirstApplication, Observed, OperationRef};
 pub use cells::Cell;
 pub use contract::{
     ContractClause, ContractClauseKind, DeclaredStates, DeclaredStatesRefusal, OperationCases,

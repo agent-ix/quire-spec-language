@@ -61,14 +61,15 @@ use crate::simulation::footprint::Location;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, reference_enc, Enc};
 use crate::simulation::model::{
-    verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict,
-    BROKEN,
+    verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, Observed, TerminalClass,
+    Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated, RequiresBound};
 use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::subject::ConstraintError;
 use crate::simulation::subject::{Bounded, Cut, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
+use qsl_semantics::model::observation::Observation;
 use steps::ProtocolExpansion;
 
 pub use access::{
@@ -1557,7 +1558,27 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         frame: Vec<Option<Value>>,
         observed: &ModelSimState,
     ) -> Result<Verdict, ExpansionStop> {
-        let observation = self.model.observation_of(observed)?;
+        self.evaluate_in(body, frame, &self.model.observation_of(observed)?)
+    }
+
+    /// [`Self::evaluate`] over a thread's observation, whose synthesized
+    /// observation is built once however many bodies read it.
+    fn evaluate_observed(
+        &self,
+        body: &qsl_semantics::check::CheckedBody,
+        frame: Vec<Option<Value>>,
+        observed: &Observed<'_>,
+    ) -> Result<Verdict, ExpansionStop> {
+        self.evaluate_in(body, frame, self.model.observation_at(observed)?)
+    }
+
+    /// `body` with `frame`, read over `observation`.
+    fn evaluate_in(
+        &self,
+        body: &qsl_semantics::check::CheckedBody,
+        frame: Vec<Option<Value>>,
+        observation: &Observation,
+    ) -> Result<Verdict, ExpansionStop> {
         let evaluation = evaluate_protocol_slot(
             self.package,
             body,
