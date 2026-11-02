@@ -1058,7 +1058,10 @@ fn expressions(g: &mut Grammar) {
             // `Text` is also a type keyword, so unlike `UUID` and other
             // constructor names it cannot pass through the identifier-call
             // alternative below.
-            s(vec![x("Text"), args.clone()]),
+            s(vec![
+                x("Text"),
+                s(vec![x("("), opt(list(|| r(P::Expression))), x(")")]),
+            ]),
             s(vec![
                 x("reaches"),
                 x("("),
