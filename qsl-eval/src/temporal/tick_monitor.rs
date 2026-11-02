@@ -18,18 +18,22 @@
 //! two stamps `d` ticks apart is the open interval `(d - w, d + w)` with
 //! `w = 1 + 2u`; an offset between an event and itself is exactly 0.
 //!
-//! A buffered operator (an interval operator whose operands hold no temporal
-//! operator) keeps its entries in a buffer of the plan's capacity. An event
-//! that would exceed the buffer is merged with the newest entry into one
-//! `lost` entry that spans both: no event disappears, and any result that
-//! depends on a lost entry and is not otherwise decided settles `Incomplete`.
+//! Every interval operator, at any depth, keeps its entries in a buffer of
+//! the plan's capacity and retention ([`TickShape`]). An event that would
+//! exceed a buffer is merged with the newest entry into one `lost` entry that
+//! spans both: no event disappears, and any result that depends on a lost
+//! entry and is not otherwise decided settles `Incomplete`. An instance
+//! settles when its value is final or its lookahead has passed, and an entry
+//! is dropped once it is settled, reported and past its retention. Unbounded
+//! operators keep a constant-size accumulator per live instance, bounded by
+//! the shared activation capacity.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use qsl_semantics::check::{
-    Activation, BinaryTemporal, CheckedFormula, FormulaNode, UnaryTemporal,
-};
+use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode};
 use quire_exact::{Integer, Rational};
+
+use super::tick_shape::{temporal_leaves, TickShape};
 
 /// An exact tick-interval bound of one interval operator.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -163,6 +167,15 @@ pub struct TickResult {
     pub outcome: TickOutcome,
 }
 
+/// What hid evidence from a value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Lost {
+    /// The buffer of this interval operator overflowed.
+    Buffer(usize),
+    /// The activation capacity refused the instance.
+    Activation,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Poss {
     t: bool,
@@ -173,8 +186,9 @@ struct Poss {
 struct Val {
     open: Poss,
     closed: Poss,
-    /// The node whose buffer lost evidence that this value depends on.
-    lost: Option<usize>,
+    /// What hid evidence that this value depends on; the left operand's
+    /// wins.
+    lost: Option<Lost>,
     /// The lowest atom without an admitted projection that this value
     /// depends on (QSpec FR-487-AC-12).
     atom: Option<usize>,
@@ -201,6 +215,12 @@ impl Val {
             Self::TRUE
         } else {
             Self::FALSE
+        }
+    }
+    fn lost_by(lost: Lost) -> Self {
+        Self {
+            lost: Some(lost),
+            ..Self::UNKNOWN
         }
     }
     fn not(self) -> Self {
@@ -230,7 +250,7 @@ impl Val {
     fn or(self, other: Self) -> Self {
         self.not().and(other.not()).not()
     }
-    fn outcome(self, capacities: &BTreeMap<usize, u64>) -> TickOutcome {
+    fn outcome(self, capacities: &BTreeMap<usize, u64>, activation: u64) -> TickOutcome {
         match (self.open.t, self.open.f) {
             (true, false) => TickOutcome::True,
             (false, _) => TickOutcome::False,
@@ -238,8 +258,11 @@ impl Val {
                 atom: self.atom.unwrap_or(0),
             },
             _ => match self.lost {
-                Some(node) => TickOutcome::Incomplete {
+                Some(Lost::Buffer(node)) => TickOutcome::Incomplete {
                     capacity: capacities.get(&node).copied().unwrap_or(0),
+                },
+                Some(Lost::Activation) => TickOutcome::ActivationLimit {
+                    capacity: activation,
                 },
                 None if self.closed.t != self.closed.f => TickOutcome::Pending,
                 None => TickOutcome::Indeterminate,
@@ -258,6 +281,8 @@ enum Member {
     No,
 }
 
+/// One entry of an interval operator's buffer: one event, or, once the buffer
+/// overflowed, a run of events merged into one `lost` entry.
 #[derive(Clone, Copy, Debug)]
 struct Cell {
     first: usize,
@@ -265,6 +290,10 @@ struct Cell {
     t_first: i128,
     t_last: i128,
     lost: bool,
+    /// The value, once the instance can no longer change.
+    set: Option<Val>,
+    /// The outcome last reported.
+    rep: Option<TickOutcome>,
 }
 
 struct Event {
@@ -273,69 +302,34 @@ struct Event {
     guard: bool,
 }
 
-#[derive(Clone, Copy)]
-enum Dir {
-    Future,
-    Past,
-}
-
-#[derive(Clone, Copy)]
-struct Op {
-    dir: Dir,
-    /// `true` for the dual operators (`always`, `historically`, `release`,
-    /// `triggered`), which negate their operands and their result.
-    dual: bool,
+/// A live instance of an unbounded operator, or of a root that is not an
+/// interval operator: a constant-size accumulator (QSL FR-251 "State").
+#[derive(Clone, Copy, Debug)]
+struct Elem {
+    node: usize,
+    pos: usize,
+    acc: Val,
+    pfx: Val,
+    rep: Option<TickOutcome>,
 }
 
 fn q(value: i128) -> Rational {
     Rational::from_integer(Integer::from(value))
 }
 
-fn operator(node: &FormulaNode) -> Option<(Op, Option<usize>, usize, Option<usize>)> {
-    // (op, left, right-or-only operand, _)
-    match node {
-        FormulaNode::Unary {
-            operator, operand, ..
-        } => {
-            let (dir, dual) = match operator {
-                UnaryTemporal::Eventually => (Dir::Future, false),
-                UnaryTemporal::Always => (Dir::Future, true),
-                UnaryTemporal::Once => (Dir::Past, false),
-                UnaryTemporal::Historically => (Dir::Past, true),
-            };
-            Some((Op { dir, dual }, None, operand.index(), None))
-        }
-        FormulaNode::Binary {
-            operator,
-            left,
-            right,
-            ..
-        } => {
-            let (dir, dual) = match operator {
-                BinaryTemporal::Until => (Dir::Future, false),
-                BinaryTemporal::Release => (Dir::Future, true),
-                BinaryTemporal::Since => (Dir::Past, false),
-                BinaryTemporal::Triggered => (Dir::Past, true),
-            };
-            Some((Op { dir, dual }, Some(left.index()), right.index(), None))
-        }
-        _ => None,
-    }
-}
-
 /// The streaming reference evaluator of one plan.
 pub struct TickMonitorReference<'f> {
     spec: TickMonitorSpec<'f>,
-    width: Rational,
+    shape: TickShape,
     events: Vec<Event>,
     watermark: i128,
     now: i128,
+    hz: i128,
     baseline: Option<u64>,
-    buffers: BTreeMap<usize, Vec<Cell>>,
-    /// Settled values of instances of buffered nodes.
-    settled: BTreeMap<(usize, usize), Val>,
-    past_values: BTreeMap<(usize, usize), Val>,
-    failed: BTreeSet<(usize, usize)>,
+    cells: BTreeMap<usize, Vec<Cell>>,
+    elems: Vec<Elem>,
+    /// Values of unbounded or root instances that finished or were refused.
+    ufinal: BTreeMap<(usize, usize), Val>,
     /// The unwrapped tick history restarts at after a reading-gap fault
     /// (FR-251-AC-15); past operators reaching before it are indeterminate.
     history_start: Option<i128>,
@@ -345,63 +339,35 @@ pub struct TickMonitorReference<'f> {
 impl<'f> TickMonitorReference<'f> {
     /// A fresh evaluator for `spec` with the unwrapped time at 0.
     pub fn new(spec: TickMonitorSpec<'f>) -> Self {
-        let width = q(1).add(&q(2).mul(&spec.uncertainty));
-        let buffers = Self::buffered_nodes(&spec)
-            .into_iter()
-            .map(|node| (node, Vec::new()))
-            .collect();
+        let shape = TickShape::of(spec.formula, &spec.bounds, &spec.uncertainty);
+        let cells = spec.bounds.keys().map(|node| (*node, Vec::new())).collect();
         Self {
             spec,
-            width,
+            shape,
             events: Vec::new(),
             watermark: -1,
             now: 0,
+            hz: 0,
             baseline: None,
-            buffers,
-            settled: BTreeMap::new(),
-            past_values: BTreeMap::new(),
-            failed: BTreeSet::new(),
+            cells,
+            elems: Vec::new(),
+            ufinal: BTreeMap::new(),
             history_start: None,
             emitted: BTreeMap::new(),
         }
     }
 
-    /// The formula nodes that keep a buffer: interval operators whose
-    /// operands hold no temporal operator.
+    /// The formula nodes that keep a buffer: the interval operators.
     pub fn buffered_nodes(spec: &TickMonitorSpec<'_>) -> Vec<usize> {
-        let nodes = spec.formula.nodes();
-        (0..nodes.len())
-            .filter(|index| {
-                spec.bounds.contains_key(index)
-                    && operator(&nodes[*index]).is_some_and(|(_, left, right, _)| {
-                        left.into_iter()
-                            .chain([right])
-                            .all(|child| !Self::has_temporal(nodes, child))
-                    })
-            })
-            .collect()
+        spec.bounds.keys().copied().collect()
     }
 
-    fn has_temporal(nodes: &[FormulaNode], index: usize) -> bool {
-        let mut stack = vec![index];
-        while let Some(next) = stack.pop() {
-            if operator(&nodes[next]).is_some() {
-                return true;
-            }
-            stack.extend(nodes[next].operands().map(|operand| operand.index()));
-        }
-        false
+    fn width(&self) -> &Rational {
+        self.shape.width()
     }
 
     fn is_future(&self, node: usize) -> bool {
-        operator(&self.spec.formula.nodes()[node])
-            .is_some_and(|(op, ..)| matches!(op.dir, Dir::Future))
-    }
-
-    /// The earliest tick a future event can carry.
-    fn horizon(&self) -> i128 {
-        let last = self.events.last().map_or(0, |event| event.tick);
-        last.max(self.watermark + 1)
+        self.shape.node(node).is_some_and(|shape| shape.future)
     }
 
     fn member(&self, node: usize, dmin: i128, dmax: i128, same: bool) -> Member {
@@ -418,8 +384,8 @@ impl<'f> TickMonitorReference<'f> {
                 Member::No
             };
         }
-        let lo = q(dmin).sub(&self.width);
-        let hi = q(dmax).add(&self.width);
+        let lo = q(dmin).sub(self.width());
+        let hi = q(dmax).add(self.width());
         if lo >= bound.lower && hi <= bound.upper {
             Member::All
         } else if hi <= bound.lower || lo >= bound.upper {
@@ -429,11 +395,12 @@ impl<'f> TickMonitorReference<'f> {
         }
     }
 
+    /// Whether an instance of `node` at `tick` can gain no more events.
     fn closed(&self, node: usize, tick: i128) -> bool {
         self.spec
             .bounds
             .get(&node)
-            .is_some_and(|bound| q(self.horizon()).sub(&q(tick)).sub(&self.width) >= bound.upper)
+            .is_some_and(|bound| q(self.hz).sub(&q(tick)).sub(self.width()) >= bound.upper)
     }
 
     fn member_val(member: Member) -> Val {
@@ -444,146 +411,176 @@ impl<'f> TickMonitorReference<'f> {
         }
     }
 
-    fn event_cells(&self, upto: Option<usize>, from: usize) -> Vec<Cell> {
-        let end = upto.map_or(self.events.len(), |last| last + 1);
-        (from..end)
-            .filter(|position| {
-                // The marker hides history from a past-looking read only; a
-                // future-looking activation keeps the positions it already
-                // covers.
-                upto.is_none()
-                    || self
-                        .history_start
-                        .is_none_or(|start| self.events[*position].tick >= start)
-            })
-            .map(|position| Cell {
-                first: position,
-                last: position,
-                t_first: self.events[position].tick,
-                t_last: self.events[position].tick,
-                lost: false,
-            })
-            .collect()
-    }
-
-    fn operand(&self, owner: usize, child: usize, cell: &Cell, memo: &mut Memo) -> Val {
-        if cell.lost {
-            return Val {
-                lost: Some(owner),
+    /// The value of the Boolean expression `index` at event `pos`.
+    fn expr(&self, index: usize, pos: usize) -> Val {
+        match &self.spec.formula.nodes()[index] {
+            FormulaNode::Constant(value) => Val::of(*value),
+            FormulaNode::Holds { .. } if self.spec.unprojectable.contains(&index) => Val {
+                atom: Some(index),
                 ..Val::UNKNOWN
-            };
+            },
+            FormulaNode::Holds { .. } => self.events[pos]
+                .atoms
+                .get(&index)
+                .map_or(Val::UNKNOWN, |value| Val::of(*value)),
+            FormulaNode::Aggregate { .. } => Val::UNKNOWN,
+            FormulaNode::Not(operand) => self.expr(operand.index(), pos).not(),
+            FormulaNode::And(a, b) => self.expr(a.index(), pos).and(self.expr(b.index(), pos)),
+            FormulaNode::Or(a, b) => self.expr(a.index(), pos).or(self.expr(b.index(), pos)),
+            FormulaNode::Implies(a, b) => {
+                self.expr(a.index(), pos).not().or(self.expr(b.index(), pos))
+            }
+            FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => {
+                self.temporal_val(index, pos)
+            }
         }
-        self.eval(child, cell.first, memo)
     }
 
-    /// Evaluate the temporal `node` at `position` over `cells`, ascending.
-    fn temporal(&self, node: usize, position: usize, cells: &[Cell], memo: &mut Memo) -> Val {
-        let Some((op, left, right, _)) = operator(&self.spec.formula.nodes()[node]) else {
+    /// The value of the temporal operator `node` at event `pos`.
+    fn temporal_val(&self, node: usize, pos: usize) -> Val {
+        if self.cells.contains_key(&node) {
+            return self.cell_val(node, pos);
+        }
+        if let Some(elem) = self.elems.iter().find(|e| e.node == node && e.pos == pos) {
+            return self.elem_val(elem);
+        }
+        self.ufinal
+            .get(&(node, pos))
+            .copied()
+            .unwrap_or(Val::UNKNOWN)
+    }
+
+    fn cell_val(&self, node: usize, pos: usize) -> Val {
+        let Some(cells) = self.cells.get(&node) else {
             return Val::UNKNOWN;
         };
-        let polar = |value: Val| if op.dual { value.not() } else { value };
-        let phi = |this: &Self, cell: &Cell, memo: &mut Memo| match left {
-            Some(child) => polar(this.operand(node, child, cell, memo)),
+        let Some(index) = cells.iter().position(|c| c.first <= pos && pos <= c.last) else {
+            return Val::UNKNOWN;
+        };
+        let cell = &cells[index];
+        if cell.lost {
+            return Val::lost_by(Lost::Buffer(node));
+        }
+        match cell.set {
+            Some(value) => value,
+            None => self.compute(node, pos, cell.t_first),
+        }
+    }
+
+    /// An operand of `owner` at `cell`: lost when the cell was merged.
+    fn operand(&self, owner: usize, child: usize, cell: &Cell) -> Val {
+        if cell.lost {
+            return Val::lost_by(Lost::Buffer(owner));
+        }
+        self.expr(child, cell.first)
+    }
+
+    /// Evaluate the interval operator `node` for the instance at event `pos`
+    /// (tick `tick`) over its buffer.
+    fn compute(&self, node: usize, pos: usize, tick: i128) -> Val {
+        let (Some(info), Some(cells)) = (self.shape.node(node), self.cells.get(&node)) else {
+            return Val::UNKNOWN;
+        };
+        let polar = |value: Val| if info.dual { value.not() } else { value };
+        let phi = |cell: &Cell| match info.left {
+            Some(child) => polar(self.operand(node, child, cell)),
             None => Val::TRUE,
         };
-        let psi = |this: &Self, cell: &Cell, memo: &mut Memo| {
-            polar(this.operand(node, right, cell, memo))
-        };
-        let tick = self.events[position].tick;
+        let psi = |cell: &Cell| polar(self.operand(node, info.right, cell));
         let mut acc = Val::FALSE;
-        match op.dir {
-            Dir::Future => {
-                let mut prefix = Val::TRUE;
-                for cell in cells.iter().filter(|cell| cell.first >= position) {
-                    let same = cell.first == position && cell.last == position;
-                    let member = self.member(node, cell.t_first - tick, cell.t_last - tick, same);
-                    let contribution = Self::member_val(member)
-                        .and(psi(self, cell, memo))
-                        .and(prefix);
-                    acc = acc.or(contribution);
-                    prefix = prefix.and(phi(self, cell, memo));
-                }
-                if !self.closed(node, tick) {
-                    acc = acc.or(Val {
-                        open: BOTH,
-                        closed: ONLY_F,
-                        lost: None,
-                        atom: None,
-                    }
-                    .and(prefix));
-                }
+        if info.future {
+            let mut prefix = Val::TRUE;
+            for cell in cells.iter().filter(|cell| cell.first >= pos) {
+                let same = cell.first == pos && cell.last == pos;
+                let member = self.member(node, cell.t_first - tick, cell.t_last - tick, same);
+                acc = acc.or(Self::member_val(member).and(psi(cell)).and(prefix));
+                prefix = prefix.and(phi(cell));
             }
-            Dir::Past => {
-                let mut suffix = Val::TRUE;
-                for cell in cells.iter().rev().filter(|cell| cell.last <= position) {
-                    let same = cell.first == position && cell.last == position;
-                    let member = self.member(node, tick - cell.t_last, tick - cell.t_first, same);
-                    let contribution = Self::member_val(member)
-                        .and(psi(self, cell, memo))
-                        .and(suffix);
-                    acc = acc.or(contribution);
-                    suffix = suffix.and(phi(self, cell, memo));
+            if !self.closed(node, tick) {
+                acc = acc.or(Val {
+                    open: BOTH,
+                    closed: ONLY_F,
+                    lost: None,
+                    atom: None,
                 }
+                .and(prefix));
             }
-        }
-        if let (Dir::Past, Some(start)) = (op.dir, self.history_start) {
-            // History before the marker is gone: an event there could have
-            // been in the window, and nothing says whether it was.
-            let before = start - 1;
-            if self.member(node, tick - before, tick - before, false) != Member::No {
-                acc = acc.or(Val::UNKNOWN);
+        } else {
+            for cell in cells.iter().filter(|cell| cell.last <= pos) {
+                let same = cell.first == pos && cell.last == pos;
+                let member = self.member(node, tick - cell.t_last, tick - cell.t_first, same);
+                acc = acc
+                    .and(phi(cell))
+                    .or(Self::member_val(member).and(psi(cell)));
+            }
+            if let Some(start) = self.history_start {
+                // History before the marker is gone: an event there could have
+                // been in the window, and nothing says whether it was.
+                let before = start - 1;
+                if self.member(node, tick - before, tick - before, false) != Member::No {
+                    acc = acc.or(Val::UNKNOWN);
+                }
             }
         }
         polar(acc)
     }
 
-    fn eval(&self, node: usize, position: usize, memo: &mut Memo) -> Val {
-        if self.failed.contains(&(node, position)) {
-            return Val::UNKNOWN;
-        }
-        if let Some(value) = memo.get(&(node, position)) {
-            return *value;
-        }
-        let value = match &self.spec.formula.nodes()[node] {
-            FormulaNode::Constant(value) => Val::of(*value),
-            FormulaNode::Holds { .. } if self.spec.unprojectable.contains(&node) => Val {
-                atom: Some(node),
-                ..Val::UNKNOWN
-            },
-            FormulaNode::Holds { .. } => self.events[position]
-                .atoms
-                .get(&node)
-                .map_or(Val::UNKNOWN, |value| Val::of(*value)),
-            FormulaNode::Aggregate { .. } => Val::UNKNOWN,
-            FormulaNode::Not(operand) => self.eval(operand.index(), position, memo).not(),
-            FormulaNode::And(a, b) => {
-                let left = self.eval(a.index(), position, memo);
-                left.and(self.eval(b.index(), position, memo))
-            }
-            FormulaNode::Or(a, b) => {
-                let left = self.eval(a.index(), position, memo);
-                left.or(self.eval(b.index(), position, memo))
-            }
-            FormulaNode::Implies(a, b) => {
-                let left = self.eval(a.index(), position, memo).not();
-                left.or(self.eval(b.index(), position, memo))
-            }
-            FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => {
-                if let Some(value) = self.settled.get(&(node, position)) {
-                    *value
-                } else if let Some(value) = self.past_values.get(&(node, position)) {
-                    *value
-                } else if let Some(cells) = self.buffers.get(&node) {
-                    self.temporal(node, position, cells, memo)
-                } else {
-                    let upto = (!self.is_future(node)).then_some(position);
-                    let cells = self.event_cells(upto, 0);
-                    self.temporal(node, position, &cells, memo)
-                }
-            }
+    /// The interval operator whose buffer carries the operands of the
+    /// unbounded operator `node`: its lowest-numbered interval operand.
+    fn carrier(&self, node: usize) -> Option<usize> {
+        let info = self.shape.node(node)?;
+        info.left
+            .into_iter()
+            .chain([info.right])
+            .flat_map(|operand| temporal_leaves(self.spec.formula, operand))
+            .find(|leaf| self.cells.contains_key(leaf))
+    }
+
+    fn fold_cell(&self, node: usize, cell: &Cell, acc: Val, pfx: Val, carrier: usize) -> (Val, Val) {
+        let Some(info) = self.shape.node(node) else {
+            return (acc, pfx);
         };
-        memo.insert((node, position), value);
-        value
+        let polar = |value: Val| if info.dual { value.not() } else { value };
+        let (psi, phi) = if cell.lost {
+            (Val::lost_by(Lost::Buffer(carrier)), Val::lost_by(Lost::Buffer(carrier)))
+        } else {
+            (
+                polar(self.expr(info.right, cell.first)),
+                info.left
+                    .map_or(Val::TRUE, |left| polar(self.expr(left, cell.first))),
+            )
+        };
+        (acc.or(psi.and(pfx)), pfx.and(phi))
+    }
+
+    fn elem_val(&self, elem: &Elem) -> Val {
+        let Some(info) = self.shape.node(elem.node) else {
+            return self.expr(elem.node, elem.pos);
+        };
+        let polar = |value: Val| if info.dual { value.not() } else { value };
+        let (mut acc, mut pfx) = (elem.acc, elem.pfx);
+        if let Some(carrier) = self.carrier(elem.node) {
+            for cell in self
+                .cells
+                .get(&carrier)
+                .into_iter()
+                .flatten()
+                .filter(|cell| cell.last >= elem.pos)
+            {
+                (acc, pfx) = self.fold_cell(elem.node, cell, acc, pfx, carrier);
+            }
+        }
+        let open = Val {
+            open: BOTH,
+            closed: ONLY_F,
+            lost: None,
+            atom: None,
+        };
+        polar(acc.or(open.and(pfx)))
+    }
+
+    fn outcome_of(&self, value: Val) -> TickOutcome {
+        value.outcome(&self.spec.capacities, self.spec.activation_capacity)
     }
 
     /// Apply one step and return the results whose outcome changed.
@@ -592,8 +589,12 @@ impl<'f> TickMonitorReference<'f> {
             TickStep::Poll { .. } => Ok(Vec::new()),
             TickStep::Watermark { boundary } => {
                 self.watermark = self.watermark.max(i128::from(*boundary));
-                self.expire();
-                Ok(self.settle_and_emit(true))
+                self.hz = self.now.max(self.watermark + 1);
+                self.settle();
+                let mut results = self.report(true);
+                self.drop_cells();
+                results.sort_by_key(|r| (r.subformula, r.position));
+                Ok(results)
             }
             TickStep::Reading {
                 reading,
@@ -639,228 +640,401 @@ impl<'f> TickMonitorReference<'f> {
         }
         self.baseline = Some(reading);
         self.now = tick;
+        self.hz = tick;
+        self.settle();
+        self.drop_cells();
         let position = self.events.len();
         self.events.push(Event {
             tick,
             atoms: atoms.clone(),
             guard,
         });
-        self.expire();
-        let nodes: Vec<usize> = self.buffers.keys().copied().collect();
-        for node in nodes {
-            self.add_event(node, position);
-        }
-        Ok(self.settle_and_emit(false))
+        let mut results = self.push(position);
+        self.settle();
+        results.extend(self.start(position));
+        results.extend(self.report(false));
+        results.sort_by_key(|r| (r.subformula, r.position));
+        Ok(results)
     }
 
-    fn add_event(&mut self, node: usize, position: usize) {
-        let tick = self.events[position].tick;
+    /// Settle every instance that can no longer change: its value is final,
+    /// or its lookahead has passed.
+    fn settle(&mut self) {
+        let nodes: Vec<usize> = self.cells.keys().rev().copied().collect();
+        for node in nodes {
+            let Some(lookahead) = self.shape.node(node).map(|info| info.lookahead.clone()) else {
+                continue;
+            };
+            let cells = self.cells.get(&node).cloned().unwrap_or_default();
+            let mut updates = Vec::new();
+            for (index, cell) in cells.iter().enumerate() {
+                if cell.set.is_some() || cell.lost {
+                    continue;
+                }
+                let value = self.compute(node, cell.first, cell.t_first);
+                let elapsed = lookahead
+                    .as_ref()
+                    .is_some_and(|look| &q(self.hz - cell.t_first) >= look);
+                if value.is_final() || elapsed {
+                    updates.push((index, value));
+                }
+            }
+            if let Some(buffer) = self.cells.get_mut(&node) {
+                for (index, value) in updates {
+                    buffer[index].set = Some(value);
+                }
+            }
+        }
+    }
+
+    /// Whether an unsettled instance of `node` can still read cell `index`.
+    fn needed(&self, node: usize, index: usize) -> bool {
+        let Some(cells) = self.cells.get(&node) else {
+            return false;
+        };
+        let cell = &cells[index];
         let future = self.is_future(node);
-        let capacity = self.spec.capacities.get(&node).map_or(usize::MAX, |value| {
-            usize::try_from(*value).unwrap_or(usize::MAX)
-        });
-        let cell = Cell {
-            first: position,
-            last: position,
-            t_first: tick,
-            t_last: tick,
-            lost: false,
-        };
-        let Some(buffer) = self.buffers.get_mut(&node) else {
-            return;
-        };
-        if buffer.len() >= capacity.max(1) {
-            if let Some(last) = buffer.last_mut() {
-                let first = last.first;
-                last.last = position;
-                last.t_last = tick;
-                last.lost = true;
-                if future {
-                    let lost = Val {
-                        lost: Some(node),
-                        ..Val::UNKNOWN
-                    };
-                    for lost_position in first..=position {
-                        // A settled result is final: losing the entry later does
-                        // not unsettle it.
-                        self.settled.entry((node, lost_position)).or_insert(lost);
+        cells.iter().enumerate().any(|(other, open)| {
+            if open.set.is_some() || open.lost || other == index {
+                return false;
+            }
+            if future {
+                other < index
+                    && self.member(node, cell.t_first - open.t_first, cell.t_last - open.t_first, false)
+                        != Member::No
+            } else {
+                other > index
+                    && self.member(node, open.t_first - cell.t_last, open.t_first - cell.t_first, false)
+                        != Member::No
+            }
+        })
+    }
+
+    /// Drop the entries nothing reads any more, folding each into the
+    /// instances of unbounded operators that it carries. Every fold reads the
+    /// buffers as they were before any entry is dropped.
+    fn drop_cells(&mut self) {
+        let nodes: Vec<usize> = self.cells.keys().copied().collect();
+        let mut dropped: Vec<(usize, Vec<usize>)> = Vec::new();
+        for node in &nodes {
+            let Some(retention) = self.shape.node(*node).map(|info| info.retention.clone()) else {
+                continue;
+            };
+            let cells = self.cells.get(node).cloned().unwrap_or_default();
+            let mut gone = Vec::new();
+            for (index, cell) in cells.iter().enumerate() {
+                let reported = match (cell.set, cell.rep) {
+                    (Some(value), Some(rep)) => self.outcome_of(value) == rep,
+                    _ => false,
+                };
+                if reported
+                    && q(self.hz - cell.t_last) >= retention
+                    && !self.needed(*node, index)
+                {
+                    gone.push(index);
+                }
+            }
+            dropped.push((*node, gone));
+        }
+        let mut folded = Vec::new();
+        for (node, gone) in &dropped {
+            let cells = self.cells.get(node).cloned().unwrap_or_default();
+            for index in gone {
+                let cell = cells[*index];
+                for (at, elem) in self.elems.iter().enumerate() {
+                    if self.carrier(elem.node) == Some(*node) && cell.last >= elem.pos {
+                        folded.push((at, *node, cell));
                     }
                 }
             }
-        } else {
-            buffer.push(cell);
         }
-        if !future {
-            // The event that overflows is merged first: its own result then
-            // depends on a lost entry and settles `Incomplete` (FR-251-AC-2).
-            let cells = self.buffers.get(&node).cloned().unwrap_or_default();
-            let value = self.temporal(node, position, &cells, &mut Memo::new());
-            self.past_values.insert((node, position), value);
+        for (at, node, cell) in folded {
+            let elem = self.elems[at];
+            let (acc, pfx) = self.fold_cell(elem.node, &cell, elem.acc, elem.pfx, node);
+            self.elems[at].acc = acc;
+            self.elems[at].pfx = pfx;
         }
-    }
-
-    /// Drop past entries that no future position can place in the window.
-    fn expire(&mut self) {
-        let horizon = self.horizon();
-        let nodes: Vec<usize> = self.buffers.keys().copied().collect();
-        for node in nodes {
-            if self.is_future(node) {
-                continue;
-            }
-            let Some(bound) = self.spec.bounds.get(&node).cloned() else {
-                continue;
-            };
-            let width = self.width.clone();
-            if let Some(buffer) = self.buffers.get_mut(&node) {
-                buffer.retain(|cell| q(horizon).sub(&q(cell.t_last)).sub(&width) < bound.upper);
+        for (node, gone) in dropped {
+            if let Some(buffer) = self.cells.get_mut(&node) {
+                let mut index = 0;
+                buffer.retain(|_| {
+                    let keep = !gone.contains(&index);
+                    index += 1;
+                    keep
+                });
             }
         }
     }
 
-    fn reported(&self) -> BTreeSet<(usize, usize)> {
-        let mut out = BTreeSet::new();
-        let root = self.spec.formula.root().index();
-        for position in 0..self.events.len() {
-            for index in self.spec.bounds.keys() {
-                out.insert((*index, position));
-            }
-            let active = match self.spec.activation {
-                Activation::Origin => position == 0,
-                Activation::Each { guarded } => !guarded || self.events[position].guard,
-            };
-            if active {
-                out.insert((root, position));
-            }
-        }
-        out
-    }
-
-    /// Whether the activation at (`node`, `position`) is the `on origin` root
-    /// and the activation capacity does not admit it.
-    fn refused_activation(&self, node: usize, position: usize) -> bool {
-        matches!(self.spec.activation, Activation::Origin)
-            && position == 0
-            && node == self.spec.formula.root().index()
-            && self.spec.activation_capacity == 0
-    }
-
-    /// Settle what can no longer change and report. An instance is reported
-    /// once when its outcome settles; the pending ones are reported again at
-    /// every watermark step (FR-251-AC-14).
-    fn settle_and_emit(&mut self, watermark: bool) -> Vec<TickResult> {
-        // Settle future instances of buffered nodes that can no longer change.
-        let nodes: Vec<usize> = self.buffers.keys().copied().collect();
-        for node in &nodes {
-            if !self.is_future(*node) {
-                continue;
-            }
-            let cells = self.buffers.get(node).cloned().unwrap_or_default();
-            for cell in cells.iter().filter(|cell| !cell.lost) {
-                let key = (*node, cell.first);
-                if self.settled.contains_key(&key) || self.failed.contains(&key) {
-                    continue;
-                }
-                let value = self.temporal(*node, cell.first, &cells, &mut Memo::new());
-                let tick = self.events[cell.first].tick;
-                if value.is_final() || self.closed(*node, tick) {
-                    self.settled.insert(key, value);
-                }
-            }
-            let oldest_open = cells
-                .iter()
-                .find(|cell| {
-                    !cell.lost
-                        && !self.settled.contains_key(&(*node, cell.first))
-                        && !self.failed.contains(&(*node, cell.first))
-                })
-                .map(|cell| cell.first);
-            if let Some(buffer) = self.buffers.get_mut(node) {
-                match oldest_open {
-                    Some(first) => buffer.retain(|cell| cell.last >= first),
-                    None => buffer.retain(|cell| cell.first + 1 == self.events.len()),
-                }
-            }
-        }
-        let mut memo = Memo::new();
+    /// Add event `position` to every buffer; returns the results of the
+    /// instances that the overflow made incomplete.
+    fn push(&mut self, position: usize) -> Vec<TickResult> {
+        let tick = self.events[position].tick;
+        let nodes: Vec<usize> = self.cells.keys().copied().collect();
         let mut results = Vec::new();
-        for (node, position) in self.reported() {
-            if self.failed.contains(&(node, position)) {
+        let mut merged_past = Vec::new();
+        for node in nodes {
+            let future = self.is_future(node);
+            let capacity = self.spec.capacities.get(&node).map_or(usize::MAX, |value| {
+                usize::try_from(*value).unwrap_or(usize::MAX)
+            });
+            let cell = Cell {
+                first: position,
+                last: position,
+                t_first: tick,
+                t_last: tick,
+                lost: false,
+                set: None,
+                rep: None,
+            };
+            let len = self.cells.get(&node).map_or(0, Vec::len);
+            if len < capacity.max(1) {
+                if let Some(buffer) = self.cells.get_mut(&node) {
+                    buffer.push(cell);
+                }
                 continue;
             }
-            let outcome = if self.refused_activation(node, position) {
-                TickOutcome::ActivationLimit {
-                    capacity: self.spec.activation_capacity,
+            let outcome = self.outcome_of(Val::lost_by(Lost::Buffer(node)));
+            let Some(buffer) = self.cells.get_mut(&node) else {
+                continue;
+            };
+            let Some(last) = buffer.last_mut() else {
+                continue;
+            };
+            let old = *last;
+            last.last = position;
+            last.t_last = tick;
+            last.lost = true;
+            last.set = Some(Val::lost_by(Lost::Buffer(node)));
+            last.rep = Some(outcome);
+            if future {
+                if !old.lost && old.set.is_none() {
+                    results.push(TickResult {
+                        subformula: node,
+                        position: old.first,
+                        origin: old.t_first,
+                        outcome,
+                    });
                 }
+                results.push(TickResult {
+                    subformula: node,
+                    position,
+                    origin: tick,
+                    outcome,
+                });
             } else {
-                self.eval(node, position, &mut memo)
-                    .outcome(&self.spec.capacities)
-            };
-            let changed = self.emitted.get(&(node, position)) != Some(&outcome);
-            self.emitted.insert((node, position), outcome);
-            let report = if outcome == TickOutcome::Pending {
-                watermark
-            } else {
-                changed
-            };
-            if report {
+                merged_past.push(node);
+            }
+        }
+        // The new instance of a past operator reads the merged entry as lost;
+        // its own result is decided by the entries that remain.
+        for node in merged_past {
+            let value = self.compute(node, position, tick);
+            results.push(TickResult {
+                subformula: node,
+                position,
+                origin: tick,
+                outcome: self.outcome_of(value),
+            });
+        }
+        for result in &results {
+            self.emitted
+                .insert((result.subformula, result.position), result.outcome);
+        }
+        results
+    }
+
+    /// Start the instances of unbounded operators and non-interval roots at
+    /// `position`, and fold the event into the live ones whose operands are
+    /// temporal-free.
+    fn start(&mut self, position: usize) -> Vec<TickResult> {
+        let formula = self.spec.formula;
+        let root = formula.root().index();
+        let activated = match self.spec.activation {
+            Activation::Origin => position == 0,
+            Activation::Each { guarded } => !guarded || self.events[position].guard,
+        };
+        // Nested unbounded operators start at every position; the root starts
+        // where the clause activates it, unless it is an interval operator,
+        // which keeps a buffer instead.
+        let starting: Vec<usize> = (0..formula.nodes().len())
+            .filter(|index| {
+                let temporal = self.shape.node(*index).is_some();
+                let buffered = self.cells.contains_key(index);
+                if *index == root {
+                    !buffered && activated
+                } else {
+                    temporal && !buffered
+                }
+            })
+            .collect();
+        let mut results = Vec::new();
+        for node in starting {
+            if u64::try_from(self.elems.len()).unwrap_or(u64::MAX) >= self.spec.activation_capacity {
+                self.ufinal
+                    .insert((node, position), Val::lost_by(Lost::Activation));
+                let outcome = self.outcome_of(Val::lost_by(Lost::Activation));
+                self.emitted.insert((node, position), outcome);
                 results.push(TickResult {
                     subformula: node,
                     position,
                     origin: self.events[position].tick,
                     outcome,
                 });
+                continue;
             }
+            self.elems.push(Elem {
+                node,
+                pos: position,
+                acc: Val::FALSE,
+                pfx: Val::TRUE,
+                rep: None,
+            });
+        }
+        // Temporal-free operands fold at event time.
+        let mut folded = Vec::new();
+        for (at, elem) in self.elems.iter().enumerate() {
+            let Some(info) = self.shape.node(elem.node) else {
+                continue;
+            };
+            if self.carrier(elem.node).is_some() || elem.pos > position {
+                continue;
+            }
+            let polar = |value: Val| if info.dual { value.not() } else { value };
+            let psi = polar(self.expr(info.right, position));
+            let phi = info
+                .left
+                .map_or(Val::TRUE, |left| polar(self.expr(left, position)));
+            folded.push((at, elem.acc.or(psi.and(elem.pfx)), elem.pfx.and(phi)));
+        }
+        for (at, acc, pfx) in folded {
+            self.elems[at].acc = acc;
+            self.elems[at].pfx = pfx;
+        }
+        results
+    }
+
+    fn leaves_settled(&self, node: usize, pos: usize) -> bool {
+        temporal_leaves(self.spec.formula, node).into_iter().all(|leaf| {
+            match self.cells.get(&leaf) {
+                Some(cells) => cells
+                    .iter()
+                    .find(|c| c.first <= pos && pos <= c.last)
+                    .is_none_or(|c| c.lost || c.set.is_some()),
+                None => self.ufinal.contains_key(&(leaf, pos)),
+            }
+        })
+    }
+
+    /// Report what changed. An instance is reported once when its outcome
+    /// settles; the pending ones are reported again at every watermark step
+    /// (FR-251-AC-14).
+    fn report(&mut self, watermark: bool) -> Vec<TickResult> {
+        let mut results = Vec::new();
+        let nodes: Vec<usize> = self.cells.keys().copied().collect();
+        for node in nodes {
+            let cells = self.cells.get(&node).cloned().unwrap_or_default();
+            let mut reps = Vec::new();
+            for (index, cell) in cells.iter().enumerate() {
+                if cell.lost {
+                    continue;
+                }
+                let value = cell
+                    .set
+                    .unwrap_or_else(|| self.compute(node, cell.first, cell.t_first));
+                let outcome = self.outcome_of(value);
+                self.emitted.insert((node, cell.first), outcome);
+                let report = if outcome == TickOutcome::Pending {
+                    watermark
+                } else {
+                    cell.rep != Some(outcome)
+                };
+                reps.push((index, outcome));
+                if report {
+                    results.push(TickResult {
+                        subformula: node,
+                        position: cell.first,
+                        origin: cell.t_first,
+                        outcome,
+                    });
+                }
+            }
+            if let Some(buffer) = self.cells.get_mut(&node) {
+                for (index, outcome) in reps {
+                    buffer[index].rep = Some(outcome);
+                }
+            }
+        }
+        let mut finished = Vec::new();
+        for (at, elem) in self.elems.clone().iter().enumerate() {
+            let value = self.elem_val(elem);
+            let outcome = self.outcome_of(value);
+            self.emitted.insert((elem.node, elem.pos), outcome);
+            let report = if outcome == TickOutcome::Pending {
+                watermark
+            } else {
+                elem.rep != Some(outcome)
+            };
+            if report {
+                results.push(TickResult {
+                    subformula: elem.node,
+                    position: elem.pos,
+                    origin: self.events[elem.pos].tick,
+                    outcome,
+                });
+            }
+            self.elems[at].rep = Some(outcome);
+            let done = value.is_final()
+                || (self.shape.node(elem.node).is_none()
+                    && self.leaves_settled(elem.node, elem.pos));
+            if done {
+                finished.push((at, value));
+            }
+        }
+        for (at, value) in finished.into_iter().rev() {
+            let elem = self.elems.remove(at);
+            self.ufinal.insert((elem.node, elem.pos), value);
         }
         results
     }
 
     /// The reading-gap fault: every instance still `Pending` fails.
     fn gap(&mut self, gap: u64) -> Vec<TickResult> {
-        let mut memo = Memo::new();
-        let mut open = Vec::new();
-        for (node, position) in self.reported() {
-            if self.failed.contains(&(node, position)) || self.refused_activation(node, position) {
-                continue;
-            }
-            let outcome = self
-                .eval(node, position, &mut memo)
-                .outcome(&self.spec.capacities);
-            if outcome == TickOutcome::Pending {
-                open.push((node, position));
-            }
-        }
-        // Open instances that are not pending keep their value; the history
-        // they read is about to go.
-        let keep: Vec<(usize, usize)> = self
-            .reported()
-            .into_iter()
-            .filter(|key| !self.failed.contains(key) && !open.contains(key))
-            .collect();
-        for (node, position) in keep {
-            if self.buffers.contains_key(&node) && self.is_future(node) {
-                let value = self.eval(node, position, &mut memo);
-                self.settled.entry((node, position)).or_insert(value);
+        let failed = TickOutcome::Failed {
+            gap,
+            max_reading_gap: self.spec.max_reading_gap,
+        };
+        let mut results = Vec::new();
+        let nodes: Vec<usize> = self.cells.keys().copied().collect();
+        for node in nodes {
+            for cell in self.cells.get(&node).cloned().unwrap_or_default() {
+                if !cell.lost && cell.rep == Some(TickOutcome::Pending) {
+                    self.emitted.insert((node, cell.first), failed);
+                    results.push(TickResult {
+                        subformula: node,
+                        position: cell.first,
+                        origin: cell.t_first,
+                        outcome: failed,
+                    });
+                }
             }
         }
-        for cells in self.buffers.values_mut() {
+        for elem in std::mem::take(&mut self.elems) {
+            if elem.rep == Some(TickOutcome::Pending) {
+                self.emitted.insert((elem.node, elem.pos), failed);
+                results.push(TickResult {
+                    subformula: elem.node,
+                    position: elem.pos,
+                    origin: self.events[elem.pos].tick,
+                    outcome: failed,
+                });
+            }
+        }
+        for cells in self.cells.values_mut() {
             cells.clear();
         }
         self.history_start = Some(self.now);
-        let mut results = Vec::new();
-        for (node, position) in open {
-            self.failed.insert((node, position));
-            let outcome = TickOutcome::Failed {
-                gap,
-                max_reading_gap: self.spec.max_reading_gap,
-            };
-            self.emitted.insert((node, position), outcome);
-            results.push(TickResult {
-                subformula: node,
-                position,
-                origin: self.events[position].tick,
-                outcome,
-            });
-        }
+        results.sort_by_key(|r| (r.subformula, r.position));
         results
     }
 
@@ -871,14 +1045,13 @@ impl<'f> TickMonitorReference<'f> {
 
     /// The outcome of an instance evaluated afresh from the current state.
     pub fn current(&self, subformula: usize, position: usize) -> TickOutcome {
-        self.eval(subformula, position, &mut Memo::new())
-            .outcome(&self.spec.capacities)
+        self.outcome_of(self.temporal_val(subformula, position))
     }
 
     /// The `(first tick, last tick, lost)` of each cell of a buffered
     /// node's buffer, oldest first.
     pub fn cells_of(&self, node: usize) -> Vec<(i128, i128, bool)> {
-        self.buffers.get(&node).map_or_else(Vec::new, |cells| {
+        self.cells.get(&node).map_or_else(Vec::new, |cells| {
             cells
                 .iter()
                 .map(|cell| (cell.t_first, cell.t_last, cell.lost))
@@ -891,8 +1064,6 @@ impl<'f> TickMonitorReference<'f> {
         self.now
     }
 }
-
-type Memo = std::collections::HashMap<(usize, usize), Val>;
 
 /// The comparison of FR-160 "Counter-tick intervals and endpoints": whether
 /// `b - a <= bound` for readings `a` and `b` under `uncertainty`. Returns

@@ -1,41 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-251 "Transitions" (TC-1081 steps 4, 6-8): the state-passing entries
-//! generated as complete-V1 source are checked by the one checker and run by
-//! `qsl-eval`'s function evaluator against the tick-trace reference.
+//! FR-251 "Transitions" (TC-1081 steps 4, 6-8, 10-14): the state-passing
+//! entries generated as complete-V1 source are checked by the one checker and
+//! run by `qsl-eval`'s function evaluator against the tick-trace reference.
 
-use qsl_analyze::monitor_entries::{render, BoolExpr, EntrySpec, IntervalNode, Thresholds};
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+
+use qsl_analyze::monitor_entries::{render, spec_from_plan, EntrySpec};
+use qsl_eval::temporal::{TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome, TickStep};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
+use qsl_replay::TimedMonitorPlan;
 use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::FamilyOutcome;
+use quire_exact::{Meter, Outcome, Rational, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 
-/// Eventually within [0, 3000] ticks at uncertainty 0 (cover width 1).
-pub(crate) fn deadline_spec() -> EntrySpec {
-    EntrySpec {
-        atoms: vec![0, 1],
-        node: IntervalNode {
-            future: true,
-            dual: false,
-            phi: None,
-            psi: BoolExpr::Atom(1),
-            thresholds: Thresholds {
-                all_lo: 1,
-                all_hi: 2999,
-                none_lo: -1,
-                none_hi: 3001,
-                zero_in: true,
-            },
-            capacity: 8,
-            subformula: 3,
-        },
-        subject: "C".to_owned(),
-        max_reading_gap: 100,
-        activation_capacity: 4,
-        root: None,
-        clause: None,
-        unprojectable: Vec::new(),
-        tick_unit: None,
-    }
-}
+use crate::monitor_plan::{base_target, premise_plan};
 
 pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
     let text = format!(
@@ -93,25 +75,14 @@ pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
 
 #[test]
 fn the_generated_declarations_check() {
-    let _ = package_of(&render(&deadline_spec()));
+    let spec = spec_from_plan(&deadline_plan()).expect("the plan is generated");
+    let _ = package_of(&render(&spec));
 }
 
 // ---------------------------------------------------------------------
 // The differential (FR-251-AC-7): the generated entries, run by qsl-eval's
 // function evaluator under a simulated runtime, against the tick-trace
 // reference evaluator.
-
-use std::collections::BTreeMap;
-
-use qsl_analyze::monitor_entries::{spec_from_plan, EntryRefusal};
-use qsl_eval::temporal::{TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome, TickStep};
-use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_replay::TimedMonitorPlan;
-use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_eval::FamilyOutcome;
-use quire_exact::{Meter, Outcome, ScalarLimits, Value};
-
-use crate::monitor_plan::{base_target, checked_clause, premise_plan};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -135,20 +106,20 @@ pub(crate) enum Input {
 }
 
 /// The code of an outcome, as the entries keep it.
-fn reference_code(outcome: TickOutcome) -> i64 {
+pub(crate) fn reference_code(outcome: TickOutcome) -> i64 {
     match outcome {
         TickOutcome::True => 1,
         TickOutcome::False => 2,
         TickOutcome::Pending => 3,
         TickOutcome::Indeterminate => 4,
-        TickOutcome::Incomplete { .. } => 5,
         TickOutcome::Failed { .. } => 6,
         TickOutcome::ActivationLimit { .. } => 7,
-        TickOutcome::AtomProjection { atom } => 100 + i64::try_from(atom).unwrap(),
+        TickOutcome::AtomProjection { atom } => 1000 + i64::try_from(atom).unwrap(),
+        TickOutcome::Incomplete { capacity } => 2000 + i64::try_from(capacity).unwrap(),
     }
 }
 
-fn reference_spec<'p>(plan: &'p TimedMonitorPlan) -> TickMonitorSpec<'p> {
+pub(crate) fn reference_spec<'p>(plan: &'p TimedMonitorPlan) -> TickMonitorSpec<'p> {
     TickMonitorSpec {
         formula: plan.program().formula(),
         activation: plan.program().activation(),
@@ -180,13 +151,13 @@ fn reference_spec<'p>(plan: &'p TimedMonitorPlan) -> TickMonitorSpec<'p> {
     }
 }
 
-/// Per input, the sorted `(origin, code)` results of the interval node.
-pub(crate) fn run_reference(
-    plan: &TimedMonitorPlan,
-    nodes: &[usize],
+/// Per input, the `(origin * 1000 + subformula, code)` results of the
+/// reference, in their reported order.
+pub(crate) fn run_reference_with(
+    spec: TickMonitorSpec<'_>,
     inputs: &[Input],
 ) -> Vec<Vec<(i128, i64)>> {
-    let mut monitor = TickMonitorReference::new(reference_spec(plan));
+    let mut monitor = TickMonitorReference::new(spec);
     inputs
         .iter()
         .map(|input| {
@@ -201,27 +172,29 @@ pub(crate) fn run_reference(
                 },
                 Input::Poll(reading) => TickStep::Poll { reading: *reading },
             };
-            let mut results: Vec<(i128, i64)> = monitor
+            monitor
                 .step(&step)
                 .expect("the step applies")
                 .into_iter()
-                .filter(|result| nodes.contains(&result.subformula))
                 .map(|result| {
                     (
                         result.origin * 1000 + i128::try_from(result.subformula).unwrap(),
                         reference_code(result.outcome),
                     )
                 })
-                .collect();
-            results.sort_unstable();
-            results
+                .collect()
         })
         .collect()
 }
 
-/// Per input, the sorted `(origin, code)` results of the generated entries,
-/// with this function playing the runtime: the baseline, the modular delta
-/// and the reading-gap fault (RT FR-276, QSL FR-251 "Counter faults").
+pub(crate) fn run_reference(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<(i128, i64)>> {
+    run_reference_with(reference_spec(plan), inputs)
+}
+
+/// Per input, the `(origin * 1000 + subformula, code)` results of the
+/// generated entries, with this function playing the runtime: the baseline,
+/// the modular delta and the reading-gap fault (RT FR-276, QSL FR-251
+/// "Counter faults").
 pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<(i128, i64)>> {
     let spec = spec_from_plan(plan).expect("the plan is in the generated fragment");
     run_entries_with(plan, &spec, inputs)
@@ -231,7 +204,7 @@ pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<
 /// values (`spec.clause`).
 pub(crate) fn run_entries_with(
     plan: &TimedMonitorPlan,
-    spec: &qsl_analyze::monitor_entries::EntrySpec,
+    spec: &EntrySpec,
     inputs: &[Input],
 ) -> Vec<Vec<(i128, i64)>> {
     let mut body = String::from(
@@ -283,12 +256,19 @@ pub(crate) fn run_entries_with(
                             };
                             format!("{}: {value}", clause.parameters[0].0)
                         }
-                        None => spec
-                            .atoms
-                            .iter()
-                            .map(|atom| format!("a{atom}: {}", truth(atom)))
-                            .collect::<Vec<_>>()
-                            .join(", "),
+                        None => {
+                            let mut fields = spec
+                                .atoms
+                                .iter()
+                                .map(|atom| format!("a{atom}: {}", truth(atom)))
+                                .collect::<Vec<_>>();
+                            if spec.activation
+                                == qsl_analyze::monitor_entries::ActivationKind::EachGuarded
+                            {
+                                fields.push("guard: true".to_owned());
+                            }
+                            fields.join(", ")
+                        }
                     };
                     format!("onEventR(s{step_no}, {delta}, Inputs {{ {fields} }})")
                 }
@@ -300,7 +280,6 @@ pub(crate) fn run_entries_with(
             "let t{step_no} = {call} in let s{step_no} = t{step_no}.state in "
         );
         encoded.push(format!("encode(t{step_no}.results)"));
-        encoded.push(format!("dump(s{step_no})"));
         encoded.push("marker()".to_owned());
     }
     let joined = encoded
@@ -311,9 +290,8 @@ pub(crate) fn run_entries_with(
     let helpers = "function marker using v(): Sequence<Integer> pure { sequence[0 - 1] }\n\
         function pairInts using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Sequence<Integer>> pure { sequence[a, b] }\n\
         function cat using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Integer> pure { flatten(pairInts(a, b)) }\n\
-        function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else if l.limit = \"atom_projection\" then 100 + l.amount else 5; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
-        function dump using v(s: State): Sequence<Integer> pure { map(x in s.buffer_0: 1000000000000 + x.tFirst * 10000 + x.tLast * 10 + (if x.lost then 1 else 0)) }\n\
-        function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: ((r.instance.origin_tick * 1000 + r.instance.subformula) * 1000) + code(r.outcome)) }\n";
+        function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else if l.limit = \"atom_projection\" then 1000 + l.amount else 2000 + l.amount; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
+        function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: ((r.instance.origin_tick * 1000 + r.instance.subformula) * 100000) + code(r.outcome)) }\n";
     let package = package_of(&format!("{}\n{helpers}\n{body}", render(spec)));
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
@@ -334,25 +312,18 @@ pub(crate) fn run_entries_with(
             panic!("integers")
         };
         let number: i128 = value.as_big().try_into().expect("small");
-        if number >= 1_000_000_000_000 {
-            if std::env::var("QSL_DUMP").is_ok() {
-                eprintln!("  entries cell {}", number - 1_000_000_000_000);
-            }
-        } else if number < 0 {
+        if number < 0 {
             steps.push(Vec::new());
         } else {
             steps
                 .last_mut()
                 .unwrap()
-                .push((number / 1000, i64::try_from(number % 1000).unwrap()));
+                .push((number / 100_000, i64::try_from(number % 100_000).unwrap()));
         }
     }
     steps.pop();
-    steps.iter_mut().for_each(|step| step.sort_unstable());
     steps
 }
-
-use std::fmt::Write as _;
 
 pub(crate) fn deadline_plan() -> TimedMonitorPlan {
     premise_plan(
@@ -366,10 +337,19 @@ pub(crate) fn deadline_plan() -> TimedMonitorPlan {
     )
 }
 
+/// The first interval operator of the plan's formula.
+fn interval_node(plan: &TimedMonitorPlan) -> usize {
+    plan.intervals()[0].0.index()
+}
+
+fn sorted(mut steps: Vec<Vec<(i128, i64)>>) -> Vec<Vec<(i128, i64)>> {
+    steps.iter_mut().for_each(|step| step.sort_unstable());
+    steps
+}
+
 #[test]
 fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
     let plan = deadline_plan();
-    let node = [spec_from_plan(&plan).unwrap().node.subformula];
     let atom = spec_from_plan(&plan).unwrap().atoms[0];
     let inputs = vec![
         Input::Reading(0, vec![(atom, false)]),
@@ -377,11 +357,9 @@ fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
         Input::Reading(2998, vec![(atom, true)]),
         Input::Watermark(4000),
     ];
-    let _ = checked_clause;
-    let _: Option<EntryRefusal> = None;
     assert_eq!(
         run_entries(&plan, &inputs),
-        run_reference(&plan, &node, &inputs)
+        run_reference(&plan, &inputs)
     );
 }
 
@@ -446,16 +424,17 @@ fn differential(formula: &str, target: qsl_replay::MonitorTarget, traces: u64) {
     let spec = spec_from_plan(&plan).unwrap_or_else(|refusal| panic!("{formula}: {refusal}"));
     for seed in 0..traces {
         let inputs = trace(seed * 7919 + 13, &spec.atoms, target.width_bits, 14);
-        let entries = run_entries(&plan, &inputs);
-        let mut nodes = vec![spec.node.subformula];
-        nodes.extend(spec.root.as_ref().map(|root| root.index));
-        let reference = run_reference(&plan, &nodes, &inputs);
+        let entries = sorted(run_entries(&plan, &inputs));
+        let reference = sorted(run_reference(&plan, &inputs));
         assert_eq!(
             entries, reference,
             "{formula} {target:?} seed {seed}\n{inputs:#?}"
         );
     }
 }
+
+const P: &str = "holds(c.versionNumber = 3)";
+const Q: &str = "holds(c.versionNumber = 2)";
 
 const SHAPES: [&str; 9] = [
     "eventually[0 ms, 3 ms] holds(c.versionNumber = 3)",
@@ -468,6 +447,33 @@ const SHAPES: [&str; 9] = [
     "holds(c.versionNumber = 2) triggered[0 ms, 3 ms] holds(c.versionNumber = 3)",
     "eventually[1 ms, 3 ms] (holds(c.versionNumber = 2) and not holds(c.versionNumber = 3))",
 ];
+
+/// Nested interval operators at any depth, temporal operands of the binary
+/// operators, Boolean combinations and two interval operators joined at one
+/// position.
+fn nested_shapes() -> Vec<String> {
+    vec![
+        format!("once[0 ms, 3 ms] once[0 ms, 2 ms] {P}"),
+        format!("eventually[0 ms, 3 ms] eventually[0 ms, 2 ms] {P}"),
+        format!("once[0 ms, 3 ms] eventually[0 ms, 2 ms] {P}"),
+        format!("eventually[0 ms, 3 ms] once[0 ms, 2 ms] {P}"),
+        format!("always[0 ms, 3 ms] historically[0 ms, 2 ms] {P}"),
+        format!("historically[0 ms, 3 ms] always[1 ms, 2 ms] {P}"),
+        format!("once[0 ms, 3 ms] once[0 ms, 2 ms] once[0 ms, 1 ms] {P}"),
+        format!("eventually[0 ms, 3 ms] once[0 ms, 2 ms] eventually[0 ms, 1 ms] {P}"),
+        format!("{Q} until[0 ms, 3 ms] (eventually[0 ms, 2 ms] {P})"),
+        format!("(eventually[0 ms, 2 ms] {Q}) release[0 ms, 3 ms] {P}"),
+        format!("(historically[0 ms, 2 ms] {Q}) since[0 ms, 3 ms] {P}"),
+        format!("{Q} triggered[0 ms, 3 ms] (once[0 ms, 2 ms] {P})"),
+        format!("once[0 ms, 3 ms] {Q} and eventually[0 ms, 2 ms] {P}"),
+        format!("once[0 ms, 3 ms] {Q} or not eventually[0 ms, 1 ms] {P}"),
+        format!("{Q} implies eventually[0 ms, 3 ms] once[0 ms, 2 ms] {P}"),
+        format!("eventually[0 ms, 3 ms] ({Q} and once[1 ms, 2 ms] {P})"),
+        format!("once[0 ms, 3 ms] eventually {P}"),
+        format!("eventually[0 ms, 3 ms] always {P}"),
+        format!("once[0 ms, 3 ms] ({Q} and eventually {P})"),
+    ]
+}
 
 fn microsecond_target(
     uncertainty: Rational,
@@ -485,49 +491,42 @@ fn microsecond_target(
     }
 }
 
-use quire_exact::Rational;
+/// The trace families of FR-251-AC-7: no uncertainty, uncertainty 1/2, a
+/// small buffer that overflows, and a small reading gap.
+fn families() -> [qsl_replay::MonitorTarget; 4] {
+    [
+        microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600),
+        microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600),
+        microsecond_target(crate::monitor_plan::ratio(0, 1), 1, 12, 3600),
+        microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 1500),
+    ]
+}
 
 #[test]
 fn every_operator_agrees_with_the_reference_without_uncertainty() {
     for shape in SHAPES {
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600),
-            25,
-        );
+        differential(shape, families()[0].clone(), 25);
     }
 }
 
 #[test]
 fn every_operator_agrees_with_the_reference_under_uncertainty() {
     for shape in SHAPES {
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600),
-            25,
-        );
+        differential(shape, families()[1].clone(), 25);
     }
 }
 
 #[test]
 fn small_buffers_overflow_the_same_way() {
     for shape in SHAPES {
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(0, 1), 1, 12, 3600),
-            25,
-        );
+        differential(shape, families()[2].clone(), 25);
     }
 }
 
 #[test]
 fn reading_gaps_fail_the_open_instances_the_same_way() {
     for shape in SHAPES {
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 1500),
-            25,
-        );
+        differential(shape, families()[3].clone(), 25);
     }
 }
 
@@ -542,26 +541,18 @@ const ROOT_SHAPES: [&str; 5] = [
 #[test]
 fn unbounded_roots_fold_one_outcome_per_activation_like_the_reference() {
     for shape in ROOT_SHAPES {
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600),
-            25,
-        );
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600),
-            25,
-        );
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(0, 1), 1, 12, 3600),
-            25,
-        );
-        differential(
-            shape,
-            microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 1500),
-            25,
-        );
+        for target in families() {
+            differential(shape, target, 25);
+        }
+    }
+}
+
+#[test]
+fn nested_operators_agree_with_the_reference_on_every_trace_family() {
+    for shape in nested_shapes() {
+        for target in families() {
+            differential(&shape, target, 12);
+        }
     }
 }
 
@@ -572,13 +563,6 @@ fn a_zero_activation_capacity_never_starts_the_root() {
     for shape in ROOT_SHAPES {
         differential(shape, target.clone(), 10);
     }
-}
-
-#[test]
-fn dump_entries_wire() {
-    let package = package_of(&render(&deadline_spec()));
-    let emission = qsl_package::emit_checked(&package).expect("emits");
-    std::fs::write("/tmp/q1463-wire.json", emission.package().bytes()).unwrap();
 }
 
 /// The plan-root wire (QSpec FR-487, FR-322-AC-308/309): the generated
@@ -847,7 +831,6 @@ fn the_entries_carry_the_declaration_less_function_key() {
         assert!(operands.iter().all(|segment| segment.get("node").is_some()));
     }
 }
-
 /// QSpec FR-487 "Counter-gap path" (MP-54, MP-55, MP-56, MP-57): on a gap
 /// every open instance fails and leaves the state, a decided one and the
 /// results already emitted are untouched, and the faulting reading is the
@@ -864,10 +847,10 @@ fn gap_results(acks: &[bool]) -> (usize, Vec<Vec<(i128, i64)>>) {
         .collect();
     inputs.push(Input::Reading(5000, vec![(atom, false)]));
     inputs.push(Input::Reading(5010, vec![(atom, false)]));
-    let entries = run_entries(&plan, &inputs);
-    let reference = run_reference(&plan, &[spec.node.subformula], &inputs);
+    let entries = sorted(run_entries(&plan, &inputs));
+    let reference = sorted(run_reference(&plan, &inputs));
     assert_eq!(entries, reference);
-    (spec.node.subformula, entries)
+    (interval_node(&plan), entries)
 }
 
 #[test]
@@ -913,10 +896,9 @@ fn the_entries_evaluate_atoms_from_admitted_values() {
             .zip(["versionNumber = 2", "versionNumber = 3"])
             .map(|(atom, text)| (*atom, text.to_owned()))
             .collect(),
+        guard: None,
         profile: "v".to_owned(),
     });
-    let mut nodes = vec![spec.node.subformula];
-    nodes.extend(spec.root.as_ref().map(|root| root.index));
     for seed in 0..25 {
         let mut inputs = trace(seed * 31 + 5, &spec.atoms, target.width_bits, 14);
         // The atoms are functions of one admitted value.
@@ -933,8 +915,8 @@ fn the_entries_evaluate_atoms_from_admitted_values() {
             }
         }
         assert_eq!(
-            run_entries_with(&plan, &spec, &inputs),
-            run_reference(&plan, &nodes, &inputs),
+            sorted(run_entries_with(&plan, &spec, &inputs)),
+            sorted(run_reference(&plan, &inputs)),
             "seed {seed}"
         );
     }
@@ -956,54 +938,17 @@ fn an_atom_without_a_projection_settles_incomplete_atom_projection() {
         let mut spec = spec_from_plan(&plan).unwrap();
         let atom = *spec.atoms.last().unwrap();
         spec.unprojectable = vec![atom];
-        let mut nodes = vec![spec.node.subformula];
-        nodes.extend(spec.root.as_ref().map(|root| root.index));
-        let reference = |unprojectable: bool| {
-            let mut ref_spec = reference_spec(&plan);
-            if unprojectable {
-                ref_spec.unprojectable.insert(atom);
-            }
-            ref_spec
-        };
         let mut saw_projection = false;
         for seed in 0..15 {
             let inputs = trace(seed * 7919 + 13, &spec.atoms, target.width_bits, 14);
-            let entries = run_entries_with(&plan, &spec, &inputs);
-            let mut monitor = TickMonitorReference::new(reference(true));
-            let expected: Vec<Vec<(i128, i64)>> = inputs
-                .iter()
-                .map(|input| {
-                    let step = match input {
-                        Input::Reading(reading, atoms) => TickStep::Reading {
-                            reading: *reading,
-                            atoms: atoms.iter().copied().collect(),
-                            guard: true,
-                        },
-                        Input::Watermark(boundary) => TickStep::Watermark {
-                            boundary: *boundary,
-                        },
-                        Input::Poll(reading) => TickStep::Poll { reading: *reading },
-                    };
-                    let mut results: Vec<(i128, i64)> = monitor
-                        .step(&step)
-                        .unwrap()
-                        .into_iter()
-                        .filter(|result| nodes.contains(&result.subformula))
-                        .map(|result| {
-                            (
-                                result.origin * 1000 + i128::try_from(result.subformula).unwrap(),
-                                reference_code(result.outcome),
-                            )
-                        })
-                        .collect();
-                    results.sort_unstable();
-                    results
-                })
-                .collect();
+            let entries = sorted(run_entries_with(&plan, &spec, &inputs));
+            let mut ref_spec = reference_spec(&plan);
+            ref_spec.unprojectable.insert(atom);
+            let expected = sorted(run_reference_with(ref_spec, &inputs));
             saw_projection |= expected
                 .iter()
                 .flatten()
-                .any(|(_, code)| *code == 100 + i64::try_from(atom).unwrap());
+                .any(|(_, code)| *code == 1000 + i64::try_from(atom).unwrap());
             assert_eq!(entries, expected, "{shape} seed {seed}");
         }
         assert!(saw_projection, "{shape}: some instance reads the atom");

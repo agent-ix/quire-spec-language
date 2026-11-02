@@ -44,6 +44,7 @@ mod plan;
 mod position;
 mod steps;
 mod tick_monitor;
+mod tick_shape;
 mod timed;
 mod tuple;
 mod window;
@@ -61,6 +62,7 @@ pub use tick_monitor::{
     definitely_before, within_bound, TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome,
     TickResult, TickStep, TickStepError,
 };
+pub use tick_shape::{operator_parts, temporal_leaves, NodeShape, TickShape};
 pub use timed::{evaluate_timed_at, TimedTrace};
 pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,

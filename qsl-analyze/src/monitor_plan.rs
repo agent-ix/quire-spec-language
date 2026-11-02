@@ -7,6 +7,7 @@ use num_traits::{One, ToPrimitive};
 use quire_exact::{Integer as ExactInteger, Rational};
 
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_eval::temporal::{TickBound, TickShape};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
@@ -20,15 +21,6 @@ use qsl_semantics::library::LibraryName;
 /// target unit whose exact duration is `unit_seconds`.
 fn default_event_rate(unit_seconds: &Rational) -> Rational {
     unit_seconds.mul(&Rational::from_integer(ExactInteger::from(1_000_000_i64)))
-}
-
-/// The span of ticks an entry of an interval operator is kept for (FR-251
-/// "Buffers", AC-13): the interval's upper bound plus the width of the tick
-/// cover widened by the uncertainty on both sides, `1 + 2u`.
-pub fn retention_window(upper: &Rational, uncertainty: &Rational) -> Rational {
-    let one = Rational::from_integer(ExactInteger::from(1_i64));
-    let two = Rational::from_integer(ExactInteger::from(2_i64));
-    upper.add(&one).add(&two.mul(uncertainty))
 }
 
 /// FR-251's per-window capacity: `ceil(rate * window) + 1`.
@@ -126,6 +118,7 @@ pub fn produce(
     };
     let mut intervals = Vec::new();
     let mut buffers = Vec::new();
+    let mut tick_bounds = std::collections::BTreeMap::new();
     for operator in clause.operators() {
         let Some(CheckedInterval::Timed(interval)) = &operator.interval else {
             continue;
@@ -139,9 +132,24 @@ pub fn produce(
             upper.clone(),
             interval.upper_closed(),
         );
-        let window = retention_window(&upper, &target.uncertainty);
+        tick_bounds.insert(
+            operator.node.index(),
+            TickBound {
+                lower,
+                lower_closed: interval.lower_closed(),
+                upper,
+                upper_closed: interval.upper_closed(),
+            },
+        );
         intervals.push((id, tick_interval));
-        buffers.push((id, buffer_capacity(&rate_limit, &window)?));
+    }
+    let shape = TickShape::of(clause.formula(), &tick_bounds, &target.uncertainty);
+    for (id, _) in &intervals {
+        let retention = shape
+            .node(id.index())
+            .map(|node| node.retention.clone())
+            .ok_or(MonitorPlanRefusal::InvalidBufferInputs)?;
+        buffers.push((*id, buffer_capacity(&rate_limit, &retention)?));
     }
 
     let formula = clause.formula();
@@ -251,7 +259,7 @@ mod tests {
     fn event_buffer_capacity_rounds_up_then_adds_one() {
         assert_eq!(buffer_capacity(&ratio(2, 1), &ratio(10, 1)), Ok(21));
         // FR-251-AC-2 and AC-13: 1 MHz ticks, 2 events per ms.
-        let window = retention_window(&ratio(10_000, 1), &ratio(0, 1));
+        let window = ratio(10_001, 1);
         assert_eq!(buffer_capacity(&ratio(2, 1000), &window), Ok(22));
         assert_eq!(buffer_capacity(&ratio(1, 3), &ratio(10, 1)), Ok(5));
     }
