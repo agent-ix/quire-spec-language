@@ -47,3 +47,30 @@ Legacy claims checked and found true: MAX_SEQUENCE_ITEMS is 10,000 in src/native
 ## Verdict
 
 Not mergeable as it stands: FND-001, FND-002 and FND-003 are contradictions with merged requirements, and FND-005, FND-006 leave existing spec vectors failing. Everything else is a fix inside this PR or a ruling. Each of the ACs read can fail except as noted in FND-010 and FND-014; the TC rows carry concrete vectors, with no inspect-and-record rows other than the three inspection ACs of FND-014.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-016 | low | FR-506 now bounds model.sequence_maximum at u32::MAX, but the amended FR-015 sentence still says "used as given with no ceiling", FR-255 says "Every limit has no ceiling", and no AC or TC-1301 row exercises u32::MAX (admit a maximum of u32::MAX at limit u32::MAX; a limit above u32::MAX is not expressible). Add the exception sentence and one vector. | spec/functional/FR-506-bound-model-admission-by-named-spine-limits.md:66-72; spec/functional/FR-015-project-native-model-semantics.md:40 | missing-requirement |
+| FND-017 | low | Wording left over after the rulings: FR-513-AC-4 still says the widening "needs the planner's and Peter's confirmation", FR-506 still says "Planner confirmation requested" and "(planner confirmation item)", and FR-499 ordering item 3 lists `number` among the files QSL-838 owns for deletion although FR-511 moves it to the root. State the rulings as made and say moved. | spec/functional/FR-513-name-the-successor-or-keep-of-each-retained-criterion-that-rides-a-retired-path.md:61; spec/functional/FR-499-delete-each-retired-family-only-behind-its-named-successor.md:68 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-511 cites FR-499's row, has one disposition (keep until the QSL-1506 port is green, then retire FR-038, no permanent keep); FR-499's row cites FR-511; consumer list now covers protocol_artifact internals, 10 tests/it files that exist, support, example and quire-protocol assessment.rs:22. |
+| FND-002 | fixed | FR-057 table rows and FR-057-AC-11 now name the probabilistic and task-set claim forms and cite FR-507/TC-1302; FR-507 says it supersedes. |
+| FND-003 | fixed | FR-046-AC-2 now refuses cycles with no termination measure and admits measured ones (FR-091-AC-30, FR-146); FR-513-AC-4 keeps the unmeasured-cycle refusal vector. Wording residue is FND-017. |
+| FND-004 | fixed | FR-513 rows are Keep until green and cite FR-499's PORT QSL-1506 row; FR-513-AC-15 is now a matrix test. |
+| FND-005 | fixed | TC-1252 uses protocol profile p; FR-508 puts the about 99 fixture sites in the coding ticket's scope and states the unknown_profile/wrong-selection-role change as intended; AC-6 no longer claims package equality. |
+| FND-006 | fixed | TC-1026 step 5 and expected result use the stage-limit stop and the formal identity parameter; ADR-033 lines 92, 173 and 246 amended. |
+| FND-007 | fixed | The pieces table splits FR-480-AC-2 into disjoint sentences; FR-514-AC-6 is a test (TC-1309 row 11) that expects only AC-2 in two rows. |
+| FND-008 | fixed | FR-506 names the intake-limits member, resource_exhausted/intake-limit-exceeded with kind, bound, actual, setting, the builder, stage_limits and settings operand; FR-506-AC-7, TC-1301 row 14; FR-255 owner list updated; FR-015 renamed to model.sequence_maximum. |
+| FND-009 | fixed | A resolved library is defined as reached through imports (CheckedUnit::libraries()); components 3 and 5 extended and the legacy mapping stated as intended. |
+| FND-010 | fixed | FR-509-AC-5 and TC-1304 row 9 use overflow block with d = 3 stopping full-queue (stop exists in qsl-eval channel.rs); lose/duplicate stated; fixture note no longer promises a changed cause. |
+| FND-011 | fixed | Restored: FR-015-AC-4 binding conflict into FR-513-AC-2, FR-050-AC-3 definition identity/revision/artifact into AC-9, temporal call site into AC-3, observation occurrences into AC-14, Rational unit as FR-505 unit member and AC-7. |
+| FND-012 | fixed | Planner ruling applied: raisable, exit 22, bounded at u32::MAX; the hard-cap loosening is stated in FR-506; FR-015 renamed. Residue is FND-016 and FND-017. |
+| FND-013 | fixed | FR-508 states why timed is admitted (dense-time interval, FR-234) and that infinite-trace is refused by FR-508-AC-3 and TC-1303 row 5. |
+| FND-014 | fixed | FR-510-AC-6, FR-514-AC-6 and FR-513-AC-15 are tests; TC-117 typo, undefined scope and the FR-512 EARS sentence fixed; quire validate on all changed files prints no warning. |
+| FND-015 | fixed | FR-514 states the row numbers were checked against QSpec FR-142; contract tickets QSL-1536 to QSL-1539 exist for the Rational type, inapplicable-kind, delivery text and FR-052 cause. |

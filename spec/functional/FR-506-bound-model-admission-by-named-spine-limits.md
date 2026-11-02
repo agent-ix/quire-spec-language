@@ -93,21 +93,22 @@ spine equivalent, the declared collection maximum.
 | FR-506-AC-5 | At each of `intake.input_bytes` (document bytes), `s3.nodes` (formal nodes) and `identity.input_bytes` (identity preimage bytes), a model whose usage equals the setting admits, usage plus one refuses at that setting naming it, and zero refuses; none of the legacy messages (`model roles limit exceeded`, `model entries limit exceeded`, `model nodes limit exceeded`) is produced. | Test (TC-1301) |
 | FR-506-AC-6 | A model nested 200 levels deep in option and sequence value types admits under default limits (ADR-030 D-1: depth is not a limit). | Test (TC-1301) |
 | FR-506-AC-7 | `model.sequence_maximum` set to 3 through the library limits builder, through a replay request's `stage_limits` entry and through the settings operand `model.sequence_maximum=3` each refuse a declared maximum 4 with `resource_exhausted`/`intake-limit-exceeded` carrying `kind`, `bound` 3, `actual` 4 and `setting` `model.sequence_maximum`, and each admits maximum 3. | Test (TC-1301) |
+| FR-506-AC-8 | `model.sequence_maximum` set to 4294967295 (`u32::MAX`) admits a declared maximum 4294967295; the settings operand `model.sequence_maximum=4294967296` is refused with the settings operation's usage refusal naming the operand and the cause `not an integer that fits a bound` (FR-255 Behavior 6), and no limit changes. | Test (TC-1301) |
 
 ## Dependencies
 
 - **Upstream:** FR-255 (setting table; this requirement adds the row
   `model.sequence_maximum`), FR-056, ADR-030 D-1, ADR-014 B-6 (the fixed
   native-v1 ceiling that this requirement ports as a setting).
-- **Loosened hard caps (planner confirmation item):** the deleted code clamped
+- **Loosened hard caps (planner ruling):** the deleted code clamped
   roles, entries and nodes at 10,000 and nesting depth at 64, and bounded the
   artifact at 1 MiB, each as a hard maximum a caller could only lower. On the
   spine the equivalent limits are `model.declaration_records` (100,000),
   `s3.nodes` (100,000), `intake.input_bytes` (64 MiB) and
   `identity.input_bytes`, all raisable without ceiling (FR-255), and depth is
   no limit (ADR-030 D-1). This requirement therefore loosens those legacy hard
-  caps; the planner is asked to confirm.
+  caps, as the planner ruled.
 - **Spec/code note:** FR-015's text says the sequence limit is `resource_exhausted`
   and raisable; the deleted code refused with `unrepresentable_constraint` at
   exit 20, not raisable. This requirement keeps FR-015's text and amends FR-015 to the setting name
-  `model.sequence_maximum`. Planner confirmation requested.
+  `model.sequence_maximum`. The planner ruled to keep FR-015's text.

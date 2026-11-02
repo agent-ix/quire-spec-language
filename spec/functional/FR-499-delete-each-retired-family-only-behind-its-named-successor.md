@@ -65,8 +65,8 @@ and the tickets named below own each PORT.
 3. QSL-840 (B8 sink and handoff writer) lands with or before that change and
    owns `native/temporal_v2.rs` and `temporal_v3.rs`, the handoff writer, the
    examples, committed snapshots and the `handoff-writer` feature. QSL-838 owns
-   `decode, domain, encoding, intake, models, number, occurrence, recovery,
-   validate, value_graph, wire, work, v2/*, v3/*`. QSL-858 owns `src/temporal*`.
+   `decode, domain, encoding, intake, models, occurrence, recovery,
+   validate, value_graph, wire, work, v2/*, v3/*`. QSL-858 owns `src/temporal*`. `number.rs` is owned by none of them: FR-511 moves it to the root module `number` until the QSL-1506 port is green.
    No file has two owners.
 4. QSL-841 lands after QSL-840: six `native/*` files still match
    `DeclarationKind::Protocol`.

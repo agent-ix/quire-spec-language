@@ -37,7 +37,7 @@ and returns a LinkedPackage that retains the exact selected models and source.
 
 The native model adapter shall derive primitive bounds, option structure, record fields and collection maxima from the supplied IR declarations.
 
-If native admission reaches a sequence declaration with a maximum greater than the caller's `model.sequence_maximum` limit (published default 10,000, used as given with no ceiling; FR-506), then the native model adapter shall refuse the entire model with resource_exhausted naming that limit, its value and the declared maximum, before publishing an artifact.
+If native admission reaches a sequence declaration with a maximum greater than the caller's `model.sequence_maximum` limit (published default 10,000, used as given; the largest value it takes is `u32::MAX`, the width of a declared maximum; FR-506), then the native model adapter shall refuse the entire model with resource_exhausted naming that limit, its value and the declared maximum, before publishing an artifact.
 
 The sequence limit applies to every collection wrapper in used or unused
 record fields and values, including nested options and sequences. It constrains

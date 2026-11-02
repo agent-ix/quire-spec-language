@@ -12,7 +12,7 @@ relationships:
 
 Verify that each legacy native-model limit is bounded on the spine by the
 setting FR-506 names, that the collection maximum is a raisable setting, and
-that nesting depth is no limit. Scope: FR-506-AC-1 to FR-506-AC-7.
+that nesting depth is no limit. Scope: FR-506-AC-1 to FR-506-AC-8.
 
 ## Test Procedure
 
@@ -37,9 +37,10 @@ operations, parameters, results and frame entries are 2 + 2 + 1 + 1 + 1 + 3 =
 | 11 | `s3.nodes` and `identity.input_bytes` at exact usage, one short, 0 | admitted, refused naming the setting, refused |
 | 12 | row 2, 5, 10, 11 refusals | none contains `model roles limit exceeded`, `model entries limit exceeded` or `model nodes limit exceeded` |
 | 14 | `model.sequence_maximum` 3 through the builder, `stage_limits` and the settings operand; maximum 4, then 3 | `resource_exhausted`/`intake-limit-exceeded` with `kind`, `bound` 3, `actual` 4, `setting`; then admitted |
+| 15 | `model.sequence_maximum` 4294967295 with a declared maximum 4294967295; operand `model.sequence_maximum=4294967296` | admitted; usage refusal naming the operand, cause `not an integer that fits a bound`; no limit changes |
 | 13 | defaults; model 200 levels deep of option and sequence value types | admitted |
 
-Tag the test `#[trace("FR-506-AC-1", "FR-506-AC-2", "FR-506-AC-3", "FR-506-AC-4", "FR-506-AC-5", "FR-506-AC-6", "FR-506-AC-7", "TC-1301")]`.
+Tag the test `#[trace("FR-506-AC-1", "FR-506-AC-2", "FR-506-AC-3", "FR-506-AC-4", "FR-506-AC-5", "FR-506-AC-6", "FR-506-AC-7", "FR-506-AC-8", "TC-1301")]`.
 
 ## Expected Results
 

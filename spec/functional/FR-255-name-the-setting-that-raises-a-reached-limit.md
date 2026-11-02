@@ -76,8 +76,9 @@ A setting name follows QSpec FR-461's naming rule. The table is the set of
 names QSL accepts at every entry point, and lists every limit of the
 requirements named below. Each row's default is the published default a
 caller gets when it does not configure the limit (ADR-014 §2, "inherited").
-Every limit has no ceiling: a caller raises or lowers it, and the value is
-used as given. The requirement that owns each limit defines its counter:
+Every limit has no ceiling beyond the width of the quantity it bounds: a
+caller raises or lowers it, and the value is used as given (a limit over a
+`u32` quantity, `model.sequence_maximum`, takes at most `u32::MAX`; FR-506). The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-297 (`inspect.*`), FR-298 (`render.*`),
 NFR-012 and FR-506 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
