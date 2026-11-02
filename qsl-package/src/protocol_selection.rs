@@ -759,11 +759,22 @@ pub(crate) fn select<'a>(
         }
     }
     let root_location = body.root().location();
+    let required_form = match body.root().kind() {
+        quire_checked::node::NodeKind::Attribute { .. } => Some("query"),
+        _ => None,
+    };
     let root_node = package
         .graph()
         .occurrences()
         .find_map(|(key, origin, location)| {
-            (origin.role().as_str() == "expression" && location == root_location)
+            let form_matches = required_form.is_none_or(|required| {
+                package
+                    .graph()
+                    .semantic_graph()
+                    .node(key.clone())
+                    .is_some_and(|node| node.semantic_form() == required)
+            });
+            (origin.role().as_str() == "expression" && location == root_location && form_matches)
                 .then(|| key.clone())
         })
         .ok_or_else(|| {

@@ -137,6 +137,26 @@ impl<'package> AdmittedEvaluationView<'package> {
         if !present {
             return Err(SlotSelectionFailure::MissingNode(root_node));
         }
+        #[cfg(feature = "std")]
+        let reader_projection = if let Some(reader) = self.reader {
+            let binders = frame
+                .iter()
+                .map(|source| source.node.clone())
+                .collect::<Vec<_>>();
+            Some(
+                reader
+                    .protocol_reference_slot(&root_node, &binders)
+                    .map_err(SlotSelectionFailure::Fault)?
+                    .ok_or_else(|| {
+                        SlotSelectionFailure::Fault(InternalFault::new(
+                            "FR-390",
+                            "reader-protocol-root-has-supported-plain-data-projection",
+                        ))
+                    })?,
+            )
+        } else {
+            None
+        };
         let root = TermHandle {
             view: self,
             node: root_node,
@@ -170,6 +190,8 @@ impl<'package> AdmittedEvaluationView<'package> {
             root,
             sources,
             frame_len,
+            #[cfg(feature = "std")]
+            reader_projection,
         })
     }
 
@@ -317,6 +339,8 @@ pub struct SelectedProtocolTerm<'view, 'package> {
     root: TermHandle<'view, 'package>,
     sources: Vec<ProtocolSource>,
     frame_len: usize,
+    #[cfg(feature = "std")]
+    reader_projection: Option<ReaderProtocolProjection>,
 }
 
 impl SelectedProtocolTerm<'_, '_> {
@@ -335,6 +359,61 @@ impl SelectedProtocolTerm<'_, '_> {
     /// The checked frame length, including unread local slots.
     pub fn frame_len(&self) -> usize {
         self.frame_len
+    }
+    /// Plain data projected from the retained reader graph for this slot.
+    #[cfg(feature = "std")]
+    pub fn reader_projection(&self) -> Option<&ReaderProtocolProjection> {
+        self.reader_projection.as_ref()
+    }
+}
+
+/// A protocol slot's reader-derived field and supplied local slot.
+#[cfg(feature = "std")]
+pub struct ReaderProtocolProjection {
+    pub(crate) slot: usize,
+    pub(crate) field: String,
+    pub(crate) owner: quire_exact::EffectiveId,
+    pub(crate) optional: bool,
+    pub(crate) derefed: bool,
+    pub(crate) value_type: quire_exact::ValueType,
+    pub(crate) location: quire_semantic_value::location::Location,
+}
+
+#[cfg(feature = "std")]
+impl ReaderProtocolProjection {
+    /// The selected expression's field name admitted by the reader.
+    pub fn field(&self) -> &str {
+        &self.field
+    }
+
+    /// The declaring object identity admitted by the reader.
+    pub fn owner(&self) -> quire_exact::EffectiveId {
+        self.owner.clone()
+    }
+
+    /// Whether the admitted field member type is optional.
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+
+    /// Whether the admitted operation retained an explicit dereference.
+    pub fn derefed(&self) -> bool {
+        self.derefed
+    }
+
+    /// The selected expression result type projected from the admitted graph.
+    pub fn value_type(&self) -> &quire_exact::ValueType {
+        &self.value_type
+    }
+
+    /// The selected expression's reader-derived root location.
+    pub fn location(&self) -> &quire_semantic_value::location::Location {
+        &self.location
+    }
+
+    /// The selected expression's supplied frame slot admitted by the reader.
+    pub fn slot(&self) -> usize {
+        self.slot
     }
 }
 
