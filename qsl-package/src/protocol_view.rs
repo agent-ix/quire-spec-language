@@ -496,7 +496,7 @@ pub fn operation_identity(node: &CheckedSemanticNodeV2) -> Result<&str, ViewRefu
 }
 
 /// The children of the control `node`, in layout order.
-fn children<'n>(node: &'n Node) -> Result<Vec<&'n CheckedNodeId>, ViewRefusal> {
+fn children(node: &Node) -> Result<Vec<&CheckedNodeId>, ViewRefusal> {
     Ok(match control_operation(node)? {
         ControlOperation::Sequence => references(node, "children")?,
         ControlOperation::Choice => records(node, "cases")?
