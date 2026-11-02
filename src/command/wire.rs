@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026–028, FR-031: closed records; existing constructors own identifier validity.
 
-use qsl_foundation::serde_object::{deserialize_objects, from_object};
+use qsl_foundation::serde_object::{deserialize_objects, from_object, Object};
 use qsl_foundation::AccountingSetting;
 use quire_contract_model as ir;
 use serde::Deserialize;
@@ -35,8 +35,11 @@ pub(super) struct Envelope<'a> {
 pub(super) struct CompileRequest {
     #[serde(deserialize_with = "deserialize_objects")]
     pub models: Vec<Model>,
-    #[serde(deserialize_with = "from_object")]
-    pub program: Program,
+    /// FR-027, FR-480: one source selection, or a non-empty array of them in
+    /// request order (the package unit list). An empty array decodes to an
+    /// empty list, which the command refuses.
+    #[serde(deserialize_with = "program_units")]
+    pub program: Vec<CompileProgram>,
     /// FR-147/FR-099: the unit's unchecked internal-list value.
     #[serde(default, deserialize_with = "present_json_value")]
     pub refinement_internals: Option<serde_json::Value>,
@@ -56,6 +59,36 @@ pub(super) struct Library {
     pub refinement_internals: Option<serde_json::Value>,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
+}
+
+/// FR-027: a `program` that is one object is a unit list of one, and an array
+/// of objects is the unit list in request order; anything else, a positional
+/// record included, fails decode.
+fn program_units<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Vec<CompileProgram>, D::Error> {
+    struct Units;
+    impl<'de> serde::de::Visitor<'de> for Units {
+        type Value = Vec<CompileProgram>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a program source selection or an array of them")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            CompileProgram::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                .map(|unit| vec![unit])
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut units = Vec::new();
+            while let Some(Object(unit)) = seq.next_element::<Object<CompileProgram>>()? {
+                units.push(unit);
+            }
+            Ok(units)
+        }
+    }
+    decoder.deserialize_any(Units)
 }
 
 fn present_json_value<'de, D: serde::Deserializer<'de>>(
@@ -214,6 +247,46 @@ pub(super) struct Model {
 pub(super) struct Program {
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
+}
+
+/// One unit of a native-compile/1 `program` (FR-027). It admits the source
+/// selection and FR-031's `extraction` record, which a compile refuses
+/// (`extraction-requires-run`); any other member, `clauses` included, fails
+/// decode.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CompileProgram {
+    #[serde(deserialize_with = "from_object")]
+    pub source: SourceFile,
+    /// FR-031: present only to be refused; its content is never read.
+    #[serde(default, deserialize_with = "extraction_record")]
+    pub extraction: Option<Extraction>,
+}
+
+/// FR-031's closed `program.extraction` record, `{body: {authority,
+/// identity, document}}`; a `null` or positional record fails decode.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Extraction {
+    #[serde(rename = "body", deserialize_with = "from_object")]
+    pub _body: ExtractionBody,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ExtractionBody {
+    #[serde(rename = "authority")]
+    pub _authority: String,
+    #[serde(rename = "identity")]
+    pub _identity: String,
+    #[serde(rename = "document")]
+    pub _document: String,
+}
+
+fn extraction_record<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<Extraction>, D::Error> {
+    from_object(decoder).map(Some)
 }
 
 #[derive(Deserialize)]

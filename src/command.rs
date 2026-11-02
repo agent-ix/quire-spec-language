@@ -173,6 +173,17 @@ pub enum RunCause {
     /// A typed clause report failed canonical wire production.
     #[error("cannot serialize clause-run result: {0}")]
     ClauseOutput(#[source] qsl_replay::spine::NativeRunResultError),
+    /// FR-031: a compile request's `program` carries an `extraction` record,
+    /// which only a clause run reads.
+    #[error("a compile request cannot carry program.extraction; extraction is read by run")]
+    ExtractionRequiresRun,
+    /// FR-027, FR-480: a `program` of several units names a package the
+    /// spine does not link yet.
+    #[error("the request's program lists {units} source units; this build links one")]
+    MultiUnitProgram {
+        /// The number of units the request lists.
+        units: usize,
+    },
     /// Request format was not selected.
     #[error("unsupported native command format")]
     Format,
@@ -252,6 +263,8 @@ impl RunCause {
             Self::Json(_) => Code::InvalidRequest,
             Self::ClauseRequest { .. } => Code::InvalidRequest,
             Self::Output(_) | Self::ClauseOutput(_) => Code::OutputFailure,
+            Self::ExtractionRequiresRun => Code::ExtractionRequiresRun,
+            Self::MultiUnitProgram { .. } => Code::UnimplementedCapability,
             Self::Format => Code::UnknownWire,
             Self::Limit(_) => Code::ResourceExhausted,
             Self::Identifier(_) => Code::InvalidIdentifier,
@@ -451,23 +464,42 @@ pub fn read_clause_run_request(
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
+        // FR-031: the mode is checked before any dependent file is read.
+        if request.program.iter().any(|unit| unit.extraction.is_some()) {
+            return Err(RunCause::ExtractionRequiresRun);
+        }
+        if request.program.is_empty() {
+            return Err(RunCause::CompleteSelection(
+                CompleteSelection::EmptyProgramList,
+            ));
+        }
         let mut intake = intake_with_fixed_bytes(
             directory,
             FileCounts {
-                // A library source is a program source a `1-draft` program
-                // imports, and counts toward the same file limits (FR-027).
-                programs: request.libraries.len().saturating_add(1),
+                // A program unit and a library source are both program
+                // sources, and count toward the same file limits (FR-027).
+                programs: request
+                    .program
+                    .len()
+                    .saturating_add(request.libraries.len()),
                 models: request.models.len(),
                 observations: 0,
             },
             TOTAL_BYTES,
         )?;
-        // The edition is decided before any model is read: a `1-draft`
-        // program takes domain packages only, and a request selecting a
-        // native rule model for it refuses whatever state the model files
-        // are in.
-        let source = intake.source(&request.program.source)?;
-        require_complete_edition(source.source())?;
+        // Each unit's edition is decided in request order, before any model
+        // is read: a `1-draft` program takes domain packages only, and a
+        // request selecting a native rule model for it refuses whatever
+        // state the model files are in (FR-027).
+        let mut units = Vec::with_capacity(request.program.len());
+        for unit in &request.program {
+            let source = intake.source(&unit.source)?;
+            require_complete_edition(source.source())?;
+            units.push(source);
+        }
+        let [source] = units.as_slice() else {
+            return Err(RunCause::MultiUnitProgram { units: units.len() });
+        };
         complete(&request, &mut intake, source.source())
     })
 }
@@ -642,12 +674,15 @@ fn library_sources<'r>(
 pub enum CompleteSelection {
     /// The request selects a model source in a native rule-model format.
     NativeModels,
+    /// The request's `program` is an empty array, so it names no unit.
+    EmptyProgramList,
 }
 
 impl std::fmt::Display for CompleteSelection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::NativeModels => "native rule-model sources",
+            Self::EmptyProgramList => "an empty program list",
         })
     }
 }

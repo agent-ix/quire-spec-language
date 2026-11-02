@@ -58,7 +58,14 @@ fn spine_request(directory: &Path, program: &[u8]) {
 /// spine; stdout is exactly the bytes `qsl_replay::spine`'s operations emit, which
 /// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
 #[test]
-#[trace("TC-105", "FR-027-AC-2", "TC-435", "FR-027-AC-5")]
+#[trace(
+    "TC-105",
+    "FR-027-AC-2",
+    "TC-435",
+    "FR-027-AC-5",
+    "TC-785",
+    "FR-027-AC-11"
+)]
 fn a_complete_v1_program_compiles_through_the_spine() {
     let program = std::fs::read(SPINE_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
@@ -529,7 +536,7 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
 /// package by the identity the program's `model` declaration
 /// names.
 #[test]
-#[trace("TC-442", "FR-027-AC-9")]
+#[trace("TC-442", "FR-027-AC-9", "TC-785", "FR-027-AC-11")]
 fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
     // The complete-V1 compile fixture with a domain package (FR-027-AC-9).
     let program = crate::support::spine_model::unit().into_bytes();
@@ -655,7 +662,14 @@ fn spine_library_request(directory: &Path, library: &[u8], identity: &str) -> Ve
 /// the program's import. Stdout is exactly the bytes `qsl_replay::spine`'s
 /// operations emit over the same program and dependency input.
 #[test]
-#[trace("TC-446", "FR-027-AC-10", "TC-885", "FR-003-AC-9")]
+#[trace(
+    "TC-446",
+    "FR-027-AC-10",
+    "TC-885",
+    "FR-003-AC-9",
+    "TC-785",
+    "FR-027-AC-11"
+)]
 fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
     crate::support::front_end::emitted(
@@ -913,4 +927,482 @@ fn a_library_source_over_the_fixed_dependent_byte_ceiling_is_refused() {
     assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
     assert!(value["details"].get("option").is_none(), "{value}");
     assert!(value.get("artifact").is_none(), "{value}");
+}
+
+/// The AC-8 sources, with the stage, code and exit status each refuses with.
+const STAGE_REFUSALS: [(&str, &str, &str, i32); 5] = [
+    (
+        "function f using v(): Int[0, 9] pure { 7\n",
+        "source",
+        "invalid_syntax",
+        20,
+    ),
+    (
+        "synthesis Syn using v grammar M::G domain M::D satisfies { true };\n",
+        "forms",
+        "unsupported_construct",
+        21,
+    ),
+    (
+        "function f using v(p: Nope): Int[0, 9] pure { 1 }\n",
+        "assembly",
+        "missing_declaration",
+        20,
+    ),
+    (
+        "function f using v(): Int[0, 9] pure { true }\n",
+        "check",
+        "ill_typed",
+        20,
+    ),
+    (
+        "type Digit = Int[0, 9];\n",
+        "emit",
+        "unsupported_projection",
+        21,
+    ),
+];
+
+/// FR-027-AC-11 (TC-785 step 2): for each AC-8 source the composed
+/// `parse`, `select`, `check` and `package` operations refuse at the stage and
+/// cause code the command reports, and the refusal's FR-285 exit code is the
+/// command's exit status.
+#[test]
+#[trace("TC-785", "FR-027-AC-11")]
+fn the_command_refuses_as_the_composed_operations_do() {
+    for (body, stage, code, exit) in STAGE_REFUSALS {
+        let text = format!("{SPINE_HEADER}{body}");
+        let refusal = crate::support::front_end::emitted(
+            qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+            "program.native",
+            text.as_bytes(),
+            &std::collections::BTreeMap::new(),
+            &qsl_replay::spine::DependencyInput::default(),
+        )
+        .map(|_| ())
+        .unwrap_err();
+        assert_eq!(refusal.stage().as_str(), stage);
+        assert_eq!(refusal.code().as_str(), code);
+        let composed_exit = i32::from(refusal.code().category().exit_code());
+        assert_eq!(composed_exit, exit, "{stage}");
+
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), text.as_bytes());
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(composed_exit), "{stage}");
+        assert!(output.stdout.is_empty(), "{stage}");
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["stage"], refusal.stage().as_str(), "{failure}");
+        assert_eq!(failure["code"], refusal.code().as_str(), "{failure}");
+    }
+}
+
+/// Rewrite the request at `directory` with `edit` applied to its `request`.
+fn edit_request(directory: &Path, edit: impl FnOnce(&mut Value)) {
+    let path = directory.join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    edit(&mut job["request"]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+}
+
+/// The failure document a compile at `directory` writes, with its exit status.
+fn refused(directory: &Path) -> (i32, Value) {
+    let output = compile(directory);
+    assert!(output.stdout.is_empty(), "no package bytes");
+    (
+        output.status.code().unwrap(),
+        serde_json::from_slice(&output.stderr).unwrap(),
+    )
+}
+
+/// FR-027-AC-7 (TC-435): the sources and selections a `1-draft` compile
+/// refuses before it emits anything.
+#[test]
+#[trace("TC-435", "FR-027-AC-7")]
+fn editions_headers_models_and_clauses_a_complete_v1_compile_refuses() {
+    // A source with no header goes to S1, which refuses it.
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(
+        directory.path(),
+        b"function f using v(): Int[0, 9] pure { 7 }\n",
+    );
+    let (exit, failure) = refused(directory.path());
+    assert_eq!(
+        (exit, &failure["code"], &failure["stage"]),
+        (20, &json!("invalid_syntax"), &json!("source")),
+        "{failure}"
+    );
+
+    // Another language is refused at S1 as an unknown language.
+    let directory = tempfile::tempdir().unwrap();
+    let other = SPINE_HEADER.replacen("ix:native", "ix:other", 1)
+        + "function f using v(): Int[0, 9] pure { 7 }\n";
+    spine_request(directory.path(), other.as_bytes());
+    let (exit, failure) = refused(directory.path());
+    assert_eq!(
+        (exit, &failure["code"], &failure["stage"]),
+        (20, &json!("unknown_language"), &json!("source")),
+        "{failure}"
+    );
+
+    // The same `0-draft` source in a request carrying a library and
+    // `refinement_internals` is refused for its edition, naming the file.
+    let directory = tempfile::tempdir().unwrap();
+    let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    let program = spine_library_request(directory.path(), &library, "test/geometry");
+    std::fs::write(
+        directory.path().join("program.native"),
+        String::from_utf8(program)
+            .unwrap()
+            .replacen("1-draft", "0-draft", 1),
+    )
+    .unwrap();
+    edit_request(directory.path(), |request| {
+        request["refinement_internals"] = json!([]);
+    });
+    let (exit, failure) = refused(directory.path());
+    assert_eq!(
+        (exit, &failure["code"], &failure["stage"]),
+        (20, &json!("unknown_edition"), &json!("profile")),
+        "{failure}"
+    );
+    let message = failure["message"].as_str().unwrap();
+    assert!(
+        message.contains("program.native") && message.contains("0-draft"),
+        "{message}"
+    );
+
+    // A selected native rule model is refused whatever state its file is in:
+    // here the file does not exist.
+    for format in ["native-rule-model/1", "native-rule-model/2"] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), &std::fs::read(SPINE_FIXTURE).unwrap());
+        edit_request(directory.path(), |request| {
+            request["models"] = json!([{"format":format,"source":{
+                "file":"missing-model.native","authority":"agent-ix","identity":"acme/m",
+                "revision_namespace":"fixture","revision":"fixture:1",
+                "document":"M","formal_revision":1}}]);
+        });
+        let (exit, failure) = refused(directory.path());
+        assert_eq!(
+            (exit, &failure["code"], &failure["stage"]),
+            (20, &json!("invalid-request"), &json!("request")),
+            "{format}: {failure}"
+        );
+    }
+
+    // A `program` carrying a `clauses` key, even an empty array, is refused.
+    for clauses in [json!([]), json!([{"clause":"c","package":"p"}])] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), &std::fs::read(SPINE_FIXTURE).unwrap());
+        edit_request(directory.path(), |request| {
+            request["program"]["clauses"] = clauses.clone();
+        });
+        let (exit, failure) = refused(directory.path());
+        assert_eq!(
+            (exit, &failure["code"], &failure["stage"]),
+            (20, &json!("invalid-request"), &json!("request")),
+            "{clauses}: {failure}"
+        );
+    }
+}
+
+/// FR-027 Outputs, FR-031-AC-6 (TC-109): a `program.extraction` record in a
+/// compile request refuses `extraction-requires-run` at the request stage
+/// before any dependent file is read; a record that is not FR-031's closed
+/// shape refuses `invalid-request`.
+#[test]
+#[trace("TC-109", "FR-031-AC-6")]
+fn a_compile_request_with_program_extraction_refuses_extraction_requires_run() {
+    let record = json!({"body":{"authority":"agent-ix","identity":"body","document":"Body"}});
+    // Every dependent file is missing, so any read would fail `io-error`.
+    let missing = |directory: &Path| {
+        spine_request(directory, b"unused");
+        std::fs::remove_file(directory.join("program.native")).unwrap();
+    };
+    for as_list in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        missing(directory.path());
+        edit_request(directory.path(), |request| {
+            request["program"]["extraction"] = record.clone();
+            if as_list {
+                request["program"] = json!([request["program"].clone()]);
+            }
+        });
+        let (exit, failure) = refused(directory.path());
+        assert_eq!(
+            (exit, &failure["code"], &failure["stage"]),
+            (20, &json!("extraction-requires-run"), &json!("request")),
+            "list {as_list}: {failure}"
+        );
+    }
+    for malformed in [
+        json!(null),
+        json!([]),
+        json!({}),
+        json!({"body":["a","i","d"]}),
+        json!({"body":{"authority":"a","identity":"i"}}),
+        json!({"body":{"authority":"a","identity":"i","document":"d"},"extra":1}),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        missing(directory.path());
+        edit_request(directory.path(), |request| {
+            request["program"]["extraction"] = malformed.clone();
+        });
+        let (exit, failure) = refused(directory.path());
+        assert_eq!(
+            (exit, &failure["code"], &failure["stage"]),
+            (20, &json!("invalid-request"), &json!("request")),
+            "{malformed}: {failure}"
+        );
+    }
+}
+
+/// Source `identity`, written as `file`, selected as a program unit.
+fn unit_selection(file: &str, identity: &str) -> Value {
+    json!({"source":{"file":file,"authority":"agent-ix","identity":identity,
+        "revision_namespace":"fixture","revision":"fixture:1",
+        "document":"Unit","formal_revision":1}})
+}
+
+/// A request over two units written as `u1.native` and `u2.native`.
+fn two_unit_request(directory: &Path, first: &str, second: &str, reversed: bool) {
+    std::fs::write(directory.join("u1.native"), first).unwrap();
+    std::fs::write(directory.join("u2.native"), second).unwrap();
+    let mut units = vec![
+        unit_selection("u1.native", "test:u1"),
+        unit_selection("u2.native", "test:u2"),
+    ];
+    if reversed {
+        units.reverse();
+    }
+    let request = json!({"format":"native-compile/1","request":{"models":[],"program":units}});
+    std::fs::write(
+        directory.join("compile.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+}
+
+/// FR-027-AC-14 (TC-1210 step 9): an empty `program` array refuses
+/// `invalid-request` and a one-unit array is the one-unit compile.
+#[test]
+#[trace("TC-1210", "FR-027-AC-14")]
+fn an_empty_program_list_is_refused_and_a_one_unit_list_is_a_one_unit_compile() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let single = compile(directory.path());
+    assert_eq!(single.status.code(), Some(0));
+    edit_request(directory.path(), |request| {
+        request["program"] = json!([request["program"].clone()]);
+    });
+    let listed = compile(directory.path());
+    assert_eq!(listed.status.code(), Some(0));
+    assert_eq!(listed.stdout, single.stdout);
+
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    edit_request(directory.path(), |request| {
+        request["program"] = json!([]);
+    });
+    let (exit, failure) = refused(directory.path());
+    assert_eq!(
+        (exit, &failure["code"], &failure["stage"]),
+        (20, &json!("invalid-request"), &json!("request")),
+        "{failure}"
+    );
+}
+
+/// FR-027-AC-14 (TC-1210 step 9): the first unit that declares another
+/// edition refuses `unknown_edition` at its edition literal, naming its file,
+/// before any header agreement across units is checked.
+#[test]
+#[trace("TC-1210", "FR-027-AC-14")]
+fn a_program_list_refuses_the_first_unit_of_another_edition() {
+    let first = format!("{SPINE_HEADER}function a using v(): Boolean pure {{ true }}\n");
+    // The second unit's profile differs from the first's as well, which a
+    // header-agreement check would refuse differently.
+    let second =
+        "language \"ix:native\" edition \"0-draft\";\nprofile w = \"quire.model.other/v1\";\n";
+    let directory = tempfile::tempdir().unwrap();
+    two_unit_request(directory.path(), &first, second, false);
+    let (exit, failure) = refused(directory.path());
+    assert_eq!(
+        (exit, &failure["code"], &failure["stage"]),
+        (20, &json!("unknown_edition"), &json!("profile")),
+        "{failure}"
+    );
+    assert_eq!(failure["details"]["path"], "u2.native", "{failure}");
+    let literal = second.find("\"0-draft\"").unwrap();
+    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
+    assert_eq!(failure["details"]["span"]["end"]["byte"], literal + 9);
+    assert!(failure["message"].as_str().unwrap().contains("u2.native"));
+}
+
+/// FR-027-AC-14 (TC-1210 step 9): two units that each fit `dependent_bytes`
+/// alone and exceed it together refuse at intake naming `dependent_bytes`.
+#[test]
+#[trace("TC-1210", "FR-027-AC-14")]
+fn a_program_list_counts_every_unit_toward_dependent_bytes() {
+    let padded = |name: &str| {
+        format!(
+            "{SPINE_HEADER}function {name} using v(): Boolean pure {{ true }}\n//{}",
+            "x".repeat(5 * 1024 * 1024)
+        )
+    };
+    let directory = tempfile::tempdir().unwrap();
+    two_unit_request(directory.path(), &padded("a"), &padded("b"), false);
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["stage"], "intake", "{value}");
+    assert_eq!(value["details"]["limit"], "dependent_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
+
+    // Each unit alone is under the ceiling at intake.
+    let alone = tempfile::tempdir().unwrap();
+    spine_request(alone.path(), padded("a").as_bytes());
+    edit_request(alone.path(), |request| {
+        request["program"] = json!([request["program"].clone()]);
+    });
+    if let Err(error) = compile_in_process(alone.path()) {
+        let value = error.value().unwrap();
+        assert_ne!(value["details"]["limit"], "dependent_bytes", "{value}");
+    }
+}
+
+/// A program list of two or more units names a package the spine does not
+/// link yet (FR-480 is specified, not built): the request is well formed and
+/// refuses as `unimplemented_capability`, exit 21, in either order, never as
+/// a package of one unit. Delete this test when the spine links units and
+/// FR-027-AC-14's byte-equality is tested.
+#[test]
+#[trace("TC-1210")]
+fn a_multi_unit_program_list_is_unimplemented_until_the_spine_links_units() {
+    let first = format!("{SPINE_HEADER}function a using v(): Boolean pure {{ true }}\n");
+    let second = format!("{SPINE_HEADER}function b using v(): Boolean pure {{ false }}\n");
+    for reversed in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        two_unit_request(directory.path(), &first, &second, reversed);
+        let (exit, failure) = refused(directory.path());
+        assert_eq!(
+            (exit, &failure["code"], &failure["stage"]),
+            (21, &json!("unimplemented_capability"), &json!("request")),
+            "{failure}"
+        );
+    }
+}
+
+/// FR-027-AC-12 (TC-446 step 9): a top-level and a per-library
+/// `refinement_internals` reach spine `compile` unchanged. Well-formed empty
+/// lists write the bytes the composition writes over the same inputs, the
+/// bytes of a request that carries none; a value the spine refuses is refused
+/// whether it is the unit's or a library's, and not only when it is `[]`.
+#[test]
+#[trace("TC-446", "FR-027-AC-12")]
+fn refinement_internals_reach_the_spine_unchanged() {
+    let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    let directory = tempfile::tempdir().unwrap();
+    let program = spine_library_request(directory.path(), &library, "test/geometry");
+    let absent = compile(directory.path());
+    assert_eq!(absent.status.code(), Some(0));
+    edit_request(directory.path(), |request| {
+        request["refinement_internals"] = json!([]);
+        request["libraries"][0]["refinement_internals"] = json!([]);
+    });
+    let listed = compile(directory.path());
+    assert_eq!(
+        listed.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    assert_eq!(
+        listed.stdout, absent.stdout,
+        "an empty list is the absent one"
+    );
+    let dependencies =
+        qsl_replay::spine::DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
+            identity: "test/geometry".to_owned(),
+            source: geometry_identity(),
+            path: "geometry.native".to_owned(),
+            bytes: library,
+        }])
+        .and_then(|input| {
+            input.with_refinement_internals([("test/geometry".to_owned(), json!([]))])
+        })
+        .unwrap();
+    let cancel = quire_exact::Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let source =
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1");
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "program.native",
+            bytes: &program,
+        },
+        limits.source,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let models = qsl_replay::spine::select(
+        &parsed,
+        &std::collections::BTreeMap::new(),
+        limits.model,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let checked = qsl_replay::spine::check_with_refinement_internals(
+        &parsed,
+        "test:spine".to_owned(),
+        Some(json!([])),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let composed = qsl_replay::spine::package(
+        &checked,
+        qsl_replay::spine::PackageLimits::default(),
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    assert_eq!(listed.stdout, composed.package().bytes());
+
+    // The value reaches the spine, which reads it: a value that is no list
+    // is refused, as the unit's and as an imported library's.
+    for malformed in [json!(null), json!({}), json!(7)] {
+        let unit = tempfile::tempdir().unwrap();
+        spine_library_request(
+            unit.path(),
+            &format!("{SPINE_HEADER}{GEOMETRY}").into_bytes(),
+            "test/geometry",
+        );
+        edit_request(unit.path(), |request| {
+            request["refinement_internals"] = malformed.clone();
+        });
+        let (exit, failure) = refused(unit.path());
+        assert_eq!(exit, 20, "unit {malformed}: {failure}");
+
+        let imported = tempfile::tempdir().unwrap();
+        spine_library_request(
+            imported.path(),
+            &format!("{SPINE_HEADER}{GEOMETRY}").into_bytes(),
+            "test/geometry",
+        );
+        edit_request(imported.path(), |request| {
+            request["libraries"][0]["refinement_internals"] = malformed.clone();
+        });
+        let (exit, failure) = refused(imported.path());
+        assert_eq!(exit, 20, "library {malformed}: {failure}");
+        assert!(failure.to_string().contains("test/geometry"), "{failure}");
+    }
 }
