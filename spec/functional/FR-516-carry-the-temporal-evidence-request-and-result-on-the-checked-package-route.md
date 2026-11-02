@@ -25,6 +25,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-502
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-522
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-523
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-524
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-526
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-499
     type: references
 ---
@@ -71,6 +79,7 @@ result field:
 | `execution` | `execution` | `Completed`/`Failed` disposition |
 | `completeness` | `completeness` | `{ reference, state, facts }` |
 | `authoritative_origin`, `evicted` | same | |
+| none (the retired document asserted the profile and clock) | `binding: TraceBinding` | the profile, clock binding name and clock parameters the request asserts; the evaluator compares them with the clause's rows before any position (FR-522) |
 
 The request names the clause by `CheckedNodeId` (FR-515); the evaluator takes the
 profile, clock row, activation, captures and formula from the package, never from
@@ -91,7 +100,8 @@ instance is identified by the trigger identity (FR-053).
 | `support()` | `support: Vec<SupportRef>` (the fact references inside the decision support) |
 | `decision_progress()` … `surrounding_closure()`, `completeness()` | the four axes and the completeness record, echoed exactly |
 | `limits()` | `usage`: the meter charges of the call, over the thirteen counters of the Work limits item |
-| `predecessor()`, `lineage()`, `relation_kind()` | `relation: Original | Superseding(prev) | Invalidating(prev)`; `lineage: u64` |
+| `predecessor()`, `lineage()`, `relation_kind()` | `relation: Original | Superseding(prev) | Invalidating(prev)`, `prev` the predecessor `EvidenceResult`; `lineage: u64`; `input_identity` (FR-526) |
+| none | `authenticated: AuthenticatedBinding` (FR-522) |
 | `request_identity()`, `subject_identity()`, `document().*` | `result_identity` as FR-043-AC-13 states it (an evaluator identity, not a digest); the rest end with the documents |
 
 Entry: `CheckedPackageEvaluation::evaluate_temporal_evidence(&self, clause:
@@ -141,7 +151,7 @@ obligation was never activated.
   nesting its type gives, so there is no depth to bound. Ten
   are carried unchanged: `formula_nodes`, `formula_depth`, `positions`, `valuations`,
   `captures`, `support`, `history_span`, `evaluation_steps`, `lineage`, `visited`
-  are named temporal work counters (QSL-1502, NFR-008). Each of the thirteen
+  are named temporal work counters whose units, settings and stop scope FR-523 defines. Each of the thirteen
   counters completes at exactly
   its measured usage, and one below it returns `Incomplete` naming the counter
   with no partial truth.
@@ -166,7 +176,10 @@ obligation was never activated.
 ## Dependencies
 
 - **Upstream:** FR-043, FR-044, FR-052, FR-053, FR-501, FR-502, FR-515; the
-  evaluator ports QSL-1502, QSL-1503 and QSL-1504 (FR-499 rows), which this
-  requirement does not replace.
+  evaluator ports QSL-1502 (FR-522, FR-523), QSL-1503 (FR-524, FR-526) and QSL-1504
+  (FR-527), the successor map FR-525 and the FR-499 rows, which this requirement
+  does not replace. FR-522 supplies `binding`, `authenticated` and the
+  `result_identity` rule, FR-523 the thirteen counters, FR-524 the activation
+  states and faults, FR-526 the relation checks.
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/conformance/kernel.rs`,
   `tests/it002_observation_temporal.rs` (QSL-1549).

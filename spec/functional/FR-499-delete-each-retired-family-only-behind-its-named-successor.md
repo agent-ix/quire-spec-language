@@ -17,6 +17,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-500
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-525
+    type: references
 ---
 # FR-499: Delete each retired native and composed family only behind its named successor
 
@@ -104,13 +106,13 @@ them at its pinned revision.
 | Operators, intervals, bounded truth (FR-043-AC-1, AC-4, AC-6) | FR-325 to FR-328; `qsl-eval/tests/it/temporal_trace.rs` | COVERED (FR-327-AC-4 and FR-329-AC-5 visit-meter tests at `temporal_trace.rs:659,938`) |
 | Lasso and fair lasso incl. `Lasso::Model` (FR-329) | FR-329 | PARTIAL: green `Lasso::Model` test required before deletion (QSL-858 criterion); QSL-1516 |
 | `on origin` / `on each` activation (FR-044-AC-8) | FR-327 | COVERED |
-| Profile and clock selected by identity (FR-043-AC-2) | FR-110, FR-326 | PARTIAL: header selection only; wrong-clock assertion is PORT QSL-1502 |
-| Trace clock/profile mismatch refusal (FR-043-AC-3), OrderKey tie refusal (AC-5), result identity (AC-13), authenticated clock report, whole-declaration vs per-instance stop | none (`TraceInput` carries documents only) | PORT QSL-1502 |
-| Open input applies neither false extension nor empty truth (AC-8), history cutoff (AC-9), four progress axes (AC-10), watermark settlement (AC-11), regressing watermark and conflicting completeness (AC-12) | FR-502 (watermark and completeness, spec PR #2131); rest none | PORT QSL-1503 (AC-12 also FR-502) |
+| Profile and clock selected by identity (FR-043-AC-2) | FR-110, FR-326 | PARTIAL: header selection only; wrong-clock assertion is PORT QSL-1502 (FR-522) |
+| Trace clock/profile mismatch refusal (FR-043-AC-3), OrderKey tie refusal (AC-5), result identity (AC-13), authenticated clock report, whole-declaration vs per-instance stop | none (`TraceInput` carries documents only); successors FR-522, FR-523 | PORT QSL-1502 |
+| Open input applies neither false extension nor empty truth (AC-8), history cutoff (AC-9), four progress axes (AC-10), watermark settlement (AC-11), regressing watermark and conflicting completeness (AC-12) | FR-502 (watermark and completeness), FR-504 (event-position and fixed-sample progress), FR-501; map in FR-525 | PORT QSL-1503 (AC-12 also FR-502) |
 | `timestamped-event.finite-window/v1` (FR-043-AC-2, AC-11) | FR-501 (spec PR #2131); today `qsl-eval/src/temporal/engine.rs:184` returns `ProfileNotEvaluated` | PORT (FR-501; implementation under the QSL-858 train) |
-| Trigger-keyed instances, duplicate delivery, conflicting payload, capture faults, four-way trigger-scope disposition, `ProtocolLedger`, opaque trigger identity (FR-044-AC-1 to AC-7, AC-9; FR-052-AC-9 to AC-12; FR-053-AC-7 to AC-9; TC-122, TC-123, TC-125, TC-144, TC-149, TC-1277 to TC-1279) | none on the spine; the existing `checked_temporal_successors.rs`, `checked_temporal_limits_v2.rs` and the TC-144/149 test exercise `src/temporal` itself and are not successors | PORT QSL-1503 |
-| FR-045 mapping classifier incl. AC-6 authenticated selection, operator reachability | none; FR-337 node is the intended input | KEEP public surface; PORT QSL-1504 (AC-1 to AC-6) |
-| Temporal work limits (`budget.rs`, NFR-008) | no spine test is tagged TC-124 or NFR-008-AC; the only TC-124 tests call `src/temporal` | PARTIAL: PORT QSL-1502; TC-124 is not a green successor |
+| Trigger-keyed instances, duplicate delivery, conflicting payload, capture faults, four-way trigger-scope disposition, `ProtocolLedger`, opaque trigger identity (FR-044-AC-1 to AC-7, AC-9; FR-052-AC-9 to AC-12; FR-053-AC-7 to AC-9; TC-122, TC-123, TC-125, TC-144, TC-149, TC-1277 to TC-1279) | FR-524 (instances, captures, dispositions), FR-526 (lineage); open rows OPEN-5 to OPEN-7 in FR-525; the existing `checked_temporal_successors.rs`, `checked_temporal_limits_v2.rs` and the TC-144/149 test exercise `src/temporal` itself and are not successors | PORT QSL-1503 |
+| FR-045 mapping classifier incl. AC-6 authenticated selection, operator reachability | FR-527 (reads the FR-337 node through FR-515's view) | KEEP public surface; PORT QSL-1504 (AC-1 to AC-6) |
+| Temporal work limits (`budget.rs`, NFR-008) | no spine test is tagged TC-124 or NFR-008-AC; the only TC-124 tests call `src/temporal` | PARTIAL: PORT QSL-1502 (FR-523); TC-124 is not a green successor |
 | `native/temporal_v2.rs`, `temporal_v3.rs` producers (FR-050) | emit side `emit_checked_with_temporal_selections` (`qsl-package/src/emit.rs:3413`), `tc134_*` (`fixture_w.rs:967,1071,1114`) | PARTIAL: owned by QSL-840; FR-050-AC-13/14 untested (QSL-1414, STD-644, IR-1262) |
 
 ## QSL-838 and QSL-840: `protocol_artifact`

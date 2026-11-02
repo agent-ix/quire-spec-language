@@ -59,6 +59,8 @@ FR-109's `ClauseRunRequest`, with the selection
   timestamped-event finite-window profile, with an optional `ledger`
   (`ProgressLedger`, FR-502) on the selection; each `DocumentRef` names a
   snapshot in the request's snapshot provision by identity (FR-106);
+- `binding`: a `TraceBinding` (FR-522) on `Timestamped` and `Progressed`, which the
+  entry compares with the clause's profile and clock rows before it evaluates;
 - `over`: `{"reference": {"population": ..., "key": ...}}`, resolved in the
   observation at position 0, when the clause has an `over` parameter.
 

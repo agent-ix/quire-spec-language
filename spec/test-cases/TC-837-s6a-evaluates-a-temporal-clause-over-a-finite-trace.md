@@ -13,7 +13,7 @@ relationships:
 Verify bounded-profile evaluation over a closed trace, activation,
 `TemporalPosition` decoding and encoding, and work metering.
 
-Scope: FR-327-AC-1 to FR-327-AC-4.
+Scope: FR-327-AC-1 to FR-327-AC-4, AC-8 and AC-9.
 
 ## Test Procedure
 
@@ -26,6 +26,8 @@ false-extension.
    `18446744073709551616`; reconstruct position 3; encode position 12.
 4. Evaluate `eventually[0,2] holds(c.value = 2)` `on origin` with a meter
    of 3 work units, then with a meter of 4, counting visits.
+5. Evaluate `always[0,3] true`, `always[0,3] (true)` and `always[0,3] holds(c.value <= 2)`.
+6. Evaluate the `until` and `release` clauses of FR-327-AC-9.
 
 Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
 
@@ -39,3 +41,5 @@ Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
   atom at positions 0, 1 and 2); with 3 units, `Incomplete` at the
   `temporal.visit` charge point (`WorkUnits`) and no truth value; with 4 units,
   `Completed(true)` charging 4.
+- Step 5: `true`; `true`; `false`.
+- Step 6: `true`; `false`; `true`; `false`.

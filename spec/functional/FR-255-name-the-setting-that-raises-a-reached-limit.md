@@ -80,7 +80,7 @@ Every limit has no ceiling beyond the width of the quantity it bounds: a
 caller raises or lowers it, and the value is used as given (a limit over a
 `u32` quantity, `model.sequence_maximum`, takes at most `u32::MAX`; FR-506). The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-297 (`inspect.*`), FR-298 (`render.*`),
-NFR-012 and FR-506 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
+NFR-012 and FR-506 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-523 (`temporal_evidence.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
 FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). Analysis
 engine limits and the typed inspection operation's limit have their own table
@@ -110,6 +110,19 @@ engine limits and the typed inspection operation's limit have their own table
 | `model.ancestor_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` ancestor_steps | 16777216 edges |
 | `model.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |
 | `progress.covered_positions` | progress ledger | node count | the `ProgressLedger` capacity for covered positions (FR-502) | 1000000 positions |
+| `temporal_evidence.formula_nodes` | temporal evidence call | node count | `TemporalEvidenceLimits` formula nodes | 100000 nodes |
+| `temporal_evidence.formula_depth` | temporal evidence call | node count | `TemporalEvidenceLimits` formula depth | 100000 nodes |
+| `temporal_evidence.positions` | temporal evidence call | node count | `TemporalEvidenceLimits` positions inspected | 1000000 positions |
+| `temporal_evidence.valuations` | temporal evidence call | node count | `TemporalEvidenceLimits` valuation lookups | 1000000 lookups |
+| `temporal_evidence.captures` | temporal evidence call | node count | `TemporalEvidenceLimits` retained captures | 100000 captures |
+| `temporal_evidence.support` | temporal evidence call | node count | `TemporalEvidenceLimits` retained support | 1000000 pairs |
+| `temporal_evidence.history_span` | temporal evidence call | tick count | `TemporalEvidenceLimits` history span | 18446744073709551615 ticks |
+| `temporal_evidence.evaluation_steps` | temporal evidence call | work budget | `TemporalEvidenceLimits` evaluation steps (`temporal.visit`) | 1000000 units |
+| `temporal_evidence.lineage` | temporal evidence call | node count | `TemporalEvidenceLimits` result lineage | 1024 results |
+| `temporal_evidence.visited` | temporal evidence call | work budget | `TemporalEvidenceLimits` visited units | 2000000 units |
+| `temporal_evidence.request_bytes` | temporal evidence call | input bytes | `TemporalEvidenceLimits` request bytes | 8388608 bytes |
+| `temporal_evidence.result_bytes` | temporal evidence call | input bytes | `TemporalEvidenceLimits` result bytes | 8388608 bytes |
+| `temporal_evidence.member_bytes` | temporal evidence call | input bytes | `TemporalEvidenceLimits` longest member bytes | 1048576 bytes |
 | `admission.population_members` | population admission | node count | `PopulationAdmissionLimitsV1` population_members | 100000 members |
 | `admission.work_units` | population admission | work budget | `PopulationAdmissionLimitsV1` work_units | 16777216 units |
 | `admission.ancestor_steps` | population admission | edge count | `PopulationAdmissionLimitsV1` ancestor_steps | 16777216 edges |
