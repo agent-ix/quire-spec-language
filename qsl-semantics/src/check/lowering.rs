@@ -5609,8 +5609,10 @@ impl<'a> Lowering<'a> {
             // `absent` (STD-493 ruling): QSpec FR-322's `none` literal,
             // typed by its option node.
             Value::Option(option) if option.payload().is_none() => LiteralValue::None,
+            // FR-093-AC-50: Text retains the profile-normalized sequence,
+            // while its semantic type points at the declared text_bounds node.
+            Value::Text(value) => LiteralValue::Text(value.retained().to_owned()),
             Value::Decimal(_)
-            | Value::Text(_)
             | Value::Option(_)
             | Value::Composite(_)
             | Value::Collection(_)

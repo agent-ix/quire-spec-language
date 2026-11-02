@@ -10,8 +10,8 @@ use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
     ApplicationTerm, BodyTerm, CheckCause, CheckRefusal, CheckedGraph, I128Limit,
-    IntegerOutsideI128, IntegerSite, LeafTerm, LiteralValue, MemberTerm, NodeTag,
-    PackageDeclarations, SemanticNode,
+    IntegerOutsideI128, IntegerSite, LawRole, LeafTerm, LiteralValue, MemberTerm, NodeTag,
+    OperationMode, PackageDeclarations, SemanticNode,
 };
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
@@ -59,6 +59,7 @@ fn literal_of(node: &SemanticNode) -> Option<(&'static str, String)> {
     };
     match value {
         LiteralValue::String(text) => Some(("string", text.clone())),
+        LiteralValue::Text(text) => Some(("text", text.clone())),
         LiteralValue::Uuid(uuid) => Some(("uuid", uuid.to_string())),
         LiteralValue::Timestamp(stamp) => Some(("timestamp", stamp.to_string())),
         _ => None,
@@ -348,6 +349,237 @@ fn a_literal_never_adapts_to_a_slot_of_another_type() {
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
             "{body}"
         );
+    }
+}
+
+/// QSL-1461, FR-056-AC-51 / FR-093-AC-50, TC-1052 steps 7–9: `Text("...")`
+/// takes the `Text[..]` type from its position, retains the selected profile's
+/// normalization, and can take that type from a typed equality peer.
+#[trace("FR-056-AC-51", "FR-093-AC-50", "TC-1052")]
+#[test]
+fn text_literals_take_their_type_from_context_and_retain_under_its_profile() {
+    let graph = check(
+        "function a1 using v(): Text[0, 8; nfc] pure { Text(\"\\u00e9\") }\n\
+         function a2 using v(): Text[0, 8; nfc] pure { Text(\"e\\u0301\") }\n\
+         function a3 using v(): Text[0, 8; unicode-scalars] pure { Text(\"e\\u0301\") }\n\
+         function eq using v(x: Text[0, 8; nfc]): Boolean pure { x = Text(\"e\\u0301\") }",
+    )
+    .expect("the explicit Text constructors have their positional types");
+    let all = nodes(&graph);
+    let mut values: Vec<String> = literals(&all, "text")
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect();
+    values.sort();
+    assert_eq!(values, ["e\u{301}", "\u{e9}"]);
+    for (node, _) in literals(&all, "text") {
+        assert_eq!(node.node_tag(), NodeTag::Value);
+        assert_eq!(node.semantic_form(), "literal");
+    }
+}
+
+/// QSL-1461, FR-091-AC-69: declaring `function Text` makes the explicit
+/// constructor and declaration ambiguous, naming both the use and declaration.
+#[trace("FR-091-AC-69", "TC-1052")]
+#[test]
+fn a_function_named_text_makes_the_constructor_call_ambiguous() {
+    let refusal = refused(
+        "function Text using v(): Boolean pure { true }\n\
+         function f using v(): Text[0, 8; nfc] pure { Text(\"abc\") }",
+    );
+    let CheckCause::AmbiguousName { name, loci } = &refusal.cause else {
+        panic!("ambiguous name: {:?}", refusal.cause);
+    };
+    assert_eq!(name, "Text");
+    assert_eq!(loci.len(), 2, "the use and the declaration");
+    assert_eq!(
+        (refusal.cause.code().as_str(), refusal.cause.cause()),
+        ("ambiguous_declaration", Some("ambiguous-name"))
+    );
+}
+
+/// QSL-1461, FR-091-AC-69: only the unqualified spelling is the native
+/// constructor. A qualified `Z::Text`, `Z::UUID` or `Z::Timestamp` is an
+/// ordinary name and refuses as one, identically for all three.
+#[trace("FR-091-AC-69", "TC-1052")]
+#[test]
+fn a_qualified_constructor_name_is_an_ordinary_name() {
+    let mut causes = Vec::new();
+    for (result, body) in [
+        ("Text[0, 8; nfc]", "Z::Text(\"a\")".to_owned()),
+        ("UUID", format!("Z::UUID(\"{U1}\")")),
+        ("Timestamp", "Z::Timestamp(5)".to_owned()),
+    ] {
+        let refusal = refused(&format!("function f using v(): {result} pure {{ {body} }}"));
+        assert!(
+            matches!(
+                refusal.cause,
+                CheckCause::MissingQualifiedName(_) | CheckCause::MissingName(_)
+            ),
+            "{body}: {:?}",
+            refusal.cause
+        );
+        causes.push(std::mem::discriminant(&refusal.cause));
+    }
+    assert!(causes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+/// QSL-1461, FR-056-AC-51: under `binary-utf8` the length is the UTF-8 byte
+/// count, so U+00E9 (two bytes) fills `Text[0, 2; binary-utf8]` and is
+/// retained as written.
+#[trace("FR-056-AC-51", "TC-1052")]
+#[test]
+fn a_two_byte_scalar_fits_a_two_byte_binary_text() {
+    let graph = check("function f using v(): Text[0, 2; binary-utf8] pure { Text(\"\\u00e9\") }")
+        .expect("two bytes fit the maximum of two");
+    let all = nodes(&graph);
+    let texts = literals(&all, "text");
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].1, "\u{e9}");
+}
+
+/// QSL-1461, FR-093-AC-50, TC-1052 step 9: the literal's `semantic_type` is
+/// its body `type`; the precomposed and decomposed spellings under `nfc`
+/// lower to one node; `x = Text("é")` lowers to one text equality with the
+/// `text_profile` law, the `nfc` mode and arguments `[ref(x), ref(literal)]`.
+#[trace("FR-093-AC-50", "TC-1052")]
+#[test]
+fn text_literals_share_one_node_and_compare_by_the_profile_equality() {
+    let graph = check(
+        "function t1 using v(): Text[0, 8; nfc] pure { Text(\"e\\u0301\") }\n\
+         function t2 using v(): Text[0, 8; nfc] pure { Text(\"\\u00e9\") }\n\
+         function e3 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text(\"\\u00e9\") }",
+    )
+    .expect("the unit checks");
+    let all = nodes(&graph);
+    let texts = literals(&all, "text");
+    assert_eq!(texts.len(), 1, "both spellings lower to the same node");
+    let (literal, value) = &texts[0];
+    assert_eq!(value, "\u{e9}");
+    let BodyTerm::Leaf(LeafTerm::Literal { ty, .. }) = literal.body() else {
+        panic!("a literal body");
+    };
+    assert_eq!(
+        ty.admitted(),
+        literal.semantic_type().as_ref(),
+        "semantic_type is the body type"
+    );
+    let equalities: Vec<&ApplicationTerm> = all
+        .iter()
+        .filter_map(|node| match node.body() {
+            BodyTerm::Application(term) if term.operation.identity() == "quire.op.text.eq" => {
+                Some(term)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(equalities.len(), 1);
+    let operation = &equalities[0].operation;
+    assert_eq!(operation.laws().len(), 1);
+    assert_eq!(operation.laws()[0].role, LawRole::TextProfile);
+    assert_eq!(
+        operation.mode(),
+        Some(&OperationMode::TextProfile(quire_exact::TextProfile::Nfc))
+    );
+    let arguments = &equalities[0].arguments;
+    assert_eq!(arguments.len(), 2);
+    let MemberTerm::Leaf(LeafTerm::Reference { target }) = &arguments[1] else {
+        panic!("the second argument is a reference");
+    };
+    assert_eq!(target.admitted(), Some(&literal.key()));
+    let MemberTerm::Leaf(LeafTerm::Reference { target: first }) = &arguments[0] else {
+        panic!("the first argument is a reference");
+    };
+    assert_ne!(first.admitted(), Some(&literal.key()), "the parameter");
+}
+
+/// QSL-1461, FR-056-AC-52 / TC-1052: the retained sequence determines the
+/// Text bound refusal and its typed cause carries the declared profile data.
+#[trace("FR-056-AC-52", "TC-1052")]
+#[test]
+fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
+    for (result, literal, min, max, profile, retained_length) in [
+        (
+            "Text[0, 2; nfc]",
+            "abc",
+            0,
+            2,
+            quire_exact::TextProfile::Nfc,
+            3,
+        ),
+        (
+            "Text[2, 2; nfc]",
+            "e\\u0301",
+            2,
+            2,
+            quire_exact::TextProfile::Nfc,
+            1,
+        ),
+        (
+            "Text[0, 1; binary-utf8]",
+            "\\u00e9",
+            0,
+            1,
+            quire_exact::TextProfile::BinaryUtf8,
+            2,
+        ),
+        (
+            "Text[1, 8; nfc]",
+            "",
+            1,
+            8,
+            quire_exact::TextProfile::Nfc,
+            0,
+        ),
+    ] {
+        let refusal = refused(&format!(
+            "function f using v(): {result} pure {{ Text(\"{literal}\") }}"
+        ));
+        assert_eq!(
+            refusal.cause,
+            CheckCause::TextLiteralOutsideBounds {
+                argument: literal
+                    .replace("\\u0301", "\u{301}")
+                    .replace("\\u00e9", "\u{e9}"),
+                min,
+                max,
+                profile,
+                retained_length,
+            }
+        );
+        assert!(refusal.location.path().is_empty());
+        assert!(matches!(
+            refusal.location.origin,
+            Origin::Body { ref function, .. } if function == "f"
+        ));
+    }
+}
+
+/// QSL-1461, FR-056-AC-52: a `Text` constructor has no standalone type and
+/// does not convert arbitrary expressions or fit a non-Text peer.
+#[trace("FR-056-AC-52", "TC-1052")]
+#[test]
+fn text_literals_require_a_text_position_and_one_quoted_argument() {
+    for (parameters, result, body, path) in [
+        ("", "String", "Text(\"a\")", vec![]),
+        ("", "Integer", "Text(\"a\")", vec![]),
+        ("", "UUID", "Text(\"a\")", vec![]),
+        ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0]),
+        ("x: String", "Boolean", "x = Text(\"a\")", vec![1]),
+        ("x: String", "Text[0, 8; nfc]", "Text(x)", vec![0]),
+        ("", "Text[0, 8; nfc]", "Text(5)", vec![0]),
+        ("", "Text[0, 8; nfc]", "Text()", vec![]),
+        ("", "Text[0, 8; nfc]", "Text(\"a\", \"b\")", vec![]),
+    ] {
+        let refusal = refused(&format!(
+            "function f using v({parameters}): {result} pure {{ {body} }}"
+        ));
+        assert_eq!(refusal.cause, mismatch(), "{body}");
+        assert_eq!(refusal.location.path(), path, "{body}");
+        assert!(matches!(
+            refusal.location.origin,
+            Origin::Body { ref function, .. } if function == "f"
+        ));
     }
 }
 

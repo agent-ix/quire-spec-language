@@ -12,6 +12,8 @@ pub(super) enum Terminal {
     Exact(&'static str),
     Literal(&'static str),
     Identifier,
+    /// An identifier that may use one explicitly allowed reserved spelling.
+    IdentifierAllowReserved(&'static str),
     MemberName,
     Text,
     TextValue(&'static str),
@@ -102,6 +104,9 @@ fn literal(value: &'static str) -> Rule {
 }
 fn ident() -> Rule {
     Rule::Terminal(Terminal::Identifier)
+}
+fn ident_allow_reserved(spelling: &'static str) -> Rule {
+    Rule::Terminal(Terminal::IdentifierAllowReserved(spelling))
 }
 fn member() -> Rule {
     Rule::Terminal(Terminal::MemberName)
@@ -597,7 +602,7 @@ fn source_and_types(g: &mut Grammar) {
         P::FunctionDeclaration,
         s(vec![
             x("function"),
-            ident(),
+            ident_allow_reserved("Text"),
             opt(s(vec![x("using"), ident()])),
             parameters(),
             x(":"),
@@ -1054,6 +1059,13 @@ fn expressions(g: &mut Grammar) {
                 x(","),
                 r(P::Expression),
                 x(")"),
+            ]),
+            // `Text` is also a type keyword, so unlike `UUID` and other
+            // constructor names it cannot pass through the identifier-call
+            // alternative below.
+            s(vec![
+                x("Text"),
+                s(vec![x("("), opt(list(|| r(P::Expression))), x(")")]),
             ]),
             s(vec![
                 x("reaches"),

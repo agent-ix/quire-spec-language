@@ -1290,6 +1290,41 @@ fn uuid_and_timestamp_literals_build_ordinary_calls() {
     );
 }
 
+/// QSL-1461, FR-091-AC-69, TC-1052 step 7: `Text("abc")` and
+/// `Text("e\u0301")` build an ordinary `Call` of the name `Text` with one
+/// `ExprNode::String` argument holding the decoded scalars; `Text("\ud800")`
+/// refuses `invalid_syntax`/`invalid-escape` with no form.
+#[trace("FR-091-AC-69", "TC-1052")]
+#[test]
+fn text_calls_build_ordinary_calls_with_one_string_argument() {
+    for (source, expected) in [
+        (r#"Text("abc")"#, "abc"),
+        (r#"Text("e\u0301")"#, "e\u{301}"),
+    ] {
+        let (_, function) = body(source);
+        let ExprNode::Call { name, arguments } = function.body.root_node() else {
+            panic!("{source}: a call");
+        };
+        assert_eq!(name.name, "Text", "{source}");
+        assert!(!name.is_qualified(), "{source}");
+        assert_eq!(arguments.len(), 1, "{source}");
+        assert_eq!(
+            function.body.at(arguments[0]).node(),
+            &ExprNode::String(expected.to_owned()),
+            "{source}"
+        );
+    }
+    let (_, parsed) = parse(r#"function f using v(): Boolean pure { Text("\ud800") }"#);
+    let first = parsed.diagnostics().first().expect("a diagnostic");
+    assert_eq!(
+        (first.code, first.cause),
+        (
+            qsl_cst::CompleteCode::InvalidSyntax,
+            qsl_cst::CompleteCause::InvalidEscape
+        )
+    );
+}
+
 /// FR-091-AC-42, TC-1052 step 2: a malformed escape is `invalid-escape`; an
 /// unterminated literal, a raw line feed and a leading-zero count are
 /// `invalid-token`, all `invalid_syntax`, with no form.

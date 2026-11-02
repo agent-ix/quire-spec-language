@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-091 "Native scalar literals": the calls `UUID("...")` and `Timestamp(n)`
-//! check to a `UUID` or `Timestamp` literal.
+//! FR-091 "Native scalar literals": the calls `UUID("...")`, `Timestamp(n)`
+//! and `Text("...")` check to their typed literal values.
 //!
-//! The two spellings are ordinary calls to S2; here the native literal
+//! These spellings are ordinary calls to S2; here the native literal
 //! constructor of that name is one candidate beside the unit's declared
 //! functions and tuples of the same name, and exactly one candidate is
 //! required. The quoted `String` literal needs no resolution and is typed in
 //! the typing loop.
 
 use quire_checked::node::{CheckedLiteral, NodeKind};
-use quire_exact::{Integer, Timestamp, Uuid, Value, ValueType};
+use quire_exact::{
+    admit_text, Integer, Meter, Outcome, TextPayload, Timestamp, Uuid, Value, ValueType,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{mismatch, node, Typer};
@@ -25,6 +27,8 @@ pub(super) enum NativeConstructor {
     Uuid,
     /// `Timestamp(n)`.
     Timestamp,
+    /// `Text("...")`.
+    Text,
 }
 
 impl NativeConstructor {
@@ -34,6 +38,7 @@ impl NativeConstructor {
         match name {
             "UUID" => Some(Self::Uuid),
             "Timestamp" => Some(Self::Timestamp),
+            "Text" => Some(Self::Text),
             _ => None,
         }
     }
@@ -48,6 +53,7 @@ impl Typer<'_> {
         name: &str,
         call: ExprRef<'_>,
         arguments: &[qsl_forms::ExprId],
+        hint: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         self.single_candidate(name, location)?;
@@ -101,6 +107,45 @@ impl Typer<'_> {
                 Ok(node(
                     NodeKind::Literal(CheckedLiteral(Value::Timestamp(timestamp))),
                     ValueType::Timestamp,
+                    location,
+                ))
+            }
+            NativeConstructor::Text => {
+                let Some(ValueType::Text(text_type)) = hint else {
+                    return Err(mismatch(location));
+                };
+                let ExprNode::String(text) = argument.node() else {
+                    return Err(mismatch(&argument_location));
+                };
+                let profile = text_type.profile();
+                let retained = profile
+                    .normalization()
+                    .map_or_else(|| text.clone(), |form| form.apply(text).collect());
+                let retained_length = profile.length(&retained);
+                if !(text_type.min()..=text_type.max()).contains(&retained_length) {
+                    return Err(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::TextLiteralOutsideBounds {
+                            argument: text.clone(),
+                            min: text_type.min(),
+                            max: text_type.max(),
+                            profile,
+                            retained_length,
+                        },
+                    });
+                }
+                let text_type = *text_type;
+                let payload = TextPayload::from_source_literal(text.as_str(), format!("{text:?}"));
+                let Outcome::Completed(text) = admit_text(
+                    &payload,
+                    &text_type,
+                    &mut Meter::new(crate::check::UNBOUNDED_SCALAR_LIMITS),
+                ) else {
+                    return Err(mismatch(location));
+                };
+                Ok(node(
+                    NodeKind::Literal(CheckedLiteral(Value::Text(text))),
+                    ValueType::Text(text_type),
                     location,
                 ))
             }

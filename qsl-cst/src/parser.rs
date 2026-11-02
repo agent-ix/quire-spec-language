@@ -1559,6 +1559,11 @@ impl<'a> Engine<'a> {
                         crate::token::identifier_spelling(&token.spelling)
                             && !self.reserved_words.contains(token.spelling.as_ref())
                     }
+                    Terminal::IdentifierAllowReserved(allowed) => {
+                        crate::token::identifier_spelling(&token.spelling)
+                            && (!self.reserved_words.contains(token.spelling.as_ref())
+                                || token.spelling.as_ref() == *allowed)
+                    }
                     Terminal::MemberName => crate::token::identifier_spelling(&token.spelling),
                     Terminal::Text => matches!(token.kind, Some(Kind::Text(_))),
                     Terminal::TextValue(expected) => {
@@ -1609,6 +1614,9 @@ impl Terminal {
                 format!("`{value}`")
             }
             Self::Identifier => "identifier".into(),
+            Self::IdentifierAllowReserved(allowed) => {
+                format!("identifier or `{allowed}`")
+            }
             Self::MemberName => "qualified ASCII member name".into(),
             Self::Text => "quoted string".into(),
             Self::TextValue(value) => format!("`\"{value}\"`"),
