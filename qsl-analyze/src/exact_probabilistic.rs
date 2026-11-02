@@ -468,7 +468,7 @@ pub enum ProductStop {
     Cancelled(CancelCause),
 }
 
-/// The locus of an FR-203/FR-204/FR-235 unsupported cause (QSpec FR-421,
+/// The locus of an FR-203/FR-204 unsupported cause (QSpec FR-421,
 /// FR-498): the claim's checked-package `{declaration, occurrence}` and the
 /// member path of the unsupported form or interval operator within that
 /// declaration's body. A claim checked without emission has no identity and
@@ -545,12 +545,6 @@ pub enum ProductRefusal {
     #[error("unsupported timed probabilistic form at {locus:?}")]
     TimedFormShape {
         /// Where the unsupported form is (FR-498).
-        locus: ClaimLocus,
-    },
-    /// FR-235 does not admit this punctual interval in this form.
-    #[error("unsupported punctual interval at {locus:?}")]
-    PunctualInterval {
-        /// Where the interval operator is (FR-498).
         locus: ClaimLocus,
     },
     /// A budget or a cancellation ended the build.

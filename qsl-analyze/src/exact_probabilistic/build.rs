@@ -16,8 +16,7 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::ModelCheckLimit;
 use qsl_semantics::check::{
-    CheckedInterval, CheckedPredicate, CheckedProbabilisticClaim, Event, FormulaNode, ProbForm,
-    Workload,
+    CheckedPredicate, CheckedProbabilisticClaim, Event, ProbForm, Workload,
 };
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -122,7 +121,7 @@ fn fault(invariant: &'static str) -> ProductRefusal {
 
 fn plan_refusal(fault_: PlanFault, claim: Option<&CheckedProbabilisticClaim>) -> ProductRefusal {
     match fault_ {
-        PlanFault::Automaton(error) => automaton_refusal(error, claim),
+        PlanFault::Automaton(error) => automaton_refusal(error),
         PlanFault::TimedFormShape { span } => ProductRefusal::TimedFormShape {
             locus: ClaimLocus::new(
                 claim.and_then(CheckedProbabilisticClaim::identity),
@@ -146,63 +145,14 @@ fn elapsed_member(claim: &CheckedProbabilisticClaim) -> Vec<String> {
     path.iter().map(|step| (*step).to_owned()).collect()
 }
 
-/// The member path of the first punctual-interval operator of a claim's
-/// event formula, in arena order: the operator an
-/// [`AutomatonError::RepeatedPunctualInterval`] refusal is about.
-fn punctual_member(claim: &CheckedProbabilisticClaim) -> Option<Vec<String>> {
-    let ProbForm::Probability {
-        event: Event::Formula { formula, .. },
-        ..
-    } = &claim.form
-    else {
-        return None;
-    };
-    formula
-        .formula()
-        .nodes()
-        .iter()
-        .enumerate()
-        .find_map(|(index, node)| {
-            let interval = match node {
-                FormulaNode::Unary { interval, .. } | FormulaNode::Binary { interval, .. } => {
-                    interval.as_ref()
-                }
-                _ => None,
-            };
-            match interval {
-                Some(CheckedInterval::Timed(timed)) if timed.lower() == timed.upper() => {
-                    Some(vec![
-                        "event".to_owned(),
-                        "formula".to_owned(),
-                        format!("node {index}"),
-                    ])
-                }
-                _ => None,
-            }
-        })
-}
-
-/// An automaton that reached its state limit is a budget; a punctual
-/// interval the automaton cannot read is FR-235's `PunctualInterval`; any
-/// other refusal is the event's.
-fn automaton_refusal(
-    error: AutomatonError,
-    claim: Option<&CheckedProbabilisticClaim>,
-) -> ProductRefusal {
+/// An automaton that reached its state limit is a budget; any other refusal
+/// is the event's.
+fn automaton_refusal(error: AutomatonError) -> ProductRefusal {
     match error {
         AutomatonError::StateLimit { limit } => ProductRefusal::Stopped(ProductStop::Limit {
             limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
             value: limit,
         }),
-        AutomatonError::RepeatedPunctualInterval => match claim {
-            Some(claim) => match punctual_member(claim) {
-                Some(member) => ProductRefusal::PunctualInterval {
-                    locus: ClaimLocus::new(claim.identity(), member, claim.span),
-                },
-                None => fault("punctual-interval-is-in-the-event-formula"),
-            },
-            None => ProductRefusal::Translation(AutomatonError::RepeatedPunctualInterval),
-        },
         other => ProductRefusal::Translation(other),
     }
 }
