@@ -89,6 +89,7 @@ ruling, plus low findings. FND-001 depends on the spec ruling in SR-2160003 FND-
 | FND-011 | fixed | Spec PR 2161 is merged (FR-518 rows 8 and 13 reader cases, 21 reader and 10 selection, AC-11 gated on IR-1278, AC-12, TC-1313 rows 2 to 4 and 11); the head is rebased on it and `every_case_gets_the_refusal_of_its_row`, the manifest test (31 cases) and the AC-4 and AC-12 tests pass against it. |
 | FND-012 | fixed | The merged FR-518 names the sixteen axes including `clock.kind`, `clock.name`, `clause.binding`, `package.nodes`; `SelectionAxis` has the same sixteen. |
 | FND-013 | fixed | `claim_and_move` is gone: the move is a rename onto a path that does not exist, so a crash leaves the finished tree or nothing; POSIX reliance is documented (macOS and Linux only) and `crash_residue_does_not_block_a_write_and_leaves_no_claim` passes. The residual race with an empty directory is stated in the doc comment. |
+| FND-014 | fixed | Spec PR 2162 merged: FR-517 now states the sidecar compensation rows, the four-row event-position package and the per-package counts (AC-2, AC-3, TC-1312); tests on head 084c37503 (src unchanged since 6aba28cdc) match merged FR-517 AC-1 to AC-14: AC-1 paths without inventory.json run, AC-11 full list ignored on QSL-1512, AC-12 rationals ignored on QSL-1522, AC-13 units ignored on QSL-1558, AC-14 receipt-sum bodies ignored on QSL-1555, and four new `compensations` assertions in each_sidecar_value_is_compared_on_its_own_axis. |
 
 ## Review method
 
