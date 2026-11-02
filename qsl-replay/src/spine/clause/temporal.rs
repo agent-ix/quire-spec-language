@@ -301,16 +301,15 @@ pub(super) fn run_temporal(
                         complete_through,
                         margin,
                     );
-                    let observed = qsl_eval::temporal::evaluate_observed_finite_window(
+                    qsl_eval::temporal::evaluate_observed_finite_window(
                         run.package,
                         node,
                         &environments,
                         &timed_trace,
-                        &reference,
+                        reference,
                         &progress,
                         &mut meter,
                     );
-                    observed
                 }
                 Err(refusal) => {
                     return late(ClauseDisposition::TemporalRefusal(trace_refusal(refusal)));
@@ -322,7 +321,7 @@ pub(super) fn run_temporal(
             node,
             &environments,
             shape,
-            &reference,
+            reference,
             &mut meter,
         ),
     };
