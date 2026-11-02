@@ -2038,6 +2038,10 @@ fn enum_member_node_ids(
     ))
 }
 
+fn equality_fact_is_package_local(key: &NodeKey, application: &NodeKey) -> bool {
+    key.package() == application.package()
+}
+
 fn equality_fact_witness_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
@@ -2059,7 +2063,7 @@ fn equality_fact_witness_rows(
             // package-local structural facts, so rows whose key belongs to
             // another package than the application are the one deliberate
             // omission; every package-local key must still resolve.
-            if key.package() != row.application().package() {
+            if !equality_fact_is_package_local(key, row.application()) {
                 return Ok(());
             }
             let Some(structural_node) = emitted_node_ids.get(key).cloned() else {

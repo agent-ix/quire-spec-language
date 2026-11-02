@@ -1575,11 +1575,10 @@ fn the_host_conversion_sources_lower_a_convert_and_read_back_verified() {
     }
 }
 
-/// QSL-1448: equality fact rows are omitted only for a key of another
-/// package; a package-local key without an emitted node still refuses.
+/// QSL-1448: a package-local equality fact without an emitted node still refuses.
 #[ix_trace_rs::trace("QSL-1448", "IR-FR-353")]
 #[test]
-fn equality_fact_witness_rows_omit_only_foreign_package_keys() {
+fn equality_fact_witness_rows_refuse_missing_local_key_context() {
     let graph = checked_graph(
         "dimension Length; unit m : Length = rational(1, 1);\n\
          function quantity using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
@@ -1601,5 +1600,25 @@ fn equality_fact_witness_rows_omit_only_foreign_package_keys() {
     assert!(matches!(
         equality_fact_witness_rows(&graph, &HashMap::new(), &[], rows),
         Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+}
+
+/// QSL-1448: an equality fact key is package-local only when it shares the
+/// application package identity; foreign keys are the one omitted category.
+#[ix_trace_rs::trace("QSL-1448", "IR-FR-353")]
+#[test]
+fn equality_fact_package_locality_uses_the_application_owner() {
+    let key = |package: &str, name: &str| {
+        NodeKey::new(package, vec![PathSegment::Text(name.to_owned())], 0)
+            .expect("a fixture identity is valid")
+    };
+    let application = key("pkg/root", "equality");
+    assert!(super::equality_fact_is_package_local(
+        &key("pkg/root", "unit"),
+        &application
+    ));
+    assert!(!super::equality_fact_is_package_local(
+        &key("pkg/library", "unit"),
+        &application
     ));
 }
