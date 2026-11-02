@@ -151,7 +151,7 @@ pub enum LinkCheckOutcome {
     /// outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-link.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
     /// The generalization closure was not [`GeneralizationClosure::Closed`].
     OpenClosure(UnclosedMethodSet),
 }

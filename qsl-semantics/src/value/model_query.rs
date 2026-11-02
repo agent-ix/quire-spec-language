@@ -119,7 +119,7 @@ pub enum ModelQueryHalt {
     },
 }
 
-impl From<Incomplete> for ModelQueryHalt {
+impl From<NormalizationIncomplete> for ModelQueryHalt {
     fn from(record: Incomplete) -> Self {
         Self::Stop(Stop::Incomplete(record))
     }

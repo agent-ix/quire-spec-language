@@ -70,7 +70,7 @@ pub enum ConformanceCheckOutcome {
     /// A real defect, such as a dangling member reference, refused the check.
     Refused(ModelRefusal),
     /// An owning meter charge or a per-walk ancestor edge was denied.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
 }
 
 /// The outcome of resolving which inherited member a redefining member's
@@ -114,12 +114,12 @@ pub(super) fn multiplicity_conforms(from: &Multiplicity, to: &Multiplicity) -> b
     }
 }
 
-fn charge_axis(meter: &mut Meter) -> Result<(), Incomplete> {
+fn charge_axis(meter: &mut Meter) -> Result<(), NormalizationIncomplete> {
     meter.charge(Charge::new(ChargePoint::ConformanceAxis))
 }
 
 /// Refinement follows a field pair's multiplicity axis exactly once.
-pub(crate) fn charge_refinement_axis(meter: &mut Meter) -> Result<(), Incomplete> {
+pub(crate) fn charge_refinement_axis(meter: &mut Meter) -> Result<(), NormalizationIncomplete> {
     charge_axis(meter)
 }
 
@@ -127,7 +127,7 @@ fn charge_type_axis(
     index: &ModelIndex,
     value_type: &crate::model::domain_package::ValueTypeRef,
     meter: &mut Meter,
-) -> Result<(), Incomplete> {
+) -> Result<(), NormalizationIncomplete> {
     meter.charge(Charge::new(ChargePoint::ConformanceAxis).work(index.type_fact_count(value_type)))
 }
 

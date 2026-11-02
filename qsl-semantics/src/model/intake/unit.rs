@@ -382,7 +382,7 @@ pub enum UnitIntakeCause {
     /// every refusal the refusing step reports.
     Refused(Refusals),
     /// Normalization reached a `ModelNormalizationLimitsV1` ceiling.
-    Limit(Incomplete),
+    Limit(NormalizationIncomplete),
     /// The record reader refused with no refusal: a broken invariant of
     /// intake, never a property of the package.
     Invariant,
@@ -456,7 +456,7 @@ struct SelectedExactRows {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SelectedExactRowsError {
-    Limit(Incomplete),
+    Limit(NormalizationIncomplete),
     Invariant,
 }
 

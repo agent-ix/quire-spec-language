@@ -177,7 +177,7 @@ fn dangling(cause: ModelRefusalCause, missing: &str, item: &str) -> ModelRefusal
     }
 }
 
-fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
+fn charge_kind(meter: &mut Meter) -> Result<(), NormalizationIncomplete> {
     meter.charge(Charge::new(ChargePoint::SystemsKind))
 }
 
@@ -191,7 +191,7 @@ fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
 pub fn classify(
     domain_package: &DomainPackage,
     meter: &mut Meter,
-) -> Result<SystemsClassification, Incomplete> {
+) -> Result<SystemsClassification, NormalizationIncomplete> {
     let mut components: Vec<&ComponentRecord> = Vec::new();
     let mut endpoints: Vec<&EndpointRecord> = Vec::new();
     let mut relationships: Vec<&RelationshipRecord> = Vec::new();
@@ -492,7 +492,7 @@ pub enum ConnectionCheckOutcome {
     /// check outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-check.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
 }
 
 fn end_port<'a>(
@@ -689,7 +689,7 @@ pub enum AllocationCheckOutcome {
     /// The allocation's target did not resolve as a Part.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-check.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
 }
 
 /// Runs `quire.model.systems.allocation/v1` over `relationship_key`. Refuses

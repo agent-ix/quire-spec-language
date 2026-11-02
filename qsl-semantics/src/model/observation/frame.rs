@@ -254,7 +254,7 @@ enum FrameStop<'a> {
     /// [`decide_frame`]'s first finding.
     Decision(Box<Decision<'a>>),
     /// A `frame.write` or `frame.redefines-link` charge the meter denied.
-    Denied(Incomplete),
+    Denied(NormalizationIncomplete),
     /// Step 5's first changed relationship instance.
     Link(Box<LinkFinding>),
 }
@@ -679,7 +679,7 @@ pub(super) fn verdict(
 
 /// `incomplete` as the admission record of the caller-budget refusal
 /// [`enforce`] raises for it.
-fn budget_record(incomplete: &Incomplete) -> AdmissionRecord {
+fn budget_record(incomplete: &NormalizationIncomplete) -> AdmissionRecord {
     caller_budget_record(&incomplete.denial(), INSUFFICIENT_NEXT_CHARGE)
 }
 

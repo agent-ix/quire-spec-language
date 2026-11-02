@@ -329,7 +329,7 @@ pub enum NormalizeOutcome {
     /// ([`Refusals`], L1 finding, PR #228 review).
     Refused(Refusals),
     /// A `ModelNormalizationLimitsV1` counter was exhausted; no effective view.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
 }
 
 /// One entry of an [`EffectiveView`]: `{effective_id, preimage}`, plus this
@@ -843,7 +843,7 @@ fn cycle_walk(
         if followed.insert((specific_key, ancestor_key.clone()))
             && u64::try_from(followed.len()).unwrap_or(u64::MAX) > max_steps
         {
-            return Err(Denial::Incomplete(Incomplete {
+            return Err(Denial::Incomplete(NormalizationIncomplete {
                 limit_kind: LimitKind::AncestorSteps,
                 limit: max_steps,
                 consumed: max_steps,
@@ -2973,7 +2973,7 @@ fn build(
                 charges.cycle_check(1)?;
                 edges_followed = edges_followed.saturating_add(1);
                 if edges_followed > limits.ancestor_steps {
-                    return Err(Denial::Incomplete(Incomplete {
+                    return Err(Denial::Incomplete(NormalizationIncomplete {
                         limit_kind: LimitKind::AncestorSteps,
                         limit: limits.ancestor_steps,
                         consumed: limits.ancestor_steps,
@@ -4185,15 +4185,15 @@ fn resolve_redefinition_contest(
 
 /// Why [`build`] stopped before completing: a counted limit ran out, or a
 /// stage exposed its refusals, each reported only once every charge its own
-/// stage admits (see the module docs). `From<Incomplete>` lets
+/// stage admits (see the module docs). `From<NormalizationIncomplete>` lets
 /// `charges.fact()?` and friends propagate a denial directly.
 enum Denial {
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
     Refused(Refusals),
 }
 
-impl From<Incomplete> for Denial {
-    fn from(incomplete: Incomplete) -> Self {
+impl From<NormalizationIncomplete> for Denial {
+    fn from(incomplete: NormalizationIncomplete) -> Self {
         Denial::Incomplete(incomplete)
     }
 }
@@ -4226,12 +4226,12 @@ impl<'m> Charges<'m> {
         }
     }
 
-    fn charge(&mut self, charge: Charge) -> Result<(), Incomplete> {
+    fn charge(&mut self, charge: Charge) -> Result<(), NormalizationIncomplete> {
         self.meter.charge(charge)
     }
 
     /// One `normalize.fact`: one more derivation fact.
-    fn fact(&mut self) -> Result<(), Incomplete> {
+    fn fact(&mut self) -> Result<(), NormalizationIncomplete> {
         let next = self.facts.saturating_add(1);
         self.charge(
             Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, next),
@@ -4242,12 +4242,12 @@ impl<'m> Charges<'m> {
 
     /// One `normalize.cycle-check` over an ancestor path of `path_len`
     /// steps (`work_units += L`, `value-accounting.md:491`).
-    fn cycle_check(&mut self, path_len: usize) -> Result<(), Incomplete> {
+    fn cycle_check(&mut self, path_len: usize) -> Result<(), NormalizationIncomplete> {
         self.charge(Charge::new(ChargePoint::NormalizeCycleCheck).work(length_amount(path_len)))
     }
 
     /// One `normalize.declaration`: one more effective declaration.
-    fn declaration(&mut self) -> Result<(), Incomplete> {
+    fn declaration(&mut self) -> Result<(), NormalizationIncomplete> {
         let next = self.declarations.saturating_add(1);
         self.charge(
             Charge::new(ChargePoint::NormalizeDeclaration)
@@ -5136,7 +5136,7 @@ mod tests {
     fn incomplete_with_steps(
         domain_package: &DomainPackage,
         limits: ModelNormalizationLimits,
-    ) -> (Incomplete, u64) {
+    ) -> (NormalizationIncomplete, u64) {
         let before = work_steps();
         let outcome = normalize(domain_package, limits);
         let steps = work_steps() - before;
@@ -5312,7 +5312,7 @@ mod tests {
             NormalizeOutcome::Incomplete(incomplete) => {
                 assert_eq!(
                     incomplete,
-                    Incomplete {
+                    NormalizationIncomplete {
                         limit_kind: LimitKind::AncestorSteps,
                         limit: 5,
                         consumed: 5,

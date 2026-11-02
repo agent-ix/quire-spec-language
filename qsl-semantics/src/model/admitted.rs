@@ -80,7 +80,7 @@ pub enum DeclarationKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdmitFailure {
     /// The FR-152 kind mapping ran out of its `systems.kind` budget.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
     /// Declaration refusals, in FR-152 kind-mapping order after any
     /// identity refusal; the package admits no declaration.
     Refused(Vec<ModelRefusal>),

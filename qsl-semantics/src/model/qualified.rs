@@ -67,7 +67,7 @@ pub enum ResolveFailure {
     /// condition, in table order.
     Connection(Vec<ConditionFailure>),
     /// A charge was denied.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
 }
 
 fn unresolved(name: &str, segment: usize, reason: &str) -> ResolveFailure {
