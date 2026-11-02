@@ -91,13 +91,18 @@ dependency; intervals and buffer capacities alone are not an executable plan.
 | Formula topology | Each `SubformulaId` identifies one node with its checked operator tag, ordered operand IDs, optional atom ID and its interval reference. One root is named. All references resolve inside this program; node IDs are scoped to its subject. Operator tags and operand order survive lowering. |
 | State | One typed `State` record whose fields are the persistent state slots, named by subformula: the unwrapped time (an integer tick, kept in state), each buffered subformula's sequence of entries (unwrapped tick and captured bindings), and the active obligation instances with their captured bindings and origin. An obligation's **origin** is the unwrapped tick of the event that activated it (monotone, so time-based windows read it directly); the event index may be carried as a capture where an operator needs it. The `init` entry's result is the initial value of every slot, so the state initializer is the `init` body. Buffer capacities are premises of the plan root (below), not part of any sequence type; every fold over a buffer is bounded by its capacity. |
 | Transitions | Three **entries**, each a checked-expression `function` node of the checked-package v2 wire (the existing expression and function contracts; no statement vocabulary): `init() -> State`, `on_event(State, event inputs) -> (State, Results)` and `on_watermark(State, watermark inputs) -> (State, Results)`. An entry is a state-passing total function: "assignment" is constructing the next state record, "branch" is `if`/`case`, "loop over a buffer" is a fold bounded by the buffer's capacity, "push" and "expire" construct and filter the buffer sequence, and "emit" is a field of `Results`. A checked atom or guard body embeds as an operand of the entry's expression. The entries explicitly compute atoms, activate obligations, update state and buffers, expire windows and emit typed obligation results; every read, call target and branch is resolved, and calling an unspecified temporal operator is not an entry body. |
-| Entry bindings | Each entry's parameters are its input slots and `State`, and its result is the next `State` and `Results`. An event's inputs are the **gap-checked tick delta** that RT supplies (below), the clause's admitted snapshot/invocation values and the binding identity; a watermark's inputs are the **unwrapped history-boundary tick** (a non-negative integer in the plan's tick unit) and the admitted scope identities of QSpec FR-094/FR-160, which RT supplies. Neither entry receives a raw, possibly wrapping counter reading. An ordinary clock poll is not a watermark and creates no event position. |
+| Entry bindings | Each entry's parameters are its input slots and `State`, and its result is the next `State` and `Results`. An event's inputs are the **gap-checked tick delta** that RT supplies (below), the clause's admitted snapshot/invocation values and the binding identity; a watermark's inputs are the **unwrapped history-boundary tick** (a non-negative integer in the plan's tick unit, covering every tick up to and including the boundary, QSpec FR-487 and FR-094) and the admitted scope identities of QSpec FR-094/FR-160, which RT supplies. Neither entry receives a raw, possibly wrapping counter reading. An ordinary clock poll is not a watermark and creates no event position. |
 
 **Plan root.** The plan crosses E5 as one **plan-root node** of the
-checked-package v2 wire (QSpec FR-322, node form pending STD-647). It names
-the three entries, the `State` type, the subject, the intervals, the buffer
-capacities as premises, the clock binding, the uncertainty, the maximum
-reading gap and the rate limit; every entry, atom body and type it needs is
+checked-package v2 wire: a `temporal`/`monitor_plan` node (QSpec FR-487,
+FR-322-AC-308). It names the three entries, the `State`, input, scope and
+results types, the clause the program monitors (whose clock binding is the
+plan's), the counter width, the maximum reading gap, the rate limit and the
+buffer capacities as premises. The declared clock uncertainty and the tick
+intervals of the logical fields above are not bindings of QSpec FR-487's root;
+their wire carriage (and so their part in the plan's identity) is an open
+question for the QSpec half, pending a STD-647 follow-up. Every entry, atom
+body and type the root needs is
 a dependency of the root, so its content key (QSpec FR-322) selects the
 complete immutable plan and no second identity scheme is introduced. The
 logical Rust record above is the producer's in-memory view of that node;
@@ -114,8 +119,9 @@ The entries SHALL be expressed in the existing checked expression and
 no new statement, loop or assignment vocabulary exists, and a state-passing
 function entry satisfies this requirement's executable-body obligation (QSL-685
 called these "instruction and control-flow bodies"). A catalog operation needed to extend a buffer
-(a sequence append) is added to the wire's operation catalog by QSpec
-(STD-647) if the existing operations cannot express it. QSL SHALL determine activation, atom meaning, operator updates,
+(a sequence append) is not a new operation: QSpec FR-487 expresses it as
+`quire.op.collection.flatten` of a sequence of two sequences, so the closed
+operation catalog is unchanged. QSL SHALL determine activation, atom meaning, operator updates,
 deadline settlement and result propagation before RT build. IR/CG may lower
 or generate these bodies, but RT SHALL NOT reconstruct them from the formula
 graph, source text, interval table or buffer IDs. A graph with missing bodies
@@ -245,7 +251,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-6 | Build two monitors from the same plan; a request observed only by the first does not activate an obligation in the second. Attempts to rebind either live monitor to another program/target fail without changing either state. Each emitted result retains its selected subject, target premises and obligation origin. | Test (TC-1081) |
 | FR-251-AC-7 | Executing the plan's transition entries and the QSL reference evaluator on the same admitted inputs gives identical per-obligation outcomes for AC-1 through AC-3, a clause with reversed implication operands, an activation guard that is false, and open versus closed interval endpoints. A progress assertion past a deadline settles according to QSpec FR-094/FR-160; polling the counter without that assertion adds no event and settles no deadline. | Test (TC-1081) |
 | FR-251-AC-8 | An unsupported predicate/instruction yields `Unsupported` and no monitor; failed state allocation yields build failure and no monitor; an event missing a required admitted value is rejected without state change; an executor invariant failure yields `Failed` with no verdict and prevents further input. None of these controls returns `false` as a property result. | Test (TC-1081) |
-| FR-251-AC-9 | The admitted plan of AC-1 crosses E5 as one plan-root node (STD-647) whose dependencies include `init`, `on_event` and `on_watermark` as `function` nodes with the signatures of the Transitions row, and the `State` type; no entry uses a statement, loop or assignment form. Changing any one entry body changes the plan-root's content key and so the plan identity. The `init` result is every slot's initial value, and an obligation's origin in `State` is the unwrapped tick of its activating event. | Test (TC-1081) |
+| FR-251-AC-9 | The admitted plan of AC-1 crosses E5 as one `temporal`/`monitor_plan` plan-root node (QSpec FR-487, FR-322-AC-308) whose dependencies include `init`, `on_event` and `on_watermark` as `function` nodes with the signatures of the Transitions row, and the `State` type; no entry uses a statement, loop or assignment form. Changing any one entry body changes the plan-root's content key and so the plan identity. The `init` result is every slot's initial value, and an obligation's origin in `State` is the unwrapped tick of its activating event. | Test (TC-1081) |
 | FR-251-AC-10 | The entries never receive a raw counter reading. On the 16-bit target of AC-3, RT supplies `on_event` the delta 10 for readings `65530` then `4` and the entry's unwrapped time advances by 10; for `65530` then `65500` RT raises `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and calls no entry. `on_watermark` receives the unwrapped history-boundary tick and the admitted scope identities; a watermark with history boundary tick 3001, the first tick at which a later `ack` would decide false, settles AC-1's `req` obligation (`ack` never seen) false, and a mere counter poll adds no event and calls no entry. | Test (TC-1081) |
 
 ## Dependencies
@@ -258,7 +264,7 @@ may repair such a disagreement by inventing another evaluation rule.
 ## References
 
 - The monitor contract handed to the runtime repository: ADR-026 OV-13.
-- QSpec half: the plan-root node, any catalog addition and the half-open tick cover (Linear STD-647); the node form named above is pending that change and this requirement's AC-9 cites it by role until the QSpec ids merge.
+- QSpec half (Linear STD-647, merged): the plan-root node and entry signatures, QSpec FR-487 with TC-978 and FR-322-AC-308; the half-open tick cover, QSpec FR-160-AC-6 and FR-160-AC-7.
 - Linear QSL-685 fixes this executable handoff for RT's IR-519. The plan
   producer (QSL-587), executable lowering/generation and RT implementation
   remain downstream work; these criteria specify their acceptance and do
