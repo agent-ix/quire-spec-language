@@ -449,7 +449,6 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
         CheckedPackageSidecarsRef {
             checked_term_data: None,
             temporal_bindings: None,
-            schedulability_claims: None,
             operation_effects: operation_effects.as_deref(),
             schedulability_claims: (!schedulability_claims.is_empty())
                 .then_some(schedulability_claims.as_slice()),

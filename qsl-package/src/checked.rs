@@ -46,8 +46,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::sync::OnceLock;
 
-#[cfg(feature = "std")]
 use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, Maybe, With};
+#[cfg(feature = "std")]
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation, CheckedGraph,
@@ -316,9 +316,6 @@ impl LinkRefusal {
     }
 }
 
-/// Drops the dependency closure over an explicit stack, so a chain of any
-/// length drops on a constant native stack (ADR-030 D-1): the derived drop
-/// would recurse once per link.
 /// Debug writes the graph and every dependency's graph under one node table,
 /// so a node is written once for the whole package. Without `std`, keys are
 /// written in full.
@@ -373,6 +370,9 @@ impl core::fmt::Debug for CheckedPackage {
     }
 }
 
+/// Drops the dependency closure over an explicit stack, so a chain of any
+/// length drops on a constant native stack (ADR-030 D-1): the derived drop
+/// would recurse once per link.
 impl Drop for CheckedPackage {
     fn drop(&mut self) {
         let mut pending = Vec::new();

@@ -512,6 +512,28 @@ mod tests {
         }
     }
 
+    /// A value inside a `scoped` call that does not take the table keeps its
+    /// keys complete: the key is written in full, never as an unresolved `#n`.
+    #[test]
+    fn an_unthreaded_value_inside_a_scope_writes_its_key_in_full() {
+        struct Unthreaded(NodeKey);
+        impl DebugWith for Unthreaded {
+            fn fmt_with(&self, f: &mut fmt::Formatter<'_>, _table: &DebugTable) -> fmt::Result {
+                fmt::Debug::fmt(&self.0, f)
+            }
+        }
+        struct Root(Unthreaded);
+        impl fmt::Debug for Root {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                scoped(f, &self.0)
+            }
+        }
+        let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
+        let text = alloc::format!("{:?}", Root(Unthreaded(key)));
+        assert!(text.contains("NodeKey(pkg:[\"k\",]:1)"), "{text}");
+        assert!(!text.contains("#0"), "{text}");
+    }
+
     /// A value formatted outside any `scoped` call keeps complete keys.
     #[test]
     fn a_standalone_value_writes_complete_keys() {
