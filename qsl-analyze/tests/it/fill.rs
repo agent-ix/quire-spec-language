@@ -8,6 +8,7 @@
 //! snapshots and protocol subjects the protocol tests build from it.
 
 use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
@@ -632,25 +633,27 @@ fn expand<M: MemoryModel>(system: &ProtocolSystem<'_, M>, state: &ProtocolState<
         .collect()
 }
 
-/// Expands every state of `frontier` across the available cores, returning
-/// each expansion at its frontier position.
+/// Expands every state of `frontier` with up to `worker_limit` workers,
+/// returning each expansion at its frontier position and the number used.
 fn expand_level<M>(
     system: &ProtocolSystem<'_, M>,
     reached: &[Reached<M>],
     frontier: &[usize],
-) -> Vec<Expanded<M>>
+    worker_limit: NonZeroUsize,
+) -> (Vec<Expanded<M>>, usize)
 where
     M: MemoryModel + Sync,
     M::Component: Send + Sync,
 {
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(frontier.len());
+    let workers = worker_limit.get().min(frontier.len());
     if workers <= 1 {
-        return frontier
-            .iter()
-            .map(|&at| expand(system, &reached[at].state))
-            .collect();
+        return (
+            frontier
+                .iter()
+                .map(|&at| expand(system, &reached[at].state))
+                .collect(),
+            1,
+        );
     }
     let next = AtomicUsize::new(0);
     let mut expanded: Vec<Option<Expanded<M>>> = std::iter::repeat_with(|| None)
@@ -677,17 +680,37 @@ where
             }
         }
     });
-    expanded
-        .into_iter()
-        .map(|successors| successors.expect("every frontier state expanded"))
-        .collect()
+    (
+        expanded
+            .into_iter()
+            .map(|successors| successors.expect("every frontier state expanded"))
+            .collect(),
+        workers,
+    )
 }
 
 /// Every reachable state of `system`, breadth-first from its initial states,
 /// each once by its state key, successors in transition-identity order. Each
-/// breadth-first level expands in parallel and is admitted in frontier
-/// order, so indices and steps equal a sequential FIFO search's.
+/// breadth-first level expands with up to the available worker count and is
+/// admitted in frontier order, so indices and steps equal a sequential FIFO
+/// search's.
 pub(crate) fn reachable<M>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
+    let workers = std::thread::available_parallelism()
+        .unwrap_or_else(|_| NonZeroUsize::new(1).expect("one is nonzero"));
+    reachable_with_workers(system, workers).0
+}
+
+/// Explore every reachable state using at most `worker_limit` workers per
+/// breadth-first level. Returns the greatest number of workers spawned for
+/// one level so callers can verify that the requested parallelism was used.
+pub(crate) fn reachable_with_workers<M>(
+    system: &ProtocolSystem<'_, M>,
+    worker_limit: NonZeroUsize,
+) -> (Vec<Reached<M>>, usize)
 where
     M: MemoryModel + Sync,
     M::Component: Send + Sync,
@@ -697,6 +720,7 @@ where
     let mut known: HashMap<StateKey, usize> = HashMap::new();
     let mut reached: Vec<Reached<M>> = Vec::new();
     let mut frontier = Vec::new();
+    let mut max_workers = 1;
     let mut admit = |state: ProtocolState<M>,
                      key: StateKey,
                      reached: &mut Vec<Reached<M>>,
@@ -722,7 +746,8 @@ where
     }
     while !frontier.is_empty() {
         let level = std::mem::take(&mut frontier);
-        let expanded = expand_level(system, &reached, &level);
+        let (expanded, workers) = expand_level(system, &reached, &level, worker_limit);
+        max_workers = max_workers.max(workers);
         for (at, successors) in level.into_iter().zip(expanded) {
             for (transition, state, key) in successors {
                 let next = admit(state, key, &mut reached, &mut frontier);
@@ -730,7 +755,7 @@ where
             }
         }
     }
-    reached
+    (reached, max_workers)
 }
 
 /// Every maximal behaviour's projection onto its event steps (ADR-027

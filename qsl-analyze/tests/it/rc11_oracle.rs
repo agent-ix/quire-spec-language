@@ -4,13 +4,14 @@
 //! that shares no code with `qsl-eval`'s `Ra`.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::num::NonZeroUsize;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::protocol::{MemoryModel, ProtocolSystem, Ra, Sc, Tso};
 use qsl_eval::simulation::{StateKey, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 
-use crate::fill::reachable;
+use crate::fill::{reachable, reachable_with_workers};
 use crate::litmus::sb_unit;
 use crate::rc11_support::{self as rc11, Op, Order};
 use crate::weak_memory::{litmus_run, outcomes, register, select, steps, Case};
@@ -162,6 +163,7 @@ fn sc_fence_edges_match_rc11_for_lt14_and_lt18() {
 
 /// LT-16 carries a predecessor of a collected SC event through an acquire
 /// fence and an SC load, so the later SC store cannot move before X := 1.
+/// `QSL_TEST_EXPLORER_WORKERS` pins the explorer independently of test threads.
 #[trace("TC-668", "FR-223-AC-8")]
 #[test]
 fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
@@ -189,7 +191,24 @@ fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
     let case = case_of(&lt16);
     let selection = [select("SB::Main::Both", MemoryModelName::Ra)];
     let system = case.system(&selection, Ra::default()).expect("builds");
-    let reached = reachable(&system);
+    let worker_limit = std::env::var_os("QSL_TEST_EXPLORER_WORKERS")
+        .map(|value| {
+            value
+                .to_str()
+                .expect("QSL_TEST_EXPLORER_WORKERS is UTF-8")
+                .parse::<NonZeroUsize>()
+                .expect("QSL_TEST_EXPLORER_WORKERS is a positive worker count")
+        })
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .unwrap_or_else(|_| NonZeroUsize::new(1).expect("one is nonzero"))
+        });
+    let (reached, workers_used) = reachable_with_workers(&system, worker_limit);
+    assert_eq!(
+        workers_used,
+        worker_limit.get(),
+        "LT-16 used the requested worker count at a wide frontier"
+    );
     let transitions = reached.iter().map(|state| state.steps.len()).sum::<usize>();
     assert_eq!(reached.len(), 7_607, "LT-16 reachable state count");
     assert_eq!(transitions, 19_574, "LT-16 successor edge count");
