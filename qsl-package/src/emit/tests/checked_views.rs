@@ -256,7 +256,7 @@ fn each_clause_of_the_package_reads_its_node_facts() {
 /// `on each (q)` read as `Origin`, `Each` with trigger and guard and `Each`
 /// with no guard; the guard reads as `ActivationGuard` and is no predicate
 /// leaf.
-#[trace("FR-515-AC-2", "TC-1310")]
+#[trace("FR-515-AC-2", "FR-515-AC-10", "TC-1310")]
 #[test]
 fn the_activation_and_its_guard_are_read_from_the_clause() {
     let compiled = compile(&unit_of(
@@ -858,7 +858,7 @@ fn equal_clauses_share_a_node_and_an_interval_or_comment_decides_identity() {
 
 /// FR-515 "Determinism": the view read from the emitted bytes is the same on
 /// a second read of the same bytes.
-#[trace("FR-515-AC-1", "TC-1310")]
+#[trace("FR-515-AC-1", "FR-515-AC-7", "TC-1310")]
 #[test]
 fn a_second_read_of_the_same_bytes_gives_the_same_view() {
     let compiled = compile(&unit(
@@ -886,4 +886,169 @@ fn a_second_read_of_the_same_bytes_gives_the_same_view() {
         assert_eq!(ops(&left), ops(&right));
         assert!(left.belongs_to(&first) && !left.belongs_to(&second));
     }
+}
+
+/// FR-515-AC-14 (TC-1310 row 14), the clause `name`: each clause of a package
+/// reads the name it was declared with.
+#[trace("FR-515-AC-14", "TC-1310")]
+#[test]
+#[ignore = "IR-1278: the checked package carries no temporal clause name until the reader admits one"]
+fn each_clause_reads_its_declared_name() {
+    let compiled = compile(&unit_of(
+        &[("t", INFINITE)],
+        &[
+            clause(
+                "Due",
+                "t",
+                "on origin",
+                "always holds(c.versionNumber <= 1)",
+            ),
+            clause(
+                "Other",
+                "t",
+                "on origin",
+                "always holds(c.versionNumber >= 7)",
+            ),
+        ]
+        .join("\n"),
+    ));
+    let package = admit(&compiled);
+    let mut names: Vec<_> = clause_ids(&package)
+        .iter()
+        .map(|id| clause_name(&temporal_subject(&package, id).unwrap()))
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Due", "Other"]);
+}
+
+/// FR-515-AC-14, the predicate's `name`: the view of a leaf names the clause
+/// it was read from.
+#[trace("FR-515-AC-14", "TC-1310")]
+#[test]
+#[ignore = "IR-1278: the checked package carries no temporal clause name until the reader admits one"]
+fn a_predicate_reads_its_clauses_declared_name() {
+    let compiled = compile(&unit(
+        INFINITE,
+        &clause(
+            "Due",
+            "t",
+            "on origin",
+            "always holds(c.versionNumber <= 1)",
+        ),
+    ));
+    let package = admit(&compiled);
+    let id = only_clause(&package);
+    let leaf = temporal_subject(&package, &id).unwrap().predicate_leaves()[0].clone();
+    let view = checked_predicate(&package, &PredicateSelection { clause: id, leaf }).unwrap();
+    assert_eq!(predicate_clause_name(&view), "Due");
+}
+
+/// FR-515-AC-13 (TC-1310 row 13): two structurally equal clauses under a
+/// clock-configured profile are one node with two occurrences of different
+/// ordinals. Today IR refuses the package (`TimedNodeReference` at the second
+/// `temporal_bindings` row).
+#[trace("FR-515-AC-13", "TC-1310")]
+#[test]
+#[ignore = "IR-1279: IR refuses a second temporal_bindings row for a shared clause node"]
+fn equal_clauses_under_a_clock_profile_share_a_node_with_two_occurrences() {
+    let body = "always[0,30] holds(c.versionNumber <= 1)";
+    let declarations = format!(
+        "{}\n{}",
+        clause("First", "t", "on origin", body),
+        clause("Second", "t", "on origin", body)
+    );
+    let package = admit(&compile(&unit(EVENT, &declarations)));
+    let [node] = clause_ids(&package).try_into().expect("one shared node");
+    let view = temporal_subject(&package, &node).unwrap();
+    let ordinals: Vec<_> = view.occurrences().iter().map(|o| o.ordinal).collect();
+    assert_eq!(ordinals.len(), 2);
+    assert_ne!(ordinals[0], ordinals[1]);
+    assert!(view.occurrences().iter().all(|o| o.node == node));
+    assert_eq!(view.clock().map(|row| &row.declaration), Some(&node));
+}
+
+/// The declared name of a temporal clause view. The package carries no clause
+/// name until IR-1278; the gated tests change here when it lands (this
+/// becomes `view.name()`).
+fn clause_name(_view: &crate::checked_views::TemporalSubjectView<'_>) -> String {
+    unimplemented!("IR-1278: the checked package carries no temporal clause name")
+}
+
+/// The declared name of a predicate view's clause (see [`clause_name`]).
+fn predicate_clause_name(_view: &CheckedPredicateView<'_>) -> String {
+    unimplemented!("IR-1278: the checked package carries no temporal clause name")
+}
+
+/// FR-515-AC-11 (TC-1310 row 11): a guard equal to a `holds` operand is one
+/// node; it reads as `ActivationGuard` and is among `predicate_leaves()` once
+/// per `holds` atom that reads it.
+#[trace("FR-515-AC-11", "TC-1310")]
+#[test]
+fn a_guard_equal_to_a_holds_operand_is_one_node_in_both_places() {
+    let compiled = compile(&unit(
+        INFINITE,
+        &clause(
+            "Shared",
+            "t",
+            "on each (q: Config::ConfigVersion) when (c.versionNumber >= 3)",
+            "always (holds(c.versionNumber >= 3) and holds(c.versionNumber >= 3))",
+        ),
+    ));
+    let package = admit(&compiled);
+    let id = only_clause(&package);
+    let subject = temporal_subject(&package, &id).unwrap();
+    let Activation::Each {
+        guard: Some(guard), ..
+    } = subject.activation().clone()
+    else {
+        panic!("a guarded activation");
+    };
+    assert_eq!(subject.predicate_leaves(), [guard.clone(), guard.clone()]);
+    let view = checked_predicate(
+        &package,
+        &PredicateSelection {
+            clause: id,
+            leaf: guard,
+        },
+    )
+    .unwrap();
+    assert_eq!(view.kind(), PredicateKind::ActivationGuard);
+}
+
+/// FR-515-AC-12 (TC-1310 row 12): a leaf the clause reads whose source map
+/// entry is absent refuses `LeafHasNoSource`.
+#[trace("FR-515-AC-12", "TC-1310")]
+#[test]
+fn a_clause_leaf_without_a_source_entry_is_refused() {
+    let compiled = compile(&unit(
+        INFINITE,
+        &clause(
+            "Due",
+            "t",
+            "on origin",
+            "always holds(c.versionNumber <= 1)",
+        ),
+    ));
+    let package = admit(&compiled);
+    let id = only_clause(&package);
+    let leaf = temporal_subject(&package, &id).unwrap().predicate_leaves()[0].clone();
+    let selection = PredicateSelection {
+        clause: id,
+        leaf: leaf.clone(),
+    };
+    assert!(checked_predicate(&package, &selection).is_ok());
+
+    // An admitted package holds an entry for every occurrence, so the refusal
+    // is read over the package's source map without the leaf's entries.
+    let without: Vec<_> = package
+        .source_map()
+        .iter()
+        .filter(|entry| entry.node_id != leaf)
+        .cloned()
+        .collect();
+    assert!(without.len() < package.source_map().len());
+    assert_eq!(
+        crate::checked_views::predicate::read_predicate(&package, &without, &selection).err(),
+        Some(ViewRefusal::LeafHasNoSource)
+    );
 }

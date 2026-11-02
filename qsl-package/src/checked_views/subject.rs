@@ -176,7 +176,8 @@ impl<'p> TemporalSubjectView<'p> {
     }
 
     /// The Boolean operand node of every `holds` atom in formula pre-order.
-    /// The activation guard is read from [`Self::activation`], not from here.
+    /// The guard is a node of the activation argument; equal terms share one
+    /// node, so a guard equal to a `holds` operand is among these entries.
     pub fn predicate_leaves(&self) -> &[CheckedNodeId] {
         &self.predicate_leaves
     }

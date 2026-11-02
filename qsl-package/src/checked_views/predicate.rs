@@ -143,10 +143,23 @@ impl<'p> CheckedPredicateView<'p> {
 ///
 /// Refuses [`ViewRefusal::UnresolvedClause`] for a clause that
 /// [`temporal_subject`] refuses, [`ViewRefusal::LeafNotInClause`] for a leaf
-/// no term of the clause reads and [`ViewRefusal::LeafNotBoolean`] for a leaf
+/// no term of the clause reads, [`ViewRefusal::LeafHasNoSource`] for a clause
+/// term with no source map entry and [`ViewRefusal::LeafNotBoolean`] for a leaf
 /// the package does not type `boolean`; no refusal leaves a partial view.
 pub fn checked_predicate<'p>(
     package: &'p CheckedPackageV2,
+    selection: &PredicateSelection,
+) -> Result<CheckedPredicateView<'p>, ViewRefusal> {
+    read_predicate(package, package.source_map(), selection)
+}
+
+/// [`checked_predicate`] over an explicit source map. An admitted package
+/// holds an entry for every occurrence, so the map is a parameter in order
+/// that the [`ViewRefusal::LeafHasNoSource`] path can be read with a map that
+/// lacks one.
+pub(crate) fn read_predicate<'p>(
+    package: &'p CheckedPackageV2,
+    sources: &'p [CheckedSourceMapEntry],
     selection: &PredicateSelection,
 ) -> Result<CheckedPredicateView<'p>, ViewRefusal> {
     let subject = temporal_subject(package, &selection.clause)?;
@@ -208,7 +221,7 @@ pub fn checked_predicate<'p>(
         .node(formula_root)
         .map(|node| &node.node_id)
         .ok_or(ViewRefusal::UnresolvedClause)?;
-    let source_span = leaf_source(package, leaf, formula_id).ok_or(ViewRefusal::LeafNotInClause)?;
+    let source_span = leaf_source(sources, leaf, formula_id).ok_or(ViewRefusal::LeafHasNoSource)?;
     Ok(CheckedPredicateView {
         subject,
         leaf,
@@ -223,12 +236,11 @@ pub fn checked_predicate<'p>(
 /// clause's formula root, else the first. A leaf shared with another clause
 /// has an entry per reading, and this picks the one in this clause's formula.
 fn leaf_source<'p>(
-    package: &'p CheckedPackageV2,
+    sources: &'p [CheckedSourceMapEntry],
     leaf: &CheckedNodeId,
     formula_root: &CheckedNodeId,
 ) -> Option<&'p CheckedSourceMapEntry> {
-    let formula: Vec<&CheckedSourceRegion> = package
-        .source_map()
+    let formula: Vec<&CheckedSourceRegion> = sources
         .iter()
         .filter(|entry| entry.node_id == *formula_root)
         .flat_map(|entry| entry.regions.iter())
@@ -238,10 +250,7 @@ fn leaf_source<'p>(
             outer.source == region.source && outer.start <= region.start && region.end <= outer.end
         })
     };
-    let mut entries = package
-        .source_map()
-        .iter()
-        .filter(|entry| entry.node_id == *leaf);
+    let mut entries = sources.iter().filter(|entry| entry.node_id == *leaf);
     let first = entries.clone().next();
     entries
         .find(|entry| entry.regions.iter().all(inside))

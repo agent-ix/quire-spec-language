@@ -11,7 +11,7 @@
 //! with [`quire_contract_model::CheckedPackageV2::term`].
 
 mod graph;
-mod predicate;
+pub(crate) mod predicate;
 mod subject;
 
 pub use predicate::{checked_predicate, CheckedPredicateView, PredicateKind, PredicateSelection};
@@ -28,9 +28,14 @@ pub enum ViewRefusal {
     /// (FR-337's `clause-root-unresolved`).
     #[error("the node names no temporal clause of the package")]
     UnresolvedClause,
-    /// The selected leaf is no term the clause reads.
+    /// The selected leaf is reachable from neither the clause's formula root
+    /// nor its activation guard.
     #[error("the leaf is not a term of the clause")]
     LeafNotInClause,
+    /// The leaf is a term of the clause and the package source map holds no
+    /// entry for it.
+    #[error("the leaf has no source map entry")]
+    LeafHasNoSource,
     /// The selected leaf's semantic type is not the `boolean` node.
     #[error("the leaf is not a Boolean term")]
     LeafNotBoolean,
