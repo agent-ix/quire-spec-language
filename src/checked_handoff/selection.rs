@@ -127,6 +127,15 @@ struct ClauseRow {
     binding: Option<BindingRow>,
 }
 
+/// One `compensate` template: its node and expected clock row.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompensationRow {
+    node: CheckedNodeId,
+    name: String,
+    binding: Option<BindingRow>,
+}
+
 /// The selection sidecar: what a consumer expects of the package beside it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -134,6 +143,7 @@ pub struct Selection {
     format: String,
     package: PackageRows,
     clauses: Vec<ClauseRow>,
+    compensations: Vec<CompensationRow>,
 }
 
 /// The axis along which a package departs from its sidecar.
@@ -355,6 +365,30 @@ impl Selection {
                 binding,
             });
         }
+        let mut compensation_rows = Vec::new();
+        for protocol in graph.protocols() {
+            let keys = graph.protocol_node_keys(&protocol.name);
+            for (index, template) in protocol.obligations.compensations.iter().enumerate() {
+                let key = keys
+                    .and_then(|keys| keys.compensations.get(index))
+                    .ok_or_else(|| Error::Unnameable {
+                        what: format!("compensation node of {}", template.name),
+                    })?;
+                let binding = request
+                    .temporal_selections
+                    .iter()
+                    .find(|selection| selection.clause == template.name)
+                    .map(|selection| BindingRow {
+                        clock_name: text(&template.clock),
+                        clock: selection.clock.clone(),
+                    });
+                compensation_rows.push(CompensationRow {
+                    node: id(key, "compensation id")?,
+                    name: text(&template.name),
+                    binding,
+                });
+            }
+        }
         let mut node_counts = BTreeMap::new();
         node_counts.insert(text("temporal/temporal_clause"), clauses.len() as u64);
         let protocol_clauses = graph
@@ -411,6 +445,7 @@ impl Selection {
                 node_counts,
             },
             clauses: rows,
+            compensations: compensation_rows,
         })
     }
 
@@ -425,11 +460,16 @@ impl Selection {
         for row in &self.clauses {
             check_clause(row, package)?;
         }
+        for row in &self.compensations {
+            check_binding(&row.node, &row.name, row.binding.as_ref(), package)?;
+        }
         let rows = package.temporal_bindings().map_or(0, <[_]>::len);
         let expected = self
             .clauses
             .iter()
-            .filter(|row| row.binding.is_some())
+            .map(|row| &row.binding)
+            .chain(self.compensations.iter().map(|row| &row.binding))
+            .filter(|binding| binding.is_some())
             .count();
         if rows != expected {
             return Err(refusal(SelectionAxis::ClauseBinding, None));
@@ -557,7 +597,7 @@ fn check_clause(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Selec
         return Err(refusal(SelectionAxis::ClauseActivation, Some(row)));
     }
     check_profile(row, node)?;
-    check_binding(row, package)
+    check_binding(&row.node, &row.name, row.binding.as_ref(), package)
 }
 
 /// The aggregate at argument position `index`.
@@ -593,18 +633,27 @@ fn check_profile(
     Ok(())
 }
 
-fn check_binding(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), SelectionRefusal> {
+fn check_binding(
+    node: &CheckedNodeId,
+    name: &str,
+    binding: Option<&BindingRow>,
+    package: &CheckedPackageV2,
+) -> Result<(), SelectionRefusal> {
+    let refused = |axis| SelectionRefusal {
+        axis,
+        clause: Some(name.to_owned()),
+    };
     let actual = package
         .temporal_bindings()
-        .and_then(|rows| rows.iter().find(|binding| binding.declaration == row.node));
-    let (Some(expected), Some(actual)) = (&row.binding, actual) else {
-        return match (&row.binding, actual) {
+        .and_then(|rows| rows.iter().find(|row| row.declaration == *node));
+    let (Some(expected), Some(actual)) = (binding, actual) else {
+        return match (binding, actual) {
             (None, None) => Ok(()),
-            _ => Err(refusal(SelectionAxis::ClauseBinding, Some(row))),
+            _ => Err(refused(SelectionAxis::ClauseBinding)),
         };
     };
     if *actual.clock_name != *expected.clock_name {
-        return Err(refusal(SelectionAxis::ClockName, Some(row)));
+        return Err(refused(SelectionAxis::ClockName));
     }
     use ClockConfiguration as C;
     match (&expected.clock, &actual.clock) {
@@ -615,7 +664,7 @@ fn check_binding(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Sele
             C::EventPosition {
                 sequence_authority: got,
             },
-        ) if want != got => Err(refusal(SelectionAxis::ClockSequenceAuthority, Some(row))),
+        ) if want != got => Err(refused(SelectionAxis::ClockSequenceAuthority)),
         (
             C::FixedSample {
                 epoch: e1,
@@ -629,11 +678,11 @@ fn check_binding(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Sele
             },
         ) => {
             if e1 != e2 {
-                Err(refusal(SelectionAxis::ClockEpoch, Some(row)))
+                Err(refused(SelectionAxis::ClockEpoch))
             } else if p1 != p2 {
-                Err(refusal(SelectionAxis::ClockPeriod, Some(row)))
+                Err(refused(SelectionAxis::ClockPeriod))
             } else if u1 != u2 {
-                Err(refusal(SelectionAxis::ClockUnit, Some(row)))
+                Err(refused(SelectionAxis::ClockUnit))
             } else {
                 Ok(())
             }
@@ -645,9 +694,9 @@ fn check_binding(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Sele
             C::TimestampedEvent {
                 timestamp_unit: got,
             },
-        ) if want != got => Err(refusal(SelectionAxis::ClockTimestampUnit, Some(row))),
+        ) if want != got => Err(refused(SelectionAxis::ClockTimestampUnit)),
         (C::EventPosition { .. }, C::EventPosition { .. })
         | (C::TimestampedEvent { .. }, C::TimestampedEvent { .. }) => Ok(()),
-        _ => Err(refusal(SelectionAxis::ClockKind, Some(row))),
+        _ => Err(refused(SelectionAxis::ClockKind)),
     }
 }

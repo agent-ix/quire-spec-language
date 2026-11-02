@@ -116,12 +116,22 @@ impl AsArrayNodes for Value {
     }
 }
 
-/// The position of the node a binding row declares.
-fn node_of_row(v: &Value, row: usize) -> Option<usize> {
-    let declaration = bindings(v)?.get(row)?.get("declaration")?;
+/// The ids of the `temporal_clause` nodes, in graph order. Binding rows also
+/// name `compensation` nodes, so a row is not necessarily a clause.
+fn clause_ids(v: &Value) -> Vec<Value> {
+    nodes(v)
+        .into_iter()
+        .flatten()
+        .filter(|node| node.get("semantic_form") == Some(&json!("temporal_clause")))
+        .filter_map(|node| node.get("node_id").cloned())
+        .collect()
+}
+
+/// The position of the first `temporal_clause` node.
+fn first_clause_node(v: &Value) -> Option<usize> {
     nodes(v)?
         .iter()
-        .position(|node| node.get("node_id") == Some(declaration))
+        .position(|node| node.get("semantic_form") == Some(&json!("temporal_clause")))
 }
 
 fn row_mut(v: &mut Value, row: usize) -> Option<&mut Value> {
@@ -169,9 +179,15 @@ fn header_wire_version(v: &Value) -> Option<Made> {
 }
 
 fn binding_missing(v: &Value) -> Option<Made> {
-    let node = node_of_row(v, 0)?;
+    let clause = clause_ids(v).first()?.clone();
+    let row = bindings(v)?
+        .iter()
+        .position(|row| row.get("declaration") == Some(&clause))?;
+    let node = nodes(v)?
+        .iter()
+        .position(|node| node.get("node_id") == Some(&clause))?;
     let mut w = clone(v);
-    w.get_mut("temporal_bindings")?.as_array_mut()?.remove(0);
+    w.get_mut("temporal_bindings")?.as_array_mut()?.remove(row);
     ok(w, timed(format!("/semantic_graph/nodes/{node}/body")))
 }
 
@@ -220,7 +236,7 @@ fn definition_index(v: &Value) -> Option<Made> {
 
 fn declaration_name(v: &Value) -> Option<Made> {
     let mut w = clone(v);
-    let node = node_of_row(v, 0)?;
+    let node = first_clause_node(v)?;
     w.get_mut("semantic_graph")?
         .get_mut("nodes")?
         .get_mut(node)?
@@ -238,11 +254,16 @@ fn declaration_name(v: &Value) -> Option<Made> {
 
 fn declaration_requirement(v: &Value) -> Option<Made> {
     let mut w = clone(v);
-    let from = bindings(v)?.first()?.get("declaration")?.clone();
-    let to = bindings(v)?.get(1)?.get("declaration")?.clone();
     let index = nodes(v)?
         .iter()
         .position(|node| node.get("semantic_form") == Some(&json!("protocol_clause")))?;
+    let protocol = nodes(v)?.get(index)?.to_string();
+    let ids = clause_ids(v);
+    let from = ids
+        .iter()
+        .find(|id| protocol.contains(&id.to_string()))?
+        .clone();
+    let to = ids.iter().find(|id| **id != from)?.clone();
     let node = w
         .get_mut("semantic_graph")?
         .get_mut("nodes")?
@@ -253,7 +274,7 @@ fn declaration_requirement(v: &Value) -> Option<Made> {
 
 fn declaration_clause(v: &Value) -> Option<Made> {
     let mut w = clone(v);
-    let from = bindings(v)?.first()?.get("declaration")?.clone();
+    let from = clause_ids(v).first()?.clone();
     let mut to = from.clone();
     *to.get_mut("ordinal")? = json!(to.get("ordinal")?.as_u64()? + 1);
     replace_id(&mut w, &from, &to);
@@ -262,7 +283,7 @@ fn declaration_clause(v: &Value) -> Option<Made> {
 
 fn declaration_execution(v: &Value) -> Option<Made> {
     let mut w = clone(v);
-    let node = node_of_row(v, 0)?;
+    let node = first_clause_node(v)?;
     let members = w
         .get_mut("semantic_graph")?
         .get_mut("nodes")?
@@ -279,6 +300,18 @@ fn declaration_execution(v: &Value) -> Option<Made> {
     ok(w, Expected::Selection(SelectionAxis::ClauseActivation))
 }
 
+/// Whether a node is a temporal clause or a compensation template: the two
+/// forms whose application carries the temporal profile law.
+fn carries_profile_law(node: &Value) -> bool {
+    let temporal_law = node
+        .pointer("/body/operation/laws/0/role")
+        .is_some_and(|role| role == "temporal_profile");
+    temporal_law
+        && ["temporal_clause", "compensation"]
+            .iter()
+            .any(|form| node.get("semantic_form") == Some(&json!(form)))
+}
+
 /// Set the identity, revision or authority of the profile law of every
 /// clause and of the lock's matching selection, so they stay consistent.
 fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Option<Made> {
@@ -289,7 +322,7 @@ fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Opt
         .get_mut("nodes")?
         .as_array_mut()?
     {
-        if node.get("semantic_form") != Some(&json!("temporal_clause")) {
+        if !carries_profile_law(node) {
             continue;
         }
         let definition = node
@@ -301,9 +334,22 @@ fn profile_law(v: &Value, member: &str, value: &str, axis: SelectionAxis) -> Opt
         rewritten = Some(rewrite_definition(definition, member, value)?);
     }
     let rewritten = rewritten?;
-    let first = nodes(v)?
-        .iter()
-        .position(|node| node.get("semantic_form") == Some(&json!("temporal_clause")))?;
+    if axis != SelectionAxis::DefinitionAuthority {
+        // A compensation row of an unregistered profile is refused at its row
+        // before the law is classified, so the compensation rows go too.
+        let compensations: Vec<Value> = nodes(&w)?
+            .iter()
+            .filter(|node| node.get("semantic_form") == Some(&json!("compensation")))
+            .filter_map(|node| node.get("node_id").cloned())
+            .collect();
+        w.get_mut("temporal_bindings")?
+            .as_array_mut()?
+            .retain(|row| {
+                row.get("declaration")
+                    .is_none_or(|id| !compensations.contains(id))
+            });
+    }
+    let first = first_clause_node(v)?;
     let expected = match axis {
         SelectionAxis::DefinitionAuthority => Expected::Selection(axis),
         _ => reader(

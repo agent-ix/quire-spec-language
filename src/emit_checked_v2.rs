@@ -430,7 +430,8 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     })
 }
 
-/// Join each named clock selection to the checked clause of that name.
+/// Join each named clock selection to the checked temporal clause or
+/// compensation template of that name.
 fn clock_selections(
     checked: &CheckedUnit,
     selections: &[ClockSelection],
@@ -446,15 +447,28 @@ fn clock_selections(
                 clause: selection.clause.clone(),
             });
         }
-        let clause = clauses
+        let span = match clauses
             .iter()
             .find(|node| node.clause().name() == selection.clause)
-            .ok_or_else(|| Error::UnknownClause {
-                clause: selection.clause.clone(),
-            })?;
+        {
+            Some(node) => node.clause().span(),
+            // A `compensate` template reads a clock too and is selected by its
+            // template name.
+            None => checked
+                .package()
+                .graph()
+                .protocols()
+                .iter()
+                .flat_map(|protocol| &protocol.obligations.compensations)
+                .find(|template| template.name == selection.clause)
+                .map(|template| template.span)
+                .ok_or_else(|| Error::UnknownClause {
+                    clause: selection.clause.clone(),
+                })?,
+        };
         joined.push(qsl_package::TemporalClockSelection {
             source: checked.source().reference().clone(),
-            declaration_span: clause.clause().span(),
+            declaration_span: span,
             clock: selection.clock.clone(),
         });
     }

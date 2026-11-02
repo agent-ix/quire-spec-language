@@ -40,6 +40,18 @@ fn recipe(kind: &str) -> (&'static str, Vec<(&'static str, ClockConfiguration)>)
                         sequence_authority: "events-authority".into(),
                     },
                 ),
+                (
+                    "Full",
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                ),
+                (
+                    "Partial",
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                ),
             ],
         ),
         "fixed_sample" => (
@@ -287,7 +299,9 @@ fn the_written_package_is_admitted_and_matches_its_sidecar() {
         let sidecar: Value = serde_json::from_slice(&files["selection.json"]).unwrap();
         let rows = sidecar["clauses"].as_array().unwrap();
         let bindings = package.temporal_bindings().unwrap();
-        assert_eq!(rows.len(), bindings.len());
+        // A binding row for each clause and each compensation template.
+        let compensations = sidecar["compensations"].as_array().unwrap();
+        assert_eq!(rows.len() + compensations.len(), bindings.len());
         let names: Vec<&str> = rows
             .iter()
             .map(|row| row["name"].as_str().unwrap())
@@ -373,7 +387,11 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
         };
         let clauses = count(CheckedNodeKind::Temporal(TemporalForm::TemporalClause));
         assert_eq!(clauses, if kind == "event_position" { 2 } else { 1 });
-        assert_eq!(package.temporal_bindings().unwrap().len(), clauses);
+        let compensations = if kind == "event_position" { 2 } else { 0 };
+        assert_eq!(
+            package.temporal_bindings().unwrap().len(),
+            clauses + compensations
+        );
         let ids: Vec<_> = package
             .temporal_bindings()
             .unwrap()
@@ -446,6 +464,8 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
     assert_eq!(
         kinds,
         [
+            "event_position",
+            "event_position",
             "event_position",
             "event_position",
             "fixed_sample",
@@ -775,14 +795,14 @@ fn table() -> Vec<Row> {
             EP,
             "invalid_package",
             TIMED,
-            "/temporal_bindings/2/declaration",
+            "/temporal_bindings/4/declaration",
         ),
         reader(
             "binding-duplicate",
             EP,
             "invalid_package",
             TIMED,
-            "/temporal_bindings/2",
+            "/temporal_bindings/4",
         ),
         reader(
             "binding-reordered",
