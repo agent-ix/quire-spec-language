@@ -28,7 +28,9 @@ pub use map::{
     MappingUndetermined, ObjectKey, StepArgument,
 };
 pub use outcome::{LivenessHalf, RefinementOutcome, SafetyOutcome, SafetyUndecided};
-pub use protocol_system::{AbstractProtocolSystem, ProtocolCandidate};
+pub use protocol_system::{
+    AbstractProtocolSystem, ProtocolAssumptionFairness, ProtocolCandidate, RequiredTemporalFairness,
+};
 pub use step::{
     check_initial, check_protocol_initial, check_protocol_state_relations, check_protocol_step,
     check_step, protocol_observation_label, ConcreteStep, ProtocolRelationError,

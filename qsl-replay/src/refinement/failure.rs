@@ -273,6 +273,17 @@ pub enum AssumptionTarget {
     Model(FairnessConstraint),
     /// An authored or derived protocol fairness member.
     Protocol(ProtocolFairness),
+    /// An authored operation-fairness row on a directly required temporal
+    /// clause. The key and checked row retain the clause and operation
+    /// identity that supplied the protocol-side assumption.
+    RequiredTemporal {
+        /// The required temporal clause's emitted node identity.
+        clause: quire_exact::NodeKey,
+        /// The clause's checked operation fairness row.
+        constraint: FairnessConstraint,
+        /// The corresponding operation class over protocol transitions.
+        fairness: ProtocolFairness,
+    },
 }
 
 /// A selected class identity for an `each` fairness member.

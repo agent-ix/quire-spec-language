@@ -287,11 +287,11 @@ pub use refinement::{
     AssumptionSelectedMember, AssumptionSide, AssumptionTarget, ConcreteStep, EvalFailure,
     HiddenSlot, HistoryValues, LivenessHalf, MappedState, MappingFailure, MappingRowRef,
     MappingUndetermined, ObjectKey, ObservationField, ObservationLabel, PairedAssumptionPath,
-    PairedAssumptionStep, ProtocolAssumptionReason, ProtocolAssumptionWitness, ProtocolCandidate,
-    ProtocolRelationError, ProtocolStateRelation, RefinementFailure, RefinementOutcome,
-    RefinementPosition, RefinementSystems, SafetyOutcome, SafetyUndecided, StepArgument,
-    StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken, TerminalSuccessDirection,
-    Undetermined,
+    PairedAssumptionStep, ProtocolAssumptionFairness, ProtocolAssumptionReason,
+    ProtocolAssumptionWitness, ProtocolCandidate, ProtocolRelationError, ProtocolStateRelation,
+    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems,
+    RequiredTemporalFairness, SafetyOutcome, SafetyUndecided, StepArgument, StepRejection,
+    StepResult, StepVerdict, SubjectRefusal, Taken, TerminalSuccessDirection, Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

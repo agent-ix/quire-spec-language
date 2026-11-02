@@ -838,9 +838,13 @@ impl Run<'_, '_> {
         if concrete_fairness.is_empty() {
             return Ok(());
         }
-        let protocol_fairness = protocol
-            .environment_fairness()
+        let protocol_assumptions = protocol
+            .assumption_fairness()
             .map_err(|_| fault("the-admitted-protocol-fairness-set-builds"))?;
+        let protocol_fairness: Vec<_> = protocol_assumptions
+            .iter()
+            .map(|assumption| assumption.fairness.clone())
+            .collect();
 
         let (candidates, initial) = self.candidate_graph()?;
         if candidates.is_empty() || initial.is_empty() {
@@ -1052,9 +1056,10 @@ impl Run<'_, '_> {
         let mut specification_constraints = Vec::new();
         let mut specification_identities = Vec::new();
         for (member_index, source_constraint) in protocol_source_constraints {
-            let Some(member) = protocol_fairness.get(member_index) else {
+            let Some(source) = protocol_assumptions.get(member_index) else {
                 return Err(fault("protocol-assumption-class-names-its-member").into());
             };
+            let member = &source.fairness;
             let mut taken_members = Vec::new();
             let mut loaded_members = Vec::new();
             let mut selected_class = None;
@@ -1106,12 +1111,20 @@ impl Run<'_, '_> {
                     qsl_replay::AssumptionOrigin::Memory
                 }
             };
+            let target = source.required_temporal.as_ref().map_or_else(
+                || qsl_replay::AssumptionTarget::Protocol(member.clone()),
+                |required| qsl_replay::AssumptionTarget::RequiredTemporal {
+                    clause: required.clause.clone(),
+                    constraint: required.constraint.clone(),
+                    fairness: member.clone(),
+                },
+            );
             specification_identities.push(qsl_replay::AssumptionIdentity {
                 side: qsl_replay::AssumptionSide::Specification,
                 origin,
                 kind: member.kind(),
                 granularity: member.granularity(),
-                target: qsl_replay::AssumptionTarget::Protocol(member.clone()),
+                target,
                 selected: selected_class.map(qsl_replay::AssumptionSelectedMember::Protocol),
             });
         }
@@ -1675,10 +1688,11 @@ impl Run<'_, '_> {
                         .then(|| qsl_replay::AssumptionSelectedMember::Model(transition.clone())),
                 };
                 let mut specification = Vec::new();
-                for assumption in protocol
-                    .environment_fairness()
+                for source in protocol
+                    .assumption_fairness()
                     .map_err(|_| fault("the-admitted-protocol-fairness-set-builds"))?
                 {
+                    let assumption = source.fairness;
                     let origin = match assumption.origin() {
                         qsl_eval::simulation::protocol::FairnessOrigin::Authored => {
                             qsl_replay::AssumptionOrigin::Authored
@@ -1713,12 +1727,20 @@ impl Run<'_, '_> {
                                 .collect()
                         };
                     for selected in selected_classes {
+                        let target = source.required_temporal.as_ref().map_or_else(
+                            || qsl_replay::AssumptionTarget::Protocol(assumption.clone()),
+                            |required| qsl_replay::AssumptionTarget::RequiredTemporal {
+                                clause: required.clause.clone(),
+                                constraint: required.constraint.clone(),
+                                fairness: assumption.clone(),
+                            },
+                        );
                         specification.push(qsl_replay::AssumptionIdentity {
                             side: qsl_replay::AssumptionSide::Specification,
                             origin,
                             kind: assumption.kind(),
                             granularity: assumption.granularity(),
-                            target: qsl_replay::AssumptionTarget::Protocol(assumption.clone()),
+                            target,
                             selected,
                         });
                     }

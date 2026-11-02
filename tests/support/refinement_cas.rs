@@ -268,6 +268,8 @@ pub struct Variant {
     pub tick: bool,
     /// Add the no-op concrete `inc()` operation used by that fairness case.
     pub inc: bool,
+    /// Replace the CAS operations with the two-state tick/inc fairness model.
+    pub fairness_toggle: bool,
 }
 
 impl Variant {
@@ -282,6 +284,7 @@ impl Variant {
         intended_terminal: false,
         tick: false,
         inc: false,
+        fairness_toggle: false,
     };
     /// The lost-update model.
     pub const LOST_UPDATE: Self = Self {
@@ -297,9 +300,13 @@ impl Variant {
 
 /// `Counter { value: Int[0, 2] }` with `inc()`, and `add(n: Bit)` when
 /// `add`, under the package identity `package`.
-fn spec_document(package: &str, add: bool, tick: bool) -> Vec<u8> {
+fn spec_document(package: &str, add: bool, tick: bool, fairness_toggle: bool) -> Vec<u8> {
     let mut operations = vec![operation(package, "inc", &["value"])];
     let mut fields = vec![field(package, "value", &ident(package, "Level"))];
+    if fairness_toggle {
+        operations.push(operation(package, "tick0", &["value"]));
+        operations.push(operation(package, "tick1", &["value"]));
+    }
     if tick {
         let mut tick = operation(package, "tick", &["value"]);
         tick["frame"]["modifies_receiver"] = tick["frame"]["modifies"].clone();
@@ -322,7 +329,13 @@ fn spec_document(package: &str, add: bool, tick: bool) -> Vec<u8> {
 fn cas_document(variant: Variant) -> Vec<u8> {
     let level = ident(CAS, "Level");
     let step = |name: &str, modifies: &[&str]| operation(CAS, name, modifies);
-    let mut operations = if variant.tick {
+    let mut operations = if variant.fairness_toggle {
+        vec![
+            step("tick0", &["value"]),
+            step("tick1", &["value"]),
+            step("inc", &[]),
+        ]
+    } else if variant.tick {
         Vec::new()
     } else {
         vec![
@@ -335,26 +348,30 @@ fn cas_document(variant: Variant) -> Vec<u8> {
     if variant.peek {
         operations.push(step("peek", &[]));
     }
-    if !variant.lost_update {
+    if !variant.lost_update && !variant.fairness_toggle {
         operations.push(step("retryA", &["busyA"]));
         operations.push(step("retryB", &["busyB"]));
     }
     if variant.add {
         operations.push(step("bump", &[]));
     }
-    if variant.inc {
+    if variant.inc && !variant.fairness_toggle {
         operations.push(step("inc", &[]));
     }
     if variant.tick {
         operations.push(step("tick", &["value"]));
     }
-    let mut fields = vec![
-        field(CAS, "value", &level),
-        field(CAS, "tmpA", &level),
-        field(CAS, "busyA", BOOLEAN),
-        field(CAS, "tmpB", &level),
-        field(CAS, "busyB", BOOLEAN),
-    ];
+    let mut fields = if variant.fairness_toggle {
+        vec![field(CAS, "value", &level)]
+    } else {
+        vec![
+            field(CAS, "value", &level),
+            field(CAS, "tmpA", &level),
+            field(CAS, "busyA", BOOLEAN),
+            field(CAS, "tmpB", &level),
+            field(CAS, "busyB", BOOLEAN),
+        ]
+    };
     if variant.tick {
         fields.push(field(CAS, "id", &level));
         fields.push(field(CAS, "w", &level));
@@ -469,7 +486,7 @@ pub fn unit_text(
             .sum::<usize>();
         refinement.split_at(split)
     };
-    let workers = if variant.tick {
+    let workers = if variant.tick || variant.fairness_toggle {
         String::new()
     } else {
         format!("{}{}", worker("A", variant), worker("B", variant))
@@ -482,17 +499,34 @@ pub fn unit_text(
          model Impl = \"{CAS}\";\n\
          model Third = \"{THIRD}\";\n\
          {}\
-         pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
-         post Inc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
+         {}\
          {}{}{}{}{refinement}\n",
         workers,
+        if variant.fairness_toggle {
+            "pre CanInc using v on Spec::Counter::inc { self.value = 1 }\n\
+             post Inc using v on Spec::Counter::inc { self.value = pre(self.value) }\n\
+             pre SpecTick0Ready using v on Spec::Counter::tick0 { self.value = 0 }\n\
+             post SpecTick0Result using v on Spec::Counter::tick0 { self.value = 1 }\n\
+             pre SpecTick1Ready using v on Spec::Counter::tick1 { self.value = 1 }\n\
+             post SpecTick1Result using v on Spec::Counter::tick1 { self.value = 0 }\n"
+        } else {
+            "pre CanInc using v on Spec::Counter::inc { self.value < 2 }\n\
+             post Inc using v on Spec::Counter::inc { pre(self.value) < 2 and self.value = pre(self.value) + 1 }\n"
+        },
         if variant.tick {
             "pre TickReady using v on Impl::Counter::tick { self.value < 2 }\n\
              post TickOne using v on Impl::Counter::tick { self.value = 1 }\n"
         } else {
             ""
         },
-        if variant.inc {
+        if variant.fairness_toggle {
+            "pre IncReady using v on Impl::Counter::inc { self.value = 1 }\n\
+             post IncStays using v on Impl::Counter::inc { self.value = pre(self.value) }\n\
+             pre ConcreteTick0Ready using v on Impl::Counter::tick0 { self.value = 0 }\n\
+             post ConcreteTick0Result using v on Impl::Counter::tick0 { self.value = 1 }\n\
+             pre ConcreteTick1Ready using v on Impl::Counter::tick1 { self.value = 1 }\n\
+             post ConcreteTick1Result using v on Impl::Counter::tick1 { self.value = 0 }\n"
+        } else if variant.inc {
             "pre IncReady using v on Impl::Counter::inc { self.value = 1 }\n\
              post IncStays using v on Impl::Counter::inc { self.value = pre(self.value) }\n"
         } else {
@@ -515,9 +549,9 @@ pub fn unit_text(
 /// The two domain packages' documents, by identity.
 pub fn packages(variant: Variant) -> qsl_semantics::model::intake::PackageInput {
     package_input([
-        spec_document(SPEC, variant.add, variant.tick).as_slice(),
+        spec_document(SPEC, variant.add, variant.tick, variant.fairness_toggle).as_slice(),
         cas_document(variant).as_slice(),
-        spec_document(THIRD, false, false).as_slice(),
+        spec_document(THIRD, false, false, false).as_slice(),
     ])
     .unwrap()
 }
@@ -686,7 +720,9 @@ impl World {
         let cas_initial = snapshot(
             CAS,
             (
-                if variant.tick {
+                if variant.fairness_toggle {
+                    json!({"value": {"integer": "0"}})
+                } else if variant.tick {
                     json!({
                         "value": {"integer": variant.concrete_value.to_string()},
                         "tmpA": {"integer": "0"}, "busyA": {"boolean": false},

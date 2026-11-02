@@ -276,11 +276,38 @@ fn protocol_scheduler_fairness_can_imply_a_concrete_assumption() {
         "the protocol scheduler fairness establishes the concrete assumption: {:?}",
         outcome.safety
     );
+    let systems = open_protocol_systems(
+        world.refinement(),
+        &world.concrete_request(UNLIMITED),
+        world.package(),
+        vec![world.abstract_initial()],
+        protocol_binding().over,
+    )
+    .expect("the protocol systems open");
+    let left_key = world
+        .package()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|clause| clause.clause().name() == "Left")
+        .expect("the required Left clause is admitted")
+        .identity();
+    assert!(systems
+        .abstract_protocol
+        .as_ref()
+        .expect("the selected protocol is open")
+        .required_temporal_fairness()
+        .iter()
+        .any(|required| required.clause == left_key
+            && required.constraint.kind() == quire_semantic_value::fairness::FairnessKind::Strong
+            && required.constraint.granularity()
+                == quire_semantic_value::fairness::FairnessGranularity::Each
+            && required.constraint.operation().name() == "inc"));
 }
 
-/// FR-148-AC-8 (TC-553): the scheduler's repeatedly taken event class does
-/// not imply a second, distinct concrete operation assumption that remains
-/// enabled and untaken on the same paired lasso.
+/// FR-148-AC-8 (TC-553): only the exact directly required temporal clause's
+/// left operation class belongs to specification assumptions; an unrelated
+/// right clause is excluded.
 fn ac8_two_class_source() -> String {
     let source = cas_twice(true, true)
         .replace(
@@ -288,11 +315,11 @@ fn ac8_two_class_source() -> String {
          attempt a1 by w on Spec::Counter::inc contracts [] as (r1: Spec::Counter) { true };\n\
          attempt a2 by w on Spec::Counter::inc contracts [] as (r2: Spec::Counter) { true };\n\
          }",
-            "run repeat Loop by w visible () while { true } sequence Main { event Ack by w as (worked: Boolean) { worked = true }; }",
+            "run repeat Loop by w visible () while { true } sequence Main { attempt left by w on Spec::Counter::inc contracts [] as (r: Spec::Counter) { true }; }",
         )
         .replace(
             "role w on Spec::Counter; scheduling adversarial;",
-            "role w on Spec::Counter;",
+            "role w on Spec::Counter; requires temporal Left; scheduling adversarial;",
         )
         .replace(
             "object Spec::Counter from Impl::Counter { value = self.value; }",
@@ -300,18 +327,24 @@ fn ac8_two_class_source() -> String {
         )
         .replace(
             "step Impl::Counter::commitA -> Spec::Counter::inc(self);",
-            "step Impl::Counter::commitA -> node Spec::Twice::Ack(true);\n\
+            "step Impl::Counter::commitA -> stutter;\n\
          assume fair weak whole Impl::Counter::commitA;",
         );
     source
         .replace(
             "step Impl::Counter::commitB -> Spec::Counter::inc(self);",
-            "step Impl::Counter::commitB -> node Spec::Twice::Ack(true);",
+            "step Impl::Counter::commitB -> stutter;",
         )
         .replace(
             "step Impl::Counter::peek -> stutter;",
-            "step Impl::Counter::peek -> node Spec::Twice::Ack(true);\n\
+            "step Impl::Counter::peek -> Spec::Counter::inc(self);\n\
          assume fair weak whole Impl::Counter::peek;",
+        )
+        .replace(
+            "profile p = \"quire.protocol.finite-global/v1\";\n",
+            "profile p = \"quire.protocol.finite-global/v1\";\n\
+             temporal Left using inf over (k: Spec::Counter) clock \"model-steps\" on origin { fair weak whole Spec::Counter::inc; eventually holds(k.value >= 0) }\n\
+             temporal Right using inf over (k: Spec::Counter) clock \"model-steps\" on origin { fair strong each Spec::Counter::inc; eventually holds(k.value >= 0) }\n",
         )
 }
 
@@ -389,16 +422,48 @@ fn one_protocol_class_does_not_imply_a_second_concrete_operation_assumption() {
         "the unmet concrete operation keeps its checked model identity: {:?}",
         witness.identities
     );
-    assert!(witness.identities.iter().any(|identity| {
-        identity.side == qsl_replay::AssumptionSide::Specification
-            && identity.origin == qsl_replay::AssumptionOrigin::Scheduler
-            && matches!(
+    let left = world
+        .package()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|clause| clause.clause().name() == "Left")
+        .expect("the required Left clause is admitted");
+    let right = world
+        .package()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|clause| clause.clause().name() == "Right")
+        .expect("the unrelated Right clause is admitted");
+    let left_key = left.identity();
+    let right_key = right.identity();
+    assert!(
+        witness.identities.iter().any(|identity| {
+            identity.side == qsl_replay::AssumptionSide::Specification
+                && identity.origin == qsl_replay::AssumptionOrigin::Authored
+                && matches!(
+                    &identity.target,
+                    qsl_replay::AssumptionTarget::RequiredTemporal { clause, constraint, .. }
+                        if clause == &left_key
+                            && constraint == &left.clause().fairness()[0]
+                            && constraint.operation().name() == "inc"
+                )
+        }),
+        "the required Left source is typed exactly: {:?}",
+        witness.identities
+    );
+    assert!(
+        !witness.identities.iter().any(|identity| {
+            matches!(
                 &identity.target,
-                qsl_replay::AssumptionTarget::Protocol(fairness)
-                    if fairness.origin() == qsl_eval::simulation::protocol::FairnessOrigin::Scheduler
+                qsl_replay::AssumptionTarget::RequiredTemporal { clause, .. }
+                    if clause == &right_key
             )
-            && matches!(identity.selected, Some(qsl_replay::AssumptionSelectedMember::Protocol(_)))
-    }), "the protocol scheduler class remains typed and selected: {:?}", witness.identities);
+        }),
+        "the unrelated Right clause contributes no assumption: {:?}",
+        witness.identities
+    );
     let peek = operation_identity_text(&key(crate::refinement_fixture::CAS, "Counter/peek"))
         .expect("the concrete peek identity is canonical");
     assert!(witness.path.steps[loop_entry..].iter().any(|step| step
@@ -473,6 +538,191 @@ fn a_protocol_product_limit_stops_assumption_decision_incomplete() {
         ),
         "a product limit is incomplete, never proved: {:?}",
         outcome.safety
+    );
+}
+
+fn ac9_toggle_source(spec_kind: &str, impl_kind: &str) -> String {
+    format!(
+        "profile p = \"quire.protocol.finite-global/v1\";\n\
+         temporal Left using inf over (k: Spec::Counter) clock \"model-steps\" on origin {{ fair {spec_kind} whole Spec::Counter::inc; eventually holds(k.value = 0 or k.value = 1) }}\n\
+         protocol Twice using p over (c: Spec::Counter) on origin {{\n\
+         role w on Spec::Counter;\n\
+         requires temporal Left; scheduling adversarial;\n\
+         run repeat Loop by w visible () while {{ true }} sequence Main {{\n\
+         event Select by w as (one: Boolean) {{ one = (c.value = 1) }};\n\
+         choice Pick by w visible (one) {{\n\
+         case Zero when {{ not one }} sequence AtZero {{ attempt Tick0 by w on Spec::Counter::tick0 contracts [] as (r0: Spec::Counter) {{ true }}; }}\n\
+         case One when {{ one }} sequence AtOne {{ event Choose by w as (take: Boolean) {{ true }}; choice Advance by w visible (take) {{ case Toggle when {{ not take }} sequence Toggle {{ attempt Tick1 by w on Spec::Counter::tick1 contracts [] as (r1: Spec::Counter) {{ true }}; }} case Increment when {{ take }} sequence Increment {{ attempt TryInc by w on Spec::Counter::inc contracts [] as (ri: Spec::Counter) {{ true }}; }} }} }}\n\
+         }}\n\
+         }}\n\
+         finish Done as (d: Boolean) {{ true }};\n\
+         }}\n\
+         refinement CasTwice using inf abstract Spec::Twice concrete Impl {{\n\
+         population Spec::counters from Impl::counters;\n\
+         object Spec::Counter from Impl::Counter {{ value = self.value; }}\n\
+         step Impl::Counter::tick0 -> Spec::Counter::tick0(self);\n\
+         step Impl::Counter::tick1 -> Spec::Counter::tick1(self);\n\
+         step Impl::Counter::inc -> stutter;\n\
+         assume fair {impl_kind} each Impl::Counter::inc;\n\
+         }}"
+    )
+}
+
+/// FR-148-AC-9 (TC-553): a directly required strong-each operation class
+/// entails the implementation's weak-whole assumption over the same finite
+/// operation domain.
+#[trace("TC-553", "FR-148-AC-9")]
+#[test]
+fn required_strong_each_fairness_implies_concrete_weak_whole() {
+    let source = ac9_toggle_source("strong", "weak");
+    let world = World::with_internals(
+        Variant {
+            peek: false,
+            fairness_toggle: true,
+            ..Variant::CAS
+        },
+        &source,
+        serde_json::json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done","Spec::Twice::Select","Spec::Twice::Choose"]}]),
+    );
+    let outcome = check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: Some(protocol_binding()),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the abstract protocol subject is admitted");
+    assert!(
+        matches!(outcome.safety, SafetyOutcome::HoldsUncertified { .. }),
+        "strong each specification fairness establishes weak whole implementation fairness: {:?}",
+        outcome.safety
+    );
+}
+
+/// FR-148-AC-9 (TC-553): a weak-whole specification assumption does not
+/// establish strong-each implementation fairness when `inc` is enabled only
+/// every other toggle state.
+#[trace("TC-553", "FR-148-AC-9")]
+#[test]
+fn required_weak_whole_fairness_does_not_imply_concrete_strong_each() {
+    let source = ac9_toggle_source("weak", "strong");
+    let world = World::with_internals(
+        Variant {
+            peek: false,
+            fairness_toggle: true,
+            ..Variant::CAS
+        },
+        &source,
+        serde_json::json!([{"refinement":"CasTwice","internal":["Spec::Twice::Done","Spec::Twice::Select","Spec::Twice::Choose"]}]),
+    );
+    let outcome = check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            abstract_protocol_binding: Some(protocol_binding()),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the abstract protocol subject is admitted");
+    let SafetyOutcome::Undecided {
+        cause: qsl_replay::SafetyUndecided::ProtocolAssumptionNotEstablished(witness),
+        ..
+    } = &outcome.safety
+    else {
+        panic!(
+            "weak whole cannot establish strong each: {:?}",
+            outcome.safety
+        );
+    };
+    assert_eq!(
+        witness.reason,
+        qsl_replay::ProtocolAssumptionReason::Strengthened
+    );
+    assert!(witness.identities.iter().any(|identity| {
+        identity.side == qsl_replay::AssumptionSide::Specification
+            && matches!(
+                &identity.target,
+                qsl_replay::AssumptionTarget::RequiredTemporal { constraint, .. }
+                    if constraint.kind() == quire_semantic_value::fairness::FairnessKind::Weak
+                        && constraint.granularity() == quire_semantic_value::fairness::FairnessGranularity::Whole
+                        && constraint.operation().name() == "inc"
+            )
+    }));
+    let left_key = world
+        .package()
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|clause| clause.clause().name() == "Left")
+        .expect("the required Left clause is admitted")
+        .identity();
+    assert!(witness.identities.iter().any(|identity| {
+        identity.side == qsl_replay::AssumptionSide::Specification
+            && matches!(
+                &identity.target,
+                qsl_replay::AssumptionTarget::RequiredTemporal { clause, .. }
+                    if clause == &left_key
+            )
+    }));
+    assert!(witness.identities.iter().any(|identity| {
+        identity.side == qsl_replay::AssumptionSide::Implementation
+            && identity.origin == qsl_replay::AssumptionOrigin::Authored
+            && identity.kind == quire_semantic_value::fairness::FairnessKind::Strong
+            && identity.granularity == quire_semantic_value::fairness::FairnessGranularity::Each
+            && matches!(
+                &identity.target,
+                qsl_replay::AssumptionTarget::Model(constraint)
+                    if constraint.operation().name() == "inc"
+            )
+            && matches!(
+                &identity.selected,
+                Some(qsl_replay::AssumptionSelectedMember::Model(transition))
+                    if transition.operation().contains("inc")
+            )
+    }));
+    let loop_entry = witness.path.loop_entry.expect("the witness lasso closes");
+    assert!(witness.path.steps[loop_entry..].iter().any(|step| {
+        step.concrete
+            .as_ref()
+            .is_some_and(|transition| transition.operation().contains("tick0"))
+    }));
+    assert!(witness.path.steps[loop_entry..].iter().any(|step| {
+        step.concrete
+            .as_ref()
+            .is_some_and(|transition| transition.operation().contains("tick1"))
+    }));
+    assert!(!witness.path.steps[loop_entry..].iter().any(|step| {
+        step.concrete
+            .as_ref()
+            .is_some_and(|transition| transition.operation().contains("inc"))
+    }));
+    let systems = open_protocol_systems(
+        world.refinement(),
+        &world.concrete_request(UNLIMITED),
+        world.package(),
+        vec![world.abstract_initial()],
+        protocol_binding().over,
+    )
+    .expect("the assumption lasso systems open");
+    assert_eq!(
+        replay_protocol_assumption_witness(world.refinement(), &systems, witness)
+            .expect("the paired witness replays"),
+        ProtocolAssumptionReplaySettlement::Reproduced
     );
 }
 

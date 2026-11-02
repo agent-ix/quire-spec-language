@@ -356,6 +356,36 @@ fn assumption_sources_match(
                         .map_err(|_| fault("assumption-replay-protocol-fairness-resolves"))?
                         .contains(assumption)
             }
+            (
+                AssumptionSide::Specification,
+                AssumptionTarget::RequiredTemporal {
+                    clause,
+                    constraint,
+                    fairness,
+                },
+            ) => {
+                identity.origin == crate::refinement::AssumptionOrigin::Authored
+                    && identity.kind == constraint.kind()
+                    && identity.granularity == constraint.granularity()
+                    && fairness.origin() == qsl_eval::simulation::protocol::FairnessOrigin::Authored
+                    && protocol
+                        .required_temporal_fairness()
+                        .iter()
+                        .any(|required| {
+                            required.clause == *clause && required.constraint == *constraint
+                        })
+                    && protocol
+                        .assumption_fairness()
+                        .map_err(|_| fault("assumption-replay-protocol-fairness-resolves"))?
+                        .iter()
+                        .any(|member| {
+                            member.required_temporal.as_ref().is_some_and(|required| {
+                                required.clause == *clause
+                                    && required.constraint == *constraint
+                                    && member.fairness == *fairness
+                            })
+                        })
+            }
             _ => false,
         };
         if !matches {
@@ -551,11 +581,19 @@ fn assumption_lasso_matches(
                 }
                 (enabled, taken)
             }
-            (AssumptionSide::Specification, AssumptionTarget::Protocol(assumption)) => {
+            (
+                AssumptionSide::Specification,
+                AssumptionTarget::Protocol(assumption)
+                | AssumptionTarget::RequiredTemporal {
+                    fairness: assumption,
+                    ..
+                },
+            ) => {
                 if !protocol
-                    .environment_fairness()
+                    .assumption_fairness()
                     .map_err(|_| fault("assumption-replay-protocol-fairness-resolves"))?
-                    .contains(assumption)
+                    .iter()
+                    .any(|member| member.fairness == *assumption)
                 {
                     return Ok(false);
                 }
