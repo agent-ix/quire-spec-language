@@ -62,7 +62,7 @@ pub struct TimedMonitorPlan {
     pub binding: ClockBindingKey,           // QSpec FR-252: counter, unit, width
     pub uncertainty: ExactRational,
     pub max_reading_gap: u64,
-    pub program: MonitorProgram,            // closed executable topology and transitions
+    pub program: MonitorProgram,            // plan-root entries, atoms, topology and State type
     pub intervals: Vec<(SubformulaId, TickInterval)>,
     pub buffers: Vec<(SubformulaId, u64)>,  // capacity per buffered subformula
     pub rate_limit: ExactRational,
@@ -112,14 +112,14 @@ transition that reads time.
 The entries SHALL be expressed in the existing checked expression and
 `function` contracts of the v2 wire, with exact arithmetic and typed outcomes;
 no new statement, loop or assignment vocabulary exists, and a state-passing
-function entry satisfies this requirement's "executable instruction and
-control-flow bodies". A catalog operation needed to extend a buffer
+function entry satisfies this requirement's executable-body obligation (QSL-685
+called these "instruction and control-flow bodies"). A catalog operation needed to extend a buffer
 (a sequence append) is added to the wire's operation catalog by QSpec
 (STD-647) if the existing operations cannot express it. QSL SHALL determine activation, atom meaning, operator updates,
 deadline settlement and result propagation before RT build. IR/CG may lower
 or generate these bodies, but RT SHALL NOT reconstruct them from the formula
 graph, source text, interval table or buffer IDs. A graph with missing bodies
-is not a supported executable plan. An instruction or predicate that the
+is not a supported executable plan. An operation or predicate that the
 selected backend cannot execute SHALL receive the existing per-item
 `Unsupported` disposition before build, with no partial monitor.
 
@@ -223,9 +223,9 @@ may repair such a disagreement by inventing another evaluation rule.
   pair of instants in the two widened covers, and decides only when all pairs
   agree, an open endpoint excluding the bound's value and a closed one
   including it. A result is `pending` iff declared progress (the watermark)
-  could still resolve the verdict and `indeterminate` when the closed evidence
-  stays conflicting. A buffered entry expires when the end of its window falls
-  before the history boundary. Each generated entry SHALL agree with this
+  could still resolve the verdict and `indeterminate` when the evidence stays
+  conflicting even with all declared progress applied. A buffered entry
+  expires when the end of its window falls before the history boundary. Each generated entry SHALL agree with this
   meaning on every trace (FR-251-AC-7).
 - QSL's reference evaluator over a tick-stamped trace SHALL give, for each
   obligation, the decision the plan specifies. It is a module of `qsl-eval`
@@ -246,7 +246,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-7 | Executing the plan's transition entries and the QSL reference evaluator on the same admitted inputs gives identical per-obligation outcomes for AC-1 through AC-3, a clause with reversed implication operands, an activation guard that is false, and open versus closed interval endpoints. A progress assertion past a deadline settles according to QSpec FR-094/FR-160; polling the counter without that assertion adds no event and settles no deadline. | Test (TC-1081) |
 | FR-251-AC-8 | An unsupported predicate/instruction yields `Unsupported` and no monitor; failed state allocation yields build failure and no monitor; an event missing a required admitted value is rejected without state change; an executor invariant failure yields `Failed` with no verdict and prevents further input. None of these controls returns `false` as a property result. | Test (TC-1081) |
 | FR-251-AC-9 | The admitted plan of AC-1 crosses E5 as one plan-root node (STD-647) whose dependencies include `init`, `on_event` and `on_watermark` as `function` nodes with the signatures of the Transitions row, and the `State` type; no entry uses a statement, loop or assignment form. Changing any one entry body changes the plan-root's content key and so the plan identity. The `init` result is every slot's initial value, and an obligation's origin in `State` is the unwrapped tick of its activating event. | Test (TC-1081) |
-| FR-251-AC-10 | The entries never receive a raw counter reading. On the 16-bit target of AC-3, RT supplies `on_event` the delta 10 for readings `65530` then `4` and the entry's unwrapped time advances by 10; for `65530` then `65500` RT raises `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and calls no entry. `on_watermark` receives the unwrapped history-boundary tick and the admitted scope identities; a watermark with history boundary tick 4000, past the last instant at which an `ack` could satisfy the 3 ms bound, settles AC-1's `req` obligation (`ack` never seen) false, and a mere counter poll adds no event and calls no entry. | Test (TC-1081) |
+| FR-251-AC-10 | The entries never receive a raw counter reading. On the 16-bit target of AC-3, RT supplies `on_event` the delta 10 for readings `65530` then `4` and the entry's unwrapped time advances by 10; for `65530` then `65500` RT raises `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and calls no entry. `on_watermark` receives the unwrapped history-boundary tick and the admitted scope identities; a watermark with history boundary tick 3001, the first tick at which a later `ack` would decide false, settles AC-1's `req` obligation (`ack` never seen) false, and a mere counter poll adds no event and calls no entry. | Test (TC-1081) |
 
 ## Dependencies
 
