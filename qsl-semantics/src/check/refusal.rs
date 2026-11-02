@@ -3412,6 +3412,10 @@ pub struct CheckRefusal {
 pub struct ProtocolCheckRefusal {
     /// The protocol declaration's authored name.
     pub declaration: String,
+    /// The protocol declaration's source-unit index.
+    pub source_index: usize,
+    /// The span of the protocol declaration's name.
+    pub declaration_span: Span,
     /// Every typed refusal attributed to this declaration, in check order.
     pub refusals: Vec<CheckRefusal>,
 }

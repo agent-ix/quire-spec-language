@@ -451,6 +451,10 @@ pub enum ProtocolEmissionResult {
     Refused {
         /// The authored protocol declaration name.
         declaration: String,
+        /// The declaration's index in the original source unit.
+        source_index: usize,
+        /// The span of the declaration's name.
+        declaration_span: qsl_foundation::Span,
         /// The first typed refusal attributed to this declaration.
         refusal: qsl_semantics::check::CheckRefusal,
     },
@@ -3591,6 +3595,8 @@ pub fn emit_checked_with_protocol_results(
             first_refusal.get_or_insert_with(|| refusal.clone());
             results.push(ProtocolEmissionResult::Refused {
                 declaration: declaration.clone(),
+                source_index: refused.source_index,
+                declaration_span: refused.declaration_span,
                 refusal,
             });
             continue;

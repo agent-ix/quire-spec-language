@@ -3536,6 +3536,8 @@ impl PackageDeclarations {
                         refused_protocols.insert(protocol.name.name.as_str());
                         protocol_check_refusals.push(ProtocolCheckRefusal {
                             declaration: protocol.name.name.clone(),
+                            source_index: index,
+                            declaration_span: protocol.name.span,
                             refusals: refusals.split_off(refusals_before),
                         });
                         protocol_places.push(None);
@@ -3555,6 +3557,8 @@ impl PackageDeclarations {
                     }
                     protocol_check_refusals.push(ProtocolCheckRefusal {
                         declaration: protocol.name.name.clone(),
+                        source_index: index,
+                        declaration_span: protocol.name.span,
                         refusals: owned_refusals,
                     });
                 }
@@ -4410,12 +4414,16 @@ impl PackageDeclarations {
                     if !self.emit_unwritten_protocols && !unsupported.is_empty() {
                         protocol_check_refusals.push(ProtocolCheckRefusal {
                             declaration: protocol.form.name.name.clone(),
+                            source_index: protocol.source_index,
+                            declaration_span: protocol.form.name.span,
                             refusals: unsupported,
                         });
                     }
                 }
                 Err(refusal) => protocol_check_refusals.push(ProtocolCheckRefusal {
                     declaration: protocol.form.name.name.clone(),
+                    source_index: protocol.source_index,
+                    declaration_span: protocol.form.name.span,
                     refusals: vec![refusal],
                 }),
             }

@@ -1112,6 +1112,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Flow emits independently: {:?}", standalone.results());
     };
 
+    let combined_source = unit(&format!("{good}\n{broken}"));
+    let expected_broken_span = combined_source.find("protocol Broken").unwrap() + "protocol ".len();
     let combined_graph = check(&format!("{good}\n{broken}"));
     assert_eq!(
         combined_graph.protocol_order(),
@@ -1151,12 +1153,17 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     assert_eq!(clause_key, baseline_clause_key);
     let ProtocolEmissionResult::Refused {
         declaration,
+        source_index,
+        declaration_span,
         refusal,
     } = &combined.results()[1]
     else {
         panic!("Broken's result is refused: {:?}", combined.results());
     };
     assert_eq!(declaration, "Broken");
+    assert_eq!(*source_index, 1);
+    assert_eq!(declaration_span.start, expected_broken_span);
+    assert_eq!(declaration_span.end, expected_broken_span + "Broken".len());
     assert_eq!(
         primary, refusal,
         "Broken is the aggregate's primary refusal"
