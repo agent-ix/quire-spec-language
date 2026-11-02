@@ -139,6 +139,7 @@ fn finite(unit: Unit, name: &str, values: &[i64]) -> ClauseRunRequest {
             name: name.to_owned(),
             trace: TraceInput::Finite(labels.to_vec()),
             over: over("c1"),
+            ledger: None,
         },
         values,
     )
@@ -152,6 +153,7 @@ fn ghost() -> ClauseRunRequest {
             name: "Reaches".to_owned(),
             trace: TraceInput::Finite(labels.to_vec()),
             over: over("ghost"),
+            ledger: None,
         },
         &[0, 1, 2],
     )
@@ -169,6 +171,7 @@ fn lasso(unit: Unit, name: &str, prefix: usize, values: &[i64]) -> ClauseRunRequ
                 repeat: labels[prefix..].to_vec(),
             },
             over: over("c1"),
+            ledger: None,
         },
         values,
     )
@@ -1132,4 +1135,158 @@ fn a_guarded_on_each_clause_over_a_finite_trace_is_evaluated_at_its_guard() {
     );
     let report = self::report(finite(Unit::Guarded, "Guarded", &[0, 1, 1]));
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 1 });
+}
+
+/// A ledger holding `binding` at watermark 100, complete through 100.
+fn retained_ledger() -> (crate::spine::LedgerBinding, crate::spine::ProgressLedger) {
+    let binding = crate::spine::LedgerBinding {
+        package: "pkg".to_owned(),
+        clause: "Bounded".to_owned(),
+        clock: "ms".to_owned(),
+        profile: "quire.temporal.timestamped-event.finite-window/v1".to_owned(),
+    };
+    let ledger = crate::spine::ProgressLedger::new()
+        .admit(
+            &binding,
+            crate::spine::ProgressAssertion {
+                watermark: 100,
+                completeness: crate::spine::ProgressCompleteness::Complete { through: 100 },
+                scope: crate::spine::ProgressClosure::Open,
+                execution: crate::spine::ProgressClosure::Open,
+            },
+            &[],
+            1000,
+        )
+        .expect("the first assertion of a binding is accepted");
+    (binding, ledger)
+}
+
+fn with_ledger(
+    mut request: ClauseRunRequest,
+    carried: &crate::spine::ProgressLedger,
+) -> ClauseRunRequest {
+    let ClauseRunSelection::Temporal { ledger, .. } = &mut request.selection else {
+        panic!("a temporal selection");
+    };
+    *ledger = Some(carried.clone());
+    request
+}
+
+fn assert_admit_invalid_value(report: &ClauseRunReport) {
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
+        panic!("expected an admission refusal, got {:?}", report.disposition);
+    };
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "invalid-value");
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    assert_eq!(report.disposition.category(), Category::Refusal);
+}
+
+#[trace("FR-502-AC-5", "TC-1296")]
+#[test]
+fn a_ledger_with_a_finite_trace_without_progress_is_refused_at_admit_and_returned_unchanged() {
+    let (_, ledger) = retained_ledger();
+    let report = report(with_ledger(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        &ledger,
+    ));
+    assert_admit_invalid_value(&report);
+    assert_eq!(report.ledger, Some(ledger));
+}
+
+#[trace("FR-502-AC-5", "TC-1296")]
+#[test]
+fn a_ledger_with_a_lasso_is_refused_at_admit_and_returned_unchanged() {
+    let (_, ledger) = retained_ledger();
+    let report = report(with_ledger(
+        lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]),
+        &ledger,
+    ));
+    assert_admit_invalid_value(&report);
+    assert_eq!(report.ledger, Some(ledger));
+}
+
+#[trace("FR-502-AC-5", "TC-1296")]
+#[test]
+fn a_ledger_with_an_infinite_trace_clause_is_refused_at_admit_and_returned_unchanged() {
+    let (_, ledger) = retained_ledger();
+    let report = report(with_ledger(
+        finite(Unit::Infinite, "Reaches", &[0, 1, 2]),
+        &ledger,
+    ));
+    assert_admit_invalid_value(&report);
+    assert_eq!(report.ledger, Some(ledger));
+}
+
+#[trace("FR-502-AC-6", "TC-1296")]
+#[test]
+fn a_request_without_a_ledger_evaluates_its_trace_and_returns_none() {
+    let report = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
+    assert_eq!(report.ledger, None);
+    assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
+}
+
+#[trace("FR-502-AC-1", "FR-330-AC-9", "TC-1296")]
+#[test]
+fn a_regressing_watermark_reports_stage_evaluate_refusal_with_its_fields() {
+    let (binding, ledger) = retained_ledger();
+    let regressing = crate::spine::ProgressAssertion {
+        watermark: 60,
+        completeness: crate::spine::ProgressCompleteness::Complete { through: 100 },
+        scope: crate::spine::ProgressClosure::Open,
+        execution: crate::spine::ProgressClosure::Open,
+    };
+    let disposition = crate::spine::admit_progress(&ledger, &binding, regressing, &[], 1000)
+        .expect_err("a regressing watermark is refused");
+    assert_eq!(disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(disposition.category(), Category::Refusal);
+    let ClauseDisposition::ProgressContradiction(refusal) = disposition else {
+        panic!("expected a progress contradiction");
+    };
+    assert_eq!(refusal.record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(refusal.record.catalog.cause(), "invalid-value");
+    assert_eq!(
+        refusal.record.fields,
+        std::collections::BTreeMap::from([
+            ("contradicted_dimension", "Watermark".to_owned()),
+            ("clock", "ms".to_owned()),
+            ("retained", "100".to_owned()),
+            ("asserted", "60".to_owned()),
+        ])
+    );
+}
+
+#[trace("FR-502-AC-8", "TC-1296")]
+#[test]
+fn covered_positions_over_the_setting_report_incomplete_with_the_limit_fields() {
+    let binding = retained_ledger().0;
+    let positions: Vec<crate::spine::ObservedPosition> = (0..4)
+        .map(|stamp| crate::spine::ObservedPosition {
+            identity: format!("p{stamp}"),
+            stamp,
+        })
+        .collect();
+    let assertion = crate::spine::ProgressAssertion {
+        watermark: 3,
+        completeness: crate::spine::ProgressCompleteness::Incomplete,
+        scope: crate::spine::ProgressClosure::Open,
+        execution: crate::spine::ProgressClosure::Open,
+    };
+    let disposition = crate::spine::admit_progress(
+        &crate::spine::ProgressLedger::new(),
+        &binding,
+        assertion,
+        &positions,
+        3,
+    )
+    .expect_err("four positions over a capacity of three");
+    assert_eq!(disposition.category(), Category::Incomplete);
+    let ClauseDisposition::Temporal(TemporalVerdict::ProgressLimitReached(reached)) = disposition
+    else {
+        panic!("expected a progress limit outcome");
+    };
+    assert_eq!(
+        (reached.limit, reached.value, reached.setting),
+        ("node count", 3, "progress.covered_positions")
+    );
 }

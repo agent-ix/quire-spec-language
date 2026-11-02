@@ -2433,7 +2433,8 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::ModelCheckMaxStoreBuffer
             | Setting::ModelCheckMaxMessages
             | Setting::ExpansionMaxCandidates
-            | Setting::InspectMaxViewEntries => Err(setting),
+            | Setting::InspectMaxViewEntries
+            | Setting::ProgressCoveredPositions => Err(setting),
         }
     }
 }
