@@ -336,7 +336,7 @@ fn minimum_mixed_cycle_work(calls: usize) -> u64 {
 fn mixed_protocol_cycle_work_is_linear_and_uses_the_exact_budget() {
     let measured = [32, 64, 128].map(minimum_mixed_cycle_work);
     println!("minimum mixed-cycle S3 work for 32/64/128 controls: {measured:?}");
-    assert_eq!(measured, [673, 1_217, 2_305]);
+    assert_eq!(measured, [414, 734, 1_374]);
     let first_increment = measured[1] - measured[0];
     let second_increment = measured[2] - measured[1];
     assert!(first_increment > 0 && second_increment > 0);
@@ -373,10 +373,10 @@ fn mixed_protocol_cycle_work_is_linear_and_uses_the_exact_budget() {
 #[test]
 fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
     const CHECKS: usize = 100_000;
-    // The measured mixed-cycle charge is exactly 17 units per control plus
-    // 129 fixed units at 32, 64 and 128 controls; use that measured linear
+    // The measured mixed-cycle charge is exactly 10 units per control plus
+    // 94 fixed units at 32, 64 and 128 controls; use that measured linear
     // charge at full scale rather than an unlimited ceiling.
-    const S3_WORK: u64 = 17 * CHECKS as u64 + 129;
+    const S3_WORK: u64 = 10 * CHECKS as u64 + 94;
     let text = mixed_cycle_text(CHECKS, false);
     let limits = CheckingLimits::new(500_000)
         .with_input_bytes(8_000_000)
