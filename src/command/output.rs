@@ -422,6 +422,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
+    use quire_contract_model as ir;
     use quire_semantic_value::catalog::Category;
 
     fn formal_source() -> FormalSource {
