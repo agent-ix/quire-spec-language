@@ -6781,7 +6781,9 @@ fn checked_model_operation_effects(
         CheckedScopedDeletion,
     };
 
-    if models.is_empty() {
+    // An unaliased model has no `model` declaration to locate its declaration
+    // nodes at, so the graph retains none; rows would name absent nodes.
+    if models.is_empty() || models.iter().any(|model| model.alias().is_none()) {
         return None;
     }
     let ids = crate::check::wire_id::StructuralIds::default();

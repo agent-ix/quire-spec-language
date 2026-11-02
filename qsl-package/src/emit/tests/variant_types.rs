@@ -446,16 +446,37 @@ fn model_enum_equality_emits_exact_member_identities() {
     }
 }
 
-/// FR-360-AC-8: a unit naming only a variant type with identifier cases emits
-/// its model enum; IR admits the carrier and the accessor reports the exact
-/// enum-member witness it still needs.
-#[trace("FR-360-AC-8", "TC-1009")]
+/// FR-360-AC-8, FR-496-AC-5: a unit naming only a variant type with
+/// identifier cases emits its model enum; IR admits the carrier and the
+/// accessor reports the exact enum-member witness it still needs. The model
+/// declares operations, so the graph retains its complete declaration view:
+/// every variant type of the package has a node, and `Tier` alone is
+/// referenced by the unit's types.
+#[trace("FR-360-AC-8", "FR-496-AC-5", "TC-1009", "TC-1286")]
 #[test]
 fn an_identifier_cased_variant_type_emits_and_reports_enum_member_witness() {
     let emitted = emit_unit(TIER_UNIT);
+    let variants = node_where(&emitted.wire, "model", "variant_type");
+    let owner = |node: &&Value| node["owner"]["node"].as_str().unwrap().to_owned();
+    let mut declared = variants.iter().map(owner).collect::<Vec<_>>();
+    declared.sort();
+    let mut expected = ["Grade", "Level", "Odd", "Tier"].map(fixture::id).to_vec();
+    expected.sort();
+    assert_eq!(declared, expected, "the complete declaration view");
+    let named = variants
+        .iter()
+        .filter(|node| {
+            node["occurrences"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|occurrence| occurrence["role"] == "type")
+        })
+        .map(owner)
+        .collect::<Vec<_>>();
     assert_eq!(
-        node_where(&emitted.wire, "model", "variant_type").len(),
-        1,
+        named,
+        [fixture::id("Tier")],
         "Tier is the one variant type the unit names"
     );
     assert_enum_equality_reader_outcomes(&emitted);
