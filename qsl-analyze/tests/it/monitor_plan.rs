@@ -19,11 +19,11 @@ const TIME_UNITS: &str = "dimension Time;\n\
     unit ms : Time = rational(1, 1000) * s;\n\
     unit us : Time = rational(1, 1000000) * s;\n";
 
-fn ratio(numerator: i64, denominator: i64) -> Rational {
+pub(crate) fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("nonzero")
 }
 
-fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
+pub(crate) fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     let domain = Domain::config_version();
     let packages =
         qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
@@ -214,7 +214,7 @@ fn producer_refuses_a_gap_at_least_one_full_counter_wrap() {
     );
 }
 
-fn premise_plan(formula: &str, target: &MonitorTarget) -> qsl_replay::TimedMonitorPlan {
+pub(crate) fn premise_plan(formula: &str, target: &MonitorTarget) -> qsl_replay::TimedMonitorPlan {
     let (package, _) = checked_clause(formula);
     let clause = package.graph().temporal_clauses()[0].clause();
     produce(
@@ -228,7 +228,7 @@ fn premise_plan(formula: &str, target: &MonitorTarget) -> qsl_replay::TimedMonit
     .0
 }
 
-fn base_target() -> MonitorTarget {
+pub(crate) fn base_target() -> MonitorTarget {
     MonitorTarget {
         counter: "counter".to_owned(),
         unit: "ms".to_owned(),

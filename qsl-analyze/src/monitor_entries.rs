@@ -21,6 +21,13 @@
 
 use std::fmt::Write as _;
 
+use num_bigint::BigInt;
+use num_integer::Integer as _;
+use num_traits::ToPrimitive;
+use qsl_replay::{SubformulaId, TimedMonitorPlan};
+use qsl_semantics::check::{BinaryTemporal, FormulaNode, UnaryTemporal};
+use quire_exact::{Integer as ExactInteger, Rational};
+
 /// A temporal-free Boolean formula over `holds` atoms, as the operands of an
 /// interval node and the body of an unbounded root.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -141,6 +148,153 @@ pub enum EntryRefusal {
 /// `(source spelling, wire spelling)`.
 pub const WIRE_FIELD_NAMES: [(&str, &str); 2] = [("origin_tick", "origin"), ("amount", "value")];
 
+fn floor_of(value: &Rational) -> Option<i128> {
+    let floor: BigInt = value
+        .numerator()
+        .as_big()
+        .div_floor(value.denominator().as_big());
+    floor.to_i128()
+}
+
+fn ceil_of(value: &Rational) -> Option<i128> {
+    let ceil: BigInt = value
+        .numerator()
+        .as_big()
+        .div_ceil(value.denominator().as_big());
+    ceil.to_i128()
+}
+
+impl Thresholds {
+    /// The thresholds of the tick interval `[lower, upper]` (with the given
+    /// endpoint flags) under the cover width `1 + 2 * uncertainty`.
+    pub fn of(
+        lower: &Rational,
+        lower_closed: bool,
+        upper: &Rational,
+        upper_closed: bool,
+        uncertainty: &Rational,
+    ) -> Option<Self> {
+        let int = |value: i64| Rational::from_integer(ExactInteger::from(value));
+        let width = int(1).add(&int(2).mul(uncertainty));
+        let zero = int(0);
+        let above = zero > *lower || (zero == *lower && lower_closed);
+        let below = zero < *upper || (zero == *upper && upper_closed);
+        Some(Self {
+            all_lo: ceil_of(&lower.add(&width))?,
+            all_hi: floor_of(&upper.sub(&width))?,
+            none_lo: floor_of(&lower.sub(&width))?,
+            none_hi: ceil_of(&upper.add(&width))?,
+            zero_in: above && below,
+        })
+    }
+}
+
+fn temporal_free(nodes: &[FormulaNode], index: usize) -> Option<BoolExpr> {
+    let child =
+        |id: qsl_semantics::check::FormulaNodeId| temporal_free(nodes, id.index()).map(Box::new);
+    Some(match &nodes[index] {
+        FormulaNode::Constant(value) => BoolExpr::Const(*value),
+        FormulaNode::Holds { .. } => BoolExpr::Atom(index),
+        FormulaNode::Not(a) => BoolExpr::Not(child(*a)?),
+        FormulaNode::And(a, b) => BoolExpr::And(child(*a)?, child(*b)?),
+        FormulaNode::Or(a, b) => BoolExpr::Or(child(*a)?, child(*b)?),
+        FormulaNode::Implies(a, b) => BoolExpr::Implies(child(*a)?, child(*b)?),
+        FormulaNode::Aggregate { .. } | FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => {
+            return None
+        }
+    })
+}
+
+/// Derive the generator input from a produced plan, or name the construct
+/// the generator does not cover.
+pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal> {
+    let nodes = plan.program().formula().nodes();
+    let temporal: Vec<usize> = (0..nodes.len())
+        .filter(|index| {
+            matches!(
+                nodes[*index],
+                FormulaNode::Unary { .. } | FormulaNode::Binary { .. }
+            )
+        })
+        .collect();
+    for node in &temporal {
+        if !plan.intervals().iter().any(|(id, _)| id.index() == *node) {
+            return Err(EntryRefusal::Unbounded { node: *node });
+        }
+    }
+    let [node] = temporal.as_slice() else {
+        return Err(EntryRefusal::IntervalOperators {
+            found: temporal.len(),
+        });
+    };
+    let node = *node;
+    let (future, dual, phi, psi) = match &nodes[node] {
+        FormulaNode::Unary {
+            operator, operand, ..
+        } => (
+            matches!(operator, UnaryTemporal::Eventually | UnaryTemporal::Always),
+            matches!(
+                operator,
+                UnaryTemporal::Always | UnaryTemporal::Historically
+            ),
+            None,
+            temporal_free(nodes, operand.index()),
+        ),
+        FormulaNode::Binary {
+            operator,
+            left,
+            right,
+            ..
+        } => (
+            matches!(operator, BinaryTemporal::Until | BinaryTemporal::Release),
+            matches!(
+                operator,
+                BinaryTemporal::Release | BinaryTemporal::Triggered
+            ),
+            Some(temporal_free(nodes, left.index()).ok_or(EntryRefusal::NestedTemporal { node })?),
+            temporal_free(nodes, right.index()),
+        ),
+        _ => return Err(EntryRefusal::IntervalOperators { found: 0 }),
+    };
+    let psi = psi.ok_or(EntryRefusal::NestedTemporal { node })?;
+    let interval = plan
+        .intervals()
+        .iter()
+        .find(|(id, _)| *id == SubformulaId::new(node))
+        .map(|(_, interval)| interval)
+        .ok_or(EntryRefusal::Unbounded { node })?;
+    let thresholds = Thresholds::of(
+        interval.lower(),
+        interval.lower_closed(),
+        interval.upper(),
+        interval.upper_closed(),
+        plan.uncertainty(),
+    )
+    .ok_or(EntryRefusal::Unbounded { node })?;
+    let capacity = plan
+        .buffers()
+        .iter()
+        .find(|(id, _)| id.index() == node)
+        .map_or(1, |(_, capacity)| *capacity);
+    Ok(EntrySpec {
+        atoms: (0..nodes.len())
+            .filter(|index| matches!(nodes[*index], FormulaNode::Holds { .. }))
+            .collect(),
+        node: IntervalNode {
+            future,
+            dual,
+            phi,
+            psi,
+            thresholds,
+            capacity,
+            subformula: node,
+        },
+        subject: plan.subject().clause_name().to_owned(),
+        max_reading_gap: plan.max_reading_gap(),
+        activation_capacity: plan.activation_capacity(),
+    })
+}
+
 /// The outcome codes the entries keep in a cell's `out`.
 pub mod code {
     /// Nothing reported yet.
@@ -218,7 +372,7 @@ fn on_event_body(spec: &EntrySpec) -> String {
              let kept = filter(x in s.buffer_0: now2 - x.tLast < {none_hi}) in \
              let full = size(kept) >= {cap} in \
              let cells = if full then push(dropLast(kept), merged(lastOf(kept), c, {settled} + {incomplete})) else push(kept, c) in \
-             Step({state}, oneResult(resultOf(now2, codeOf(evalAt(cells, size(cells) - 1, s.history_start)))))",
+             mk({state}, oneResult(resultOf(now2, codeOf(evalAt(cells, size(cells) - 1, s.history_start)))))",
             state = state_with("now2", "s.history_start", "cells", spec),
         );
     }
@@ -232,7 +386,7 @@ fn on_event_body(spec: &EntrySpec) -> String {
          let lostOld = if full and not last.lost and last.out < {settled} then oneResult(resultOf(last.tFirst, {incomplete})) else noResults() in \
          let sw = {sweep} in \
          let tail = pruned(sw.cells) in \
-         Step({state}, flatten(tripleResults(lostOld, lostNew, sw.results)))",
+         mk({state}, flatten(tripleResults(lostOld, lostNew, sw.results)))",
         sweep = sweep("cells", "now2", false, spec, pending, settled),
         state = state_with("now2", "s.history_start", "tail", spec),
     )
@@ -240,7 +394,14 @@ fn on_event_body(spec: &EntrySpec) -> String {
 
 /// The sweep over `cells` at `horizon`: re-evaluate every open instance and
 /// report the changed ones.
-fn sweep(cells: &str, horizon: &str, watermark: bool, spec: &EntrySpec, pending: i64, settled: i64) -> String {
+fn sweep(
+    cells: &str,
+    horizon: &str,
+    watermark: bool,
+    spec: &EntrySpec,
+    pending: i64,
+    settled: i64,
+) -> String {
     let node = &spec.node;
     let none_hi = sig(node.thresholds.none_hi);
     format!(
@@ -267,7 +428,7 @@ fn on_watermark_body(spec: &EntrySpec) -> String {
     if !node.future {
         return format!(
             "let hz = if s.now > boundary then s.now else boundary + 1 in \
-             Step({state}, noResults())",
+             mk({state}, noResults())",
             state = state_with(
                 "s.now",
                 "s.history_start",
@@ -279,9 +440,9 @@ fn on_watermark_body(spec: &EntrySpec) -> String {
     format!(
         "let hz = if s.now > boundary then s.now else boundary + 1 in \
          let sw = {sweep} in \
-         Step({state}, sw.results)",
-        sweep = sweep("s.buffer_0", "hz", true, spec, pending, settled)
-            .replace("a.cells", "a.cells"),
+         mk({state}, sw.results)",
+        sweep =
+            sweep("s.buffer_0", "hz", true, spec, pending, settled).replace("a.cells", "a.cells"),
         state = state_with("s.now", "s.history_start", "pruned(sw.cells)", spec),
     )
 }
@@ -299,7 +460,7 @@ fn on_gap_body(spec: &EntrySpec) -> String {
         "noResults()".to_owned()
     };
     format!(
-        "let now2 = s.now + gap in Step({state}, {results})",
+        "let now2 = s.now + gap in mk({state}, {results})",
         state = state_with("now2", "now2", "noCells()", spec),
     )
 }
@@ -328,8 +489,9 @@ pub fn render(spec: &EntrySpec) -> String {
          record LimitReached {{ limit: String; amount: Integer; setting: String; }}\n\
          union {outcome} {{ Failed(ReadingGapExceeded), False, Incomplete(LimitReached), Indeterminate, Pending, True }}\n\
          record {result} {{ instance: Instance; outcome: {outcome}; }}\n\
-         type Results = Sequence<{result}>;
+         type Results = Sequence<{result}>;\n\
          tuple Step({state}, Results);\n\
+         record StepR {{ state: {state}; results: Results; }}\n\
          record Acc {{ j: Integer; acc: V; pfx: V; }}\n\
          record Sweep {{ j: Integer; cells: Cells; results: Results; }}\n\
          record Keep {{ j: Integer; kept: Cells; }}",
@@ -513,9 +675,13 @@ pub fn render(spec: &EntrySpec) -> String {
     );
     let _ = writeln!(
         w,
-        "function {on_event} using v(s: {state}, delta: Integer, i: {inputs}): Step pure {{ {on_event_body} }}\n\
-         function {on_watermark} using v(s: {state}, boundary: Integer, scope_in: {scope}): Step pure {{ {on_watermark_body} }}\n\
-         function {on_gap} using v(s: {state}, gap: Integer): Step pure {{ {on_gap_body} }}",
+        "function mk using v(s: {state}, r: Results): StepR pure {{ StepR {{ state: s, results: r }} }}\n\
+         function onEventR using v(s: {state}, delta: Integer, i: {inputs}): StepR pure {{ {on_event_body} }}\n\
+         function onWatermarkR using v(s: {state}, boundary: Integer, scope_in: {scope}): StepR pure {{ {on_watermark_body} }}\n\
+         function onGapR using v(s: {state}, gap: Integer): StepR pure {{ {on_gap_body} }}\n\
+         function {on_event} using v(s: {state}, delta: Integer, i: {inputs}): Step pure {{ let r = onEventR(s, delta, i) in Step(r.state, r.results) }}\n\
+         function {on_watermark} using v(s: {state}, boundary: Integer, scope_in: {scope}): Step pure {{ let r = onWatermarkR(s, boundary, scope_in) in Step(r.state, r.results) }}\n\
+         function {on_gap} using v(s: {state}, gap: Integer): Step pure {{ let r = onGapR(s, gap) in Step(r.state, r.results) }}",
         on_event = names::ON_EVENT,
         on_watermark = names::ON_WATERMARK,
         on_gap = names::ON_GAP,
@@ -539,9 +705,6 @@ mod tests {
             Box::new(BoolExpr::Atom(7)),
             Box::new(BoolExpr::Not(Box::new(BoolExpr::Atom(3)))),
         );
-        assert_eq!(
-            expr.render("m", &[3, 7]),
-            "(m.a7 and (not m.a3))"
-        );
+        assert_eq!(expr.render("m", &[3, 7]), "(m.a7 and (not m.a3))");
     }
 }
