@@ -1537,6 +1537,29 @@ fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Valu
     })
 }
 
+/// Whether every node an `operation_effects` row names is a node of the
+/// package. An omitted node (an unsupported form, or a node naming one) makes
+/// the effect unavailable, and a present member must cover every operation, so
+/// the whole member is then left out rather than refused by the reader
+/// (FR-496).
+fn operation_effects_are_carried(
+    rows: &[quire_contract_model::CheckedOperationEffectRow],
+    nodes: &[CheckedSemanticNodeV2],
+) -> bool {
+    let carried: BTreeSet<&CheckedNodeId> = nodes.iter().map(|node| &node.node_id).collect();
+    rows.iter().all(|row| {
+        let modified = row.effect.modifies.iter().map(|entry| match entry {
+            CheckedFrameModification::Field { declaration, .. }
+            | CheckedFrameModification::Relationship { declaration } => declaration,
+        });
+        std::iter::once(&row.declaring)
+            .chain(modified)
+            .chain(&row.effect.creates)
+            .chain(&row.effect.deletes)
+            .all(|id| carried.contains(id))
+    })
+}
+
 fn frame_term(ids: &StructuralIds, frame: &FrameTerm) -> Result<CheckedTerm, EmitRefusal> {
     let modifies = frame
         .modifies
@@ -5406,6 +5429,9 @@ fn emit_package_inner(
         catalog: diagnostics_catalog(),
         entries: Vec::new(),
     };
+    let operation_effects = graph
+        .operation_effects()
+        .filter(|rows| operation_effects_are_carried(rows, &semantic_graph.nodes));
     let package = EmittedPackage::new(graph.package_name(), |name| {
         encode_checked_package_v2(
             name,
@@ -5419,7 +5445,7 @@ fn emit_package_inner(
                 checked_term_data: checked_term_data.as_ref(),
                 temporal_bindings: (!temporal_bindings.is_empty())
                     .then_some(temporal_bindings.as_slice()),
-                operation_effects: graph.operation_effects(),
+                operation_effects,
                 schedulability_claims: (!schedulability_claim_rows.is_empty())
                     .then_some(schedulability_claim_rows.as_slice()),
             },
