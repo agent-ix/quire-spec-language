@@ -507,11 +507,11 @@ fn the_signed_64_extrema_are_package_values_within_their_declared_bounds() {
     assert_eq!(bounds, ["-9223372036854775808", "9223372036854775807"]);
 }
 
-/// FR-517-AC-4, the rational half: `Exact` carries the extreme rationals
+/// FR-517-AC-12: `Exact` carries the extreme rationals
 /// `9223372036854775807/9223372036854775806` and
 /// `-9223372036854775808/9223372036854775807`. The spine admits no bounded
 /// Rational value type yet (FR-505, QSL-1522), so R has none.
-#[trace("FR-517-AC-4", "TC-1312")]
+#[trace("FR-517-AC-12", "TC-1312")]
 #[test]
 #[ignore = "gated on QSL-1522 (FR-505): the spine admits no bounded Rational value type"]
 fn the_extreme_rationals_are_package_values() {
@@ -1517,5 +1517,58 @@ fn a_differing_declared_clause_name_is_refused_on_clause_name() {
     assert_eq!(
         selection.check(&package).unwrap_err().axis,
         SelectionAxis::ClauseName
+    );
+}
+
+/// FR-517-AC-13: with the model admitting a unit on a bounded scalar, the
+/// `Amount` and `Total` scalars of R carry the unit `U`.
+#[trace("FR-517-AC-13", "TC-1312")]
+#[test]
+#[ignore = "gated on QSL-1558 (FR-497): the recipe model carries no unit on Amount and Total"]
+fn amount_and_total_carry_the_unit_u() {
+    let model: Value =
+        serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
+            .unwrap();
+    for scalar in ["Amount", "Total"] {
+        let declared = model["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| {
+                t["displayName"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(&format!("/{scalar}"))
+            })
+            .unwrap();
+        for constraint in declared["constraints"].as_array().unwrap() {
+            assert_eq!(constraint["appliesTo"], "ix://quire/unit/U", "{scalar}");
+        }
+    }
+}
+
+/// FR-517-AC-14: the `recover` condition of `Full` compares the receipt sum
+/// with the captured target; that of `Partial` requires a positive sum below
+/// it.
+#[trace("FR-517-AC-14", "TC-1312")]
+#[test]
+#[ignore = "gated on QSL-1555: a `sum` query binder inside `recover` fails emission"]
+fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
+    let unit = std::fs::read_to_string(format!("{DIR}/unit-event-position.native")).unwrap();
+    let recover = |name: &str| {
+        let from = unit.find(&format!("recover (recovered{name}")).unwrap();
+        unit[from..].split("};").next().unwrap().to_owned()
+    };
+    let full = recover("Full");
+    assert!(
+        full.contains("sum<M::Total>(") && full.contains("= targetFull"),
+        "{full}"
+    );
+    let partial = recover("Partial");
+    assert!(
+        partial.contains("sum<M::Total>(")
+            && partial.contains("> 0")
+            && partial.contains("< targetPartial"),
+        "{partial}"
     );
 }
