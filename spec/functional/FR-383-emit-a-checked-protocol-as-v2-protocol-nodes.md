@@ -212,17 +212,28 @@ than `Literal` and `Local`).
 
 The origin of a row is the closed origin of QSpec FR-322: either a named type
 declaration (`kind` `type_declaration`, `name`) or a protocol attempt (`kind`
-`protocol_attempt`, `protocol` position, `attempt` position). It identifies an
-attempt or a declaration, not a slot, so two slots of one attempt carry the same
-origin. The *slot order* of the slots that carry one origin is ascending by the
-key of the owning protocol node, then by the slot's selector name in code-point
-order (FR-390's names such as `trigger.guard`, `retry.relation` and
-`constraints`), then by slot index in numeric order. The *origin walk* of an
-origin is the concatenation of the slot walks of its slots in slot order, and the
-*visit number* `k` of a term is the zero-based count of earlier positions of the
-same application in its origin walk. *Origin order* is: `type_declaration`
-before `protocol_attempt`; type declarations by `name` in code-point order;
-protocol attempts by `protocol` and then `attempt`, numerically ascending.
+`protocol_attempt`, `protocol` position, `attempt` position). FR-322 has no other
+variant, and a protocol slot is not a type declaration, so every slot of a
+protocol carries a `protocol_attempt` origin. The `attempt` position is the
+zero-based position, among the attempt-bearing nodes of the protocol (its
+`attempt` controls and its `compensate` templates, FR-466), in ascending node
+key. A compensation such as `Refund` is therefore one attempt-bearing node and
+all its slots (registration captures, trigger guard, activation captures, retry
+relation, recovery predicate) carry its one origin; an `attempt` control's
+constraint carries that control's origin. An origin identifies an
+attempt-bearing node, not a slot.
+
+The *slot order* of the slots that carry one origin is ascending by the key of
+the owning protocol node, then by the slot's member name in code-point order (the
+member column of FR-390's slot table, such as `activation_captures`,
+`recovery.predicate`, `registration_captures`, `retry.relation`, `trigger.guard`
+and `constraint`), then by the slot's position index in numeric order. The *origin walk*
+of an origin is the concatenation of the slot walks of its slots in slot order.
+It is a total, deterministic order, and the *visit number* `k` of a term is the
+zero-based count of earlier positions of the same application in its origin
+walk. *Origin order* is: `type_declaration` before `protocol_attempt`; type
+declarations by `name` in code-point order; protocol attempts by `protocol` and
+then `attempt`, numerically ascending.
 
 The emitter SHALL write, in the `checked_term_data.protocol_locations` array of
 QSpec FR-322, one row for every term of every protocol slot expression it
@@ -236,23 +247,23 @@ The emitter SHALL assign every slot the closed origin the checker gave its
 attempt or declaration, and SHALL NOT invent a per-slot origin.
 
 A row's *occurrence* is the source occurrence key (`node_id`, role, ordinal) of
-QSpec FR-322 that the checker associated with the term, and its *occurrence
-ordinal* is the third component of that key. The group of FR-322-AC-291 is the
-rows of one application and one occurrence, and its `term_ordinal` values run
-consecutively from zero across every origin the group holds; they do not
-restart for each origin. Within a group the emitter SHALL write the rows of the
-origins in origin order, and within one origin in visit order. The emitter SHALL
-order the rows of one application and one origin so that their ascending
-(occurrence ordinal, `term_ordinal`) order is the order of that application's
-visits in the origin walk: the row at index `k` of that order, counting only the
-rows of that origin, belongs to the visit numbered `k`.
+QSpec FR-322 that the emitter keys the term to, and its *occurrence ordinal* is
+the third component of that key. The group of FR-322-AC-291 is the rows of one
+application and one occurrence, and its `term_ordinal` values run consecutively
+from zero across every origin the group holds; they do not restart for each
+origin. Within a group the emitter SHALL write the rows of the origins in origin
+order, and within one origin in visit order.
 
-Assumption A2 (occurrence, one place): the checker associates every visit of
-one application in the fixtures of this specification with that node's single
-`expression` occurrence, so the visits share one occurrence key and take
-consecutive `term_ordinal` values. A visit the checker associates with another
-occurrence of the node is keyed to that occurrence and ordered by its occurrence
-ordinal.
+For each application and origin, the number of rows SHALL equal the number of
+visits of that application in the origin walk; no row is dropped, repeated or
+padded. The emitter SHALL key the visits of one application in an origin walk to
+the application's occurrences in non-decreasing occurrence ordinal (document
+order of the occurrences), and within one occurrence give consecutive
+`term_ordinal` values in visit order, so that the ascending (occurrence
+ordinal, `term_ordinal`) order of that origin's rows of the application is the
+order of its visits: the row at that order's index `k` belongs to the visit
+numbered `k`. A node with one occurrence is the case in which every visit takes
+that occurrence.
 
 The emitter SHALL NOT derive a row's location from a source region, a node
 order, an operand position or a default value.
@@ -263,10 +274,17 @@ sidecar absent as before.
 
 In TC-1070 fixture E the retry relation of `Refund` holds one `earlier.tally`
 application node reached at two positions, in `earlier.tally < 3` (visit 0) and
-in `earlier.tally + 1` (visit 1). No other slot of the `Refund` attempt holds
-it, so it has two rows of that attempt's origin: the first carries the location
-of the term in `earlier.tally < 3` and the second that in `earlier.tally + 1`,
-with `term_ordinal` 0 and 1 under A2.
+in `earlier.tally + 1` (visit 1). No other slot of the `Refund` origin holds it,
+so it has two rows of that origin: the first carries the location of the term in
+`earlier.tally < 3` and the second that in `earlier.tally + 1`. Fixture E's
+`earlier.tally` node has the one occurrence of its `expression` role, so both
+rows share its key, with `term_ordinal` 0 and 1.
+
+In the same fixture the trigger guard and the retry relation of `Refund` both
+read the capture `target`, so `target >= 0` is one application node held by two
+slots of one origin. The slot order puts `retry.relation` before `trigger.guard`,
+so the `Refund` origin holds two rows of it, the first carrying the location of
+the term in the retry relation and the second that in the trigger guard.
 
 Assumption A1 (leaf locations, one place): a literal or `Local` leaf is not an
 application, has no row, and takes its location from its own admitted node.
@@ -530,27 +548,29 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte, and removing **W** changes **X**'s refusal record in no field; an `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
 | FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
 | FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
-| FR-383-AC-32 | For every origin of **W** and of protocol L (TC-1070 fixture L), the number of `protocol_locations` rows of that origin for an application equals the number of that application's visits in the origin walk. | Test (TC-1063) |
+| FR-383-AC-32 | For every origin of **W**, of TC-1070 fixture E and of protocol L (fixture L), the number of `protocol_locations` rows of that origin for an application equals the number of that application's visits in the origin walk. | Test (TC-1063) |
 | FR-383-AC-33 | No `protocol_locations` row of an origin names an application that origin's walk does not visit. | Test (TC-1063) |
-| FR-383-AC-34 | In fixture E, the `Refund` attempt's origin holds one `earlier.tally` application node with exactly two rows, and the `Partial` attempt's origin one `partialEarlier.tally` node with exactly two rows of its own. | Test (TC-1063) |
+| FR-383-AC-34 | In fixture E, the `Refund` origin holds one `earlier.tally` application node with exactly two rows, and the `Partial` origin one `partialEarlier.tally` node with exactly two rows of its own. | Test (TC-1063) |
 | FR-383-AC-35 | Each row, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the checked clause held in memory. | Test (TC-1063) |
 | FR-383-AC-36 | The two `Refund`-origin `earlier.tally` rows carry different `Location` values, the first that of the term in `earlier.tally < 3` and the second that in `earlier.tally + 1`. | Test (TC-1063) |
 | FR-383-AC-37 | A unit with no protocol slot expression writes `protocol_locations` as an empty array. | Test (TC-1063) |
 | FR-383-AC-38 | A package with no checked-term data keeps `checked_term_data` absent. | Test (TC-1063) |
-| FR-383-AC-39 | In fixture E-C (TC-1070), the slots `Tried.constraints[0]` and `Tried.constraints[1]` carry one closed origin (`protocol_attempt`, protocol 0, attempt 0) and `Picked.constraints[0]` another (protocol 0, attempt 1). | Test (TC-1063) |
+| FR-383-AC-39 | In fixture E, every slot of `Refund` carries one `protocol_attempt` origin and every slot of `Partial` another; in fixture E-C (TC-1070), the constraint of `Tried` and the constraint of `Picked` carry different origins, `Tried`'s attempt position lower than `Picked`'s. | Test (TC-1063) |
 | FR-383-AC-40 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
 | FR-383-AC-41 | Removing the highest-`term_ordinal` `Refund`-origin `earlier.tally` row from fixture E's emitted package (leaving a lone ordinal-zero row) leaves a package QSL's I2 reader admits. | Test (TC-1063) |
 | FR-383-AC-42 | Removing the ordinal-zero `Refund`-origin `earlier.tally` row (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
 | FR-383-AC-43 | Changing the second `Refund`-origin `earlier.tally` row's `term_ordinal` from 1 to 2 (ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
 | FR-383-AC-44 | Duplicating a `Refund`-origin `earlier.tally` row (same key, written next to the original) is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
-| FR-383-AC-45 | For fixture E-C, every table slot's row count for an application equals its visits in the slot walk (each table slot is the only slot of its attempt), including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
+| FR-383-AC-45 | For fixture E-C, every table slot's row count for an application equals its visits in the slot walk (each table slot is the only slot of its own attempt), including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
 | FR-383-AC-46 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
 | FR-383-AC-47 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
 | FR-383-AC-48 | In fixture E the two `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
-| FR-383-AC-49 | In fixture E-C the application `order >= 0` is one graph node that `Tried.constraints[0]`, `Tried.constraints[1]` and `Picked.constraints[0]` all hold. | Test (TC-1063) |
-| FR-383-AC-50 | In fixture E-C the group of `order >= 0` holds two rows of the `Tried` origin and one row of the `Picked` origin. | Test (TC-1063) |
-| FR-383-AC-51 | In fixture E-C the group of `order >= 0` has `term_ordinal` values 0, 1 and 2, with no gap and no restart between the two origins. | Test (TC-1063) |
-| FR-383-AC-52 | In fixture E-C the `Tried` origin's two rows of `order >= 0` come before the `Picked` origin's row (origin order: attempt 0 before attempt 1), the first carrying the location of the term in `Tried.constraints[0]` and the second that in `Tried.constraints[1]`. | Test (TC-1063) |
+| FR-383-AC-49 | In fixture E, `target >= 0` is one graph node that `Refund`'s `retry.relation` and `trigger.guard` both hold, and the `Refund` origin holds exactly two rows of it, with `term_ordinal` 0 and 1. | Test (TC-1063) |
+| FR-383-AC-50 | In fixture E the first of those two rows carries the location of `target >= 0` in `Refund.retry.relation` and the second that in `Refund.trigger.guard`. | Test (TC-1063) |
+| FR-383-AC-51 | In fixture E-C, `order >= 0` is one graph node that the constraints of `Tried` and `Picked` both hold. | Test (TC-1063) |
+| FR-383-AC-52 | In fixture E-C the group of `order >= 0` holds one row of the `Tried` origin and one of the `Picked` origin, with `term_ordinal` 0 and 1 and no restart between the origins. | Test (TC-1063) |
+| FR-383-AC-53 | In fixture E-C the `Tried` row of `order >= 0` has `term_ordinal` 0 and the `Picked` row `term_ordinal` 1, as origin order requires. | Test (TC-1063) |
+| FR-383-AC-54 | For every application of **W**, fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of an origin's rows, taken along the origin walk's visits of that application, strictly increase. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.

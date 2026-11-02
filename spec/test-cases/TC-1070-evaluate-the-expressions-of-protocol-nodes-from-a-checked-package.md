@@ -14,7 +14,7 @@ Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
 the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
-FR-390-AC-55. The E-P procedure below verifies FR-390-AC-23 without
+FR-390-AC-56. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -172,31 +172,31 @@ through the reader view and compare with the same call over the checked
 package. They leave E and L's rows 1 to 33 unchanged. Rows are labelled `C`
 so they do not collide with E-P's rows 34 to 46.
 
-Fixture **E-C** is fixture E with `M` extended by the record `Mix{ready:
-Boolean, count: Int[0, 9], note: Option<Int[0, 9]>, items: Sequence<Int[0,
-9]>[0, 3]}` and the union `Choice` with the members `Left(Int[0, 9])` and
-`Right(Boolean)`, and the protocol `Composed` (protocol position 0) over
-`view: M::Node`. `Composed` declares the capture `order: M::Total = view.total`
-and a run `Main` of attempts in attempt-position order:
+Fixture **E-C** is its own package, separate from fixture E: a domain package
+`M` with the record `Mix{ready: Boolean, count: Int[0, 9], note: Option<Int[0,
+9]>, items: Sequence<Int[0, 9]>[0, 3]}`, the union `Choice` with the members
+`Left(Int[0, 9])` and `Right(Boolean)`, `Total = Int[0, 1000]`, the object type
+`Node{total: Total}` with population `nodes`, and one protocol `Composed` over
+`view: M::Node`, which is protocol position 0 of that package. It shares nothing
+with fixture E's protocol `Refunds`. `Composed` declares the capture
+`order: M::Total = view.total` and a run `Main` whose attempt controls, in
+ascending node key and so in attempt-position order, are:
 
-- `Tried` (attempt 0), whose result binder is `(m: M::Mix)`, with the constraint
-  slots `Tried.constraints[0]` = `order >= 0` and `Tried.constraints[1]` =
-  `order >= 0 and m.ready`;
-- `Picked` (attempt 1), whose result binder is `(choice: M::Choice)`, with the
-  constraint slot `Picked.constraints[0]` = `order >= 0`;
-- one further attempt per row of the table below (attempts 2 onward, in table
-  order), each with that row's expression as its only constraint slot. Its result
+- `Tried` (attempt 0), whose constraint is `order >= 0`;
+- `Picked` (attempt 1), whose constraint is `order >= 0`;
+- one further attempt control per row of the table below (attempts 2 onward, in
+  table order), whose only constraint is that row's expression. Its result
   binder is `(m: M::Mix)`, except that of `Composed.case`, which is `(choice:
   M::Choice)`.
 
-Shapes are written in checked-term form, not QSL surface syntax; whether each
-is expressible in QSL's surface syntax is a check for the code lane. Every
-constraint of `Tried` and `Picked` reads the one protocol-level capture `order`,
-so the application `order >= 0` is a single graph node held by three slots (the
-checker builds equal applications over one binder as one node); `Tried`'s two
-slots share one origin and `Picked`'s slot has another. Each table slot is the
-only slot of its attempt, so its origin is its own and its binder `m` or
-`choice` is its attempt's own, shared with no other slot.
+Each attempt control has one constraint slot, as FR-390's slot table gives it.
+Shapes are written in checked-term form, not QSL surface syntax; whether each is
+expressible in QSL's surface syntax is a check for the code lane. The
+constraints of `Tried` and `Picked` both read the one protocol-level capture
+`order`, so the application `order >= 0` is a single graph node held by two
+slots of two origins (the checker builds equal applications over one binder as
+one node). Each table slot is the only slot of its attempt, so its origin is its
+own and its binder `m` or `choice` is shared with no other slot.
 
 | Slot | Shape | Walk positions of interest |
 | --- | --- | --- |
@@ -233,10 +233,11 @@ only slot of its attempt, so its origin is its own and its binder `m` or
 | C11c | each E-C slot on a package with the node ids relabelled (ascending `dependencies` and identities recomputed) so that a slot's ascending-id order differs from its walk order | as C10 | every handle's `Location` is unchanged (AC-49) |
 | C12 | Inspection of the reader's `read_node`, pairing and descriptor | n/a | root and origin come only from the descriptor; no `NodeRead` is built from a `CheckedBody` (AC-50) |
 | C13 | Inspection of the reader's `NodeKind` match | n/a | exhaustive, no wildcard arm (AC-51) |
-| C14 | `Picked.constraints[0]` (E-C) | `order = 5` | the handle of `order >= 0` reads the `Location` of the `Picked`-origin row (`term_ordinal` 2) (AC-52) |
-| C14a | `Tried.constraints[0]` and `Tried.constraints[1]` (E-C), then the same on the package with the `Location` values of the `term_ordinal` 0 and 1 rows swapped | `order = 5`, `m = Mix(ready true, count 4, note present 2, items [4])` | the handles read ordinals 0 and 1 respectively; after the swap each handle reads the other's location (AC-53) |
-| C14b | E-C package with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Picked` row) | any | `MissingLocationProjection` at the `Node` locus of `order >= 0`, carrying the `Picked` origin (protocol 0, attempt 1), visit number 0, one visit, zero rows (AC-54) |
-| C14c | the package of C14b | any | the `Tried` origin's two visits are paired and not reported unpaired (AC-55) |
+| C14 | `Refund.retry.relation` and `Refund.trigger.guard` (E), handles of `target >= 0` | row 8's and row 4's supplies | the two handles read the `Refund`-origin rows of `term_ordinal` 0 and 1 respectively, each equal to the in-process `Location` of its term (AC-52) |
+| C14a | C14 on the package with those two rows' `Location` values swapped | as C14 | each handle reads the other's location (AC-53) |
+| C14b | `Tried.constraint` and `Picked.constraint` (E-C), handles of `order >= 0` | `order = 5` | the `Tried` handle reads the `Tried`-origin row (`term_ordinal` 0), the `Picked` handle the `Picked`-origin row (`term_ordinal` 1) (AC-54) |
+| C14c | E-C package with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Picked` row) | any | `MissingLocationProjection` at the `Node` locus of `order >= 0`, `Picked` origin, visit number 0, one visit, zero rows, pointer `/checked_term_data/protocol_locations` (AC-55) |
+| C14d | the package of C14c | any | the `Tried` origin's visit is paired and not reported unpaired (AC-56) |
 
 ## Fixture E-P: reference-population provenance extension
 

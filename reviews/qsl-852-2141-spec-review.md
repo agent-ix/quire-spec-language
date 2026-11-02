@@ -68,6 +68,11 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-021 | fixed | round 4: FR-383 orders rows across origins by ascending origin string, and FR-390-AC-53 and C14a remove the highest-term_ordinal row (the lone remaining row is ordinal zero, so I2 admits it). Residual: FND-024. |
 | FND-022 | fixed | round 4: the merge-gate sentences are gone from FR-383 A1 and FR-390. Residual: FND-026 (the cited QSpec ids are not yet on QSpec main). |
 | FND-023 | fixed | round 4: FR-383-AC-48 is split into AC-49, 50, 51 and FR-390-AC-53 into AC-53 and AC-54. Residual: FND-027. |
+| FND-024 | fixed | round 5: the origin string is replaced by FR-322's structured origin with a defined origin order (type_declaration before protocol_attempt; declarations by name; attempts by protocol then attempt, numerically). |
+| FND-025 | fixed | round 5: FR-390-AC-38 now adds a Refund-origin row at term_ordinal 1, the next consecutive ordinal after the group's one ordinal-zero row. |
+| FND-026 | fixed | round 5: PR 2141's body states "MERGE ORDER: ... Merge #603 first, then this PR"; QSpec PR 603 is still open. |
+| FND-027 | fixed | round 5: FR-383-AC-51 now states only the ordinal values 0, 1, 2 with no gap and no restart; the order is in AC-52. |
+| FND-028 | fixed | round 5: TC-1070 declares Composed (protocol position 0), the capture order, run Main and attempts Tried 0 and Picked 1. New conflicts: FND-029, FND-030. |
 
 ## New findings (disposition pass 2)
 
@@ -96,6 +101,22 @@ Round 1 and round 2 left FND-001 to FND-016 fixed. Round 3: FND-017, FND-018 and
 | FND-027 | low | compound: FR-383-AC-51 joins ordinal values and byte order | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 | FND-028 | low | ambiguous: "Composed's run Main" and the attempts Tried and Picked of E-C are not declared; Tried is fixture E's attempt | spec/test-cases/TC-1070-evaluate-the-expressions-of-protocol-nodes-from-a-checked-package.md |
 
-## Verdict (disposition pass 4)
+## Verdict (disposition pass 4, superseded by pass 5)
 
 FND-021, FND-022 and FND-023 are fixed. Head 8de494964 on main c18814e85 (unchanged): quire validate has no errors; no id collisions with main or open PRs; every AC has a TC row and the scope lines match. No high finding. FND-024 and FND-025 are medium vector or term defects, so the PR is not mergeable yet. QSpec PR 603 is still open and FR-322-AC-310 to 312 are not on QSpec main, so the PR must also wait for it (FND-026).
+
+## New findings (disposition pass 5)
+
+Head e2aaf6de4 on main c18814e85 (unchanged). quire validate: no errors. No id collision with main or open PRs. Every FR-390-AC-28 to 55 and FR-383-AC-32 to 52 has a TC row; scope lines match.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-029 | high | untestable-ac: E-C slots `Tried.constraints[0]`, `Tried.constraints[1]`, `Picked.constraints[0]` do not exist in FR-390's slot table (an attempt has one `constraint`, index none), so the shared-origin vectors cannot be built | spec/test-cases/TC-1070-evaluate-the-expressions-of-protocol-nodes-from-a-checked-package.md |
+| FND-030 | medium | ambiguous: E-C is fixture E plus Composed at protocol position 0 with attempt Tried at attempt 0, but fixture E's Refunds is protocol 0 and its run Main already has a Tried | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-031 | low | soundness: the rule that (occurrence ordinal, term_ordinal) order equals visit order is unsatisfiable when visits interleave occurrences, which A2's second sentence admits | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-032 | low | compound: FR-390-AC-53 and FR-383-AC-52 each join two claims | spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md |
+| FND-033 | low | other: FR-383-AC-32 covers W and L only, while L1 and the text apply it to fixture E | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+
+## Verdict (disposition pass 5)
+
+FND-024 to FND-028 are fixed. FND-029 is a high defect: the fixture slots the shared-origin vectors need are not slots in FR-390's table. The PR is not mergeable until FND-029 is fixed and FND-030 resolved. It must also merge after QSpec PR 603 (stated in the PR body). Open questions for the planner, not defects: the origin-walk reading, assumption A2, and whether a compensation such as Refund counts as a protocol attempt in FR-322's origin.
