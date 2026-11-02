@@ -1757,7 +1757,6 @@ dependencies = [
  "qsl-replay",
  "qsl-route",
  "qsl-semantics",
- "qsl-source",
  "quire-canonical",
  "quire-checked",
  "quire-contract-model",

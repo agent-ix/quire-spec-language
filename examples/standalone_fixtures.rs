@@ -35,20 +35,5 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     }
-    for (name, case) in [
-        ("markdown-healthy", setup::Case::Aggregate(2)),
-        ("markdown-violating", setup::Case::Aggregate(1)),
-        (
-            "markdown-refused",
-            setup::Case::Operation {
-                violate_frame: true,
-            },
-        ),
-    ] {
-        if let Err(error) = setup::write_extracted(&directory.join(name), case, true) {
-            eprintln!("cannot write {name}: {error}");
-            return std::process::ExitCode::from(2);
-        }
-    }
     std::process::ExitCode::SUCCESS
 }

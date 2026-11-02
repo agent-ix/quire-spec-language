@@ -66,7 +66,14 @@ fn document(expression: &str, crlf: bool) -> Source {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-3", "FR-030-AC-4", "FR-011-AC-3")]
+#[trace(
+    "TC-108",
+    "FR-030-AC-3",
+    "FR-030-AC-4",
+    "FR-030-AC-2",
+    "FR-031-AC-2",
+    "FR-011-AC-3"
+)]
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let original = document("true", false);
     let ctx = context();
@@ -95,7 +102,7 @@ fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-4", "FR-030-AC-5")]
+#[trace("TC-108", "FR-030-AC-4", "FR-030-AC-5", "FR-030-AC-2")]
 fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
     let ctx = context();
     for crlf in [false, true] {

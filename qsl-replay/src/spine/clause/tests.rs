@@ -3306,10 +3306,15 @@ mod extracted {
     /// unselected fence.
     pub(super) fn original_text_in(language: &str) -> String {
         let (unit, _) = unit_and_packages();
+        let indented = unit
+            .lines()
+            .map(|line| format!("  {line}\n"))
+            .collect::<String>();
         format!(
-            "# Clause run document\n\n## Invariants\n\n### no_cycle\n```{language}\n{unit}```\n\n\
-             ### unselected\n```ix:native\nopaque body remains unparsed\n```\n"
+            "# Ω Clause run document\n\n## Invariants\n\n### no_cycle\n  ```{language}\n{indented}  ```\n\n\
+             ### unselected\n```ix:native\nopaque body remains unparsed\n```\n\n## Notes\nλ authored source.\n"
         )
+        .replace('\n', "\r\n")
     }
 
     /// `qsl_source::extract`'s verified body of the `ix:native` `no_cycle`
@@ -3342,18 +3347,24 @@ mod extracted {
     /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
     /// is an I3 extracted source compiles the extracted body and reports
     /// `success` as the program source does.
-    #[trace("TC-468", "FR-109-AC-6")]
+    #[trace("TC-468", "FR-109-AC-6", "FR-030-AC-1", "FR-030-AC-2")]
     #[test]
     fn run_clause_compiles_an_extracted_body() {
         let (mut request, _label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
         let (unit, _packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
+        let expected_body = unit
+            .lines()
+            .map(|line| format!("  {line}\r\n"))
+            .collect::<String>();
         assert_eq!(
             body.text(),
-            unit.trim_end_matches('\n'),
+            expected_body.trim_end_matches("\r\n"),
             "the extracted body is the fenced unit"
         );
+        assert_eq!(extracted.map().original().identity(), &original_identity());
+        assert_eq!(extracted.map().body().identity(), &body_identity());
         request.source = ClauseRunSource::Extracted(extracted);
         let report = run_clause(request).expect("a well-formed request always reports");
 
@@ -3365,7 +3376,7 @@ mod extracted {
     /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
     /// `violation`, and a compile refusal over an I3 source (no domain
     /// package supplied) reports stage `compile`.
-    #[trace("TC-468", "FR-109-AC-6")]
+    #[trace("TC-468", "FR-109-AC-6", "FR-030-AC-1", "FR-030-AC-2", "FR-031-AC-2")]
     #[test]
     fn run_clause_reports_a_violation_and_a_compile_refusal_over_an_extracted_body() {
         let (mut violating, _) = no_cycle_request(&[("a", Some("b")), ("b", Some("a"))]);
@@ -3384,10 +3395,9 @@ mod extracted {
 
 /// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
 /// a language other than `ix:native` reports stage `compile`, `refusal`,
-/// `unknown_language`, exit 20, -- the same refusal the root crate's
-/// `mapped::compile` gives that fence.
+/// `unknown_language`, exit 20.
 #[cfg(feature = "quire-extraction")]
-#[trace("TC-468", "FR-109-AC-6")]
+#[trace("TC-468", "FR-109-AC-6", "FR-031-AC-2")]
 #[test]
 fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
     use extracted::extracted_in;
