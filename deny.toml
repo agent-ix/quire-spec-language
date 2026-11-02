@@ -9,12 +9,25 @@
 # ADR-013 §2: `quire-canonical` is QSL's one RFC 8785 implementation, so the
 # `quire-canonical` entry denies a second copy of it in the resolved graph.
 #
-# Scoped to `check bans` only (`make cargo-deny-bans`, which runs `cargo deny
-# --workspace check bans` over every workspace crate): this file configures no
-# license or advisory policy, so it does not claim to gate either, and a bare
-# `cargo deny check` should not be run against it for that reason.
+# `make cargo-deny-bans` runs `cargo deny --workspace check bans` over every
+# workspace crate. The license allowlist also includes this repository's own
+# AGPL-3.0-or-later license and the AGPL-licensed Agent IX workspace crates it
+# consumes; cargo-deny rejects that SPDX identifier unless it is explicit.
 [graph]
 all-features = true
+
+[licenses]
+allow = [
+    "AGPL-3.0-or-later",
+    # Existing permissive licenses in the dependency graph remain allowed.
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Zlib",
+    "Apache-2.0 WITH LLVM-exception",
+]
 
 [bans]
 multiple-versions = "allow"
