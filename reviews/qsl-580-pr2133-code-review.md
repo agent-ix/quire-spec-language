@@ -71,3 +71,6 @@ The public type comment at `qsl-forms/src/syntax.rs:4454` still describes only `
 | --- | --- | --- |
 | FND-001 | fixed | The S3 checker now refuses mixed ordinary and quantified bounds before guard or bound lowering; the adverse package test asserts one `time-invariant-shape` refusal and no partial timed model. |
 | FND-002 | fixed | The public type documentation now states that each bound is ordinary or quantified. |
+
+| FND-001 | fixed | Rechecked at `e0af4b3d`: mixed quantified and ordinary bounds still refuse before lowering, and the adverse test still asserts no partial timed output. |
+| FND-002 | fixed | Rechecked at `e0af4b3d`: public docs still state that bounds are ordinary or quantified. |

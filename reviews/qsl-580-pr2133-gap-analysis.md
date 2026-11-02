@@ -43,3 +43,5 @@ FR-393-AC-9 explicitly exercises a source form with both `forall(e in self.ts: e
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The S3 checker refuses mixed ordinary and quantified bounds; the adverse test covers the empty-capable collection fixture and verifies no partial output. |
+
+| FND-001 | fixed | Rechecked at `e0af4b3d`: mixed bound scopes still refuse before lowering, with no partial output. |
