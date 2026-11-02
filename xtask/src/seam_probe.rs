@@ -268,7 +268,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         // `FamilyOutcome`, mirroring `replay_value_parity`'s above.
         SeamLocation {
             file: "qsl-replay/src/value_check.rs".to_owned(),
-            item: "ValueTarget::evaluate".to_owned(),
+            item: "ValueTarget::evaluate_with_case_budget".to_owned(),
         },
     ]
     .into_iter()
@@ -1108,6 +1108,14 @@ mod tests {
         assert!(checked_in_locations().contains(&SeamLocation {
             file: "qsl-semantics/src/check/refusal.rs".to_owned(),
             item: "CheckCause::code".to_owned(),
+        }));
+    }
+
+    #[test]
+    fn checked_in_locations_contains_value_check_case_budget_seam() {
+        assert!(checked_in_locations().contains(&SeamLocation {
+            file: "qsl-replay/src/value_check.rs".to_owned(),
+            item: "ValueTarget::evaluate_with_case_budget".to_owned(),
         }));
     }
 
