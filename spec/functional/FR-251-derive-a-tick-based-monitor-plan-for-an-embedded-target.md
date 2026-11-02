@@ -101,7 +101,7 @@ plan's), the counter width, the maximum reading gap, the rate limit and the
 buffer capacities as premises. The declared clock uncertainty and the tick
 intervals of the logical fields above are not bindings of QSpec FR-487's root;
 their wire carriage (and so their part in the plan's identity) is an open
-question for the QSpec half, pending a STD-647 follow-up. Every entry, atom
+question for the QSpec half, for a follow-up to STD-647. Every entry, atom
 body and type the root needs is
 a dependency of the root, so its content key (QSpec FR-322) selects the
 complete immutable plan and no second identity scheme is introduced. The
