@@ -318,9 +318,8 @@ impl LinkRefusal {
 /// Drops the dependency closure over an explicit stack, so a chain of any
 /// length drops on a constant native stack (ADR-030 D-1): the derived drop
 /// would recurse once per link.
-/// With `std`, Debug writes the graph and every dependency's graph under one
-/// node table, so a node is written once for the whole package. Without `std`,
-/// keys are written in full.
+/// Debug writes complete node identities in both `std` and no-`std` builds,
+/// without relying on ambient formatting state.
 impl core::fmt::Debug for CheckedPackage {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         struct Body<'a>(&'a CheckedPackage);

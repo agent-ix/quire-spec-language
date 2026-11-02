@@ -488,7 +488,7 @@ pub struct MapTypeRecord {
     pub values: ValueTypeRef,
 }
 
-/// A package `alias` of a clock, a unit, or an Option<T> value type (FCD's
+/// A package `alias` of a clock, a unit, or an `Option<T>` value type (FCD's
 /// core kind `alias`, FCD #315 / #333): the type its `target` names, under its
 /// own name (QSL FR-230 "Clocks and resets", FR-230-AC-17; QSpec FR-154).
 #[derive(Clone, Debug, Eq, PartialEq)]

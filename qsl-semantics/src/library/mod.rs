@@ -296,9 +296,8 @@ pub struct ImportView {
     exports: BTreeMap<NodeKey, String>,
 }
 
-/// Debug writes each export's node through [`NodeKeyDebug`]: once in the
-/// enclosing [`scoped`] table, so the output stays linear however deeply the
-/// exported identities nest.
+/// Debug writes each export's complete node identity, without relying on
+/// hidden formatting state.
 impl std::fmt::Debug for ImportView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         struct Body<'a>(&'a ImportView);
