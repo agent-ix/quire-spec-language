@@ -17,7 +17,8 @@
 //! that typer's.
 
 use quire_checked::node::{
-    CheckedLiteral, Connective, IntegerDivisionOperator, NodeKind, RecordSlot, Visit,
+    CheckedLiteral, Connective, ConnectiveOrigin, IntegerDivisionOperator, NodeKind, RecordSlot,
+    Visit,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -2574,7 +2575,12 @@ impl<'a> Typer<'a> {
                 ))
             }
             Pair::Second(left) => Step::Typed(node(
-                NodeKind::Connective(connective, self.push(left), self.push(typed)),
+                NodeKind::Connective(
+                    connective,
+                    ConnectiveOrigin::Authored,
+                    self.push(left),
+                    self.push(typed),
+                ),
                 ValueType::Boolean,
                 &location,
             )),

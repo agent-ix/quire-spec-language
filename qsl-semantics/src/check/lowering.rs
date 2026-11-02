@@ -4109,7 +4109,7 @@ impl<'a> Lowering<'a> {
                 ),
                 Operands::Two(left, right),
             ),
-            NodeKind::Connective(connective, left, right) => {
+            NodeKind::Connective(connective, _, left, right) => {
                 let identity = match connective {
                     Connective::And => "quire.op.boolean.and",
                     Connective::Or => "quire.op.boolean.or",

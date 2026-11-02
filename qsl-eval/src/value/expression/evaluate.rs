@@ -8,8 +8,8 @@
 //! make no charge.
 
 use quire_checked::node::{
-    Arithmetic, AuthoredBound, CheckedLiteral, Connective, EndSide, IntegerDivisionOperator,
-    NodeKind, OrderedKind, RecordSlot, Visit,
+    Arithmetic, AuthoredBound, CheckedLiteral, Connective, ConnectiveOrigin, EndSide,
+    IntegerDivisionOperator, NodeKind, OrderedKind, RecordSlot, Visit,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
@@ -1623,14 +1623,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Short(node) => {
-                let NodeKind::Connective(connective, left_node, right) = node.kind() else {
+                let NodeKind::Connective(connective, origin, _, right) = node.kind() else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
                 let left = self.pop_boolean()?;
-                // A connective the checker synthesized (a float ordering's
-                // composition) sits at its operands' own location; only an
-                // authored one has a decision (FR-265).
-                if node.at(*left_node).location() != node.location() {
+                // Only a connective the source wrote has a decision (FR-265);
+                // the checker's own composition of a float ordering has none.
+                if matches!(origin, ConnectiveOrigin::Authored) {
                     self.decide(node, left);
                 }
                 let skipped = match connective {
@@ -1800,7 +1799,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(node.at(*condition)));
                 return Ok(());
             }
-            NodeKind::Connective(_, left, _) => {
+            NodeKind::Connective(_, _, left, _) => {
                 self.tasks.push(Task::Short(node));
                 self.tasks.push(Task::Eval(node.at(*left)));
                 return Ok(());
@@ -5458,7 +5457,7 @@ mod tests {
             let mut decisions = Vec::new();
             while let Some(node) = nodes.pop() {
                 let children: Vec<_> = match node.kind() {
-                    NodeKind::Connective(_, left, right) => vec![*left, *right],
+                    NodeKind::Connective(_, _, left, right) => vec![*left, *right],
                     NodeKind::Not(operand) => vec![*operand],
                     _ => Vec::new(),
                 };
@@ -5485,5 +5484,71 @@ mod tests {
         let decisions = run(&authored);
         assert_eq!(decisions.iter().flatten().count(), 1, "{decisions:?}");
         assert!(decisions.contains(&Some(true)));
+    }
+    /// FR-265: whether a connective records a decision is read from its
+    /// origin, not from where it sits. Every node of this body has one
+    /// location, so an authored connective shares its left operand's.
+    #[trace("TC-1091", "FR-397-AC-12")]
+    #[test]
+    fn a_connective_records_a_decision_by_its_origin_not_its_location() {
+        use qsl_semantics::check::CheckedBody;
+        let package = qsl_package::CheckedPackage::link(
+            PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                "fixture".to_owned(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+            .check(CheckingLimits::default())
+            .unwrap(),
+        );
+        let decision = |origin| {
+            let literal = || {
+                (
+                    NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                    ValueType::Boolean,
+                )
+            };
+            let body = CheckedBody::from_nodes(vec![
+                literal(),
+                literal(),
+                (
+                    NodeKind::Connective(
+                        Connective::And,
+                        origin,
+                        CheckedBody::id_at(0),
+                        CheckedBody::id_at(1),
+                    ),
+                    ValueType::Boolean,
+                ),
+            ]);
+            assert_eq!(
+                body.root().at(CheckedBody::id_at(0)).location(),
+                body.root().location()
+            );
+            let objects = ObjectEnvironment::default();
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let trail = Trail::new(
+                super::super::s6a::separation::ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                None,
+            );
+            let (_, trail) = Machine::new(
+                package.graph().scope(),
+                package.graph(),
+                &objects,
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(body.root(), 0, Vec::new())
+            .unwrap();
+            trail.decision(body.root().location())
+        };
+        assert_eq!(decision(ConnectiveOrigin::Authored), Some(true));
+        assert_eq!(decision(ConnectiveOrigin::Synthesized), None);
     }
 }

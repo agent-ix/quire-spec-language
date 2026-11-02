@@ -79,7 +79,7 @@ pub(crate) fn derive_separating_witness(
                 }
             }
             NodeKind::Not(operand) => operand,
-            NodeKind::Connective(connective, left, right) => {
+            NodeKind::Connective(connective, _, left, right) => {
                 let left_value = decision(node)?;
                 let stopped_on_left = match connective {
                     Connective::And | Connective::Implies => !left_value,

@@ -720,7 +720,7 @@ impl<'n> ClaimsWalk<'n, '_> {
                     &frame.first_objects,
                 );
             }
-            (NodeKind::Connective(connective, left, _), 1) => {
+            (NodeKind::Connective(connective, _, left, _), 1) => {
                 let holds = !matches!(connective, Connective::Or);
                 guard_on(
                     node.at(*left).location(),

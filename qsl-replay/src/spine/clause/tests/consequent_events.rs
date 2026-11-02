@@ -51,7 +51,7 @@ fn checked_implications(
     let mut pending = vec![clause.body()];
     let mut found = Vec::new();
     while let Some(node) = pending.pop() {
-        if let NodeKind::Connective(Connective::Implies, _, consequent) = node.kind() {
+        if let NodeKind::Connective(Connective::Implies, _, _, consequent) = node.kind() {
             found.push((
                 graph.region(node.location()).expect("implication region"),
                 graph

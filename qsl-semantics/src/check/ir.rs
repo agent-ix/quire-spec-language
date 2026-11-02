@@ -1024,7 +1024,7 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         | NodeKind::IeeeNumericEquality(left, right)
         | NodeKind::IeeeTotalOrder(_, left, right)
         | NodeKind::IeeeBitIdentical(left, right)
-        | NodeKind::Connective(_, left, right)
+        | NodeKind::Connective(_, _, left, right)
         | NodeKind::Contains(left, right)
         | NodeKind::Reaches {
             source: left,

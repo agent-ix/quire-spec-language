@@ -48,7 +48,8 @@ use qsl_foundation::source::node_table::{
     standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList,
 };
 use quire_checked::node::{
-    Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
+    Arithmetic, CheckedLiteral, Connective, ConnectiveOrigin, NodeKind, OrderedKind, RecordField,
+    RecordSlot, Visit,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
@@ -3210,7 +3211,12 @@ impl<'a> Typer<'a> {
         let greater_ordinary = boolean(self, NodeKind::IeeeNumericEquality(greater, greater));
         let both_ordinary = boolean(
             self,
-            NodeKind::Connective(Connective::And, lesser_ordinary, greater_ordinary),
+            NodeKind::Connective(
+                Connective::And,
+                ConnectiveOrigin::Synthesized,
+                lesser_ordinary,
+                greater_ordinary,
+            ),
         );
         let precedes = boolean(
             self,
@@ -3219,12 +3225,33 @@ impl<'a> Typer<'a> {
         let equal = boolean(self, NodeKind::IeeeNumericEquality(lesser, greater));
         let relation = if strict {
             let apart = boolean(self, NodeKind::Not(equal));
-            boolean(self, NodeKind::Connective(Connective::And, precedes, apart))
+            boolean(
+                self,
+                NodeKind::Connective(
+                    Connective::And,
+                    ConnectiveOrigin::Synthesized,
+                    precedes,
+                    apart,
+                ),
+            )
         } else {
-            boolean(self, NodeKind::Connective(Connective::Or, precedes, equal))
+            boolean(
+                self,
+                NodeKind::Connective(
+                    Connective::Or,
+                    ConnectiveOrigin::Synthesized,
+                    precedes,
+                    equal,
+                ),
+            )
         };
         let mut composed = node(
-            NodeKind::Connective(Connective::And, both_ordinary, relation),
+            NodeKind::Connective(
+                Connective::And,
+                ConnectiveOrigin::Synthesized,
+                both_ordinary,
+                relation,
+            ),
             ValueType::Boolean,
             location,
         );
@@ -4547,7 +4574,7 @@ fn catalogued_step(
             ValueType::Integer,
         )
         | (
-            NodeKind::Connective(Connective::And | Connective::Or, left, right),
+            NodeKind::Connective(Connective::And | Connective::Or, _, left, right),
             ValueType::Boolean,
         ) => (*left, *right),
         _ => return false,

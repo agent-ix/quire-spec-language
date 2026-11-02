@@ -2594,13 +2594,13 @@ fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     );
 }
 
-/// The connectives under `node`: whether each sits at its left operand's own
-/// location (one the checker synthesized) or not (one the source wrote).
+/// The connectives under `node`: whether each is one the checker synthesized
+/// (true) or one the source wrote (false), by the origin the node carries.
 fn connective_sites(node: qsl_semantics::check::CheckedNode<'_>, found: &mut Vec<bool>) {
-    use quire_checked::node::NodeKind;
+    use quire_checked::node::{ConnectiveOrigin, NodeKind};
     match node.kind() {
-        NodeKind::Connective(_, left, right) => {
-            found.push(node.at(*left).location() == node.location());
+        NodeKind::Connective(_, origin, left, right) => {
+            found.push(matches!(origin, ConnectiveOrigin::Synthesized));
             connective_sites(node.at(*left), found);
             connective_sites(node.at(*right), found);
         }
@@ -2614,8 +2614,8 @@ fn connective_sites(node: qsl_semantics::check::CheckedNode<'_>, found: &mut Vec
 }
 
 /// FR-265 records a decision for each authored `and`, `or`, `implies` and
-/// `if`; the connectives a float ordering lowers to sit at its own location,
-/// which is how the evaluator tells them from authored ones.
+/// `if`; the connectives a float ordering lowers to carry the synthesized
+/// origin, which is how the evaluator tells them from authored ones.
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("TC-1091", "FR-397-AC-12")]
 #[test]

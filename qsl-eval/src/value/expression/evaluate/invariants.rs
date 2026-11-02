@@ -1753,7 +1753,9 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
             then: ids[1],
             otherwise: ids[1],
         }),
-        body(|ids| NodeKind::Connective(Connective::And, ids[0], ids[1])),
+        body(|ids| {
+            NodeKind::Connective(Connective::And, ConnectiveOrigin::Authored, ids[0], ids[1])
+        }),
         body(|ids| NodeKind::Pre(ids[0])),
     ] {
         probe!("evaluation-apply-node-invalid", m, [], {

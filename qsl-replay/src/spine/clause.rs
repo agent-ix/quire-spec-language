@@ -1028,10 +1028,10 @@ fn derive_consequent_source_events(
         let decision = evaluation.decision(node.location());
         // The operand position the node's recorded decision proves skipped.
         let skipped_child = match node.kind() {
-            NodeKind::Connective(Connective::Implies | Connective::And, _, _) => {
+            NodeKind::Connective(Connective::Implies | Connective::And, _, _, _) => {
                 (decision == Some(false)).then_some(1)
             }
-            NodeKind::Connective(Connective::Or, _, _) => (decision == Some(true)).then_some(1),
+            NodeKind::Connective(Connective::Or, _, _, _) => (decision == Some(true)).then_some(1),
             NodeKind::If { .. } => decision.map(|taken| if taken { 2 } else { 1 }),
             _ => None,
         };
@@ -1043,7 +1043,7 @@ fn derive_consequent_source_events(
         {
             return ConsequentSourceEvents::Refused(ConsequentEventRefusal::CalledFunction);
         }
-        if let NodeKind::Connective(Connective::Implies, _, consequent) = node.kind() {
+        if let NodeKind::Connective(Connective::Implies, _, _, consequent) = node.kind() {
             let state = if unreached {
                 ConsequentState::NotReached
             } else if binder {
