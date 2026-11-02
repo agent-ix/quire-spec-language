@@ -171,7 +171,8 @@ impl EvaluationOutcome {
     pub(crate) fn of_undetermined(cause: &Undetermined) -> Self {
         match cause {
             Undetermined::Mapping(mapping) => Self::of_mapping(&mapping.cause),
-            Undetermined::UndecidedSuccessor => Self::Refused,
+            Undetermined::UndecidedSuccessor
+            | Undetermined::ProtocolAssumptionNotEstablished(_) => Self::Refused,
         }
     }
 
@@ -282,7 +283,10 @@ impl FailedStep {
             // The liveness half has no certificate, so no step check writes
             // these.
             Self::Fails(
-                RefinementFailure::Divergence { .. } | RefinementFailure::AbstractUnfair { .. },
+                RefinementFailure::Divergence { .. }
+                | RefinementFailure::AbstractUnfair { .. }
+                | RefinementFailure::RefusalNotPermitted { .. }
+                | RefinementFailure::TerminalSuccessMismatch { .. },
             ) => return Err("a step check fails with a safety kind".to_owned()),
             Self::Undefined(evaluation) => json!({
                 "kind": "UndefinedEvaluation",
@@ -299,6 +303,9 @@ impl FailedStep {
                 "cause": match cause {
                     Undetermined::Mapping(_) => "MappingUndetermined",
                     Undetermined::UndecidedSuccessor => "UndecidedSuccessor",
+                    Undetermined::ProtocolAssumptionNotEstablished(_) => {
+                        "ProtocolAssumptionNotEstablished"
+                    }
                 },
                 "evaluation": match evaluation {
                     EvaluationOutcome::Refused => json!({"outcome": "refused"}),

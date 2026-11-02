@@ -15,7 +15,12 @@ mod protocol_system;
 mod step;
 mod subject;
 
-pub use failure::{RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined};
+pub use failure::{
+    AssumptionIdentity, AssumptionOrigin, AssumptionSelectedMember, AssumptionSide,
+    AssumptionTarget, ObservationField, ObservationLabel, PairedAssumptionPath,
+    PairedAssumptionStep, ProtocolAssumptionReason, ProtocolAssumptionWitness, RefinementFailure,
+    StepRejection, StepResult, StepVerdict, Taken, TerminalSuccessDirection, Undetermined,
+};
 pub use history::{initial_history, step_history, HistoryValues};
 pub use liveness::{abstract_classes, AbstractClass};
 pub use map::{
@@ -25,8 +30,9 @@ pub use map::{
 pub use outcome::{LivenessHalf, RefinementOutcome, SafetyOutcome, SafetyUndecided};
 pub use protocol_system::{AbstractProtocolSystem, ProtocolCandidate};
 pub use step::{
-    check_initial, check_protocol_initial, check_protocol_step, check_step, ConcreteStep,
-    RefinementPosition,
+    check_initial, check_protocol_initial, check_protocol_state_relations, check_protocol_step,
+    check_step, protocol_observation_label, ConcreteStep, ProtocolRelationError,
+    ProtocolStateRelation, RefinementPosition,
 };
 
 /// Canonical abstract step class spelling for one admitted protocol

@@ -33,7 +33,7 @@ use crate::model_check::counterexample::{
 };
 use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::refinement::failure::{
-    RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined,
+    ProtocolTrace, RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined,
 };
 use crate::refinement::history::{advance, has_update, initial_history, HistoryValues};
 use crate::refinement::map::{
@@ -395,7 +395,6 @@ pub fn check_protocol_step(
             }
         };
     let mut matching = Vec::new();
-    let mut taken_protocol = Vec::new();
     let mut count = model_result.abstract_successors;
     for before in &pre.abstract_protocol_states {
         let expansion = match protocol.successors(before) {
@@ -430,12 +429,24 @@ pub fn check_protocol_step(
                 };
             };
             if key == visible_key {
-                matching.push(candidate);
-                taken_protocol.push(transition);
+                match make_protocol_trace(
+                    protocol,
+                    before.clone(),
+                    vec![transition],
+                    vec![candidate],
+                ) {
+                    Ok(trace) => matching.push(trace),
+                    Err(verdict) => {
+                        return StepResult {
+                            verdict,
+                            abstract_successors: count,
+                        }
+                    }
+                }
             }
         }
     }
-    let (candidates, closure_count) = match protocol_closure(refinement, protocol, matching) {
+    let (paths, closure_count) = match protocol_closure_traces(refinement, protocol, matching) {
         Ok(closure) => closure,
         Err(verdict) => {
             return StepResult {
@@ -445,6 +456,15 @@ pub fn check_protocol_step(
         }
     };
     count = count.saturating_add(closure_count);
+    let mut candidates = paths
+        .iter()
+        .map(|path| path.candidates.last().unwrap_or(&path.start).clone())
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|candidate| protocol.state_key(candidate).ok().map(|(key, _)| key));
+    candidates.dedup_by(|later, earlier| {
+        protocol.state_key(later).ok().map(|(key, _)| key)
+            == protocol.state_key(earlier).ok().map(|(key, _)| key)
+    });
     if candidates.is_empty() {
         return StepResult {
             verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
@@ -463,27 +483,12 @@ pub fn check_protocol_step(
         };
         model_states.push(state.state().clone());
     }
-    let mut keyed = Vec::new();
-    for transition in taken_protocol {
-        let key = match protocol.transition_key(&transition) {
-            Ok(key) => key,
-            Err(_) => continue,
-        };
-        keyed.push((key, transition));
-    }
-    keyed.sort_by(|left, right| left.0.cmp(&right.0));
-    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
     post.abstract_states = model_states;
     post.abstract_protocol_states = candidates;
     StepResult {
         verdict: StepVerdict::Passes {
             post,
-            taken: Taken::Protocol(
-                keyed
-                    .into_iter()
-                    .map(|(_, transition)| transition)
-                    .collect(),
-            ),
+            taken: Taken::ProtocolTraces(paths),
         },
         abstract_successors: count,
     }
@@ -526,15 +531,26 @@ fn check_protocol_any_step(
     let stuttered = pre_visible
         .and_then(|state| abstract_system.state_key_of(&state).ok())
         .is_some_and(|(key, _)| key == visible_key);
-    let mut candidates = if stuttered {
-        pre.abstract_protocol_states.clone()
+    let mut seeds: Vec<ProtocolTrace> = if stuttered {
+        let mut traces = Vec::new();
+        for state in &pre.abstract_protocol_states {
+            match make_protocol_trace(protocol, state.clone(), Vec::new(), Vec::new()) {
+                Ok(trace) => traces.push(trace),
+                Err(verdict) => {
+                    return StepResult {
+                        verdict,
+                        abstract_successors: count,
+                    }
+                }
+            }
+        }
+        traces
     } else {
         Vec::new()
     };
-    let mut taken_protocol = Vec::new();
     match taken {
         Taken::Abstract(_) | Taken::Stutter => {}
-        Taken::Protocol(_) => {
+        Taken::Protocol(_) | Taken::ProtocolTraces(_) => {
             return StepResult {
                 verdict: fault("any-row-is-decided-before-protocol-matching"),
                 abstract_successors: count,
@@ -579,12 +595,24 @@ fn check_protocol_any_step(
                 };
             };
             if key == visible_key {
-                candidates.push(candidate);
-                taken_protocol.push(transition);
+                match make_protocol_trace(
+                    protocol,
+                    before.clone(),
+                    vec![transition],
+                    vec![candidate],
+                ) {
+                    Ok(trace) => seeds.push(trace),
+                    Err(verdict) => {
+                        return StepResult {
+                            verdict,
+                            abstract_successors: count,
+                        }
+                    }
+                }
             }
         }
     }
-    let (candidates, closure_count) = match protocol_closure(refinement, protocol, candidates) {
+    let (paths, closure_count) = match protocol_closure_traces(refinement, protocol, seeds) {
         Ok(closure) => closure,
         Err(verdict) => {
             return StepResult {
@@ -594,6 +622,15 @@ fn check_protocol_any_step(
         }
     };
     count = count.saturating_add(closure_count);
+    let mut candidates = paths
+        .iter()
+        .map(|path| path.candidates.last().unwrap_or(&path.start).clone())
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|candidate| protocol.state_key(candidate).ok().map(|(key, _)| key));
+    candidates.dedup_by(|later, earlier| {
+        protocol.state_key(later).ok().map(|(key, _)| key)
+            == protocol.state_key(earlier).ok().map(|(key, _)| key)
+    });
     if candidates.is_empty() {
         return StepResult {
             verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
@@ -614,7 +651,11 @@ fn check_protocol_any_step(
     }
     post.abstract_states = model_states;
     post.abstract_protocol_states = candidates;
-    if stuttered && taken_protocol.is_empty() {
+    let traces: Vec<_> = paths
+        .into_iter()
+        .filter(|path| !path.transitions.is_empty())
+        .collect();
+    if stuttered && traces.is_empty() {
         return StepResult {
             verdict: StepVerdict::Passes {
                 post,
@@ -623,23 +664,10 @@ fn check_protocol_any_step(
             abstract_successors: count,
         };
     }
-    let mut keyed = Vec::new();
-    for transition in taken_protocol {
-        if let Ok(key) = protocol.transition_key(&transition) {
-            keyed.push((key, transition));
-        }
-    }
-    keyed.sort_by(|left, right| left.0.cmp(&right.0));
-    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
     StepResult {
         verdict: StepVerdict::Passes {
             post,
-            taken: Taken::Protocol(
-                keyed
-                    .into_iter()
-                    .map(|(_, transition)| transition)
-                    .collect(),
-            ),
+            taken: Taken::ProtocolTraces(traces),
         },
         abstract_successors: count,
     }
@@ -741,7 +769,6 @@ fn check_protocol_node_step(
         };
     };
     let mut matching = Vec::new();
-    let mut taken_protocol = Vec::new();
     for before in &pre.abstract_protocol_states {
         let expansion = match protocol.successors(before) {
             Ok(expansion) => expansion,
@@ -779,12 +806,24 @@ fn check_protocol_node_step(
                 };
             };
             if key == visible_key {
-                matching.push(candidate);
-                taken_protocol.push(candidate_transition);
+                match make_protocol_trace(
+                    protocol,
+                    before.clone(),
+                    vec![candidate_transition],
+                    vec![candidate],
+                ) {
+                    Ok(trace) => matching.push(trace),
+                    Err(verdict) => {
+                        return StepResult {
+                            verdict,
+                            abstract_successors: count,
+                        }
+                    }
+                }
             }
         }
     }
-    let (candidates, closure_count) = match protocol_closure(refinement, protocol, matching) {
+    let (paths, closure_count) = match protocol_closure_traces(refinement, protocol, matching) {
         Ok(closure) => closure,
         Err(verdict) => {
             return StepResult {
@@ -794,6 +833,23 @@ fn check_protocol_node_step(
         }
     };
     count = count.saturating_add(closure_count);
+    let mut candidates = Vec::with_capacity(paths.len());
+    for path in &paths {
+        candidates.push(path.candidates.last().unwrap_or(&path.start).clone());
+    }
+    let mut keyed = Vec::new();
+    for (path, candidate) in paths.into_iter().zip(candidates.iter()) {
+        if let Ok((key, _)) = protocol.state_key(candidate) {
+            keyed.push((key, path));
+        }
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    let paths: Vec<_> = keyed.into_iter().map(|(_, path)| path).collect();
+    candidates.sort_by_key(|candidate| protocol.state_key(candidate).ok().map(|(key, _)| key));
+    candidates.dedup_by(|later, earlier| {
+        protocol.state_key(later).ok().map(|(key, _)| key)
+            == protocol.state_key(earlier).ok().map(|(key, _)| key)
+    });
     if candidates.is_empty() {
         return StepResult {
             verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
@@ -812,25 +868,12 @@ fn check_protocol_node_step(
         };
         model_states.push(state.state().clone());
     }
-    let mut keyed = Vec::new();
-    for transition in taken_protocol {
-        if let Ok(key) = protocol.transition_key(&transition) {
-            keyed.push((key, transition));
-        }
-    }
-    keyed.sort_by(|left, right| left.0.cmp(&right.0));
-    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
     post.abstract_states = model_states;
     post.abstract_protocol_states = candidates;
     StepResult {
         verdict: StepVerdict::Passes {
             post,
-            taken: Taken::Protocol(
-                keyed
-                    .into_iter()
-                    .map(|(_, transition)| transition)
-                    .collect(),
-            ),
+            taken: Taken::ProtocolTraces(paths),
         },
         abstract_successors: count,
     }
@@ -902,51 +945,130 @@ fn protocol_closure(
     system: &AbstractProtocolSystem<'_>,
     seeds: Vec<ProtocolCandidate>,
 ) -> Result<(Vec<ProtocolCandidate>, u64), StepVerdict> {
+    let traces = seeds
+        .into_iter()
+        .map(|start| make_protocol_trace(system, start, Vec::new(), Vec::new()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (traces, expanded) = protocol_closure_traces(refinement, system, traces)?;
+    let mut keyed = Vec::new();
+    for trace in traces {
+        let candidate = trace.candidates.last().unwrap_or(&trace.start).clone();
+        let (key, _) = system
+            .state_key(&candidate)
+            .map_err(|_| fault("protocol-state-encodes"))?;
+        keyed.push((key, candidate));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
+    Ok((
+        keyed.into_iter().map(|(_, candidate)| candidate).collect(),
+        expanded,
+    ))
+}
+
+fn make_protocol_trace(
+    system: &AbstractProtocolSystem<'_>,
+    start: ProtocolCandidate,
+    transitions: Vec<qsl_eval::simulation::protocol::ProtocolTransition>,
+    candidates: Vec<ProtocolCandidate>,
+) -> Result<ProtocolTrace, StepVerdict> {
+    let start_key = system
+        .state_key(&start)
+        .map_err(|_| fault("protocol-state-encodes"))?
+        .0;
+    let candidate_keys = candidates
+        .iter()
+        .map(|candidate| {
+            system
+                .state_key(candidate)
+                .map(|(key, _)| key)
+                .map_err(|_| fault("protocol-state-encodes"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ProtocolTrace {
+        start,
+        start_key,
+        transitions,
+        candidates,
+        candidate_keys,
+    })
+}
+
+fn protocol_closure_traces(
+    refinement: &CheckedRefinement,
+    system: &AbstractProtocolSystem<'_>,
+    seeds: Vec<ProtocolTrace>,
+) -> Result<(Vec<ProtocolTrace>, u64), StepVerdict> {
     let internal: std::collections::BTreeSet<&str> = refinement
         .abstract_internal()
         .iter()
         .map(|class| class.spelling())
         .collect();
-    let mut known = std::collections::BTreeMap::<Vec<u8>, ProtocolCandidate>::new();
-    let mut queue = std::collections::VecDeque::new();
-    for state in seeds {
-        let (key, _) = system
-            .state_key(&state)
-            .map_err(|_| fault("protocol-state-encodes"))?;
-        if known.insert(key, state.clone()).is_none() {
-            if u64::try_from(known.len()).unwrap_or(u64::MAX) > system.model().max_candidates() {
-                return Err(StepVerdict::Stopped(ReachedLimit {
-                    limit: ModelCheckLimit::MaxCandidates,
-                    value: system.model().max_candidates(),
-                }));
-            }
-            queue.push_back(state);
-        }
-    }
     let mut expanded = 0_u64;
-    while let Some(state) = queue.pop_front() {
-        let expansion = system
-            .successors(&state)
-            .map_err(|stop| stop_verdict(system.model(), stop))?;
-        if expansion
-            .findings
-            .iter()
-            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-        {
-            return Err(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor));
-        }
-        for (transition, post) in expansion.successors {
-            expanded = expanded.saturating_add(1);
-            let Some(class) = protocol_class(system, &transition) else {
-                continue;
+    let mut paths = Vec::new();
+    for seed in seeds {
+        let mut known = std::collections::BTreeMap::<Vec<u8>, ProtocolTrace>::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut closure_edges = std::collections::BTreeSet::new();
+        let mut closure_paths = Vec::new();
+        let seed_candidate = seed.candidates.last().unwrap_or(&seed.start);
+        let seed_key = system
+            .state_key(seed_candidate)
+            .map_err(|_| fault("protocol-state-encodes"))?
+            .0;
+        known.insert(seed_key.clone(), seed.clone());
+        queue.push_back(seed_key);
+        while let Some(key) = queue.pop_front() {
+            let Some(path) = known.get(&key).cloned() else {
+                return Err(fault("protocol-closure-queue-has-candidate"));
             };
-            if !internal.contains(class.as_str()) {
-                continue;
+            let state = path.candidates.last().unwrap_or(&path.start);
+            let expansion = system
+                .successors(state)
+                .map_err(|stop| stop_verdict(system.model(), stop))?;
+            if expansion
+                .findings
+                .iter()
+                .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+            {
+                return Err(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor));
             }
-            let (key, _) = system
-                .state_key(&post)
-                .map_err(|_| fault("protocol-state-encodes"))?;
-            if known.insert(key, post.clone()).is_none() {
+            for (transition, post) in expansion.successors {
+                expanded = expanded.saturating_add(1);
+                let Some(class) = protocol_class(system, &transition) else {
+                    continue;
+                };
+                if !internal.contains(class.as_str()) {
+                    continue;
+                }
+                let (post_key, _) = system
+                    .state_key(&post)
+                    .map_err(|_| fault("protocol-state-encodes"))?;
+                if let Some(target_path) = known.get(&post_key) {
+                    let transition_key = system
+                        .transition_key(&transition)
+                        .map_err(|_| fault("protocol-transition-encodes"))?;
+                    if !closure_edges.insert((key.clone(), transition_key, post_key.clone())) {
+                        continue;
+                    }
+                    let mut cycle = path.clone();
+                    cycle.transitions.push(transition);
+                    cycle.candidate_keys.push(post_key);
+                    cycle.candidates.push(
+                        target_path
+                            .candidates
+                            .last()
+                            .unwrap_or(&target_path.start)
+                            .clone(),
+                    );
+                    closure_paths.push(cycle);
+                    continue;
+                }
+                let mut next = path.clone();
+                next.transitions.push(transition);
+                next.candidate_keys.push(post_key.clone());
+                next.candidates.push(post);
+                known.insert(post_key.clone(), next);
                 if u64::try_from(known.len()).unwrap_or(u64::MAX) > system.model().max_candidates()
                 {
                     return Err(StepVerdict::Stopped(ReachedLimit {
@@ -954,11 +1076,20 @@ fn protocol_closure(
                         value: system.model().max_candidates(),
                     }));
                 }
-                queue.push_back(post);
+                queue.push_back(post_key);
             }
         }
+        paths.extend(known.into_values());
+        paths.extend(closure_paths);
     }
-    Ok((known.into_values().collect(), expanded))
+    paths.sort_by(|left, right| {
+        let left = left.candidates.last().unwrap_or(&left.start);
+        let right = right.candidates.last().unwrap_or(&right.start);
+        let left_key = system.state_key(left).ok().map(|(key, _)| key);
+        let right_key = system.state_key(right).ok().map(|(key, _)| key);
+        left_key.cmp(&right_key)
+    });
+    Ok((paths, expanded))
 }
 
 pub(crate) fn protocol_class(
@@ -1321,7 +1452,7 @@ fn stutter(
 }
 
 /// The step row of the operation `transition` applies (FR-136).
-fn step_row<'r>(
+pub(crate) fn step_row<'r>(
     refinement: &'r CheckedRefinement,
     transition: &ModelTransition,
 ) -> Option<&'r StepRow> {
@@ -1331,6 +1462,298 @@ fn step_row<'r>(
             return false;
         };
         operation_identity_text(operation).is_ok_and(|text| text == transition.operation())
+    })
+}
+
+/// FR-379: build the exact visible observation label of an admitted protocol
+/// transition, including its complete typed binder record.
+pub fn protocol_observation_label(
+    protocol: &AbstractProtocolSystem<'_>,
+    transition: &qsl_eval::simulation::protocol::ProtocolTransition,
+) -> Result<super::failure::ObservationLabel, InternalFault> {
+    let step = super::protocol_transition_class(protocol, transition)
+        .ok_or_else(|| InternalFault::new("refinement-relation", "protocol-class-exists"))?;
+    let binder = protocol
+        .binder_record_json(transition)
+        .map_err(|_| InternalFault::new("refinement-relation", "protocol-binder-record-encodes"))?;
+    let fields = match binder {
+        None => Vec::new(),
+        Some(value) => match value.get("fields").and_then(serde_json::Value::as_array) {
+            Some(entries) => entries
+                .iter()
+                .map(|entry| {
+                    let field = entry
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| {
+                            InternalFault::new("refinement-relation", "binder-field-has-name")
+                        })?;
+                    let value = entry.get("value").cloned().ok_or_else(|| {
+                        InternalFault::new("refinement-relation", "binder-field-has-value")
+                    })?;
+                    Ok(super::failure::ObservationField {
+                        field: field.to_owned(),
+                        value,
+                    })
+                })
+                .collect::<Result<Vec<_>, InternalFault>>()?,
+            None => {
+                let names = protocol.binder_names(transition).ok_or_else(|| {
+                    InternalFault::new("refinement-relation", "scalar-binder-has-checked-node")
+                })?;
+                let [field] = names.as_slice() else {
+                    return Err(InternalFault::new(
+                        "refinement-relation",
+                        "scalar-binder-has-one-checked-name",
+                    ));
+                };
+                vec![super::failure::ObservationField {
+                    field: field.clone(),
+                    value,
+                }]
+            }
+        },
+    };
+    Ok(super::failure::ObservationLabel {
+        step,
+        binder: fields,
+    })
+}
+
+/// FR-148/FR-379's refusal-set and terminal-success checks at one reachable
+/// product state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProtocolStateRelation {
+    /// Both relation checks were decided; `failure` is the first failure in
+    /// FR-379 precedence order, if any.
+    Decided {
+        /// The first failure in FR-379 precedence order, if any.
+        failure: Option<RefinementFailure>,
+        /// Abstract successors expanded while checking the relation.
+        expanded: u64,
+    },
+    /// An admitted subject reported `ContractUndetermined` while the checks
+    /// were deriving enabledness or terminal success.
+    Undetermined {
+        /// Abstract successors expanded before the undecided finding.
+        expanded: u64,
+    },
+}
+
+/// A product relation check stopped on an evaluator stop or an established
+/// invariant failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProtocolRelationError {
+    /// A checked predicate or bounded protocol expansion stopped.
+    Expansion(ExpansionStop),
+    /// An admitted identity or encoding invariant failed.
+    Fault(InternalFault),
+}
+
+/// Check the protocol-only refusal-set and terminal-success relations at
+/// `position`. `edges` are the already-checked outgoing concrete edges of
+/// that product state; a `None` transition is the synthetic terminal stutter
+/// and is not a concrete enabled action.
+pub fn check_protocol_state_relations(
+    refinement: &CheckedRefinement,
+    concrete: &ModelSystem<'_>,
+    protocol: &AbstractProtocolSystem<'_>,
+    position: &RefinementPosition,
+    concrete_state: &ModelSimState,
+    edges: &[crate::certificate::simulation::CertifiedEdge],
+    position_index: u64,
+) -> Result<ProtocolStateRelation, ProtocolRelationError> {
+    use qsl_eval::simulation::model::TerminalClass;
+    use qsl_semantics::check::StepTarget;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let internal: BTreeSet<&str> = refinement
+        .abstract_internal()
+        .iter()
+        .map(|class| class.spelling())
+        .collect();
+    let mut concrete_stable = true;
+    let mut concrete_visible = BTreeSet::<Vec<u8>>::new();
+    for edge in edges {
+        let Some(transition) = &edge.transition else {
+            continue;
+        };
+        let row = step_row(refinement, transition);
+        if row.is_some_and(|row| matches!(&row.target, StepTarget::Stutter | StepTarget::Any)) {
+            concrete_stable = false;
+        }
+        let mut record_visible =
+            |transition: &qsl_eval::simulation::protocol::ProtocolTransition| {
+                let class =
+                    super::protocol_transition_class(protocol, transition).ok_or_else(|| {
+                        ProtocolRelationError::Fault(InternalFault::new(
+                            "refinement-relation",
+                            "protocol-transition-has-class",
+                        ))
+                    })?;
+                if internal.contains(class.as_str())
+                    || transition.kind() == qsl_eval::simulation::protocol::StepKind::Finish
+                {
+                    return Ok(());
+                }
+                let label = protocol_observation_label(protocol, transition)
+                    .map_err(ProtocolRelationError::Fault)?;
+                let encoded = serde_json::to_vec(&label).map_err(|_| {
+                    ProtocolRelationError::Fault(InternalFault::new(
+                        "refinement-relation",
+                        "protocol-observation-label-encodes",
+                    ))
+                })?;
+                concrete_visible.insert(encoded);
+                Ok(())
+            };
+        match &edge.taken {
+            Taken::Protocol(transitions) => {
+                for transition in transitions {
+                    record_visible(transition)?;
+                }
+            }
+            Taken::ProtocolTraces(traces) => {
+                for trace in traces {
+                    for transition in &trace.transitions {
+                        record_visible(transition)?;
+                    }
+                }
+            }
+            Taken::Stutter | Taken::Abstract(_) => {}
+        }
+    }
+    let mut stable_candidates = Vec::new();
+    let mut candidate_labels = Vec::new();
+    let mut candidate_success = Vec::new();
+    let mut expanded = 0_u64;
+    for candidate in &position.abstract_protocol_states {
+        let Some((expansion, terminal)) = protocol
+            .successors_and_terminal(candidate)
+            .map_err(ProtocolRelationError::Expansion)?
+        else {
+            return Err(ProtocolRelationError::Fault(InternalFault::new(
+                "refinement-relation",
+                "candidate-belongs-to-admitted-system",
+            )));
+        };
+        expanded =
+            expanded.saturating_add(u64::try_from(expansion.successors.len()).unwrap_or(u64::MAX));
+        if expansion
+            .findings
+            .iter()
+            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+        {
+            return Ok(ProtocolStateRelation::Undetermined { expanded });
+        }
+        let mut labels = BTreeMap::<Vec<u8>, super::failure::ObservationLabel>::new();
+        let mut stable = true;
+        for (transition, _) in &expansion.successors {
+            // Finishing establishes the protocol's terminal classification;
+            // it is not an observable action offered against a concrete step.
+            if transition.kind() == qsl_eval::simulation::protocol::StepKind::Finish {
+                continue;
+            }
+            let Some(class) = super::protocol_transition_class(protocol, transition) else {
+                return Err(ProtocolRelationError::Fault(InternalFault::new(
+                    "refinement-relation",
+                    "protocol-transition-has-class",
+                )));
+            };
+            if internal.contains(class.as_str()) {
+                stable = false;
+                continue;
+            }
+            let label = protocol_observation_label(protocol, transition)
+                .map_err(ProtocolRelationError::Fault)?;
+            let encoded = serde_json::to_vec(&label).map_err(|_| {
+                ProtocolRelationError::Fault(InternalFault::new(
+                    "refinement-relation",
+                    "protocol-observation-label-encodes",
+                ))
+            })?;
+            labels.entry(encoded).or_insert(label);
+        }
+        stable_candidates.push(stable);
+        candidate_labels.push(labels);
+        if stable {
+            let offers_successful_finish = expansion.successors.iter().any(|(transition, _)| {
+                transition.kind() == qsl_eval::simulation::protocol::StepKind::Finish
+            });
+            candidate_success
+                .push(matches!(terminal, TerminalClass::Intended) || offers_successful_finish);
+        }
+    }
+    if concrete_stable && stable_candidates.iter().any(|stable| *stable) {
+        let stable_indices = stable_candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(index, stable)| stable.then_some(index))
+            .collect::<Vec<_>>();
+        let mut qualifying = Vec::<(Vec<u8>, super::failure::ObservationLabel)>::new();
+        if let Some(first) = stable_indices.first().copied() {
+            for (encoded, label) in &candidate_labels[first] {
+                let all_enable = stable_indices
+                    .iter()
+                    .all(|index| candidate_labels[*index].contains_key(encoded));
+                if all_enable && !concrete_visible.contains(encoded) {
+                    qualifying.push((encoded.clone(), label.clone()));
+                }
+            }
+        }
+        qualifying.sort_by(|left, right| left.0.cmp(&right.0));
+        if let Some((_, label)) = qualifying.into_iter().next() {
+            return Ok(ProtocolStateRelation::Decided {
+                failure: Some(RefinementFailure::RefusalNotPermitted {
+                    position: position_index,
+                    label,
+                }),
+                expanded,
+            });
+        }
+    }
+    let has_successor = edges.iter().any(|edge| edge.transition.is_some());
+    let concrete_terminal = !has_successor;
+    if concrete_terminal {
+        let class = concrete
+            .terminal_class(concrete_state, false)
+            .map_err(ProtocolRelationError::Expansion)?;
+        let concrete_intended = match class {
+            TerminalClass::Intended => true,
+            TerminalClass::Deadlocked => false,
+            TerminalClass::NotTerminal => {
+                return Err(ProtocolRelationError::Fault(InternalFault::new(
+                    "refinement-relation",
+                    "a-terminal-state-is-terminal",
+                )))
+            }
+            TerminalClass::Undefined { .. } | TerminalClass::Undecided { .. } => {
+                return Ok(ProtocolStateRelation::Undetermined { expanded })
+            }
+        };
+        let all_abstract_intended =
+            !candidate_success.is_empty() && candidate_success.iter().all(|success| *success);
+        let any_abstract_intended = candidate_success.iter().any(|success| *success);
+        let direction = if concrete_intended && !any_abstract_intended {
+            Some(super::failure::TerminalSuccessDirection::ConcreteOnly)
+        } else if !concrete_intended && all_abstract_intended {
+            Some(super::failure::TerminalSuccessDirection::AbstractOnly)
+        } else {
+            None
+        };
+        if let Some(direction) = direction {
+            return Ok(ProtocolStateRelation::Decided {
+                failure: Some(RefinementFailure::TerminalSuccessMismatch {
+                    position: position_index,
+                    direction,
+                }),
+                expanded,
+            });
+        }
+    }
+    Ok(ProtocolStateRelation::Decided {
+        failure: None,
+        expanded,
     })
 }
 

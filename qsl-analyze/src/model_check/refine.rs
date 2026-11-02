@@ -44,14 +44,14 @@ use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimStat
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    abstract_classes, check_initial, check_protocol_initial, check_protocol_step, check_step,
-    open_protocol_systems, open_systems, AbstractClass, AbstractProtocolSystem, CertifiedEdge,
-    CertifiedPosition, ConcreteStep, CounterexampleKind, IncompleteCause, Lasso, LivenessHalf,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ReachedLimit,
-    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, RunStats,
-    SafetyOutcome, SafetyUndecided, SimulationCertificate, StepResult, StepVerdict, SubjectRefusal,
-    Taken, TemporalCounterexample, UnavailabilityCause, UndecidedCause, UndefinedEvaluation,
-    Undetermined,
+    abstract_classes, check_initial, check_protocol_initial, check_protocol_state_relations,
+    check_protocol_step, check_step, open_protocol_systems, open_systems, AbstractClass,
+    AbstractProtocolSystem, CertifiedEdge, CertifiedPosition, ConcreteStep, CounterexampleKind,
+    IncompleteCause, Lasso, LivenessHalf, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ModelStep, ProtocolRelationError, ProtocolStateRelation, ReachedLimit, RefinementFailure,
+    RefinementOutcome, RefinementPosition, RefinementSystems, RunStats, SafetyOutcome,
+    SafetyUndecided, SimulationCertificate, StepResult, StepVerdict, SubjectRefusal, Taken,
+    TemporalCounterexample, UnavailabilityCause, UndecidedCause, UndefinedEvaluation, Undetermined,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -106,6 +106,28 @@ struct Node {
     initial_index: usize,
     /// The edges out of the state, in canonical order, once it is expanded.
     edges: Vec<CertifiedEdge>,
+}
+
+/// One candidate-specific edge in the paired concrete/protocol graph. The
+/// stored model product edge may admit several protocol candidates; this
+/// edge keeps one coherent pre, transition and post triple for fairness.
+#[derive(Clone, Eq, PartialEq)]
+struct CandidateEdge {
+    target: usize,
+    concrete: Option<ModelTransition>,
+    protocol: Option<qsl_eval::simulation::protocol::ProtocolTransition>,
+}
+
+/// Source identities carried by one paired transition in the protocol
+/// assumption graph. The empty pair is the concrete terminal stutter.
+type PairedIdentityKey = (Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// One vertex in the candidate-specific product, retaining the concrete
+/// product node and exactly one abstract protocol candidate.
+struct CandidateNode {
+    product: usize,
+    candidate: qsl_replay::ProtocolCandidate,
+    edges: Vec<CandidateEdge>,
 }
 
 /// The first failing initial state or edge: the node it leaves, the step it
@@ -240,7 +262,27 @@ fn check_with(
                     counterexample: Box::new(counterexample),
                     stats: run.stats(),
                 },
-                Ok(None) => SafetyOutcome::HoldsUncertified { stats: run.stats() },
+                Ok(None) => match run.protocol_assumption_strengthening() {
+                    Ok(()) => SafetyOutcome::HoldsUncertified { stats: run.stats() },
+                    Err(End::Stopped(cause, limit)) => SafetyOutcome::Stopped {
+                        cause,
+                        limit,
+                        stats: run.stats(),
+                    },
+                    Err(End::Fault(fault)) => SafetyOutcome::Fault {
+                        fault,
+                        stats: run.stats(),
+                    },
+                    Err(End::Undecided(cause)) => SafetyOutcome::Undecided {
+                        cause,
+                        stats: run.stats(),
+                    },
+                    Err(End::Refusal(refusal)) => return Err(refusal),
+                    Err(End::Violated(failure)) => SafetyOutcome::Violated {
+                        counterexample: Box::new(run.counterexample(*failure)),
+                        stats: run.stats(),
+                    },
+                },
                 Err(End::Stopped(cause, limit)) => SafetyOutcome::Stopped {
                     cause,
                     limit,
@@ -348,12 +390,281 @@ struct Run<'r, 'a> {
 }
 
 impl Run<'_, '_> {
+    /// Reconstruct the candidate-specific graph retained by the set-valued
+    /// refinement product. `Taken::Protocol` is intentionally a union at the
+    /// step API; pairing each transition with its admitted pre/post candidate
+    /// here avoids combining incompatible abstract paths in fairness checks.
+    fn candidate_graph(&mut self) -> Result<(Vec<CandidateNode>, Vec<usize>), End> {
+        let Some(protocol) = self.abstract_protocol else {
+            return Err(End::Fault(InternalFault::new(
+                "refinement-check",
+                "candidate-graph-requires-protocol",
+            )));
+        };
+        let mut candidates = Vec::<(usize, qsl_replay::ProtocolCandidate, Vec<u8>, bool)>::new();
+        let mut by_product_key = BTreeMap::<(usize, Vec<u8>), usize>::new();
+        for (product, node) in self.nodes.iter().enumerate() {
+            for candidate in &node.position.abstract_protocol_states {
+                let (key, _) = protocol.state_key(candidate).map_err(|_| {
+                    End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "protocol-candidate-state-key",
+                    ))
+                })?;
+                let pair = (product, key.clone());
+                if by_product_key.contains_key(&pair) {
+                    continue;
+                }
+                let index = candidates.len();
+                by_product_key.insert(pair, index);
+                candidates.push((product, candidate.clone(), key, true));
+            }
+        }
+        // Retain the protocol-only internal closure candidates between a
+        // paired concrete transition and its endpoint. These intermediate
+        // states carry fairness classes such as the selected TSO flush.
+        for (product, node) in self.nodes.iter().enumerate() {
+            for edge in &node.edges {
+                let Taken::ProtocolTraces(traces) = &edge.taken else {
+                    continue;
+                };
+                let target_product = usize::try_from(edge.post).map_err(|_| {
+                    End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "candidate-product-edge-target",
+                    ))
+                })?;
+                for trace in traces {
+                    let start_pair = (product, trace.start_key.clone());
+                    if !by_product_key.contains_key(&start_pair) {
+                        return Err(End::Fault(InternalFault::new(
+                            "refinement-check",
+                            "protocol-trace-start-is-a-candidate",
+                        )));
+                    }
+                    for (candidate, key) in trace.candidates.iter().zip(&trace.candidate_keys) {
+                        let pair = (target_product, key.clone());
+                        if let Some(index) = by_product_key.get(&pair).copied() {
+                            candidates[index].3 = true;
+                            continue;
+                        }
+                        let index = candidates.len();
+                        by_product_key.insert(pair, index);
+                        candidates.push((target_product, candidate.clone(), key.clone(), false));
+                    }
+                }
+            }
+        }
+        let mut graph = candidates
+            .iter()
+            .map(|(product, candidate, _, _)| CandidateNode {
+                product: *product,
+                candidate: candidate.clone(),
+                edges: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        for (source, (product, candidate, _, endpoint)) in candidates.iter().enumerate() {
+            self.poll()?;
+            if !endpoint {
+                continue;
+            }
+            let Some(node) = self.nodes.get(*product) else {
+                return Err(End::Fault(InternalFault::new(
+                    "refinement-check",
+                    "candidate-product-node-exists",
+                )));
+            };
+            for edge in &node.edges {
+                let target_product = usize::try_from(edge.post).map_err(|_| {
+                    End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "candidate-product-edge-target",
+                    ))
+                })?;
+                let target_keys = self
+                    .nodes
+                    .get(target_product)
+                    .ok_or_else(|| {
+                        End::Fault(InternalFault::new(
+                            "refinement-check",
+                            "candidate-product-edge-target-exists",
+                        ))
+                    })?
+                    .position
+                    .abstract_protocol_states
+                    .iter()
+                    .map(|candidate| {
+                        protocol
+                            .state_key(candidate)
+                            .map(|(key, _)| key)
+                            .map_err(|_| {
+                                End::Fault(InternalFault::new(
+                                    "refinement-check",
+                                    "protocol-candidate-state-key",
+                                ))
+                            })
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
+                match &edge.taken {
+                    Taken::Stutter => {
+                        let (key, _) = protocol.state_key(candidate).map_err(|_| {
+                            End::Fault(InternalFault::new(
+                                "refinement-check",
+                                "protocol-candidate-state-key",
+                            ))
+                        })?;
+                        if target_keys.contains(&key) {
+                            if let Some(target) = by_product_key.get(&(target_product, key)) {
+                                graph[source].edges.push(CandidateEdge {
+                                    target: *target,
+                                    concrete: edge.transition.clone(),
+                                    protocol: None,
+                                });
+                            }
+                        }
+                    }
+                    Taken::Protocol(accepted) => {
+                        let accepted = accepted
+                            .iter()
+                            .filter_map(|transition| protocol.transition_key(transition).ok())
+                            .collect::<BTreeSet<_>>();
+                        let expansion = protocol
+                            .successors(candidate)
+                            .map_err(|stop| self.expansion_stop(stop))?;
+                        self.transitions =
+                            self.transitions.saturating_add(expansion.successors.len());
+                        if self.transitions > self.limits.limits.max_transitions {
+                            return Err(Self::stopped(
+                                ModelCheckLimit::MaxTransitions,
+                                widen(self.limits.limits.max_transitions),
+                            ));
+                        }
+                        for (transition, post_candidate) in expansion.successors {
+                            let transition_key =
+                                protocol.transition_key(&transition).map_err(|_| {
+                                    End::Fault(InternalFault::new(
+                                        "refinement-check",
+                                        "protocol-transition-key",
+                                    ))
+                                })?;
+                            if !accepted.contains(&transition_key) {
+                                continue;
+                            }
+                            let (post_key, _) =
+                                protocol.state_key(&post_candidate).map_err(|_| {
+                                    End::Fault(InternalFault::new(
+                                        "refinement-check",
+                                        "protocol-candidate-state-key",
+                                    ))
+                                })?;
+                            if !target_keys.contains(&post_key) {
+                                continue;
+                            }
+                            let Some(target) = by_product_key.get(&(target_product, post_key))
+                            else {
+                                continue;
+                            };
+                            graph[source].edges.push(CandidateEdge {
+                                target: *target,
+                                concrete: edge.transition.clone(),
+                                protocol: Some(transition),
+                            });
+                        }
+                    }
+                    Taken::ProtocolTraces(traces) => {
+                        for trace in traces {
+                            let source_key = protocol
+                                .state_key(&trace.start)
+                                .map_err(|_| {
+                                    End::Fault(InternalFault::new(
+                                        "refinement-check",
+                                        "protocol-trace-start-key",
+                                    ))
+                                })?
+                                .0;
+                            if source_key
+                                != protocol
+                                    .state_key(candidate)
+                                    .map_err(|_| {
+                                        End::Fault(InternalFault::new(
+                                            "refinement-check",
+                                            "protocol-candidate-state-key",
+                                        ))
+                                    })?
+                                    .0
+                            {
+                                continue;
+                            }
+                            let mut from = source;
+                            for (index, (transition, post_candidate)) in
+                                trace.transitions.iter().zip(&trace.candidates).enumerate()
+                            {
+                                let post_key =
+                                    trace.candidate_keys.get(index).ok_or_else(|| {
+                                        End::Fault(InternalFault::new(
+                                            "refinement-check",
+                                            "protocol-trace-state-key-exists",
+                                        ))
+                                    })?;
+                                let Some(to) = by_product_key
+                                    .get(&(target_product, post_key.clone()))
+                                    .copied()
+                                else {
+                                    return Err(End::Fault(InternalFault::new(
+                                        "refinement-check",
+                                        "protocol-trace-candidate-exists",
+                                    )));
+                                };
+                                let candidate_edge = CandidateEdge {
+                                    target: to,
+                                    concrete: (index == 0)
+                                        .then(|| edge.transition.clone())
+                                        .flatten(),
+                                    protocol: Some(transition.clone()),
+                                };
+                                if !graph[from].edges.contains(&candidate_edge) {
+                                    graph[from].edges.push(candidate_edge);
+                                }
+                                from = to;
+                                let _ = post_candidate;
+                            }
+                        }
+                    }
+                    Taken::Abstract(_) => {
+                        return Err(End::Fault(InternalFault::new(
+                            "refinement-check",
+                            "protocol-product-edge-has-protocol-taken",
+                        )));
+                    }
+                }
+            }
+        }
+        let initial = self
+            .initial_positions
+            .iter()
+            .flat_map(|product| {
+                self.nodes[*product]
+                    .position
+                    .abstract_protocol_states
+                    .iter()
+                    .filter_map(|candidate| {
+                        protocol
+                            .state_key(candidate)
+                            .ok()
+                            .and_then(|(key, _)| by_product_key.get(&(*product, key)).copied())
+                    })
+            })
+            .collect();
+        Ok((graph, initial))
+    }
+
     /// FR-148's fairness-independent observable-divergence check over the
     /// retained safety product.
     fn protocol_divergence(&mut self) -> Result<Option<TemporalCounterexample>, End> {
         let Some(protocol) = self.abstract_protocol else {
             return Ok(None);
         };
+        self.validate_candidate_graph()?;
         let internal: BTreeSet<&str> = self
             .refinement
             .abstract_internal()
@@ -449,6 +760,671 @@ impl Run<'_, '_> {
             }
         }
         Ok(None)
+    }
+
+    /// Validate the candidate-specific projection before running protocol
+    /// liveness and environment-relation checks. Every retained set-valued
+    /// concrete edge must have at least one coherent candidate witness.
+    fn validate_candidate_graph(&mut self) -> Result<(), End> {
+        let (graph, initial) = self.candidate_graph()?;
+        let Some(protocol) = self.abstract_protocol else {
+            return Err(End::Fault(InternalFault::new(
+                "refinement-check",
+                "candidate-graph-requires-protocol",
+            )));
+        };
+        if graph.is_empty() || initial.is_empty() {
+            return Err(End::Fault(InternalFault::new(
+                "refinement-check",
+                "protocol-candidate-graph-has-initials",
+            )));
+        }
+        for candidate in &graph {
+            protocol.state_key(&candidate.candidate).map_err(|_| {
+                End::Fault(InternalFault::new(
+                    "refinement-check",
+                    "candidate-vertex-retains-checked-state",
+                ))
+            })?;
+        }
+        for (product, node) in self.nodes.iter().enumerate() {
+            for retained in &node.edges {
+                let target = usize::try_from(retained.post).map_err(|_| {
+                    End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "candidate-edge-target-index",
+                    ))
+                })?;
+                let witnessed = graph
+                    .iter()
+                    .filter(|candidate| candidate.product == product)
+                    .flat_map(|candidate| &candidate.edges)
+                    .any(|candidate_edge| {
+                        graph
+                            .get(candidate_edge.target)
+                            .is_some_and(|post| post.product == target)
+                            && candidate_edge.concrete == retained.transition
+                            && matches!(
+                                (&retained.taken, &candidate_edge.protocol),
+                                (Taken::Stutter, None)
+                                    | (Taken::Protocol(_), Some(_))
+                                    | (Taken::ProtocolTraces(_), Some(_))
+                            )
+                    });
+                if !witnessed {
+                    return Err(End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "retained-product-edge-has-coherent-candidate-witness",
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// FR-148's first assumption-relation slice: find a paired lasso that
+    /// satisfies the protocol's environment assumptions and violates a
+    /// concrete `assume` class. The paired graph retains one candidate per
+    /// vertex, so incompatible protocol paths are never unioned.
+    fn protocol_assumption_strengthening(&mut self) -> Result<(), End> {
+        let Some(protocol) = self.abstract_protocol else {
+            return Ok(());
+        };
+        let concrete_fairness: Vec<_> = self
+            .refinement
+            .concrete_operation_fairness()
+            .cloned()
+            .collect();
+        if concrete_fairness.is_empty() {
+            return Ok(());
+        }
+        let protocol_fairness = protocol
+            .environment_fairness()
+            .map_err(|_| fault("the-admitted-protocol-fairness-set-builds"))?;
+
+        let (candidates, initial) = self.candidate_graph()?;
+        if candidates.is_empty() || initial.is_empty() {
+            return Err(End::Fault(InternalFault::new(
+                "refinement-check",
+                "protocol-assumption-graph-has-initials",
+            )));
+        }
+
+        let mut enabled_by_node = Vec::with_capacity(candidates.len());
+        let mut pair_keys = BTreeSet::<PairedIdentityKey>::new();
+        let mut concrete_by_key = BTreeMap::<Vec<u8>, ModelTransition>::new();
+        let mut protocol_by_key =
+            BTreeMap::<Vec<u8>, qsl_eval::simulation::protocol::ProtocolTransition>::new();
+        for node in &candidates {
+            let concrete = self.nodes[node.product]
+                .edges
+                .iter()
+                .filter_map(|edge| edge.transition.as_ref())
+                .map(|transition| {
+                    self.concrete
+                        .transition_key(transition)
+                        .map(|key| (key, transition.clone()))
+                        .map_err(|_| fault("a-concrete-assumption-transition-has-a-key"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let expansion = protocol
+                .successors(&node.candidate)
+                .map_err(|stop| self.expansion_stop(stop))?;
+            if expansion
+                .findings
+                .iter()
+                .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+            {
+                return Err(End::Undecided(SafetyUndecided::Undetermined(
+                    Undetermined::UndecidedSuccessor,
+                )));
+            }
+            self.transitions = self.transitions.saturating_add(expansion.successors.len());
+            if self.transitions > self.limits.limits.max_transitions {
+                return Err(Self::stopped(
+                    ModelCheckLimit::MaxTransitions,
+                    widen(self.limits.limits.max_transitions),
+                ));
+            }
+            let mut protocol_enabled = Vec::with_capacity(expansion.successors.len());
+            for (transition, _) in expansion.successors {
+                let key = protocol
+                    .transition_key(&transition)
+                    .map_err(|_| fault("a-protocol-assumption-transition-has-a-key"))?;
+                protocol_by_key.insert(key.clone(), transition);
+                protocol_enabled.push(key);
+            }
+            let mut concrete_enabled = Vec::with_capacity(concrete.len());
+            for (key, transition) in concrete {
+                concrete_by_key.insert(key.clone(), transition);
+                concrete_enabled.push(key);
+            }
+            for key in &concrete_enabled {
+                pair_keys.insert((Some(key.clone()), None));
+            }
+            for key in &protocol_enabled {
+                pair_keys.insert((None, Some(key.clone())));
+            }
+            for edge in &node.edges {
+                let concrete_key = edge
+                    .concrete
+                    .as_ref()
+                    .map(|transition| {
+                        self.concrete
+                            .transition_key(transition)
+                            .map_err(|_| fault("a-concrete-assumption-edge-has-a-key"))
+                    })
+                    .transpose()?;
+                let protocol_key = edge
+                    .protocol
+                    .as_ref()
+                    .map(|transition| {
+                        protocol
+                            .transition_key(transition)
+                            .map_err(|_| fault("a-protocol-assumption-edge-has-a-key"))
+                    })
+                    .transpose()?;
+                if concrete_key.is_some() || protocol_key.is_some() {
+                    pair_keys.insert((concrete_key, protocol_key));
+                }
+            }
+            enabled_by_node.push((concrete_enabled, protocol_enabled));
+        }
+        let identities: BTreeMap<_, _> = pair_keys
+            .into_iter()
+            .enumerate()
+            .map(|(index, key)| {
+                u64::try_from(index)
+                    .map(|number| (key, Identity::new(number)))
+                    .map_err(|_| fault("paired-assumption-identities-fit-u64"))
+            })
+            .collect::<Result<_, _>>()?;
+        let source_ids = |concrete: &Option<Vec<u8>>, abstract_: &Option<Vec<u8>>| {
+            identities
+                .get(&(concrete.clone(), abstract_.clone()))
+                .copied()
+                .ok_or_else(|| fault("paired-assumption-identity-is-numbered"))
+        };
+        let mut graph = Graph::new();
+        let mut vertices = Vec::with_capacity(candidates.len());
+        for (index, node) in candidates.iter().enumerate() {
+            let (concrete, abstract_) = &enabled_by_node[index];
+            let mut ids = concrete
+                .iter()
+                .map(|key| source_ids(&Some(key.clone()), &None))
+                .chain(
+                    abstract_
+                        .iter()
+                        .map(|key| source_ids(&None, &Some(key.clone()))),
+                )
+                .collect::<Result<Vec<_>, _>>()?;
+            for edge in &node.edges {
+                let concrete_key = edge
+                    .concrete
+                    .as_ref()
+                    .map(|transition| {
+                        self.concrete
+                            .transition_key(transition)
+                            .map_err(|_| fault("a-concrete-assumption-edge-has-a-key"))
+                    })
+                    .transpose()?;
+                let protocol_key = edge
+                    .protocol
+                    .as_ref()
+                    .map(|transition| {
+                        protocol
+                            .transition_key(transition)
+                            .map_err(|_| fault("a-protocol-assumption-edge-has-a-key"))
+                    })
+                    .transpose()?;
+                if concrete_key.is_some() || protocol_key.is_some() {
+                    ids.push(source_ids(&concrete_key, &protocol_key)?);
+                }
+            }
+            ids.sort_unstable();
+            ids.dedup();
+            vertices.push(graph.add_vertex(ids));
+        }
+        for (source, node) in candidates.iter().enumerate() {
+            for edge in &node.edges {
+                let concrete_key = edge
+                    .concrete
+                    .as_ref()
+                    .map(|transition| {
+                        self.concrete
+                            .transition_key(transition)
+                            .map_err(|_| fault("a-concrete-assumption-edge-has-a-key"))
+                    })
+                    .transpose()?;
+                let protocol_key = edge
+                    .protocol
+                    .as_ref()
+                    .map(|transition| {
+                        protocol
+                            .transition_key(transition)
+                            .map_err(|_| fault("a-protocol-assumption-edge-has-a-key"))
+                    })
+                    .transpose()?;
+                let label = if concrete_key.is_none() && protocol_key.is_none() {
+                    EdgeLabel::Stutter
+                } else {
+                    EdgeLabel::Transition(source_ids(&concrete_key, &protocol_key)?)
+                };
+                graph
+                    .add_edge(vertices[source], vertices[edge.target], label)
+                    .map_err(|_| fault("paired-assumption-edge-joins-existing-vertices"))?;
+            }
+        }
+
+        let protocol_keys: Vec<_> = protocol_by_key.keys().cloned().collect();
+        let protocol_transitions: Vec<_> = protocol_keys
+            .iter()
+            .map(|key| protocol_by_key[key].clone())
+            .collect();
+        let protocol_source_ids: BTreeMap<_, _> = protocol_keys
+            .iter()
+            .enumerate()
+            .map(|(index, key)| {
+                u64::try_from(index)
+                    .map(|number| (key.clone(), Identity::new(number)))
+                    .map_err(|_| fault("protocol-assumption-identities-fit-u64"))
+            })
+            .collect::<Result<_, _>>()?;
+        let protocol_source_constraints = qsl_eval::simulation::protocol::protocol_constraints(
+            &protocol_fairness,
+            &protocol_transitions,
+            |transition| {
+                let key = protocol.transition_key(transition).map_err(|_| {
+                    InternalFault::new(
+                        "refinement-check",
+                        "protocol-assumption-transition-has-a-key",
+                    )
+                })?;
+                protocol_source_ids.get(&key).copied().ok_or_else(|| {
+                    InternalFault::new(
+                        "refinement-check",
+                        "protocol-assumption-transition-is-numbered",
+                    )
+                })
+            },
+        )
+        .map_err(|_| fault("protocol-assumption-classes-resolve"))?;
+        let mut specification_constraints = Vec::new();
+        let mut specification_identities = Vec::new();
+        for (member_index, source_constraint) in protocol_source_constraints {
+            let Some(member) = protocol_fairness.get(member_index) else {
+                return Err(fault("protocol-assumption-class-names-its-member").into());
+            };
+            let mut taken_members = Vec::new();
+            let mut loaded_members = Vec::new();
+            let mut selected_class = None;
+            for (key, transition) in protocol_keys.iter().zip(&protocol_transitions) {
+                let source_identity = protocol_source_ids[key];
+                let source_label = EdgeLabel::Transition(source_identity);
+                let takes = source_constraint.is_taken_by(source_label);
+                let loads = source_constraint.is_owed_by(source_label);
+                if !takes && !loads {
+                    continue;
+                }
+                if selected_class.is_none() {
+                    selected_class = member.class_of(transition);
+                }
+                for ((_, paired_protocol), paired_identity) in &identities {
+                    if paired_protocol.as_ref() == Some(key) {
+                        if takes {
+                            taken_members.push(*paired_identity);
+                        }
+                        if loads {
+                            loaded_members.push(*paired_identity);
+                        }
+                    }
+                }
+            }
+            let resolved = match source_constraint.obligation() {
+                qsl_eval::fairness::Obligation::Enablement(_) => {
+                    qsl_eval::fairness::Constraint::new(
+                        source_constraint.strength(),
+                        taken_members.iter().copied(),
+                    )
+                }
+                qsl_eval::fairness::Obligation::Visibility { .. } => {
+                    qsl_eval::fairness::Constraint::visibility(
+                        loaded_members,
+                        taken_members.iter().copied(),
+                    )
+                }
+            };
+            specification_constraints.push(resolved);
+            let origin = match member.origin() {
+                qsl_eval::simulation::protocol::FairnessOrigin::Authored => {
+                    qsl_replay::AssumptionOrigin::Authored
+                }
+                qsl_eval::simulation::protocol::FairnessOrigin::Scheduler => {
+                    qsl_replay::AssumptionOrigin::Scheduler
+                }
+                qsl_eval::simulation::protocol::FairnessOrigin::Memory => {
+                    qsl_replay::AssumptionOrigin::Memory
+                }
+            };
+            specification_identities.push(qsl_replay::AssumptionIdentity {
+                side: qsl_replay::AssumptionSide::Specification,
+                origin,
+                kind: member.kind(),
+                granularity: member.granularity(),
+                target: qsl_replay::AssumptionTarget::Protocol(member.clone()),
+                selected: selected_class.map(qsl_replay::AssumptionSelectedMember::Protocol),
+            });
+        }
+
+        let mut reachable = BTreeSet::new();
+        let mut prefix_roots = BTreeMap::new();
+        let mut prefix_parent = BTreeMap::<usize, (usize, usize)>::new();
+        let mut queue = VecDeque::new();
+        for root in &initial {
+            prefix_roots.insert(*root, *root);
+            reachable.insert(vertices[*root]);
+            queue.push_back(*root);
+        }
+        while let Some(from) = queue.pop_front() {
+            for (edge_index, edge) in candidates[from].edges.iter().enumerate() {
+                let to = edge.target;
+                if prefix_roots.contains_key(&to) {
+                    continue;
+                }
+                prefix_roots.insert(to, prefix_roots[&from]);
+                reachable.insert(vertices[to]);
+                prefix_parent.insert(to, (from, edge_index));
+                queue.push_back(to);
+            }
+        }
+        for assumption in &concrete_fairness {
+            let operation = assumption.operation();
+            let text = self
+                .concrete
+                .operation_text(operation.declaring_type(), operation.name())
+                .ok_or_else(|| fault("a-checked-assume-names-a-concrete-operation"))?;
+            let selected: Vec<_> = concrete_by_key
+                .iter()
+                .filter(|(_, transition)| transition.operation() == text)
+                .map(|(key, transition)| (key.clone(), transition.clone()))
+                .collect();
+            let groups: Vec<Vec<(Vec<u8>, ModelTransition)>> = match assumption.granularity() {
+                quire_semantic_value::fairness::FairnessGranularity::Whole => {
+                    vec![selected.clone()]
+                }
+                quire_semantic_value::fairness::FairnessGranularity::Each => selected
+                    .iter()
+                    .cloned()
+                    .map(|transition| vec![transition])
+                    .collect(),
+            };
+            for group in groups {
+                let group_keys: BTreeSet<_> = group.iter().map(|(key, _)| key.clone()).collect();
+                let members: Vec<_> = identities
+                    .iter()
+                    .filter_map(|((concrete_key, _), identity)| {
+                        concrete_key
+                            .as_ref()
+                            .filter(|key| group_keys.contains(*key))
+                            .map(|_| *identity)
+                    })
+                    .collect();
+                let constraint = qsl_eval::fairness::Constraint::new(
+                    qsl_eval::fairness::Strength::from(assumption.kind()),
+                    members,
+                );
+                let enabled: BTreeSet<_> = reachable
+                    .iter()
+                    .copied()
+                    .filter(|vertex| {
+                        constraint.is_enabled_in(graph.enabled(*vertex).unwrap_or(&BTreeSet::new()))
+                            == Some(true)
+                    })
+                    .collect();
+                let mut reduced = Graph::new();
+                for vertex in graph.vertices() {
+                    reduced.add_vertex(graph.enabled(vertex).into_iter().flatten().copied());
+                }
+                for from in graph.vertices() {
+                    for edge in graph.edges_from(from) {
+                        if constraint.is_taken_by(edge.label) {
+                            continue;
+                        }
+                        if assumption.kind() == FairnessKind::Weak
+                            && (!enabled.contains(&from) || !enabled.contains(&edge.target))
+                        {
+                            continue;
+                        }
+                        reduced
+                            .add_edge(from, edge.target, edge.label)
+                            .map_err(|_| {
+                                fault("filtered-assumption-edge-joins-existing-vertices")
+                            })?;
+                    }
+                }
+                if assumption.kind() == FairnessKind::Strong {
+                    reduced
+                        .add_acceptance_set(enabled.iter().copied())
+                        .map_err(|_| {
+                            fault("strong-assumption-acceptance-uses-existing-vertices")
+                        })?;
+                }
+                let analyses = match analyze(
+                    &reduced,
+                    &reachable,
+                    &specification_constraints,
+                    self.cancel,
+                ) {
+                    Ok(analyses) => analyses,
+                    Err(FairnessError::Cancelled) => {
+                        self.poll()?;
+                        return Err(End::Fault(InternalFault::new(
+                            "refinement-check",
+                            "a-cancelled-run-has-a-cause",
+                        )));
+                    }
+                    Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
+                        return Err(
+                            fault("assumption-fairness-analysis-uses-the-paired-graph").into()
+                        );
+                    }
+                };
+                let Some(passing) = Analysis::first_fair_in(&analyses) else {
+                    continue;
+                };
+                let component: BTreeSet<_> = passing.vertices().iter().copied().collect();
+                let witness_at = *passing
+                    .vertices()
+                    .first()
+                    .ok_or_else(|| fault("a-fair-assumption-component-has-a-vertex"))?;
+                let fair_model = FairModel {
+                    graph: reduced,
+                    constraints: specification_constraints.clone(),
+                };
+                let loop_edges =
+                    fair_model.greedy_loop(&component, passing.removed(), witness_at)?;
+                let identity = qsl_replay::AssumptionIdentity {
+                    side: qsl_replay::AssumptionSide::Implementation,
+                    origin: qsl_replay::AssumptionOrigin::Authored,
+                    kind: assumption.kind(),
+                    granularity: assumption.granularity(),
+                    target: qsl_replay::AssumptionTarget::Model(assumption.clone()),
+                    selected: (assumption.granularity()
+                        == quire_semantic_value::fairness::FairnessGranularity::Each)
+                        .then(|| {
+                            group.first().map(|(_, transition)| {
+                                qsl_replay::AssumptionSelectedMember::Model(transition.clone())
+                            })
+                        })
+                        .flatten(),
+                };
+                let root = *prefix_roots
+                    .get(&witness_at.index())
+                    .ok_or_else(|| fault("fair-assumption-component-is-reachable"))?;
+                let mut prefix_edges = Vec::new();
+                let mut cursor = witness_at.index();
+                while cursor != root {
+                    let (parent, edge_index) = *prefix_parent
+                        .get(&cursor)
+                        .ok_or_else(|| fault("assumption-prefix-has-a-parent-edge"))?;
+                    prefix_edges.push((parent, edge_index));
+                    cursor = parent;
+                }
+                prefix_edges.reverse();
+                let loop_entry = prefix_edges.len();
+                let mut paired_edges: Vec<_> = prefix_edges
+                    .into_iter()
+                    .map(|(source, edge)| (source, candidates[source].edges[edge].clone()))
+                    .collect();
+                for (source, graph_edge) in &loop_edges {
+                    let source = source.index();
+                    let target = graph_edge.target.index();
+                    let edge = candidates[source]
+                        .edges
+                        .iter()
+                        .find(|edge| {
+                            if edge.target != target {
+                                return false;
+                            }
+                            let concrete_key = edge.concrete.as_ref().and_then(|transition| {
+                                self.concrete.transition_key(transition).ok()
+                            });
+                            let protocol_key = edge
+                                .protocol
+                                .as_ref()
+                                .and_then(|transition| protocol.transition_key(transition).ok());
+                            if concrete_key.is_none() && protocol_key.is_none() {
+                                graph_edge.label == EdgeLabel::Stutter
+                            } else {
+                                identities.get(&(concrete_key, protocol_key)).is_some_and(
+                                    |identity| graph_edge.label == EdgeLabel::Transition(*identity),
+                                )
+                            }
+                        })
+                        .cloned()
+                        .ok_or_else(|| fault("assumption-lasso-edge-is-a-paired-product-edge"))?;
+                    paired_edges.push((source, edge));
+                }
+                let path = self.paired_assumption_path(
+                    &candidates,
+                    root,
+                    paired_edges,
+                    Some(loop_entry),
+                    protocol,
+                )?;
+                return Err(End::Undecided(
+                    SafetyUndecided::ProtocolAssumptionNotEstablished(Box::new(
+                        qsl_replay::ProtocolAssumptionWitness {
+                            reason: qsl_replay::ProtocolAssumptionReason::Strengthened,
+                            identities: std::iter::once(identity)
+                                .chain(specification_identities.iter().cloned())
+                                .collect(),
+                            path,
+                            undecided_locus: None,
+                        },
+                    )),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn paired_assumption_path(
+        &self,
+        candidates: &[CandidateNode],
+        root: usize,
+        edges: Vec<(usize, CandidateEdge)>,
+        loop_entry: Option<usize>,
+        protocol: &AbstractProtocolSystem<'_>,
+    ) -> Result<qsl_replay::PairedAssumptionPath, End> {
+        let Some(root_node) = candidates.get(root) else {
+            return Err(fault("assumption-witness-root-is-a-candidate").into());
+        };
+        let (_, concrete_initial) = self
+            .concrete
+            .state_key(&self.nodes[root_node.product].state)
+            .map_err(|_| fault("assumption-witness-concrete-initial-has-a-key"))?;
+        let (protocol_initial, _) = protocol
+            .state_key(&root_node.candidate)
+            .map_err(|_| fault("assumption-witness-protocol-initial-has-a-key"))?;
+        let mut steps = Vec::with_capacity(edges.len());
+        for (_, edge) in edges {
+            let Some(post) = candidates.get(edge.target) else {
+                return Err(fault("assumption-witness-edge-target-is-a-candidate").into());
+            };
+            let (_, concrete_post) = self
+                .concrete
+                .state_key(&self.nodes[post.product].state)
+                .map_err(|_| fault("assumption-witness-concrete-post-has-a-key"))?;
+            let (protocol_post, _) = protocol
+                .state_key(&post.candidate)
+                .map_err(|_| fault("assumption-witness-protocol-post-has-a-key"))?;
+            let protocol_transition = edge
+                .protocol
+                .as_ref()
+                .map(|transition| protocol.transition_key(transition))
+                .transpose()
+                .map_err(|_| fault("assumption-witness-protocol-transition-has-a-key"))?;
+            steps.push(qsl_replay::PairedAssumptionStep {
+                concrete: edge.concrete,
+                concrete_post,
+                protocol: protocol_transition,
+                protocol_post,
+            });
+        }
+        Ok(qsl_replay::PairedAssumptionPath {
+            concrete_initial,
+            protocol_initial,
+            steps,
+            loop_entry,
+        })
+    }
+
+    fn paired_assumption_prefix_to(
+        &mut self,
+        target_product: usize,
+        protocol: &AbstractProtocolSystem<'_>,
+    ) -> Result<qsl_replay::PairedAssumptionPath, End> {
+        let (candidates, initial) = self.candidate_graph()?;
+        let target = candidates
+            .iter()
+            .position(|candidate| candidate.product == target_product)
+            .ok_or_else(|| fault("undetermined-assumption-state-has-a-protocol-candidate"))?;
+        let mut parent = BTreeMap::<usize, (usize, usize)>::new();
+        let mut roots = BTreeMap::new();
+        let mut seen = BTreeSet::new();
+        let mut queue = VecDeque::new();
+        for root in initial {
+            roots.insert(root, root);
+            seen.insert(root);
+            queue.push_back(root);
+        }
+        while let Some(from) = queue.pop_front() {
+            if from == target {
+                break;
+            }
+            for (edge_index, edge) in candidates[from].edges.iter().enumerate() {
+                if seen.insert(edge.target) {
+                    roots.insert(edge.target, roots[&from]);
+                    parent.insert(edge.target, (from, edge_index));
+                    queue.push_back(edge.target);
+                }
+            }
+        }
+        let root = *roots
+            .get(&target)
+            .ok_or_else(|| fault("undetermined-assumption-state-is-reachable"))?;
+        let mut edges = Vec::new();
+        let mut cursor = target;
+        while cursor != root {
+            let (from, edge_index) = *parent
+                .get(&cursor)
+                .ok_or_else(|| fault("undetermined-assumption-prefix-has-a-parent"))?;
+            edges.push((from, candidates[from].edges[edge_index].clone()));
+            cursor = from;
+        }
+        edges.reverse();
+        self.paired_assumption_path(&candidates, root, edges, None, protocol)
     }
 
     fn protocol_divergence_counterexample(
@@ -655,6 +1631,113 @@ impl Run<'_, '_> {
             .concrete
             .successors(&self.nodes[at].state)
             .map_err(|stop| self.expansion_stop(stop))?;
+        if let Some((transition, clause)) = expansion.findings.iter().find_map(|finding| {
+            let ModelFinding::ContractUndetermined {
+                transition, clause, ..
+            } = finding
+            else {
+                return None;
+            };
+            self.refinement
+                .concrete_operation_fairness()
+                .find(|assumption| {
+                    let operation = assumption.operation();
+                    self.concrete
+                        .operation_text(operation.declaring_type(), operation.name())
+                        == Some(transition.operation())
+                })
+                .map(|_| (transition.clone(), clause.clone()))
+        }) {
+            if let Some(protocol) = self.abstract_protocol {
+                let Some(assumption) =
+                    self.refinement
+                        .concrete_operation_fairness()
+                        .find(|assumption| {
+                            let operation = assumption.operation();
+                            self.concrete
+                                .operation_text(operation.declaring_type(), operation.name())
+                                == Some(transition.operation())
+                        })
+                else {
+                    return Err(End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "undetermined-assumption-has-a-checked-class",
+                    )));
+                };
+                let implementation = qsl_replay::AssumptionIdentity {
+                    side: qsl_replay::AssumptionSide::Implementation,
+                    origin: qsl_replay::AssumptionOrigin::Authored,
+                    kind: assumption.kind(),
+                    granularity: assumption.granularity(),
+                    target: qsl_replay::AssumptionTarget::Model(assumption.clone()),
+                    selected: (assumption.granularity()
+                        == quire_semantic_value::fairness::FairnessGranularity::Each)
+                        .then(|| qsl_replay::AssumptionSelectedMember::Model(transition.clone())),
+                };
+                let mut specification = Vec::new();
+                for assumption in protocol
+                    .environment_fairness()
+                    .map_err(|_| fault("the-admitted-protocol-fairness-set-builds"))?
+                {
+                    let origin = match assumption.origin() {
+                        qsl_eval::simulation::protocol::FairnessOrigin::Authored => {
+                            qsl_replay::AssumptionOrigin::Authored
+                        }
+                        qsl_eval::simulation::protocol::FairnessOrigin::Scheduler => {
+                            qsl_replay::AssumptionOrigin::Scheduler
+                        }
+                        qsl_eval::simulation::protocol::FairnessOrigin::Memory => {
+                            qsl_replay::AssumptionOrigin::Memory
+                        }
+                    };
+                    let selected_classes =
+                        if assumption.granularity()
+                            == quire_semantic_value::fairness::FairnessGranularity::Whole
+                        {
+                            vec![None]
+                        } else {
+                            let mut classes = BTreeSet::new();
+                            for candidate in &self.nodes[at].position.abstract_protocol_states {
+                                let successors = protocol.successors(candidate).map_err(|_| {
+                                    fault("undetermined-protocol-assumption-candidates-expand")
+                                })?;
+                                classes.extend(successors.successors.into_iter().filter_map(
+                                    |(transition, _)| assumption.class_of(&transition),
+                                ));
+                            }
+                            classes
+                                .into_iter()
+                                .map(|class| {
+                                    Some(qsl_replay::AssumptionSelectedMember::Protocol(class))
+                                })
+                                .collect()
+                        };
+                    for selected in selected_classes {
+                        specification.push(qsl_replay::AssumptionIdentity {
+                            side: qsl_replay::AssumptionSide::Specification,
+                            origin,
+                            kind: assumption.kind(),
+                            granularity: assumption.granularity(),
+                            target: qsl_replay::AssumptionTarget::Protocol(assumption.clone()),
+                            selected,
+                        });
+                    }
+                }
+                let path = self.paired_assumption_prefix_to(at, protocol)?;
+                return Err(End::Undecided(
+                    SafetyUndecided::ProtocolAssumptionNotEstablished(Box::new(
+                        qsl_replay::ProtocolAssumptionWitness {
+                            reason: qsl_replay::ProtocolAssumptionReason::RelationUndetermined,
+                            identities: std::iter::once(implementation)
+                                .chain(specification)
+                                .collect(),
+                            path,
+                            undecided_locus: Some(format!("ContractUndetermined:{clause}")),
+                        },
+                    )),
+                ));
+            }
+        }
         if expansion
             .findings
             .iter()
@@ -754,6 +1837,57 @@ impl Run<'_, '_> {
             });
         }
         self.nodes[at].edges = listed;
+        if let Some(protocol) = self.abstract_protocol {
+            let relation = check_protocol_state_relations(
+                self.refinement,
+                self.concrete,
+                protocol,
+                &self.nodes[at].position,
+                &self.nodes[at].state,
+                &self.nodes[at].edges,
+                widen(self.nodes[at].depth),
+            );
+            let relation = match relation {
+                Ok(relation) => relation,
+                Err(ProtocolRelationError::Expansion(stop)) => {
+                    return Err(self.expansion_stop(stop));
+                }
+                Err(ProtocolRelationError::Fault(fault)) => return Err(End::Fault(fault)),
+            };
+            let expanded = match &relation {
+                ProtocolStateRelation::Decided { expanded, .. }
+                | ProtocolStateRelation::Undetermined { expanded } => *expanded,
+            };
+            self.transitions = self
+                .transitions
+                .saturating_add(usize::try_from(expanded).unwrap_or(usize::MAX));
+            if self.transitions > self.limits.limits.max_transitions {
+                return Err(Self::stopped(
+                    ModelCheckLimit::MaxTransitions,
+                    widen(self.limits.limits.max_transitions),
+                ));
+            }
+            match relation {
+                ProtocolStateRelation::Decided {
+                    failure: Some(failure),
+                    ..
+                } => {
+                    return Err(End::Violated(Box::new(Failure {
+                        from: Some(at),
+                        edge: None,
+                        initial_index: self.nodes[at].initial_index,
+                        failure,
+                        kind: CounterexampleKind::Formula,
+                    })));
+                }
+                ProtocolStateRelation::Undetermined { .. } => {
+                    return Err(End::Undecided(SafetyUndecided::Undetermined(
+                        Undetermined::UndecidedSuccessor,
+                    )));
+                }
+                ProtocolStateRelation::Decided { failure: None, .. } => {}
+            }
+        }
         Ok(())
     }
 

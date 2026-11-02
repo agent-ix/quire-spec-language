@@ -208,6 +208,54 @@ pub(crate) fn document() -> Vec<u8> {
     .into_bytes()
 }
 
+/// The `Cell` value domain used when a refinement has no abstract `Core` or
+/// `Spare` counterpart.
+pub(crate) fn cell_document() -> Vec<u8> {
+    let mut value: Json = serde_json::from_slice(&document()).expect("litmus document JSON");
+    value["types"]
+        .as_array_mut()
+        .expect("types")
+        .retain(|node| node["identity"] == ident("Level") || node["identity"] == ident("Cell"));
+    value["populations"]
+        .as_array_mut()
+        .expect("populations")
+        .retain(|population| population["identity"] == ident("cells"));
+    value.to_string().into_bytes()
+}
+
+/// A single admitted `Cell` state and its package provision.
+pub(crate) struct CellDocuments {
+    pub(crate) packages: qsl_semantics::model::intake::PackageInput,
+    pub(crate) snapshots: qsl_semantics::model::observation::DocumentProvision,
+    pub(crate) initial: DocumentRef,
+    pub(crate) keys: Vec<String>,
+}
+
+impl CellDocuments {
+    /// Cell `x` (`id` 0) with `v = w = 0`.
+    pub(crate) fn new() -> Self {
+        let int = |value: i64| json!({"integer": value.to_string()});
+        let snapshot = json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": "s0-cell", "revision_namespace": "fixture", "revision": "fixture:1"},
+            "observation": "current", "model": {"identity": PACKAGE},
+            "anchor": {"kind": "initialization", "name": "start"},
+            "populations": [{"population": ident("cells"), "complete": true,
+                "objects": [{"key": "c", "type": ident("Cell"),
+                    "fields": {"id": int(0), "v": int(0), "w": int(0)}}]}],
+        });
+        let bytes = snapshot.to_string().into_bytes();
+        let initial = qsl_semantics::model::observation::document_reference(&bytes)
+            .expect("snapshot refers to itself");
+        Self {
+            packages: package_input([cell_document().as_slice()]).expect("cell package input"),
+            snapshots: BTreeMap::from([(initial.clone(), bytes)]),
+            initial,
+            keys: vec!["c".to_owned()],
+        }
+    }
+}
+
 /// The contracts: `IsX`/`IsY`/`IsZ` select a cell, `StoreZero` stores 0,
 /// `StoreOne` stores 1, `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
 /// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
@@ -279,14 +327,50 @@ pub(crate) fn protocol_profiled_package(body: &str) -> CheckedPackage {
     package_with(PROTOCOL_PROFILE, body)
 }
 
+/// The protocol-profiled package with checked abstract refinement internals.
+pub(crate) fn protocol_profiled_package_with_internals(
+    body: &str,
+    internals: serde_json::Value,
+) -> CheckedPackage {
+    package_with_internals(PROTOCOL_PROFILE, body, Some(internals))
+}
+
+/// Build a protocol-profiled package from the litmus package plus additional
+/// admitted domain packages.
+pub(crate) fn protocol_package_with_provisions(
+    body: &str,
+    packages: qsl_semantics::model::intake::PackageInput,
+    internals: serde_json::Value,
+) -> CheckedPackage {
+    let text = unit_text_with(PROTOCOL_PROFILE, body);
+    package_with_provisions(&text, body, packages, Some(internals))
+}
+
 /// The header line selecting the protocol profile.
 pub(crate) const PROTOCOL_PROFILE: &str = "profile pp = \"quire.protocol.finite-global/v1\";\n";
 
 /// The checked package of `body` under the header's further `profiles`.
 fn package_with(profiles: &str, body: &str) -> CheckedPackage {
+    package_with_internals(profiles, body, None)
+}
+
+fn package_with_internals(
+    profiles: &str,
+    body: &str,
+    internals: Option<serde_json::Value>,
+) -> CheckedPackage {
     let document = document();
     let text = unit_text_with(profiles, body);
     let packages = package_input([document.as_slice()]).unwrap();
+    package_with_provisions(&text, body, packages, internals)
+}
+
+fn package_with_provisions(
+    text: &str,
+    body: &str,
+    packages: qsl_semantics::model::intake::PackageInput,
+    internals: Option<serde_json::Value>,
+) -> CheckedPackage {
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "litmus", "git", "1"),
         "litmus.native",
@@ -310,16 +394,21 @@ fn package_with(profiles: &str, body: &str) -> CheckedPackage {
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    let graph = PackageDeclarations::assemble(
+    let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         "package".to_owned(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles")
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    .expect("the unit assembles");
+    let declarations = match internals {
+        Some(internals) => declarations.with_refinement_internals(internals),
+        None => declarations.with_unwritten_refinements(),
+    };
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
 
@@ -393,27 +482,34 @@ pub(crate) struct Documents {
     pub(crate) initial: DocumentRef,
     /// Whether the universe also holds the `Spare` object `z`.
     spare: bool,
+    /// Whether the initial model holds the `Core` instance.
+    has_core: bool,
 }
 
 impl Documents {
     /// Cells `x` (`id` 0) and `y` (`id` 1) at `v = w = 0`, and `core` with
     /// every register at 3, "not yet read".
     pub(crate) fn new() -> Self {
-        Self::build(&["x", "y"], false)
+        Self::build(&["x", "y"], false, true)
     }
 
     /// [`Self::new`] with the cells `cells` (`x`, `y`, `z` in `id` order 0, 1, 2).
     pub(crate) fn with_cells(cells: &[&'static str]) -> Self {
-        Self::build(cells, false)
+        Self::build(cells, false, true)
+    }
+
+    /// [`Self::with_cells`] without the `Core` object.
+    pub(crate) fn cells_without_core(cells: &[&'static str]) -> Self {
+        Self::build(cells, false, false)
     }
 
     /// [`Self::new`] with the `Spare` object `z`, which no operation touches,
     /// in the universe.
     pub(crate) fn with_spare_cell() -> Self {
-        Self::build(&["x", "y"], true)
+        Self::build(&["x", "y"], true, true)
     }
 
-    fn build(cells: &[&'static str], spare: bool) -> Self {
+    fn build(cells: &[&'static str], spare: bool, has_core: bool) -> Self {
         let int = |value: i64| json!({"integer": value.to_string()});
         let cell = |key: &str, id: i64| {
             json!({"key": key, "type": ident("Cell"),
@@ -431,6 +527,12 @@ impl Documents {
         } else {
             Vec::new()
         };
+        let cores: Vec<Json> = if has_core {
+            vec![json!({"key": "core", "type": ident("Core"),
+                "fields": {"r1": int(3), "r2": int(3), "r3": int(3), "r4": int(3)}})]
+        } else {
+            Vec::new()
+        };
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -441,10 +543,7 @@ impl Documents {
                 {"population": ident("spares"), "complete": true, "objects": spares},
                 {"population": ident("cells"), "complete": true,
                     "objects": objects},
-                {"population": ident("cores"), "complete": true,
-                    "objects": [{"key": "core", "type": ident("Core"),
-                        "fields": {"r1": int(3), "r2": int(3), "r3": int(3),
-                            "r4": int(3)}}]},
+                {"population": ident("cores"), "complete": true, "objects": cores},
             ],
         });
         let bytes = snapshot.to_string().into_bytes();
@@ -463,6 +562,7 @@ impl Documents {
                 revision: "fixture:1".to_owned(),
             },
             spare,
+            has_core,
         }
     }
 
@@ -484,7 +584,11 @@ impl Documents {
             },
             PopulationUniverse {
                 population: key("cores"),
-                keys: vec!["core".to_owned()],
+                keys: if self.has_core {
+                    vec!["core".to_owned()]
+                } else {
+                    Vec::new()
+                },
             },
         ]
     }

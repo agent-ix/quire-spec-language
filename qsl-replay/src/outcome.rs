@@ -581,6 +581,7 @@ impl ItemCause {
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined
+                | InconclusiveCause::ProtocolAssumptionNotEstablished(_)
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::NoAdmittedBehaviour
                 | InconclusiveCause::LassoNotConcretized

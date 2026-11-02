@@ -7,7 +7,8 @@
 use qsl_eval::model_subject::ProtocolSubject;
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Ra, Sc, SubjectMemory, Tso,
+    ProtocolFairness, ProtocolFairnessError, ProtocolRefusal, ProtocolState, ProtocolSystem,
+    ProtocolTransition, Ra, Sc, SubjectMemory, Tso,
 };
 use qsl_eval::simulation::{
     EncodingRefusal, Expansion, ExpansionStop, SubjectSystem, TransitionSystem,
@@ -105,6 +106,129 @@ impl<'a> AbstractProtocolSystem<'a> {
             ProtocolSystemKind::Sc(system) => system.protocol(),
             ProtocolSystemKind::Tso(system) => system.protocol(),
             ProtocolSystemKind::Ra(system) => system.protocol(),
+        }
+    }
+
+    /// The checked binder names of a step node, in the same order as its
+    /// emitted record. Scalar binders use a one-field observation record.
+    pub fn binder_names(&self, transition: &ProtocolTransition) -> Option<Vec<String>> {
+        let path = transition.node()?;
+        let control = self
+            .protocol()
+            .controls
+            .controls
+            .iter()
+            .find(|control| control.path.join("/") == path)?;
+        Some(
+            self.protocol()
+                .slots
+                .binders
+                .iter()
+                .filter(|binder| binder.node == Some(control.node))
+                .map(|binder| binder.name.clone())
+                .collect(),
+        )
+    }
+
+    /// FR-148's specification environment assumptions: the protocol's
+    /// derived scheduler and memory fairness members. Authored protocol
+    /// constraints are supplied by the checked request when present.
+    pub fn environment_fairness(&self) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
+        match &self.inner {
+            ProtocolSystemKind::Sc(system) => system.fairness_set(&[]),
+            ProtocolSystemKind::Tso(system) => system.fairness_set(&[]),
+            ProtocolSystemKind::Ra(system) => system.fairness_set(&[]),
+        }
+    }
+
+    /// FR-148/FR-379: classify one admitted protocol candidate with its
+    /// checked terminal declaration.
+    pub fn terminal_class(
+        &self,
+        state: &ProtocolCandidate,
+    ) -> Result<Option<qsl_eval::simulation::model::TerminalClass>, ExpansionStop> {
+        self.successors_and_terminal(state)
+            .map(|result| result.map(|(_, terminal)| terminal))
+    }
+
+    /// One bounded expansion and its terminal classification for an
+    /// admitted protocol candidate.
+    pub fn successors_and_terminal(
+        &self,
+        state: &ProtocolCandidate,
+    ) -> Result<
+        Option<(
+            Expansion<ProtocolTransition, ProtocolCandidate, ModelFinding>,
+            qsl_eval::simulation::model::TerminalClass,
+        )>,
+        ExpansionStop,
+    > {
+        match (&self.inner, state) {
+            (ProtocolSystemKind::Sc(system), ProtocolCandidate::Sc(state)) => system
+                .successors_and_terminal(state)
+                .map(|(expansion, terminal)| {
+                    Some((
+                        Expansion {
+                            successors: expansion
+                                .successors
+                                .into_iter()
+                                .map(|(transition, state)| {
+                                    (transition, ProtocolCandidate::Sc(state))
+                                })
+                                .collect(),
+                            findings: expansion.findings,
+                        },
+                        terminal,
+                    ))
+                }),
+            (ProtocolSystemKind::Tso(system), ProtocolCandidate::Tso(state)) => system
+                .successors_and_terminal(state)
+                .map(|(expansion, terminal)| {
+                    Some((
+                        Expansion {
+                            successors: expansion
+                                .successors
+                                .into_iter()
+                                .map(|(transition, state)| {
+                                    (transition, ProtocolCandidate::Tso(state))
+                                })
+                                .collect(),
+                            findings: expansion.findings,
+                        },
+                        terminal,
+                    ))
+                }),
+            (ProtocolSystemKind::Ra(system), ProtocolCandidate::Ra(state)) => system
+                .successors_and_terminal(state)
+                .map(|(expansion, terminal)| {
+                    Some((
+                        Expansion {
+                            successors: expansion
+                                .successors
+                                .into_iter()
+                                .map(|(transition, state)| {
+                                    (transition, ProtocolCandidate::Ra(state))
+                                })
+                                .collect(),
+                            findings: expansion.findings,
+                        },
+                        terminal,
+                    ))
+                }),
+            _ => Ok(None),
+        }
+    }
+
+    /// The protocol transition's complete binder record in its admitted
+    /// typed canonical JSON form.
+    pub fn binder_record_json(
+        &self,
+        transition: &ProtocolTransition,
+    ) -> Result<Option<serde_json::Value>, ExpansionStop> {
+        match &self.inner {
+            ProtocolSystemKind::Sc(system) => system.binder_record_json(transition),
+            ProtocolSystemKind::Tso(system) => system.binder_record_json(transition),
+            ProtocolSystemKind::Ra(system) => system.binder_record_json(transition),
         }
     }
 

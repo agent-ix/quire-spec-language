@@ -53,6 +53,7 @@ impl AbstractClass {
                 transitions.iter().any(|transition| self.covers(transition))
             }
             Taken::Protocol(_) => false,
+            Taken::ProtocolTraces(_) => false,
         }
     }
 }

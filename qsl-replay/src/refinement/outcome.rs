@@ -25,6 +25,9 @@ pub enum SafetyUndecided {
     /// (`mapping-undetermined`), or a contract conjunction of either model
     /// was undecided (`undecided-successor`).
     Undetermined(Undetermined),
+    /// A protocol refinement could not establish its environment-assumption
+    /// implication (FR-148); it is never a refutation or proof.
+    ProtocolAssumptionNotEstablished(Box<super::failure::ProtocolAssumptionWitness>),
 }
 
 impl SafetyUndecided {
@@ -33,6 +36,9 @@ impl SafetyUndecided {
         match self {
             Self::NoInitialState => InconclusiveCause::NoInitialState,
             Self::Undetermined(undetermined) => undetermined.cause(),
+            Self::ProtocolAssumptionNotEstablished(witness) => {
+                InconclusiveCause::ProtocolAssumptionNotEstablished((**witness).clone())
+            }
         }
     }
 }

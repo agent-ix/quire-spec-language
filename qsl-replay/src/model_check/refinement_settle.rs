@@ -39,12 +39,16 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ModelCheckLimits;
 use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
-use crate::model_check::refinement_replay::RefinementTraceSettlement;
+use crate::model_check::refinement_replay::{
+    ProtocolAssumptionReplaySettlement, RefinementTraceSettlement,
+};
 use crate::model_check::settle::{ModelCheckRecord, Row, EXPLICIT_STATE};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
-use crate::refinement::{LivenessHalf, RefinementOutcome, SafetyOutcome};
+use crate::refinement::{
+    LivenessHalf, ProtocolAssumptionWitness, RefinementOutcome, SafetyOutcome, SafetyUndecided,
+};
 
 /// FR-144's terminal record of one refinement item: the item's own record
 /// and the value each half settled.
@@ -91,6 +95,48 @@ pub fn settle_refinement(
     mut replay: impl FnMut(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
 ) -> RefinementRecord {
     let safety = settle_refinement_safety(&outcome.safety, limits, certified, cancel, &mut replay);
+    let liveness = match &outcome.liveness {
+        None => None,
+        Some(LivenessHalf::Unsupported(cause)) => Some(record_of(
+            Row::unsupported(cause.clone()),
+            limits,
+            None,
+            None,
+        )),
+        Some(LivenessHalf::Checked(checked)) => Some(settle_liveness(checked, limits, replay)),
+    };
+    let proved = matches!(safety.value, TerminalValue::Proved { .. });
+    RefinementRecord {
+        safety: Some(safety.value.clone()),
+        liveness: liveness.as_ref().map(|record| record.value.clone()),
+        fault: None,
+        record: match liveness {
+            Some(liveness) if proved => liveness,
+            _ => safety,
+        },
+    }
+}
+
+/// FR-144/FR-145: settle a refinement while replaying typed protocol
+/// assumption-relation witnesses in its safety half.
+pub fn settle_refinement_with_assumption_replay(
+    outcome: &RefinementOutcome,
+    limits: &ModelCheckLimits,
+    certified: &SimulationCertificateRequest<'_>,
+    cancel: &Cancel,
+    mut replay: impl FnMut(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+    replay_assumption: impl FnOnce(
+        &ProtocolAssumptionWitness,
+    ) -> Result<ProtocolAssumptionReplaySettlement, ReplayRefusal>,
+) -> RefinementRecord {
+    let safety = settle_refinement_safety_with_assumption_replay(
+        &outcome.safety,
+        limits,
+        certified,
+        cancel,
+        &mut replay,
+        replay_assumption,
+    );
     let liveness = match &outcome.liveness {
         None => None,
         Some(LivenessHalf::Unsupported(cause)) => Some(record_of(
@@ -255,4 +301,40 @@ pub fn settle_refinement_safety(
         SafetyOutcome::Fault { .. } => Row::failed(),
     };
     record_of(row, limits, depth, counterexample)
+}
+
+/// FR-144/FR-145: settle a protocol refinement's safety half, replaying
+/// typed assumption-relation witnesses before retaining their inconclusive
+/// cause. A witness that does not replay settles by `ReplayParity`; a
+/// replay limit remains V-7.
+pub fn settle_refinement_safety_with_assumption_replay(
+    outcome: &SafetyOutcome,
+    limits: &ModelCheckLimits,
+    certified: &SimulationCertificateRequest<'_>,
+    cancel: &Cancel,
+    replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+    replay_assumption: impl FnOnce(
+        &ProtocolAssumptionWitness,
+    ) -> Result<ProtocolAssumptionReplaySettlement, ReplayRefusal>,
+) -> ModelCheckRecord {
+    let SafetyOutcome::Undecided {
+        cause: SafetyUndecided::ProtocolAssumptionNotEstablished(witness),
+        ..
+    } = outcome
+    else {
+        return settle_refinement_safety(outcome, limits, certified, cancel, replay);
+    };
+    let row = match replay_assumption(witness) {
+        Ok(ProtocolAssumptionReplaySettlement::Reproduced) => Row::inconclusive(
+            SafetyUndecided::ProtocolAssumptionNotEstablished(witness.clone()).cause(),
+        ),
+        Ok(ProtocolAssumptionReplaySettlement::Inconclusive(cause)) => {
+            Row::inconclusive(InconclusiveCause::ReplayParity(cause))
+        }
+        Ok(ProtocolAssumptionReplaySettlement::Stopped(reached)) => {
+            Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached))
+        }
+        Err(refusal) => Row::refused(&refusal),
+    };
+    record_of(row, limits, None, None)
 }

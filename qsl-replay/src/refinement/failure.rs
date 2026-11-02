@@ -2,15 +2,18 @@
 //! ADR-020 RC-1 and QSpec FR-379: the failure a refinement counterexample
 //! names, and the verdict of one step check (FR-141).
 
-use qsl_eval::simulation::protocol::ProtocolTransition;
+use qsl_eval::simulation::protocol::{ProtocolClass, ProtocolFairness, ProtocolTransition};
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
-use quire_semantic_value::fairness::FairnessConstraint;
+use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 use crate::model_check::counterexample::UndefinedEvaluation;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::InconclusiveCause;
 use crate::refinement::map::{MappingRowRef, MappingUndetermined};
+use crate::refinement::protocol_system::ProtocolCandidate;
 
 /// The first check that rejected an abstract transition identity (RS-4).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -87,6 +90,49 @@ pub enum RefinementFailure {
         /// The violated constraint of `F_A`.
         constraint: FairnessConstraint,
     },
+    /// FR-379: a concrete protocol refinement refuses a label that every
+    /// stable abstract candidate enables.
+    RefusalNotPermitted {
+        /// The position of the state, equal to the concrete prefix length.
+        position: u64,
+        /// The canonical visible label refused by the concrete state.
+        label: ObservationLabel,
+    },
+    /// FR-379: concrete and abstract terminal success disagree.
+    TerminalSuccessMismatch {
+        /// The position of the state, equal to the concrete prefix length.
+        position: u64,
+        /// Which side alone marks terminal success.
+        direction: TerminalSuccessDirection,
+    },
+}
+
+/// FR-379's full observation label for protocol refinement refusal checks.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObservationLabel {
+    /// The alias-free FR-432 spelling of the protocol step class.
+    pub step: String,
+    /// The complete binder record in effective field order.
+    pub binder: Vec<ObservationField>,
+}
+
+/// One field/value entry in an [`ObservationLabel`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObservationField {
+    /// The checked field name.
+    pub field: String,
+    /// The full typed value in FR-181's canonical representation.
+    pub value: JsonValue,
+}
+
+/// Which side alone has terminal success at a product state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TerminalSuccessDirection {
+    /// The concrete model is terminal success; no abstract candidate is.
+    ConcreteOnly,
+    /// Every abstract candidate is terminal success; concrete is not.
+    AbstractOnly,
 }
 
 impl RefinementFailure {
@@ -98,7 +144,9 @@ impl RefinementFailure {
             Self::StutterChanged { position }
             | Self::AbstractStepRejected { position, .. }
             | Self::NoAbstractMatch { position }
-            | Self::Undefined { position, .. } => Some(*position),
+            | Self::Undefined { position, .. }
+            | Self::RefusalNotPermitted { position, .. }
+            | Self::TerminalSuccessMismatch { position, .. } => Some(*position),
             Self::Divergence { .. } | Self::AbstractUnfair { .. } => None,
         }
     }
@@ -114,7 +162,35 @@ pub enum Taken {
     Abstract(Vec<ModelTransition>),
     /// Abstract protocol transitions accepted by FR-148.
     Protocol(Vec<ProtocolTransition>),
+    /// Candidate-specific protocol paths, including internal closure steps.
+    /// `candidates[n]` is the state reached by `transitions[n]`.
+    ProtocolTraces(Vec<ProtocolTrace>),
 }
+
+/// One admitted path through an abstract protocol candidate graph.
+#[derive(Clone, Debug)]
+pub struct ProtocolTrace {
+    /// The candidate before the first transition.
+    pub start: ProtocolCandidate,
+    /// Canonical identity of the starting candidate.
+    pub start_key: Vec<u8>,
+    /// The transitions taken from `start`.
+    pub transitions: Vec<ProtocolTransition>,
+    /// The candidate after each matching transition.
+    pub candidates: Vec<ProtocolCandidate>,
+    /// Canonical identity of each reached candidate.
+    pub candidate_keys: Vec<Vec<u8>>,
+}
+
+impl PartialEq for ProtocolTrace {
+    fn eq(&self, other: &Self) -> bool {
+        self.start_key == other.start_key
+            && self.transitions == other.transitions
+            && self.candidate_keys == other.candidate_keys
+    }
+}
+
+impl Eq for ProtocolTrace {}
 
 /// Why a step check is undetermined (ADR-020 RE-4).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -123,6 +199,8 @@ pub enum Undetermined {
     Mapping(Box<MappingUndetermined>),
     /// A contract conjunction of the abstract model could not be decided.
     UndecidedSuccessor,
+    /// FR-148 could not establish its environment-assumption relation.
+    ProtocolAssumptionNotEstablished(Box<ProtocolAssumptionWitness>),
 }
 
 impl Undetermined {
@@ -131,8 +209,120 @@ impl Undetermined {
         match self {
             Self::Mapping(_) => InconclusiveCause::MappingUndetermined,
             Self::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
+            Self::ProtocolAssumptionNotEstablished(witness) => {
+                InconclusiveCause::ProtocolAssumptionNotEstablished((**witness).clone())
+            }
         }
     }
+}
+
+/// FR-148's typed reason for an assumption relation that cannot be established.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolAssumptionReason {
+    /// A paired lasso satisfies the specification assumptions and violates
+    /// an implementation assumption.
+    Strengthened,
+    /// An identified source fairness predicate is undetermined at a reachable
+    /// paired state, and no violating lasso is available.
+    RelationUndetermined,
+}
+
+/// Which admitted system owns one environment assumption.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AssumptionSide {
+    /// Concrete implementation assumptions (`assume`).
+    Implementation,
+    /// Abstract protocol assumptions.
+    Specification,
+}
+
+/// The source of one typed environment assumption.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AssumptionOrigin {
+    /// An authored checked fairness constraint.
+    Authored,
+    /// Derived protocol scheduler fairness.
+    Scheduler,
+    /// Derived protocol memory fairness.
+    Memory,
+}
+
+/// One assumption's checked target and optional selected member identity.
+/// The canonical bytes preserve the source identity without replacing it with
+/// a display name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssumptionIdentity {
+    /// Which side owns the assumption.
+    pub side: AssumptionSide,
+    /// How the source supplied it.
+    pub origin: AssumptionOrigin,
+    /// Weak or strong fairness.
+    pub kind: FairnessKind,
+    /// Whole-class or each-member fairness.
+    pub granularity: FairnessGranularity,
+    /// The exact source-checked target and fairness identity.
+    pub target: AssumptionTarget,
+    /// The selected application or thread identity for an `each` member.
+    pub selected: Option<AssumptionSelectedMember>,
+}
+
+/// The typed checked declaration that owns an assumption.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AssumptionTarget {
+    /// An authored concrete `assume` row.
+    Model(FairnessConstraint),
+    /// An authored or derived protocol fairness member.
+    Protocol(ProtocolFairness),
+}
+
+/// A selected class identity for an `each` fairness member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AssumptionSelectedMember {
+    /// A concrete operation application identity.
+    Model(ModelTransition),
+    /// A protocol application or thread identity.
+    Protocol(ProtocolClass),
+}
+
+/// One edge of a paired implementation/protocol path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PairedAssumptionStep {
+    /// The concrete model transition, or `None` for its terminal stutter.
+    pub concrete: Option<ModelTransition>,
+    /// The concrete post-state's canonical key.
+    pub concrete_post: qsl_eval::simulation::StateKey,
+    /// The protocol transition's canonical identity, or `None` for an
+    /// internal concrete step.
+    pub protocol: Option<Vec<u8>>,
+    /// The protocol post-state's canonical state key.
+    pub protocol_post: Vec<u8>,
+}
+
+/// Paired path evidence for FR-148's assumption relation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PairedAssumptionPath {
+    /// The concrete initial-state key.
+    pub concrete_initial: qsl_eval::simulation::StateKey,
+    /// The protocol initial-state key.
+    pub protocol_initial: Vec<u8>,
+    /// Steps after the initial states.
+    pub steps: Vec<PairedAssumptionStep>,
+    /// The loop entry for a strengthened-assumption lasso, absent for finite
+    /// relation-undetermined prefixes.
+    pub loop_entry: Option<usize>,
+}
+
+/// The typed product outcome when assumption weakening is not established.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolAssumptionWitness {
+    /// Why the relation was not established.
+    pub reason: ProtocolAssumptionReason,
+    /// Exact source assumptions involved in the decision.
+    pub identities: Vec<AssumptionIdentity>,
+    /// The paired path or lasso that establishes the outcome.
+    pub path: PairedAssumptionPath,
+    /// Canonical checked predicate locus for relation-undetermined, if any.
+    pub undecided_locus: Option<String>,
 }
 
 /// What `check_step` returns: the verdict and the number of abstract
