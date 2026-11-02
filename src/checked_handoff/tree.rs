@@ -76,33 +76,33 @@ pub(super) fn publish(
     let temporary = sibling(directory);
     std::fs::create_dir(&temporary).map_err(io(&temporary))?;
     let built =
-        build(&temporary, files, environment).and_then(|()| claim_and_move(&temporary, directory));
+        build(&temporary, files, environment).and_then(|()| move_into_place(&temporary, directory));
     if built.is_err() {
         // Best effort: the temporary tree is ours, and a failed removal can
-        // only leave that tree behind, never anything at `directory`.
+        // only leave that tree behind (a later write picks another name), never
+        // anything at `directory`.
         let _ = std::fs::remove_dir_all(&temporary);
     }
     built
 }
 
-/// Claim `directory` with an atomic `create_dir`, which fails when anything
-/// exists there, and only then move the tree over the claim; a racing creator
-/// is refused rather than replaced. A failed move releases the claim.
-fn claim_and_move(temporary: &Path, directory: &Path) -> Result<(), Error> {
-    match std::fs::create_dir(directory) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(Error::Exists {
-                path: directory.display().to_string(),
-            })
-        }
-        Err(error) => return Err(io(directory)(error)),
+/// Move the finished tree to `directory`, which must not exist.
+///
+/// The writer relies on POSIX `rename` semantics (this repository is built and
+/// tested on macOS and Linux only; see the Makefile). Renaming a directory onto
+/// a path that does not exist is atomic, so a crash leaves either the finished
+/// tree or nothing at `directory`, and never an empty claim that every later
+/// write would refuse. The check and the rename are two calls, so a creator
+/// that races between them with a non-empty directory makes the rename fail
+/// (`ENOTEMPTY`, reported as an I/O error) and the temporary tree is removed;
+/// one that races with an empty directory is replaced.
+fn move_into_place(temporary: &Path, directory: &Path) -> Result<(), Error> {
+    if exists(directory) {
+        return Err(Error::Exists {
+            path: directory.display().to_string(),
+        });
     }
-    std::fs::rename(temporary, directory).map_err(|error| {
-        // The claim is an empty directory this call created.
-        let _ = std::fs::remove_dir(directory);
-        io(directory)(error)
-    })
+    std::fs::rename(temporary, directory).map_err(io(directory))
 }
 
 fn build(root: &Path, files: &Files, environment: &dyn Environment) -> Result<(), Error> {

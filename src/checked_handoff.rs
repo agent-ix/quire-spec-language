@@ -14,6 +14,32 @@
 //! only to mutate them; every verdict on a package comes from
 //! `read_checked_package` and [`Selection::check`].
 
+//! # A downstream consumer
+//!
+//! A crate that enables only the `checked-handoff` feature compiles [`write`]
+//! and [`Selection::check`] against this public surface alone:
+//!
+//! ```no_run
+//! use quire_spec_language::checked_handoff::{
+//!     write, CheckedHandoffRequest, Corpus, Selection,
+//! };
+//! use quire_spec_language::emit_checked_v2::Request;
+//!
+//! fn handoff(emit: Request, directory: &std::path::Path) {
+//!     let request = CheckedHandoffRequest { emit, corpus: Corpus::None };
+//!     write(&request, directory).expect("the handoff is written");
+//!     let sidecar = std::fs::read(directory.join("selection.json")).unwrap();
+//!     let _selection = Selection::read(&sidecar).expect("a sidecar");
+//! }
+//! # fn main() {}
+//! ```
+//!
+//! The writer's internals are not part of that surface:
+//!
+//! ```compile_fail
+//! use quire_spec_language::checked_handoff::tree::Files;
+//! ```
+
 mod corpus;
 mod selection;
 mod tree;

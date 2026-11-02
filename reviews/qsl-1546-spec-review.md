@@ -57,6 +57,17 @@ amendments (dropped coverage, stale TC-1313) is not resolved.
 | FND-004 | low | "Rows 8, 12 and 13 were selection rows before the writer self-check ran them against the reader." is a build-log sentence; the spec should state the system behavior and rationale only. | FR-518 corpus table closing paragraph | wrong-requirement |
 | FND-005 | low | The FR-517 note says only the `Workflow` object becomes `Attempt` and `Recovery`; the port also replaces the `Full` and `Partial` receipt-sum conditions with receipt counts (SR-2160001 FND-003), so the note does not describe how R now differs, and the FR-517 Outputs table still lists `inventory.json`, which this PR does not write. | FR-517 note after the recipe table; Outputs table | missing-requirement |
 
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | The PR no longer edits FR-518 rows or TC-1313; TC-1313 rows 2 to 4 and FR-518 rows 8, 13, counts and AC-4 must change together in the spec PR the coordinator is authoring (code FND-011). |
+| FND-002 | deferred | The stage-moving amendments left this PR. Evidence for the spec PR from the real reader: `definition.identity` fires when clauses, lock selection and binding rows move to another registered profile (row 12 stays a selection case); `definition.revision` cannot (reader registers `/v1` only, row 13 is a reader case, `unknown_profile`); `clause.name` cannot (node carries no declaration, row 8 is a reader case). The spec PR needs the planner ruling on `definition.revision` and `clause.name` successors. |
+| FND-003 | deferred | Row 8 mutation text and the Verification status paragraph are in the merged text and change in the spec PR. |
+| FND-004 | fixed | The build-log sentence is no longer in this PR. |
+| FND-005 | fixed | The FR-517 note now lists each departure with its ticket (QSL-1555 to QSL-1558, QSL-1522); inventory.json is covered by the ignored full-list test (QSL-1512). |
+
 ## Review method
 
 quoin spec-review base pass over the two spec diffs, reading FR-517 and FR-518 in full and TC-1313; compared with the

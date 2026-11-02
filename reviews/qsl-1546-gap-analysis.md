@@ -42,6 +42,15 @@ Coverage gaps are tracked except FND-001 (inventory) and FND-003.
 | FND-002 | low | FR-518-AC-9 is traced only to an ignored test and FR-518-AC-1's "with IR-1273 reader" half only to an ignored test; the running variants use a `Double` that returns the declared 28m refusal itself, so 28m is checked against its own constants. Spec-sanctioned and tracked by IR-1273, recorded so the matrix is not read as executed coverage. | tests/it/checked_handoff.rs:1068,822 | correct-requirement-no-evidence |
 | FND-003 | low | Public API paths without any test: `Selection::read` rejecting a wrong format or an unknown field; `Error::Label`, `Error::Dependency`, `Error::Unnameable`, `Error::Encode` and the `ErrorCode` mapping beyond `Exists`, `Compile`, `Reader`, `Io`, `ReadBackDiffers`, `CaseMismatch`. | src/checked_handoff.rs; src/checked_handoff/selection.rs:Selection::read | correct-requirement-no-evidence |
 
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | Same as SR-2160001 FND-002: ignored full-list test gated on QSL-1512. |
+| FND-002 | deferred | AC-9 is untagged until IR-1273 lands; the real-reader half of AC-1 stays an ignored test; the 28m double remains a double. Tracked by IR-1273. |
+| FND-003 | fixed | `a_sidecar_that_does_not_parse_is_refused` (wrong format, malformed, unknown field) and `bad_requests_get_their_own_error` (UnknownClause, DuplicateClause, Label, Exists); Dependency, Unnameable and Encode remain unreachable from a request. |
+
 ## Verification
 
 Read `quire matrix` expectations from the AC tables by hand (tags `#[trace("FR-517-AC-n", "TC-1312")]`); ran the

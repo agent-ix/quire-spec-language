@@ -322,6 +322,8 @@ impl Selection {
                 Activation::Origin => ("origin", None, false),
                 Activation::Each { guarded } => (
                     "each",
+                    // The trigger binder's name only: the sidecar does not
+                    // record the trigger's type, which has no stable spelling.
                     clause.trigger().map(|(name, _)| text(name)),
                     guarded,
                 ),

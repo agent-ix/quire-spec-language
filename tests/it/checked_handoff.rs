@@ -1430,3 +1430,28 @@ fn bad_requests_get_their_own_error() {
         "the empty directory is left as it was"
     );
 }
+
+/// Whether a stale temporary tree from a crashed write, or an empty
+/// directory already at the path, blocks a write: the stale tree does not
+/// (the writer picks another sibling name), the existing directory does.
+#[test]
+fn crash_residue_does_not_block_a_write_and_leaves_no_claim() {
+    let fresh = tempfile::tempdir().unwrap();
+    let target = fresh.path().join("handoff");
+    let stale = format!(".handoff.writing-{}-0", std::process::id());
+    std::fs::create_dir(fresh.path().join(&stale)).unwrap();
+    std::fs::write(fresh.path().join(&stale).join("half"), b"x").unwrap();
+    write(&request("event_position", Corpus::None), &target)
+        .expect("a stale sibling does not block");
+    assert!(target.join("checked-package.json").exists());
+    assert_eq!(entries(fresh.path()), [stale.as_str(), "handoff"]);
+    // A failed write leaves no empty claim at the path.
+    let other = fresh.path().join("second");
+    let double = Double {
+        fail_write_at: Some(1),
+        ..Double::default()
+    };
+    write_with(&request("event_position", Corpus::None), &other, &double).unwrap_err();
+    assert!(!other.exists());
+    write(&request("event_position", Corpus::None), &other).expect("a later write is not refused");
+}

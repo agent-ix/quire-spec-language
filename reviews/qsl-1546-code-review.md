@@ -55,6 +55,30 @@ ruling, plus low findings. FND-001 depends on the spec ruling in SR-2160003 FND-
 | FND-009 | low | `check_binding` returns axis `ClauseNode` for a `clock_name` difference, a missing or surplus binding row and a clock-kind change, so a consumer cannot tell them apart; `check_clause` skips the name test when a node has no `declaration`; `check_profile` takes an unused `_package`. | src/checked_handoff/selection.rs:check_clause,check_profile,check_binding | implementation-bug-despite-evidence |
 | FND-010 | low | `tree::publish` checks `exists(directory)` and then `rename`s; on POSIX a rename onto an existing empty directory succeeds, so a racing creator is replaced instead of refused. The temporary-tree removal error is discarded with `let _ =`, and the sibling name carries the process id only. | src/checked_handoff/tree.rs:publish,sibling | implementation-bug-despite-evidence |
 
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-011 | medium | The code now follows a table the merged FR-518 does not state: rows 8 and 13 are reader cases (merged: selection), counts are 21 reader and 10 selection (merged: 19 and 12), and row 12's mutation moves clauses, lock selection and binding rows together (merged text: one profile identity differs). Merged FR-518-AC-2 and AC-3 and TC-1313 rows 2 to 4 therefore disagree with the tests until the separate spec PR lands. Merge order: spec PR first. | tests/it/checked_handoff.rs:table; src/checked_handoff/corpus.rs:definition_revision,declaration_name | spec-code mismatch pending spec PR |
+| FND-012 | low | `SelectionAxis` gained four variants (`clock.kind`, `clock.name`, `clause.binding`, `package.nodes`) that the merged FR-518 Outputs axis list (twelve names) does not contain, so `Selection::check` can return an axis the spec never names; `clock.name`, `clause.binding` and `package.nodes` have no corpus case. Carry the four names into the spec PR. | src/checked_handoff/selection.rs:SelectionAxis; FR-518 Outputs | spec-code mismatch pending spec PR | missing-requirement |
+| FND-013 | low | `tree::claim_and_move` creates the destination with `create_dir` and then renames the temporary tree onto that empty directory. POSIX allows it; on Windows renaming a directory onto an existing one fails, so `write` could never succeed there, and a crash between the two calls leaves an empty directory at the requested path that every later `write` refuses as `Exists`. | src/checked_handoff/tree.rs:claim_and_move | implementation-bug-despite-evidence |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | New test `each_sidecar_value_is_compared_on_its_own_axis` edits each sidecar value against the unchanged admitted package; reviewer mutations on 8cdba1f10: identity comparison deleted gives 10 red, revision comparison deleted 1 red, write_with read-back deleted 1 red (`a_refusal_or_difference_writes_nothing`, now failing the comparison for real through a reader double), binding-count check deleted 1 red. `clause.name` stays unexercised: a temporal_clause node carries no declaration, shown by `the_clause_name_has_no_package_side_value`; the remaining question is a spec ruling (spec PR). |
+| FND-002 | deferred | The full-list test is kept and ignored with reason `gated on QSL-1512 (PR 2140)`; the running test is renamed `the_directory_holds_the_outputs_table_except_the_inventory`. Tracked by QSL-1512. |
+| FND-003 | fixed | FR-517 now records the departure with a ticket for each: size instead of receipt sum (QSL-1555), Attempt and Recovery records (QSL-1556), no CLI flag (QSL-1557), units (QSL-1558), rationals (QSL-1522); all four new tickets exist in Backlog. |
+| FND-004 | still-open | low, non-blocking: names, authority, profile identity and revision, requirements and activation form are now compared (`the_written_package_is_admitted_and_matches_its_sidecar`); the trigger type is still not in the sidecar (binder name only) although FR-517 lists it. Either record it or amend FR-517 in the spec PR. |
+| FND-005 | fixed | The AC-3 test now asserts `Full` and `Partial` in the node keys and that exactly one shared node is the `Main::Applied` run node. |
+| FND-006 | still-open | low, non-blocking: no feature-only downstream compile test for FR-517-AC-8 and `FR-518-AC-8` still counts `pub const` lines; the AC-9 grep now counts the two permitted parses per file instead of two spellings. The reviewer ran `clippy --features checked-handoff` and `check --no-default-features`, both clean. |
+| FND-007 | accepted-no-change | Documented on `compile`: the check stage runs `check_unit_owner` (qsl-replay lifecycle.rs:681) and a byte-for-byte comparison with `compile_package` exists in tests/it/emit_checked_v2.rs through `producer_bytes`; the check stage still gets no temporal selections because they are joined to checked clauses by name, which the doc states. |
+| FND-008 | fixed | The AC-4 test now reads the cases from the written directory and asserts the axes and the `unknown_profile` refusal; the rational test (ignored, QSL-1522) asserts both rationals in the package; the AC-9 tag is removed from the ignored test so no running coverage is claimed. |
+| FND-009 | fixed | Distinct axes `clock.name`, `clause.binding`, `clock.kind`, `package.nodes`; the unused `_package` parameter is gone; the silent pass without a `declaration` is commented as unreachable on a temporal clause node and shown by a test. The four new names are FND-012. |
+| FND-010 | fixed | `claim_and_move` claims the destination with an atomic `create_dir`; `an_existing_directory_...` leaves an existing empty directory as it was; reviewer mutation removing the temp-tree cleanup still turns that test red. New residue is FND-013. |
+
 ## Review method
 
 Applied /dev-team:reviewer with code-review and rust-review (rust-style baseline) as one lane in this file. Read every
