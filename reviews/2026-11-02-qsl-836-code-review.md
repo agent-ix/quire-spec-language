@@ -26,3 +26,10 @@ Ticket: QSL-836. Head fd92175a8f5456ef7443988f0719ca64fe1feddc, base main. Delet
 ## Verdict
 
 Code is sound; two small findings, none blocking.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in PR 2080 (QSL-836 follow-up); confirmed by SR-202611020003 code-review (clean), Linear QSL-836 comment 6daabb98 |
+| FND-002 | fixed | Fixed in PR 2080; confirmed by SR-202611020003 (Linear QSL-836 comment 6daabb98) |

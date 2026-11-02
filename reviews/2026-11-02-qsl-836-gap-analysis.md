@@ -29,4 +29,13 @@ Ticket: QSL-836. Of 94 acceptance criteria whose trace tags sat on deleted lines
 
 ## Verdict
 
-Not mergeable until FND-001 is resolved; FND-002 should land in this PR or be ruled a named follow-up.
+Resolved: all findings were fixed by PR 2080 (see Dispositions); the original not-mergeable status no longer applies.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Coverage restored in PR 2080 (QSL-836 follow-up); confirmed by SR-202611020004 gap-analysis, Linear QSL-836 comment 12031d29 |
+| FND-002 | fixed | Retired-spec cleanup landed in PR 2080; confirmed by SR-202611020004 |
+| FND-003 | fixed | Fixed in PR 2080; confirmed by SR-202611020004 |
+| FND-004 | fixed | Fixed in PR 2080; confirmed by SR-202611020004 |
