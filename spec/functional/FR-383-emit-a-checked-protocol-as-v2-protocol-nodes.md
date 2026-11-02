@@ -358,7 +358,9 @@ refusal changes no other protocol's result (see "Per-protocol results").
   declaration, code, cause, locus }` whose locus pairs the source index and span
   of the owning declaration (FR-042-AC-8), or `Incomplete { declaration, limit }`
   carrying the typed limit refusal (`StageFailure::Limit`, `stage_limit_exceeded`)
-  that names `s3.work_units`.
+  that names `s3.work_units`. An operation that stops before S4 (`parse`,
+  `check`; FR-503) reports `Cleared { declaration, stage }` for a declaration
+  that passed every stage it ran, and only `compile` produces `Emitted`.
 - Independence SHALL hold at every stage whose work is per protocol: a refusal
   at S1, S2, S3 or S4 that the stage attributes to one protocol declaration
   gives that protocol a `Refused` result and changes no result of a protocol that

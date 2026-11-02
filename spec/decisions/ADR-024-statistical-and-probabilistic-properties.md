@@ -60,7 +60,7 @@ What exists today:
   without the sampler (FR-101-AC-5).
 - **Quantities.** QSpec FR-142 gives exact dimensions, units and conversions;
   comparison needs equal dimensions and an explicit common unit.
-- **Verdict vocabulary.** ADR-013 O-16's eight categories, QSpec FR-331's
+- **Verdict vocabulary.** ADR-013 O-16's ten categories, QSpec FR-331's
   result values (`proved`, `refuted`, `tested`, `inconclusive`,
   `unsupported`, `declined`, `incomplete`, `failed`), and ADR-018's
   `ProofBasis` on `TerminalValue::Proved`. O-16 already keeps `tested` in the

@@ -107,6 +107,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `model.work_units` | model normalization | work budget | `ModelNormalizationLimitsV1` work_units | 16777216 units |
 | `model.ancestor_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` ancestor_steps | 16777216 edges |
 | `model.family_steps` | model normalization | edge count | `ModelNormalizationLimitsV1` family_steps | 16777216 edges |
+| `progress.covered_positions` | progress ledger | node count | the `ProgressLedger` capacity for covered positions (FR-502) | 1000000 positions |
 | `admission.population_members` | population admission | node count | `PopulationAdmissionLimitsV1` population_members | 100000 members |
 | `admission.work_units` | population admission | work budget | `PopulationAdmissionLimitsV1` work_units | 16777216 units |
 | `admission.ancestor_steps` | population admission | edge count | `PopulationAdmissionLimitsV1` ancestor_steps | 16777216 edges |

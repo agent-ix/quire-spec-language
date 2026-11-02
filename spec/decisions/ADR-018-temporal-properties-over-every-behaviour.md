@@ -88,7 +88,7 @@ QS-13 change. QSpec FR-360 maps `proved`, `refuted`, `inconclusive`, `unsupporte
 basis axes. QSpec FR-243's bases are `closed-scope`, `decisive-witness`,
 `decisive-counterexample`, `unsettled` and `unavailable`.
 
-QSL's result vocabulary is ADR-013 O-16's eight categories and
+QSL's result vocabulary is ADR-013 O-16's ten categories and
 `qsl_replay::TerminalValue` (`Proved{basis, certification}`, `Tested`, `Refuted`,
 `Declined`, `Unsupported`, `Incomplete`, `Failed`, and the `Inconclusive`
 variant ADR-013 C-09 adds), with `InconclusiveCause`

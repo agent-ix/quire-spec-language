@@ -96,7 +96,7 @@ no truth value, and the ledger unchanged.
 - The covered position set SHALL be bounded by the ledger capacity, the FR-255
   setting `progress.covered_positions`. When recording a position would exceed
   it, the evaluator SHALL return `Incomplete(LimitReached{limit, value,
-  setting})` naming that setting, and the ledger is unchanged.
+  setting})` with `limit` the kind (node count) and `setting` the name, and the ledger is unchanged.
 - A later trace that omits a position an earlier assertion covered is accepted:
   the ledger keeps the omitted position as covered and does not treat its absence
   as a contradiction; only a position that was not covered and now appears at or
@@ -128,4 +128,4 @@ no truth value, and the ledger unchanged.
 | FR-502-AC-5 | A request that supplies a `ledger` with a `Finite` trace without progress, a `Lasso`, a `Model` or an infinite-trace clause is refused at stage `admit`, `invalid_runtime_input`/`invalid-value` and the ledger is unchanged; the same ledger with a `Timestamped` trace (finite-window), a fixed-sample `Progressed` trace and an event-position `Progressed` trace is accepted, a fixed-sample watermark regression is refused `Watermark`, and an event-position watermark that advances leaves its `Pending` outcome `Pending`. | Test (TC-1296, TC-1299) |
 | FR-502-AC-6 | Evaluation with no ledger accepts a `W` 100 call followed by a `W` 60 call and reports each from its own trace; evaluation with a ledger refuses the second. The report of an accepted request returns the updated ledger, and passing it to the next request gives the same outcome as one request sequence replayed from the same initial ledger. | Test (TC-1296) |
 | FR-502-AC-7 | After a request retaining `Complete { through: 100 }` over positions 0 to 3, a later request whose trace adds a position stamped 80 that was not among positions 0 to 3 is refused `Completeness`, and one adding a position stamped 120 is accepted; the returned ledger lists positions 0 to 3 (and the new one) as covered. | Test (TC-1296) |
-| FR-502-AC-8 | With `progress.covered_positions` set to 3, a request covering 4 positions returns `Incomplete(LimitReached{limit: progress.covered_positions, value: 3, setting: progress.covered_positions})` and leaves the ledger unchanged; a later trace that omits two earlier covered positions and adds one new position beyond `through` is accepted and the ledger still lists the omitted positions as covered. | Test (TC-1296) |
+| FR-502-AC-8 | With `progress.covered_positions` set to 3, a request covering 4 positions returns `Incomplete(LimitReached{limit: node count, value: 3, setting: progress.covered_positions})` and leaves the ledger unchanged; a later trace that omits two earlier covered positions and adds one new position beyond `through` is accepted and the ledger still lists the omitted positions as covered. | Test (TC-1296) |

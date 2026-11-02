@@ -98,7 +98,7 @@ A source unit and the lifecycle operations `parse`, `check` and `compile`
 | FR-503-AC-3 | The `compile` operation over AC-1's unit returns a failure whose `protocol_results` are [W `Emitted`, X `Refused`, Z `Emitted`] with **W**'s and **Z**'s nodes byte-identical to compiling each alone, the category `refusal` (exit 20), and no package. | Test (TC-1298) |
 | FR-503-AC-4 | An S2 refusal of **X**'s forms and an S3 refusal in **X** each give **X** a `Refused` result whose locus is **X**'s source index and span (in a two-source unit, the source that holds **X**, not the preceding one), leave **W** `Emitted`, and give the failure the code of the first `Refused` result. | Test (TC-1298) |
 | FR-503-AC-5 | The `check` operation over a unit with **X** refused at S3 returns `protocol_results` [W `Cleared{S3}`, X `Refused`], and its category and exit equal those of **X**'s cause alone; the `Limit` failure of an exhausted `s3.work_units` budget carries the FR-383-AC-30 results and exits 22. | Test (TC-1298) |
-| FR-503-AC-6 | A refusal of a non-protocol declaration (a state clause) in a unit holding **W** gives `protocol_results` [W `Cleared{S3}`] or [W `Emitted`], never `Refused` for **W**. | Test (TC-1298) |
+| FR-503-AC-6 | A refusal of a non-protocol declaration (a state clause) in a unit holding **W** gives, through `check`, `protocol_results` [W `Cleared{S3}`] and, through `compile`, [W `Emitted`]; W is never `Refused`. | Test (TC-1298) |
 
 ## Dependencies
 
