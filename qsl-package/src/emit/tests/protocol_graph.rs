@@ -1141,14 +1141,11 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Broken's result is refused: {:?}", combined.results());
     };
     assert_eq!(declaration, "Broken");
-    assert!(
-        matches!(
-            refusal.cause,
-            qsl_semantics::check::CheckCause::MissingName(_)
-        ),
-        "missing join label refusal: {:?}",
-        refusal.cause
-    );
+    assert!(matches!(
+        &refusal.cause,
+        qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+            if matches!(cause.as_ref(), qsl_semantics::check::ProtocolAnchorCause::Missing { segment, .. } if segment == "ghost")
+    ));
     assert_eq!(
         combined
             .results()
