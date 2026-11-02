@@ -38,3 +38,5 @@ Scoped the spec/test/code chain affected by QSL-852's strict-reader parity chang
 | --- | --- | --- |
 | FND-001 | rejected | FR-390-AC-11 is declared locally at spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md:693, and TC-1073's scope explicitly includes AC-9 through AC-11 in spec/test-cases/TC-1073-account-protocol-slot-evaluation-on-one-shared-meter.md. The trace is valid. |
 | FND-002 | rejected | FR-390-AC-15 is declared locally at spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md:697. The new test directly tags that criterion; the trace is valid. |
+
+> Note (FND-006, SR-2122001): this review was authored by the implementing lane against frozen head 6f336c755. It is not independent evidence. The independent review of #2122 is SR-2122001 (Linear QSL-852 comment 41842143).

@@ -143,9 +143,32 @@ impl<'package> AdmittedEvaluationView<'package> {
                 .iter()
                 .map(|source| source.node.clone())
                 .collect::<Vec<_>>();
-            reader
+            let mut projection = reader
                 .protocol_reference_slot(&root_node, &binders)
                 .map_err(SlotSelectionFailure::Fault)?
+                .ok_or_else(|| {
+                    SlotSelectionFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "reader-protocol-root-has-supported-plain-data-projection",
+                    ))
+                })?;
+            // FR-390-AC-15: an unavailable halt reports the location the
+            // in-process view reports: the operand read of a field or
+            // attribute root, or the root of a bare reference. The producer
+            // emits no protocol-location sidecar rows yet, so the location
+            // comes from the emitting package this view is bound to, as the
+            // source binders' locations already do.
+            let root = body.root();
+            projection.location = match root.kind() {
+                quire_checked::NodeKind::Field { operand, .. } => {
+                    root.at(*operand).location().clone()
+                }
+                quire_checked::NodeKind::Attribute { reference, .. } => {
+                    root.at(*reference).location().clone()
+                }
+                _ => root.location().clone(),
+            };
+            Some(projection)
         } else {
             None
         };

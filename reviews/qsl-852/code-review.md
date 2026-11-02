@@ -47,3 +47,5 @@ Reviewed the frozen QSL-852 diff at `6f336c755`, including the Rust implementati
 | --- | --- | --- |
 | FND-001 | rejected | FR-390-AC-11 is declared locally at spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md:693, and the test case assigned to it, TC-1073, scopes itself to FR-390-AC-9 through AC-11 in spec/test-cases/TC-1073-account-protocol-slot-evaluation-on-one-shared-meter.md. The trace is valid. |
 | FND-002 | rejected | FR-390-AC-15 is declared locally at spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md:697. The new test explicitly tags that criterion; absence from TC-1073's narrower AC-9 through AC-11 scope does not invalidate the direct criterion tag. |
+
+> Note (FND-006, SR-2122001): this review was authored by the implementing lane against frozen head 6f336c755. It is not independent evidence. The independent review of #2122 is SR-2122001 (Linear QSL-852 comment 41842143).

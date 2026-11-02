@@ -2206,7 +2206,7 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
 /// the same checked protocol term, while foreign and dangling references
 /// refuse before changing any meter counter.
 #[test]
-#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14")]
+#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14", "FR-390-AC-15")]
 fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence() {
     let (package, model_view) = fixture_with_view();
     let domain_bytes = serde_json::to_vec(&document()).unwrap();
@@ -2245,13 +2245,16 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
             capture.index,
         ))
         .expect("reader view selects the capture term");
-    let source_location = selected.checked_body().root().location().clone();
     let reader_location = selected
         .reader_projection()
         .expect("reader view owns the root projection")
         .location()
         .clone();
-    assert_ne!(reader_location, source_location);
+    let reader_location = selected
+        .reader_projection()
+        .expect("reader view owns the root projection")
+        .location()
+        .clone();
     let unavailable = reader_view
         .evaluate_protocol_slot(
             &capture,
@@ -2273,7 +2276,31 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         panic!("reader-backed unavailable source must halt at its read: {unavailable:?}");
     };
     assert_eq!(location, reader_location);
-    assert_ne!(location, source_location);
+    let checked_unavailable = package
+        .evaluate_protocol_slot(
+            &capture,
+            &ProtocolSupply {
+                binders: vec![(
+                    binder(&package, "Refunds", "view"),
+                    SuppliedValue::Unavailable(CatalogCode::new(
+                        "unavailable_observation",
+                        "missing-required-artifact",
+                    ))
+                    .into(),
+                )],
+                observation: None,
+            },
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("the checked view returns the same unavailable outcome");
+    let ProtocolSlotEvaluation::Unavailable {
+        location: checked_location,
+        ..
+    } = checked_unavailable
+    else {
+        panic!("the checked view halts at the unavailable read");
+    };
+    assert_eq!(location, checked_location, "FR-390-AC-15 equal locus");
 
     let before = meter.clone();
     let mismatched = second_reader_view.evaluate_protocol_slot(
@@ -2398,185 +2425,659 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     }
 }
 
-/// TC-142: the checked protocol package and its strict I2 read-back evaluate
-/// compensation slots with the same results and ordered charge log.
-#[test]
-#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-390-AC-11", "FR-390-AC-15")]
-fn compensation_slots_preserve_results_and_charge_logs_after_strict_read_back() {
-    let (package, _) = fixture_with_view();
-    let model_bytes = serde_json::to_vec(&document()).unwrap();
-    let domain_packages =
-        qsl_semantics::model::intake::package_input([model_bytes.as_slice()]).unwrap();
-    let read = qsl_package::read_evaluation_package(
-        &package,
+/// The invariant of the unmet AC-11 dependency: a composed protocol root has
+/// no plain-data reader projection yet (FR-390: an unsupported projection of a
+/// QSL-emitted type is an unmet dependency, never a passing parity case).
+const UNMET_PROJECTION: &str = "reader-protocol-root-has-supported-plain-data-projection";
+
+/// One TC-1070 slot compared across the checked and the strict-reader view.
+struct ParitySlot<'p> {
+    name: &'static str,
+    protocol: &'static str,
+    owner: &'static str,
+    member: &'static str,
+    index: Option<usize>,
+    values: Box<dyn Fn(Option<&ObjectReference>) -> Vec<(&'static str, Value)> + 'p>,
+    observed: bool,
+    expected: Option<Value>,
+    /// Whether the slot's root is a plain-data reader projection.
+    reader_backed: bool,
+}
+
+fn parity_slots(package: &CheckedPackage) -> Vec<ParitySlot<'_>> {
+    let on = |name,
+              protocol,
+              owner,
+              member,
+              index,
+              values: Vec<(&'static str, Value)>,
+              expected: Value,
+              backed| {
+        ParitySlot {
+            name,
+            protocol,
+            owner,
+            member,
+            index,
+            values: Box::new(move |_| values.clone()),
+            observed: false,
+            expected: Some(expected),
+            reader_backed: backed,
+        }
+    };
+    let observed = |name, owner, member, protocol, expected: Option<Value>, backed| ParitySlot {
+        name,
+        protocol,
+        owner,
+        member,
+        index: Some(0),
+        values: Box::new(|reference: Option<&ObjectReference>| {
+            let reference = reference.expect("an observed slot is supplied a reference");
+            vec![("view", Value::Reference(reference.clone()))]
+        }),
+        observed: true,
+        expected,
+        reader_backed: backed,
+    };
+    let tick = record(
+        package,
+        "Tick",
+        vec![("ready", Value::Boolean(true)), ("count", int(2))],
+    );
+    let t = Value::Boolean(true);
+    let f = Value::Boolean(false);
+    let mut slots = vec![
+        on(
+            "activation guard",
+            "Refunds",
+            "Refunds",
+            "activation.guard",
+            None,
+            vec![("opened", tick)],
+            t.clone(),
+            true,
+        ),
+        observed(
+            "protocol capture",
+            "Refunds",
+            "captures",
+            "Refunds",
+            Some(int(5)),
+            true,
+        ),
+    ];
+    for (owner, forward, trigger, target, activated, earlier, later, recovered) in [
+        (
+            "Refund",
+            "forward",
+            "trigger",
+            "target",
+            "activated",
+            "earlier",
+            "later",
+            "recovered",
+        ),
+        (
+            "Partial",
+            "partialForward",
+            "partialTrigger",
+            "partialTarget",
+            "partialActivated",
+            "partialEarlier",
+            "partialLater",
+            "partialRecovered",
+        ),
+    ] {
+        slots.push(on(
+            "registration capture",
+            "Refunds",
+            owner,
+            "registration_captures",
+            Some(0),
+            vec![(forward, receipt(package, 5))],
+            int(5),
+            true,
+        ));
+        slots.push(on(
+            "activation capture",
+            "Refunds",
+            owner,
+            "activation_captures",
+            Some(0),
+            vec![(trigger, flag(package, true))],
+            t.clone(),
+            true,
+        ));
+        slots.push(on(
+            "trigger guard",
+            "Refunds",
+            owner,
+            "trigger.guard",
+            None,
+            vec![(trigger, flag(package, false)), (target, int(5))],
+            t.clone(),
+            false,
+        ));
+        slots.push(on(
+            "retry relation",
+            "Refunds",
+            owner,
+            "retry.relation",
+            None,
+            vec![
+                (earlier, attempt(package, 0)),
+                (later, attempt(package, 1)),
+                (target, int(5)),
+                (activated, f.clone()),
+            ],
+            t.clone(),
+            false,
+        ));
+        slots.push(on(
+            "recovery predicate",
+            "Refunds",
+            owner,
+            "recovery.predicate",
+            None,
+            vec![
+                (recovered, receipt(package, 5)),
+                (target, int(5)),
+                (activated, f.clone()),
+            ],
+            t.clone(),
+            false,
+        ));
+    }
+    slots.push(on(
+        "effect constraint",
+        "Refunds",
+        "Applied",
+        "constraint",
+        None,
+        vec![("order", int(5))],
+        t.clone(),
+        false,
+    ));
+    slots.push(on(
+        "commit constraint",
+        "Refunds",
+        "Committed",
+        "constraint",
+        None,
+        vec![("committed", flag(package, true))],
+        t.clone(),
+        true,
+    ));
+    slots.push(on(
+        "finish constraint",
+        "Refunds",
+        "Closed",
+        "constraint",
+        None,
+        vec![],
+        t.clone(),
+        false,
+    ));
+    slots.push(observed(
+        "related from",
+        "Got",
+        "related.from",
+        "Pipeline",
+        None,
+        false,
+    ));
+    slots.push(observed(
+        "related to",
+        "Got",
+        "related.to",
+        "Pipeline",
+        None,
+        false,
+    ));
+    slots.push(on(
+        "choice visible",
+        "Pipeline",
+        "Decide",
+        "visible",
+        Some(0),
+        vec![("got", flag(package, true))],
+        t.clone(),
+        true,
+    ));
+    slots.push(on(
+        "choice guard no",
+        "Pipeline",
+        "Decide",
+        "cases.guard",
+        Some(0),
+        vec![("got", flag(package, true))],
+        f,
+        false,
+    ));
+    slots.push(on(
+        "choice guard yes",
+        "Pipeline",
+        "Decide",
+        "cases.guard",
+        Some(1),
+        vec![("got", flag(package, true))],
+        t,
+        true,
+    ));
+    slots
+}
+
+fn charges_and_usage_match(label: &str, checked: &Meter, reader: &Meter) {
+    assert_eq!(
+        checked.admitted_charges(),
+        reader.admitted_charges(),
+        "{label}: ordered charge logs"
+    );
+    for counter in LimitKind::ALL {
+        assert_eq!(
+            checked.consumed(counter),
+            reader.consumed(counter),
+            "{label}: {counter:?} usage"
+        );
+    }
+}
+
+fn limits_at(measured: &Meter) -> ScalarLimits {
+    let mut limits = UNLIMITED;
+    for counter in LimitKind::ALL {
+        set_limit(&mut limits, counter, measured.consumed(counter));
+    }
+    limits
+}
+
+fn read_checked_package(package: &CheckedPackage) -> qsl_package::AdmittedPackageRead<'_> {
+    let bytes = serde_json::to_vec(&document()).unwrap();
+    let domain_packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    qsl_package::read_evaluation_package(
+        package,
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
         qsl_package::V2ReadLimits::default(),
     )
-    .expect("strict I2 admission accepts the emitted TC-1070 package");
-    let reader_view = read
-        .evaluation_view()
-        .expect("the successful read retains its evaluator view");
+    .expect("strict I2 admission accepts the emitted TC-1070 package")
+}
+
+/// TC-1073 / FR-390-AC-11, AC-15: every TC-1070 slot compared between the
+/// in-process view and the view over the package the strict reader returns.
+/// A reader-backed slot (its root is a plain-data reader projection) must
+/// agree in the complete result, every ordered charge entry, each AC-9
+/// counter boundary, repeated runs and unavailable supplies. A composed root
+/// has no reader projection yet: it is reported as the typed unmet
+/// dependency, never as a passing parity case.
+#[test]
+#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-390-AC-11", "FR-390-AC-18")]
+fn reader_backed_tc1070_slots_match_the_checked_view_and_composed_roots_are_unmet() {
+    let (package, model_view) = fixture_with_view();
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
     assert!(reader_view.is_reader_backed());
+    let (checked_observation, checked_reference) = observation(&package, &model_view);
+    let (reader_observation, reader_reference) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    assert_eq!(checked_reference, reader_reference);
 
-    let calls = [
-        (
-            "registration capture",
-            slot(
-                &package,
-                "Refunds",
-                "Refund",
-                "registration_captures",
-                Some(0),
-            ),
-            supply(
-                &package,
-                "Refunds",
-                vec![("forward", receipt(&package, 5))],
-                None,
-            ),
-            int(5),
-        ),
-        (
-            "activation capture",
-            slot(
-                &package,
-                "Refunds",
-                "Refund",
-                "activation_captures",
-                Some(0),
-            ),
-            supply(
-                &package,
-                "Refunds",
-                vec![("trigger", flag(&package, true))],
-                None,
-            ),
-            Value::Boolean(true),
-        ),
-        (
-            "trigger guard",
-            slot(&package, "Refunds", "Refund", "trigger.guard", None),
-            supply(
-                &package,
-                "Refunds",
-                vec![("trigger", flag(&package, false)), ("target", int(5))],
-                None,
-            ),
-            Value::Boolean(true),
-        ),
-        (
-            "retry relation",
-            slot(&package, "Refunds", "Refund", "retry.relation", None),
-            retry_supply(&package, 0),
-            Value::Boolean(true),
-        ),
-        (
-            "recovery predicate",
-            slot(&package, "Refunds", "Refund", "recovery.predicate", None),
-            supply(
-                &package,
-                "Refunds",
-                vec![
-                    ("recovered", receipt(&package, 5)),
-                    ("target", int(5)),
-                    ("activated", Value::Boolean(false)),
-                ],
-                None,
-            ),
-            Value::Boolean(true),
-        ),
-    ];
+    let mut unmet = Vec::new();
+    let mut compared = Vec::new();
+    for spec in parity_slots(&package) {
+        let selected = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
+        let values = (spec.values)(Some(&checked_reference));
+        let checked_supply = supply(
+            &package,
+            spec.protocol,
+            values.clone(),
+            spec.observed.then_some(&checked_observation),
+        );
+        let reader_supply = supply(
+            &package,
+            spec.protocol,
+            values,
+            spec.observed.then_some(&reader_observation),
+        );
+        let label = format!("{} ({}.{})", spec.name, spec.owner, spec.member);
 
-    let mut checked_meter = Meter::new(UNLIMITED);
-    let mut reader_meter = Meter::new(UNLIMITED);
-    for (name, selected, values, expected) in &calls {
-        let checked_result = package
-            .evaluate_protocol_slot(selected, values, &mut checked_meter)
-            .expect("the checked package evaluates the selected slot");
-        let reader_result = reader_view
-            .evaluate_protocol_slot(selected, values, &mut reader_meter)
-            .unwrap_or_else(|failure| {
-                panic!("the strict-reader view evaluates {name}: {failure:?}")
-            });
-
-        let (
-            ProtocolSlotEvaluation::Evaluated(checked_evaluation),
-            ProtocolSlotEvaluation::Evaluated(reader_evaluation),
-        ) = (checked_result, reader_result)
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let checked =
+            package.evaluate_protocol_slot(&selected, &checked_supply, &mut checked_meter);
+        let ProtocolSlotEvaluation::Evaluated(ref checked_evaluation) = *checked
+            .as_ref()
+            .unwrap_or_else(|failure| panic!("{label}: checked view: {failure:?}"))
         else {
-            panic!("{name} did not return an evaluated result");
+            panic!("{label}: checked view did not evaluate");
         };
-        let (
-            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(checked_value)),
-            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(reader_value)),
-        ) = (&checked_evaluation.outcome, &reader_evaluation.outcome)
+        let FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)) =
+            &checked_evaluation.outcome
         else {
-            panic!("{name} did not complete on both views");
+            panic!("{label}: checked view did not complete");
         };
-        assert_value_eq!(checked_value, *expected, "checked {name}");
-        assert_value_eq!(reader_value, *expected, "reader {name}");
-        assert_eq!(
-            checked_evaluation.location, reader_evaluation.location,
-            "{name} evaluation locations"
-        );
-        assert_eq!(
-            checked_evaluation.losses, reader_evaluation.losses,
-            "{name} evaluation losses"
-        );
-        assert_eq!(
-            checked_meter.admitted_charges(),
-            reader_meter.admitted_charges(),
-            "after {name}, both meters have the same cumulative ordered charge log"
-        );
-        for counter in LimitKind::ALL {
+        match &spec.expected {
+            Some(expected) => assert_value_eq!(*value, *expected, "checked {label}"),
+            None => assert!(
+                matches!(value, Value::Reference(actual) if *actual == checked_reference),
+                "{label}: returns the supplied endpoint"
+            ),
+        }
+
+        let before = Meter::new(UNLIMITED);
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader =
+            reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut reader_meter);
+        if !spec.reader_backed {
+            let Err(CallFailure::Fault(fault)) = &reader else {
+                panic!("{label}: a composed root must be an unmet dependency: {reader:?}");
+            };
+            assert_eq!(fault.invariant(), UNMET_PROJECTION, "{label}");
             assert_eq!(
-                checked_meter.consumed(counter),
-                reader_meter.consumed(counter),
-                "{name} preserves {counter:?} usage"
+                reader_meter, before,
+                "{label}: the unmet call charges nothing"
+            );
+            unmet.push(label);
+            continue;
+        }
+        compared.push(label.clone());
+        assert_eq!(
+            format!("{checked:?}").replace(&format!("{checked_reference:?}"), "REF"),
+            format!("{reader:?}").replace(&format!("{reader_reference:?}"), "REF"),
+            "{label}: complete results (value, location, losses)"
+        );
+        charges_and_usage_match(&label, &checked_meter, &reader_meter);
+
+        // Running the call twice gives equal results and charge logs.
+        let mut again = Meter::new(UNLIMITED);
+        let second = reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut again);
+        assert_eq!(
+            format!("{second:?}"),
+            format!("{reader:?}"),
+            "{label}: run twice"
+        );
+        charges_and_usage_match(&format!("{label} twice"), &reader_meter, &again);
+
+        // AC-9: each counter at its measured usage completes; one below returns
+        // Incomplete naming that counter, on both views alike.
+        let exact = limits_at(&checked_meter);
+        let mut exact_checked = Meter::new(exact);
+        let mut exact_reader = Meter::new(exact);
+        let exact_checked_result =
+            package.evaluate_protocol_slot(&selected, &checked_supply, &mut exact_checked);
+        let exact_reader_result =
+            reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut exact_reader);
+        assert_eq!(
+            format!("{exact_checked_result:?}"),
+            format!("{exact_reader_result:?}"),
+            "{label}: exact budget"
+        );
+        completed(exact_reader_result.unwrap());
+        charges_and_usage_match(&format!("{label} exact"), &exact_checked, &exact_reader);
+        for counter in LimitKind::ALL {
+            let used = checked_meter.consumed(counter);
+            if used == 0 {
+                continue;
+            }
+            let mut limits = exact;
+            set_limit(&mut limits, counter, used - 1);
+            let mut short_checked = Meter::new(limits);
+            let mut short_reader = Meter::new(limits);
+            let short_checked_result =
+                package.evaluate_protocol_slot(&selected, &checked_supply, &mut short_checked);
+            let short_reader_result =
+                reader_view.evaluate_protocol_slot(&selected, &reader_supply, &mut short_reader);
+            assert_incomplete(short_reader_result.unwrap(), counter);
+            assert_incomplete(short_checked_result.unwrap(), counter);
+            charges_and_usage_match(
+                &format!("{label} one short {counter:?}"),
+                &short_checked,
+                &short_reader,
+            );
+        }
+
+        // Unavailable supply: the halt reports the same binder, cause, locus
+        // and charges made before the read.
+        let unavailable = |keyed: &[(&'static str, Value)]| ProtocolSupply {
+            binders: keyed
+                .iter()
+                .map(|(name, _)| {
+                    (
+                        binder(&package, spec.protocol, name),
+                        SuppliedValue::Unavailable(CatalogCode::new(
+                            "unavailable_observation",
+                            "missing-required-artifact",
+                        ))
+                        .into(),
+                    )
+                })
+                .collect(),
+            observation: None,
+        };
+        let keyed = (spec.values)(Some(&checked_reference));
+        if !keyed.is_empty() {
+            let supply_unavailable = unavailable(&keyed);
+            let mut unavailable_checked = Meter::new(UNLIMITED);
+            let mut unavailable_reader = Meter::new(UNLIMITED);
+            let on_checked = package.evaluate_protocol_slot(
+                &selected,
+                &supply_unavailable,
+                &mut unavailable_checked,
+            );
+            let on_reader = reader_view.evaluate_protocol_slot(
+                &selected,
+                &supply_unavailable,
+                &mut unavailable_reader,
+            );
+            assert!(
+                matches!(on_checked, Ok(ProtocolSlotEvaluation::Unavailable { .. })),
+                "{label}: unavailable halt: {on_checked:?}"
+            );
+            assert_eq!(
+                format!("{on_checked:?}"),
+                format!("{on_reader:?}"),
+                "{label}: unavailable halt result and location (FR-390-AC-15)"
+            );
+            charges_and_usage_match(
+                &format!("{label} unavailable"),
+                &unavailable_checked,
+                &unavailable_reader,
             );
         }
     }
+    assert_eq!(
+        unmet,
+        [
+            "trigger guard (Refund.trigger.guard)",
+            "retry relation (Refund.retry.relation)",
+            "recovery predicate (Refund.recovery.predicate)",
+            "trigger guard (Partial.trigger.guard)",
+            "retry relation (Partial.retry.relation)",
+            "recovery predicate (Partial.recovery.predicate)",
+            "effect constraint (Applied.constraint)",
+            "finish constraint (Closed.constraint)",
+            "related from (Got.related.from)",
+            "related to (Got.related.to)",
+            "choice guard no (Decide.cases.guard)",
+        ],
+        "the composed or literal roots without a reader projection are the AC-11 unmet dependency"
+    );
+    assert!(!compared.is_empty());
+}
 
-    let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
-    let mut missing = retry_supply(&package, 0);
-    let target = binder(&package, "Refunds", "target");
-    missing.binders.retain(|(key, _)| *key != target);
-    let checked_before = checked_meter.clone();
-    let reader_before = reader_meter.clone();
-    let checked_refusal = package.evaluate_protocol_slot(&retry, &missing, &mut checked_meter);
-    let reader_refusal = reader_view.evaluate_protocol_slot(&retry, &missing, &mut reader_meter);
-    assert_eq!(
-        checked_meter, checked_before,
-        "checked refusal is uncharged"
+/// FR-390-AC-15: selection refusals have the same locus on both views and
+/// leave their meters unchanged, including refusals only the view can make
+/// (an absent node, a node of another tag).
+#[test]
+#[trace("TC-1071", "FR-390-AC-4", "FR-390-AC-15")]
+fn selection_refusals_match_across_the_checked_and_reader_views() {
+    let package = fixture_from_source(&SOURCE.replace(
+        "  run sequence Main {",
+        "  terminal any;\n  run sequence Main {",
+    ))
+    .0;
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let empty = supply(&package, "Refunds", vec![], None);
+    let mut cases = vec![
+        slot(&package, "Refunds", "Refunds", "retry.relation", None),
+        slot(
+            &package,
+            "Refunds",
+            "Refund",
+            "registration_captures",
+            Some(1),
+        ),
+        slot(&package, "Refunds", "Refund", "registration_captures", None),
+        slot(&package, "Refunds", "Refund", "retry.relation", Some(0)),
+        slot(&package, "Refunds", "Closed", "condition", None),
+    ];
+    let real = slot(
+        &package,
+        "Refunds",
+        "Refund",
+        "registration_captures",
+        Some(0),
     );
-    assert_eq!(reader_meter, reader_before, "reader refusal is uncharged");
+    cases.push(ProtocolSlot {
+        node: population_node("absent-node"),
+        ..real.clone()
+    });
+    cases.push(ProtocolSlot {
+        node: binder(&package, "Refunds", "target"),
+        ..real
+    });
+    for case in cases {
+        let mut checked_meter = Meter::new(UNLIMITED);
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let checked = package.evaluate_protocol_slot(&case, &empty, &mut checked_meter);
+        let reader = reader_view.evaluate_protocol_slot(&case, &empty, &mut reader_meter);
+        let (
+            Err(CallFailure::Admission(checked_failure)),
+            Err(CallFailure::Admission(reader_failure)),
+        ) = (&checked, &reader)
+        else {
+            panic!("{case:?} must be a typed admission refusal on both views: {checked:?} / {reader:?}");
+        };
+        assert_eq!(
+            checked_failure, reader_failure,
+            "{case:?}: same record and locus"
+        );
+        assert_eq!(
+            checked_meter,
+            Meter::new(UNLIMITED),
+            "{case:?}: checked meter unchanged"
+        );
+        assert_eq!(
+            reader_meter,
+            Meter::new(UNLIMITED),
+            "{case:?}: reader meter unchanged"
+        );
+    }
+}
 
-    let (Err(CallFailure::Admission(checked_failure)), Err(CallFailure::Admission(reader_failure))) =
-        (checked_refusal, reader_refusal)
-    else {
-        panic!("the missing retry binder refuses on both views");
+/// FR-390-AC-10 / AC-15: one meter passed to reader-backed slots in turn
+/// accumulates the sum of their charges on both views; a `work_units` budget
+/// of the sum completes all of them, one below returns Incomplete at the last
+/// call, and the reverse order gives the same total.
+#[test]
+#[trace("TC-1073", "FR-390-AC-10", "FR-390-AC-15")]
+fn reader_backed_shared_meter_sums_and_bounds_in_both_orders() {
+    let (package, model_view) = fixture_with_view();
+    let read = read_checked_package(&package);
+    let reader_view = read.evaluation_view().expect("the read retains its view");
+    let (checked_observation, reference) = observation(&package, &model_view);
+    let (reader_observation, _) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    let specs: Vec<_> = parity_slots(&package)
+        .into_iter()
+        .filter(|spec| spec.reader_backed)
+        .collect();
+    assert!(specs.len() >= 8);
+    let selections: Vec<_> = specs
+        .iter()
+        .map(|spec| slot(&package, spec.protocol, spec.owner, spec.member, spec.index))
+        .collect();
+    let supplies = |observation| -> Vec<_> {
+        specs
+            .iter()
+            .map(|spec| {
+                supply(
+                    &package,
+                    spec.protocol,
+                    (spec.values)(Some(&reference)),
+                    spec.observed.then_some(observation),
+                )
+            })
+            .collect()
     };
-    let (
-        CallAdmissionFailure::Refused(checked_record),
-        CallAdmissionFailure::Refused(reader_record),
-    ) = (checked_failure.as_ref(), reader_failure.as_ref())
-    else {
-        panic!("the missing retry binder has a typed refusal on both views");
+    let checked_supplies = supplies(&checked_observation);
+    let reader_supplies = supplies(&reader_observation);
+    let run = |view_is_reader: bool, order: &[usize], limits: ScalarLimits| {
+        let mut meter = Meter::new(limits);
+        let mut results = Vec::new();
+        for index in order {
+            results.push(if view_is_reader {
+                reader_view.evaluate_protocol_slot(
+                    &selections[*index],
+                    &reader_supplies[*index],
+                    &mut meter,
+                )
+            } else {
+                package.evaluate_protocol_slot(
+                    &selections[*index],
+                    &checked_supplies[*index],
+                    &mut meter,
+                )
+            });
+        }
+        (meter, results)
     };
-    assert_eq!(
-        checked_failure.as_ref(),
-        reader_failure.as_ref(),
-        "the complete stable refusal payload matches"
-    );
-    assert_eq!(checked_record.record.catalog, reader_record.record.catalog);
-    assert_eq!(checked_record.record.path, reader_record.record.path);
-    assert_eq!(checked_record.locus, reader_record.locus);
-    assert_eq!(
-        checked_record.locus,
-        CallAdmissionLocus::Binder(target),
-        "both refusals identify the missing binder"
-    );
+    // The work_units each call adds, measured alone, locates the last call
+    // that charges.
+    let work = |index: usize| {
+        let (meter, _) = run(true, &[index], UNLIMITED);
+        meter.consumed(LimitKind::WorkUnits)
+    };
+    let calls = selections.len();
+    let forward: Vec<usize> = (0..calls).collect();
+    let reversed: Vec<usize> = forward.iter().rev().copied().collect();
+    let (checked_meter, _) = run(false, &forward, UNLIMITED);
+    let (reader_meter, _) = run(true, &forward, UNLIMITED);
+    charges_and_usage_match("forward sum", &checked_meter, &reader_meter);
+    let (reversed_meter, _) = run(true, &reversed, UNLIMITED);
+    for counter in LimitKind::ALL {
+        assert_eq!(
+            reversed_meter.consumed(counter),
+            reader_meter.consumed(counter),
+            "the reverse order gives the same {counter:?} total"
+        );
+    }
+    let sum = reader_meter.consumed(LimitKind::WorkUnits);
+    assert!(sum > 0);
+    for order in [&forward, &reversed] {
+        let mut at_sum = UNLIMITED;
+        set_limit(&mut at_sum, LimitKind::WorkUnits, sum);
+        let (meter, results) = run(true, order, at_sum);
+        for result in results {
+            completed(result.unwrap());
+        }
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), sum);
+        let last_charging = order
+            .iter()
+            .rposition(|index| work(*index) > 0)
+            .expect("a call charges work_units");
+        let mut one_short = UNLIMITED;
+        set_limit(&mut one_short, LimitKind::WorkUnits, sum - 1);
+        for reader in [true, false] {
+            let (_, results) = run(reader, order, one_short);
+            for (position, result) in results.into_iter().enumerate() {
+                if position < last_charging {
+                    completed(result.unwrap());
+                } else if position == last_charging {
+                    assert_incomplete(result.unwrap(), LimitKind::WorkUnits);
+                }
+            }
+        }
+    }
 }
 
 /// FR-390-AC-6: a foreign reference nested in a binder whose declared type is

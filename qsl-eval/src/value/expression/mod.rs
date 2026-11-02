@@ -1839,38 +1839,42 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let body = selected.checked_body();
         frame.resize(body.frame_slots(frame.len()), None);
         let reader_root = if view.is_reader_backed() {
-            selected.reader_projection().map(|projection| {
-                let operation = match projection.field() {
-                    qsl_package::ReaderProtocolField::Local => {
-                        quire_checked::NodeKind::Local(projection.slot())
-                    }
-                    qsl_package::ReaderProtocolField::Attribute { owner, name } => {
-                        quire_checked::NodeKind::Attribute {
-                            reference: projection.slot(),
-                            field: quire_semantic_value::declaration::FieldRef::new(
-                                owner.clone(),
-                                name.clone(),
-                            ),
-                            optional: projection.optional(),
-                            derefed: projection.derefed(),
-                        }
-                    }
-                    qsl_package::ReaderProtocolField::RecordField { declaration, name } => {
-                        quire_checked::NodeKind::Field {
-                            operand: projection.slot(),
-                            field: quire_checked::node::RecordField::new(
-                                declaration.clone(),
-                                name.clone(),
-                            ),
-                            optional: projection.optional(),
-                        }
-                    }
-                };
-                quire_checked::NodeRead {
-                    operation,
-                    value_type: projection.value_type(),
-                    location: projection.location(),
+            let Some(projection) = selected.reader_projection() else {
+                return Err(CallFailure::Fault(InternalFault::new(
+                    "FR-390",
+                    "reader-protocol-root-has-supported-plain-data-projection",
+                )));
+            };
+            let operation = match projection.field() {
+                qsl_package::ReaderProtocolField::Local => {
+                    quire_checked::NodeKind::Local(projection.slot())
                 }
+                qsl_package::ReaderProtocolField::Attribute { owner, name } => {
+                    quire_checked::NodeKind::Attribute {
+                        reference: projection.slot(),
+                        field: quire_semantic_value::declaration::FieldRef::new(
+                            owner.clone(),
+                            name.clone(),
+                        ),
+                        optional: projection.optional(),
+                        derefed: projection.derefed(),
+                    }
+                }
+                qsl_package::ReaderProtocolField::RecordField { declaration, name } => {
+                    quire_checked::NodeKind::Field {
+                        operand: projection.slot(),
+                        field: quire_checked::node::RecordField::new(
+                            declaration.clone(),
+                            name.clone(),
+                        ),
+                        optional: projection.optional(),
+                    }
+                }
+            };
+            Some(quire_checked::NodeRead {
+                operation,
+                value_type: projection.value_type(),
+                location: projection.location(),
             })
         } else {
             None
