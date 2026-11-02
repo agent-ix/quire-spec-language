@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1546. PR: quire-spec-language#2162, head 53997415ac3b895bdc044b34ecb921eccb1a1721, `git diff origin/main...HEAD` against main acf5cb518.
+Ticket: QSL-1546. PR: quire-spec-language#2162, head 53997415ac3b895bdc044b34ecb921eccb1a1721 (review pass) and 91a91ddef1cd1693668e977b594ef2357c2d165f (disposition pass 1), `git diff origin/main...HEAD` against main acf5cb518.
 
 Checked against code PR #2160 at head 45ef24e32 (`src/checked_handoff/selection.rs`, `src/emit_checked_v2.rs`, `examples/checked-handoff/*.native`, `tests/it/checked_handoff.rs`).
 
@@ -41,3 +41,20 @@ Grounded and true:
 Not mergeable. FND-001 and FND-002 are statements the code and the same section contradict. The sidecar wire names, the compensation-row counting, the 4/1/1 counts, the gated AC-11 and the renumbering are correct.
 
 Cross-PR: FR-518 rows 14b and 15b on main still read `malformed_wire` at the entry; the code (#2160) gives `unknown_member` at `/lock/definition_selections/0/digest` and `/digest_domain`. #2162 does not touch FR-518, so that correction exists only in #2160's FR-518 edit; #2160 must keep it (and drop its FR-517 edit once #2162 lands, since both edit the same FR-517 paragraphs).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-006 | low | FR-517-AC-14 says the `recover` conditions of `Full` and `Partial` "compare the receipt sum with the captured target", and the recipe table no longer states the two conditions (`Full`: sum equals the target; `Partial`: sum positive and below it). Any comparison satisfies the AC, so a wrong condition passes. State the two conditions in the AC. | spec/functional/FR-517-write-a-checked-package-handoff-directory-from-source-in-process.md:170 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-4 and TC row 4 cover only the `Wide` extrema; the rationals, the unit `U` and the receipt-sum conditions are AC-12, AC-13 and AC-14, each opening with its gate (QSL-1522, QSL-1558, QSL-1555) and each with a TC row (12-14); the recipe table states what R holds. |
+| FND-002 | fixed | The recipe row says four temporal clauses; a per-package table (event position: Due, DueLate, one protocol_clause, Full/Partial, Main::Applied, four rows; fixed sample DueSample and timestamped event DueTimestamp: one clause, one row, no protocol) matches the example units; AC-3 and TC row 3 are per package. |
+| FND-003 | fixed | The departure list is gone; the table states R's elements and each gated element is an AC. |
+| FND-004 | fixed | The duplicate trigger-binder sentence is deleted; the Outputs paragraph keeps it. |
+| FND-005 | fixed | TC row 9 reads "one event-position `temporal_bindings` row"; the sidecar paragraph says `binding` is absent when the request gives no clock selection, as #2160's optional `BindingRow`. |
+

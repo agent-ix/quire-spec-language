@@ -30,7 +30,7 @@ Scope: FR-517-AC-1 to FR-517-AC-14.
 | 11 | 11 | with `qsl_inventory` over the spine unit available, write **R** and read `inventory.json` in each directory | equal to `qsl_replay::qsl_inventory` over the unit with the selected formal identity; gated on QSL-1512 |
 | 12 | 12 | with the spine admitting a bounded rational value type, read the `Exact` values of **R**; gated on QSL-1522 | the two extreme rationals present |
 | 13 | 13 | with the model admitting a unit on a bounded scalar, read `Amount` and `Total` of **R**; gated on QSL-1558 | both carry unit `U` |
-| 14 | 14 | with a `sum` query binder admitted inside `recover`, read the `recover` conditions of `Full` and `Partial`; gated on QSL-1555 | both compare the receipt sum with the captured target |
+| 14 | 14 | with a `sum` query binder admitted inside `recover`, read the `recover` conditions of `Full` and `Partial`; gated on QSL-1555 | `Full`: receipt sum equals the captured target; `Partial`: receipt sum positive and below it |
 
 Tag the test `#[trace("FR-517-AC-1", ..., "FR-517-AC-14", "TC-1312")]`; row 3 and 4 also carry FR-042-AC-10.
 

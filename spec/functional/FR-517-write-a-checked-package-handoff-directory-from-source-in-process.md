@@ -133,7 +133,7 @@ ported recipe is **R**; its elements and their spine requirements:
 | --- | --- |
 | `model.json` scalars `ObjectId` (text, 128), `Amount` 1..20, `Total` 0..100, `Tally` 0..5, `Wide` (signed 64-bit) | one domain package document with the same bounds, selected by a `model` declaration; `Amount` and `Total` carry no unit (FR-517-AC-13) |
 | scalars `Ratio` and `Exact` (bounded rationals) | none (FR-517-AC-12) |
-| records `Workflow`, `WorkflowRef`, `Notice`, `Provider`, and the compensation value types `Attempt` and `Recovery` (QSL-1556); sequence `receipts` (maximum 5) | the same records and bounded sequence |
+| records `Workflow`, `Notice`, `Provider`, and the compensation value types `Attempt` and `Recovery` (QSL-1556); sequence `receipts` (maximum 5) | the same records and bounded sequence |
 | `predicates` and `state` bodies: cross-unit calls, bounded `sum`/`size` queries, the extrema literals `-9223372036854775808` and `9223372036854775807` | predicates and functions in a library unit imported by the main unit, with the same literals |
 | `temporal` bodies, three clock kinds: event position, fixed sample, timestamped event | four `temporal` clauses, each under a `profile` selection; clock configurations are given in the request (QSL-1557); `temporal_bindings` holds one row per temporal clause and per compensation template, in ascending `NodeRef` order |
 | `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, and the compensations `Full` (commit `Main::Committed`) and `Partial` (commit `never`) | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383), whose `recover` conditions test `size` of the receipts (FR-517-AC-14) |
@@ -167,7 +167,7 @@ the three directories. The packages hold:
 | FR-517-AC-11 | With `qsl_inventory` over the spine unit available (QSL-1512), each handoff directory written for **R** contains `inventory.json` equal to `qsl_replay::qsl_inventory` over the unit with the selected formal identity. | Test (TC-1312) |
 | FR-517-AC-12 | With the spine admitting a bounded rational value type (QSL-1522, FR-505), **R** carries the rationals `9223372036854775807/9223372036854775806` and `-9223372036854775808/9223372036854775807` as `Exact` values of the emitted package. | Test (TC-1312) |
 | FR-517-AC-13 | With the model admitting a unit on a bounded scalar (QSL-1558, FR-497), the `Amount` and `Total` scalars of **R** carry the unit `U`. | Test (TC-1312) |
-| FR-517-AC-14 | With a `sum` query binder admitted inside `recover` (QSL-1555), the `recover` conditions of `Full` and `Partial` compare the receipt sum with the captured target. | Test (TC-1312) |
+| FR-517-AC-14 | With a `sum` query binder admitted inside `recover` (QSL-1555), the `recover` condition of `Full` is that the receipt sum equals the captured target, and that of `Partial` is that the receipt sum is positive and below the captured target. | Test (TC-1312) |
 
 ## Dependencies
 
