@@ -35,3 +35,10 @@ Ticket: QSL-1397. Manual changed-scope trace review found each FR-494 criterion 
 - Matrix verification: not completed. The QSL `quoin matrix` and `quire matrix` invocations exceeded the review run's practical time budget before emitting results.
 - Reverse gaps: manually inspected changed production files; no additional changed behavior outside FR-494 was identified.
 - Plan completion: not assessed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The test now compares each typed candidate's selection key, operation-body identity and effective-precondition identity to its pre-emission captured decision, including the precondition-bearing package. |
+| FND-002 | fixed | The test recompiles a permuted declaration sequence, then checks captured producer identities and structuralized canonical dispatch rows for equality. |

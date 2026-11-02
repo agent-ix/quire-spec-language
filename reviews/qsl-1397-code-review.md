@@ -30,3 +30,10 @@ Verification: the two `dispatch_emission` integration tests passed with the IR w
 ## Verdict
 
 **CONDITIONAL.** The changed Rust path is coherent on inspection, but the two medium evidence gaps leave required identity-copy and declaration-order invariance behavior unverified by the tagged acceptance tests.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The fix captures pre-emission candidate identities and compares every typed candidate's exact selection key, body identity and nullable effective-precondition identity. |
+| FND-002 | fixed | The fix recompiles after declaration permutation and compares producer identities and structuralized canonical rows. |
