@@ -960,13 +960,16 @@ fn tc134_selections(
         .collect()
 }
 
-/// FR-048-AC-8: a timed compensation subject emits as strict `/2` with one
-/// typed clock binding per selected temporal declaration, and the actual
-/// strict reader admits the package and retains each binding and the
-/// temporal profile selection.
+/// FR-048-AC-8, PARTIAL: a timed variant of the TC-134 fixture emits as strict
+/// `/2` with one typed clock binding per explicitly selected temporal
+/// declaration (`OrderClosureBounded`), and the actual strict reader admits
+/// the package and retains each binding and the `temporal_profile` selection.
+/// The compensation's own `refund-clock` is present in the package but is NOT
+/// bound: whether a compensation window is a selected temporal declaration
+/// awaits the spec ruling on compensation clock rows (QSL-1384/QSL-1414).
 #[trace("FR-048-AC-8", "TC-134")]
 #[test]
-fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back() {
+fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_partial() {
     let graph = tc134_timed_graph();
     let selections = tc134_selections(&graph);
     assert!(
@@ -1014,7 +1017,7 @@ fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back
             .any(|selection| selection["role"] == "temporal_profile"
                 && selection["definition"]["identity"]
                     == "quire.temporal.event-position.false-extension/v1"),
-        "the temporal profile DefinitionRef is selected with role temporal_profile"
+        "the emitted wire selects the temporal profile with role temporal_profile"
     );
 
     let mut evidence = read_evidence(&emission);
@@ -1029,9 +1032,17 @@ fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back
         quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
         other => panic!("strict v2 read admits the timed package: {other:?}"),
     };
+    let admitted_selections = serde_json::to_value(&admitted.lock().profile_selections)
+        .expect("admitted profile selections serialize");
     assert!(
-        wire.to_string().contains("refund-clock"),
-        "the compensation's own clock name stays in the emitted package"
+        admitted_selections.as_array().is_some_and(|selections| {
+            selections.iter().any(|selection| {
+                selection["role"] == "temporal_profile"
+                    && selection["definition"]["identity"]
+                        == "quire.temporal.event-position.false-extension/v1"
+            })
+        }),
+        "the admitted package retains the temporal_profile selection: {admitted_selections}"
     );
     let read_bindings = admitted
         .temporal_bindings()
@@ -1040,6 +1051,19 @@ fn tc134_timed_compensation_emits_one_clock_binding_per_selection_and_reads_back
     for read in read_bindings {
         assert_eq!(read.clock, tc134_clock());
         assert_eq!(&*read.clock_name, "model-steps");
+        assert_ne!(
+            &*read.clock_name, "refund-clock",
+            "the compensation's own clock is not bound (partial coverage)"
+        );
+        let declaration = serde_json::to_value(&read.declaration).expect("node id serializes");
+        assert!(
+            declaration["package"].is_string()
+                && declaration["path"]
+                    .as_array()
+                    .is_some_and(|path| !path.is_empty())
+                && declaration["ordinal"].is_u64(),
+            "the binding declaration is a structural NodeId: {declaration}"
+        );
     }
 }
 
@@ -1085,9 +1109,9 @@ fn tc134_timed_compensation_refuses_each_unfit_clock_selection() {
     ));
 }
 
-/// FR-048-AC-8: `/1` stays strict. The reader refuses a `/1` contract
-/// version outright, so a timed subject's clock selections are never
-/// carried or inferred under it.
+/// FR-048-AC-8: `/2` bytes carrying clock bindings whose `contract_version`
+/// is relabelled `/1` are refused with the generic `UnsupportedVersion`
+/// refusal. This shows only that the reader admits no non-`/2` version.
 #[trace("FR-048-AC-8", "TC-134")]
 #[test]
 fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
