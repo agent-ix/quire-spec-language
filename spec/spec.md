@@ -762,6 +762,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-496
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-497
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1303,6 +1305,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-494](functional/FR-494-emit-producer-dispatch-decisions-into-checked-packages.md) | FR |
 | [FR-495](functional/FR-495-reach-the-integer-division-zero-divisor-and-state-core-rows-from-qsl-source.md) | FR |
 | [FR-496](functional/FR-496-emit-model-operation-effects-into-checked-packages.md) | FR |
+| [FR-497](functional/FR-497-check-and-emit-carried-quantities-and-their-conversion.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |
