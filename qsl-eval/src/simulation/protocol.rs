@@ -837,6 +837,12 @@ pub fn load_buffering_shapes(
     )
 }
 
+/// One bounded protocol expansion together with its terminal classification.
+pub type ProtocolSuccessorsAndTerminal<M> = (
+    Expansion<ProtocolTransition, ProtocolState<M>, ModelFinding>,
+    TerminalClass,
+);
+
 /// FR-215: the transition system of a protocol subject.
 pub struct ProtocolSystem<'a, M: MemoryModel> {
     model: ModelSystem<'a>,
