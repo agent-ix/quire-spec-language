@@ -79,6 +79,7 @@ channel and states what it means; the four policy words keep their meaning.
 | FR-509-AC-4 | The emitted package holds the delivery text `[0,3]` for AC-1's channel, a different text `[0,4]` when only `hi` changes, the unchanged word text for each policy word, and reads back through the I2 reader. | Test (TC-1304) |
 | FR-509-AC-5 | On a `fifo` channel of capacity 2 with `delivery [2,2]`, `send P; receive R1 of P; receive R2 of P` completes in every execution and a third receive stops `empty-queue`; with `[0,1]` the executions include one where `receive R1 of P` stops `empty-queue` and one where it completes; with `[1,3]`, capacity 2 and `overflow block`, `send P` has the executions d = 1 and d = 2 that enqueue, and one (d = 3) that stops `full-queue` at the send; on a `[1,1]` channel no execution loses or duplicates the message (FR-211-AC-5's `lose` and `duplicate` stay disabled), and on a `[0,1]` channel the only losing execution is d = 0. | Test (TC-1304) |
 | FR-509-AC-6 | A `delivery [1,2]` channel in a unit whose header selects no temporal profile and no clock checks and emits; the interval reads no clock. | Test (TC-1304) |
+| FR-509-AC-7 | The parser accepts `delivery [<lo>,<hi>]` in a channel clause as the fifth delivery form beside the four policy words, so a channel that declares an interval parses with no syntax error. | Test (TC-1304) |
 
 ## Dependencies
 
@@ -89,6 +90,8 @@ channel and states what it means; the four policy words keep their meaning.
   QSpec carries the delivery text as an opaque string; if the IR validates
   the four words, that validator must admit the interval (a question to the
   Contract IR owner filed with this batch).
+- **Implementation:** QSL-1526 (grammar, checking, emission, exploration);
+  QSL-1538 (QSpec and Contract IR delivery text).
 - **Upstream:** FR-048-AC-2 (the legacy behavior), FR-218 (channel premises),
   TC-383 (queue semantics).
 - **Fixture note:** `tests/fixtures/composed-choreography.native` is refused

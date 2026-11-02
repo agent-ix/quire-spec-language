@@ -80,9 +80,14 @@ pub fn checked_predicate<'p>(package: &'p CheckedPackageV2, selection: &Predicat
 ```
 
 Both views borrow the package, have no public constructor and no method that
-evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of this requirement are `UnresolvedClause` (FR-337's
-`clause-root-unresolved` lookup refusal, reused), `LeafNotInClause`,
-`LeafNotBoolean`.
+evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of this requirement are:
+
+- `UnresolvedClause`: FR-337's `clause-root-unresolved` lookup refusal, reused;
+- `LeafNotInClause`: the leaf is no term the clause reads (it is reachable
+  from neither the formula root nor the activation guard);
+- `LeafHasNoSource`: the leaf is a term of the clause, and the package source
+  map holds no entry for it;
+- `LeafNotBoolean`: the leaf's semantic type is not the `boolean` node.
 
 ## Behavior
 
@@ -93,14 +98,14 @@ evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of 
 | `declaration()` (u32 index) | `declaration() -> &CheckedNodeId` | the clause node id |
 | `root()` (handle) | `occurrences() -> &[ClauseOccurrence]`, each `{ node, role: claim, ordinal }` | FR-337's identity triples; one per declaration of a structurally equal clause |
 | none (implicit in `root`) | `over() -> &CheckedNodeId` | the first argument of the `quire.op.temporal.clause` application (FR-337) |
-| `clause()` (requirement, name, execution) | `name() -> &str`; `requirements() -> Vec<&CheckedNodeId>` | the declaration's name; the protocol `requirements` entries that name this clause (the FR-449 rows) |
-| `source()` (source, span) | `source_span() -> &CheckedSourceMapEntry` | the package source map entry of the clause node |
+| `clause()` (requirement, name, execution) | `requirements() -> &[&CheckedNodeId]`; `name() -> &str` once IR-1278 decides the package carries the clause's name, and none until then | `requirements()`: the node ids of the protocol clauses whose `requirements` entries name this clause (the FR-449 rows whose `required_temporal` is this clause), in row order. The package holds no declared name for a temporal clause: the clause node has no `declaration` member and the reader refuses one (IR-1278) |
+| `source()` (source, span) | `source_span() -> &CheckedSourceMapEntry` | the package source map entry of the clause node with role `claim`; its region covers the clause's name token only, not the formula |
 | `profile_identities()` | `profile() -> &CheckedSelection` | the lock `profile_selections` row whose definition equals the clause's `temporal_profile` law |
 | `clock()` | `clock() -> Option<&TemporalBinding>` | the `temporal_bindings()` row for this declaration; `None` when the lock selects no clock configuration |
 | `activation()` | `activation() -> Activation` | `Origin`, or `Each { trigger: CheckedNodeId, guard: Option<CheckedNodeId> }` from the clause's activation argument |
 | `captures()` | `captures() -> &[CheckedNodeId]` | the clause's captures argument, in source order |
 | `operators()`, `required_history()` | `formula() -> Vec<OperatorUse>`, each `{ operation: &str, interval: Option<Interval> }` in formula pre-order | the `quire.op.temporal.*` applications and their `temporal_interval` members (FR-337); the history span is derived by FR-043, not carried |
-| `predicate_leaves()` | `predicate_leaves() -> &[CheckedNodeId]` | the Boolean operand node of every `holds` atom in formula pre-order; the activation guard is never among them |
+| `predicate_leaves()` | `predicate_leaves() -> &[CheckedNodeId]` | the Boolean operand node of every `holds` atom in formula pre-order, one entry per atom. The activation guard is a separate node of the clause's activation argument; equal terms share one node (FR-337), so a guard equal to a `holds` operand is that same node and is among the entries |
 | `history_boundary()` | none | a property of an evaluation input (FR-516), not of the package |
 | `values()`, `bindings()`, `type_indices()`, `temporal_nodes()` | none | the checked graph is the closed table; a caller resolves a node id with `CheckedPackageV2::term` |
 | `package_artifact()`, `package_digest()`, `document().digest()`, `document().identity()`, `document().bytes()`, `SCHEMA_BYTES`, `SCHEMA_SHA256`, the `identity` label | none | the digest, the schema and the document go with the retired contract (QSL-1270 removed digests); the package binding is by lifetime and by `belongs_to` below |
@@ -118,11 +123,17 @@ package the view was read from (the check quire-protocol made by comparing
 | none | `kind() -> PredicateKind`: `HoldsLeaf`, `ActivationGuard`, `ClauseLeaf` |
 | `parent_kind()` | `parent_operation() -> Option<&str>` (the operation identity of the leaf's parent application) |
 | `parameters()` | `binders() -> &[CheckedNodeId]`: the binder nodes of the clause's `over` and activation trigger and its captures that the leaf term reads, in first-reference order |
-| `source()` | `source_span()` |
-| `clause()` | `name()` |
+| `source()` | `source_span() -> &CheckedSourceMapEntry`: the entry of the leaf node, the one whose regions lie inside the source regions of the clause's formula root node when the leaf is shared with another clause |
+| `clause()` | `name()` once IR-1278 decides the package carries the clause's name, and none until then |
 | `type_indices()` | none: the leaf's semantic type is the `boolean` node, checked at selection |
 | `profile_identities()` | `profile()` |
 | `package_*`, `document()` | as for the temporal subject |
+
+`kind()` is decided by node identity, in this order: a leaf that is the
+activation guard node is `ActivationGuard`; otherwise a leaf that is among
+`predicate_leaves()` is `HoldsLeaf`; otherwise a leaf the formula reads is
+`ClauseLeaf`. A guard that shares its node with a `holds` operand therefore
+reads as `ActivationGuard` and is also among `predicate_leaves()`.
 
 A `ClauseLeaf` selection is admitted for a Boolean term that is neither a `holds`
 operand nor the activation guard but is a complete Boolean leaf of the clause's
@@ -136,25 +147,36 @@ only when one is written.
   the same bytes again, and a comment or whitespace change in the source leaves
   every returned id unchanged (FR-337).
 - Two structurally equal clauses share one node; each declaration keeps its own
-  `ClauseOccurrence`, and the view of the shared node returns both.
+  `ClauseOccurrence`, and the view of the shared node returns both. Under a
+  clock-configured temporal profile the writer emits one `temporal_bindings`
+  row per declaration and Contract IR's reader refuses the second row for the
+  shared node (`invalid_package`/`timed-node-reference`), so that case has no
+  admitted package until the Contract IR decision named in FR-515-AC-7 lands.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-515-AC-1 | Over the package of the ported IT-001 recipe (FR-517, call it **R**) and each of its three temporal clauses (event-position, fixed-sample, timestamped-event), `temporal_subject` returns a view whose `declaration`, `occurrences`, `over`, `name`, `source_span`, `profile`, `clock`, `activation`, `captures` and `formula` each equal the value read directly from the node or lock by the test, and whose `clock()` equals the row of `CheckedPackageV2::temporal_bindings()` for that declaration. | Test (TC-1310) |
-| FR-515-AC-2 | For a clause with `on each (q: T) when (g)`, `activation()` is `Each` with the trigger binder node and the guard node; for `on origin` it is `Origin`; for `on each` without a guard it is `Each` with `guard: None`; and `checked_predicate` of the guard is `ActivationGuard`, while the guard is absent from `predicate_leaves()`. | Test (TC-1310) |
+| FR-515-AC-1 | Over each of the three packages of **R** (event position, fixed sample, timestamped event; FR-517) and each of its temporal clauses (`Due` and `DueLate`, `DueSample`, `DueTimestamp`), `temporal_subject` returns a view whose `declaration`, `occurrences`, `over`, `source_span`, `profile`, `clock`, `activation`, `captures` and `formula` each equal the value read directly from the node or lock by the test, and whose `clock()` equals the row of `CheckedPackageV2::temporal_bindings()` for that declaration. | Test (TC-1310) |
+| FR-515-AC-2 | For a clause with `on each (q: T) when (g)`, `activation()` is `Each` with the trigger binder node and the guard node; for `on origin` it is `Origin`; and for `on each` without a guard it is `Each` with `guard: None`. | Test (TC-1310) |
 | FR-515-AC-3 | For `always[0,30] holds(Allowed(view.ratio))` (the recipe's `Due`), `formula()` is the `always` operation with interval `[0, 30]` followed by the `holds` application, and `predicate_leaves()` holds the one Boolean operand node; for a formula with three `holds` atoms it holds three nodes in formula pre-order. | Test (TC-1310) |
-| FR-515-AC-4 | `checked_predicate` for the `HoldsLeaf` of AC-3 returns a view with `kind() = HoldsLeaf`, the leaf, the clause, `binders()` naming `view` and no other binder, and a `source_span` inside the clause span. | Test (TC-1310) |
-| FR-515-AC-5 | `temporal_subject` of a node id that is absent, that names a non-temporal node (a `protocol_clause`), or that names a temporal node of another form refuses `UnresolvedClause`; `checked_predicate` of a leaf outside the clause refuses `LeafNotInClause`, of an integer-typed node `LeafNotBoolean`; none returns a partial view. | Test (TC-1310) |
+| FR-515-AC-4 | `checked_predicate` for the `HoldsLeaf` of AC-3 returns a view with `kind() = HoldsLeaf`, the leaf, the clause, `binders()` naming `view` and no other binder, and a `source_span` whose regions lie inside the source regions of the clause's formula root node. | Test (TC-1310) |
+| FR-515-AC-5 | `temporal_subject` of a node id that is absent, that names a non-temporal node (a `protocol_clause`), or that names a temporal node of another form refuses `UnresolvedClause`; `checked_predicate` of a leaf the clause does not read refuses `LeafNotInClause`, of an integer-typed node `LeafNotBoolean`; none returns a partial view. | Test (TC-1310) |
 | FR-515-AC-6 | A view read from package **P1** answers `belongs_to(P1)` true and `belongs_to(P2)` false for a second package **P2** whose clause has the same name, and the lifetime of the view ends with the borrow of its package. | Test (TC-1310) |
-| FR-515-AC-7 | Two structurally equal clauses of one package give one node and two `ClauseOccurrence` values with different ordinals, returned by the view of that node; changing one interval of the formula changes `formula()` and the node id, and adding a source comment changes neither. | Test (TC-1310) |
+| FR-515-AC-7 | Two structurally equal clauses of one package under an infinite-trace temporal profile give one node and two `ClauseOccurrence` values with different ordinals, returned by the view of that node; changing one interval of the formula changes `formula()` and the node id, and adding a source comment changes neither. | Test (TC-1310) |
 | FR-515-AC-8 | The views expose no method that takes a closure or evaluates a term, no public constructor, and none of `digest`, `bytes`, `identity`, `package_digest`, `SCHEMA_BYTES`; a compile-fail test that constructs either view outside the module, and compile-fail tests that call `digest()`, `bytes()`, `identity()`, `package_digest()` and a closure-taking method on either view, each fail to compile. | Test (TC-1310) |
-| FR-515-AC-9 | `quire_spec_language::protocol_artifact::checked_predicate` and `temporal_subject` are not resolvable once QSL-840 and QSL-838 land, and the change that deletes them lands only when TC-1310 is green on its head (FR-521 row 1). | Test (TC-1310, TC-1316) |
+| FR-515-AC-9 | `quire_spec_language::protocol_artifact::checked_predicate` and `temporal_subject` do not resolve; QSL-303 retired them. | Test (TC-1310, TC-1316) |
+| FR-515-AC-10 | For a clause whose guard `g` is a different node from every `holds` operand, `checked_predicate` of `g` is `ActivationGuard` and `g` is absent from `predicate_leaves()`. | Test (TC-1310) |
+| FR-515-AC-11 | For a clause whose guard is equal to a `holds` operand, so that the two are one node, `checked_predicate` of that node is `ActivationGuard` and the node is present in `predicate_leaves()` once for each `holds` atom that reads it. | Test (TC-1310) |
+| FR-515-AC-12 | `checked_predicate` of a leaf the clause reads and for which the package source map holds no entry refuses `LeafHasNoSource` and returns no partial view. | Test (TC-1310) |
+| FR-515-AC-13 | Two structurally equal clauses under a clock-configured temporal profile give one node and two `ClauseOccurrence` values, and the package is admitted by `read_checked_package`. This is gated on a Contract IR decision for the shared node's `temporal_bindings` row, for which no Linear ticket exists yet. | Test (TC-1310) |
+| FR-515-AC-14 | With a reader that implements IR-1278, `name()` of a view returns the clause's declared name, equal to the name in the selection sidecar. This is gated on IR-1278. | Test (TC-1310) |
 
 ## Dependencies
 
 - **Upstream:** FR-337, FR-383, FR-449, FR-051 (retired modules), QSL-303,
-  QSL-1270 (digest removal), `quire_contract_model::CheckedPackageV2`.
+  QSL-1270 (digest removal), `quire_contract_model::CheckedPackageV2`; IR-1278
+  (the clause name, gates FR-515-AC-14); a Contract IR ticket for the shared
+  node's clock row (gates FR-515-AC-13), not yet filed.
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/result/record.rs`
   (QSL-1549).

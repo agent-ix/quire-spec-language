@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the delivery interval of FR-509: parsing, refusals, premises, emission
-and queue semantics. Scope: FR-509-AC-1 to FR-509-AC-6.
+and queue semantics. Scope: FR-509-AC-1 to FR-509-AC-7.
 
 ## Test Procedure
 
@@ -30,8 +30,9 @@ is substituted per row; the smallest valid body sends and receives on `ch`.
 | 8 | capacity 2, `delivery [0,1]`: `send P; receive R1 of P` | one execution stops `empty-queue` at R1, one completes |
 | 9 | capacity 2, `overflow block`, `delivery [1,3]`: `send P` | executions d = 1 and d = 2 enqueue; the execution d = 3 stops `full-queue` at the send |
 | 10 | `delivery [1,2]` in a unit with no temporal profile and no clock | checks and emits |
+| 11 | 7 | parse a channel clause with `delivery [0,3]` (CST only, no check) | parses with no syntax error |
 
-Tag the test `#[trace("FR-509-AC-1", "FR-509-AC-2", "FR-509-AC-3", "FR-509-AC-4", "FR-509-AC-5", "FR-509-AC-6", "TC-1304")]`.
+Tag the test `#[trace("FR-509-AC-1", "FR-509-AC-2", "FR-509-AC-3", "FR-509-AC-4", "FR-509-AC-5", "FR-509-AC-6", "FR-509-AC-7", "TC-1304")]`.
 
 ## Expected Results
 
