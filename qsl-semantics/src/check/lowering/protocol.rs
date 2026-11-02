@@ -39,7 +39,7 @@ mod controls;
 use controls::RunInputs;
 pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
-use super::{fault, refuse, Binder, Binders, Lowering, NodeContent, NodeRef};
+use super::{fault, refuse, require_admitted, Binder, Binders, Lowering, NodeContent, NodeRef};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::{CheckedBody, CheckedNode};
 use crate::check::node_key::{
@@ -623,7 +623,7 @@ impl Lowering<'_> {
             return Ok(Vec::new());
         }
         let placeholder = match self.protocol_keys.get(index) {
-            Some(ProtocolKey::Keyed(key)) if cyclic => Some(*key),
+            Some(ProtocolKey::Keyed(NodeRef::Pending(handle))) if cyclic => Some(*handle),
             _ => None,
         };
         let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
@@ -643,9 +643,10 @@ impl Lowering<'_> {
         ) {
             Ok(key) => {
                 if let Some(placeholder) = placeholder {
-                    self.placeholders.insert(placeholder, Some(key));
+                    self.placeholders
+                        .insert(placeholder, Some(NodeRef::Admitted(key)));
                 } else {
-                    self.set_protocol_key(index, ProtocolKey::Keyed(key));
+                    self.set_protocol_key(index, ProtocolKey::Keyed(NodeRef::Admitted(key)));
                 }
                 Ok(Vec::new())
             }
@@ -714,7 +715,7 @@ impl Lowering<'_> {
                 },
                 &location,
             )?;
-            self.protocol_keys[index] = ProtocolKey::Keyed(key);
+            self.protocol_keys[index] = ProtocolKey::Keyed(NodeRef::Admitted(key));
         }
         Ok(())
     }
@@ -2055,9 +2056,9 @@ impl Lowering<'_> {
         node: CheckedNode<'_>,
         protocol: usize,
     ) -> Result<LeafTerm, CheckRefusal> {
-        let target = self.protocol_key(protocol, node.location())?;
+        let target = self.protocol_target(protocol, node.location())?;
         let semantic_type = self.type_node(&ValueType::Boolean, node.location())?;
-        let key = self.insert_content_key(
+        let key = self.insert_node(
             node.location(),
             NodeContent {
                 owner_model: None,
@@ -2066,7 +2067,7 @@ impl Lowering<'_> {
                 semantic_type: Some(semantic_type.into()),
                 declaration: None,
                 owner: None,
-                body: BodyTerm::Leaf(LeafTerm::reference(target)),
+                body: BodyTerm::Leaf(LeafTerm::reference_node(target)),
             },
         )?;
         self.record(
@@ -2074,19 +2075,18 @@ impl Lowering<'_> {
             OccurrenceRole::Expression,
             node.location().clone(),
         );
-        Ok(LeafTerm::reference(key))
+        Ok(LeafTerm::reference_node(key))
     }
 
-    /// The node key of the `protocol`-th declaration, or the refusal that
-    /// the package selected no protocol profile for it to carry, or that it
-    /// names a construct whose node is not written yet.
-    pub(crate) fn protocol_key(
+    /// The node reference of the `protocol`-th declaration, which may be a
+    /// lowering-local placeholder while a mixed recursion component is open.
+    fn protocol_target(
         &self,
         protocol: usize,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         match self.protocol_keys.get(protocol) {
-            Some(ProtocolKey::Keyed(key)) => Ok(key.clone()),
+            Some(ProtocolKey::Keyed(target)) => Ok(target.clone()),
             Some(ProtocolKey::NotEmitted(construct)) => Err(not_emitted(*construct, location)),
             Some(ProtocolKey::Unkeyed) => Err(refuse(
                 location,
@@ -2105,6 +2105,17 @@ impl Lowering<'_> {
                 },
             )),
         }
+    }
+
+    /// The node key of the `protocol`-th declaration, or the refusal that
+    /// the package selected no protocol profile for it to carry, or that it
+    /// names a construct whose node is not written yet.
+    pub(crate) fn protocol_key(
+        &self,
+        protocol: usize,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        require_admitted(self.protocol_target(protocol, location)?, location)
     }
 }
 
@@ -2292,7 +2303,7 @@ pub(crate) struct ProtocolMembers {
 #[derive(Clone, Debug)]
 pub(super) enum ProtocolKey {
     /// The key of its `protocol_clause` node.
-    Keyed(NodeKey),
+    Keyed(NodeRef),
     /// The package selects no protocol profile.
     Unselected,
     /// Its node is not keyed yet, or its lowering was refused and the
