@@ -50,8 +50,7 @@ pub use checked_v2::{
 };
 #[cfg(feature = "std")]
 pub use emit::{
-    checked_occurrence, emit_checked, emit_checked_with_cancel,
-    emit_checked_with_protocol_results,
+    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_checked_with_protocol_results,
     emit_checked_with_temporal_selections, emit_checked_with_temporal_selections_and_cancel,
     emit_package, emit_package_with_temporal_selections, emit_timed_models, Emission, EmitRefusal,
     OmissionCause, OmittedNode, ProtocolEmission, ProtocolEmissionAggregate,

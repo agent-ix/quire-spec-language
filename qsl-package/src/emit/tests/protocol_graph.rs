@@ -1027,6 +1027,121 @@ fn parallel_flow(parallel: &str) -> String {
     )
 }
 
+/// FR-383-AC-18, AC-28 and AC-29 (TC-1297): a refused protocol leaves
+/// independent protocol results readable and makes the aggregate inadmissible.
+#[trace("FR-383-AC-18", "FR-383-AC-28", "FR-383-AC-29", "TC-1297")]
+#[test]
+fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
+    let good = parallel_flow(
+        "parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, b];",
+    );
+    let broken = good
+        .replace("protocol Flow", "protocol Broken")
+        .replace("join all [a, b]", "join all [a, absent]");
+    let unit = |protocols: &str| {
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+             model M = \"acme/orders\";\n{protocols}"
+        )
+    };
+    let check = |protocols: &str| {
+        let document = model();
+        let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+            .expect("the test model admits");
+        assemble_with_models(unit(protocols).as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check_with_protocol_results(CheckingLimits::default())
+            .expect("unit-level checks succeed")
+    };
+    let standalone = CheckedPackage::link(check(&good));
+    let standalone = emit_checked_with_protocol_results(&standalone).expect("Flow emits");
+    let ProtocolEmissionResult::Emitted {
+        nodes: baseline, ..
+    } = standalone.results().first().expect("one protocol result")
+    else {
+        panic!("Flow emits independently: {:?}", standalone.results());
+    };
+
+    let combined_graph = check(&format!("{good}\n{broken}"));
+    assert_eq!(
+        combined_graph.protocol_order(),
+        ["Flow", "Broken"],
+        "protocol results retain declaration order"
+    );
+    assert_eq!(combined_graph.protocol_refusals().len(), 1);
+    assert_eq!(combined_graph.protocol_refusals()[0].declaration, "Broken");
+    let combined = emit_checked_with_protocol_results(&CheckedPackage::link(combined_graph))
+        .expect("the good protocol's nodes can still be emitted");
+    assert!(matches!(
+        combined.aggregate(),
+        ProtocolEmissionAggregate::Refused { .. }
+    ));
+    assert!(
+        combined.emission().is_none(),
+        "a refused aggregate has no package"
+    );
+    assert_eq!(combined.results().len(), 2);
+    let ProtocolEmissionResult::Emitted {
+        declaration,
+        nodes: emitted_good,
+        ..
+    } = &combined.results()[0]
+    else {
+        panic!("Flow's result stays emitted: {:?}", combined.results());
+    };
+    assert_eq!(declaration, "Flow");
+    assert_eq!(
+        emitted_good, baseline,
+        "Flow's nodes are byte-for-byte stable"
+    );
+    let ProtocolEmissionResult::Refused {
+        declaration,
+        refusal,
+    } = &combined.results()[1]
+    else {
+        panic!("Broken's result is refused: {:?}", combined.results());
+    };
+    assert_eq!(declaration, "Broken");
+    assert!(matches!(
+        refusal.cause,
+        qsl_semantics::check::CheckCause::MissingName(_)
+    ));
+    assert_eq!(
+        combined
+            .results()
+            .iter()
+            .filter(|result| matches!(result, ProtocolEmissionResult::Refused { .. }))
+            .count(),
+        1,
+        "one diagnostic result is retained for the refused protocol"
+    );
+
+    let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+        "{broken}\n{good}"
+    ))))
+    .expect("the reordered good protocol's nodes can still be emitted");
+    let ProtocolEmissionResult::Refused {
+        refusal: reversed_refusal,
+        ..
+    } = &reversed.results()[0]
+    else {
+        panic!("Broken remains refused: {:?}", reversed.results());
+    };
+    assert_eq!(
+        reversed_refusal, refusal,
+        "refusal record is order-independent"
+    );
+    let ProtocolEmissionResult::Emitted {
+        nodes: reversed_good,
+        ..
+    } = &reversed.results()[1]
+    else {
+        panic!("Flow remains emitted: {:?}", reversed.results());
+    };
+    assert_eq!(reversed_good, baseline, "Flow remains byte-for-byte stable");
+}
+
 /// The `control` node of `wire` whose declaration is `path`.
 fn control_at<'w>(wire: &'w Value, path: &[&str]) -> &'w Value {
     nodes(wire)
