@@ -141,16 +141,6 @@ subject. A field, operation or relationship-end member has no node of
 its own; an FR-322 member names it by its declaring node and its name
 (ADR-013 O-06):
 
-A selected `RelationshipRecord` is an unconditional exception to that
-reachability rule. `check` roots every selected relationship declaration even
-when no checked value, function, frame or relationship-end member names it,
-and records one `generated` occurrence at the selected model alias's own
-declaration-site/source span. The fallback `generated_location` is never used
-for this root, and no relationship root may reach emission as an
-`UnlocatedOccurrence`. For example, the `billedTo` relationship in the
-unreferenced model fixture is emitted from the `M` alias declaration site
-even when the fixture has no function that names it.
-
 - the `field` member of an `Attribute` (`deref(r).f`) names the model node of
   `r`'s static object type `T`, the target of `r`'s `Reference<T>` type, and
   the attribute name `f`;
@@ -163,6 +153,28 @@ even when the fixture has no function that names it.
   relationship's node and the end's role;
 - the `type_argument` member of `allInstances<T>` and `lookup<T>` names the
   model node of `T`.
+
+A selected `RelationshipRecord` is an unconditional exception to that
+reachability rule. `check` roots every selected relationship declaration even
+when no checked value, function, frame or relationship-end member names it,
+and records one `generated` occurrence at the selected model alias's own
+declaration-site/source span. The fallback `generated_location` is never used
+for this root, and no relationship root may reach emission as an
+`UnlocatedOccurrence`. For example, the `billedTo` relationship in the
+unreferenced model fixture is emitted from the `M` alias declaration site
+even when the fixture has no function that names it.
+
+An [FR-496](./FR-496-emit-model-operation-effects-into-checked-packages.md)
+`operation_effects` row is a further root of that reachability rule. QSpec
+FR-322-AC-303's reader refuses a row whose `declaring` node or effect subject
+has no node (`missing_declaration`/`missing-name`), so for each operation that
+has a row, `check` builds the node of its declaring owner, of the declaring
+node of each field and of each relationship its frame `modifies` under either
+scope, and of each `creates` and `deletes` subject. It builds them from the
+admitted records whether or not the package carries `operation_effects`
+(FR-496-AC-5), at the model alias's declaration site, or as one `generated`
+occurrence at the fallback `generated_location` for a model admitted without
+an alias.
 
 A `Reference<T>` type carries `T` as an `EffectiveId` (ADR-013 O-05).
 `check` maps it to the `DeclarationKey` that the effective view's
@@ -409,7 +421,7 @@ QSpec's `unit-metre` and `unit-second` nominal nodes.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-094-AC-1 | With `acme/orders` `1.0.0` admitted, a parameter typed `Reference<M::Order>` has a `composite_type`/`reference` type node whose id is `{package of the checked package, path [composite_type, reference, <Order's node id>], ordinal 0}` and whose body references `Order`'s model node, whose id is `{acme/orders, [model, object_type, ix://acme/orders/Order], 0}`. With `acme/orders` `2.0.0` admitted instead, the same source gives the same two ids. `Invoice` has the id with `ix://acme/orders/Invoice` and the relationship `billedTo` the id `{acme/orders, [relation, relationship, ix://acme/orders/billedTo], 0}`. `Order`'s model node has `owner` `{kind: "model", identity: "acme/orders", node: "ix://acme/orders/Order"}`, with no `version` member, and `declaration` `null`, and the reference type node has no `owner`. | Test (TC-417) |
-| FR-094-AC-2 | Checking `function g using v(r: Reference<M::Order>, s: Reference<M::Invoice>): Boolean pure { true }` records exactly two model correspondence entries, (`Order`'s node id, `ix://acme/orders/Order`'s `DeclarationKey`) and (`Invoice`'s node id, `ix://acme/orders/Invoice`'s), and no entry names a clause function or a type node. | Test (TC-417) |
+| FR-094-AC-2 | Checking `function g using v(r: Reference<M::Order>, s: Reference<M::Invoice>): Boolean pure { true }` records exactly three model correspondence entries, (`Order`'s node id, `ix://acme/orders/Order`'s `DeclarationKey`), (`Invoice`'s node id, `ix://acme/orders/Invoice`'s) and (`Sub`'s node id, `ix://acme/orders/Sub`'s), and no entry names a clause function or a type node. `Order` is named by `r`'s type and declares rows, `Invoice` only by `s`'s type, and `Sub` only as the declaring node of the `Sub.size` and `Sub.scaled` rows; the fixture's frames are empty, so no frame subject adds a node. | Test (TC-417) |
 | FR-094-AC-3 | In functions over the parameters `p: Population<M::Order>[3]` and `r: Reference<M::Order>`, in that order, `p`'s type node has id path `[bounded_domain, model_population, <Order's node id>, "3"]` and `semantic_type` the `Set<Reference<Order>>` node, and `r`'s type is the reference node of AC-1. `allInstances<M::Order>(p)` has `result_type` the `Set<Reference<Order>>[0, 3]` node, `lookup<M::Order>(p, r) absent undefined` has `result_type` the reference node, and `lookup<M::Order>(p, r) absent empty` has `result_type` the `Option<Reference<Order>>` node. `p: Population<M::Order>[5]` has a type node with a different id from the `[3]` one, and `Population<M::Invoice>[3]` has a different id from `Population<M::Order>[3]`. | Test (TC-417) |
 | FR-094-AC-4 | With `r: Reference<M::Order>` at level 1, `deref(r).total` has a `field` member naming `Order`'s model node and `total`, and `r.size()` has an `operation` member naming `Order`'s model node and `size`. `deref(s).total` and `s.size()` over `s: Reference<M::Sub>` name `Sub`'s model node, not `Order`'s. | Test (TC-417) |
 | FR-094-AC-5 | `checked_dispatch_operation` for `Order.size` with the authored precondition `true` and the body `7`, and receiver parameter `self: Reference<M::Order>`, builds two clause functions, one `precondition` and one `body`, each with `owner` `ModelOwner` of `ix://acme/orders/Order/size` and `declaration` `null`. Under `acme/orders` `2.0.0`, the same receiver parameter and the same clause functions are built, with the same ids. The same precondition authored on `Order.count` is a different node. When `Sub.size` redefines `Order.size` with the authored precondition `false` and receiver `self: Reference<M::Sub>`, its authored precondition and its effective precondition `false or true` are two nodes whose owner is `Sub.size`, while `Order.size`'s authored function is unchanged. Rebuilding with a different synthesized label gives the same ids, and building `Sub.size`'s clauses from both dispatch operations yields one node for each clause. | Test (TC-418) |
