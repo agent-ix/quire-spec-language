@@ -2007,6 +2007,14 @@ fn mismatch(location: &Location) -> CheckRefusal {
     CheckRefusal::ill_typed(location, IllTypedCause::TypeMismatch)
 }
 
+fn quantity_unit(value_type: &ValueType) -> Option<&quire_exact::UnitId> {
+    match value_type {
+        ValueType::Quantity(unit) => Some(unit),
+        ValueType::CarriedQuantity(carried) => Some(carried.unit()),
+        _ => None,
+    }
+}
+
 fn ineligible(location: &Location) -> CheckRefusal {
     CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible)
 }
@@ -2686,6 +2694,7 @@ impl<'a> Typer<'a> {
                 | ValueType::Decimal(_)
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
+                | ValueType::CarriedQuantity(_)
                 | ValueType::BoundedQuantity(_)
                 | ValueType::CarriedQuantity(_)
                 | ValueType::Text(_)
@@ -2896,6 +2905,11 @@ impl<'a> Typer<'a> {
         right: TypedOperand,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if matches!(&left.node.value_type, ValueType::CarriedQuantity(_))
+            || matches!(&right.node.value_type, ValueType::CarriedQuantity(_))
+        {
+            return Err(mismatch(location));
+        }
         // FR-359 item 4: FR-208 gives an event type no equality, so an
         // operand holding one is ineligible, not compared.
         if self.scope.reaches_event(&left.node.value_type)
@@ -2956,6 +2970,7 @@ impl<'a> Typer<'a> {
         ] {
             let unit_id = match value_type {
                 ValueType::Quantity(unit) => Some(unit.clone()),
+                ValueType::CarriedQuantity(carried) => Some(carried.unit().clone()),
                 ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
                 ValueType::CarriedQuantity(quantity) => Some(quantity.unit().clone()),
                 ValueType::Boolean
@@ -3011,6 +3026,7 @@ impl<'a> Typer<'a> {
                 });
                 let unit_id = match value_type {
                     ValueType::Quantity(unit) => Some(unit.clone()),
+                    ValueType::CarriedQuantity(carried) => Some(carried.unit().clone()),
                     ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
                     ValueType::CarriedQuantity(quantity) => Some(quantity.unit().clone()),
                     _ => None,
@@ -3294,6 +3310,7 @@ impl<'a> Typer<'a> {
                     ValueType::Decimal(target),
                 )
             }
+            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
             ValueType::Float(_) | ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
                 return Err(ineligible(location))
             }
@@ -3535,6 +3552,7 @@ impl<'a> Typer<'a> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Population(_) => false,
@@ -4060,6 +4078,32 @@ impl<'a> Typer<'a> {
                     location,
                 ))
             }
+            (
+                ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
+                ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
+            ) => {
+                let Some(source_unit) = quantity_unit(&operand.value_type) else {
+                    return Err(mismatch(location));
+                };
+                let Some(target_unit) = quantity_unit(target) else {
+                    return Err(mismatch(location));
+                };
+                let compatible = self
+                    .units
+                    .get(source_unit.clone())
+                    .zip(self.units.get(target_unit.clone()))
+                    .is_some_and(|(source, target)| source.converts_to(target));
+                if !compatible {
+                    return Err(mismatch(location));
+                }
+                let converted =
+                    EqualityOperand::converted(operand.value_type.clone(), target.clone());
+                Ok(node(
+                    NodeKind::ConvertScalar(converted, self.push(operand)),
+                    target.clone(),
+                    location,
+                ))
+            }
             (source, _) => {
                 if matches!(source, ValueType::Float(_))
                     || !admits_equality_conversion(source, target, &self.units)
@@ -4491,6 +4535,7 @@ fn holds_float(mut ty: &ValueType) -> bool {
             | ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Quantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Text(_)

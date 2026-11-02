@@ -387,6 +387,7 @@ fn holds_reference(
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)

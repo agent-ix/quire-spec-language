@@ -1535,6 +1535,7 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Enum(_)
@@ -1604,6 +1605,7 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
+                    | ValueType::CarriedQuantity(_)
                     | ValueType::BoundedQuantity(_)
                     | ValueType::CarriedQuantity(_)
                     | ValueType::String
@@ -2470,14 +2472,15 @@ impl<'a> Lowering<'a> {
             ValueType::Quantity(unit) => self
                 .quantity_type(unit.clone(), location)
                 .map(NodeRef::from),
-            // No checked type node carries a map, a bounded quantity or a
-            // carried quantity yet: a typed refusal, never a guessed node.
-            ValueType::Map(_) | ValueType::BoundedQuantity(_) | ValueType::CarriedQuantity(_) => {
-                Err(refuse(
-                    location,
-                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-                ))
-            }
+            ValueType::CarriedQuantity(carried) => self
+                .carried_quantity_type(carried, location)
+                .map(NodeRef::from),
+            // No checked type node carries a map or a bounded quantity yet:
+            // a typed refusal, never a guessed node.
+            ValueType::Map(_) | ValueType::BoundedQuantity(_) => Err(refuse(
+                location,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+            )),
             ValueType::Reference(target) => self
                 .reference_type(target.clone(), location)
                 .map(NodeRef::from),
@@ -4318,13 +4321,22 @@ impl<'a> Lowering<'a> {
                 };
                 let target = target.clone();
                 let member = self.type_argument(&target, node.location())?;
-                let operation = if let ValueType::Quantity(_) = node.at(*operand).value_type() {
-                    // FR-093 `quire.op.quantity.convert`: a quantity's
-                    // magnitude is an exact rational, and its conversion is
-                    // exact (`value::quantity`'s `QuantityTarget::Exact`).
+                let operation = if matches!(
+                    node.at(*operand).value_type(),
+                    ValueType::Quantity(_) | ValueType::CarriedQuantity(_)
+                ) {
+                    // FR-093 / FR-497 quantity conversions carry the target
+                    // carrier's mode, or exact for an uncarried Quantity.
+                    let rounding = match &target {
+                        ValueType::CarriedQuantity(carried) => match carried.carrier() {
+                            quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
+                            quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
+                        },
+                        _ => quire_exact::RoundingMode::Exact,
+                    };
                     Operation {
                         member: Some(member),
-                        mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                        mode: Some(OperationMode::Rounding(rounding)),
                         ..plain("quire.op.quantity.convert")
                     }
                 } else {
@@ -5659,7 +5671,9 @@ impl<'a> Lowering<'a> {
                 });
             }
             ValueType::Enum(_) => "enum",
-            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => "quantity",
+            ValueType::Quantity(_)
+            | ValueType::CarriedQuantity(_)
+            | ValueType::BoundedQuantity(_) => "quantity",
             ValueType::Reference(_) => "reference",
             // QSpec FR-149 states no map equality relation. FR-497-AC-2: the
             // checker refuses a carried quantity `=` operand before lowering.

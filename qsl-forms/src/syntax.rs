@@ -33,7 +33,8 @@ pub enum BuiltinType {
     Boolean,
     /// `Integer`: unbounded.
     Integer,
-    /// `Int[lower, upper]`.
+    /// `Int[lower, upper]`, or a carrier spelling with an optional rounding
+    /// mode inside `Quantity<u, Int[lower, upper; mode]>`.
     Int,
     /// `Rational[numerator lower, numerator upper; denominator lower,
     /// denominator upper]`.
@@ -51,8 +52,9 @@ pub enum BuiltinType {
     Option,
     /// `Reference<T>`.
     Reference,
-    /// `Quantity<u>` (QSpec FR-142 "Quantity type reference"): its one
-    /// argument is the named unit `u`, looked up in the unit namespace.
+    /// `Quantity<u>` or `Quantity<u, C>` (QSpec FR-142): the first argument
+    /// is the named unit `u`, looked up in the unit namespace; the optional
+    /// second argument is a bounded `Int` or `Decimal` carrier.
     Quantity,
     /// `Clock`, the built-in clock type: only an unqualified `Clock`
     /// (FR-393). Whether a unit admits it is S3's decision (FR-230).
@@ -84,8 +86,9 @@ pub enum TypeFormHead {
 ///
 /// It carries no `ValueType` and no `NodeKey` (FR-091-AC-11). [`Self::head`]
 /// is a builtin keyword, a kernel collection kind, `Population` or a name.
-/// [`Self::arguments`] are this same syntactic type recursively (an element
-/// or payload type). [`Self::bounds`] are declared bound or extent literals,
+/// [`Self::arguments`] are this same syntactic type recursively (an element,
+/// payload, or carried-quantity carrier). [`Self::bounds`] are declared bound
+/// or extent literals,
 /// spelled exactly as written (e.g. `Int[0, 10]`'s `"0"`, `"10"`;
 /// `Text[1, 100; nfc]`'s `"nfc"`); FR-091-OQ-9 is open on whether they
 /// become kernel values. `check` resolves a type form to the kernel

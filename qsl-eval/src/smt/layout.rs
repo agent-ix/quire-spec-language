@@ -87,6 +87,7 @@ fn sort_of(value_type: &ValueType) -> Result<FieldSort, &'static str> {
         ValueType::Decimal(_) => Err("a Decimal"),
         ValueType::Float(_) => Err("a Float"),
         ValueType::Quantity(_) => Err("a Quantity"),
+        ValueType::CarriedQuantity(_) => Err("a carried Quantity"),
         ValueType::BoundedQuantity(_) => Err("a BoundedQuantity"),
         ValueType::CarriedQuantity(_) => Err("a CarriedQuantity"),
         ValueType::Map(_) => Err("a Map"),

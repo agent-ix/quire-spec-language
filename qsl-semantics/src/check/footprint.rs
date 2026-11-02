@@ -256,6 +256,7 @@ fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)

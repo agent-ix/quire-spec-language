@@ -60,39 +60,28 @@ fn collection_type_form(collection: &CollectionType) -> TypeForm {
 /// panic).
 pub fn type_form(value_type: &ValueType) -> TypeForm {
     match value_type {
-        ValueType::Boolean => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Boolean, SPAN)
-        }
-        ValueType::Integer => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Integer, SPAN)
-        }
-        ValueType::Int(interval) => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Int, SPAN).with_bounds(vec![
+        ValueType::Boolean => TypeForm::builtin(qsl_forms::BuiltinType::Boolean, SPAN),
+        ValueType::Integer => TypeForm::builtin(qsl_forms::BuiltinType::Integer, SPAN),
+        ValueType::Int(interval) => TypeForm::builtin(qsl_forms::BuiltinType::Int, SPAN)
+            .with_bounds(vec![
                 interval.lower().to_string(),
                 interval.upper().to_string(),
-            ])
-        }
-        ValueType::Rational(domain) => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Rational, SPAN).with_bounds(
-                vec![
-                    domain.numerator().lower().to_string(),
-                    domain.numerator().upper().to_string(),
-                    domain.denominator().lower().to_string(),
-                    domain.denominator().upper().to_string(),
-                ],
-            )
-        }
-        ValueType::Decimal(decimal) => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Decimal, SPAN).with_bounds(
-                vec![
-                    decimal.lower().to_string(),
-                    decimal.upper().to_string(),
-                    decimal.min_scale().to_string(),
-                    decimal.max_scale().to_string(),
-                    rounding_mode_text(decimal.rounding()).to_owned(),
-                ],
-            )
-        }
+            ]),
+        ValueType::Rational(domain) => TypeForm::builtin(qsl_forms::BuiltinType::Rational, SPAN)
+            .with_bounds(vec![
+                domain.numerator().lower().to_string(),
+                domain.numerator().upper().to_string(),
+                domain.denominator().lower().to_string(),
+                domain.denominator().upper().to_string(),
+            ]),
+        ValueType::Decimal(decimal) => TypeForm::builtin(qsl_forms::BuiltinType::Decimal, SPAN)
+            .with_bounds(vec![
+                decimal.lower().to_string(),
+                decimal.upper().to_string(),
+                decimal.min_scale().to_string(),
+                decimal.max_scale().to_string(),
+                rounding_mode_text(decimal.rounding()).to_owned(),
+            ]),
         ValueType::Float(float) => TypeForm::builtin(
             match float.width() {
                 IeeeWidth::Binary32 => qsl_forms::BuiltinType::Float32,
@@ -102,25 +91,19 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
         )
         .with_bounds(vec![rounding_mode_text(float.rounding()).to_owned()]),
         ValueType::Text(text) => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Text, SPAN).with_bounds(
-                vec![
-                    text.min().to_string(),
-                    text.max().to_string(),
-                    text_profile_text(text.profile()).to_owned(),
-                ],
-            )
+            TypeForm::builtin(qsl_forms::BuiltinType::Text, SPAN).with_bounds(vec![
+                text.min().to_string(),
+                text.max().to_string(),
+                text_profile_text(text.profile()).to_owned(),
+            ])
         }
-        ValueType::Option(payload) => {
-            TypeForm::builtin(qsl_forms::BuiltinType::Option, SPAN)
-                .with_arguments(vec![type_form(payload)])
-        }
+        ValueType::Option(payload) => TypeForm::builtin(qsl_forms::BuiltinType::Option, SPAN)
+            .with_arguments(vec![type_form(payload)]),
         ValueType::Collection(collection) => collection_type_form(collection),
-        ValueType::Population(maximum) => {
-            TypeForm::new(qsl_forms::TypeFormHead::Population, SPAN)
-                .with_bounds(vec![maximum
-                    .expect("type_form: an unbounded population has no source spelling yet")
-                    .to_string()])
-        }
+        ValueType::Population(maximum) => TypeForm::new(qsl_forms::TypeFormHead::Population, SPAN)
+            .with_bounds(vec![maximum
+                .expect("type_form: an unbounded population has no source spelling yet")
+                .to_string()]),
         ValueType::Composite(_) | ValueType::Enum(_) | ValueType::Reference(_) => {
             panic!(
                 "type_form: {value_type:?} carries a NodeKey with no recoverable name -- build \
@@ -134,12 +117,18 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
              `value::declaration::EqualityOperand`'s own `ValueType`-based API instead, not a \
              `TypeForm`"
         ),
-        ValueType::BoundedQuantity(_) | ValueType::CarriedQuantity(_) | ValueType::Map(_) => panic!(
+        ValueType::CarriedQuantity(_) | ValueType::BoundedQuantity(_) | ValueType::Map(_) => panic!(
             "type_form: {value_type:?} has no declared-type syntax in this profile"
         ),
         ValueType::String | ValueType::Uuid | ValueType::Timestamp => panic!(
             "type_form: {value_type:?} has no QSL source type spelling in this profile"
         ),
+        ValueType::BoundedQuantity(_) | ValueType::Map(_) => {
+            panic!("type_form: {value_type:?} has no declared-type syntax in this profile")
+        }
+        ValueType::String | ValueType::Uuid | ValueType::Timestamp => {
+            panic!("type_form: {value_type:?} has no QSL source type spelling in this profile")
+        }
     }
 }
 
