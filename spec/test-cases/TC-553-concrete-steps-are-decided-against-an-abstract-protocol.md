@@ -15,7 +15,7 @@ internal concrete steps, refutations that replay, and QSpec FR-177's
 divergence-freedom, refusal-set, terminal-success and environment-assumption
 checks on the same product.
 
-Scope: FR-148-AC-1 to FR-148-AC-13; FR-144-AC-9 to FR-144-AC-10.
+Scope: FR-148-AC-1 to FR-148-AC-14; FR-144-AC-9 to FR-144-AC-10.
 
 ## Test Procedure
 
@@ -97,14 +97,19 @@ model (ADR-020 §8) with `peek` removed; `CasTwice` with `peek` kept.
     and the typed undecided-predicate locus. Replay it, then change the locus
     and verify `ReplayParity`. Keep this case separate from step 8's
     product-limit `incomplete` result.
-13. Supply a checked protocol requirement reference that cannot resolve to
-    exactly one admitted temporal-clause node. Check that no clause or target
-    is inferred by name and the product returns the typed
-    `relation-undetermined` result with the exact requirement `NodeKey`, all
-    available candidate clause identities and paired initial prefixes.
-    Replay the resolution and verify an `inconclusive`, `unsettled` result,
-    never `refuted` or `proved`. Also check that a uniquely resolved required
-    clause with no fairness rows contributes no authored constraint.
+13. Compile a protocol with a `requires temporal` name that does not name a
+    local temporal clause and verify FR-218-AC-16's S3 refusal. Then use an
+    emitted protocol requirement key that names no emitted temporal node and
+    verify FR-383-AC-17's S4 refusal. In both cases no FR-148 product runs and
+    no `ProtocolAssumptionNotEstablished` result is produced. Verify a
+    uniquely resolved required temporal clause with no fairness rows
+    contributes no authored constraint; FR-148 selects admitted node keys,
+    not names.
+14. Use the directly required `fair weak whole inc` clause from step 6 and
+    add a separate `ensure fair weak whole inc` guarantee. Choose a paired
+    lasso that takes `inc` so the guarantee is satisfied. Compare the
+    assumption source sets and result with the equivalent refinement without
+    the `ensure`; verify the guarantee row is absent from both `I` and `S`.
 
 Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 
@@ -156,8 +161,12 @@ Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
   reproduces this as an inconclusive no-proof result, never `refuted` or
   `proved`. A changed locus settles `inconclusive`, `replay-parity`, while
   the separate product-limit case is `incomplete`.
-- Step 13: the unresolved checked requirement relation returns the typed
-  `relation-undetermined` outcome with its exact requirement and candidate
-  clause identities; replay reproduces the same resolution. A required clause
-  with no fairness rows contributes no authored constraint, and neither case
-  uses display names to select a source.
+- Step 13: the undeclared or alias-only temporal requirement refuses at S3,
+  and the requirement key with no emitted temporal node refuses at S4. Neither
+  reaches product evaluation or emits an assumption outcome. A uniquely
+  resolved required clause with no fairness rows contributes no authored
+  constraint; product lookup uses admitted node identities, never display
+  names.
+- Step 14: the selected lasso satisfies the `ensure` guarantee. The `ensure`
+  row appears in neither `I` nor `S`, and adding or removing it leaves the
+  assumption source sets and relation result unchanged.

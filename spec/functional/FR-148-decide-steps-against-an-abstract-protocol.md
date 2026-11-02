@@ -70,13 +70,14 @@ often than the protocol allows, is refuted with a prefix that replays.
   identity includes the required clause's `NodeKey` and the constraint's
   checked `FairnessOperation` identity, kind and granularity. It excludes
   `ensure` rows, clauses not directly required by the selected protocol, and
-  protocol-target fairness rows, which FR-337 refuses to admit. If a
-  requirement member cannot resolve to one exact admitted temporal clause,
-  or an operation-class fairness row cannot resolve to one exact checked
-  `FairnessOperation`, the relation is `relation-undetermined`; no source is
-  inferred from a clause or target name. A resolved clause with no fairness
-  rows contributes no authored constraint. With no directly required temporal
-  clause, the authored part of `S` is empty.
+  protocol-target fairness rows, which FR-337 refuses to admit. By FR-218-AC-16
+  and FR-383-AC-17, every admitted `requires temporal` key identifies exactly
+  one checked clause and each admitted operation-class fairness row has an
+  exact checked `FairnessOperation`; missing or unresolved links are refused
+  before FR-148 runs. No source is inferred from a clause or target name. A
+  resolved clause with no fairness rows contributes no authored constraint.
+  With no directly required temporal clause, the authored part of `S` is
+  empty.
 - FR-141's positions and steps.
 
 ## Outputs
@@ -185,15 +186,15 @@ at their respective entry states.
   authored constraints SHALL retain their exact source clause `NodeKey` and
   checked `FairnessOperation` identity with kind and granularity. The
   checker SHALL NOT include protocol-target fairness rows, which FR-337
-  refuses to admit, or any unrelated temporal clause's fairness rows. If a
-  checked requirement cannot be resolved to exactly one admitted clause, or
-  an operation-class fairness row cannot be resolved to one exact checked
-  `FairnessOperation`, the authored relation SHALL be
-  `relation-undetermined`; the checker SHALL NOT infer a source by clause or
-  target display name. No directly required temporal clause means an empty
-  authored part of `S`. The product SHALL prove the implication `S => I` over
-  the paired behaviour
-  space: every concrete path that has a corresponding abstract protocol
+  refuses to admit, or any unrelated temporal clause's fairness rows. FR-218
+  and FR-383 require every admitted `requires temporal` key to identify exactly
+  one checked clause and each admitted operation-class fairness row to hold
+  one exact `FairnessOperation`; a missing or unresolved source link is
+  refused before the product runs. The checker SHALL NOT infer a source by
+  clause or target display name. No directly required temporal clause means
+  an empty authored part of `S`. The product SHALL prove the implication `S => I` over
+  the paired behaviour space: every concrete path that has a corresponding
+  abstract protocol
   path satisfying all of `S` SHALL satisfy every constraint in `I` under
   the concrete model's own enabledness and taken-step semantics. Thus the
   implementation assumption is no stronger than the specification's.
@@ -213,10 +214,7 @@ at their respective entry states.
   `each`), exact checked target identity, and, for `each`, the selected
   operation/receiver/argument identity when that member form applies. An
   authored specification identity SHALL also include its required temporal
-  clause `NodeKey`. A relation-undetermined result caused by resolving a
-  requirement SHALL retain that exact requirement `NodeKey` and every
-  available exact candidate identity; an absent source is represented as an
-  empty candidate set, not guessed from a name. The identity SHALL preserve
+  clause `NodeKey`. The identity SHALL preserve
   the source's typed checked identity; display names are not identity.
 
   When a reachable paired lasso satisfies every constraint in `S` and
@@ -266,7 +264,8 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | FR-148-AC-10 | For an abstract `tso` protocol with `scheduling adversarial` and no directly required temporal fairness clause, the specification assumption set includes the derived `fair weak each flush(thread)` memory constraint. A reachable paired lasso that cycles a buffered `tick` write and its flush, never takes the continuously enabled `inc`, satisfies the memory fairness constraint but violates the concrete `assume fair weak whole inc`; the product returns `ProtocolAssumptionNotEstablished{reason: strengthened}` with exact identities and paired paths, and replay confirms flush fairness and the violated `inc` constraint. | Test (TC-553) |
 | FR-148-AC-11 | At each reachable product state whose incoming step rules passed, a refusal violation reports `RefusalNotPermitted{position, label}` with QSpec FR-379's canonical full `ObservationLabel`; a terminal-success mismatch reports `TerminalSuccessMismatch{position, direction}`. The first failing step rule takes precedence, then refusal precedes terminal success, and replay recomputes each recorded condition; model abstract subjects report neither kind. | Test (TC-553) |
 | FR-148-AC-12 | When an identified concrete or protocol fairness class has `ContractUndetermined` enabledness at a reachable paired state and no violating paired lasso exists, the product returns `ProtocolAssumptionNotEstablished{reason: relation-undetermined}` with the exact checked identities and both finite prefixes to the undecided state; FR-145 replay reproduces the same undecided predicate and the item settles `inconclusive`, `unsettled`, never `refuted` or `proved`. This is distinct from product-limit `incomplete`. | Test (TC-553) |
-| FR-148-AC-13 | If a selected protocol's checked `requirements` member cannot resolve to exactly one admitted temporal-clause node, the product returns `ProtocolAssumptionNotEstablished{reason: relation-undetermined}` with the exact requirement `NodeKey`, every available candidate clause identity, and paired initial prefixes; it settles `inconclusive`, `unsettled`, never `refuted` or `proved`. Replay recomputes the same checked-node resolution and candidates. A clause with no fairness rows is a uniquely resolved source that contributes no authored constraint, and no clause or target is inferred by name. | Test (TC-553) |
+| FR-148-AC-13 | An undeclared or alias-only `requires temporal` name refuses at S3 per FR-218-AC-16; a bound requirement `NodeKey` with no emitted temporal node refuses at S4 per FR-383-AC-17. Each refusal occurs before product evaluation and produces no `ProtocolAssumptionNotEstablished` result. The product uses only admitted clause `NodeKey`s, never a clause or target name. A uniquely resolved required clause with no fairness rows contributes no authored constraint. | Test (TC-553) |
+| FR-148-AC-14 | When a required temporal clause contributes `fair weak whole inc` to authored `S`, a separate `ensure fair weak whole inc` guarantee is satisfied by the checked lasso. The `ensure` row is absent from both `I` and `S`; the same assumption relation, source identities and result occur with the guarantee row present or removed. | Test (TC-553) |
 
 ## Dependencies
 
