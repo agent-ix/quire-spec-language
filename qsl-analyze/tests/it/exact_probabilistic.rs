@@ -2517,13 +2517,14 @@ fn a_resolution_advances_the_accumulator_with_the_draws_rewards() {
     };
     let mut draws = 0;
     for edge in &product.edges {
-        match edge.choice {
+        match &edge.choice {
             ProductAction::Identity(_) => {
                 draws += 1;
                 assert_eq!(cost(edge), 2);
             }
             ProductAction::PostState(_) => assert_eq!(cost(edge), 0),
             ProductAction::TerminalStutter => {}
+            other => panic!("an untimed product has no digital action: {other:?}"),
         }
     }
     assert!(draws > 0);

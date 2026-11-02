@@ -54,7 +54,15 @@ pub fn build_product(
         Err(TimedSubjectRefusal::NotSimulated(refusal)) => {
             return Err(ProductRefusal::NotSimulated(refusal));
         }
-        Err(_) => return Err(fault("timed-subject-builds")),
+        Err(TimedSubjectRefusal::ParameterizedGuard { .. }) => {
+            return Err(fault("timed-guard-reads-no-operation-parameter"));
+        }
+        Err(TimedSubjectRefusal::NestedUnboundedCollection { .. }) => {
+            return Err(fault("timed-clocks-nest-no-unbounded-collections"));
+        }
+        Err(TimedSubjectRefusal::Unbounded { .. }) => {
+            return Err(fault("timed-clock-owners-have-universes"));
+        }
     }
     let (kind, workload) = match &claim.scheduler {
         qsl_semantics::check::ProbScheduler::Workload(name) => {

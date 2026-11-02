@@ -419,7 +419,6 @@ struct Enabled {
 
 struct Resolution {
     successors: Vec<DState>,
-    rewards: Vec<(Identifier, Value)>,
 }
 
 struct Node {
@@ -473,7 +472,6 @@ struct Hit {
     read: UndefinedRead,
     cause: qsl_eval::temporal::UndefinedCause,
     state_key: StateKey,
-    model: Vec<u8>,
 }
 
 /// The window of one scheduled identity: the delays, in digital units, after
@@ -773,7 +771,6 @@ impl<'c> Builder<'_, '_, 'c> {
                         read: *read,
                         cause,
                         state_key,
-                        model,
                     }));
                 }
                 PredicateReading::Refused(outcome) => {
@@ -1307,7 +1304,6 @@ impl<'c> Builder<'_, '_, 'c> {
                         .iter()
                         .map(|(model, clocks)| post(model, clocks))
                         .collect(),
-                    rewards: draw.rewards.clone(),
                 }),
             };
             planned.push(Planned {
