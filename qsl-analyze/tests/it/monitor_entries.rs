@@ -221,6 +221,16 @@ pub(crate) fn run_reference(
 /// and the reading-gap fault (RT FR-276, QSL FR-251 "Counter faults").
 pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<(i128, i64)>> {
     let spec = spec_from_plan(plan).expect("the plan is in the generated fragment");
+    run_entries_with(plan, &spec, inputs)
+}
+
+/// [`run_entries`] over `spec`, which may evaluate its atoms from admitted
+/// values (`spec.clause`).
+pub(crate) fn run_entries_with(
+    plan: &TimedMonitorPlan,
+    spec: &qsl_analyze::monitor_entries::EntrySpec,
+    inputs: &[Input],
+) -> Vec<Vec<(i128, i64)>> {
     let modulus = 1_u128 << plan.binding().width_bits();
     let mut body = String::from(
         "function scenario using v(): Sequence<Integer> pure { let s0 = monitorInit() in ",
@@ -247,18 +257,32 @@ pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<
                 if fault {
                     format!("onGapR(s{step_no}, {delta})")
                 } else {
-                    let fields = spec
-                        .atoms
-                        .iter()
-                        .map(|atom| {
-                            let value = atoms
-                                .iter()
-                                .find(|(a, _)| a == atom)
-                                .is_some_and(|(_, v)| *v);
-                            format!("a{atom}: {value}")
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
+                    let truth = |atom: &usize| {
+                        atoms
+                            .iter()
+                            .find(|(a, _)| a == atom)
+                            .is_some_and(|(_, v)| *v)
+                    };
+                    let fields = match &spec.clause {
+                        // The admitted value the atoms read: the first atom
+                        // holds at 2, the second at 3, else 1.
+                        Some(clause) => {
+                            let value = if truth(&spec.atoms[0]) {
+                                2
+                            } else if truth(&spec.atoms[1]) {
+                                3
+                            } else {
+                                1
+                            };
+                            format!("{}: {value}", clause.parameters[0].0)
+                        }
+                        None => spec
+                            .atoms
+                            .iter()
+                            .map(|atom| format!("a{atom}: {}", truth(atom)))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    };
                     format!("onEventR(s{step_no}, {delta}, Inputs {{ {fields} }})")
                 }
             }
@@ -864,37 +888,47 @@ fn a_gap_fails_every_open_instance_in_instance_order() {
     assert_eq!(steps[2], [(sub, 6), (10 * 1000 + sub, 6)]);
 }
 
-/// QSL FR-251 "Entry bindings": with the clause's own parameters as the
-/// `Inputs` fields and each atom's authored expression as a helper over
-/// them, the entries evaluate the atoms; the package checks and the plan
-/// root is written.
+/// QSL FR-251 "Entry bindings": the `Inputs` fields are the already-read
+/// values the atoms depend on, and each atom is a pure helper over them
+/// (the authored expression over those values). The entries then agree with
+/// the reference on traces whose atoms come from the admitted value.
 #[test]
-#[ignore = "model-typed atoms: an authored `c.versionNumber = k` over a model parameter does not type-check as a value-function body (S3 IllTyped/TypeMismatch); needs a model read seam or explicit deref"]
-fn the_entries_evaluate_the_clauses_own_atoms() {
-    use qsl_package::emit_checked;
-    let formula = "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))";
+fn the_entries_evaluate_atoms_from_admitted_values() {
+    let formula = ROOT_SHAPES[0];
     let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
     let plan = premise_plan(formula, &target);
     let mut spec = spec_from_plan(&plan).unwrap();
     spec.clause = Some(qsl_analyze::monitor_entries::ClauseSource {
-        parameters: vec![("c".to_owned(), "Reference<M::ConfigVersion>".to_owned())],
+        parameters: vec![("versionNumber".to_owned(), "Integer".to_owned())],
         atoms: spec
             .atoms
             .iter()
-            .zip(["c.versionNumber = 2", "c.versionNumber = 3"])
+            .zip(["versionNumber = 2", "versionNumber = 3"])
             .map(|(atom, text)| (*atom, text.to_owned()))
             .collect(),
-        profile: "tc".to_owned(),
+        profile: "v".to_owned(),
     });
-    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &render(&spec), true);
-    let emission = emit_checked(&package).expect("the unit emits");
-    let json: serde_json::Value = serde_json::from_slice(emission.package().bytes()).unwrap();
-    let nodes = json["semantic_graph"]["nodes"].as_array().unwrap();
-    let declared = |name: &str| {
-        nodes
-            .iter()
-            .any(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
-    };
-    assert!(declared("atom2") || declared(&format!("atom{}", spec.atoms[0])));
-    assert!(declared("Inputs") && declared("Atoms"));
+    let mut nodes = vec![spec.node.subformula];
+    nodes.extend(spec.root.as_ref().map(|root| root.index));
+    for seed in 0..25 {
+        let mut inputs = trace(seed * 31 + 5, &spec.atoms, target.width_bits, 14);
+        // The atoms are functions of one admitted value.
+        for input in &mut inputs {
+            if let Input::Reading(_, truths) = input {
+                let value = if truths[0].1 {
+                    2
+                } else if truths[1].1 {
+                    3
+                } else {
+                    1
+                };
+                *truths = vec![(spec.atoms[0], value == 2), (spec.atoms[1], value == 3)];
+            }
+        }
+        assert_eq!(
+            run_entries_with(&plan, &spec, &inputs),
+            run_reference(&plan, &nodes, &inputs),
+            "seed {seed}"
+        );
+    }
 }

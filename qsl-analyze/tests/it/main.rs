@@ -37,6 +37,7 @@ mod model_settle;
 mod model_world;
 mod monitor_entries;
 mod monitor_plan;
+mod monitor_plan_vectors;
 mod operation_contract;
 mod partial_order;
 mod por_world;
