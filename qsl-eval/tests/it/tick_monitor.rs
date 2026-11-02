@@ -89,6 +89,7 @@ impl Plan {
             width_bits: self.width_bits,
             max_reading_gap: self.max_gap,
             capacities,
+            activation_capacity: 8,
         })
     }
 }

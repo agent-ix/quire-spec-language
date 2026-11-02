@@ -31,6 +31,7 @@ pub(crate) fn deadline_spec() -> EntrySpec {
         max_reading_gap: 100,
         activation_capacity: 4,
         root: None,
+        clause: None,
         tick_unit: None,
     }
 }
@@ -814,4 +815,86 @@ fn the_entries_carry_the_declaration_less_function_key() {
         );
         assert!(operands.iter().all(|segment| segment.get("node").is_some()));
     }
+}
+
+/// QSpec FR-487 "Counter-gap path" (MP-54, MP-55, MP-56, MP-57): on a gap
+/// every open instance fails and leaves the state, a decided one and the
+/// results already emitted are untouched, and the faulting reading is the
+/// new baseline.
+fn gap_results(acks: &[bool]) -> (usize, Vec<Vec<(i128, i64)>>) {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 16, 100);
+    let plan = premise_plan("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)", &target);
+    let spec = spec_from_plan(&plan).unwrap();
+    let atom = spec.atoms[0];
+    let mut inputs: Vec<Input> = acks
+        .iter()
+        .enumerate()
+        .map(|(n, ack)| Input::Reading(10 * n as u64, vec![(atom, *ack)]))
+        .collect();
+    inputs.push(Input::Reading(5000, vec![(atom, false)]));
+    inputs.push(Input::Reading(5010, vec![(atom, false)]));
+    let entries = run_entries(&plan, &inputs);
+    let reference = run_reference(&plan, &[spec.node.subformula], &inputs);
+    assert_eq!(entries, reference);
+    (spec.node.subformula, entries)
+}
+
+#[test]
+fn a_gap_fails_the_open_instance_and_leaves_the_decided_one() {
+    // MP-54: one decided (ack at its own reading) and one open instance.
+    let (node, steps) = gap_results(&[true, false]);
+    let sub = i128::try_from(node).unwrap();
+    assert_eq!(steps[2], [(10 * 1000 + sub, 6)]);
+    // The reading after the fault is differenced from the faulting reading.
+    assert!(steps[3].iter().all(|(_, code)| *code != 6));
+}
+
+#[test]
+fn a_gap_with_no_open_instance_changes_nothing() {
+    // MP-55.
+    let (_, steps) = gap_results(&[true]);
+    assert_eq!(steps[1], []);
+}
+
+#[test]
+fn a_gap_fails_every_open_instance_in_instance_order() {
+    // MP-56.
+    let (node, steps) = gap_results(&[false, false]);
+    let sub = i128::try_from(node).unwrap();
+    assert_eq!(steps[2], [(sub, 6), (10 * 1000 + sub, 6)]);
+}
+
+/// QSL FR-251 "Entry bindings": with the clause's own parameters as the
+/// `Inputs` fields and each atom's authored expression as a helper over
+/// them, the entries evaluate the atoms; the package checks and the plan
+/// root is written.
+#[test]
+#[ignore = "model-typed atoms: an authored `c.versionNumber = k` over a model parameter does not type-check as a value-function body (S3 IllTyped/TypeMismatch); needs a model read seam or explicit deref"]
+fn the_entries_evaluate_the_clauses_own_atoms() {
+    use qsl_package::emit_checked;
+    let formula = "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))";
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let plan = premise_plan(formula, &target);
+    let mut spec = spec_from_plan(&plan).unwrap();
+    spec.clause = Some(qsl_analyze::monitor_entries::ClauseSource {
+        parameters: vec![("c".to_owned(), "Reference<M::ConfigVersion>".to_owned())],
+        atoms: spec
+            .atoms
+            .iter()
+            .zip(["c.versionNumber = 2", "c.versionNumber = 3"])
+            .map(|(atom, text)| (*atom, text.to_owned()))
+            .collect(),
+        profile: "tc".to_owned(),
+    });
+    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &render(&spec), true);
+    let emission = emit_checked(&package).expect("the unit emits");
+    let json: serde_json::Value = serde_json::from_slice(emission.package().bytes()).unwrap();
+    let nodes = json["semantic_graph"]["nodes"].as_array().unwrap();
+    let declared = |name: &str| {
+        nodes
+            .iter()
+            .any(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+    };
+    assert!(declared("atom2") || declared(&format!("atom{}", spec.atoms[0])));
+    assert!(declared("Inputs") && declared("Atoms"));
 }

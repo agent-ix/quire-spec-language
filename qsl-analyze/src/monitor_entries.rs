@@ -147,6 +147,20 @@ pub struct RootSpec {
     pub index: usize,
 }
 
+/// The clause text the atoms are evaluated from: the entries call one
+/// helper per atom over the clause's own parameters, with the atom's
+/// expression exactly as authored.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseSource {
+    /// The clause parameters as `(name, type text)`; they are the fields of
+    /// the `Inputs` record, one per admitted value.
+    pub parameters: Vec<(String, String)>,
+    /// The authored expression of each `holds` atom, by formula index.
+    pub atoms: Vec<(usize, String)>,
+    /// The unit's profile alias that admits the clause's model reads.
+    pub profile: String,
+}
+
 /// Everything the source generator needs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntrySpec {
@@ -162,6 +176,9 @@ pub struct EntrySpec {
     pub activation_capacity: u64,
     /// The unbounded root, when the clause has one.
     pub root: Option<RootSpec>,
+    /// The clause's own parameters and `holds` expressions, when the atoms
+    /// are evaluated by the entries (QSL FR-251 "Entry bindings").
+    pub clause: Option<ClauseSource>,
     /// The declared tick unit, which the generated unit mentions so the
     /// graph holds its node (the plan root's `tick_unit` binding).
     pub tick_unit: Option<String>,
@@ -362,6 +379,7 @@ pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal
         max_reading_gap: plan.max_reading_gap(),
         activation_capacity: plan.activation_capacity(),
         root,
+        clause: None,
         tick_unit: Some(plan.binding().unit().to_owned()),
     })
 }
@@ -414,6 +432,8 @@ pub mod names {
     pub const STATE: &str = "State";
     /// The inputs record.
     pub const INPUTS: &str = "Inputs";
+    /// The record of atom truths a cell keeps.
+    pub const ATOMS: &str = "Atoms";
     /// The scope record.
     pub const SCOPE: &str = "Scope";
     /// The result record.
@@ -440,6 +460,28 @@ fn sig(value: i128) -> String {
 
 fn cell_literal(tick: &str, inputs: &str) -> String {
     format!("Cell {{ tFirst: {tick}, tLast: {tick}, lost: false, inputs: {inputs}, out: 0 }}")
+}
+
+/// The atom truths of an event, from its admitted values.
+fn atoms_expr(spec: &EntrySpec) -> String {
+    let fields = spec
+        .atoms
+        .iter()
+        .map(|atom| match &spec.clause {
+            None => format!("a{atom}: i.a{atom}"),
+            Some(clause) => format!(
+                "a{atom}: atom{atom}({})",
+                clause
+                    .parameters
+                    .iter()
+                    .map(|(name, _)| format!("i.{name}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{} {{ {fields} }}", names::ATOMS)
 }
 
 fn state_with(now: &str, start: &str, cells: &str, acts: &str, pos: &str) -> String {
@@ -539,7 +581,7 @@ fn on_event_body(spec: &EntrySpec) -> String {
     let pending = code::PENDING;
     let incomplete = code::INCOMPLETE;
     let settled = code::SETTLED;
-    let c = cell_literal("now2", "i");
+    let c = cell_literal("now2", "atoms");
     let head = root_head(spec, true);
     let tail_root = root_tail(spec, false, true);
     let acts = if spec.root.is_some() {
@@ -556,7 +598,7 @@ fn on_event_body(spec: &EntrySpec) -> String {
             format!(
                 "let pv = evalAt(cells, size(cells) - 1, s.history_start) in \
                  {head}\
-                 let flags1 = foldFlags(flags0, psiV(i, pv)) in \
+                 let flags1 = foldFlags(flags0, psiV(atoms, pv)) in \
                  let pend = {ident} in \
                  {tail_root}"
             )
@@ -572,19 +614,21 @@ fn on_event_body(spec: &EntrySpec) -> String {
         };
         return format!(
             "let now2 = s.now + delta in \
+             let atoms = {atoms_expr} in \
              let c = {c} in \
              let kept = filter(x in s.buffer_0: now2 - x.tLast < {none_hi}) in \
              let full = size(kept) >= {cap} in \
              let cells = if full then push(dropLast(kept), merged(lastOf(kept), c, {settled} + {incomplete})) else push(kept, c) in \
              {root_part}\
              mk({state}, {results})",
+            atoms_expr = atoms_expr(spec),
             state = state_with("now2", "s.history_start", "cells", acts, "s.event_position + 1"),
         );
     }
     let flags_start = if spec.root.is_some() {
         format!(
             "{head}\
-             let flagsM = if full and live then foldFlags(foldFlags(flags0, psiV(i, vLost())), (if not last.lost and last.out < {settled} then psiV(last.inputs, vLost()) else {ident})) else flags0 in "
+             let flagsM = if full and live then foldFlags(foldFlags(flags0, psiV(atoms, vLost())), (if not last.lost and last.out < {settled} then psiV(last.inputs, vLost()) else {ident})) else flags0 in "
         )
     } else {
         String::new()
@@ -609,6 +653,7 @@ fn on_event_body(spec: &EntrySpec) -> String {
     let _ = pending;
     format!(
         "let now2 = s.now + delta in \
+             let atoms = {atoms_expr} in \
          let c = {c} in \
          let full = size(s.buffer_0) >= {cap} in \
          let last = if size(s.buffer_0) = 0 then c else lastOf(s.buffer_0) in \
@@ -620,6 +665,7 @@ fn on_event_body(spec: &EntrySpec) -> String {
          let tail = pruned(sw.cells) in \
          {after}\
          mk({state}, {results})",
+        atoms_expr = atoms_expr(spec),
         state = state_with("now2", "s.history_start", "tail", acts, "s.event_position + 1"),
     )
 }
@@ -798,9 +844,10 @@ pub fn render(spec: &EntrySpec) -> String {
          record Idx {{ j: Integer; ix: Integer; }}
          record Last {{ c: Cell; }}
          record V {{ oT: Boolean; oF: Boolean; cT: Boolean; cF: Boolean; lost: Boolean; }}\n\
-         record Cell {{ tFirst: Integer; tLast: Integer; lost: Boolean; inputs: {inputs}; out: Integer; }}\n\
+         record Cell {{ tFirst: Integer; tLast: Integer; lost: Boolean; inputs: {atoms}; out: Integer; }}\n\
          record Activation {{ subformula: Integer; origin_tick: Integer; status: Integer; }}\n\
          record {state} {{ now: Integer; history_start: Integer; buffer_0: Cells; activations: Sequence<Activation>; event_position: Integer; }}\n\
+         record {atoms} {{ {atom_fields} }}\n\
          record {inputs} {{ {inputs_fields} }}\n\
          record {scope} {{ subject: Integer; }}\n\
          record Instance {{ subject: String; subformula: Integer; origin_tick: Integer; }}\n\
@@ -821,12 +868,27 @@ pub fn render(spec: &EntrySpec) -> String {
         scope = names::SCOPE,
         result = names::RESULT,
         outcome = names::OUTCOME,
-        inputs_fields = spec
+        atoms = names::ATOMS,
+        atom_fields = spec
             .atoms
             .iter()
             .map(|atom| format!("a{atom}: Boolean;"))
             .collect::<Vec<_>>()
             .join(" "),
+        inputs_fields = match &spec.clause {
+            Some(clause) => clause
+                .parameters
+                .iter()
+                .map(|(name, ty)| format!("{name}: {ty};"))
+                .collect::<Vec<_>>()
+                .join(" "),
+            None => spec
+                .atoms
+                .iter()
+                .map(|atom| format!("a{atom}: Boolean;"))
+                .collect::<Vec<_>>()
+                .join(" "),
+        },
     );
     // The value algebra.
     let psi_text = format!("vOf({})", node.psi.render("c.inputs", &bits));
@@ -936,6 +998,21 @@ pub fn render(spec: &EntrySpec) -> String {
         act = code::ACTIVATION,
         acap = spec.activation_capacity,
     );
+    if let Some(clause) = &spec.clause {
+        let parameters = clause
+            .parameters
+            .iter()
+            .map(|(name, ty)| format!("{name}: {ty}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        for (atom, expression) in &clause.atoms {
+            let _ = writeln!(
+                w,
+                "function atom{atom} using {profile}({parameters}): Boolean pure {{ {expression} }}",
+                profile = clause.profile
+            );
+        }
+    }
     if let Some(root) = &spec.root {
         let consts = root_consts(root);
         let psi = root.psi.render_v("i", "nv");
@@ -955,7 +1032,7 @@ pub fn render(spec: &EntrySpec) -> String {
              function accV using v(f: Integer): V pure {{ V {{ oT: flagT(f), oF: flagF(f), cT: flagT(f), cF: flagF(f), lost: f >= 4 }} }}\n\
              function flagsOfV using v(a: V): Integer pure {{ (if a.oT then 1 else 0) + (if a.oF then 2 else 0) + (if a.lost then 4 else 0) }}\n\
              function foldFlags using v(f: Integer, a: V): Integer pure {{ flagsOfV({op}(accV(f), a)) }}\n\
-             function psiV using v(i: {inputs}, nv: V): V pure {{ {psi} }}\n\
+             function psiV using v(i: {atoms}, nv: V): V pure {{ {psi} }}\n\
              function rootV using v(f: Integer, pend: V): V pure {{ {op}({op}(accV(f), pend), {future}) }}\n\
              function rootResultOf using v(tick: Integer, c: Integer): {result} pure {{ \
                 {result} {{ instance: Instance {{ subject: \"{subject}\", subformula: {index}, origin_tick: tick }}, outcome: outcomeOf(c, {cap}) }} }}\n\
@@ -966,7 +1043,7 @@ pub fn render(spec: &EntrySpec) -> String {
             future = consts.future,
             flags0 = consts.flags0,
             index = root.index,
-            inputs = names::INPUTS,
+            atoms = names::ATOMS,
             result = names::RESULT,
             outcome = names::OUTCOME,
             subject = spec.subject,
@@ -979,7 +1056,7 @@ pub fn render(spec: &EntrySpec) -> String {
     }
     let zero_inputs = format!(
         "{} {{ {} }}",
-        names::INPUTS,
+        names::ATOMS,
         spec.atoms
             .iter()
             .map(|atom| format!("a{atom}: false"))
@@ -1004,7 +1081,7 @@ pub fn render(spec: &EntrySpec) -> String {
          function oneCell using v(c: Cell): Cells pure {{ sequence[c] }}\n\
          function noResults using v(): Results pure {{ sequence[] }}\n\
          function oneResult using v(r: {result}): Results pure {{ sequence[r] }}\n\
-         function zeroInputs using v(): {inputs} pure {{ {zero_inputs} }}\n\
+         function zeroInputs using v(): {atoms} pure {{ {zero_inputs} }}\n\
          function push using v(s: Cells, c: Cell): Cells pure {{ flatten(pairCells(s, oneCell(c))) }}\n\
          function push2 using v(s: Results, r: {result}): Results pure {{ flatten(pairResults(s, oneResult(r))) }}\n\
          function lastOf using v(s: Cells): Cell pure {{ \
@@ -1042,7 +1119,7 @@ pub fn render(spec: &EntrySpec) -> String {
             else if lastOf(s).lost then noCells() else oneCell(lastOf(s)) }}",
         settled = code::SETTLED,
         result = names::RESULT,
-        inputs = names::INPUTS,
+        atoms = names::ATOMS,
         zero_inputs = zero_inputs,
     );
     let _ = writeln!(
