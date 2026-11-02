@@ -2391,6 +2391,7 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::EnvironmentAncestorSteps
             | Setting::EnvironmentWorkUnits
             | Setting::ModelDeclarationRecords
+            | Setting::ModelSequenceMaximum
             | Setting::ModelDerivationFacts
             | Setting::ModelEffectiveDeclarations
             | Setting::ModelDispatchCandidates

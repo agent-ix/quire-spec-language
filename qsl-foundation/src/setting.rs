@@ -72,6 +72,7 @@ settings! {
     EnvironmentAncestorSteps => "environment.ancestor_steps", "S3 type-environment admission", EdgeCount;
     EnvironmentWorkUnits => "environment.work_units", "S3 type-environment admission", WorkBudget;
     ModelDeclarationRecords => "model.declaration_records", "model normalization", NodeCount;
+    ModelSequenceMaximum => "model.sequence_maximum", "model intake", NodeCount;
     ModelDerivationFacts => "model.derivation_facts", "model normalization", NodeCount;
     ModelEffectiveDeclarations => "model.effective_declarations", "model normalization", NodeCount;
     ModelDispatchCandidates => "model.dispatch_candidates", "model normalization", NodeCount;
@@ -121,6 +122,18 @@ settings! {
 }
 
 impl Setting {
+    /// The largest bound this setting takes: the width of the quantity it
+    /// bounds (FR-255 "Setting names"). Every limit over a `u64` count takes
+    /// `u64::MAX`; `model.sequence_maximum`, over a declared collection
+    /// maximum that is a `u32`, takes `u32::MAX` (FR-506).
+    #[must_use]
+    pub const fn greatest_bound(self) -> u64 {
+        match self {
+            Self::ModelSequenceMaximum => u32::MAX as u64,
+            _ => u64::MAX,
+        }
+    }
+
     /// The setting named `name`, or `None` when no setting has that name.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
@@ -328,7 +341,12 @@ pub fn parse_operands<'a>(
         let bound = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
             value
                 .parse::<u64>()
-                .map_err(|_| refuse(UsageCause::NotAnInteger))?
+                .ok()
+                .filter(|bound| match setting {
+                    SettingName::Stage(stage) => *bound <= stage.greatest_bound(),
+                    SettingName::Accounting(_) => true,
+                })
+                .ok_or_else(|| refuse(UsageCause::NotAnInteger))?
         } else {
             return Err(refuse(UsageCause::NotAnInteger));
         };
