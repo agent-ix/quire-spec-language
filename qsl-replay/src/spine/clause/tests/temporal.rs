@@ -1334,6 +1334,70 @@ fn timestamped_windows_pending_and_decisive_witnesses() {
     );
 }
 
+/// FR-330-AC-9 (TC-1295): only the finite-window profile reads timestamped
+/// input, and it rejects a position-only trace at admission.
+#[trace("TC-1295", "FR-330-AC-9")]
+#[test]
+fn timestamped_profile_and_trace_shape_must_match() {
+    let timestamped_clause_on_positions = request(
+        Unit::Timestamped,
+        |labels| ClauseRunSelection::Temporal {
+            name: "Window".to_owned(),
+            trace: TraceInput::Finite(labels.to_vec()),
+            over: over("c1"),
+        },
+        &[1],
+    );
+    let report = report(timestamped_clause_on_positions);
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
+        panic!(
+            "expected an admission refusal, got {:?}",
+            report.disposition
+        );
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("invalid_runtime_input", "invalid-value")
+    );
+
+    let position_clause_on_timestamps = request(
+        Unit::Bounded,
+        |labels| ClauseRunSelection::Temporal {
+            name: "Bounded".to_owned(),
+            trace: TraceInput::Timestamped(crate::spine::TimestampedTraceInput {
+                positions: labels
+                    .iter()
+                    .map(|document| crate::spine::TimestampedObservation {
+                        document: document.clone(),
+                        stamp: 0,
+                        order: None,
+                    })
+                    .collect(),
+                watermark: 0,
+                complete_through: Some(0),
+                scope_closed: true,
+                uncertainty: 0,
+                authoritative_origin: true,
+            }),
+            over: over("c1"),
+        },
+        &[1],
+    );
+    let report = report(position_clause_on_timestamps);
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
+        panic!(
+            "expected an admission refusal, got {:?}",
+            report.disposition
+        );
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("invalid_runtime_input", "invalid-value")
+    );
+}
+
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace
 /// evaluates its guard on the observed trace (no evaluator fault): over the
 /// values 0, 1, 2 the guard holds at position 1 alone, where the property
