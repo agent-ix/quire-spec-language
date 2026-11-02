@@ -234,7 +234,6 @@ pub(crate) fn run_entries_with(
     spec: &qsl_analyze::monitor_entries::EntrySpec,
     inputs: &[Input],
 ) -> Vec<Vec<(i128, i64)>> {
-    let modulus = 1_u128 << plan.binding().width_bits();
     let mut body = String::from(
         "function scenario using v(): Sequence<Integer> pure { let s0 = monitorInit() in ",
     );
@@ -251,13 +250,18 @@ pub(crate) fn run_entries_with(
                 format!("onWatermarkR(s{step_no}, {boundary}, Scope {{ subject: 0 }})")
             }
             Input::Reading(reading, atoms) => {
-                let delta = baseline.map_or(0, |base| {
-                    u64::try_from((u128::from(*reading) + modulus - u128::from(base)) % modulus)
-                        .unwrap()
-                });
-                let fault = baseline.is_some() && delta > plan.max_reading_gap();
-                baseline = Some(*reading);
-                if fault {
+                let (call, next) = rt_call(
+                    baseline,
+                    *reading,
+                    plan.binding().width_bits(),
+                    plan.max_reading_gap(),
+                );
+                baseline = next;
+                let delta = match call {
+                    RtCall::OnEvent(delta) | RtCall::OnGap(delta) => delta,
+                    RtCall::Baseline => 0,
+                };
+                if matches!(call, RtCall::OnGap(_)) {
                     format!("onGapR(s{step_no}, {delta})")
                 } else {
                     let truth = |atom: &usize| {
@@ -1004,4 +1008,62 @@ fn an_atom_without_a_projection_settles_incomplete_atom_projection() {
         }
         assert!(saw_projection, "{shape}: some instance reads the atom");
     }
+}
+
+/// What the runtime does with one reading (RT FR-276; QSL FR-251 "Counter
+/// faults"; QSpec FR-487 "Counter-gap path"): the first reading is the
+/// baseline, a later one is differenced modulo `2^width` and passed to
+/// `on_event`, or, above `max_reading_gap`, to `on_gap`; the reading then
+/// becomes the new baseline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RtCall {
+    Baseline,
+    OnEvent(u64),
+    OnGap(u64),
+}
+
+pub(crate) fn rt_call(
+    baseline: Option<u64>,
+    reading: u64,
+    width_bits: u32,
+    max_gap: u64,
+) -> (RtCall, Option<u64>) {
+    let Some(base) = baseline else {
+        return (RtCall::Baseline, Some(reading));
+    };
+    let modulus = 1_u128 << width_bits;
+    let delta =
+        u64::try_from((u128::from(reading) + modulus - u128::from(base)) % modulus).unwrap();
+    let call = if delta > max_gap {
+        RtCall::OnGap(delta)
+    } else {
+        RtCall::OnEvent(delta)
+    };
+    (call, Some(reading))
+}
+
+/// QSpec FR-487 MP-57 and QSL FR-251-AC-3/AC-10/AC-11: readings 65530, 4,
+/// 65500, 65510 on a 16-bit counter with `max_reading_gap` 100 call
+/// baseline, `on_event(10)`, `on_gap(65496)`, `on_event(10)`; and 65530 then
+/// 65500 calls `on_gap(65506)`.
+#[test]
+fn the_runtime_calls_baseline_event_gap_event() {
+    let mut baseline = None;
+    let mut calls = Vec::new();
+    for reading in [65530_u64, 4, 65500, 65510] {
+        let (call, next) = rt_call(baseline, reading, 16, 100);
+        baseline = next;
+        calls.push(call);
+    }
+    assert_eq!(
+        calls,
+        [
+            RtCall::Baseline,
+            RtCall::OnEvent(10),
+            RtCall::OnGap(65496),
+            RtCall::OnEvent(10)
+        ]
+    );
+    let (second, _) = rt_call(Some(65530), 65500, 16, 100);
+    assert_eq!(second, RtCall::OnGap(65506));
 }
