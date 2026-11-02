@@ -85,6 +85,8 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-038 | fixed | round 8: invariant and variant are removed from the site table and FR-383 says they are not slots (FR-390) and get no row. |
 | FND-039 | fixed | round 8: the FR-096 citation is gone; the site-name rule is stated as this requirement's own. |
 | FND-040 | fixed | round 8: FR-383-AC-51/52 and AC-54/55 are split and FR-390-AC-52/53 and AC-55/56 are split; all renumbered consistently (FR-383-AC-32 to 56, FR-390-AC-28 to 58, TC-1063 L8a to L8g and L9, TC-1070 C-rows, scope lines). |
+| FND-041 | fixed | round 9: FR-383-AC-39 is split into AC-39 (site-name origin), AC-40 (unique names) and AC-41 (no protocol_attempt rows); later ACs renumbered to AC-58 with TC-1063 and scope lines consistent. |
+| FND-042 | fixed | round 10: Composed.case is now `case choice of Left(x) => x >= 1; Right(b) => not b`, one application over a Local per arm, so each arm holds one row; FR-390-AC-47, FR-383-AC-49 and C11a/L7b are now true. By hand: let holds `m.count`, `c + c`, `>=` (m.count once); if holds `m.ready`, then `>=`, `m.count`, else `>=`, `+`, `m.count` (m.count twice); deref, option, coll and record shapes are Boolean. FR-390 requires Boolean for guard, relation, predicate, condition or constraint, which is what every E-C table slot is. |
 
 ## New findings (disposition pass 2)
 
@@ -170,6 +172,31 @@ Head ba7971190 on main 38f3020e8 (unchanged). quire validate: no errors. No id c
 | --- | --- | --- | --- |
 | FND-041 | low | compound: FR-383-AC-39 joins the site-name origin, name uniqueness and the absence of protocol_attempt rows | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 
-## Verdict (disposition pass 8)
+## Verdict (disposition pass 8, superseded by pass 9)
 
 FND-037 to FND-040 are fixed and the fixture vectors are buildable against FR-322-AC-291 and I2. No high or medium finding remains. Mergeable with the low FND-041. Known by design, not defects: the QSpec follow-up PR that makes FR-322 and vectors PL-01 and PL-02 state site-name type_declaration origins (until it lands, QSpec text and vectors do not state the rule this spec relies on); the code-lane premises (shared nodes, E-C surface syntax); the two-occurrence coverage gap in the PR body.
+
+## New findings (disposition pass 9)
+
+Head 6ee19ea8f on main 1d2a256d4. quire validate: no errors. No id collision with main or open PRs. Every FR-390-AC-28 to 58 and FR-383-AC-32 to 58 has a TC row; scope lines match. Cited QSpec ids checked on QSpec at aaf8c65cc: FR-322-AC-310 to 312 (leaf rule, row naming a leaf refused invalid_package/invalid-value at the row's application member, other non-application kinds stay under AC-291) and AC-313 to 318 (site-name type_declaration origins; protocol_attempt origin in no positive row) say what FR-383 and FR-390 claim. FR-322 also names `let` and `conditional` as non-application forms whose rows stay under FR-322-AC-291, so the new term definition agrees with it.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-042 | medium | soundness: FR-390-AC-47, FR-383-AC-49, TC-1063 L7b and TC-1070 C11a say the unselected arms of Composed.case hold visits and rows, but its arms are a Local and a conditional over literals, so under the new term definition they hold no application and no row | spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md |
+
+## Verdict (disposition pass 9, superseded by pass 10)
+
+FND-041 is fixed and the cited FR-322 ids exist and say what is claimed. FND-042 is a medium contradiction introduced by the new term definition; not mergeable until it is fixed. Open questions for the spec lane, not defects: the location source for a `let`, a conditional and a `case` (FR-322 states the leaf rule only; the PR body asks for confirmation); whether a record or tuple constructor (Composed.record) is an application or a value node; FR-322 uses both "application" (AC-291) and "call" (AC-312) for the form.
+
+## New findings (disposition pass 10)
+
+Head 8f1d3f92e on main 1d2a256d4. quire validate: no errors. No id collision with main or open PRs. Every FR-390-AC-28 to 60 and FR-383-AC-32 to 59 has a TC row; scope lines match (FR-383-AC-59, FR-390-AC-60).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-043 | low | ambiguous: the E-C table uses a record `Pair` that the E-C package does not declare, and says arithmetic is range-coerced "where the checker coerces" without naming where | spec/test-cases/TC-1070-evaluate-the-expressions-of-protocol-nodes-from-a-checked-package.md |
+| FND-044 | low | compound: FR-383-AC-59 joins no-row-for-non-terms with one-row-per-case-arm; FR-390-AC-59 and AC-60 each join several node kinds | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+
+## Verdict (disposition pass 10)
+
+FND-042 is fixed. No high or medium finding remains. Mergeable with the lows FND-043 and FND-044. Open questions for the spec lane, not defects: the location source for a let, a conditional and a case (FR-390-AC-60 asserts their own admitted node's Location, which depends on the answer); whether a record or tuple constructor is an application; FR-322 says both application (AC-291) and call (AC-312).
