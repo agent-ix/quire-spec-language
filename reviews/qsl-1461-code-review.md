@@ -44,4 +44,27 @@ Reviewed PR #2084 against QSL-1461's Text literal acceptance criteria, the Rust 
 
 ## Dispositions
 
-Not applicable on the initial review pass.
+| FND | Outcome | Reason |
+| --- | ------- | ------ |
+| FND-001 | fixed | The new replay integration test compiles source Text bodies and evaluates retained values and equality under nfc and unicode-scalars. |
+| FND-002 | fixed | The semantic refusal table now includes Text("") below a positive minimum and Text(5), asserting typed causes and body locations. |
+
+
+### Round 1 evidence
+
+- FND-001 after excerpt (`qsl-replay/tests/it/compile_text_literals.rs:96-158`):
+  ```rust
+  #[trace("FR-056-AC-51", "TC-1052")]
+  #[test]
+  fn explicit_text_bodies_evaluate_with_profile_normalization_and_equality() {
+      let compiled = compile(&source);
+      assert_eq!(evaluate_text(&compiled, function).retained(), expected);
+      assert_eq!(evaluate_bool(&compiled, function, composed, profile), matches_composed);
+  }
+  ```
+- FND-002 after excerpt (`qsl-semantics/tests/it/native_literals.rs:411-465`):
+  ```rust
+  ("Text[1, 8; nfc]", "", 1, 8, quire_exact::TextProfile::Nfc, 0),
+  ("", "Text[0, 8; nfc]", "Text(5)", vec![0]),
+  ```
+- Focused locked replay evaluation test passed (1/1); focused locked `native_literals` tests passed (12/12). `cargo fmt --all -- --check` and `git diff --check` passed. PR reports focused check and all-target Clippy passed; review independently confirmed the two focused tests and formatting/diff checks.

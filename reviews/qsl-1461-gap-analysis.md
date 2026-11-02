@@ -30,3 +30,17 @@ Attempted the repository's computed Test Matrix and inspected the QSL-1461 chang
 - Reverse coverage and stubs: inspected changed production code and its requirement references; no unowned behavior or stub found.
 - Semantic review: skipped (optional; no opt-in).
 - Plan completion: not assessed.
+
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | ------- | ------ |
+| FND-001 | fixed | New replay evaluation coverage and both omitted refusal vectors directly address the manual criteria-to-test gap. |
+
+### Round 1 evidence
+
+- `qsl-replay/tests/it/compile_text_literals.rs::explicit_text_bodies_evaluate_with_profile_normalization_and_equality` now compiles source Text calls and evaluates retained values and equality for nfc and unicode-scalars.
+- `qsl-semantics/tests/it/native_literals.rs` adds the empty literal below a positive minimum and `Text(5)`, checking the typed refusal and body location.
+- Focused locked replay evaluation test passed (1/1); focused locked `native_literals` tests passed (12/12). Formatting and diff checks passed.
+- Historical limitation: Quoin matrix did not return during the initial review window; the disposition is based on the specific manual acceptance-to-test finding, not a claim that the original matrix completed.
