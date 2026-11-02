@@ -218,19 +218,23 @@ fn a_later_attempt_protocol_lowers_after_an_earlier_refusal() {
     let package = CheckedPackage::link(checked);
     let results = emit_checked_with_protocol_results(&package)
         .expect("the later protocol with an attempt emits independently");
-    assert!(
-        matches!(
-            results.results(),
-            [
-                ProtocolEmissionResult::Refused { declaration, .. },
-                ProtocolEmissionResult::Emitted { declaration: later, nodes, .. }
-            ] if declaration == "Broken"
-                && later == "Later"
-                && nodes.iter().any(|node| node["node_tag"] == "attempt")
-        ),
-        "independent attempt result: {:?}",
-        results.results()
-    );
+    let [ProtocolEmissionResult::Refused {
+        declaration: refused,
+        ..
+    }, ProtocolEmissionResult::Emitted {
+        declaration: emitted,
+        nodes,
+        ..
+    }] = results.results()
+    else {
+        panic!("the independent results retain both declarations");
+    };
+    assert_eq!(refused, "Broken");
+    assert_eq!(emitted, "Later");
+    assert!(nodes.iter().any(|node| {
+        node["semantic_form"] == "control"
+            && node["body"]["operation"]["member"]["operator"] == "attempt"
+    }));
 }
 
 pub(super) fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
