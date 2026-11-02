@@ -76,6 +76,21 @@ fn fault(invariant: &'static str) -> StepVerdict {
     StepVerdict::Fault(InternalFault::new("refinement-step", invariant))
 }
 
+fn fails(failure: RefinementFailure) -> StepVerdict {
+    StepVerdict::Fails(Box::new(failure))
+}
+
+fn passes(post: RefinementPosition, taken: Taken) -> StepVerdict {
+    StepVerdict::Passes {
+        post: Box::new(post),
+        taken: Box::new(taken),
+    }
+}
+
+fn undefined(evaluation: UndefinedEvaluation) -> StepVerdict {
+    StepVerdict::Undefined(Box::new(evaluation))
+}
+
 /// `state` without its hidden fields: the part of an abstract state a
 /// mapping gives (AX-2), which every member of a candidate set shares.
 fn visible_part(refinement: &CheckedRefinement, state: &ModelState) -> ModelState {
@@ -97,10 +112,6 @@ fn visible_part(refinement: &CheckedRefinement, state: &ModelState) -> ModelStat
 }
 
 /// `states` in state-key order, each state once.
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
-)]
 fn sorted(
     system: &ModelSystem<'_>,
     states: impl IntoIterator<Item = ModelState>,
@@ -161,17 +172,17 @@ pub fn check_initial(
         Err(verdict) => return verdict,
     };
     if candidates.is_empty() {
-        return StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial: index });
+        return fails(RefinementFailure::InitialNotAbstract { initial: index });
     }
-    StepVerdict::Passes {
-        post: RefinementPosition {
+    passes(
+        RefinementPosition {
             concrete: concrete_initial.clone(),
             history,
             abstract_states: candidates,
             abstract_protocol_states: Vec::new(),
         },
-        taken: Taken::Stutter,
-    }
+        Taken::Stutter,
+    )
 }
 
 /// FR-141 "Deciding the step rules" (RS-3 to RS-6): `step` taken from `pre`.
@@ -282,7 +293,7 @@ pub fn check_protocol_initial(
     };
     if candidates.is_empty() {
         return StepResult {
-            verdict: StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial: index }),
+            verdict: fails(RefinementFailure::InitialNotAbstract { initial: index }),
             abstract_successors,
         };
     }
@@ -300,7 +311,7 @@ pub fn check_protocol_initial(
     post.abstract_states = model_states;
     post.abstract_protocol_states = candidates;
     StepResult {
-        verdict: StepVerdict::Passes { post, taken },
+        verdict: passes(*post, *taken),
         abstract_successors,
     }
 }
@@ -329,11 +340,13 @@ pub fn check_protocol_step(
         protocol_node,
     );
     let StepVerdict::Passes { mut post, taken } = model_result.verdict else {
-        if let StepVerdict::Fails(RefinementFailure::AbstractStepRejected { .. }) =
-            model_result.verdict
-        {
+        if matches!(
+            &model_result.verdict,
+            StepVerdict::Fails(failure)
+                if matches!(failure.as_ref(), RefinementFailure::AbstractStepRejected { .. })
+        ) {
             return StepResult {
-                verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                verdict: fails(RefinementFailure::NoAbstractMatch {
                     position: step.position,
                 }),
                 abstract_successors: model_result.abstract_successors,
@@ -351,8 +364,8 @@ pub fn check_protocol_step(
             protocol,
             pre,
             step,
-            post,
-            taken,
+            *post,
+            *taken,
             model_result.abstract_successors,
         );
     }
@@ -364,21 +377,18 @@ pub fn check_protocol_step(
             protocol,
             pre,
             step,
-            post,
+            *post,
             model_result.abstract_successors,
         );
     }
-    if matches!(taken, Taken::Stutter) {
+    if matches!(taken.as_ref(), Taken::Stutter) {
         post.abstract_protocol_states = pre.abstract_protocol_states.clone();
         return StepResult {
-            verdict: StepVerdict::Passes {
-                post,
-                taken: Taken::Stutter,
-            },
+            verdict: passes(*post, Taken::Stutter),
             abstract_successors: model_result.abstract_successors,
         };
     }
-    let Taken::Abstract(accepted) = taken else {
+    let Taken::Abstract(accepted) = *taken else {
         return StepResult {
             verdict: fault("a-model-operation-row-yields-model-transitions"),
             abstract_successors: model_result.abstract_successors,
@@ -467,7 +477,7 @@ pub fn check_protocol_step(
     });
     if candidates.is_empty() {
         return StepResult {
-            verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+            verdict: fails(RefinementFailure::NoAbstractMatch {
                 position: step.position,
             }),
             abstract_successors: count,
@@ -486,10 +496,7 @@ pub fn check_protocol_step(
     post.abstract_states = model_states;
     post.abstract_protocol_states = candidates;
     StepResult {
-        verdict: StepVerdict::Passes {
-            post,
-            taken: Taken::ProtocolTraces(paths),
-        },
+        verdict: passes(*post, Taken::ProtocolTraces(paths)),
         abstract_successors: count,
     }
 }
@@ -633,7 +640,7 @@ fn check_protocol_any_step(
     });
     if candidates.is_empty() {
         return StepResult {
-            verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+            verdict: fails(RefinementFailure::NoAbstractMatch {
                 position: step.position,
             }),
             abstract_successors: count,
@@ -657,18 +664,12 @@ fn check_protocol_any_step(
         .collect();
     if stuttered && traces.is_empty() {
         return StepResult {
-            verdict: StepVerdict::Passes {
-                post,
-                taken: Taken::Stutter,
-            },
+            verdict: passes(post, Taken::Stutter),
             abstract_successors: count,
         };
     }
     StepResult {
-        verdict: StepVerdict::Passes {
-            post,
-            taken: Taken::ProtocolTraces(traces),
-        },
+        verdict: passes(post, Taken::ProtocolTraces(traces)),
         abstract_successors: count,
     }
 }
@@ -852,7 +853,7 @@ fn check_protocol_node_step(
     });
     if candidates.is_empty() {
         return StepResult {
-            verdict: StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+            verdict: fails(RefinementFailure::NoAbstractMatch {
                 position: step.position,
             }),
             abstract_successors: count,
@@ -871,10 +872,7 @@ fn check_protocol_node_step(
     post.abstract_states = model_states;
     post.abstract_protocol_states = candidates;
     StepResult {
-        verdict: StepVerdict::Passes {
-            post,
-            taken: Taken::ProtocolTraces(paths),
-        },
+        verdict: passes(post, Taken::ProtocolTraces(paths)),
         abstract_successors: count,
     }
 }
@@ -936,10 +934,6 @@ fn protocol_node_arguments_match(
     expected.is_empty()
 }
 
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-141 fixes StepVerdict's shape, which this closure returns directly"
-)]
 fn protocol_closure(
     refinement: &CheckedRefinement,
     system: &AbstractProtocolSystem<'_>,
@@ -1149,10 +1143,6 @@ struct Soft {
 impl Soft {
     /// Keep `verdict` if it is a row outcome; hand back any other verdict,
     /// which ends the check at once.
-    #[allow(
-        clippy::result_large_err,
-        reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
-    )]
     fn record(&mut self, verdict: StepVerdict) -> Result<(), StepVerdict> {
         let slot = match verdict {
             StepVerdict::Undefined(_) => &mut self.undefined,
@@ -1188,10 +1178,6 @@ pub(crate) fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> Ste
     })
 }
 
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
-)]
 fn decide_step(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
@@ -1320,27 +1306,29 @@ fn decide_step(
     };
     let stuttered = after_key == before_key;
     let hidden = !mapped.hidden.is_empty();
-    let passes = |taken, states: Vec<ModelState>| StepVerdict::Passes {
-        post: RefinementPosition {
-            concrete: step.post.state().clone(),
-            history: history.clone(),
-            abstract_states: states,
-            abstract_protocol_states: Vec::new(),
-        },
-        taken,
+    let pass_with_states = |taken, states: Vec<ModelState>| {
+        passes(
+            RefinementPosition {
+                concrete: step.post.state().clone(),
+                history: history.clone(),
+                abstract_states: states,
+                abstract_protocol_states: Vec::new(),
+            },
+            taken,
+        )
     };
     let Some(row) = row else {
         return stutter(step, stuttered, || {
-            passes(Taken::Stutter, pre.abstract_states.clone())
+            pass_with_states(Taken::Stutter, pre.abstract_states.clone())
         });
     };
     match &row.target {
         StepTarget::Stutter => stutter(step, stuttered, || {
-            passes(Taken::Stutter, pre.abstract_states.clone())
+            pass_with_states(Taken::Stutter, pre.abstract_states.clone())
         }),
         StepTarget::Any => {
             if stuttered && !hidden {
-                return passes(Taken::Stutter, pre.abstract_states.clone());
+                return pass_with_states(Taken::Stutter, pre.abstract_states.clone());
             }
             // The members after the step: the set itself for a stutter, and
             // every successor of a member whose visible part is the mapped
@@ -1401,7 +1389,7 @@ fn decide_step(
                 if undecided {
                     return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
                 }
-                return StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                return fails(RefinementFailure::NoAbstractMatch {
                     position: step.position,
                 });
             }
@@ -1410,10 +1398,10 @@ fn decide_step(
                 Err(verdict) => return verdict,
             };
             if stuttered {
-                return passes(Taken::Stutter, next);
+                return pass_with_states(Taken::Stutter, next);
             }
             match canonical(abstract_system, matched) {
-                Ok(matched) => passes(Taken::Abstract(matched), next),
+                Ok(matched) => pass_with_states(Taken::Abstract(matched), next),
                 Err(verdict) => verdict,
             }
         }
@@ -1426,7 +1414,7 @@ fn decide_step(
                 Err(verdict) => return verdict,
             };
             match sorted(abstract_system, candidates) {
-                Ok(candidates) => passes(Taken::Abstract(Vec::new()), candidates),
+                Ok(candidates) => pass_with_states(Taken::Abstract(Vec::new()), candidates),
                 Err(verdict) => verdict,
             }
         }
@@ -1441,7 +1429,7 @@ fn decide_step(
                 arguments,
                 step,
                 abstract_successors,
-                passes,
+                pass_with_states,
             )
         }
     }
@@ -1456,7 +1444,7 @@ fn stutter(
     if stuttered {
         passes()
     } else {
-        StepVerdict::Fails(RefinementFailure::StutterChanged {
+        fails(RefinementFailure::StutterChanged {
             position: step.position,
         })
     }
@@ -1770,10 +1758,6 @@ pub fn check_protocol_state_relations(
 
 /// `identities` in canonical order (FR-101): ascending transition-identity
 /// bytes.
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
-)]
 fn canonical(
     system: &ModelSystem<'_>,
     identities: Vec<ModelTransition>,
@@ -1803,10 +1787,6 @@ struct Arguments {
 /// evaluated at the pre-state over the concrete step's receiver and
 /// arguments (FR-141 "Abstract-operation evaluation"), with the history
 /// values the pre-state holds.
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
-)]
 fn evaluate_arguments(
     refinement: &CheckedRefinement,
     (concrete_system, abstract_system): (&ModelSystem<'_>, &ModelSystem<'_>),
@@ -1866,7 +1846,7 @@ fn evaluate_arguments(
                     let Ok((bytes, _)) = concrete_system.state_key_of(step.post.state()) else {
                         return Err(fault("post-state-encodes"));
                     };
-                    Err(StepVerdict::Undefined(UndefinedEvaluation {
+                    Err(undefined(UndefinedEvaluation {
                         site: UndefinedSite {
                             position: step.position,
                             state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(bytes),
@@ -1923,7 +1903,6 @@ fn evaluate_arguments(
     Ok((evaluated, soft))
 }
 
-#[allow(clippy::result_large_err, reason = "FR-141 fixes StepVerdict's shape")]
 fn evaluate_node_arguments(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
@@ -1982,7 +1961,7 @@ fn evaluate_node_arguments(
                 let Ok((bytes, _)) = concrete_system.state_key_of(step.post.state()) else {
                     return Err(fault("post-state-encodes"));
                 };
-                Err(StepVerdict::Undefined(UndefinedEvaluation {
+                Err(undefined(UndefinedEvaluation {
                     site: UndefinedSite {
                         position: step.position,
                         state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(bytes),
@@ -2021,10 +2000,6 @@ type NodeArgumentValues = (Option<Vec<Option<Value>>>, Soft);
 /// The abstract states a mapped post-state stands for once its hidden fields
 /// take each value of their finite domains (AX-2): the visible state itself
 /// when no field is hidden.
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
-)]
 fn completions(
     system: &ModelSystem<'_>,
     mapped: &MappedState,
@@ -2189,24 +2164,22 @@ fn judge_operation(
     // A set that comes out empty has no abstract match, whichever candidate
     // and completion rejected (QSpec FR-378).
     if !mapped.hidden.is_empty() {
-        return StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+        return fails(RefinementFailure::NoAbstractMatch {
             position: step.position,
         });
     }
     rejected.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
     match rejected.into_iter().next() {
-        Some((_, _, transition, rejection)) => {
-            StepVerdict::Fails(RefinementFailure::AbstractStepRejected {
-                position: step.position,
-                transition,
-                cause: match rejection {
-                    Rejection::Precondition { clause } => StepRejection::Precondition { clause },
-                    Rejection::Frame { code } => StepRejection::Frame { code },
-                    Rejection::Postcondition => StepRejection::Postcondition,
-                },
-            })
-        }
-        None => StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+        Some((_, _, transition, rejection)) => fails(RefinementFailure::AbstractStepRejected {
+            position: step.position,
+            transition,
+            cause: match rejection {
+                Rejection::Precondition { clause } => StepRejection::Precondition { clause },
+                Rejection::Frame { code } => StepRejection::Frame { code },
+                Rejection::Postcondition => StepRejection::Postcondition,
+            },
+        }),
+        None => fails(RefinementFailure::NoAbstractMatch {
             position: step.position,
         }),
     }
@@ -2235,7 +2208,7 @@ fn mapping_verdict(
             let Some(state_key) = state_key() else {
                 return fault("concrete-state-encodes");
             };
-            StepVerdict::Undefined(UndefinedEvaluation {
+            undefined(UndefinedEvaluation {
                 site: UndefinedSite {
                     position,
                     state_key,
@@ -2271,9 +2244,7 @@ mod tests {
             .record(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor))
             .is_ok());
         assert!(soft
-            .record(StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
-                position: 1
-            }))
+            .record(fails(RefinementFailure::NoAbstractMatch { position: 1 }))
             .is_err());
         assert!(matches!(
             soft.first(),
@@ -2286,7 +2257,7 @@ mod tests {
     #[trace("TC-555")]
     #[test]
     fn an_undefined_row_outranks_an_undetermined_one_recorded_first() {
-        let undefined = StepVerdict::Undefined(UndefinedEvaluation {
+        let undefined = undefined(UndefinedEvaluation {
             site: UndefinedSite {
                 position: 2,
                 state_key: qsl_eval::simulation::StateKey::from_canonical_bytes(b"null".to_vec()),

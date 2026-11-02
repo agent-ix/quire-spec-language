@@ -59,7 +59,7 @@ fn passes(verdict: StepVerdict) -> (RefinementPosition, Taken) {
     let StepVerdict::Passes { post, taken } = verdict else {
         panic!("the step passes: {verdict:?}");
     };
-    (post, taken)
+    (*post, *taken)
 }
 
 /// `check_step` on `operation` from `pre` to `post` at `position`.
@@ -167,11 +167,7 @@ fn a_mapped_side_that_changes_at_show_fails_the_frame() {
         )
         .verdict,
     );
-    let StepVerdict::Fails(RefinementFailure::AbstractStepRejected {
-        position,
-        transition,
-        cause,
-    }) = decide(
+    let StepVerdict::Fails(failure) = decide(
         &world,
         &unit,
         &tossed,
@@ -181,6 +177,14 @@ fn a_mapped_side_that_changes_at_show_fails_the_frame() {
     .verdict
     else {
         panic!("the step is rejected");
+    };
+    let RefinementFailure::AbstractStepRejected {
+        position,
+        transition,
+        cause,
+    } = *failure
+    else {
+        panic!("the failure is an abstract step rejection");
     };
     assert_eq!(position, 2);
     assert_eq!(
@@ -219,7 +223,7 @@ fn three_initial_states_and_a_toss_judge_the_hidden_side_both_ways() {
     assert!(matches!(verdicts[0], StepVerdict::Passes { .. }));
     for (index, verdict) in verdicts.iter().enumerate().skip(1) {
         assert!(
-            matches!(verdict, StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial }) if *initial == index),
+            matches!(verdict, StepVerdict::Fails(failure) if matches!(failure.as_ref(), RefinementFailure::InitialNotAbstract { initial } if *initial == index)),
             "{index}: {verdict:?}"
         );
     }
@@ -335,7 +339,7 @@ fn an_empty_candidate_set_is_no_abstract_match() {
     assert!(
         matches!(
             verdict,
-            StepVerdict::Fails(RefinementFailure::NoAbstractMatch { position: 2 })
+            StepVerdict::Fails(ref failure) if matches!(failure.as_ref(), RefinementFailure::NoAbstractMatch { position: 2 })
         ),
         "{verdict:?}"
     );
@@ -409,7 +413,7 @@ fn a_set_of_one_side_that_a_reveal_contradicts_is_no_abstract_match() {
     assert!(
         matches!(
             verdict,
-            StepVerdict::Fails(RefinementFailure::NoAbstractMatch { position: 2 })
+            StepVerdict::Fails(ref failure) if matches!(failure.as_ref(), RefinementFailure::NoAbstractMatch { position: 2 })
         ),
         "{verdict:?}"
     );

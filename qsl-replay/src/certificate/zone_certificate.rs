@@ -1602,7 +1602,7 @@ impl<O> Checker<'_, '_, O> {
                         && entry.automaton_state < reserved
                         && self.position_is(entry.automaton_state, &post)?;
                     if holds {
-                        self.know(entry.automaton_state, post);
+                        self.know(entry.automaton_state, *post);
                     }
                     holds
                 }
@@ -1673,7 +1673,7 @@ impl<O> Checker<'_, '_, O> {
                         && taken == Some(&yielded)
                         && self.position_is(target.automaton_state, &post)?;
                     if holds {
-                        self.know(target.automaton_state, post);
+                        self.know(target.automaton_state, *post);
                     }
                     (!holds).then_some(CertificateRule::PostDiffers)
                 }

@@ -99,14 +99,14 @@ fn passes_with(verdict: StepVerdict) -> Taken {
     let StepVerdict::Passes { taken, .. } = verdict else {
         panic!("the step passes: {verdict:?}");
     };
-    taken
+    *taken
 }
 
 fn fails_with(verdict: StepVerdict) -> RefinementFailure {
     let StepVerdict::Fails(failure) = verdict else {
         panic!("the step fails: {verdict:?}");
     };
-    failure
+    *failure
 }
 
 /// FR-141-AC-1 (TC-546 step 1): the initial state and the `beginA` and
@@ -125,7 +125,7 @@ fn the_initial_state_and_the_compare_and_set_steps_pass() {
     ) else {
         panic!("the initial state passes");
     };
-    assert_eq!(taken, Taken::Stutter);
+    assert_eq!(*taken, Taken::Stutter);
     assert_eq!(post.abstract_states.len(), 1);
 
     let begun = cas_state(0, 0, true, 0, false);
@@ -331,6 +331,6 @@ fn a_failed_step_names_its_position_and_counts_the_transitions_it_judged() {
     assert_eq!(result.abstract_successors, 1);
     assert!(matches!(
         result.verdict,
-        StepVerdict::Fails(RefinementFailure::AbstractStepRejected { position: 3, .. })
+        StepVerdict::Fails(failure) if matches!(failure.as_ref(), RefinementFailure::AbstractStepRejected { position: 3, .. })
     ));
 }

@@ -461,7 +461,7 @@ fn start(world: &World<'_>) -> RefinementPosition {
     ) else {
         panic!("the initial state passes");
     };
-    post
+    *post
 }
 
 /// FR-141-AC-6 (TC-554 step 2): over `RegisterHistory` with the `inv`
