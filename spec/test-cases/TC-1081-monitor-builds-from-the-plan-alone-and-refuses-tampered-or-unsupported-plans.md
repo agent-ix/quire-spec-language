@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15 and FR-251-AC-17.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19 and FR-251-AC-21.
 
 ## Test Procedure
 
@@ -30,6 +30,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 10. Build the AC-1 plan with `activation_capacity` 2; start three `req` instances before any `ack`; present watermarks and then the `ack`s; read the root outcomes and the per-instance reports.
 11. On the 16-bit target of FR-251-AC-3, fill the window of `once[0 ms, 10 ms] holds(p)`, cause a fault, evaluate before and after the window refills, and poll the counter between readings.
 12. Run an "on each" clause over a model-typed value with three admitted events (two in one tick); read each instance's activation position and captures from `State`; add an atom over a model value with no admitted projection.
+13. Build `once[0 ms, 10 ms] eventually holds(ack)` with `activation_capacity` 2; present events at ticks 0, 1000 and 2000 with no `ack`; read each instance's `subformula` (the `eventually` node's id).
+14. On a 1 MHz counter at rate 2 per ms, build `once[0 ms, 10 ms] eventually[0 ms, 5 ms] holds(p)` and `eventually[0 ms, 5 ms] once[0 ms, 10 ms] holds(p)`; read each operator's capacity; feed `p` at tick 0 and 30 events at the rate across ticks 0 to 14999; read the inner buffer at tick 14999 and the decisions that need the tick-0 entry.
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -47,3 +49,5 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 10: the third live instance is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`, none dropped silently; the root gives one folded outcome per activation, pending until resolved; each `eventually` instance is reported once on settlement and each pending one at every watermark.
 - Step 11: buffers empty and `history_start` at the faulting reading's unwrapped tick; `indeterminate` until the window refills, then decided; the poll leaves the baseline unchanged.
 - Step 12: activation positions 1, 2, 3 from `State.event_position`, no `Activation` field; captures are typed projections; the unprojectable atom yields `Incomplete(LimitReached{limit: atom_projection, value: <its AtomId>, setting: monitor.atom_projection})` with replayable evidence.
+- Step 13: the third instance is not started and settles `Incomplete(LimitReached{limit: activation, value: 2, setting: monitor.max_activations})`; the plan root has no additional binding.
+- Step 14: inner capacity 32 in both plans (retention 15002 ticks), outer capacity 22 for the `once` and 12 for the `eventually`; the tick-0 entry is present at tick 14999 and read, no `Incomplete`, and it expires only after tick 15002.

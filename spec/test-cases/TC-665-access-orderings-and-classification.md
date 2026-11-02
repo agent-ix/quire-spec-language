@@ -12,7 +12,7 @@ relationships:
 
 Verify access classification, admitted orderings with their refusal, the access-shape rule at S3 and in the pre-check, and that orderings change nothing under `sc`.
 
-Scope: FR-220-AC-1 to FR-220-AC-15. Steps 1 to 9 are S3 and pre-check checks; steps 10 to 14 are EN-1 checks, owned by the EN-1 pre-check and run against the EN-1 pre-check.
+Scope: FR-220-AC-1 to FR-220-AC-16. Steps 1 to 9 are S3 and pre-check checks; steps 10 to 15 are EN-1 checks, owned by the EN-1 pre-check and run against the EN-1 pre-check.
 
 ## Test Procedure
 
@@ -52,6 +52,9 @@ EN-1 steps (not S3 results):
     returned together, in typed protocol transition identity order, with the
     reader's `transition` set to `None`. In the unaccessed-`z` variant, verify
     that the attempts' selected preconditions and constraints reject `z`.
+15. Run the deadlock-freedom item over `SB` under `tso` and under `ra` with
+    `max_candidates` 0, and over the variant whose universe also holds ten
+    absent `Cell` keys with `max_candidates` 6 and 12 (FR-220-AC-16).
 
 Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 
@@ -75,3 +78,4 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 - Step 12: the register is branch-local.
 - Step 13: under `tso` and `ra`, the pre-check returns V-8 `WeakAccessShape.failures` with the `ordering-mismatch` entry FR-220-AC-14 specifies for each invalid non-local access before its outgoing transitions; under `sc`, each is admitted. The release access to a branch-local register remains local throughout exhaustive reachable-state classification and then returns the same `ordering-mismatch` cause with `access` `local`; the two-field attempt has only `multi-location` for its own shape, while the pre-check continues collecting other failures.
 - Step 14: under `tso`, the base example has a `MultiLocation` entry for the `event` reader and not for the ordinary store. With the store's ordering changed to `acquire`, one V-8 `WeakAccessShape.failures` list contains the reader's `MultiLocation` and the store's `OrderingMismatch`; both share ascending JCS-byte order of typed protocol transition identities, and the reader entry's `transition` is `None`. For the unaccessed-`z` variant, the store precondition and load constraints exclude `z` in every reachable state, so the `z.v` reader is not shared and the item is admitted. Under `sc`, the item is admitted for the shared reader and the `finish` reader.
+- Step 15: with `max_candidates` 0, and with 6 in the absent-keys variant, construction stops on the bound and the item settles `Stopped{ResourceExhausted, {MaxCandidates, <bound>}}` with no product state, its record `incomplete`/`limit-reached` naming `expansion.max_candidates`; never a refusal or `runtime_invariant`. The variant builds with 12, and `SB` without absent keys builds with 6 and with the default bound.

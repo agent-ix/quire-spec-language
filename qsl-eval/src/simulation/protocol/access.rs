@@ -700,13 +700,26 @@ pub(crate) enum ClassificationMode {
     Enabled,
 }
 
+/// The refusal a stop of EN-1's classification over an initial state is: a
+/// budget the expansion reached, or another stop it settles, stops
+/// construction with that stop (FR-120 "Post-states"); a broken invariant
+/// is a fault.
+fn classification_stop(stop: ExpansionStop) -> ProtocolRefusal {
+    if stop.is_internal_failure() {
+        ProtocolRefusal::fault("attempt-identities-list")
+    } else {
+        ProtocolRefusal::InitialStop(stop)
+    }
+}
+
 /// EN-1 (MA-1, MA-2): instantiate and classify every attempt of every
 /// `parallel` `governing` resolves weak, over the identities of `initial`.
 ///
 /// # Errors
 ///
-/// [`ProtocolRefusal`] when an application has no footprint or the
-/// identities cannot be listed.
+/// [`ProtocolRefusal`] when an application has no footprint;
+/// [`ProtocolRefusal::InitialStop`] when listing the identities stops on a
+/// budget, and [`ProtocolRefusal::Fault`] when it breaks an invariant.
 pub(crate) fn classify(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
@@ -719,7 +732,6 @@ pub(crate) fn classify(
     let Some(initial) = initial else {
         return Ok(WeakAccesses::default());
     };
-    let unlisted = |_: ExpansionStop| ProtocolRefusal::fault("attempt-identities-list");
     // Each node's chain: its outermost weak `parallel` and every
     // (`parallel`, branch label) above it, innermost first.
     let chain_of = |node: ProtocolNodeId| -> Result<Option<Chain>, ProtocolRefusal> {
@@ -803,12 +815,12 @@ pub(crate) fn classify(
         let transitions = match mode {
             ClassificationMode::Potential => model
                 .attempt_identities(initial, &operation)
-                .map_err(unlisted)?,
+                .map_err(classification_stop)?,
             ClassificationMode::Enabled => {
                 let selected = |clause| attempt.contracts.contains(&clause);
                 model
                     .apply_operation(initial, &operation, &selected, &mut model.budget())
-                    .map_err(unlisted)?
+                    .map_err(classification_stop)?
                     .successors
                     .into_iter()
                     .map(|applied| applied.transition)
@@ -898,7 +910,10 @@ pub(crate) fn classify(
         if let std::collections::btree_map::Entry::Vacant(slot) =
             cells.entry(touch.location.clone())
         {
-            if let Some(cell) = model.cell_of(initial, &touch.location).map_err(unlisted)? {
+            if let Some(cell) = model
+                .cell_of(initial, &touch.location)
+                .map_err(classification_stop)?
+            {
                 slot.insert(cell);
             }
         }
@@ -1384,4 +1399,47 @@ fn acquires(ordering: Option<AccessOrdering>) -> bool {
         ordering,
         Some(AccessOrdering::Acquire | AccessOrdering::AcqRel | AccessOrdering::SeqCst)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_exact::LimitKind;
+
+    use super::*;
+    use crate::simulation::expansion::ExpansionLimit;
+    use crate::simulation::model::{BROKEN, EXHAUSTED};
+
+    /// A classification stop on a caller-raisable budget stops construction
+    /// with that stop; one that broke an invariant stays a fault.
+    #[trace("TC-665", "FR-220-AC-16")]
+    #[test]
+    fn a_budget_stop_is_a_stop_and_a_broken_one_a_fault() {
+        for limit in [
+            ExpansionLimit::MaxCandidates,
+            ExpansionLimit::EvaluationMeter(LimitKind::WorkUnits),
+        ] {
+            let stop = ExpansionStop {
+                cause: EXHAUSTED,
+                limit: Some(limit),
+            };
+            let refusal = classification_stop(stop);
+            assert!(
+                matches!(&refusal, ProtocolRefusal::InitialStop(stopped) if *stopped == stop),
+                "{refusal:?}"
+            );
+            assert_eq!(
+                (refusal.code().as_str(), refusal.cause()),
+                ("resource_exhausted", "insufficient-next-charge")
+            );
+        }
+        let refusal = classification_stop(ExpansionStop {
+            cause: BROKEN,
+            limit: None,
+        });
+        let ProtocolRefusal::Fault(fault) = &refusal else {
+            panic!("{refusal:?}");
+        };
+        assert_eq!(fault.invariant(), "attempt-identities-list");
+    }
 }

@@ -21,18 +21,20 @@ use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Ra, RestKind, Sc, StepKind,
     ThreadPath, Tso, WaitCause, WeakAccesses,
 };
-use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{
+    independent, ExpansionLimit, Location, SubjectSystem, TransitionSystem,
+};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_protocol_trace, settle_protocol_check, InconclusiveCause, MemoryBound,
-    MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
-    ModelCheckRecord, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits,
-    ReplayRefusal, ResultLabel, StatedMemoryBound, TemporalCounterexample, TerminalValue,
-    UnavailabilityCause, UndecidedCause, WeakAccessFailure,
+    replay_protocol_trace, settle_protocol_check, IncompleteCause, InconclusiveCause, MemoryBound,
+    MemoryBoundMember, MemoryCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject,
+    ReachedLimit, ReplayLimits, ReplayRefusal, ResultLabel, StatedMemoryBound,
+    TemporalCounterexample, TerminalValue, UnavailabilityCause, UndecidedCause, WeakAccessFailure,
 };
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
@@ -180,9 +182,94 @@ impl Case {
         selection: &[MemorySelection],
         memory: M,
     ) -> Result<ProtocolSystem<'_, M>, ProtocolRefusal> {
-        let subject = self.subject(selection);
+        Self::build(&self.subject(selection), memory)
+    }
+
+    /// [`Self::subject`] with each expansion bound to `max_candidates`, and
+    /// `absent` further `Cell` keys in the universe that the initial state
+    /// does not hold.
+    fn subject_within(
+        &self,
+        selection: &[MemorySelection],
+        max_candidates: u64,
+        absent: usize,
+    ) -> ProtocolSubject<'_> {
+        let mut subject = self.subject(selection);
+        subject.model.simulation.expansion.max_candidates = max_candidates;
+        let cells = subject
+            .model
+            .simulation
+            .universes
+            .iter_mut()
+            .find(|universe| universe.population == key("cells"))
+            .expect("the cells universe");
+        cells.keys.extend((0..absent).map(|n| format!("absent{n}")));
+        subject
+    }
+
+    /// [`Self::system`] over [`Self::subject_within`].
+    fn system_within<M: MemoryModel>(
+        &self,
+        selection: &[MemorySelection],
+        memory: M,
+        max_candidates: u64,
+        absent: usize,
+    ) -> Result<ProtocolSystem<'_, M>, ProtocolRefusal> {
+        Self::build(
+            &self.subject_within(selection, max_candidates, absent),
+            memory,
+        )
+    }
+
+    /// The deadlock-freedom item over [`Self::subject_within`], and its
+    /// FR-127 record.
+    fn deadlock_within(
+        &self,
+        selection: &[MemorySelection],
+        max_candidates: u64,
+        absent: usize,
+    ) -> (
+        ModelCheckOutcome<ProtocolTransition>,
+        ModelCheckRecord<ProtocolTransition>,
+    ) {
+        let outcome = check_protocol(
+            ProtocolCheckRequest {
+                temporal_clock_selections: &[],
+                subject: self.subject_within(selection, max_candidates, absent),
+                item: ModelCheckItem::DeadlockFreedom,
+                max_depth: None,
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+                limits: ModelCheckLimits::default(),
+                ignore_memory_constraints: false,
+            },
+            &Cancel::new(),
+        )
+        .expect("the protocol subject checks");
+        let record = settle_protocol_check(
+            &outcome,
+            &ModelCheckLimits::default(),
+            &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
+                subject: self.subject_within(selection, max_candidates, absent),
+                item: ModelCheckItem::DeadlockFreedom,
+                max_store_buffer: None,
+                max_messages: None,
+                max_live_instances: None,
+            },
+            &Cancel::new(),
+            |payload| self.replay(selection, payload.clone()),
+        );
+        (outcome, record)
+    }
+
+    fn build<'s, M: MemoryModel>(
+        subject: &ProtocolSubject<'s>,
+        memory: M,
+    ) -> Result<ProtocolSystem<'s, M>, ProtocolRefusal> {
         let model = ModelSystem::new(subject.model.simulation.clone()).expect("admits");
-        ProtocolSystem::new(model, &subject, memory)
+        ProtocolSystem::new(model, subject, memory)
     }
 
     /// EN-1 over `SB` with `item`, the selection and the store buffer bound.
@@ -2606,6 +2693,116 @@ fn a_memory_model_refuses_a_resolved_model_it_does_not_implement() {
             ("unsupported_construct", "not-yet-implemented")
         );
     }
+}
+
+/// Asserts that `refusal` is construction's stop on `max_candidates`, with
+/// FR-120's resource stop code, and that the item over the same subject
+/// settles FR-126's `Stopped{ResourceExhausted, {MaxCandidates, bound}}`, an
+/// incomplete record naming `expansion.max_candidates`, not a refusal and
+/// not a broken invariant.
+fn assert_candidate_stop(
+    case: &Case,
+    selection: &[MemorySelection],
+    refusal: Option<ProtocolRefusal>,
+    bound: u64,
+    absent: usize,
+) {
+    let refusal = refusal.expect("the bound stops construction");
+    let ProtocolRefusal::InitialStop(stop) = &refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(stop.limit, Some(ExpansionLimit::MaxCandidates));
+    assert_eq!(
+        (refusal.code().as_str(), refusal.cause()),
+        ("resource_exhausted", "insufficient-next-charge")
+    );
+    let reached = ReachedLimit {
+        limit: ModelCheckLimit::MaxCandidates,
+        value: bound,
+    };
+    let (outcome, record) = case.deadlock_within(selection, bound, absent);
+    let ModelCheckOutcome::Stopped {
+        cause: IncompleteCause::ResourceExhausted,
+        limit: Some(limit),
+        stats,
+    } = &outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(*limit, reached);
+    assert_eq!(stats.product_states, 0);
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxCandidates,
+            value: bound,
+        })
+    );
+    assert_eq!(record.limit_reached, Some(reached));
+    assert_eq!(reached.limit.setting(), "expansion.max_candidates");
+}
+
+/// EN-1's enabled classification of `SB`'s attempts over the initial state
+/// expands their applications under the subject's `max_candidates`: a bound
+/// it reaches stops construction with FR-120's resource stop, and the item
+/// settles FR-126's `Stopped` naming `MaxCandidates` and the bound, under
+/// `tso` and `ra`; the default bound builds.
+#[trace("TC-665", "FR-220-AC-16")]
+#[test]
+fn a_candidate_bound_reached_while_classifying_is_a_resource_stop() {
+    let case = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let ra = [select("SB::Both", MemoryModelName::Ra)];
+    assert_candidate_stop(
+        &case,
+        &tso,
+        case.system_within(&tso, Tso::default(), 0, 0).err(),
+        0,
+        0,
+    );
+    assert_candidate_stop(
+        &case,
+        &ra,
+        case.system_within(&ra, Ra::default(), 0, 0).err(),
+        0,
+        0,
+    );
+    assert!(case.system(&tso, Tso::default()).is_ok());
+    assert!(case.system(&ra, Ra::default()).is_ok());
+}
+
+/// EN-1's potential classification lists every attempt identity, of held
+/// and of absent universe receivers, under the same bound. With ten `Cell`
+/// keys the initial state does not hold, a bound of 6 fits the enabled
+/// applications (the same subject without them builds) but not the twelve
+/// potential identities of `Cell::set`: construction stops on the bound and
+/// the item settles FR-126's `Stopped{ResourceExhausted, {MaxCandidates,
+/// 6}}`, under `tso` and `ra`; a bound of 12 builds.
+#[trace("TC-665", "FR-220-AC-16")]
+#[test]
+fn a_candidate_bound_reached_listing_potential_identities_is_a_resource_stop() {
+    const ABSENT: usize = 10;
+    let case = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let ra = [select("SB::Both", MemoryModelName::Ra)];
+    assert!(case.system_within(&tso, Tso::default(), 6, 0).is_ok());
+    assert!(case.system_within(&ra, Ra::default(), 6, 0).is_ok());
+    assert_candidate_stop(
+        &case,
+        &tso,
+        case.system_within(&tso, Tso::default(), 6, ABSENT).err(),
+        6,
+        ABSENT,
+    );
+    assert_candidate_stop(
+        &case,
+        &ra,
+        case.system_within(&ra, Ra::default(), 6, ABSENT).err(),
+        6,
+        ABSENT,
+    );
+    assert!(case.system_within(&tso, Tso::default(), 12, ABSENT).is_ok());
+    assert!(case.system_within(&ra, Ra::default(), 12, ABSENT).is_ok());
 }
 
 /// A claim's one atom over the bound core's registers: the weak outcome
