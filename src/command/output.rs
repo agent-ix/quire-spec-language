@@ -72,6 +72,10 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                     maximum: *maximum,
                     option: "--request-bytes",
                 },
+                LimitKind::FixedRequestBytes { maximum } => types::Details::FixedBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
+                },
                 LimitKind::DependentBytes { maximum } => types::Details::ConfiguredBytes {
                     limit: kind.as_str(),
                     maximum: *maximum,

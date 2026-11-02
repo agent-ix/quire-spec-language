@@ -81,6 +81,11 @@ pub enum LimitKind {
         /// The caller's effective request byte ceiling.
         maximum: usize,
     },
+    /// A command without caller-configurable request limits exceeded its fixed ceiling.
+    FixedRequestBytes {
+        /// The effective request byte ceiling.
+        maximum: usize,
+    },
     /// Dependent files exceeded their aggregate configured ceiling.
     DependentBytes {
         /// The caller's effective aggregate dependent byte ceiling.
@@ -114,7 +119,7 @@ impl LimitKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::FileBytes => "file bytes",
-            Self::RequestBytes { .. } => "request_bytes",
+            Self::RequestBytes { .. } | Self::FixedRequestBytes { .. } => "request_bytes",
             Self::DependentBytes { .. } | Self::FixedDependentBytes { .. } => "dependent_bytes",
             Self::ObservationDocumentBytes { .. } => "observation.document_bytes",
             Self::SelectedFiles { .. } => "selected files",
@@ -666,8 +671,8 @@ fn with_request<T>(
     action: impl FnOnce(&Path, &[u8]) -> Result<T>,
 ) -> std::result::Result<T, Box<RunError>> {
     with_request_limits(path, REQUEST_BYTES, action).map_err(|mut error| {
-        if matches!(error.cause, RunCause::Limit(LimitKind::RequestBytes { .. })) {
-            error.cause = RunCause::Limit(LimitKind::FileBytes);
+        if let RunCause::Limit(LimitKind::RequestBytes { maximum }) = &error.cause {
+            error.cause = RunCause::Limit(LimitKind::FixedRequestBytes { maximum: *maximum });
         }
         error
     })

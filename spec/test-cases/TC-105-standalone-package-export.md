@@ -26,13 +26,12 @@ Scope: FR-027-AC-2, FR-027-AC-3 and FR-027-AC-13.
    program source lacks `authority`.
 4. Compile a request whose program source file is missing, then one whose
    program source has malformed syntax.
-5. Compile a request whose program source exceeds the fixed `dependent_bytes`
-   ceiling.
-6. Compile a request whose program source and models are under
-   `dependent_bytes` and whose one `libraries` source takes the total one
-   byte over it; compile it again with the limit raised to that total. Then
-   compile a program that imports 65 libraries, each its own small
-   `libraries` source file, at the default limits.
+5. Compile a request file one byte over the fixed `request_bytes` ceiling, and
+   a request whose program source exceeds the fixed `dependent_bytes` ceiling.
+6. Compile a request whose program source and models are under the fixed
+   `dependent_bytes` ceiling and whose one `libraries` source takes the total
+   one byte over it. Then compile a request selecting 64 small library sources
+   in addition to its program.
 
 Capture the process streams around every call. Tag the tests
 `#[trace("TC-105", "FR-027-AC-n")]` with the AC each backs: steps 1 and 2
@@ -49,9 +48,10 @@ AC-2, steps 3 to 5 AC-3, step 6 AC-13.
   bytes.
 - Step 4: each refuses with its original stage and code, exit code 20, with
   no package bytes.
-- Step 5: the request refuses naming `dependent_bytes` and its fixed ceiling,
-  with no package bytes.
-- Step 6: the first refuses at intake naming `dependent_bytes` and its
-  configured value, with no package bytes; the second returns FR-027-AC-10's
-  package bytes, exit code 0; the 65-library request compiles, exit code 0.
+- Step 5: each request refuses naming its fixed setting and ceiling, with no
+  package bytes or option hint.
+- Step 6: the first refuses at intake naming `dependent_bytes` and its fixed
+  maximum, with no package bytes or option hint; the second refuses at intake
+  with `selected files`, category `programs`, requested 65, maximum 64,
+  before reading a selected source.
 - No call writes a byte to stdout or stderr.

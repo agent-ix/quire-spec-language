@@ -17,6 +17,14 @@ fn compile(directory: &Path) -> Output {
         .unwrap()
 }
 
+fn compile_with_args(directory: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args(args)
+        .current_dir(directory)
+        .output()
+        .unwrap()
+}
+
 fn compile_in_process(
     directory: &Path,
 ) -> Result<Vec<u8>, Box<quire_spec_language::command::RunError>> {
@@ -148,6 +156,20 @@ fn source_selection_and_dependent_byte_refusals_are_typed() {
     let directory = tempfile::tempdir().unwrap();
     spine_request(directory.path(), &program);
     let path = directory.path().join("compile.json");
+    let mut request = std::fs::read(&path).unwrap();
+    request.resize(1_048_577, b' ');
+    std::fs::write(&path, request).unwrap();
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["details"]["limit"], "request_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 1_048_576, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let path = directory.path().join("compile.json");
     let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     request["request"]["program"]["source"]["file"] = json!("missing-program.native");
     std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
@@ -170,6 +192,51 @@ fn source_selection_and_dependent_byte_refusals_are_typed() {
     assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
     assert!(value["details"].get("option").is_none(), "{value}");
     assert!(value.get("artifact").is_none(), "{value}");
+}
+
+/// FR-287-AC-4 (TC-1262 step 2): the compile CLI enforces fixed request and
+/// dependent-byte ceilings and rejects run-only limit options.
+#[test]
+#[trace("TC-1262", "FR-287-AC-4", "FR-287-AC-5")]
+fn compile_cli_uses_fixed_byte_ceilings_and_rejects_limit_options() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+
+    let request_directory = tempfile::tempdir().unwrap();
+    spine_request(request_directory.path(), &program);
+    let request_path = request_directory.path().join("compile.json");
+    let mut request = std::fs::read(&request_path).unwrap();
+    request.resize(1_048_577, b' ');
+    std::fs::write(&request_path, request).unwrap();
+    let output = compile(request_directory.path());
+    assert_eq!(output.status.code(), Some(22));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["details"]["limit"], "request_bytes", "{failure}");
+    assert_eq!(failure["details"]["maximum"], 1_048_576, "{failure}");
+    assert!(failure["details"].get("option").is_none(), "{failure}");
+
+    let dependent_directory = tempfile::tempdir().unwrap();
+    let oversized = format!(
+        "{SPINE_HEADER}function f using v(): Int[0, 9] pure {{ 7 }}\n//{}",
+        "x".repeat(8 * 1024 * 1024)
+    );
+    spine_request(dependent_directory.path(), oversized.as_bytes());
+    let output = compile(dependent_directory.path());
+    assert_eq!(output.status.code(), Some(22));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["details"]["limit"], "dependent_bytes", "{failure}");
+    assert_eq!(failure["details"]["maximum"], 8_388_608, "{failure}");
+    assert!(failure["details"].get("option").is_none(), "{failure}");
+
+    let no_files = tempfile::tempdir().unwrap();
+    let output = compile_with_args(
+        no_files.path(),
+        &["compile", "missing.json", "--dependent-bytes", "10000000"],
+    );
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: quire-spec"));
 }
 
 /// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
@@ -678,7 +745,7 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
 /// FR-027-AC-10: library sources count toward the request's `programs`
 /// file limit (QSL-265), so 64 libraries beside the program refuse.
 #[test]
-#[trace("TC-446", "FR-027-AC-10")]
+#[trace("TC-105", "FR-027-AC-13", "TC-446", "FR-027-AC-10")]
 fn sixty_four_libraries_exceed_the_file_limit() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
     let directory = tempfile::tempdir().unwrap();
@@ -696,4 +763,33 @@ fn sixty_four_libraries_exceed_the_file_limit() {
     assert_eq!(failure["details"]["limit"], "selected files", "{failure}");
     assert_eq!(failure["details"]["category"], "programs", "{failure}");
     assert_eq!(failure["details"]["requested"], 65, "{failure}");
+}
+
+/// FR-027-AC-13 (TC-105 step 6): a supplied library source is charged to the
+/// compile request's fixed dependent-byte ceiling, with no limit override.
+#[test]
+#[trace("TC-105", "FR-027-AC-13")]
+fn a_library_source_over_the_fixed_dependent_byte_ceiling_is_refused() {
+    let program = format!(
+        "{SPINE_HEADER}import \"test/geometry\" as g;\n\
+         function u using v(x: Int[0, 9]): Boolean pure {{ g::f(x) }}\n"
+    )
+    .into_bytes();
+    let base_library = format!("{SPINE_HEADER}{GEOMETRY}");
+    let directory = tempfile::tempdir().unwrap();
+    let base = spine_library_request(directory.path(), base_library.as_bytes(), "test/geometry");
+    assert_eq!(base, program);
+
+    let library_size = 8_388_609 - program.len() - base_library.len();
+    let padded_library = format!("{base_library}//{}", "x".repeat(library_size - 2));
+    std::fs::write(directory.path().join("geometry.native"), padded_library).unwrap();
+
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["stage"], "intake", "{value}");
+    assert_eq!(value["details"]["limit"], "dependent_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
 }
