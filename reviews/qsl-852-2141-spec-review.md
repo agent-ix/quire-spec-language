@@ -78,6 +78,9 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-031 | fixed | round 6: the occurrence rule is normative (non-decreasing occurrence ordinal, consecutive ordinals within an occurrence) and FR-383-AC-54 and L9 test strictly increasing pairs. |
 | FND-032 | fixed | round 6: FR-390-AC-53 is split into AC-52, 53 and 54. Residual: FND-036. |
 | FND-033 | fixed | round 6: FR-383-AC-32 now names W, fixture E and protocol L. |
+| FND-034 | fixed | round 7: every slot now has a type-declaration origin named by its site name. The FR-383 site-name table matches qsl-semantics lowering/protocol.rs protocol_site and check/mod.rs register_protocol_sites for every slot kind in FR-390's slot table (activation guard, capture initializer, five compensation stages with index, control body, related, decision, finish body, terminal body, role until, channel key). |
+| FND-035 | fixed | round 7: E-C Tried and Picked now declare result binders `(t: M::Mix)` and `(p: M::Mix)`. |
+| FND-036 | fixed | round 7: FR-383-AC-52 to 54 split the node-sharing, row-count and ordinal claims. Residual: FND-040. |
 
 ## New findings (disposition pass 2)
 
@@ -136,6 +139,21 @@ Head c0eb6c213 on main 38f3020e8 (includes PR 2145). quire validate: no errors. 
 | FND-035 | low | ambiguous: E-C Tried and Picked are attempt controls with no result binder declared | spec/test-cases/TC-1070-evaluate-the-expressions-of-protocol-nodes-from-a-checked-package.md |
 | FND-036 | low | compound: FR-383-AC-52 joins row counts and ordinals; AC-53 repeats AC-52's ordinals | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 
-## Verdict (disposition pass 6)
+## Verdict (disposition pass 6, superseded by pass 7)
 
 FND-029 to FND-033 are fixed. FND-034 is a high defect: fixture L (in FR-383-AC-32) has no attempt-bearing node, and fixture E's effect, commit and finish constraints have none, so the origin the spec requires does not exist for those slots. Not mergeable until FND-034 is fixed. It must also merge after QSpec PR 603. Open questions: the origin-walk reading, whether a compensation is an attempt position in FR-322 (in the PR body), and whether the producer-defect classification `invalid_package`/`invalid-value` with a pointer fits as evidence on `ViewFailure::Unsupported`.
+
+## New findings (disposition pass 7)
+
+Head 1a4a945d2 on main 38f3020e8. quire validate: no errors. No id collision with main or open PRs. Every FR-390-AC-28 to 56 and FR-383-AC-32 to 55 has a TC row; scope lines match. The site-name table was checked against the checker source in a fresh clone (qsl-semantics/src/check/lowering/protocol.rs and check/mod.rs): formats and slot coverage are accurate. QSpec FR-322 does not state the site-origin rule (open question; PR body carries the follow-up).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-037 | medium | soundness: stale FR-383 sentence says the emitter SHALL assign the origin the checker gave "its attempt or declaration" and SHALL NOT invent a per-slot origin, contradicting the per-slot site names; stale "attempt" wording remains in FR-383-AC-45 and the E-C text | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-038 | low | soundness: the FR-383 site table lists invariant and variant as slot expressions, but FR-390 says a repeat's proof.invariant and proof.variant are not slots | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-039 | low | other: FR-383 says FR-096 locates each slot expression at a site-name origin; FR-096 (stage limits and loci) does not state it | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-040 | low | compound: FR-383-AC-51 and AC-54 and FR-390-AC-52 each join ordinals with locations or a no-restart claim | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+
+## Verdict (disposition pass 7)
+
+FND-034 to FND-036 are fixed and the fixture vectors are buildable against FR-322-AC-291 and I2 (checked by hand: ordinal removals, the 0-and-2 gap, the duplicate, the appended row, the added foreign-slot row, and the Picked-before-Tried byte order). No high finding. FND-037 is a medium contradiction inside FR-383; the PR is not mergeable until it is fixed, and must merge after QSpec PR 603.
