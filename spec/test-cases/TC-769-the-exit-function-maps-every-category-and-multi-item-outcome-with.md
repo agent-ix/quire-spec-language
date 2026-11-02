@@ -23,6 +23,7 @@ Scope: FR-285-AC-1 to FR-285-AC-6.
 5. Run a source with the source byte limit set to 1, and with `s3.nodes` set to 1.
 6. Map `CallFailure::Unsupported` with cause `NotSupplied`, `CallFailure::Unsupported` with cause `Untranslatable`, and `CallFailure::Limit` naming `prepare.compile_work_units`.
 7. Map the three payload-carrying failures of FR-285-AC-8 with and without their `protocol_results`.
+8. Render a clause pending at the end of its supplied trace and a run whose clauses are all discharged; read each machine-output record.
 
 Tag the tests `#[trace("TC-769", "<AC id>")]`.
 
@@ -35,3 +36,4 @@ Tag the tests `#[trace("TC-769", "<AC id>")]`.
 - Step 5: each run refuses `stage_limit_exceeded` in category `incomplete`, exits 22, and names its limits field and configured bound.
 - Step 6: 21, 21, 22.
 - Step 7: 20, 21, 22, each equal with and without the payload.
+- Step 8: category `pending`, exit 0, status `pending` and the pending clause ids; the discharged run has neither.

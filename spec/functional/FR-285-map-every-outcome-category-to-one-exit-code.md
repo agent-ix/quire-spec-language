@@ -42,7 +42,7 @@ binary.
 | unsupported | 21 |
 | incomplete (limit, cancellation, deadline, budget) | 22 |
 | inconclusive: a proof or `analyze` item | 22 |
-| inconclusive: a supplied-trace clause still pending when the trace ends | 0 |
+| pending: a supplied-trace clause still pending when the trace ends | 0 |
 | indeterminate: a finite-window clause (FR-501) whose window is closed and whose evidence stays unresolved | 11 |
 | internal failure (including tool failure) | 30 |
 
@@ -70,7 +70,10 @@ QSpec FR-301 gives exit 22 to an incomplete result and exit 0 to a run
 that completed without violation. An inconclusive proof or `analyze` item
 did not settle its claim, so it is incomplete and exits 22. A supplied-trace
 clause still pending when the trace ends (FR-283) observed no violation, so
-it exits 0.
+it has the category pending, a category of its own that is not QSpec's
+inconclusive, and exits 0. The machine-output record of a pending item SHALL
+carry the status `pending` and the ids of the pending clauses, so that a
+consumer can tell "no violation observed" from "all obligations discharged".
 
 A multi-item outcome exits with the most severe code present, in the order
 30, 20, 21, 22, 10, 11, 0 (QSpec FR-301's order with 11 added below 10).
@@ -90,8 +93,8 @@ incomplete and `Fault` is internal failure; `CallFailure::Unsupported`
 
 ## Inputs
 
-An O-16 category, and for inconclusive whether the item is a proof or
-`analyze` item or a pending supplied-trace clause; or those inputs for each
+An O-16 category (inconclusive for a proof or `analyze` item, pending for a
+supplied-trace clause pending at the trace's end); or those inputs for each
 item of a multi-item outcome.
 
 ## Outputs
@@ -104,7 +107,9 @@ One exit code.
   states.
 - The exit function shall map the category indeterminate to 11.
 - The exit function shall map an inconclusive proof or `analyze` item to 22
-  and a supplied-trace clause pending at the trace's end to 0.
+  and the category pending to 0.
+- The machine-output record of a pending item shall carry the status `pending`
+  and the ids of the pending clauses.
 - When an outcome holds several items, the frontend shall exit with the most
   severe item code under the order 30, 20, 21, 22, 10, 11, 0.
 - Each `StageFailure` and `CallFailure` variant shall have the O-16 category
@@ -119,7 +124,7 @@ One exit code.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-285-AC-1 | For each of the ten table rows, the exit function returns the code the table states: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, FR-283-AC-1's pending clause exits 0, and FR-501-AC-4's `Indeterminate` clause exits 11. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
+| FR-285-AC-1 | For each of the ten table rows, the exit function returns the code the table states: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, FR-283-AC-1's pending clause (category pending) exits 0, and FR-501-AC-4's `Indeterminate` clause exits 11. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
 | FR-285-AC-2 | Multi-item outcomes with item codes {10, 22} exit 22; {0, 30, 20} exit 30; {21, 22} exit 21; {20, 21} exit 20; {0, 10} exit 10; {10, 11} exit 10; {11, 22} exit 22; {0, 11} exit 11; {0} exit 0. | Test (TC-769) |
 | FR-285-AC-3 | `StageFailure::Refused` with a profile-gated cause exits 21 and with an `ill_typed` cause exits 20; `StageFailure::Limit` and `StageFailure::Cancelled` exit 22; `StageFailure::Fault` exits 30; `CallFailure::Input`, `Cancelled` and `Fault` exit 20, 22 and 30. | Test (TC-769) |
 | FR-285-AC-4 | FR-100's outcome mapping renders FR-100-AC-10's `sum-out-of-domain` evaluation as `{"kind": "undefined", "reason": "sum-out-of-domain"}` and exits 10. | Test (TC-769) |
@@ -127,6 +132,7 @@ One exit code.
 | FR-285-AC-6 | `CallFailure::Unsupported` with cause `NotSupplied` and with cause `Untranslatable` each exit 21, and `CallFailure::Limit` naming `prepare.compile_work_units` exits 22. | Test (TC-769) |
 | FR-285-AC-7 | A finite-window clause run (FR-330) whose result is FR-501's `Indeterminate` reports category `indeterminate`, keeps that label and the reason in its machine output, and exits 11; it does not exit 10 or 0. | Test (TC-769) |
 | FR-285-AC-8 | A `StageFailure::Refused` carrying `protocol_results` [W `Emitted`, X `Refused` with an `ill_typed` cause] exits 20, one whose first `Refused` result has a profile-gated cause exits 21, and a `StageFailure::Limit` carrying [W `Emitted`, Z `Incomplete`] exits 22; removing the payload from each changes neither category nor exit. | Test (TC-769) |
+| FR-285-AC-9 | A clause pending when its supplied trace ends exits 0 with the category `pending`, not `inconclusive`; its machine-output record carries the status `pending` and the ids of the pending clauses, and a run whose clauses are all discharged carries no pending status and no pending ids. | Test (TC-769) |
 
 ## Dependencies
 

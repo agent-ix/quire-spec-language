@@ -67,7 +67,7 @@ FR-109's `ClauseRunRequest`, with the selection
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
 the usage; for a `Timestamped` trace it also returns the updated `ledger`
 (FR-502) and FR-501's result report (basis, decision support, premises and
-result identity). Its `category` adds `inconclusive` (a pending result)
+result identity). Its `category` adds `pending` (a pending result, with the pending clause ids in its body)
 and `unsupported` (a missing fairness premise). Its `disposition` for a
 `violation` (`Completed(false)` or an `Undefined` that is a violation)
 carries the failing `TemporalPosition` and the refutation's
@@ -114,7 +114,7 @@ FR-267 writer writes these as the report holds them and derives none.
 - The entry SHALL report a `Finite`, `Lasso` or `Model` trace for that profile, and a
   `Timestamped` trace for any other profile, at stage `admit`,
   `invalid_runtime_input`/`invalid-value`. FR-501's `Pending` reports
-  `inconclusive` (the exit of FR-285's row for a supplied-trace clause pending when the trace ends) and its `Indeterminate` reports `indeterminate` (exit 11)
+  `pending` (the exit of FR-285's row for a supplied-trace clause pending when the trace ends) and its `Indeterminate` reports `indeterminate` (exit 11)
   with its reason as the cause, no `truth` and no counterexample. A progress
   contradiction (FR-502) reports stage `evaluate`, category `refusal`, with its
   record.
@@ -133,7 +133,7 @@ FR-267 writer writes these as the report holds them and derives none.
   `InsufficientData` to `undefined` (exit 10, FR-285) with its position,
   `count` and `min_count`, no `truth` and no counterexample, as the trace
   lacks the data to decide the claim (QSpec FR-414);
-  `Pending` to `inconclusive` (exit 0, completed without violation);
+  `Pending` to `pending` (exit 0, completed without violation) with the status and the pending clause ids in the report;
   `MissingFairnessPremise` to `unsupported` (exit 21) with cause
   `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to
   `incomplete` (exit 22), by QSpec FR-301's exit contract. Every
@@ -145,7 +145,7 @@ FR-267 writer writes these as the report holds them and derives none.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-330-AC-1 | From source, the `Counter` unit's clause `Bounded` (`eventually[0,1] holds(c.value = 2)`, event-position false-extension) over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, `violation`, position 0, exit 10. | Test (TC-840) |
-| FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `inconclusive`, exit 0, with no `truth`; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
+| FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `pending`, exit 0, with no `truth` and the clause id in the report's pending ids; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
 | FR-330-AC-3 | A selection naming `Absent` reports stage `select`, `missing_declaration`/`missing-name`; `Bounded` over a `Lasso` reports stage `admit`, `invalid_runtime_input`/`invalid-value`; an `over` naming key `ghost` reports stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; a `Lasso` with an empty loop reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-840) |
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause, `always[0,2] holds(3 mod (2 - c.value) >= 0)` in the `Counter` unit, which compiles, over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
