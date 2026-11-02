@@ -4446,7 +4446,8 @@ pub enum TimeInvariantBoundForm {
     Quantified(QuantifiedClockBoundForm),
 }
 
-/// `time invariant Name when { P } { bound (and bound)* }` (FR-393).
+/// `time invariant Name when { P } { bound (and bound)* }`, each bound
+/// ordinary or quantified (FR-393).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeInvariantForm {
     /// The declared name.

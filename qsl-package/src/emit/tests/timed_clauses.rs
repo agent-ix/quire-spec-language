@@ -1004,6 +1004,31 @@ fn element_presence_in_timed_predicates_refuses_without_emitting_partial_nodes()
     assert!(text.starts_with("urgent HasElement"), "{text}");
 }
 
+/// FR-230-AC-57 / TC-685 step 38: a mixed quantified and ordinary bound
+/// list refuses at the invariant before it can emit a partially scoped node.
+/// The fixture's `ts` range includes zero, where one global binder would
+/// otherwise make the ordinary bound vacuous.
+#[trace("TC-685", "FR-230-AC-57")]
+#[test]
+fn a_mixed_quantified_invariant_bound_refuses_before_partial_emission() {
+    use qsl_foundation::diagnostic::Code;
+    use qsl_semantics::check::{CheckCause, TemporalCause};
+
+    let source = "time invariant Mixed when { true } { forall(e in self.ts: e.x <= 9 ms) and self.x < 12 ms }";
+    let (unit, result) = checked(&timer_document(), &format!("{source}\n"));
+    let refusals = result.expect_err("mixed bound scopes cannot be represented");
+    assert_eq!(refusals.len(), 1, "no partial timed model is produced");
+    let refusal = &refusals[0];
+    assert_eq!(refusal.cause.code(), Code::InvalidTimedModel);
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("temporal refusal: {:?}", refusal.cause);
+    };
+    let TemporalCause::TimeInvariantShape { span } = &**cause else {
+        panic!("time-invariant-shape refusal: {cause:?}");
+    };
+    assert!(unit[span.start..span.end].starts_with(source));
+}
+
 /// FR-230-AC-50, QSpec FR-342-AC-11: a clock-reading clause bound to an
 /// execution point refuses `not-yet-implemented` at the clause and is never
 /// written with a point-qualified anchor.

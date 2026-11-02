@@ -3878,6 +3878,17 @@ fn time_invariant(
     population: Option<PopulationDomain>,
     budget: &mut PartBudget,
 ) -> Result<InvariantDraft, CheckCause> {
+    let has_ordinary_bound = form
+        .bounds
+        .iter()
+        .any(|bound| matches!(bound, qsl_forms::TimeInvariantBoundForm::Clock(_)));
+    let has_quantified_bound = form
+        .bounds
+        .iter()
+        .any(|bound| matches!(bound, qsl_forms::TimeInvariantBoundForm::Quantified(_)));
+    if has_ordinary_bound && has_quantified_bound {
+        return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+    }
     let alternatives = state_alternatives(&form.guard, clocks, context, population, budget)?;
     let mut bounds = Vec::with_capacity(form.bounds.len());
     let mut binders = Vec::new();
