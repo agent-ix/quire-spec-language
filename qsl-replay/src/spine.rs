@@ -1950,6 +1950,23 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
         ValueType::BoundedQuantity(bounded) => {
             format!("BoundedQuantity[{}]", unit_spelling(bounded.unit()))
         }
+        // FR-497: `Quantity<unit, carrier>`, the carrier spelled as the
+        // refusal records spell it plus its rounding mode.
+        ValueType::CarriedQuantity(carried) => {
+            let carrier = match carried.carrier() {
+                quire_exact::QuantityCarrier::Decimal(decimal) => {
+                    format!(
+                        "{}; {}",
+                        spell_decimal(decimal),
+                        decimal.rounding().as_str()
+                    )
+                }
+                quire_exact::QuantityCarrier::Integer { domain, rounding } => {
+                    format!("{}; {}", spell_int(domain), rounding.as_str())
+                }
+            };
+            format!("Quantity<{}, {carrier}>", unit_spelling(carried.unit()))
+        }
         ValueType::Map(map) => {
             let values = value_type_source(map.values());
             match map.bound() {

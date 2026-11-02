@@ -257,6 +257,7 @@ fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
         | ValueType::Float(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid

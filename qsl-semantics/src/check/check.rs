@@ -2687,6 +2687,7 @@ impl<'a> Typer<'a> {
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
                 | ValueType::BoundedQuantity(_)
+                | ValueType::CarriedQuantity(_)
                 | ValueType::Text(_)
                 | ValueType::String
                 | ValueType::Composite(_)
@@ -2956,6 +2957,7 @@ impl<'a> Typer<'a> {
             let unit_id = match value_type {
                 ValueType::Quantity(unit) => Some(unit.clone()),
                 ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
+                ValueType::CarriedQuantity(quantity) => Some(quantity.unit().clone()),
                 ValueType::Boolean
                 | ValueType::Integer
                 | ValueType::Int(_)
@@ -3305,7 +3307,9 @@ impl<'a> Typer<'a> {
             | ValueType::Population(_)
             | ValueType::Uuid
             | ValueType::String
-            | ValueType::Timestamp => return Err(mismatch(location)),
+            | ValueType::Timestamp
+            // FR-497-AC-2: a carried quantity is no operand of unary `-`.
+            | ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }
@@ -3506,7 +3510,8 @@ impl<'a> Typer<'a> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
-            | ValueType::BoundedQuantity(_) => false,
+            | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_) => false,
         }
     }
 
@@ -3530,6 +3535,7 @@ impl<'a> Typer<'a> {
             | ValueType::Float(_)
             | ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Population(_) => false,
         }
     }
@@ -4485,6 +4491,7 @@ fn holds_float(mut ty: &ValueType) -> bool {
             | ValueType::Decimal(_)
             | ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Text(_)
             | ValueType::String
             | ValueType::Uuid

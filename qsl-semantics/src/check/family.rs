@@ -77,6 +77,7 @@ use super::{DeclarationRegions, DispatchTable, Scope};
 use crate::family::ClassifyFailure;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
+use quire_exact::QuantityCarrier;
 use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
 use quire_exact::ValueType;
@@ -337,6 +338,27 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                             out.write_str(&bound.magnitude().to_string());
                         }
                         None => out.write_str("unbounded"),
+                    }
+                }
+            }
+            ValueType::CarriedQuantity(carried) => {
+                out.write_str("carried-quantity");
+                encode_quantity_unit(out, carried.unit().clone());
+                // The carrier is part of the type identity (QExact FR-497).
+                match carried.carrier() {
+                    QuantityCarrier::Decimal(decimal) => {
+                        out.write_str("decimal");
+                        out.write_str(&decimal.lower().to_string());
+                        out.write_str(&decimal.upper().to_string());
+                        out.write_u64(u64::from(decimal.min_scale()));
+                        out.write_u64(u64::from(decimal.max_scale()));
+                        out.write_str(rounding_mode_tag(decimal.rounding()));
+                    }
+                    QuantityCarrier::Integer { domain, rounding } => {
+                        out.write_str("int");
+                        out.write_str(&domain.lower().to_string());
+                        out.write_str(&domain.upper().to_string());
+                        out.write_str(rounding_mode_tag(*rounding));
                     }
                 }
             }
@@ -964,6 +986,7 @@ fn is_package_independent(value_type: &ValueType) -> bool {
             ValueType::Map(map) => current = map.values(),
             ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Enum(_)
             | ValueType::Composite(_)
             | ValueType::Reference(_)

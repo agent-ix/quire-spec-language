@@ -605,6 +605,7 @@ fn reachable_composites(
             | ValueType::Quantity(_)
             // A bounded quantity is a quantity leaf and names no composite.
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Text(_)
             | ValueType::String
             | ValueType::Uuid

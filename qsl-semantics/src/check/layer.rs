@@ -87,6 +87,7 @@ pub(super) fn typed_equalities(
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
                 | ValueType::BoundedQuantity(_)
+                | ValueType::CarriedQuantity(_)
                 | ValueType::Text(_)
                 | ValueType::String
                 | ValueType::Uuid

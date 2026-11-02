@@ -63,6 +63,7 @@ pub(crate) fn enumerable(value_type: &ValueType) -> bool {
         | ValueType::Float(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::Map(_)
         | ValueType::Text(_)
         | ValueType::String

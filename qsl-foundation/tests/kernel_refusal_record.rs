@@ -148,6 +148,35 @@ fn a_domain_refusal_renders_its_declared_target() {
     );
 }
 
+/// FR-497-AC-7: the `InexactConversion` kernel refusal renders as code
+/// `inexact_conversion`, cause `inexact-conversion`, with `expected` the
+/// carrier type text, for a `Decimal` and an `Int` carrier.
+#[trace("TC-1287", "FR-497-AC-7", "FR-096-AC-8")]
+#[test]
+fn an_inexact_conversion_renders_its_carrier_type() {
+    let decimal = DecimalType::new(int(-100), int(100), 2, 2, RoundingMode::Exact).unwrap();
+    assert_eq!(
+        record(
+            &Refusal::InexactConversion {
+                target: InexactTarget::Decimal(Box::new(decimal))
+            },
+            "inexact_conversion",
+            "inexact-conversion"
+        ),
+        expected("Decimal[-100, 100; 2, 2]")
+    );
+    assert_eq!(
+        record(
+            &Refusal::InexactConversion {
+                target: InexactTarget::Integer(interval(-2, 2))
+            },
+            "inexact_conversion",
+            "inexact-conversion"
+        ),
+        expected("Int[-2, 2]")
+    );
+}
+
 /// FR-096-AC-8: the IEEE refusals render widths and the flag set in
 /// vocabulary order, joined by `,`.
 #[trace("TC-428", "FR-096-AC-8")]

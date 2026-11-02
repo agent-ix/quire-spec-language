@@ -485,7 +485,10 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Enum(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_) => true,
-        ValueType::Boolean
+        // FR-497-AC-2: `=` refuses a carried quantity operand at check, so
+        // no scalar equality family holds one.
+        ValueType::CarriedQuantity(_)
+        | ValueType::Boolean
         | ValueType::Reference(_)
         | ValueType::Option(_)
         | ValueType::Composite(_)

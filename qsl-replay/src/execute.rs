@@ -2047,8 +2047,8 @@ fn arguments(
 /// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
 /// text) for every other value type, the native `UUID` and `Timestamp`
 /// included. A `Population<T>` and a `Map` are not values, and a
-/// `BoundedQuantity` has no native binding (`argument_value` refuses it too),
-/// so none has a witness form and each refuses `WrongValueKind` before the
+/// `BoundedQuantity` and `CarriedQuantity` have no native binding
+/// (`argument_value` refuses them too), so none has a witness form and each refuses `WrongValueKind` before the
 /// call.
 fn witness_type(
     parameter: usize,
@@ -2070,11 +2070,12 @@ fn witness_type(
         | ValueType::Reference(_)
         | ValueType::Uuid
         | ValueType::Timestamp => Ok(WitnessValueType::Canonical),
-        ValueType::Map(_) | ValueType::BoundedQuantity(_) | ValueType::Population(_) => {
-            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-                parameter,
-            }))
-        }
+        ValueType::Map(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
+        | ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+            parameter,
+        })),
     }
 }
 
