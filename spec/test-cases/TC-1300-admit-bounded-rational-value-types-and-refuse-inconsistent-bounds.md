@@ -1,18 +1,18 @@
 ---
-id: TC-1298
+id: TC-1300
 title: "Admit bounded Rational value types and refuse inconsistent bounds"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-503
+  - target: ix://agent-ix/quire-spec-language/FR-505
     type: verifies
 ---
-# TC-1298: Admit bounded Rational value types and refuse inconsistent bounds
+# TC-1300: Admit bounded Rational value types and refuse inconsistent bounds
 
 ## Description
 
-Verify the Rational value type of FR-503: shared bounds across sites, the
+Verify the Rational value type of FR-505: shared bounds across sites, the
 ordered reader refusals, alias and site restatement, value admission and the
-unchanged bare native. Scope: FR-503-AC-1 to FR-503-AC-6.
+unchanged bare native. Scope: FR-505-AC-1 to FR-505-AC-6.
 
 ## Test Procedure
 
@@ -48,7 +48,7 @@ Value rows, over row 1's package, as `level` in a snapshot:
 | 18 | `7/12`, `-3/1`, `0/1` | admitted |
 | 19 | `8/1`, `1/13`, `2/4`, `-4/1`, float `0.5` | each `invalid_runtime_input`/`invalid-value` naming the member path |
 
-Tag the test `#[trace("FR-503-AC-1", "FR-503-AC-2", "FR-503-AC-3", "FR-503-AC-4", "FR-503-AC-5", "FR-503-AC-6", "TC-1298")]`.
+Tag the test `#[trace("FR-505-AC-1", "FR-505-AC-2", "FR-505-AC-3", "FR-505-AC-4", "FR-505-AC-5", "FR-505-AC-6", "TC-1300")]`.
 
 ## Expected Results
 

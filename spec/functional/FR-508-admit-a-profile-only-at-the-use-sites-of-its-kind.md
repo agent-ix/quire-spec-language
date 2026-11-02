@@ -1,5 +1,5 @@
 ---
-id: FR-506
+id: FR-508
 title: "Admit a profile only at the use sites of its kind"
 type: FR
 relationships:
@@ -14,7 +14,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
 ---
-# FR-506: Admit a profile only at the use sites of its kind
+# FR-508: Admit a profile only at the use sites of its kind
 
 ## Description
 
@@ -68,12 +68,12 @@ The kind each site requires is:
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-506-AC-1 | With `profile v = "quire.value.complete/v1";` and `profile pp = "quire.protocol.finite-global/v1";`, `protocol P using pp` admits and `protocol P using v` refuses `unknown_profile`/`wrong-selection-role` at `v`, retaining alias `v`, identity `quire.value.complete/v1` and the required kind protocol profile. | Test (TC-1301) |
-| FR-506-AC-2 | `protocol P using t` with `t` selecting `quire.temporal.timed/v1` refuses the same way; so does an alias selecting a state layer. | Test (TC-1301) |
-| FR-506-AC-3 | An `await` and a `compensate` `using` an alias that selects each of the four admitted temporal identities admit; `using pp` (protocol profile), `using v` (value layer) and `using i` (`quire.temporal.infinite-trace/v1`) each refuse `unknown_profile`/`wrong-selection-role` at the alias. | Test (TC-1301) |
-| FR-506-AC-4 | A `check` `using` each of the six admitted layers admits; `using pp` and `using t` (any temporal profile) refuse `unknown_profile`/`wrong-selection-role` at the alias. | Test (TC-1301) |
-| FR-506-AC-5 | A protocol whose `using` alias is not a profile alias (a function name) keeps `MissingProfile` and not `wrong-selection-role`; a protocol with a wrong-kind `protocol` alias and a wrong-kind `check` alias reports both refusals in source order and produces no package. | Test (TC-1301) |
-| FR-506-AC-6 | A unit selecting `pp` and `v` admits `protocol P using pp` beside `function f using v`, and its checked package is equal to the package of the same unit before this requirement. | Test (TC-1301) |
+| FR-508-AC-1 | With `profile v = "quire.value.complete/v1";` and `profile pp = "quire.protocol.finite-global/v1";`, `protocol P using pp` admits and `protocol P using v` refuses `unknown_profile`/`wrong-selection-role` at `v`, retaining alias `v`, identity `quire.value.complete/v1` and the required kind protocol profile. | Test (TC-1303) |
+| FR-508-AC-2 | `protocol P using t` with `t` selecting `quire.temporal.timed/v1` refuses the same way; so does an alias selecting a state layer. | Test (TC-1303) |
+| FR-508-AC-3 | An `await` and a `compensate` `using` an alias that selects each of the four admitted temporal identities admit; `using pp` (protocol profile), `using v` (value layer) and `using i` (`quire.temporal.infinite-trace/v1`) each refuse `unknown_profile`/`wrong-selection-role` at the alias. | Test (TC-1303) |
+| FR-508-AC-4 | A `check` `using` each of the six admitted layers admits; `using pp` and `using t` (any temporal profile) refuse `unknown_profile`/`wrong-selection-role` at the alias. | Test (TC-1303) |
+| FR-508-AC-5 | A protocol whose `using` alias is not a profile alias (a function name) keeps `MissingProfile` and not `wrong-selection-role`; a protocol with a wrong-kind `protocol` alias and a wrong-kind `check` alias reports both refusals in source order and produces no package. | Test (TC-1303) |
+| FR-508-AC-6 | A unit selecting `pp` and `v` admits `protocol P using pp` beside `function f using v`, and its checked package is equal to the package of the same unit before this requirement. | Test (TC-1303) |
 
 ## Dependencies
 

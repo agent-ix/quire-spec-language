@@ -1,5 +1,5 @@
 ---
-id: FR-509
+id: FR-511
 title: "Keep the exact protocol number codec as a root module"
 type: FR
 relationships:
@@ -14,7 +14,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-322
     type: references
 ---
-# FR-509: Keep the exact protocol number codec as a root module
+# FR-511: Keep the exact protocol number codec as a root module
 
 ## Description
 
@@ -59,7 +59,7 @@ Evidence:
   `protocol_artifact` is deleted.
 - The module SHALL live at `src/number.rs` with no dependency on
   `protocol_artifact`, and the old path `protocol_artifact::number` and its
-  re-exports SHALL be deleted with `protocol_artifact`; no alias at the old
+  re-exports are deleted by the change that deletes `protocol_artifact`; no alias at the old
   path is kept (no compatibility shim).
 - The codec SHALL NOT be used by the spine's checked-package writers or
   readers.
@@ -71,10 +71,10 @@ Evidence:
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-509-AC-1 | After `protocol_artifact` is deleted, `quire_spec_language::number::{ProtocolNumber, ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire, NUMERIC_PROFILE}` resolve; `NUMERIC_PROFILE` equals `quire.protocol.numeric/1`; the path `protocol_artifact::number` does not resolve. | Test (TC-1304) |
-| FR-509-AC-2 | The nine TC-117 vectors groups (FR-038-AC-1 to AC-5) pass at the new path with their expected strings, kinds and refusals unchanged. | Test (TC-1304) |
-| FR-509-AC-3 | No `qsl-*` crate's source and no checked-package v2 writer or reader refers to the module or to `quire.protocol.numeric/1`. | Test (TC-1304) |
-| FR-509-AC-4 | FR-038-AC-1 to AC-5 each have a tagged test after the deletion (`quire matrix` lists none untagged). | Test (TC-1304) |
+| FR-511-AC-1 | After `protocol_artifact` is deleted, `quire_spec_language::number::{ProtocolNumber, ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire, NUMERIC_PROFILE}` resolve; `NUMERIC_PROFILE` equals `quire.protocol.numeric/1`; the path `protocol_artifact::number` does not resolve. | Test (TC-1306) |
+| FR-511-AC-2 | The nine TC-117 vectors groups (FR-038-AC-1 to AC-5) pass at the new path with their expected strings, kinds and refusals unchanged. | Test (TC-1306) |
+| FR-511-AC-3 | No `qsl-*` crate's source and no checked-package v2 writer or reader refers to the module or to `quire.protocol.numeric/1`. | Test (TC-1306) |
+| FR-511-AC-4 | FR-038-AC-1 to AC-5 each have a tagged test after the deletion (`quire matrix` lists none untagged). | Test (TC-1306) |
 
 ## Dependencies
 

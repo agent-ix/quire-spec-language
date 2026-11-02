@@ -1,5 +1,5 @@
 ---
-id: FR-510
+id: FR-512
 title: "Refuse a repeated operation role or frame entry at intake"
 type: FR
 relationships:
@@ -14,7 +14,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-154
     type: depends_on
 ---
-# FR-510: Refuse a repeated operation role or frame entry at intake
+# FR-512: Refuse a repeated operation role or frame entry at intake
 
 ## Description
 
@@ -39,11 +39,10 @@ records which one is satisfied by construction.
 
 ## Behavior
 
-- **Context is a mapped object.** An operation SHALL be declared on an object
-  type or process of the package (FR-103); an operation record whose owner
-  names any other declaration refuses `invalid_model_binding`/
-  `malformed-declaration` at the owner reference. (FR-103 already assigns the
-  operation to its owner; this states the refusal.)
+- **Context is a mapped object.** The intake reader SHALL refuse, as
+  `invalid_model_binding`/`malformed-declaration` at the owner reference, an
+  operation record whose owner names a declaration that is not an object type
+  or process of the package (FR-103 already assigns the operation to its owner; this states the refusal.)
 - **Unique by (owner, name).** Two operations of one owner with equal names
   SHALL refuse `ambiguous_declaration`/`ambiguous-name` at the second,
   naming both. An operation of a subtype with the name of an inherited one is
@@ -70,12 +69,12 @@ records which one is satisfied by construction.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-510-AC-1 | In the ConfigVersion package, an operation record whose owner names the population `config_history` refuses `invalid_model_binding`/`malformed-declaration` at the owner reference. | Test (TC-1305) |
-| FR-510-AC-2 | Two operations named `bump` on `Counter` refuse `ambiguous_declaration`/`ambiguous-name` at the second, naming both; `Sub.bump` redefining `Counter.bump` through `redefines` admits. | Test (TC-1305) |
-| FR-510-AC-3 | An operation with parameters `a` and `a`, and one with a parameter `r` and a result binder `r`, each refuse `ambiguous_declaration`/`ambiguous-name` at the second. | Test (TC-1305) |
-| FR-510-AC-4 | `modifies [Gauge/g, Gauge/g]` refuses `invalid_model_binding`/`malformed-declaration` at the second entry naming positions 0 and 1; `modifies [Gauge/g, Gauge/h]` admits; `creates [A, A]` and `deletes [B, B]` each refuse the same way; `creates [A]` with `deletes [A]` admits. | Test (TC-1305) |
-| FR-510-AC-5 | An operation with a repeated parameter and a repeated `modifies` entry reports the parameter refusal only; one with a repeated `modifies` and a repeated `creates` reports the `modifies` one only. | Test (TC-1305) |
-| FR-510-AC-6 | Admitting the ConfigVersion package with its operations and frame entries reordered in the document still gives equal `PackageDeclarations` (FR-103-AC-5), and the refusals of AC-2 to AC-4 name the same entries under the reordering of unrelated records. | Test (TC-1305) |
+| FR-512-AC-1 | In the ConfigVersion package, an operation record whose owner names the population `config_history` refuses `invalid_model_binding`/`malformed-declaration` at the owner reference. | Test (TC-1307) |
+| FR-512-AC-2 | Two operations named `bump` on `Counter` refuse `ambiguous_declaration`/`ambiguous-name` at the second, naming both; `Sub.bump` redefining `Counter.bump` through `redefines` admits. | Test (TC-1307) |
+| FR-512-AC-3 | An operation with parameters `a` and `a`, and one with a parameter `r` and a result binder `r`, each refuse `ambiguous_declaration`/`ambiguous-name` at the second. | Test (TC-1307) |
+| FR-512-AC-4 | `modifies [Gauge/g, Gauge/g]` refuses `invalid_model_binding`/`malformed-declaration` at the second entry naming positions 0 and 1; `modifies [Gauge/g, Gauge/h]` admits; `creates [A, A]` and `deletes [B, B]` each refuse the same way; `creates [A]` with `deletes [A]` admits. | Test (TC-1307) |
+| FR-512-AC-5 | An operation with a repeated parameter and a repeated `modifies` entry reports the parameter refusal only; one with a repeated `modifies` and a repeated `creates` reports the `modifies` one only. | Test (TC-1307) |
+| FR-512-AC-6 | Admitting the ConfigVersion package with its operations and frame entries reordered in the document still gives equal `PackageDeclarations` (FR-103-AC-5), and the refusals of AC-2 to AC-4 name the same entries under the reordering of unrelated records. | Test (TC-1307) |
 
 ## Dependencies
 

@@ -1,5 +1,5 @@
 ---
-id: FR-505
+id: FR-507
 title: "Apply each capability kind to its declaration family only"
 type: FR
 relationships:
@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
 ---
-# FR-505: Apply each capability kind to its declaration family only
+# FR-507: Apply each capability kind to its declaration family only
 
 ## Description
 
@@ -82,12 +82,12 @@ declaration forms.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-505-AC-1 | For each of the twelve kinds and each of the six families the table names, exactly the tabled (kind, family) pairs are applicable: of the 72 pairs, 12 are applicable and 60 settle `invalid-request` with `invalid_capability`/`inapplicable-kind` naming the kind and the claim's family. | Test (TC-1300) |
-| FR-505-AC-2 | A required `operation-contract` item on a state clause's claim is applicable and runs; a `finite-replay` item (not required) on the same claim settles `invalid-request` naming `state-model`; the state declaration's clause is still checked and its record unchanged. | Test (TC-1300) |
-| FR-505-AC-3 | Each of the seven protocol kinds on a `protocol` declaration's claim is applicable; each of the seven on a state claim, a value function claim and a temporal clause claim settles `invalid-request` naming `state-model`, `value` and `temporal-trace` respectively. | Test (TC-1300) |
-| FR-505-AC-4 | A `probabilistic-satisfaction` item on a probabilistic claim and a `schedulability` item on a task-set claim are applicable; the same kinds on a state claim settle `invalid-request` naming `state-model`. | Test (TC-1300) |
-| FR-505-AC-5 | Two items, `operation-contract` on a state claim (`supported`) and `finite-replay` required on the same claim, give two records at indices 0 and 1 in caller order; the aggregate is unavailable, and an engine ran only for index 0. | Test (TC-1300) |
-| FR-505-AC-6 | A `Capability` variant with no applicable-family entry does not compile under `--cfg seam_probe`. | Test (TC-1300) |
+| FR-507-AC-1 | For each of the twelve kinds and each of the six families the table names, exactly the tabled (kind, family) pairs are applicable: of the 72 pairs, 12 are applicable and 60 settle `invalid-request` with `invalid_capability`/`inapplicable-kind` naming the kind and the claim's family. | Test (TC-1302) |
+| FR-507-AC-2 | A required `operation-contract` item on a state clause's claim is applicable and runs; a `finite-replay` item (not required) on the same claim settles `invalid-request` naming `state-model`; the state declaration's clause is still checked and its record unchanged. | Test (TC-1302) |
+| FR-507-AC-3 | Each of the seven protocol kinds on a `protocol` declaration's claim is applicable; each of the seven on a state claim, a value function claim and a temporal clause claim settles `invalid-request` naming `state-model`, `value` and `temporal-trace` respectively. | Test (TC-1302) |
+| FR-507-AC-4 | A `probabilistic-satisfaction` item on a probabilistic claim and a `schedulability` item on a task-set claim are applicable; the same kinds on a state claim settle `invalid-request` naming `state-model`. | Test (TC-1302) |
+| FR-507-AC-5 | Two items, `operation-contract` on a state claim (`supported`) and `finite-replay` required on the same claim, give two records at indices 0 and 1 in caller order; the aggregate is unavailable, and an engine ran only for index 0. | Test (TC-1302) |
+| FR-507-AC-6 | A `Capability` variant with no applicable-family entry does not compile under `--cfg seam_probe`. | Test (TC-1302) |
 
 ## Dependencies
 

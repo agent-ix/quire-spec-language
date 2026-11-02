@@ -766,6 +766,26 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-504
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-505
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-506
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-507
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-508
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-509
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-510
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-511
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-512
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-513
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-514
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1309,6 +1329,16 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-502](functional/FR-502-reject-a-regressing-watermark-and-a-conflicting-completeness-revision-on-the-spine.md) | FR |
 | [FR-503](functional/FR-503-confine-a-protocol-declaration-s-refusal-to-that-declaration-at-every-stage.md) | FR |
 | [FR-504](functional/FR-504-carry-progress-on-event-position-and-fixed-sample-traces.md) | FR |
+| [FR-505](functional/FR-505-admit-bounded-rational-value-types-and-refuse-inconsistent-bounds.md) | FR |
+| [FR-506](functional/FR-506-bound-model-admission-by-named-spine-limits.md) | FR |
+| [FR-507](functional/FR-507-apply-each-capability-kind-to-its-declaration-family-only.md) | FR |
+| [FR-508](functional/FR-508-admit-a-profile-only-at-the-use-sites-of-its-kind.md) | FR |
+| [FR-509](functional/FR-509-declare-a-channel-s-delivery-count-interval.md) | FR |
+| [FR-510](functional/FR-510-compare-the-static-subject-of-two-checked-units.md) | FR |
+| [FR-511](functional/FR-511-keep-the-exact-protocol-number-codec-as-a-root-module.md) | FR |
+| [FR-512](functional/FR-512-refuse-a-repeated-operation-role-or-frame-entry-at-intake.md) | FR |
+| [FR-513](functional/FR-513-name-the-successor-or-keep-of-each-retained-criterion-that-rides-a-retired-path.md) | FR |
+| [FR-514](functional/FR-514-specify-the-spine-type-report-the-inventory-on-exhaustion-and-the-multi-unit-cycle-refusals.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

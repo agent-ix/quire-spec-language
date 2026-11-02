@@ -1,5 +1,5 @@
 ---
-id: FR-504
+id: FR-506
 title: "Bound model admission by named spine limits"
 type: FR
 relationships:
@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: references
 ---
-# FR-504: Bound model admission by named spine limits
+# FR-506: Bound model admission by named spine limits
 
 ## Description
 
@@ -78,12 +78,12 @@ spine equivalent, the declared collection maximum.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-504-AC-1 | A package of N model records, with one field per type, one operation with one parameter, one result and one `modifies`, one `creates` and one `deletes` entry, charges `model.declaration_records` exactly its count of declared types, fields, operations, parameters, results and frame entries: with the limit set to that count the package admits, with the count less one it is `resource_exhausted` at `model.declaration_records` and nothing is published, and with 0 it is `resource_exhausted` (zero never disables). | Test (TC-1299) |
-| FR-504-AC-2 | A field with multiplicity upper bound 10,000, a nested option of a sequence of maximum 10,000, and an unused declaration with maximum 10,000 all admit at the default; the same shapes with maximum 10,001 each refuse `resource_exhausted` naming `model.sequence_maximum`, 10,000 and 10,001, the unused one included; setting `model.sequence_maximum` to 10,001 admits all three. The refusal exits 22. | Test (TC-1299) |
-| FR-504-AC-3 | `model.sequence_maximum` 0 refuses every package that declares any collection; a limit of 3 admits a maximum 3 and refuses 4 at the exact boundary. | Test (TC-1299) |
-| FR-504-AC-4 | A Text value type with `maxLength` 1,048,576 admits and with 1,048,577 refuses `unsupported_construct`/`declaration-form` naming the bound, whatever the limits. | Test (TC-1299) |
-| FR-504-AC-5 | At each of `intake.input_bytes` (document bytes), `s3.nodes` (formal nodes) and `identity.input_bytes` (identity preimage bytes), a model whose usage equals the setting admits, usage plus one refuses at that setting naming it, and zero refuses; none of the legacy messages (`model roles limit exceeded`, `model entries limit exceeded`, `model nodes limit exceeded`) is produced. | Test (TC-1299) |
-| FR-504-AC-6 | A model nested 200 levels deep in option and sequence value types admits under default limits (ADR-030 D-1: depth is not a limit). | Test (TC-1299) |
+| FR-506-AC-1 | A package of N model records, with one field per type, one operation with one parameter, one result and one `modifies`, one `creates` and one `deletes` entry, charges `model.declaration_records` exactly its count of declared types, fields, operations, parameters, results and frame entries: with the limit set to that count the package admits, with the count less one it is `resource_exhausted` at `model.declaration_records` and nothing is published, and with 0 it is `resource_exhausted` (zero never disables). | Test (TC-1301) |
+| FR-506-AC-2 | A field with multiplicity upper bound 10,000, a nested option of a sequence of maximum 10,000, and an unused declaration with maximum 10,000 all admit at the default; the same shapes with maximum 10,001 each refuse `resource_exhausted` naming `model.sequence_maximum`, 10,000 and 10,001, the unused one included; setting `model.sequence_maximum` to 10,001 admits all three. The refusal exits 22. | Test (TC-1301) |
+| FR-506-AC-3 | `model.sequence_maximum` 0 refuses every package that declares any collection; a limit of 3 admits a maximum 3 and refuses 4 at the exact boundary. | Test (TC-1301) |
+| FR-506-AC-4 | A Text value type with `maxLength` 1,048,576 admits and with 1,048,577 refuses `unsupported_construct`/`declaration-form` naming the bound, whatever the limits. | Test (TC-1301) |
+| FR-506-AC-5 | At each of `intake.input_bytes` (document bytes), `s3.nodes` (formal nodes) and `identity.input_bytes` (identity preimage bytes), a model whose usage equals the setting admits, usage plus one refuses at that setting naming it, and zero refuses; none of the legacy messages (`model roles limit exceeded`, `model entries limit exceeded`, `model nodes limit exceeded`) is produced. | Test (TC-1301) |
+| FR-506-AC-6 | A model nested 200 levels deep in option and sequence value types admits under default limits (ADR-030 D-1: depth is not a limit). | Test (TC-1301) |
 
 ## Dependencies
 

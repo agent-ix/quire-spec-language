@@ -1,16 +1,16 @@
 ---
-id: TC-1306
+id: TC-1308
 title: "Name the successor or keep of each retained criterion that rides a retired path"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-511
+  - target: ix://agent-ix/quire-spec-language/FR-513
     type: verifies
 ---
-# TC-1306: Name the successor or keep of each retained criterion that rides a retired path
+# TC-1308: Name the successor or keep of each retained criterion that rides a retired path
 
 ## Description
 
-Verify the spine successors of FR-511. Scope: FR-511-AC-1 to FR-511-AC-14
+Verify the spine successors of FR-513. Scope: FR-513-AC-1 to FR-513-AC-14
 (AC-15 is by inspection). Vectors are the source fragments below or are
 referenced by QSpec case ID and never copied.
 
@@ -43,7 +43,7 @@ referenced by QSpec case ID and never copied.
 | 23 | 13 | emit a protocol unit; read with Contract IR's reader; then swap source identity; swap package identity; swap result identity; non-canonical re-serialisation | admitted; then four refusals |
 | 24 | 14 | snapshot with a duplicate member, a surplus member, a foreign member, a wrong-type member, a duplicate storage key; deref to an absent target in a complete population; deref in an unavailable closure | five `invalid_runtime_input` refusals; `undefined`/`absent-key`; incomplete unavailable |
 
-Tag the test `#[trace("FR-511-AC-1", ..., "FR-511-AC-14", "TC-1306")]` for the criteria each case covers; the ported tests also keep the legacy tags they succeed (FR-015-AC-1 to AC-4, AC-6, FR-046-AC-1, AC-2, AC-4, AC-7, AC-8, FR-056-AC-8, FR-050-AC-2, AC-3, AC-5, FR-054-AC-1 to AC-4, FR-048-AC-4, AC-9, FR-049-AC-2, AC-5).
+Tag the test `#[trace("FR-513-AC-1", ..., "FR-513-AC-14", "TC-1308")]` for the criteria each case covers; the ported tests also keep the legacy tags they succeed (FR-015-AC-1 to AC-4, AC-6, FR-046-AC-1, AC-2, AC-4, AC-7, AC-8, FR-056-AC-8, FR-050-AC-2, AC-3, AC-5, FR-054-AC-1 to AC-4, FR-048-AC-4, AC-9, FR-049-AC-2, AC-5).
 
 ## Expected Results
 

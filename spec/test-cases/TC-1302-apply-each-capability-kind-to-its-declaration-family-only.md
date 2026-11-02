@@ -1,17 +1,17 @@
 ---
-id: TC-1300
+id: TC-1302
 title: "Apply each capability kind to its declaration family only"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-505
+  - target: ix://agent-ix/quire-spec-language/FR-507
     type: verifies
 ---
-# TC-1300: Apply each capability kind to its declaration family only
+# TC-1302: Apply each capability kind to its declaration family only
 
 ## Description
 
-Verify the kind-to-family applicability table of FR-505 on the spine `analyze`
-operation. Scope: FR-505-AC-1 to FR-505-AC-6.
+Verify the kind-to-family applicability table of FR-507 on the spine `analyze`
+operation. Scope: FR-507-AC-1 to FR-507-AC-6.
 
 ## Test Procedure
 
@@ -29,9 +29,9 @@ an engine registered for every kind.
 | 5 | index 0 `operation-contract` on `S` (`supported`), index 1 `finite-replay` required on `S` | records at 0, 1 in order; aggregate unavailable; engine ran for index 0 only |
 | 6 | compile with `--cfg seam_probe` a `Capability` variant absent from the table | compile error |
 
-Tag the test `#[trace("FR-505-AC-1", "FR-505-AC-2", "FR-505-AC-3", "FR-505-AC-4", "FR-505-AC-5", "FR-505-AC-6", "TC-1300")]`.
+Tag the test `#[trace("FR-507-AC-1", "FR-507-AC-2", "FR-507-AC-3", "FR-507-AC-4", "FR-507-AC-5", "FR-507-AC-6", "TC-1302")]`.
 TC-115 step 3 and its last sentence are superseded by this case for the
-composed protocol family; TC-115 keeps its static-subject text until FR-508.
+composed protocol family; TC-115 keeps its static-subject text until FR-510.
 
 ## Expected Results
 

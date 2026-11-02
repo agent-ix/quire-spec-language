@@ -1,5 +1,5 @@
 ---
-id: FR-503
+id: FR-505
 title: "Admit bounded Rational value types and refuse inconsistent bounds"
 type: FR
 relationships:
@@ -18,7 +18,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
 ---
-# FR-503: Admit bounded Rational value types and refuse inconsistent bounds
+# FR-505: Admit bounded Rational value types and refuse inconsistent bounds
 
 ## Description
 
@@ -96,12 +96,12 @@ type shares one bound by construction and a disagreement is a refusal.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-503-AC-1 | A package with value type `Ratio` (constraints `minNumerator` -3, `maxNumerator` 7, `minDenominator` 1, `maxDenominator` 12) and a field, an operation parameter and an operation result typed `Ratio` admits, and each of the three sites has the type `Rational[-3, 7; 1, 12]`; the checked package carries one `Ratio` type node and the three sites reference it. | Test (TC-1298) |
-| FR-503-AC-2 | Over `Ratio`, a constraint `minLength` refuses `unsupported_construct`/`declaration-form` naming `minLength`; `maxNumerator` given twice refuses `invalid_model_binding`/`malformed-declaration` naming `maxNumerator`; with `minDenominator` removed the refusal is `invalid_model_binding`/`malformed-declaration` naming `minDenominator`; `minNumerator` 8 against `maxNumerator` 7, `minDenominator` 0 and `minDenominator` 13 against `maxDenominator` 12 each refuse `unsupported_construct`/`declaration-form` naming the bounds. When two defects are present the earlier row of the order above is the one reported. | Test (TC-1298) |
-| FR-503-AC-3 | Operands `1.5`, `1e2`, `"3/4"` and 9223372036854775808 for `maxNumerator`, and `0.5` for `maxDenominator`, refuse `invalid_model_binding`/`malformed-declaration` at the value type, with no bound rounded or widened. | Test (TC-1298) |
-| FR-503-AC-4 | A field of type `Ratio` that adds its own `maxDenominator` constraint, and an alias of `Ratio` that carries a constraint, each refuse `invalid_model_binding`/`malformed-declaration` at the field's `Field.constraints` and at the alias; a plain alias of `Ratio` admits and has the type `Rational[-3, 7; 1, 12]`. Two sites typed by two value types that differ only in `maxDenominator` (12 and 13) stay two distinct types. | Test (TC-1298) |
-| FR-503-AC-5 | A snapshot supplying `7/12`, `-3/1` and `0/1` to a `Ratio` field is admitted; `8/1`, `1/13`, `2/4` (unreduced), `-4/1` and the float `0.5` each refuse `invalid_runtime_input`/`invalid-value` naming the member path, and no value is reduced or rounded. | Test (TC-1298) |
-| FR-503-AC-6 | A field typed bare `ix://quire/native/Rational` admits and its use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1298) |
+| FR-505-AC-1 | A package with value type `Ratio` (constraints `minNumerator` -3, `maxNumerator` 7, `minDenominator` 1, `maxDenominator` 12) and a field, an operation parameter and an operation result typed `Ratio` admits, and each of the three sites has the type `Rational[-3, 7; 1, 12]`; the checked package carries one `Ratio` type node and the three sites reference it. | Test (TC-1300) |
+| FR-505-AC-2 | Over `Ratio`, a constraint `minLength` refuses `unsupported_construct`/`declaration-form` naming `minLength`; `maxNumerator` given twice refuses `invalid_model_binding`/`malformed-declaration` naming `maxNumerator`; with `minDenominator` removed the refusal is `invalid_model_binding`/`malformed-declaration` naming `minDenominator`; `minNumerator` 8 against `maxNumerator` 7, `minDenominator` 0 and `minDenominator` 13 against `maxDenominator` 12 each refuse `unsupported_construct`/`declaration-form` naming the bounds. When two defects are present the earlier row of the order above is the one reported. | Test (TC-1300) |
+| FR-505-AC-3 | Operands `1.5`, `1e2`, `"3/4"` and 9223372036854775808 for `maxNumerator`, and `0.5` for `maxDenominator`, refuse `invalid_model_binding`/`malformed-declaration` at the value type, with no bound rounded or widened. | Test (TC-1300) |
+| FR-505-AC-4 | A field of type `Ratio` that adds its own `maxDenominator` constraint, and an alias of `Ratio` that carries a constraint, each refuse `invalid_model_binding`/`malformed-declaration` at the field's `Field.constraints` and at the alias; a plain alias of `Ratio` admits and has the type `Rational[-3, 7; 1, 12]`. Two sites typed by two value types that differ only in `maxDenominator` (12 and 13) stay two distinct types. | Test (TC-1300) |
+| FR-505-AC-5 | A snapshot supplying `7/12`, `-3/1` and `0/1` to a `Ratio` field is admitted; `8/1`, `1/13`, `2/4` (unreduced), `-4/1` and the float `0.5` each refuse `invalid_runtime_input`/`invalid-value` naming the member path, and no value is reduced or rounded. | Test (TC-1300) |
+| FR-505-AC-6 | A field typed bare `ix://quire/native/Rational` admits and its use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1300) |
 
 ## Dependencies
 

@@ -1,17 +1,17 @@
 ---
-id: TC-1304
+id: TC-1306
 title: "Keep the exact protocol number codec as a root module"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-509
+  - target: ix://agent-ix/quire-spec-language/FR-511
     type: verifies
 ---
-# TC-1304: Keep the exact protocol number codec as a root module
+# TC-1306: Keep the exact protocol number codec as a root module
 
 ## Description
 
 Verify that the FR-038 codec survives the deletion of `protocol_artifact` at
-its new path with unchanged behavior. Scope: FR-509-AC-1 to FR-509-AC-4.
+its new path with unchanged behavior. Scope: FR-511-AC-1 to FR-511-AC-4.
 
 ## Test Procedure
 
@@ -28,7 +28,7 @@ its new path with unchanged behavior. Scope: FR-509-AC-1 to FR-509-AC-4.
    module path and the profile string.
 4. Run `quire matrix` and list the tags of FR-038-AC-1 to AC-5.
 
-Tag the test `#[trace("FR-509-AC-1", "FR-509-AC-2", "FR-509-AC-3", "FR-509-AC-4", "TC-1304")]`; the step 2 test also carries the FR-038-AC and TC-117 tags.
+Tag the test `#[trace("FR-511-AC-1", "FR-511-AC-2", "FR-511-AC-3", "FR-511-AC-4", "TC-1306")]`; the step 2 test also carries the FR-038-AC and TC-117 tags.
 
 ## Expected Results
 

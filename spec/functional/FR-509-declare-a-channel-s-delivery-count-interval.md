@@ -1,5 +1,5 @@
 ---
-id: FR-507
+id: FR-509
 title: "Declare a channel's delivery count interval"
 type: FR
 relationships:
@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-464
     type: depends_on
 ---
-# FR-507: Declare a channel's delivery count interval
+# FR-509: Declare a channel's delivery count interval
 
 ## Description
 
@@ -73,19 +73,19 @@ channel and states what it means; the four policy words keep their meaning.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-507-AC-1 | `channel ch from a to b carries Boolean ordering unordered delivery [0,3] capacity 4 overflow block;` parses, checks and records `Between{0, 3}`, capacity `Literal(4)`, `Block` and the unordered ordering, each as written; `delivery [ 0 , 3 ]` records the same. | Test (TC-1302) |
-| FR-507-AC-2 | `delivery [4,3]` refuses `ill_typed`/`type-mismatch` at the interval naming 4 and 3; `delivery [-1,3]`, `delivery [0.5,3]` and `delivery [0,18446744073709551616]` each refuse `invalid_syntax` at the offending token; `delivery [2,2]` and `delivery [0,0]` admit. | Test (TC-1302) |
-| FR-507-AC-3 | Channels with `delivery [1,1]` and with `delivery exactly-once-premise`, otherwise equal, are two different checked channels, and neither changes the other's recorded capacity, overflow or ordering. | Test (TC-1302) |
-| FR-507-AC-4 | The emitted package holds the delivery text `[0,3]` for AC-1's channel, a different text `[0,4]` when only `hi` changes, the unchanged word text for each policy word, and reads back through the I2 reader. | Test (TC-1302) |
-| FR-507-AC-5 | On a `fifo` channel of capacity 2 with `delivery [2,2]`, `send P; receive R1 of P; receive R2 of P` completes in every execution and a third receive stops `empty-queue`; with `[0,1]` the executions include one where `receive R1 of P` stops `empty-queue` and one where it completes; with `[1,3]` and capacity 2, a send whose third delivery would exceed capacity follows the channel's overflow policy for that entry. | Test (TC-1302) |
-| FR-507-AC-6 | A `delivery [1,2]` channel in a unit whose header selects no temporal profile and no clock checks and emits; the interval reads no clock. | Test (TC-1302) |
+| FR-509-AC-1 | `channel ch from a to b carries Boolean ordering unordered delivery [0,3] capacity 4 overflow block;` parses, checks and records `Between{0, 3}`, capacity `Literal(4)`, `Block` and the unordered ordering, each as written; `delivery [ 0 , 3 ]` records the same. | Test (TC-1304) |
+| FR-509-AC-2 | `delivery [4,3]` refuses `ill_typed`/`type-mismatch` at the interval naming 4 and 3; `delivery [-1,3]`, `delivery [0.5,3]` and `delivery [0,18446744073709551616]` each refuse `invalid_syntax` at the offending token; `delivery [2,2]` and `delivery [0,0]` admit. | Test (TC-1304) |
+| FR-509-AC-3 | Channels with `delivery [1,1]` and with `delivery exactly-once-premise`, otherwise equal, are two different checked channels, and neither changes the other's recorded capacity, overflow or ordering. | Test (TC-1304) |
+| FR-509-AC-4 | The emitted package holds the delivery text `[0,3]` for AC-1's channel, a different text `[0,4]` when only `hi` changes, the unchanged word text for each policy word, and reads back through the I2 reader. | Test (TC-1304) |
+| FR-509-AC-5 | On a `fifo` channel of capacity 2 with `delivery [2,2]`, `send P; receive R1 of P; receive R2 of P` completes in every execution and a third receive stops `empty-queue`; with `[0,1]` the executions include one where `receive R1 of P` stops `empty-queue` and one where it completes; with `[1,3]` and capacity 2, a send whose third delivery would exceed capacity follows the channel's overflow policy for that entry. | Test (TC-1304) |
+| FR-509-AC-6 | A `delivery [1,2]` channel in a unit whose header selects no temporal profile and no clock checks and emits; the interval reads no clock. | Test (TC-1304) |
 
 ## Dependencies
 
 - **Contract change required (QSpec FR-464/FR-466):** the protocol `channel`
   node's delivery text vocabulary currently names the four policy words; it
   must admit the text `[lo,hi]` (two non-negative integers, `lo <= hi`).
-  Without it FR-507-AC-4 cannot pass. No Contract IR change is needed if
+  Without it FR-509-AC-4 cannot pass. No Contract IR change is needed if
   QSpec carries the delivery text as an opaque string; if the IR validates
   the four words, that validator must admit the interval (a question to the
   Contract IR owner filed with this batch).

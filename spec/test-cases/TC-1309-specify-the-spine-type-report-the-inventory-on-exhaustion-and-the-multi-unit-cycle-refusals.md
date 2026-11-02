@@ -1,17 +1,17 @@
 ---
-id: TC-1307
+id: TC-1309
 title: "Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-512
+  - target: ix://agent-ix/quire-spec-language/FR-514
     type: verifies
 ---
-# TC-1307: Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals
+# TC-1309: Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals
 
 ## Description
 
 Verify the type report, the inventory outcomes and the cross-unit cycle
-refusals of FR-512. Scope: FR-512-AC-1 to FR-512-AC-5 (AC-6 is by inspection).
+refusals of FR-514. Scope: FR-514-AC-1 to FR-514-AC-5 (AC-6 is by inspection).
 
 ## Test Procedure
 
@@ -32,7 +32,7 @@ x }`, a state `post` clause on an object operation, and a protocol with one
 | 9 | document 1 `unit z : T = z2 * rational(2, 1); unit z2 : T = z * rational(2, 1);`, document 2 `dimension L;` | `invalid_package`/`definition-cycle`, both edges, naming document 1 |
 | 10 | the QSpec TC-187 dimension-cycle vector split across documents 1 and 2 (vector referenced by case ID, not copied) | `invalid_package`/`definition-cycle`, naming the first document in list order |
 
-Tag the test `#[trace("FR-512-AC-1", "FR-512-AC-2", "FR-512-AC-3", "FR-512-AC-4", "FR-512-AC-5", "TC-1307")]`.
+Tag the test `#[trace("FR-514-AC-1", "FR-514-AC-2", "FR-514-AC-3", "FR-514-AC-4", "FR-514-AC-5", "TC-1309")]`.
 
 ## Expected Results
 

@@ -1,16 +1,16 @@
 ---
-id: TC-1303
+id: TC-1305
 title: "Compare the static subject of two checked units"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-508
+  - target: ix://agent-ix/quire-spec-language/FR-510
     type: verifies
 ---
-# TC-1303: Compare the static subject of two checked units
+# TC-1305: Compare the static subject of two checked units
 
 ## Description
 
-Verify the static subject of FR-508. Scope: FR-508-AC-1 to FR-508-AC-5
+Verify the static subject of FR-510. Scope: FR-510-AC-1 to FR-510-AC-5
 (AC-6 is by inspection).
 
 ## Test Procedure
@@ -32,7 +32,7 @@ is the subject of checking `Z0` under default limits.
 | 8 | two declarations each bind a role `x`; then rename one | two role entries with different owners; then [roles] |
 | 9 | a unit that fails S3 | the refusal; no subject exists |
 
-Tag the test `#[trace("FR-508-AC-1", "FR-508-AC-2", "FR-508-AC-3", "FR-508-AC-4", "FR-508-AC-5", "TC-1303")]`.
+Tag the test `#[trace("FR-510-AC-1", "FR-510-AC-2", "FR-510-AC-3", "FR-510-AC-4", "FR-510-AC-5", "TC-1305")]`.
 
 ## Expected Results
 

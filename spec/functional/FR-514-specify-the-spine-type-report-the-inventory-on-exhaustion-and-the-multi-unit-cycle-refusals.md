@@ -1,5 +1,5 @@
 ---
-id: FR-512
+id: FR-514
 title: "Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals"
 type: FR
 relationships:
@@ -18,7 +18,7 @@ relationships:
   - target: ix://agent-ix/quire-contract-ir/FR-052
     type: depends_on
 ---
-# FR-512: Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals
+# FR-514: Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals
 
 ## Description
 
@@ -115,12 +115,12 @@ FR-480's criteria belong to four pieces of work (QSL-1508):
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-512-AC-1 | For a unit with a function, a state clause with a `post` claim and a protocol with one `check` and one `requirement`, `type_report()` lists the declarations in ascending `NodeRef` order with their value types, one `RequirementRecord` per requirement and one `PendingObligation` per claim and per protocol requirement obligation, each `Pending` with the capability kind of its claim form; it holds no source reference field. | Test (TC-1307) |
-| FR-512-AC-2 | The two units of FR-480-AC-2's package give two `CheckedUnit`s whose type reports list only their own declarations; no API accepts a report or source for rebinding. | Test (TC-1307) |
-| FR-512-AC-3 | With `s3.work_units` set one below the unit's measured need, `check` returns the stage limit outcome and `qsl_inventory` returns `Incomplete` with one requirement row per requirement form, no obligation row and cause (S3, work budget, `s3.work_units`); with `s1.nodes` set to stop S1, `Incomplete` with zero rows and cause (S1, node count, `s1.nodes`); with the unit refused `ill_typed`, an error and no rows; with sufficient limits, `Complete`. | Test (TC-1307) |
-| FR-512-AC-4 | `qsl_inventory` over one source with formal identities `F1` and `F2` gives two inventories with different identities, and over `Incomplete` and `Complete` outcomes of one source and `F1` the same identity; no `check*` signature has a formal-identity parameter and `CheckedUnit` has no such member. | Test (TC-1307) |
-| FR-512-AC-5 | The FR-480-AC-6 documents give, for `[1, 2]`, `invalid_package`/`invalid-value` at `z` in document 1; for `[2, 1]`, `invalid_package`/`definition-cycle` at `u_self` in document 2 with edge `u_self` to `u_self`; a two-unit cycle `z`, `z2` across documents gives `invalid_package`/`definition-cycle` with both edges; a dimension cycle across documents gives the same code; each names the document's source reference. | Test (TC-1307) |
-| FR-512-AC-6 | Every FR-480 criterion appears in exactly one row of the pieces table, and the Linear tickets of pieces (a) to (d) each cite their criteria. | Inspection |
+| FR-514-AC-1 | For a unit with a function, a state clause with a `post` claim and a protocol with one `check` and one `requirement`, `type_report()` lists the declarations in ascending `NodeRef` order with their value types, one `RequirementRecord` per requirement and one `PendingObligation` per claim and per protocol requirement obligation, each `Pending` with the capability kind of its claim form; it holds no source reference field. | Test (TC-1309) |
+| FR-514-AC-2 | The two units of FR-480-AC-2's package give two `CheckedUnit`s whose type reports list only their own declarations; no API accepts a report or source for rebinding. | Test (TC-1309) |
+| FR-514-AC-3 | With `s3.work_units` set one below the unit's measured need, `check` returns the stage limit outcome and `qsl_inventory` returns `Incomplete` with one requirement row per requirement form, no obligation row and cause (S3, work budget, `s3.work_units`); with `s1.nodes` set to stop S1, `Incomplete` with zero rows and cause (S1, node count, `s1.nodes`); with the unit refused `ill_typed`, an error and no rows; with sufficient limits, `Complete`. | Test (TC-1309) |
+| FR-514-AC-4 | `qsl_inventory` over one source with formal identities `F1` and `F2` gives two inventories with different identities, and over `Incomplete` and `Complete` outcomes of one source and `F1` the same identity; no `check*` signature has a formal-identity parameter and `CheckedUnit` has no such member. | Test (TC-1309) |
+| FR-514-AC-5 | The FR-480-AC-6 documents give, for `[1, 2]`, `invalid_package`/`invalid-value` at `z` in document 1; for `[2, 1]`, `invalid_package`/`definition-cycle` at `u_self` in document 2 with edge `u_self` to `u_self`; a two-unit cycle `z`, `z2` across documents gives `invalid_package`/`definition-cycle` with both edges; a dimension cycle across documents gives the same code; each names the document's source reference. | Test (TC-1309) |
+| FR-514-AC-6 | Every FR-480 criterion appears in exactly one row of the pieces table, and the Linear tickets of pieces (a) to (d) each cite their criteria. | Inspection |
 
 ## Dependencies
 

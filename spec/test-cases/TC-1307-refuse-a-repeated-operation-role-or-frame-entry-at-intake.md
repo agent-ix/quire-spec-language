@@ -1,17 +1,17 @@
 ---
-id: TC-1305
+id: TC-1307
 title: "Refuse a repeated operation role or frame entry at intake"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-510
+  - target: ix://agent-ix/quire-spec-language/FR-512
     type: verifies
 ---
-# TC-1305: Refuse a repeated operation role or frame entry at intake
+# TC-1307: Refuse a repeated operation role or frame entry at intake
 
 ## Description
 
-Verify the operation and frame checks of FR-510. Scope: FR-510-AC-1 to
-FR-510-AC-6.
+Verify the operation and frame checks of FR-512. Scope: FR-512-AC-1 to
+FR-512-AC-6.
 
 ## Test Procedure
 
@@ -32,7 +32,7 @@ with operation `bump`.
 | 9 | repeated `modifies` plus repeated `creates` | the `modifies` refusal only |
 | 10 | rows 2-4 with unrelated records reordered in the document | the same refusals naming the same entries; row 5's package equal under reordering |
 
-Tag the test `#[trace("FR-510-AC-1", "FR-510-AC-2", "FR-510-AC-3", "FR-510-AC-4", "FR-510-AC-5", "FR-510-AC-6", "TC-1305")]`.
+Tag the test `#[trace("FR-512-AC-1", "FR-512-AC-2", "FR-512-AC-3", "FR-512-AC-4", "FR-512-AC-5", "FR-512-AC-6", "TC-1307")]`.
 
 ## Expected Results
 
