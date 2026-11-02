@@ -42,9 +42,15 @@ is `reader` (refused by `quire_contract_model::read_checked_package`) or
 `selection` (admitted by the reader and refused by `Selection::check`).
 `expected` is, for `reader`, a code, an optional cause and a JSON pointer; for
 `selection`, a `SelectionAxis` (`clause.name`, `clause.requirement`,
-`clause.node`, `clause.activation`, `definition.identity`, `definition.revision`,
-`definition.authority`, `clock.sequence_authority`, `clock.epoch`,
-`clock.period`, `clock.unit`, `clock.timestamp_unit`).
+`clause.node`, `clause.activation`, `clause.binding`, `definition.identity`,
+`definition.revision`, `definition.authority`, `clock.kind`, `clock.name`,
+`clock.sequence_authority`, `clock.epoch`, `clock.period`, `clock.unit`,
+`clock.timestamp_unit`, `package.nodes`). `clause.binding`, `clock.kind`,
+`clock.name` and `package.nodes` are the axes `Selection::check` returns for a
+difference that is not one of the others (a clause with another binding row, a
+row of another clock kind or clock name, a package whose node set differs), so
+an unrelated difference never reports as `clause.node`; no row of the table
+mutates them.
 
 ## Behavior
 
@@ -55,8 +61,11 @@ Stage `reader` codes and loci are the ones Contract IR's reader gives today
 the ones in the sidecar. The expected values are written by hand in the QSL
 writer's source; the writer never copies them from the reader's output.
 
-Verification status: rows 1 to 4, 8 to 13, 16 to 21, 29 and 30 restate codes
-and axes the current reader and `Selection::check` give. Rows 5 to 7, the
+Verification status: rows 1 to 4, 9 to 11, 16 to 21, 29 and 30 restate codes
+and axes the current reader and `Selection::check` give. Rows 8, 12 and 13 have
+been executed against the Contract IR reader: row 8 and row 13 are refused by
+the reader with the codes in the table, and row 12 is admitted by the reader and
+refused by `Selection::check`. Rows 5 to 7, the
 renamed-member rows 23, 25 and 27, row 31 and the moved row 28m
 are written from Contract IR's rules and have not been executed against the
 reader. The writer self-check below is what verifies them; where it shows a
@@ -72,12 +81,12 @@ reader source and amends this table in the same change.
 | 5 | `binding-reordered` (`temporal_bindings.order`) | `v2.binding.*` | reader: swap two rows | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/declaration` of the row out of `NodeRef` order |
 | 6 | `declaration-index` (`temporal_binding.declaration`) | `v2.binding.*` | reader: a row's declaration becomes the id of a non-clause node | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/declaration` |
 | 7 | `definition-index` (`temporal_binding.definition`) | `v2.binding.*` | reader: remove the lock `profile_selections` row of one clause's `temporal_profile` law | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/clock/kind` |
-| 8 | `declaration-name` (`declaration.name`) | `v2.declaration.*` | selection: a different well-formed declared name for a clause | `clause.name` |
+| 8 | `declaration-name` (`declaration.name`) | `v2.declaration.*` | reader: add a `declaration` member to a `temporal_clause` node, which carries none; this tests that the reader refuses an unexpected declaration member, and its legacy successor for a differing clause name is the unit-level `clause.name` test of FR-518-AC-11 | `invalid_package`/`invalid_semantic_graph` at `/semantic_graph/nodes/{N}/declaration` |
 | 9 | `declaration-requirement` (`declaration.requirement`) | `v2.declaration.*` | selection: the protocol `requirements` entry that names the clause points at another clause | `clause.requirement` |
 | 10 | `declaration-clause` (`declaration.clause`) | `v2.declaration.*` | selection: the clause node id differs from the sidecar's | `clause.node` |
 | 11 | `declaration-execution` (`declaration.execution`) | `v2.declaration.*` | selection: the activation form differs (`origin` for `each`) | `clause.activation` |
-| 12 | `definition-identity` (`definition.identity`) | `v2.definition.*` | selection: the profile law identity of a clause differs | `definition.identity` |
-| 13 | `definition-revision` (`definition.revision`) | `v2.definition.*` | selection: the profile law revision differs | `definition.revision` |
+| 12 | `definition-identity` (`definition.identity`) | `v2.definition.*` | selection: the profile law identity of a clause differs; the clauses, the lock `profile_selections` row and the `temporal_bindings` rows move together to another registered profile, because changing only the law and the lock gives `invalid_package`/`timed-node-reference` at `/temporal_bindings/0/clock/kind`, and moving to the `infinite-trace` profile with the rows removed gives `malformed_wire` at `/temporal_bindings` | `definition.identity` |
+| 13 | `definition-revision` (`definition.revision`) | `v2.definition.*` | reader: the profile law revision is another revision; Contract IR registers one revision per profile, so no admitted package differs in revision, and the legacy successor for an admitted revision difference is the unit-level `definition.revision` test of FR-518-AC-12 | `unknown_profile`/`unsupported-selection` at `/semantic_graph/nodes/{N}/body/operation/laws/0/definition` |
 | 14 | `definition-artifact-digest` (`definition.artifact.digest`) | `v2.definition.*` | moved to row 12, which refuses a definition whose identity differs from the sidecar's; closed-shape successor 14b | see 12, 14b |
 | 14b | by absence: a `digest` member added to a `definition_selections` entry | none | reader: add the member | `malformed_wire` at the entry |
 | 15 | `definition-artifact-digest-domain` (`definition.artifact.digest`) | `v2.definition.*` | moved to row 29, which refuses a definition whose authority differs; closed-shape successor 15b | see 29, 15b |
@@ -104,8 +113,18 @@ Rows 1 to 28 are the legacy identities. Rows 29 and 30 are cases QSL main has
 that the legacy list does not, and rows 14, 15 and 28 are legacy identities main
 no longer has. The manifest holds a case for every row that names a mutation:
 rows 1 to 13, 14b, 15b, 16 to 27, 28m, 29, 30 and 31 (31 cases). Of
-these, 19 are stage `reader` (rows 1 to 7, 14b, 15b, 16, 22 to 27, 28m, 30, 31)
-and 12 are stage `selection` (rows 8 to 13, 17 to 21, 29).
+these, 21 are stage `reader` (rows 1 to 8, 13, 14b, 15b, 16, 22 to 27, 28m, 30,
+31) and 10 are stage `selection` (rows 9 to 12, 17 to 21, 29).
+
+The Contract IR reader admits no package that differs from another in a clause
+name or in a profile law revision: a `temporal_clause` node carries no
+declaration, so the package holds no clause name, and Contract IR registers one
+revision per profile. The `clause.name` and `definition.revision` axes of
+`Selection::check` therefore have no case that reaches them through
+`read_checked_package`; each is tested at unit level (FR-518-AC-11 and
+FR-518-AC-12). The absence of a clause name in the package is a Contract IR gap
+(IR ticket pending); until it closes, the `clause.name` axis is exercised only
+by the unit-level test.
 
 ### Writer self-check
 
@@ -126,7 +145,10 @@ and refusing source bytes that differ from the vouched bytes, is not dropped.
 Rows 14 and 15 move onto rows 12 and 29, whose selection axes `definition.identity`
 and `definition.authority` (FR-517's `Selection::check`, FR-513-AC-9) refuse a
 definition whose identity or authority is not the one the sidecar declares; a
-separate case would repeat them, so none is added and no coverage is dropped.
+separate case would repeat them, so none is added. Row 8 moves to the
+unit-level `clause.name` test and the reader refusal of its row, and row 13 to
+the reader refusal of its row and the unit-level `definition.revision` test, so
+every legacy property keeps a test and no coverage is dropped.
 Rows 14b and 15b keep the closed-shape assertion. Row 28m needs a Contract IR
 requirement that `CheckedSourceRef` carries source-byte integrity that the reader
 verifies (today it is "named by the producer, with no byte authentication"); that
@@ -144,18 +166,22 @@ default and changes only by amendment. The identity of the moved case 28m is `de
 | FR-518-AC-1 | With a reader that implements the Contract IR source-byte-integrity requirement (IR-1273), `write(R, dir)` with `corpus = Standard` writes `mutations/manifest.json` of format `quire.checked-handoff.mutations/1` whose cases are in table order, each with a unique identity, a stage of `reader` or `selection`, and a non-empty case file; the cases include 14b, 15b and 28m. | Test (TC-1313) |
 | FR-518-AC-2 | Every case with stage `reader` is refused by `read_checked_package` with the code, cause and pointer of its table row, and no such case is admitted. | Test (TC-1313) |
 | FR-518-AC-3 | Every case with stage `selection` is admitted by `read_checked_package` and refused by `Selection::check` with the `SelectionAxis` of its row, and the unmutated **R** passes both. | Test (TC-1313) |
-| FR-518-AC-4 | Over **R**, the case of row 12 is admitted by `read_checked_package` and refused by `Selection::check` with `definition.identity`, and the case of row 29 with `definition.authority` (the destinations of legacy rows 14 and 15). | Test (TC-1313) |
+| FR-518-AC-4 | Over **R**, the cases of rows 12 and 29 are admitted by `read_checked_package` and refused by `Selection::check` with `definition.identity` and `definition.authority` respectively (the destinations of legacy rows 14 and 15). | Test (TC-1313) |
 | FR-518-AC-5 | A case whose declared refusal the stage does not give (a stage double returning another code or pointer), and a case whose bytes equal the base, each make `write` return `Error::CaseMismatch` naming that identity, and nothing is written. | Test (TC-1313) |
 | FR-518-AC-6 | Two `write` calls with `Standard` give byte-identical manifests and case files, and the manifest lists the cases in table order. | Test (TC-1313) |
 | FR-518-AC-7 | No case's `expected` field names a digest, a seal or a `v2.*` refusal string, and `mutations/` of a `None` corpus does not exist. | Test (TC-1313) |
 | FR-518-AC-8 | Every `mutations/<identity>.json` is named by exactly one manifest case and every case names one existing file; the crate exports no case-count or identity-list constant, so a consumer reads the case list from the manifest. | Test (TC-1313) |
 | FR-518-AC-9 | With a reader that implements IR-1273, case 28m is refused with `invalid_package`/`source-integrity` at the pointer of the changed `CheckedSourceRef`. | Test (TC-1313) |
 | FR-518-AC-10 | With a reader that admits 28m, `write` returns `Error::CaseMismatch` naming `definition-original-bytes-moved` and writes nothing. | Test (TC-1313) |
+| FR-518-AC-11 | `Selection::check` refuses a package value built in memory whose clause name differs from the sidecar's, with `clause.name`; the package is not read through `read_checked_package`. | Test (TC-1313) |
+| FR-518-AC-12 | `Selection::check` refuses a package value built in memory whose profile law revision differs from the sidecar's, with `definition.revision`; the package is not read through `read_checked_package`. | Test (TC-1313) |
+| FR-518-AC-13 | Over **R**, the case of row 13 is refused by `read_checked_package` with `unknown_profile`/`unsupported-selection` and is not admitted. | Test (TC-1313) |
+| FR-518-AC-14 | Over **R**, the case of row 8 is refused by `read_checked_package` with `invalid_semantic_graph` at the declaration pointer of its row and is not admitted. | Test (TC-1313) |
 
 ## Dependencies
 
 - **Upstream:** FR-517, FR-513-AC-9 (emission-time selection refusals: the
-  emission side of rows 8 to 13 and 17 to 21 is covered there), Contract IR
+  emission side of rows 9 to 12 and 17 to 21 is covered there), Contract IR
   FR-038 (temporal binding rows), QSL-1270.
 - **Rulings:** rows 14, 15, 28 (above, pending; default applied).
 - **Contract IR:** IR-1273, source-byte integrity on `CheckedSourceRef` (row 28m).
