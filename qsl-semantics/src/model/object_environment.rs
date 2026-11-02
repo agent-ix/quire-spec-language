@@ -291,6 +291,14 @@ impl ObjectEnvironment {
         })
     }
 
+    /// The universe selected for a checked member type in this observation.
+    pub fn population_universe_for_type(&self, member_type: &EffectiveId) -> Option<&UniverseId> {
+        self.population_provenance
+            .values()
+            .flat_map(|provenance| provenance.member_types.iter())
+            .find_map(|(candidate, universe)| (candidate == member_type).then_some(universe))
+    }
+
     /// Records the parsed check-7 closure rooted at each model population.
     #[must_use]
     pub fn with_population_reference_closures(

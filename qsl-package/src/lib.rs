@@ -28,23 +28,25 @@ pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
 mod protocol_activation;
+mod protocol_selection;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, occurrence_role, read_hybrids, read_import_view, read_terminal,
-    read_terminals, resolve_clause_root, resolve_hyper_root, resolve_state_graph_root,
-    resolve_terminals, state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint,
-    CheckedClockGuard, CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget,
-    CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource,
-    CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved,
-    ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
-    ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim,
-    ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect,
-    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
-    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    clause_roots, hyper_roots, occurrence_role, read_evaluation_package, read_hybrids,
+    read_import_view, read_terminal, read_terminals, resolve_clause_root, resolve_hyper_root,
+    resolve_state_graph_root, resolve_terminals, state_graph_roots, supply_closure,
+    AdmittedPackageRead, AdmittedPackages, CheckedClockConstraint, CheckedClockGuard,
+    CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget, CheckedGuardPart,
+    CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource, CheckedTimeSourceKind,
+    CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockComparison,
+    ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal,
+    PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
+    ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect, StateGraphKind,
+    StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
+    V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{
@@ -53,8 +55,12 @@ pub use emit::{
     emit_package, emit_package_with_temporal_selections, emit_timed_models, Emission, EmitRefusal,
     OmissionCause, OmittedNode, TemporalClockSelection, TimedOrderFault,
 };
-pub use evaluation_view::{AdmittedEvaluationView, AdmittedProtocolObservation};
+pub use evaluation_view::{
+    AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,
+    TermHandle, ViewFailure,
+};
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 
 #[cfg(feature = "std")]
 pub use quire_contract_model::ClockConfiguration;

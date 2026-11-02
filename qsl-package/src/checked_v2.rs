@@ -7,7 +7,7 @@
 //! `NodeKey`, and constructs the import view and package source map. It
 //! returns staged refusals with IR's loci and the caller's exact limits.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use quire_contract_model::{
@@ -30,7 +30,7 @@ use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
 use crate::emit::{emit_checked, Emission, EmitRefusal};
-use quire_exact::{Origin, Role};
+use quire_exact::{NodeKey, Origin, Role};
 
 mod clause_root;
 mod hybrid;
@@ -835,6 +835,118 @@ pub fn read_import_view(
     let read = read?;
     admitted.0.insert(identity, Arc::clone(&read.admitted));
     Ok(read.package)
+}
+
+/// Emit `package`, admit those bytes and its dependency closure through the
+/// I2 reader, and retain the successful read for evaluator use.
+pub fn read_evaluation_package<'package>(
+    package: &'package CheckedPackage,
+    identity: LibraryName,
+    domain_packages: &qsl_semantics::model::intake::PackageInput,
+    limits: V2ReadLimits,
+) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
+    let emission = emit_checked(package).map_err(|refusal| ImportViewRefusal::Emission {
+        package: identity.clone(),
+        refusal: Some(refusal),
+    })?;
+    let mut held = BTreeMap::new();
+    hold_closure(package, &mut held);
+    let mut reader = ClosureReader {
+        held,
+        domain_packages,
+        admitted: BTreeMap::new(),
+        limits,
+    };
+    let read = reader.read_emitted(package, &emission, identity.clone())?;
+    let mut closure = reader.admitted;
+    closure.insert(identity.clone(), Arc::clone(&read.admitted));
+    let reader_nodes = reader_node_keys(&read.admitted).map_err(|_| ImportViewRefusal::Read {
+        package: identity,
+        refusal: Box::new(StageFailure::Fault(InternalFault::new(
+            "FR-390",
+            "admitted-reader-graph-has-structural-keys",
+        ))),
+    })?;
+    Ok(AdmittedPackageRead {
+        source: package,
+        read,
+        dependencies: AdmittedPackages(closure),
+        reader_nodes,
+    })
+}
+
+/// A successful I2 read retained with the package that emitted its bytes.
+///
+/// This is the only constructor path for a reader-backed evaluation view;
+/// callers cannot pair an admitted IR graph with an unrelated QSL package.
+pub struct AdmittedPackageRead<'package> {
+    source: &'package CheckedPackage,
+    read: V2Read,
+    dependencies: AdmittedPackages,
+    reader_nodes: BTreeSet<NodeKey>,
+}
+
+impl AdmittedPackageRead<'_> {
+    /// The structural exports admitted for this package.
+    pub fn import_view(&self) -> &ImportView {
+        &self.read.package
+    }
+
+    /// The source map retained from the successful I2 read.
+    pub fn source_map(&self) -> &PackageSourceMap {
+        &self.read.source_map
+    }
+
+    /// The exact ceilings enforced by the successful I2 read.
+    pub fn effective_limits(&self) -> V2ReadLimits {
+        self.read.effective_limits
+    }
+
+    /// Every package admitted from this package's dependency closure,
+    /// including the root package.
+    pub fn admitted_packages(&self) -> &AdmittedPackages {
+        &self.dependencies
+    }
+
+    /// Create the evaluation view over this successful I2 read.
+    pub fn evaluation_view(
+        &self,
+    ) -> Result<
+        crate::evaluation_view::AdmittedEvaluationView<'_>,
+        crate::evaluation_view::ViewFailure,
+    > {
+        let source_nodes: BTreeSet<_> = self
+            .source
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .map(|node| node.key())
+            .collect();
+        if !source_nodes.is_subset(&self.reader_nodes) {
+            return Err(crate::evaluation_view::ViewFailure::ReaderSourceMismatch(
+                InternalFault::new("FR-390", "reader-evaluation-view-retains-source-nodes"),
+            ));
+        }
+        Ok(crate::evaluation_view::AdmittedEvaluationView::reader(self))
+    }
+
+    pub(crate) fn source_package(&self) -> &CheckedPackage {
+        self.source
+    }
+
+    pub(crate) fn has_node(&self, node: &NodeKey) -> bool {
+        self.reader_nodes.contains(node)
+    }
+}
+
+fn reader_node_keys(package: &CheckedPackageV2) -> Result<BTreeSet<NodeKey>, WireIdError> {
+    let graph = wire_graph(package)?;
+    package
+        .graph()
+        .nodes
+        .iter()
+        .map(|node| graph.key(&node.node_id))
+        .collect()
 }
 
 /// The packages [`read_import_view`] calls have admitted, by library name:

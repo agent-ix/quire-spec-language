@@ -3,8 +3,8 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{
-    CheckedPackageEvaluation, ProtocolReferenceOccurrence, ProtocolSlot, ProtocolSlotEvaluation,
-    ProtocolSuppliedValue, ProtocolSupply, SuppliedValue,
+    AdmittedEvaluationViewEvaluation, CheckedPackageEvaluation, ProtocolReferenceOccurrence,
+    ProtocolSlot, ProtocolSlotEvaluation, ProtocolSuppliedValue, ProtocolSupply, SuppliedValue,
 };
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{NodeTag, PackageDeclarations};
