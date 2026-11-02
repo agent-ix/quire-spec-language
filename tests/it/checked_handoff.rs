@@ -225,6 +225,7 @@ const SOURCE_LABEL: &str = "sources/source:examples/checked-handoff/unit-event-p
 /// FR-517-AC-1, the paths the writer writes today: everything in the Outputs
 /// table except `inventory.json`, and no `mutations/` for a `None` corpus. The
 /// package bytes are those `emit_checked_v2::emit` returns.
+#[trace("FR-517-AC-1", "TC-1312")]
 #[test]
 fn the_directory_holds_the_outputs_table_except_the_inventory() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
@@ -255,13 +256,13 @@ fn the_directory_holds_the_outputs_table_except_the_inventory() {
     );
 }
 
-/// FR-517-AC-1: exactly the paths of the Outputs table, `inventory.json`
+/// FR-517-AC-11: the paths of the Outputs table with `inventory.json`
 /// included (`qsl_replay::qsl_inventory` over the unit with the selected
 /// formal identity, FR-514).
-#[trace("FR-517-AC-1", "TC-1312")]
+#[trace("FR-517-AC-11", "TC-1312")]
 #[test]
 #[ignore = "gated on QSL-1512 (PR 2140): qsl_inventory over the spine unit with a formal identity"]
-fn the_directory_holds_exactly_the_outputs_table() {
+fn each_directory_holds_the_inventory_with_the_outputs_table() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
     let paths: Vec<String> = tree(&out).into_keys().collect();
     assert_eq!(
