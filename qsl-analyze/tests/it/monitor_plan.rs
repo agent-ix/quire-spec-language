@@ -14,7 +14,7 @@ use quire_exact::{Integer, Rational};
 
 use crate::units::Domain;
 
-const TIME_UNITS: &str = "dimension Time;\n\
+pub(crate) const TIME_UNITS: &str = "dimension Time;\n\
     unit s : Time = rational(1, 1);\n\
     unit ms : Time = rational(1, 1000) * s;\n\
     unit us : Time = rational(1, 1000000) * s;\n";

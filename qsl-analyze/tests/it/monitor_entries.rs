@@ -39,7 +39,8 @@ pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         {declarations}\n"
+         {units}{declarations}\n",
+        units = crate::monitor_plan::TIME_UNITS
     );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
@@ -646,4 +647,171 @@ fn the_plan_root_is_written_with_seventeen_bindings() {
             "event_position"
         ]
     );
+}
+
+/// The wire of the plan root for `formula` under `target`, with the root's
+/// own identity-bearing premises replaced by `edit`.
+fn root_wire(
+    formula: &str,
+    target: &qsl_replay::MonitorTarget,
+    edit: impl Fn(&mut Premises),
+) -> serde_json::Value {
+    use qsl_package::{emit_checked, emit_monitor_plan_over, MonitorPlanWire};
+    let plan = premise_plan(formula, target);
+    let spec = spec_from_plan(&plan).unwrap();
+    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &render(&spec), true);
+    let emission = emit_checked(&package).expect("the unit emits");
+    let name = qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap();
+    let domain = crate::units::Domain::config_version();
+    let mut evidence = emission.evidence().clone();
+    evidence
+        .insert_domain_package_document(domain.package, domain.document.clone())
+        .unwrap();
+    let mut premises = Premises {
+        counter: plan.root_premises().counter,
+        tick_unit: plan.binding().unit().to_owned(),
+        rate: plan.root_premises().max_event_rate,
+        uncertainty: plan.root_premises().uncertainty,
+        activation_capacity: plan.root_premises().activation_capacity,
+        capacity_delta: 0,
+    };
+    edit(&mut premises);
+    let buffers: Vec<(usize, u64)> = plan
+        .buffers()
+        .iter()
+        .map(|(id, c)| (id.index(), *c + premises.capacity_delta))
+        .collect();
+    let root = plan.root_premises();
+    let wire = MonitorPlanWire {
+        formula: plan.program().formula(),
+        counter: &premises.counter,
+        counter_width_bits: root.counter_width_bits,
+        max_reading_gap: root.max_reading_gap,
+        max_event_rate: &premises.rate,
+        uncertainty: &premises.uncertainty,
+        buffers: &buffers,
+        tick_unit: &premises.tick_unit,
+        activation_capacity: premises.activation_capacity,
+        state: "State",
+        inputs: "Inputs",
+        scope: "Scope",
+        result: "Result",
+        entries: [
+            qsl_analyze::monitor_entries::names::INIT,
+            qsl_analyze::monitor_entries::names::ON_EVENT,
+            qsl_analyze::monitor_entries::names::ON_WATERMARK,
+            qsl_analyze::monitor_entries::names::ON_GAP,
+        ],
+        renamed_records: &["Instance", "Activation", "LimitReached"],
+        renames: &qsl_analyze::monitor_entries::WIRE_FIELD_NAMES,
+    };
+    let rooted = emit_monitor_plan_over(&emission, name, &evidence, &wire)
+        .unwrap_or_else(|refusal| panic!("{refusal:?}"));
+    serde_json::from_slice(rooted.package().bytes()).unwrap()
+}
+
+struct Premises {
+    counter: String,
+    tick_unit: String,
+    rate: Rational,
+    uncertainty: Rational,
+    activation_capacity: u64,
+    capacity_delta: u64,
+}
+
+fn root_key(wire: &serde_json::Value) -> serde_json::Value {
+    wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["node_tag"] == "temporal" && n["semantic_form"] == "monitor_plan")
+        .unwrap()["node_id"]
+        .clone()
+}
+
+/// FR-487-AC-6 (MP-02, MP-33, MP-43, MP-44, MP-45, MP-58): each
+/// identity-bearing premise alone gives a different root key.
+#[test]
+fn each_root_premise_alone_changes_the_root_key() {
+    let formula = ROOT_SHAPES[0];
+    let target = microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600);
+    let base = root_key(&root_wire(formula, &target, |_| {}));
+    let variants: Vec<(&str, serde_json::Value)> = vec![
+        (
+            "MP-02 capacity",
+            root_key(&root_wire(formula, &target, |p| p.capacity_delta = 1)),
+        ),
+        (
+            "MP-33 uncertainty",
+            root_key(&root_wire(formula, &target, |p| {
+                p.uncertainty = crate::monitor_plan::ratio(0, 1)
+            })),
+        ),
+        (
+            "MP-43 counter",
+            root_key(&root_wire(formula, &target, |p| {
+                p.counter = "ticks2".to_owned()
+            })),
+        ),
+        (
+            "MP-44 rate",
+            root_key(&root_wire(formula, &target, |p| {
+                p.rate = crate::monitor_plan::ratio(1, 10)
+            })),
+        ),
+        (
+            "MP-45 tick unit",
+            root_key(&root_wire(formula, &target, |p| {
+                p.tick_unit = "ms".to_owned()
+            })),
+        ),
+        (
+            "MP-58 activations",
+            root_key(&root_wire(formula, &target, |p| p.activation_capacity += 1)),
+        ),
+    ];
+    for (id, key) in &variants {
+        assert_ne!(&base, key, "{id}");
+    }
+    for (a, (_, left)) in variants.iter().enumerate() {
+        for (_, right) in &variants[a + 1..] {
+            assert_ne!(left, right);
+        }
+    }
+}
+
+/// FR-322-AC-309: a declaration-less function node is keyed
+/// `[function, form, parameter count, parameter operands, body root]`.
+#[test]
+fn the_entries_carry_the_declaration_less_function_key() {
+    let wire = root_wire(
+        ROOT_SHAPES[0],
+        &microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600),
+        |_| {},
+    );
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let functions: Vec<&serde_json::Value> = nodes
+        .iter()
+        .filter(|n| n["node_tag"] == "function" && n.get("declaration").is_none())
+        .collect();
+    assert_eq!(functions.len(), 4);
+    let counts: Vec<String> = functions
+        .iter()
+        .map(|n| n["node_id"]["path"][2].as_str().unwrap().to_owned())
+        .collect();
+    let mut sorted = counts.clone();
+    sorted.sort();
+    // init 0, on_gap 2, on_event 3, on_watermark 3 parameters.
+    assert_eq!(sorted, ["0", "2", "3", "3"]);
+    for function in functions {
+        let path = function["node_id"]["path"].as_array().unwrap();
+        assert_eq!(path[0], "function");
+        assert_eq!(path[1], "pure_function");
+        let operands = &path[3..];
+        assert_eq!(
+            operands.len(),
+            path[2].as_str().unwrap().parse::<usize>().unwrap() + 1
+        );
+        assert!(operands.iter().all(|segment| segment.get("node").is_some()));
+    }
 }
