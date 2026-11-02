@@ -4,16 +4,16 @@
 //! value and of a transition identity.
 //!
 //! A value, key or identity is built as an owned [`Enc`] tree and written
-//! through `quire-canonical`'s event writer, the one RFC 8785 encoder. The
-//! tree's depth follows the nesting of the declared value types, which a
-//! checked package bounds, so building and writing it recurse once per
-//! declared nesting level and never per element.
+//! through `quire-canonical`'s event writer, or by [`Canonicalizer`] straight
+//! to the same RFC 8785 bytes. The tree's depth follows the nesting of the
+//! declared value types, which a checked package bounds, so building and
+//! writing it recurse once per declared nesting level and never per element.
 
-use std::collections::BTreeMap;
-use std::sync::{Mutex, RwLock};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex, RwLock};
 
 use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
-use quire_canonical::{Encode, Error, Limits, Sink, Writer};
+use quire_canonical::{Encode, Error, LimitExceeded, LimitKind, Limits, Sink, Writer};
 use quire_exact::{
     CollectionKind, EffectiveId, FieldValue, IeeeWidth, NodeKey, ObjectReference,
     OriginalDeclarationKey, UniverseId, Value,
@@ -40,6 +40,15 @@ pub(crate) enum Enc {
     Effective(EffectiveId),
     /// Members in any order: the writer sorts them (RFC 8785 section 3.2.3).
     Object(Vec<(&'static str, Enc)>),
+    /// A value many members of one key share: written as the value it holds,
+    /// and by [`Canonicalizer`] once per key however often it occurs.
+    Shared(Arc<Enc>),
+    /// A declaration's identity text ([`declaration_text`]) as a string.
+    Declaration(DeclarationKey),
+    /// FR-181's `map`, `{"type":"map","entries":[{"key":..,"value":..}, ...]}`,
+    /// its entries in any order: they are written ascending by the key's
+    /// RFC 8785 bytes, entries with equal key bytes in the order held.
+    Map(Vec<(Enc, Enc)>),
     /// A value FR-181's typed canonical form does not yet cover here; it has
     /// no encoding, and writing it refuses with this description.
     Unencodable(&'static str),
@@ -64,6 +73,11 @@ impl Encode for Enc {
                 write_json(writer, &json)
             }
             Self::Effective(id) => write_effective(writer, id),
+            Self::Shared(value) => value.encode_into(writer),
+            Self::Declaration(key) => match declaration_text(key, Limits::new(u64::MAX)) {
+                Ok(text) => writer.string(&text),
+                Err(_) => Err(unencodable(UNENCODABLE_DECLARATION)),
+            },
             Self::Object(members) => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -72,10 +86,344 @@ impl Encode for Enc {
                 }
                 writer.end_object()
             }
-            Self::Unencodable(what) => Err(Error::Serialize(format!(
-                "{what} has no typed canonical form in a model state"
-            ))),
+            Self::Map(entries) => {
+                // A key with no encoding sorts first, so writing it refuses
+                // before any other entry is written.
+                let limits = Limits::new(u64::MAX);
+                let mut keyed: Vec<(Vec<u8>, &Enc, &Enc)> = entries
+                    .iter()
+                    .map(|(key, value)| {
+                        let bytes = quire_canonical::to_vec(key, limits).unwrap_or_default();
+                        (bytes, key, value)
+                    })
+                    .collect();
+                keyed.sort_by(|left, right| left.0.cmp(&right.0));
+                writer.begin_object()?;
+                writer.name("entries")?;
+                writer.begin_array()?;
+                for (_, key, value) in keyed {
+                    writer.begin_object()?;
+                    writer.name("key")?;
+                    key.encode_into(writer)?;
+                    writer.name("value")?;
+                    value.encode_into(writer)?;
+                    writer.end_object()?;
+                }
+                writer.end_array()?;
+                writer.name("type")?;
+                writer.string("map")?;
+                writer.end_object()
+            }
+            Self::Unencodable(what) => Err(unencodable(what)),
         }
+    }
+}
+
+/// What a declaration identity whose text does not encode is.
+const UNENCODABLE_DECLARATION: &str = "a declaration identity";
+
+/// The refusal of a value FR-181's typed canonical form does not cover.
+fn unencodable(what: &str) -> Error {
+    Error::Serialize(format!(
+        "{what} has no typed canonical form in a model state"
+    ))
+}
+
+/// The RFC 8785 bytes of [`Enc`] trees, written straight into one buffer.
+///
+/// The bytes are the ones [`Enc`]'s [`Encode`] implementation gives through
+/// `quire-canonical`'s writer, refusals included, in the same order: the
+/// members of an object are written in the order held and then arranged by
+/// name, and a map's entries by key bytes. A string with nothing to escape
+/// is its UTF-8 bytes in quotes (RFC 8785 section 3.2.2.2); any other
+/// string, and each node and effective declaration identity, is encoded by
+/// `quire-canonical`. An identity's bytes are encoded once and reused, so a
+/// state key that names the same location or reference many times encodes
+/// it once per system.
+#[derive(Default)]
+pub(crate) struct Canonicalizer {
+    nodes: RwLock<HashMap<NodeKey, Arc<[u8]>>>,
+    effective: RwLock<HashMap<EffectiveId, Arc<[u8]>>>,
+    declarations: RwLock<HashMap<DeclarationKey, Arc<[u8]>>>,
+}
+
+/// The canonical bytes written so far, against the caller's byte bound.
+struct Out {
+    bytes: Vec<u8>,
+    bound: u64,
+}
+
+impl Out {
+    fn new(bound: u64) -> Self {
+        Self {
+            bytes: Vec::new(),
+            bound,
+        }
+    }
+
+    /// Append `bytes`, refusing past the bound as the writer does.
+    fn push(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let length = self.bytes.len().saturating_add(bytes.len());
+        if u64::try_from(length).map_or(true, |length| length > self.bound) {
+            return Err(Error::Limit(LimitExceeded {
+                kind: LimitKind::CanonicalBytes,
+                bound: self.bound,
+                required: u64::try_from(length).unwrap_or(u64::MAX),
+            }));
+        }
+        if length > self.bytes.capacity() {
+            self.bytes
+                .try_reserve(bytes.len())
+                .map_err(|_| Error::Allocation {
+                    requested: bytes.len(),
+                })?;
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    /// The bytes from `from` to `to`.
+    fn span(&self, from: usize, to: usize) -> Result<&[u8], Error> {
+        self.bytes.get(from..to).ok_or(Error::Internal {
+            invariant: "a written member lies inside the written bytes",
+        })
+    }
+}
+
+/// The bytes of each [`Enc::Shared`] value one call has written, by the
+/// value's address. Each entry holds its value, so no address is reused
+/// while it is remembered.
+#[derive(Default)]
+struct Scope {
+    shared: HashMap<usize, (Arc<Enc>, Arc<[u8]>)>,
+}
+
+/// One member's value: a typed canonical form, or RFC 8785 bytes already
+/// written.
+enum Member<'m> {
+    Enc(&'m Enc),
+    Bytes(&'m [u8]),
+}
+
+/// One `quire-canonical` string event's value.
+struct Text<'t>(&'t str);
+
+impl Encode for Text<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        writer.string(self.0)
+    }
+}
+
+/// RFC 8785 section 3.2.3: member names compare by UTF-16 code units.
+fn cmp_names(left: &str, right: &str) -> std::cmp::Ordering {
+    left.encode_utf16().cmp(right.encode_utf16())
+}
+
+impl Canonicalizer {
+    /// `value`'s RFC 8785 bytes under `limits`.
+    ///
+    /// # Errors
+    ///
+    /// The refusal `quire_canonical::to_vec(value, limits)` gives.
+    pub(crate) fn to_vec(&self, value: &Enc, limits: Limits) -> Result<Vec<u8>, Error> {
+        let mut out = Out::new(limits.max_bytes());
+        self.write(value, &mut out, &mut Scope::default())?;
+        Ok(out.bytes)
+    }
+
+    /// The RFC 8785 bytes of the object of `members` and the member `name`,
+    /// whose value is the RFC 8785 bytes `bytes`, under `limits`.
+    ///
+    /// # Errors
+    ///
+    /// The refusal `quire-canonical`'s writer gives for that object.
+    pub(crate) fn object_with(
+        &self,
+        members: &[(&'static str, Enc)],
+        name: &'static str,
+        bytes: &[u8],
+        limits: Limits,
+    ) -> Result<Vec<u8>, Error> {
+        let mut out = Out::new(limits.max_bytes());
+        let members = members
+            .iter()
+            .map(|(name, value)| (*name, Member::Enc(value)))
+            .chain(std::iter::once((name, Member::Bytes(bytes))));
+        self.object(members, &mut out, &mut Scope::default())?;
+        Ok(out.bytes)
+    }
+
+    fn write(&self, value: &Enc, out: &mut Out, scope: &mut Scope) -> Result<(), Error> {
+        match value {
+            Enc::Null => out.push(b"null"),
+            Enc::Bool(true) => out.push(b"true"),
+            Enc::Bool(false) => out.push(b"false"),
+            Enc::Str(text) => Self::string(text, out),
+            Enc::Array(items) => {
+                out.push(b"[")?;
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(b",")?;
+                    }
+                    self.write(item, out, scope)?;
+                }
+                out.push(b"]")
+            }
+            Enc::Node(key) => Self::identity(&self.nodes, key, || Enc::Node(key.clone()), out),
+            Enc::Effective(id) => {
+                Self::identity(&self.effective, id, || Enc::Effective(id.clone()), out)
+            }
+            Enc::Declaration(key) => Self::identity(
+                &self.declarations,
+                key,
+                || Enc::Declaration(key.clone()),
+                out,
+            ),
+            Enc::Shared(value) => self.shared(value, out, scope),
+            Enc::Object(members) => self.object(
+                members
+                    .iter()
+                    .map(|(name, value)| (*name, Member::Enc(value))),
+                out,
+                scope,
+            ),
+            Enc::Map(entries) => self.map(entries, out, scope),
+            Enc::Unencodable(what) => Err(unencodable(what)),
+        }
+    }
+
+    fn string(text: &str, out: &mut Out) -> Result<(), Error> {
+        if text
+            .bytes()
+            .all(|byte| byte != b'"' && byte != b'\\' && byte >= 0x20)
+        {
+            out.push(b"\"")?;
+            out.push(text.as_bytes())?;
+            out.push(b"\"")
+        } else {
+            out.push(&quire_canonical::to_vec(
+                &Text(text),
+                Limits::new(u64::MAX),
+            )?)
+        }
+    }
+
+    /// An identity's bytes, encoded on first use and reused after.
+    fn identity<K: Clone + Eq + std::hash::Hash>(
+        memo: &RwLock<HashMap<K, Arc<[u8]>>>,
+        key: &K,
+        leaf: impl FnOnce() -> Enc,
+        out: &mut Out,
+    ) -> Result<(), Error> {
+        let known = memo
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(key)
+            .cloned();
+        let bytes = match known {
+            Some(bytes) => bytes,
+            None => {
+                let bytes: Arc<[u8]> =
+                    quire_canonical::to_vec(&leaf(), Limits::new(u64::MAX))?.into();
+                memo.write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert(key.clone(), Arc::clone(&bytes));
+                bytes
+            }
+        };
+        out.push(&bytes)
+    }
+
+    /// A shared value's bytes, written on its first occurrence in this call
+    /// and copied after.
+    fn shared(&self, value: &Arc<Enc>, out: &mut Out, scope: &mut Scope) -> Result<(), Error> {
+        let address = Arc::as_ptr(value).addr();
+        if let Some((_, bytes)) = scope.shared.get(&address) {
+            return out.push(bytes);
+        }
+        let mut own = Out::new(out.bound);
+        self.write(value, &mut own, scope)?;
+        out.push(&own.bytes)?;
+        scope
+            .shared
+            .insert(address, (Arc::clone(value), own.bytes.into()));
+        Ok(())
+    }
+
+    /// The members written in the order held, then arranged by name.
+    fn object<'m>(
+        &self,
+        members: impl Iterator<Item = (&'static str, Member<'m>)>,
+        out: &mut Out,
+        scope: &mut Scope,
+    ) -> Result<(), Error> {
+        out.push(b"{")?;
+        let start = out.bytes.len();
+        let mut spans = Vec::with_capacity(members.size_hint().0);
+        for (index, (name, value)) in members.enumerate() {
+            if index > 0 {
+                out.push(b",")?;
+            }
+            let from = out.bytes.len();
+            Self::string(name, out)?;
+            out.push(b":")?;
+            match value {
+                Member::Enc(value) => self.write(value, out, scope)?,
+                Member::Bytes(bytes) => out.push(bytes)?,
+            }
+            spans.push((name, from, out.bytes.len()));
+        }
+        if !spans
+            .windows(2)
+            .all(|pair| matches!(pair, [left, right] if cmp_names(left.0, right.0).is_lt()))
+        {
+            spans.sort_by(|left, right| cmp_names(left.0, right.0));
+            if let Some(pair) = spans
+                .windows(2)
+                .find(|pair| matches!(pair, [left, right] if left.0 == right.0))
+            {
+                let name = pair.first().map_or("", |member| member.0);
+                return Err(Error::DuplicateMemberName {
+                    name: name.to_owned(),
+                });
+            }
+            let written = Out {
+                bytes: out.bytes.split_off(start),
+                bound: out.bound,
+            };
+            for (index, (_, from, to)) in spans.iter().enumerate() {
+                if index > 0 {
+                    out.push(b",")?;
+                }
+                out.push(written.span(from - start, to - start)?)?;
+            }
+        }
+        out.push(b"}")
+    }
+
+    /// FR-181's `map`: every key's bytes first, then the entries ascending
+    /// by them. A key with no encoding refuses before any value is written.
+    fn map(&self, entries: &[(Enc, Enc)], out: &mut Out, scope: &mut Scope) -> Result<(), Error> {
+        let mut keyed = Vec::with_capacity(entries.len());
+        for (key, value) in entries {
+            let mut bytes = Out::new(out.bound);
+            self.write(key, &mut bytes, scope)?;
+            keyed.push((bytes.bytes, value));
+        }
+        keyed.sort_by(|left, right| left.0.cmp(&right.0));
+        out.push(b"{\"entries\":[")?;
+        for (index, (key, value)) in keyed.iter().enumerate() {
+            out.push(if index > 0 {
+                b",{\"key\":"
+            } else {
+                b"{\"key\":"
+            })?;
+            out.push(key)?;
+            out.push(b",\"value\":")?;
+            self.write(value, out, scope)?;
+            out.push(b"}")?;
+        }
+        out.push(b"],\"type\":\"map\"}")
     }
 }
 
@@ -397,7 +745,9 @@ pub(crate) type KeyName = (Vec<u8>, Enc);
 /// A map key with the bytes [`map_enc`] orders it by.
 pub(crate) fn keyed_name(key: Enc) -> KeyName {
     (
-        quire_canonical::to_vec(&key, Limits::new(u64::MAX)).unwrap_or_default(),
+        Canonicalizer::default()
+            .to_vec(&key, Limits::new(u64::MAX))
+            .unwrap_or_default(),
         key,
     )
 }
@@ -858,16 +1208,7 @@ pub(crate) fn untyped_value_enc(value: &Value) -> Enc {
 /// FR-181's `map`: `{"type":"map","entries":[{"key":..,"value":..}, ...]}`
 /// with the entries ascending by the key's RFC 8785 bytes.
 pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
-    let limits = Limits::new(u64::MAX);
-    sorted_map_enc(
-        entries
-            .into_iter()
-            .map(|(key, value)| {
-                let bytes = quire_canonical::to_vec(&key, limits).unwrap_or_default();
-                (bytes, key, value)
-            })
-            .collect(),
-    )
+    Enc::Map(entries)
 }
 
 /// A map entry with the bytes [`map_enc`] orders it by.
@@ -1075,10 +1416,7 @@ pub(crate) fn clock_shell_enc() -> Enc {
 
 /// A declaration's identity text as a string value.
 fn declaration_enc_text(key: &DeclarationKey) -> Enc {
-    match declaration_text(key, Limits::new(u64::MAX)) {
-        Ok(text) => Enc::Str(text),
-        Err(_) => Enc::Unencodable("a declaration identity"),
-    }
+    Enc::Declaration(key.clone())
 }
 
 /// The empty `map`.

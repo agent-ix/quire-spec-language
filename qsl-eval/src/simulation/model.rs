@@ -465,6 +465,9 @@ pub struct ModelSystem<'a> {
     /// The map-key names of the run's state keys: see
     /// [`encode::KeyNames`].
     key_names: encode::KeyNames,
+    /// The canonical writer of this system's keys, with the identities it
+    /// has already encoded.
+    canonical: encode::Canonicalizer,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
     /// QSpec FR-154's unit bounds on fields, each an invariant of every
@@ -903,6 +906,7 @@ impl<'a> ModelSystem<'a> {
             declaring: std::sync::Mutex::default(),
             applied: application::AppliedMemo::default(),
             key_names: encode::KeyNames::default(),
+            canonical: encode::Canonicalizer::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
             record_orders,
@@ -925,8 +929,9 @@ impl<'a> ModelSystem<'a> {
         &self,
         state: &ModelSimState,
     ) -> Result<(Vec<u8>, crate::simulation::StateKey), crate::simulation::EncodingRefusal> {
-        crate::simulation::key::state_key(
-            &encode::model_key(&self.model, &state.state, self.typing()),
+        crate::simulation::key::state_key_of(
+            &self.canonical,
+            &encode::model_key(&self.model, &state.state, self.typing()).0,
             identity_limits(),
         )
     }
@@ -936,10 +941,16 @@ impl<'a> ModelSystem<'a> {
         &self,
         state: &ModelSimState,
     ) -> Result<crate::simulation::StateKey, crate::simulation::EncodingRefusal> {
-        crate::simulation::key::canonical_state_key(
-            &encode::model_key(&self.model, &state.state, self.typing()),
+        crate::simulation::key::canonical_state_key_of(
+            &self.canonical,
+            &encode::model_key(&self.model, &state.state, self.typing()).0,
             identity_limits(),
         )
+    }
+
+    /// The canonical writer of this system's keys.
+    pub(crate) fn canonical(&self) -> &encode::Canonicalizer {
+        &self.canonical
     }
 
     /// The evaluation meter limits each reading of the system starts from.

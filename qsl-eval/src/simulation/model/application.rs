@@ -356,12 +356,14 @@ impl ModelSystem<'_> {
     /// model key bytes and anchor.
     pub(crate) fn observed<'s>(&self, state: Cow<'s, ModelSimState>) -> Observed<'s> {
         let key = super::encode::model_key(&self.model, &state.state, self.typing());
-        let identity = quire_canonical::to_vec(
-            &key,
-            quire_canonical::Limits::new(super::identity_limits().input_bytes),
-        )
-        .ok()
-        .map(|bytes| (bytes, format!("{:?}", state.anchor)));
+        let identity = self
+            .canonical()
+            .to_vec(
+                &key.0,
+                quire_canonical::Limits::new(super::identity_limits().input_bytes),
+            )
+            .ok()
+            .map(|bytes| (bytes, format!("{:?}", state.anchor)));
         Observed {
             state,
             identity,

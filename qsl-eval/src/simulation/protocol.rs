@@ -1705,14 +1705,19 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
         &self,
         state: &Self::State,
     ) -> Result<(Vec<u8>, crate::simulation::StateKey), EncodingRefusal> {
-        key::state_key(&self.key(state), identity_limits())
+        let bytes = self.key_bytes(state)?;
+        Ok((
+            bytes.clone(),
+            crate::simulation::StateKey::from_canonical_bytes(bytes),
+        ))
     }
 
     fn canonical_state_key(
         &self,
         state: &Self::State,
     ) -> Result<crate::simulation::StateKey, EncodingRefusal> {
-        key::canonical_state_key(&self.key(state), identity_limits())
+        self.key_bytes(state)
+            .map(crate::simulation::StateKey::from_canonical_bytes)
     }
 
     fn transition_key(&self, transition: &ProtocolTransition) -> Result<Vec<u8>, EncodingRefusal> {
@@ -1791,6 +1796,25 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
         } else {
             Ok(transition)
         }
+    }
+}
+
+impl<M: MemoryModel> ProtocolSystem<'_, M> {
+    /// The RFC 8785 bytes of `state`'s key ([`TransitionSystem::key`]),
+    /// written without the event writer: the members through the model's
+    /// canonical writer, the memory member through [`MemoryModel::key_bytes`].
+    fn key_bytes(&self, state: &ProtocolState<M>) -> Result<Vec<u8>, EncodingRefusal> {
+        let identity = identity_limits();
+        let limits = quire_canonical::Limits::new(identity.input_bytes);
+        let refusal = |error: Error| EncodingRefusal::of(&error, identity);
+        let memory = self
+            .memory
+            .key_bytes(&state.memory, limits)
+            .map_err(refusal)?;
+        self.model
+            .canonical()
+            .object_with(&self.key_members(state), "memory", &memory, limits)
+            .map_err(refusal)
     }
 }
 

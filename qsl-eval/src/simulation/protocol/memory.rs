@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::AccessClass;
 use qsl_semantics::check::AccessOrdering;
-use quire_canonical::{Encode, Error, Sink, Writer};
+use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 
 use std::collections::BTreeSet;
 
@@ -246,6 +246,16 @@ pub enum Written<C> {
 pub trait MemoryModel {
     /// (a) The memory state, a member of the state key.
     type Component: Clone + Eq + std::fmt::Debug + Encode;
+
+    /// The RFC 8785 bytes of `component` as the state key's `memory` member:
+    /// the bytes its [`Encode`] implementation gives under `limits`.
+    ///
+    /// # Errors
+    ///
+    /// The refusal of `quire_canonical::to_vec(component, limits)`.
+    fn key_bytes(&self, component: &Self::Component, limits: Limits) -> Result<Vec<u8>, Error> {
+        quire_canonical::to_vec(component, limits)
+    }
 
     /// The resolved models (FR-219) this memory model implements: a
     /// protocol subject whose `parallel` resolves to another is refused.
