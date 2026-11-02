@@ -152,9 +152,9 @@ into a float. Model float fields are refused at intake (FR-091).
     one `compare_ieee` charge (QSpec FR-148, its operand and result charge
     points) for the `totalOrder` part, charged only when the composition reaches
     that part. The `numericEqual` parts of the composition, `N(a)`, `N(b)` and
-    `numericEqual(a, b)`, are computed inline from the evaluated operand bits,
-    SHALL NOT be routed through `compare_ieee`, and charge nothing, although a
-    standalone `quire.op.ieee.numeric_equal` node (`a = b`, the `numericEqual`
+    `numericEqual(a, b)`, are computed inline from the evaluated operand bits;
+    the evaluator SHALL NOT route them through `compare_ieee` and SHALL charge
+    nothing for them, although a standalone `quire.op.ieee.numeric_equal` node (`a = b`, the `numericEqual`
     call) charges as before. A `bitIdentical(a, b)` call charges one
     `compare_ieee`. The charge of `=` and `!=` and of the `numericEqual` and
     `totalOrder` calls is unchanged.
