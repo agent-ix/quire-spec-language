@@ -109,9 +109,12 @@ obligation was never activated.
 - **Activation.** `Inactive` when no trigger was admitted within a closed,
   complete trigger scope; `Unknown` when the scope was open or trigger evidence
   was missing or refused; `Active` when one semantic trigger was admitted or the
-  whole-execution origin activated the obligation; `Unavailable` when a fact the
-  clause needs was withdrawn from the request or the obligation was never
-  activated. No other path
+  whole-execution origin activated the obligation; `Unavailable` when a fact
+  that decides activation (the anchor or the clock row) was withdrawn from the
+  request or the obligation was never activated. A fact withdrawn after
+  activation (decision closure, completeness record, a support fact) leaves
+  `activation` as derived and yields a `Missing` non-value for that fact
+  (Independent facts below). No other path
   assigns an activation state (FR-044).
 - **No supplied truth.** The request has no truth, settlement or support field;
   the result's three are derived from the package and the evidence
@@ -151,7 +154,7 @@ obligation was never activated.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-516-AC-1 | A compile-fail test that sets `truth`, `settlement`, `support` or `instance` on `EvidenceRequest` fails to compile, and the type has no member holding a QSL document or a QSL-computed digest. | Test (TC-1311) |
-| FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with the decision closure withdrawn `Unavailable`; a request naming a clause the package does not hold returns `Err(CallFailure::Admission)` with an empty charge log and no result. | Test (TC-1311) |
+| FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with the anchor withdrawn `Unavailable`; a request naming a clause the package does not hold returns `Err(CallFailure::Admission)` with an empty charge log and no result. | Test (TC-1311) |
 | FR-516-AC-3 | With one fact withdrawn from an otherwise Active request (decision closure, completeness record, a support fact), the result truth, settlement and support are the FR-043 values of the remaining evidence, the result carries a `Missing` non-value for the withdrawn fact, and no field defaults to false, closed, settled or complete. | Test (TC-1311) |
 | FR-516-AC-4 | Two requests that differ only in one byte of the trigger identity give two different `result_identity` values; equal timestamps, receipts, payloads and captures under two identities give two instances, a repeated delivery with an equal payload gives the existing instance, a different payload under one identity is the FR-044 contradiction, and an empty identity is refused at construction. | Test (TC-1311) |
 | FR-516-AC-5 | The decision and surrounding progress and closure axes, the trigger scope and the completeness record are each echoed in the result exactly as supplied, and changing one of them changes only its field and the derived truth where FR-043 says it does. | Test (TC-1311) |

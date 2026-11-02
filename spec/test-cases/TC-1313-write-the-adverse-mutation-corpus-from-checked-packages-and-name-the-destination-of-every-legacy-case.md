@@ -18,9 +18,9 @@ The case table is FR-518's; rows are referenced by number.
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
 | 1 | 1 | `write(R, dir)` with `Standard`; parse `mutations/manifest.json` | format `quire.checked-handoff.mutations/1`; cases in table order with unique identities and stages `reader` or `selection`; 14m, 14b, 15m, 15b, 28m present; every file non-empty |
-| 2 | 2 | submit each `reader` case to `read_checked_package` with the evidence of the directory | refused with the table's code, cause and pointer; every reader case of the table (rows 1 to 7, 14m, 14b, 15m, 15b, 16, 22 to 27, 28m, 30, 31) |
-| 3 | 3 | submit each `selection` case to the reader, then to `Selection::check`; submit unmutated **R** to both | admitted then refused with the row's `SelectionAxis` (rows 8 to 13, 17 to 21, 29); **R** passes both |
-| 4 | 4 | submit 14m, 15m and 28m to the reader; submit 28m to a reader double that admits it | 14m, 15m non-canonical-bytes refusals; 28m refused at the `CheckedSourceRef`; `CaseMismatch` for the double, nothing written |
+| 2 | 2 | submit each `reader` case to `read_checked_package` with the evidence of the directory | refused with the table's code, cause and pointer; every reader case of the table (rows 1 to 7, 14b, 15b, 16, 22 to 27, 28m, 30, 31) |
+| 3 | 3 | submit each `selection` case to the reader, then to `Selection::check`; submit unmutated **R** to both | admitted then refused with the row's `SelectionAxis` (rows 8 to 13, 14m, 15m, 17 to 21, 29); **R** passes both |
+| 4 | 4 | (a) submit 14m and 15m to the reader, then `Selection::check`; (b) submit 28m to a reader implementing the Contract IR source-byte-integrity requirement; (c) submit 28m to a reader double that admits it | (a) admitted, then `definition.identity` and `definition.authority`; (b) `invalid_package`/`source-integrity` at the `CheckedSourceRef`; (c) `CaseMismatch` naming `definition-original-bytes-moved`, nothing written |
 | 5 | 5 | a stage double giving another code or pointer; replace a case file by the base bytes | `Error::CaseMismatch` naming the identity, nothing written |
 | 6 | 6 | two writes | identical manifest and case files; cases in table order |
 | 7 | 7 | search each case's `expected` for `digest`, `seal`, `v2.`; write with `None` | none names any of them; no `mutations/` directory |

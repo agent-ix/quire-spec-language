@@ -82,7 +82,7 @@ pub fn checked_predicate<'p>(package: &'p CheckedPackageV2, selection: &Predicat
 Both views borrow the package, have no public constructor and no method that
 evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of this requirement are `UnresolvedClause` (FR-337's
 `clause-root-unresolved` lookup refusal, reused), `LeafNotInClause`,
-`LeafNotBoolean`, `ActivationGuardAbsent`.
+`LeafNotBoolean`.
 
 ## Behavior
 
@@ -146,10 +146,10 @@ only when one is written.
 | FR-515-AC-2 | For a clause with `on each (q: T) when (g)`, `activation()` is `Each` with the trigger binder node and the guard node; for `on origin` it is `Origin`; for `on each` without a guard it is `Each` with `guard: None`; and `checked_predicate` of the guard is `ActivationGuard`, while the guard is absent from `predicate_leaves()`. | Test (TC-1310) |
 | FR-515-AC-3 | For `always[0,30] holds(Allowed(view.ratio))` (the recipe's `Due`), `formula()` is the `always` operation with interval `[0, 30]` followed by the `holds` application, and `predicate_leaves()` holds the one Boolean operand node; for a formula with three `holds` atoms it holds three nodes in formula pre-order. | Test (TC-1310) |
 | FR-515-AC-4 | `checked_predicate` for the `HoldsLeaf` of AC-3 returns a view with `kind() = HoldsLeaf`, the leaf, the clause, `binders()` naming `view` and no other binder, and a `source_span` inside the clause span. | Test (TC-1310) |
-| FR-515-AC-5 | `temporal_subject` of a node id that is absent, that names a non-temporal node (a `protocol_clause`), or that names a temporal node of another form refuses `UnresolvedClause`; `checked_predicate` of a leaf outside the clause refuses `LeafNotInClause`, of an integer-typed node `LeafNotBoolean`, and `ActivationGuard`-kind selection of an `on origin` clause `ActivationGuardAbsent`; none returns a partial view. | Test (TC-1310) |
+| FR-515-AC-5 | `temporal_subject` of a node id that is absent, that names a non-temporal node (a `protocol_clause`), or that names a temporal node of another form refuses `UnresolvedClause`; `checked_predicate` of a leaf outside the clause refuses `LeafNotInClause`, of an integer-typed node `LeafNotBoolean`; none returns a partial view. | Test (TC-1310) |
 | FR-515-AC-6 | A view read from package **P1** answers `belongs_to(P1)` true and `belongs_to(P2)` false for a second package **P2** whose clause has the same name, and the lifetime of the view ends with the borrow of its package. | Test (TC-1310) |
 | FR-515-AC-7 | Two structurally equal clauses of one package give one node and two `ClauseOccurrence` values with different ordinals, returned by the view of that node; changing one interval of the formula changes `formula()` and the node id, and adding a source comment changes neither. | Test (TC-1310) |
-| FR-515-AC-8 | The views expose no method that takes a closure or evaluates a term, no public constructor, and none of `digest`, `bytes`, `identity`, `package_digest`, `SCHEMA_BYTES`; a compile-fail test constructing either view outside the module, and a test that lists the public methods of both types, pass. | Test (TC-1310) |
+| FR-515-AC-8 | The views expose no method that takes a closure or evaluates a term, no public constructor, and none of `digest`, `bytes`, `identity`, `package_digest`, `SCHEMA_BYTES`; a compile-fail test that constructs either view outside the module, and compile-fail tests that call `digest()`, `bytes()`, `identity()`, `package_digest()` and a closure-taking method on either view, each fail to compile. | Test (TC-1310) |
 | FR-515-AC-9 | `quire_spec_language::protocol_artifact::checked_predicate` and `temporal_subject` are not resolvable once QSL-840 and QSL-838 land, and the change that deletes them lands only when TC-1310 is green on its head (FR-521 row 1). | Test (TC-1310, TC-1316) |
 
 ## Dependencies

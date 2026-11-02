@@ -29,7 +29,7 @@ relationships:
 quire-protocol's link layer (`src/link/mod.rs`, owner chunk C-12) builds a finite
 linked protocol from QSL's typed `wire::Package`: `Handle`, `Locus`, `EdgeKind`,
 `CausalEdge`, `Declaration`, `Body`, `ControlOperation`, `Binder`, `BindingKind`
-and others (about 66 references). Its own rule is "an owner publishes it, import
+and others. Its own rule is "an owner publishes it, import
 it; do not mirror it": QSL derived and compared the causal edge set, resolved
 references and checked joins, and the link layer refused only what QSL did not.
 `wire::Package` has no checked-package equivalent (QSL-1501 symbol map, row B):
@@ -119,7 +119,7 @@ the FR-449 activation rows (`protocol_activation_relation`).
 | FR-519-AC-2 | The function FR-383-AC-16's test calls is `qsl_package::protocol_view::causal_relation`; `git grep` finds no second derivation of the relation in `qsl-*/src` or `src`. | Inspection (TC-1314) |
 | FR-519-AC-3 | `protocol_view` of **R**'s protocol lists the clause, each role, channel, queue, control (layout order), the `Full` and `Partial` compensations, the required temporal clause and the activation rows, each equal to the node set the in-process checked clause rebuilds (FR-383-AC-19). | Test (TC-1314) |
 | FR-519-AC-4 | A node id that is absent, or that names a non-protocol node, refuses `UnknownProtocol`; a `protocol_reference` carrier refuses `NotAProtocolClause`; neither returns a partial view or relation. | Test (TC-1314) |
-| FR-519-AC-5 | Every row of the record-to-node map marked Successor resolves on **R**: a test finds the node, argument or lock member it names; every row marked Ended or Keep is listed with its reason and no code path of QSL refers to an ended record after QSL-838. | Test (TC-1314) |
+| FR-519-AC-5 | For each kind of record **R** holds that the map gives a successor, the typed views return the node, argument or lock member the map names, equal to the in-process value, and a package from which that member is removed is refused with a `ViewRefusal` naming it; no QSL export names a record the map marks Ended after QSL-838 (a compile-fail use of each). | Test (TC-1314) |
 | FR-519-AC-6 | QSL's resolved dependency graph holds no dependency on quire-protocol (`arch-lint direction`, FR-059), and no function of `protocol_view` or `checked_views` reads checked-package bytes (the reader is IR's). | Test (TC-1314) |
 | FR-519-AC-7 | The cross-repository ticket QSL-1549 exists in the QSL V1 Architecture Spine project, blocks QSL-1501, is blocked by the QSL tickets of this batch, and its description lists the three obligations above. | Inspection (TC-1314) |
 

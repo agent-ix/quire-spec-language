@@ -202,7 +202,7 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | FR-499-AC-4 | After QSL-499, `src/native_model` is absent and TC-469 passes. | Test (TC-1293) |
 | FR-499-AC-5 | After QSL-868 and QSL-830, TC-1027 steps 2 and 3 pass, the CLI `parse` runs on `qsl_cst::parse` with its flags and exits unchanged, and the interim FR-362 items 8 and 9 wording is gone. | Test (TC-1027, TC-1293) |
 | FR-499-AC-6 | `quire matrix` after each deleting change lists no criterion of a retained requirement untagged because its test went with a retired path. | Test (TC-1276 step 5) |
-| FR-499-AC-7 | The handoff writer, its examples, snapshots and feature remain until QSL-1501 closes. | Inspection |
+| FR-499-AC-7 | The handoff writer, its examples, snapshots and feature remain until FR-521 row 2 is green. | Inspection |
 
 ## Dependencies
 

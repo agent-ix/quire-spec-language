@@ -19,7 +19,7 @@ FR-043 cases and TC-144; they are referenced, never copied.
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
 | 1 | 1 | compile-fail: set `truth`, `settlement`, `support`, `instance` on `EvidenceRequest` | does not compile; no document or QSL-computed digest member |
-| 2 | 2 | **R** event-position clause: closed complete scope and no delivery; open scope; one admitted delivery; decision closure withdrawn; a clause the package does not hold | `Inactive`/`Inactive`/no truth; `Unknown`/`ActivationUnknown`; `Active` with a truth; `Unavailable`; `Err(CallFailure::Admission)`, empty charge log |
+| 2 | 2 | **R** event-position clause: closed complete scope and no delivery; open scope; one admitted delivery; anchor withdrawn; a clause the package does not hold | `Inactive`/`Inactive`/no truth; `Unknown`/`ActivationUnknown`; `Active` with a truth; `Unavailable`; `Err(CallFailure::Admission)`, empty charge log |
 | 3 | 3 | the Active request with the decision closure withdrawn; with the completeness record withdrawn; with one support fact withdrawn | FR-043 values of the remaining evidence and a `Missing` non-value for each withdrawn fact; no default value in any field |
 | 4 | 4 | trigger id `t1` vs `t1` with one byte changed; equal timestamp/receipt/payload/captures under `t1` and `t2`; redelivery of `t1` with equal then different payload; empty id | different `result_identity`; two instances; existing instance; FR-044 contradiction; refused at construction |
 | 5 | 5 | change the surrounding closure, then the completeness state, then the trigger scope | each echoed exactly; only the field and the FR-043-derived truth change |

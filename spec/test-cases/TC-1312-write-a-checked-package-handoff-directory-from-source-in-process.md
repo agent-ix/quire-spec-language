@@ -26,7 +26,7 @@ Scope: FR-517-AC-1 to FR-517-AC-10.
 | 7 | 7 | source with a type error; a package the reader refuses; injected `ReadBackDiffers` | the compiler refusal; the reader's refusal; `ReadBackDiffers`; nothing written in all three |
 | 8 | 8 | build a crate depending on `checked-handoff` only; compare `Cargo.lock` | builds; no new lock entry |
 | 9 | 9 | change the `sequence_authority` of the event-position row to another non-empty text; `git grep` for a second reader | admitted by `read_checked_package`; `Selection::check` refuses `clock.sequence_authority`; no second reader |
-| 10 | 10 | list the legacy writer's items on the head of any change that touches them; delete one in a fixture tree | all present; the FR-521 gate test fails on the deletion |
+| 10 | 10 | list the legacy writer's items on the head of any change that touches them | all present; a change deleting one is not merged while FR-521 row 2 is not green |
 
 Tag the test `#[trace("FR-517-AC-1", ..., "FR-517-AC-10", "TC-1312")]`; row 3 and 4 also carry FR-042-AC-10.
 
