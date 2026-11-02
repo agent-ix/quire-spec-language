@@ -7,9 +7,9 @@
 use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, BinaryOperator, BuiltinType, DeclarationForm, ExactValueKind, ExprNode, FormsCause,
-    IntervalUpper, OperatorInterval, ParsedUnit, QuantityForm, TemporalNodeForm,
-    TemporalOperatorForm, TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedUpper,
-    TypeFormHead, UrgentForm, UrgentTarget,
+    IntervalUpper, OperatorInterval, ParsedUnit, QuantifierKind, QuantityForm, TemporalNodeForm,
+    TemporalOperatorForm, TimeInvariantBoundForm, TimeInvariantForm, TimeSourceForm,
+    TimeSourceSyntax, TimedUpper, TypeFormHead, UrgentForm, UrgentTarget,
 };
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::Integer;
@@ -167,7 +167,7 @@ fn the_rpc_declarations_build_their_time_forms_in_order_with_spans() {
             .span(invariant.guard.spans.root())
             .expect("the guard has a span");
         assert_eq!(slice(&text, guard_span), guard);
-        let [clock_bound] = &invariant.bounds[..] else {
+        let [TimeInvariantBoundForm::Clock(clock_bound)] = &invariant.bounds[..] else {
             panic!("one clock bound: {:?}", invariant.bounds);
         };
         assert!(!clock_bound.strict);
@@ -228,6 +228,54 @@ fn the_rpc_declarations_build_their_time_forms_in_order_with_spans() {
         slice(&text, tick.span),
         "time Rpc tick Call::send period rational(1,2) ms unit ms;"
     );
+}
+
+/// FR-393-AC-9 (TC-1078 step 9): S2 preserves ordinary and quantified
+/// invariant bounds in source order, including each quantified field/span;
+/// it retains `exists` for the semantic checker to refuse at S3.
+#[trace("TC-1078", "FR-393-AC-9")]
+#[test]
+fn quantified_time_invariant_bounds_build_in_source_order_with_spans() {
+    let source =
+        "time invariant All when { true } { forall(e in self.ts: e.x <= 9 ms) and self.x < 12 ms }";
+    let (text, unit) = build(source);
+    let [form] = unit.forms() else {
+        panic!("one invariant: {:?}", unit.forms());
+    };
+    let invariant = time_invariant(form.form());
+    let [TimeInvariantBoundForm::Quantified(quantified), TimeInvariantBoundForm::Clock(clock)] =
+        invariant.bounds.as_slice()
+    else {
+        panic!(
+            "quantified bound then ordinary bound: {:?}",
+            invariant.bounds
+        );
+    };
+    assert_eq!(quantified.quantifier, QuantifierKind::Forall);
+    assert_eq!(quantified.binder.name, "e");
+    assert_eq!(slice(&text, quantified.binder.span), "e");
+    assert_eq!(
+        slice(&text, quantified.span),
+        "forall(e in self.ts: e.x <= 9 ms)"
+    );
+    assert!(!quantified.strict);
+    assert_eq!(quantity(&quantified.bound), (natural(9), "ms"));
+    assert_eq!(slice(&text, clock.span), "self.x < 12 ms");
+
+    let (_, exists_unit) =
+        build("time invariant Some when { true } { exists(e in self.ts: e.x <= 9 ms) }");
+    let [form] = exists_unit.forms() else {
+        panic!("one invariant: {:?}", exists_unit.forms());
+    };
+    let [TimeInvariantBoundForm::Quantified(exists)] =
+        time_invariant(form.form()).bounds.as_slice()
+    else {
+        panic!(
+            "one quantified bound: {:?}",
+            time_invariant(form.form()).bounds
+        );
+    };
+    assert_eq!(exists.quantifier, QuantifierKind::Exists);
 }
 
 /// FR-230-AC-3's S2 half (TC-685 step 3): `time Rpc tick tick period
@@ -304,7 +352,7 @@ fn the_rpc_time_member_invariants_reset_and_guard_build_with_spans() {
             .into_iter()
             .map(|form| {
                 let invariant = time_invariant(form.form());
-                let [bound] = invariant.bounds.as_slice() else {
+                let [TimeInvariantBoundForm::Clock(bound)] = invariant.bounds.as_slice() else {
                     panic!("one bound: {invariant:?}");
                 };
                 (
@@ -378,7 +426,7 @@ fn large_clock_bound_and_disjunctive_guard_keep_their_source_forms() {
             ..
         }
     ));
-    let [bound] = invariant.bounds.as_slice() else {
+    let [TimeInvariantBoundForm::Clock(bound)] = invariant.bounds.as_slice() else {
         panic!("one exact bound: {:?}", invariant.bounds);
     };
     assert_eq!(bound.bound.magnitude.kind, ExactValueKind::Natural);

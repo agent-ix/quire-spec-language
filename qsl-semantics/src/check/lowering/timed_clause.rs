@@ -270,15 +270,44 @@ impl Lowering<'_> {
                     &sites,
                 )?
             };
+            let slot_binders = if invariant.binders().is_empty() {
+                Vec::new()
+            } else {
+                let integer = self.type_node(&ValueType::Integer, input.declaration)?;
+                invariant
+                    .binders()
+                    .iter()
+                    .enumerate()
+                    .map(|(level, binding)| {
+                        let parameter = self.parameter(
+                            binding.name(),
+                            level,
+                            integer.clone(),
+                            input.declaration,
+                        )?;
+                        Ok((binding.clone(), parameter))
+                    })
+                    .collect::<Result<Vec<_>, CheckRefusal>>()?
+            };
+            let binders = slot_binders
+                .iter()
+                .map(|(_, parameter)| parameter.clone())
+                .collect();
             let bounds = invariant
                 .bounds()
                 .iter()
                 .map(|bound| {
-                    self.place_constraint(bound, invariant.context(), input.declaration, &[])
+                    self.place_constraint(
+                        bound,
+                        invariant.context(),
+                        input.declaration,
+                        &slot_binders,
+                    )
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             invariants.push(InvariantNodes {
                 predicate,
+                binders,
                 bounds,
                 span: invariant.span(),
             });

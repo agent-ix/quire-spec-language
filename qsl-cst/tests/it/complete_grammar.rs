@@ -90,6 +90,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TimeDeclaration,
     Production::TimeInvariant,
     Production::ClockBound,
+    Production::QuantifiedClockBound,
     Production::UrgentDeclaration,
     Production::TasksetDeclaration,
     Production::Task,
@@ -299,7 +300,7 @@ fn corpus() -> Vec<(&'static str, String)> {
             source(concat!(
                 "time Rpc dense unit ms;\n",
                 "time Rpc tick Call::send period rational(1, 2) ms unit ms;\n",
-                "time invariant inflight when { self.inflight } { self.x <= 3 ms and self.y < 0.5 ms }\n",
+                "time invariant inflight when { self.inflight } { self.x <= 3 ms and forall(e in self.ts: e.x <= 9 ms) and self.y < 0.5 ms }\n",
                 "urgent hurry Call::timeout;\n",
                 "urgent stalled when { self.waiting };\n",
                 "record Call { x: Clock; }\n",

@@ -13,12 +13,13 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
-    ClockBoundForm, DeclarationForm, DeclaredName, ExpressionForm, TimeInvariantForm,
-    TimeSourceForm, TimeSourceSyntax, UrgentForm, UrgentTarget,
+    ClockBoundForm, DeclarationForm, DeclaredName, ExpressionForm, QuantifiedClockBoundForm,
+    TimeInvariantBoundForm, TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, UrgentForm,
+    UrgentTarget,
 };
 use super::value::{
-    expression, items, name_form, nodes_of, only, production_node, quantity_form, text, tokens_of,
-    unexpected, Item,
+    expression, has_token, items, name_form, nodes_of, only, production_node, quantity_form, text,
+    tokens_of, unexpected, Item,
 };
 
 /// A declaration headed `time`: the `TimeInvariant` production when `time`
@@ -88,9 +89,26 @@ fn time_invariant(cst: &LosslessCst, node: &CstNode) -> Result<DeclarationForm, 
     else {
         return Err(unexpected(node));
     };
-    let bounds = nodes_of(&declaration_items, Production::ClockBound)
-        .into_iter()
-        .map(|bound| clock_bound(cst, bound))
+    let bounds = declaration_items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Node(node)
+                if matches!(
+                    node.production(),
+                    Production::ClockBound | Production::QuantifiedClockBound
+                ) =>
+            {
+                Some(node)
+            }
+            _ => None,
+        })
+        .map(|bound| match bound.production() {
+            Production::ClockBound => clock_bound(cst, bound).map(TimeInvariantBoundForm::Clock),
+            Production::QuantifiedClockBound => {
+                quantified_clock_bound(cst, bound).map(TimeInvariantBoundForm::Quantified)
+            }
+            _ => Err(unexpected(bound)),
+        })
         .collect::<Result<_, _>>()?;
     Ok(DeclarationForm::TimeInvariant(Box::new(
         TimeInvariantForm {
@@ -121,6 +139,56 @@ fn clock_bound(cst: &LosslessCst, node: &CstNode) -> Result<ClockBoundForm, Form
         clock: ExpressionForm {
             expression: clock,
             spans,
+        },
+        strict,
+        bound: quantity_form(cst, only(&bound_items, Production::QuantityLiteral, node)?)?,
+        span: node.span(),
+    })
+}
+
+fn quantified_clock_bound(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<QuantifiedClockBoundForm, FormsRefusal> {
+    let bound_items = items(cst, node);
+    let Some(binder) = tokens_of(&bound_items, TokenKind::Identifier)
+        .first()
+        .copied()
+    else {
+        return Err(unexpected(node));
+    };
+    let quantifier = if has_token(&bound_items, b"forall") {
+        super::hyper_clause::QuantifierKind::Forall
+    } else if has_token(&bound_items, b"exists") {
+        super::hyper_clause::QuantifierKind::Exists
+    } else {
+        return Err(unexpected(node));
+    };
+    let strict = bound_items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Token(token) if token.spelling() == b"<" => Some(true),
+            Item::Token(token) if token.spelling() == b"<=" => Some(false),
+            _ => None,
+        })
+        .next_back()
+        .ok_or_else(|| unexpected(node))?;
+    let (collection, collection_spans) =
+        expression(cst, only(&bound_items, Production::Expression, node)?)?;
+    let (clock, clock_spans) = expression(cst, only(&bound_items, Production::Postfix, node)?)?;
+    Ok(QuantifiedClockBoundForm {
+        quantifier,
+        binder: DeclaredName {
+            name: text(binder, node)?,
+            span: binder.span(),
+        },
+        collection: ExpressionForm {
+            expression: collection,
+            spans: collection_spans,
+        },
+        clock: ExpressionForm {
+            expression: clock,
+            spans: clock_spans,
         },
         strict,
         bound: quantity_form(cst, only(&bound_items, Production::QuantityLiteral, node)?)?,

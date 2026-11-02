@@ -144,10 +144,12 @@ productions! {
     TimedInterval,
     #[doc = "`time <identifier> (dense | tick <qualified-name> period <quantity-literal>) unit <qualified-name> ;`: a model's time source (FR-393)."]
     TimeDeclaration,
-    #[doc = "`time invariant <identifier> when <block> { <clock-bound> (and <clock-bound>)* }`: a time invariant (FR-393)."]
+    #[doc = "`time invariant <identifier> when <block> { <clock-bound | quantified-clock-bound> (and ...)* }`: a time invariant (FR-393)."]
     TimeInvariant,
     #[doc = "`<postfix> (< | <=) <quantity-literal>`: one upper bound on a clock (FR-393)."]
     ClockBound,
+    #[doc = "`forall|exists ( <identifier> in <expression> : <postfix> (< | <=) <quantity-literal> )`: one quantified invariant bound (FR-393)."]
+    QuantifiedClockBound,
     #[doc = "`urgent <identifier> (when <block> | <qualified-name>) ;`: an urgency declaration (FR-393)."]
     UrgentDeclaration,
     #[doc = "`taskset <identifier> { <task>* }`: a task set for one preemptive uniprocessor (QSpec FR-419)."]
