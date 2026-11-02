@@ -94,20 +94,23 @@ dependency; intervals and buffer capacities alone are not an executable plan.
 | Entry bindings | Each entry's parameters are its input slots and `State`, and its result is the next `State` and `Results`. An event's inputs are the **gap-checked tick delta** that RT supplies (below), the clause's admitted snapshot/invocation values and the binding identity; a watermark's inputs are the **unwrapped history-boundary tick** (a non-negative integer in the plan's tick unit, covering every tick up to and including the boundary, QSpec FR-487 and FR-094) and the admitted scope identities of QSpec FR-094/FR-160, which RT supplies. Neither entry receives a raw, possibly wrapping counter reading. An ordinary clock poll is not a watermark and creates no event position. |
 
 **Plan root.** The plan crosses E5 as one **plan-root node** of the
-checked-package v2 wire: a `temporal`/`monitor_plan` node (QSpec FR-487,
-FR-322-AC-308). It names the three entries, the `State`, input, scope and
-results types, the clause the program monitors (whose clock binding is the
-plan's), the counter width, the maximum reading gap, the rate limit and the
-buffer capacities as premises. The declared clock uncertainty and the tick
-intervals of the logical fields above are not bindings of QSpec FR-487's root;
-their wire carriage (and so their part in the plan's identity) is an open
-question for the QSpec half, for a follow-up to STD-647. Every entry, atom
-body and type the root needs is
-a dependency of the root, so its content key (QSpec FR-322) selects the
+checked-package v2 wire: a `temporal`/`monitor_plan` node with fifteen ordered
+bindings (QSpec FR-487, FR-322-AC-308): `clause` (the clause the program
+monitors, whose `temporal_bindings` row is the plan's clock binding), `state`,
+`inputs`, `scope`, `results`, the three entries `init`, `on_event` and
+`on_watermark`, `counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
+rational, events per tick), `buffers` (capacity per buffered subformula),
+`counter` (the counter's name), `tick_unit` (a `Time` unit node whose scale is
+the tick scale) and `uncertainty` (a rational at least 0, in ticks). Each
+premise, including the uncertainty, counter, tick unit, gap, rate and
+capacities, is part of the root's key (QSpec FR-487-AC-6), so changing one
+gives a different plan. The tick intervals of the logical fields above are
+not bindings: each is derived from the clause's interval bounds and the unit
+scales (QSpec FR-487). Every entry, atom body and type the root needs is a
+dependency of the root, so its content key (QSpec FR-322) selects the
 complete immutable plan and no second identity scheme is introduced. The
-logical Rust record above is the producer's in-memory view of that node;
-the wire node, not a QSL-owned Rust type, is what IR reads and the driver
-admits.
+logical Rust record above is the producer's in-memory view of that node; the
+wire node, not a QSL-owned Rust type, is what IR reads and the driver admits.
 
 The retained closure SHALL include the clock binding's counter, exact unit
 scale and width, so `ClockBindingKey` requires no ambient lookup at build or
@@ -264,7 +267,7 @@ may repair such a disagreement by inventing another evaluation rule.
 ## References
 
 - The monitor contract handed to the runtime repository: ADR-026 OV-13.
-- QSpec half (Linear STD-647, merged): the plan-root node and entry signatures, QSpec FR-487 with TC-978 and FR-322-AC-308; the half-open tick cover, QSpec FR-160-AC-6 and FR-160-AC-7.
+- QSpec half (Linear STD-647, merged): the plan-root node, its fifteen bindings and entry signatures, QSpec FR-487 (FR-487-AC-6 for plan identity) with TC-978 and FR-322-AC-308; the half-open tick cover, QSpec FR-160-AC-6 and FR-160-AC-7.
 - Linear QSL-685 fixes this executable handoff for RT's IR-519. The plan
   producer (QSL-587), executable lowering/generation and RT implementation
   remain downstream work; these criteria specify their acceptance and do
