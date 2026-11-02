@@ -80,7 +80,8 @@ A new directory containing exactly:
 
 The sidecar holds, per temporal clause: the clause `NodeId`, declared name, the
 protocol requirement entries that name it (FR-449), its activation form
-(`origin` or `each`, with the trigger binder name, not a trigger type, because the type has no stable spelling, and whether a guard is written), the
+(`origin` or `each`, with the trigger binder name and whether a guard is
+written), the
 profile selection (identity and revision) of its law, the lock definition
 authority, and its expected `TemporalBinding` row (`clock_name` and clock
 configuration); and per package: the contract version, the read limits the

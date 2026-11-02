@@ -26,7 +26,7 @@ refusal code). The table below records every legacy identity. quire-protocol's
 IT-001 submits every case to its reader and asserts the declared refusal
 (`tests/it001_v2_handoff.rs`). Nothing in the checked-package path produces them.
 Moving them is the QSL-1501 gate for GAP-10 and GAP-15: **no case is dropped
-silently**. Each is moved to a checked-package mutation with a named refusal.
+silently**. Each is moved to a named successor.
 
 ## Inputs
 
@@ -148,8 +148,7 @@ separate case would repeat them, so none is added. Row 8 moves to the
 reader refusal of its row and, for a differing clause name, to FR-518-AC-11,
 which is gated on IR-1278; row 13 moves to the reader refusal of its row and to
 FR-518-AC-12. Until IR-1278 lands the legacy property of row 8 (a clause name
-that differs) has no passing test, which is recorded here and is not coverage
-claimed as kept.
+that differs) has no passing test.
 Rows 14b and 15b keep the closed-shape assertion. Row 28m needs a Contract IR
 requirement that `CheckedSourceRef` carries source-byte integrity that the reader
 verifies (today it is "named by the producer, with no byte authentication"); that
@@ -157,8 +156,7 @@ requirement (IR-1273, Contract IR: `CheckedSourceRef` carries reader-verified so
 **Ordering:** the implementation of this requirement is gated on that
 requirement landing first. The acceptance criteria below describe the writer
 paired with a reader that implements it; against a reader that admits 28m the
-self-check returns `CaseMismatch`, so no corpus ships that the reader admits. The owner's ruling on these three rows is pending; this text is the
-default and changes only by amendment. The identity of the moved case 28m is `definition-original-bytes-moved`.
+self-check returns `CaseMismatch`, so no corpus ships that the reader admits. The identity of the moved case 28m is `definition-original-bytes-moved`.
 
 ## Acceptance Criteria
 
@@ -182,5 +180,5 @@ default and changes only by amendment. The identity of the moved case 28m is `de
 - **Upstream:** FR-517, FR-513-AC-9 (emission-time selection refusals: the
   emission side of rows 9 to 12 and 17 to 21 is covered there), Contract IR
   FR-038 (temporal binding rows), QSL-1270.
-- **Rulings:** rows 14, 15, 28 (above, pending; default applied).
+- **Successors:** rows 14 and 15 are carried by rows 12 and 29 and by rows 14b and 15b; row 28 is carried by row 28m, gated on IR-1273.
 - **Contract IR:** IR-1273, source-byte integrity on `CheckedSourceRef` (row 28m); IR-1278, the checked package carries no temporal clause name (FR-518-AC-11).

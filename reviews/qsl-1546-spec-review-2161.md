@@ -16,7 +16,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-1546. PR: quire-spec-language#2161, head 63b634123a511536952bc3c7af54c6dba898eeea, `git diff origin/main...HEAD`.
+Ticket: QSL-1546. PR: quire-spec-language#2161, head 63b634123a511536952bc3c7af54c6dba898eeea (review pass) and 26aa5d69ecaadfaeacbcd205a100fc4609062bfa (disposition pass 1), `git diff origin/main...HEAD`.
 
 Checked against Contract IR main (b3b0bad0), `crates/quire-contract-model`, and the QSL-1546 code PR #2160 at head 8cdba1f10, where I ran `cargo test --features checked-handoff --test it checked_handoff` (23 passed, 3 ignored, among them `every_case_gets_the_refusal_of_its_row`, which submits every corpus case to the real reader and `Selection::check`).
 
@@ -43,3 +43,22 @@ Not true: "nothing dropped" for the clause name and the revision. The unit-level
 ## Verdict
 
 Not mergeable. FND-001 to FND-003 are wrong or unusable as written: the two unit-level successor ACs cannot be run, so 'nothing dropped' is true for rows 8 and 13 only as far as the reader refusals go, and false for the clause-name and revision properties of the sidecar, and the row 8 code is wrong. The stage moves for rows 8, 12 and 13, the counts (21/10/31/16), AC-4, FR-517-AC-10 and the TC scope, rows and trace tag are correct.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-007 | medium | Two sentences still say the rulings on rows 14, 15 and 28 are pending: "The owner's ruling on these three rows is pending; this text is the default and changes only by amendment" (Ordering paragraph) and "**Rulings:** rows 14, 15, 28 (above, pending; default applied)" (Dependencies). The planner has ruled (nothing dropped; moved cases with equivalents for 14, 15 and 28), so both state a process condition that no longer holds and the text is the requirement, not a default. Delete the Ordering sentence and replace the Dependencies bullet with the ruling's content or remove it. | spec/functional/FR-518-write-the-adverse-mutation-corpus-from-checked-packages-and-name-the-destination-of-every-legacy-case.md:160,185 | wrong-requirement |
+| FND-008 | low | Two new sentences carry process or negation phrasing. "which is recorded here and is not coverage claimed as kept" (Moved cases) describes the document, not the system; state only that the `clause.name` property of row 8 has no passing test until IR-1278. The opening of the FR ("Each is moved to a checked-package mutation with a named refusal") no longer holds for row 13, whose successor FR-518-AC-12 edits the sidecar, and row 8's clause-name successor, which is gated; say "moved to a named successor". | spec/functional/FR-518-write-the-adverse-mutation-corpus-from-checked-packages-and-name-the-destination-of-every-legacy-case.md:147-150 | wrong-requirement |
+| FND-009 | low | FR-517's sidecar sentence now reads "with the trigger binder name, not a trigger type, because the type has no stable spelling, and whether a guard is written" on one unwrapped line, in the "X, not Y" form. Say "with the trigger binder name and whether a guard is written", and put the reason, if kept, in its own sentence. | spec/functional/FR-517-write-a-checked-package-handoff-directory-from-source-in-process.md:83 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-518-AC-11 now reads "With a reader that implements IR-1278, a package whose temporal clause declares a name that differs from the sidecar's is admitted by `read_checked_package` and refused by `Selection::check` with `clause.name`", the gated AC-9/AC-10 pattern; the Moved cases text states that until IR-1278 lands the axis has no passing test. IR-1278 exists in Linear (Backlog). after_excerpt: AC-11 text above. |
+| FND-002 | fixed | FR-518-AC-12 now reads "Over **R**, a sidecar whose profile law revision differs from the revision of the admitted package is refused by `Selection::check` with `definition.revision`"; the input is an admitted package plus an edited sidecar, the test #2160 already runs. TC-1313 row 12 matches. |
+| FND-003 | fixed | Row 8 expected is `invalid_semantic_graph` (no cause) at `/semantic_graph/nodes/{N}/declaration`. |
+| FND-004 | fixed | AC-13, AC-14 and TC-1313 rows 13 and 14 are removed; rows 8 and 13 stay reader cases under AC-2 and its row lists. |
+| FND-005 | fixed | Verification status and the row 12 cell are present tense ("are not yet given by the reader", the rationale for moving all three pieces together); no "have been executed". |
+| FND-006 | fixed | TC-1313 rows 2 and 3 read "every `reader` case of the manifest" and "every `selection` case of the manifest"; the counts are gone. |
