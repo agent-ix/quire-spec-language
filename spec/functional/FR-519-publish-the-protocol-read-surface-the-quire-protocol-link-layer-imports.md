@@ -34,8 +34,13 @@ it; do not mirror it": QSL derived and compared the causal edge set, resolved
 references and checked joins, and the link layer refused only what QSL did not.
 `wire::Package` has no checked-package equivalent (QSL-1501 symbol map, row B):
 the checked package holds protocol nodes (FR-383) and carries **no** causal edge
-(FR-383-AC-16); the relation is derived from the nodes by QSpec FR-464's rules,
-and today that derivation exists only in QSL's emit tests
+(FR-383-AC-16); the relation is derived from the nodes by QSpec FR-464's rules.
+QSL derives that relation in production from two other inputs: the checker's
+`compile` (`qsl-semantics/src/check/protocol_clause/graph.rs`) over the source
+forms of a clause, and the expansion `edges`
+(`src/protocol_artifact/native/controls.rs`) over the controls of a `wire`
+package until QSL-838 retires it. Nothing in production derives it from the
+nodes of a `CheckedPackageV2`; QSL's emit tests do
 (`qsl-package/src/emit/tests/protocol_graph.rs`).
 
 This requirement divides the work. **QSL provides** the derivation as a
@@ -67,9 +72,22 @@ pub fn protocol_view<'p>(package: &'p CheckedPackageV2, protocol: &CheckedNodeId
     -> Result<ProtocolView<'p>, ViewRefusal>;
 ```
 
-`CausalRelation` is the strictly ascending, duplicate-free sequence of `{ from:
-Port, to: Port, kind: EdgeKind }` where `Port` and `EdgeKind` are the port and
-edge-kind vocabulary of FR-218's compiled edge relation. `ProtocolView` borrows
+`CausalRelation` is the strictly ascending, duplicate-free sequence of
+`CausalEdge { from: PortRef, to: PortRef, kind: EdgeKind }`, with this
+vocabulary, which is the vocabulary of FR-218's compiled edge relation:
+
+- `Port` is `Enter` or `Exit`: the point at which a protocol node is entered
+  or left.
+- `PortRef { node: CheckedNodeId, port: Port }` names one port of one protocol
+  node of the clause (a control, a `parallel` branch or a `choice` case body,
+  a `send`, a `receive`, an `attempt`, an `effect`).
+- `EdgeKind` is one of `Sequence`, `Branch`, `Join`, `RepeatProgress`,
+  `RepeatBack`, `AwaitSuccess`, `AwaitTimeout`, `AwaitAnchor`, `Message`,
+  `Effect`, the rules of QSpec FR-464 "Derived causal relation".
+- The order is ascending by `from`, then `to`, then `kind`; a `PortRef` orders
+  by node id, then `Enter` before `Exit`.
+
+`ProtocolView` borrows
 the package and lists, as node ids in the order the nodes carry them: the clause,
 its roles, channels, queues, controls in layout order, compensations,
 `requirements` (temporal clauses), `terminal` and `scheduling` when present, and
@@ -79,25 +97,35 @@ the FR-449 activation rows (`protocol_activation_relation`).
 
 ### The record-to-node map
 
+The map ends in one of two dispositions. A record is **read by a QSL view
+function** when QSL's `protocol_view` module returns its successor, or it is
+**consumed by name** when the successor is a Contract IR type that the caller
+reads directly and QSL publishes no view for it. The view functions are
+`protocol_view`, `causal_relation`, `control_operation`, `operation_identity`,
+`binder`, `locus`, `delivery`, `queue_capacity`, `owner_model`, `declaration`,
+`temporal_binding`, `dependency`, `source` and `selection`. `protocol_view`,
+`causal_relation` and `binder` take an admitted package; the others take the
+node, lock or source map they read.
+
 | `wire` record used by quire-protocol | Successor | Disposition |
 | --- | --- | --- |
-| `Package` | `CheckedPackageV2` | Successor; the typed link view over it is quire-protocol's |
-| `Handle` (index into a table) | `CheckedNodeId` | Successor |
-| `Declaration`, `Body::Protocol { .. }` | the `protocol_clause`, `role`, `channel`, `queue`, `obligation`, `control` and `compensation` nodes and their arguments (FR-383-AC-1 to AC-8), with the declaration's identity triple | Successor |
-| `ControlOperation`, `TemporalOperation`, `ValueOperation` | the `quire.op.protocol.control`, `quire.op.temporal.*` and FR-093 value operation identities of the applications | Successor |
-| `Binder` (and its level) | the binder node and level of FR-383-AC-10 | Successor |
-| `Locus` | the package source-map entry of the node | Successor |
-| `Type`, `Value`, `Number` | `semantic_type` nodes, literal and reference terms; numbers in the FR-322 encoding (the FR-038 codec is not used by the checked package, FR-511-AC-3) | Successor |
-| `Delivery` | the channel node's delivery text and, for a declared interval, FR-509's members | Successor |
-| `EdgeKind`, `CausalEdge` | `CausalRelation` above | Successor (this requirement) |
-| `ActivationMapping` | the FR-449 activation rows | Successor |
-| `TemporalBinding`, `ClockConfiguration` | the Contract IR types of the same names | Successor |
-| `Model` | the `model` node and the clause's `owner_model` (FR-383-AC-26) | Successor |
-| `Dependency` | the lock `dependency_selections` | Successor |
-| `ArtifactRef`, `ArtifactKind`, `Revision`, `Language`, `Definition` | `CheckedSourceRef`, `CheckedArtifactRef` and `CheckedSelection` (`{ authority, identity }` only) | The `digest`, `revision` and kind fields end with QSL-1270; the `Definition` table ends because definitions are lock selections |
-| `BindingKind::Population` | the population declaration node of the model (FR-106, FR-513-AC-14) | Successor |
-| `BindingKind::Clock` | the `temporal_bindings` row | Successor |
-| `BindingKind::Window` | none: a window is an evaluation input (FR-049-AC-5, FR-516), not a package member | Keep the `wire.rs` spelling until QSL-1506 (FR-513's row) |
+| `Package` | `CheckedPackageV2` | Successor, consumed by name: the argument of every view function; the typed link view over it is quire-protocol's |
+| `Handle` (index into a table) | `CheckedNodeId` | Successor, consumed by name: the id every view and relation returns |
+| `Declaration`, `Body::Protocol { .. }` | the `protocol_clause`, `role`, `channel`, `queue`, `obligation`, `control` and `compensation` nodes and their arguments (FR-383-AC-1 to AC-8), with the declaration's identity triple | Successor, read by `protocol_view` and `declaration` |
+| `ControlOperation`, `TemporalOperation`, `ValueOperation` | the `quire.op.protocol.control`, `quire.op.temporal.*` and FR-093 value operation identities of the applications | Successor, read by `control_operation` and `operation_identity` |
+| `Binder` (and its level) | the binder node and level of FR-383-AC-10 | Successor, read by `binder` |
+| `Locus` | the package source-map entry of the node | Successor, read by `locus` |
+| `Type`, `Value`, `Number` | `semantic_type` nodes, literal and reference terms; numbers in the FR-322 encoding (the FR-038 codec is not used by the checked package, FR-511-AC-3) | Successor, consumed by name through `CheckedPackageV2::term`; no QSL view |
+| `Delivery` | the channel node's delivery text: a policy word or, for a declared interval, FR-509's `[lo,hi]` | Successor, read by `delivery` |
+| `EdgeKind`, `CausalEdge` | `CausalRelation` above | Successor, read by `causal_relation` |
+| `ActivationMapping` | the FR-449 activation rows | Successor, read by `protocol_view` (`activation`) |
+| `TemporalBinding`, `ClockConfiguration` | the Contract IR types of the same names | Successor, read by `temporal_binding` |
+| `Model` | the `model` node and the clause's `owner_model` (FR-383-AC-26) | Successor, read by `owner_model` |
+| `Dependency` | the lock `dependency_selections` | Successor, read by `dependency` |
+| `ArtifactRef`, `ArtifactKind`, `Revision`, `Language`, `Definition` | `CheckedSourceRef`, `CheckedArtifactRef` and `CheckedSelection` (`{ authority, identity }` only) | The `digest`, `revision` and kind fields end with QSL-1270; the `Definition` table ends because definitions are lock selections. `source` reads a `CheckedSourceRef` by identity and `selection` reads a `CheckedArtifactRef` by selection role |
+| `BindingKind::Population` | the population declaration node of the model (FR-106, FR-513-AC-14) | Successor, consumed by node id; no QSL view |
+| `BindingKind::Clock` | the `temporal_bindings` row | Successor, read by `temporal_binding` |
+| `BindingKind::Window` | none: a window is an evaluation input (FR-049-AC-5, FR-516), not a package member | No QSL view; keep the `wire.rs` spelling until QSL-1506 (FR-513's row) |
 | `ExportRef` | none: exports are the domain package document's declarations, selected by node id | Ended; no consumer use after QSL-1549 |
 
 ### Required of quire-protocol (not QSL code; ticket QSL-1549)
@@ -116,12 +144,18 @@ the FR-449 activation rows (`protocol_activation_relation`).
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-519-AC-1 | For **R**'s protocol, `causal_relation` returns the (source port, target port) pairs of the checked clause's compiled edge relation, back edges of every `repeat` included, strictly ascending and duplicate-free, and the relation derived from the in-process package equals the one derived from the package read back. | Test (TC-1314) |
-| FR-519-AC-2 | The function FR-383-AC-16's test calls is `qsl_package::protocol_view::causal_relation`; `git grep` finds no second derivation of the relation in `qsl-*/src` or `src`. | Inspection (TC-1314) |
+| FR-519-AC-2 | `qsl_package::protocol_view::causal_relation` is the only function in `qsl-*/src` and `src` that derives a causal relation from the nodes of a `CheckedPackageV2`; the other derivations, the checker's `compile` over source forms and the expansion `edges` over `wire` controls, start from their own inputs. | Inspection (TC-1314) |
 | FR-519-AC-3 | `protocol_view` of **R**'s protocol lists the clause, each role, channel, queue, control (layout order), the `Full` and `Partial` compensations, the required temporal clause and the activation rows, each equal to the node set the in-process checked clause rebuilds (FR-383-AC-19). | Test (TC-1314) |
 | FR-519-AC-4 | A node id that is absent, or that names a non-protocol node, refuses `UnknownProtocol`; a `protocol_reference` carrier refuses `NotAProtocolClause`; neither returns a partial view or relation. | Test (TC-1314) |
-| FR-519-AC-5 | For each kind of record **R** holds that the map gives a successor, the typed views return the node, argument or lock member the map names, equal to the in-process value, and a package from which that member is removed is refused with a `ViewRefusal` naming it; no QSL export names a record the map marks Ended after QSL-838 (a compile-fail use of each). | Test (TC-1314) |
+| FR-519-AC-5 | For each record the map marks read by a QSL view function, the view function over **R** returns the node, argument or lock member the map names, equal to the value the checked clause holds in memory. | Test (TC-1314) |
 | FR-519-AC-6 | QSL's resolved dependency graph holds no dependency on quire-protocol (`arch-lint direction`, FR-059), and no function of `protocol_view` or `checked_views` reads checked-package bytes (the reader is IR's). | Test (TC-1314) |
 | FR-519-AC-7 | The cross-repository ticket QSL-1549 exists in the QSL V1 Architecture Spine project, blocks QSL-1501, is blocked by the QSL tickets of this batch, and its description lists the three obligations above. | Inspection (TC-1314) |
+| FR-519-AC-8 | For each view function that takes a node, a lock or a source map, a copy of that value with the member the view reads removed is refused with a `ViewRefusal` that names the member and returns no partial value. An admitted package never lacks a member, so the removal is made on the value the view reads and not on an admitted package. | Test (TC-1314) |
+| FR-519-AC-9 | No QSL export names a record the map marks Ended after QSL-838; a compile-fail use of each of `ExportRef`, `ArtifactKind`, `Revision`, `Language` and `Definition` through `qsl_package` fails to resolve. | Test (TC-1314) |
+| FR-519-AC-10 | Each of `protocol_view`, `causal_relation` and `binder` takes `&CheckedPackageV2`, and every node reference a view or relation returns is a `CheckedNodeId`; a test that passes a `CheckedPackageV2` and a `CheckedNodeId` to each compiles. | Test (TC-1314) |
+| FR-519-AC-11 | For **R**, the `semantic_type` nodes and the literal and reference terms that stand for `Type`, `Value` and `Number` records are read through `CheckedPackageV2::term` and equal the values the checked clause holds in memory, with numbers in the FR-322 encoding. | Test (TC-1314) |
+| FR-519-AC-12 | For **R**, the population declaration node of the model, selected from the `CheckedPackageV2` by its node id, equals the node the checked clause holds in memory. | Test (TC-1314) |
+| FR-519-AC-13 | `qsl_package::protocol_view` exports no item for a window binding; a compile-fail `use` of `qsl_package::protocol_view::Window` fails to resolve. | Test (TC-1314) |
 
 ## Dependencies
 
