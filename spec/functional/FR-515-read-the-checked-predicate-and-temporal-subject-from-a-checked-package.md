@@ -169,14 +169,14 @@ only when one is written.
 | FR-515-AC-10 | For a clause whose guard `g` is a different node from every `holds` operand, `checked_predicate` of `g` is `ActivationGuard` and `g` is absent from `predicate_leaves()`. | Test (TC-1310) |
 | FR-515-AC-11 | For a clause whose guard is equal to a `holds` operand, so that the two are one node, `checked_predicate` of that node is `ActivationGuard` and the node is present in `predicate_leaves()` once for each `holds` atom that reads it. | Test (TC-1310) |
 | FR-515-AC-12 | `checked_predicate` of a leaf the clause reads and for which the package source map holds no entry refuses `LeafHasNoSource` and returns no partial view. | Test (TC-1310) |
-| FR-515-AC-13 | Two structurally equal clauses under a clock-configured temporal profile give one node and two `ClauseOccurrence` values, and the package is admitted by `read_checked_package`. This is gated on a Contract IR decision for the shared node's `temporal_bindings` row, for which no Linear ticket exists yet. | Test (TC-1310) |
+| FR-515-AC-13 | Two structurally equal clauses under a clock-configured temporal profile give one node and two `ClauseOccurrence` values, and the package is admitted by `read_checked_package`. This is gated on a Contract IR decision for the shared node's `temporal_bindings` row (IR-1279). | Test (TC-1310) |
 | FR-515-AC-14 | With a reader that implements IR-1278, `name()` of a view returns the clause's declared name, equal to the name in the selection sidecar. This is gated on IR-1278. | Test (TC-1310) |
 
 ## Dependencies
 
 - **Upstream:** FR-337, FR-383, FR-449, FR-051 (retired modules), QSL-303,
   QSL-1270 (digest removal), `quire_contract_model::CheckedPackageV2`; IR-1278
-  (the clause name, gates FR-515-AC-14); a Contract IR ticket for the shared
-  node's clock row (gates FR-515-AC-13), not yet filed.
+  (the clause name, gates FR-515-AC-14); IR-1279 (the shared
+  node's clock row, gates FR-515-AC-13).
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/result/record.rs`
   (QSL-1549).
