@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-10.
+Scope: FR-251-AC-4 to FR-251-AC-11.
 
 ## Test Procedure
 
@@ -26,6 +26,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 6. Read the admitted plan-root node of AC-1: list its entry nodes and their signatures, the `State` type and the capacity premises; change each entry body in turn and compare plan identity; read the initial state and a created obligation's origin.
 7. On the 16-bit target of FR-251-AC-3, feed the readings `65530` then `4` and `65530` then `65500`, recording each entry call; then admit a watermark at history boundary tick 3001 and a bare counter poll for AC-1's claim.
 
+8. On the 16-bit target of FR-251-AC-3, keep one instance open across a fault, one decided before it and start one after it; feed the first reading, then `65530`, `65500`, `65510`, recording each entry call and its inputs.
+
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
 ## Expected Results
@@ -36,4 +38,5 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 4: the per-obligation outcomes are identical. The progress assertion settles the deadline per QSpec FR-094/FR-160; the poll adds no event and settles no deadline.
 - Step 5: `Unsupported` and no monitor; a build failure and no monitor; the event is rejected and state is unchanged; `Failed` with no verdict, and the later input is refused. No step returns `false` as a property result.
 - Step 6: three function entries with the stated signatures and no statement form; each body change gives a different plan identity; the initial state is the `init` result and the origin is the unwrapped tick of the activating event.
-- Step 7: delta 10 passed and unwrapped time advances by 10; the second pair raises `Failed` `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` with no entry called; the watermark settles the deadline false; the poll calls no entry.
+- Step 7: delta 10 passed and unwrapped time advances by 10; the second pair calls `on_gap` with 65506 and not `on_event` (the open instance fails `ReadingGapExceeded`, Step 8); the watermark settles the deadline false; the poll calls no entry.
+- Step 8: the first reading passes delta 0; the fault calls `on_gap` with 65506 and not `on_event`; only the open instance fails with `ReadingGapExceeded` and is dropped; the decided and later instances are unaffected; `65510` passes delta 10.

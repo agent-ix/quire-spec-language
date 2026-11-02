@@ -90,15 +90,15 @@ dependency; intervals and buffer capacities alone are not an executable plan.
 | Atoms | Each `AtomId` maps to its checked predicate body, ordered input/capture slots with admitted types and declaration identities, and source occurrence. The activation guard is identified separately from formula atoms. No atom is an unresolved name or caller-supplied Boolean callback. |
 | Formula topology | Each `SubformulaId` identifies one node with its checked operator tag, ordered operand IDs, optional atom ID and its interval reference. One root is named. All references resolve inside this program; node IDs are scoped to its subject. Operator tags and operand order survive lowering. |
 | State | One typed `State` record whose fields are the persistent state slots, named by subformula: the unwrapped time (an integer tick, kept in state), each buffered subformula's sequence of entries (unwrapped tick and captured bindings), and the active obligation instances with their captured bindings and origin. An obligation's **origin** is the unwrapped tick of the event that activated it (monotone, so time-based windows read it directly); the event index may be carried as a capture where an operator needs it. The `init` entry's result is the initial value of every slot, so the state initializer is the `init` body. Buffer capacities are premises of the plan root (below), not part of any sequence type; every fold over a buffer is bounded by its capacity. |
-| Transitions | Three **entries**, each a checked-expression `function` node of the checked-package v2 wire (the existing expression and function contracts; no statement vocabulary): `init() -> State`, `on_event(State, event inputs) -> (State, Results)` and `on_watermark(State, watermark inputs) -> (State, Results)`. An entry is a state-passing total function: "assignment" is constructing the next state record, "branch" is `if`/`case`, "loop over a buffer" is a fold bounded by the buffer's capacity, "push" and "expire" construct and filter the buffer sequence, and "emit" is a field of `Results`. A checked atom or guard body embeds as an operand of the entry's expression. The entries explicitly compute atoms, activate obligations, update state and buffers, expire windows and emit typed obligation results; every read, call target and branch is resolved, and calling an unspecified temporal operator is not an entry body. |
+| Transitions | Four **entries**, each a checked-expression `function` node of the checked-package v2 wire (the existing expression and function contracts; no statement vocabulary): `init() -> State`, `on_event(State, event inputs) -> (State, Results)` `on_watermark(State, watermark inputs) -> (State, Results)` and `on_gap(State, gap) -> (State, Results)`, where `gap` is the checked gap RT passes on a counter fault. An entry is a state-passing total function: "assignment" is constructing the next state record, "branch" is `if`/`case`, "loop over a buffer" is a fold bounded by the buffer's capacity, "push" and "expire" construct and filter the buffer sequence, and "emit" is a field of `Results`. A checked atom or guard body embeds as an operand of the entry's expression. The entries explicitly compute atoms, activate obligations, update state and buffers, expire windows and emit typed obligation results; every read, call target and branch is resolved, and calling an unspecified temporal operator is not an entry body. |
 | Entry bindings | Each entry's parameters are its input slots and `State`, and its result is the next `State` and `Results`. An event's inputs are the **gap-checked tick delta** that RT supplies (below), the clause's admitted snapshot/invocation values and the binding identity; a watermark's inputs are the **unwrapped history-boundary tick** (a non-negative integer in the plan's tick unit, covering every tick up to and including the boundary, QSpec FR-487 and FR-094) and the admitted scope identities of QSpec FR-094/FR-160, which RT supplies. Neither entry receives a raw, possibly wrapping counter reading. An ordinary clock poll is not a watermark and creates no event position. |
 
 **Plan root.** The plan crosses E5 as one **plan-root node** of the
 checked-package v2 wire: a `temporal`/`monitor_plan` node with fifteen ordered
 bindings (QSpec FR-487, FR-322-AC-308): `clause` (the clause the program
 monitors, whose `temporal_bindings` row is the plan's clock binding), `state`,
-`inputs`, `scope`, `results`, the three entries `init`, `on_event` and
-`on_watermark`, `counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
+`inputs`, `scope`, `results`, the entries `init`, `on_event` and
+`on_watermark` (a sixteenth binding, `on_gap`, is pending QSpec FR-487's change), `counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
 rational, events per tick), `buffers` (capacity per buffered subformula),
 `counter` (the counter's name), `tick_unit` (a `Time` unit node whose scale is
 the tick scale) and `uncertainty` (a rational at least 0, in ticks). Each
@@ -218,12 +218,20 @@ may repair such a disagreement by inventing another evaluation rule.
   the plan SHALL refuse with `MonitorPlanRefusal::GapExceedsWidth{
   max_reading_gap, width_bits}`, since wraparound could not be decided.
 - **Counter faults.** RT owns the modular counter arithmetic (RT FR-276):
-  it SHALL compute each tick difference modulo `2^width_bits` and, when that
-  difference exceeds `max_reading_gap`, the reading ran backwards or a reading
-  was missed, and the affected obligations SHALL settle `Failed` with cause
-  `ReadingGapExceeded{gap, max_reading_gap}`, never a verdict. Otherwise RT
-  passes the gap-checked delta to `on_event`; the entry adds it to the
-  unwrapped time it keeps in `State` and never sees a raw wrapping reading.
+  it SHALL compute each tick difference modulo `2^width_bits`. The first
+  admitted reading of a monitor is its baseline: RT makes no gap check and
+  passes `on_event` the delta 0, so the unwrapped time stays at the value
+  `init` set. When a later difference exceeds `max_reading_gap`, the reading
+  ran backwards or a reading was missed: RT SHALL call `on_gap` with the
+  checked gap (and not `on_event`), SHALL make the faulting reading the new
+  baseline, and the monitor SHALL continue. `on_gap` SHALL return
+  `Failed` with cause `ReadingGapExceeded{gap, max_reading_gap}`, never a
+  verdict, for every live obligation instance whose verdict is still open
+  (pending, its window or deadline spanning the gap), and SHALL drop those
+  instances from `State`; decided instances and results already emitted, and
+  instances not yet started, are unaffected. Otherwise RT passes the
+  gap-checked delta to `on_event`; the entry adds it to the unwrapped time it
+  keeps in `State` and never sees a raw wrapping reading.
 - **Declarative semantics.** The meaning of every operator is the declarative
   one of QSpec FR-091 and FR-092 (timestamped rule) over the widened tick
   intervals of QSpec FR-160, and is normative; no separate update algorithm
@@ -255,7 +263,8 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-7 | Executing the plan's transition entries and the QSL reference evaluator on the same admitted inputs gives identical per-obligation outcomes for AC-1 through AC-3, a clause with reversed implication operands, an activation guard that is false, and open versus closed interval endpoints. A progress assertion past a deadline settles according to QSpec FR-094/FR-160; polling the counter without that assertion adds no event and settles no deadline. | Test (TC-1081) |
 | FR-251-AC-8 | An unsupported predicate/instruction yields `Unsupported` and no monitor; failed state allocation yields build failure and no monitor; an event missing a required admitted value is rejected without state change; an executor invariant failure yields `Failed` with no verdict and prevents further input. None of these controls returns `false` as a property result. | Test (TC-1081) |
 | FR-251-AC-9 | The admitted plan of AC-1 crosses E5 as one `temporal`/`monitor_plan` plan-root node (QSpec FR-487, FR-322-AC-308) whose dependencies include `init`, `on_event` and `on_watermark` as `function` nodes with the signatures of the Transitions row, and the `State` type; no entry uses a statement, loop or assignment form. Changing any one entry body changes the plan-root's content key and so the plan identity. The `init` result is every slot's initial value, and an obligation's origin in `State` is the unwrapped tick of its activating event. | Test (TC-1081) |
-| FR-251-AC-10 | The entries never receive a raw counter reading. On the 16-bit target of AC-3, RT supplies `on_event` the delta 10 for readings `65530` then `4` and the entry's unwrapped time advances by 10; for `65530` then `65500` RT raises `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and calls no entry. `on_watermark` receives the unwrapped history-boundary tick and the admitted scope identities; a watermark with history boundary tick 3001, the first tick at which a later `ack` would decide false, settles AC-1's `req` obligation (`ack` never seen) false, and a mere counter poll adds no event and calls no entry. | Test (TC-1081) |
+| FR-251-AC-10 | The entries never receive a raw counter reading. On the 16-bit target of AC-3, RT supplies `on_event` the delta 10 for readings `65530` then `4` and the entry's unwrapped time advances by 10; for `65530` then `65500` RT calls `on_gap` with the gap 65506 (not `on_event`) and the faulting reading `65500` becomes the new baseline (AC-11). `on_watermark` receives the unwrapped history-boundary tick and the admitted scope identities; a watermark with history boundary tick 3001, the first tick at which a later `ack` would decide false, settles AC-1's `req` obligation (`ack` never seen) false, and a mere counter poll adds no event and calls no entry. | Test (TC-1081) |
+| FR-251-AC-11 | On the 16-bit target of AC-3 with `max_reading_gap` 100, the first admitted reading passes `on_event` the delta 0 and leaves the unwrapped time at `init`'s value. With one obligation instance still open across the fault, one decided before it and one started after it: readings `65530`, `65500` make RT call `on_gap` with 65506; the open instance yields `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and is dropped from `State`, the decided instance's result and the later instance are unaffected, no verdict is emitted for the dropped instance, and a following reading `65510` is differenced from `65500` (delta 10) and passed to `on_event`. The `on_gap` binding on the wire is pending QSpec FR-487's change. | Test (TC-1081) |
 
 ## Dependencies
 
