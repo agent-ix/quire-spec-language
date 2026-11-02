@@ -79,11 +79,12 @@ invariant ParentOrder using v on Config::ConfigVersion at current {
 ```
 ````
 
-The optional `quire-extraction` feature reads the block's bytes from the
-Markdown file, using [quire-rs](https://github.com/agent-ix/quire-rs), and keeps
-a source map to the document. Errors are reported at their line and column in
-the Markdown file. This is a library API; the `run` command does not yet accept
-Markdown for `1-draft` rules.
+The optional `qsl-replay/quire-extraction` feature reads the block's bytes from
+the Markdown file through `qsl-source`, using
+[quire-rs](https://github.com/agent-ix/quire-rs), and keeps a source map to the
+document. Errors are reported at their line and column in the Markdown file.
+This is a library API; the `run` command does not yet accept Markdown for
+`1-draft` rules.
 
 ## Outcomes
 
@@ -314,7 +315,7 @@ and incomplete runs. `run` can also evaluate one pure function;
 
 | Feature | Adds |
 | --- | --- |
-| `quire-extraction` | Reads rules from Quire Markdown spec artifacts, with locations mapped to the document. |
+| `qsl-replay/quire-extraction` | Enables QSL's replay library to read rules from Quire Markdown spec artifacts, with locations mapped to the document. |
 | `handoff-writer` | Writes the compiled-protocol handoff files that protocol tools consume. |
 | `population-fixtures` | Writes the population fixtures used by the admission tests. |
 
@@ -374,7 +375,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-route` | Matches a package's requirements to the backends that can check it. |
 | `qsl-analyze` | In-process model checking, timed zones and schedulability. |
 | `qsl-replay` | Recompiles and re-runs counterexamples; codegen calls it. |
-| `qsl-source` | Reads rules from Quire Markdown (feature `quire-extraction`). |
+| `qsl-source` | Reads rules from Quire Markdown; its `quire-extraction` feature is enabled by `qsl-replay/quire-extraction`. |
 | `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
 | `qsl-walk-grow`, `qsl-bench` | Deep-recursion stack growth, benchmarks. |
 | root crate | The `quire-spec` binary and the library facade. |

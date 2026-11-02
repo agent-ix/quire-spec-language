@@ -4,13 +4,13 @@
 //! ADR-011 §2.1 I3: verify Quire's reported extraction against the original document
 //! and yield S0 bytes plus a document `SourceMap`. Quire retains Markdown, availability
 //! and schema ownership. This adapter never reaches the native compiler; the join lives
-//! at the SEAM-1 caller (the root crate's `command::extraction`). Every dependency,
-//! `qsl-foundation` (layer F) and quire-rs among them, is behind this crate's
-//! `quire-extraction` feature. Without that feature the crate is empty.
+//! in `qsl-replay`'s spine clause runner. Every dependency, `qsl-foundation` (layer F)
+//! and quire-rs among them, is behind this crate's `quire-extraction` feature. Without
+//! that feature the crate is empty.
 //!
-//! This crate is the root crate's only code path to quire-rs (ADR-011 §6.1 layer-6
-//! row): the root crate names no quire-rs dependency. quire-rs is still built
-//! transitively through FCD's `agent-ix-extraction-frontend` (`model::intake`).
+//! This crate is `qsl-replay`'s only code path to quire-rs (ADR-011 §6.1 layer-6 row):
+//! `qsl-replay` names no quire-rs dependency. quire-rs is also built transitively
+//! through FCD's `agent-ix-extraction-frontend` (`model::intake`).
 
 #![cfg(feature = "quire-extraction")]
 
