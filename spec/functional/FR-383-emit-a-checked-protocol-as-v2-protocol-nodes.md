@@ -558,24 +558,26 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-36 | The two retry-origin `earlier.tally` rows of `Refund` carry different `Location` values, the first that of the term in `earlier.tally < 3` and the second that in `earlier.tally + 1`. | Test (TC-1063) |
 | FR-383-AC-37 | A unit with no protocol slot expression writes `protocol_locations` as an empty array. | Test (TC-1063) |
 | FR-383-AC-38 | A package with no checked-term data keeps `checked_term_data` absent. | Test (TC-1063) |
-| FR-383-AC-39 | In fixtures E, L and E-C every slot that holds an application has a type-declaration origin named by its site name, and no two slots share a name; no row of those fixtures has a `protocol_attempt` origin. | Test (TC-1063) |
-| FR-383-AC-40 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
-| FR-383-AC-41 | Removing the highest-`term_ordinal` retry-origin `earlier.tally` row of `Refund` from fixture E's emitted package (leaving a lone ordinal-zero row) leaves a package QSL's I2 reader admits. | Test (TC-1063) |
-| FR-383-AC-42 | Removing the ordinal-zero retry-origin `earlier.tally` row of `Refund` (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
-| FR-383-AC-43 | Changing the second retry-origin `earlier.tally` row's `term_ordinal` from 1 to 2 (ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
-| FR-383-AC-44 | Duplicating a retry-origin `earlier.tally` row (same key, written next to the original) is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
-| FR-383-AC-45 | For fixture E-C, every table slot's row count for an application equals its visits in the slot walk (each table slot has its own site name and shares no application with another slot), including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
-| FR-383-AC-46 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
-| FR-383-AC-47 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
-| FR-383-AC-48 | In fixture E the two retry-origin `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
-| FR-383-AC-49 | In fixture E, `target >= 0` is one graph node that `Refund`'s retry relation and trigger guard both hold. | Test (TC-1063) |
-| FR-383-AC-50 | In fixture E the group of `target >= 0` holds exactly one row of the retry origin and one of the trigger-guard origin of `Refund`. | Test (TC-1063) |
-| FR-383-AC-51 | In fixture E the retry-origin row of `target >= 0` has `term_ordinal` 0 and the trigger-guard row `term_ordinal` 1. | Test (TC-1063) |
-| FR-383-AC-52 | In fixture E each of the two rows of `target >= 0` carries the `Location` of the term in its own slot. | Test (TC-1063) |
-| FR-383-AC-53 | In fixture E-C, `order >= 0` is one graph node that the constraints of `Tried` and of `Picked` both hold. | Test (TC-1063) |
-| FR-383-AC-54 | In fixture E-C the group of `order >= 0` holds exactly one row of the `Picked` constraint's origin (`protocol Composed run Main Picked body`) and one of the `Tried` constraint's origin (`protocol Composed run Main Tried body`). | Test (TC-1063) |
-| FR-383-AC-55 | In fixture E-C the `Picked` row of `order >= 0` has `term_ordinal` 0 and the `Tried` row `term_ordinal` 1 (`Picked` before `Tried` in UTF-8 byte order of the names). | Test (TC-1063) |
-| FR-383-AC-56 | For every application of **W** and fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of a slot's rows of that application, taken along the slot walk's visits, strictly increase. | Test (TC-1063) |
+| FR-383-AC-39 | In fixtures E, L and E-C every slot that holds an application has its rows under a type-declaration origin whose `name` is that slot's site name. | Test (TC-1063) |
+| FR-383-AC-40 | In fixtures E, L and E-C no two slots have the same site name. | Test (TC-1063) |
+| FR-383-AC-41 | In fixtures E, L and E-C no row has a `protocol_attempt` origin. | Test (TC-1063) |
+| FR-383-AC-42 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
+| FR-383-AC-43 | Removing the highest-`term_ordinal` retry-origin `earlier.tally` row of `Refund` from fixture E's emitted package (leaving a lone ordinal-zero row) leaves a package QSL's I2 reader admits. | Test (TC-1063) |
+| FR-383-AC-44 | Removing the ordinal-zero retry-origin `earlier.tally` row of `Refund` (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-45 | Changing the second retry-origin `earlier.tally` row's `term_ordinal` from 1 to 2 (ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-46 | Duplicating a retry-origin `earlier.tally` row (same key, written next to the original) is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
+| FR-383-AC-47 | For fixture E-C, every table slot's row count for an application equals its visits in the slot walk (each table slot has its own site name and shares no application with another slot), including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
+| FR-383-AC-48 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
+| FR-383-AC-49 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
+| FR-383-AC-50 | In fixture E the two retry-origin `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
+| FR-383-AC-51 | In fixture E, `target >= 0` is one graph node that `Refund`'s retry relation and trigger guard both hold. | Test (TC-1063) |
+| FR-383-AC-52 | In fixture E the group of `target >= 0` holds exactly one row of the retry origin and one of the trigger-guard origin of `Refund`. | Test (TC-1063) |
+| FR-383-AC-53 | In fixture E the retry-origin row of `target >= 0` has `term_ordinal` 0 and the trigger-guard row `term_ordinal` 1. | Test (TC-1063) |
+| FR-383-AC-54 | In fixture E each of the two rows of `target >= 0` carries the `Location` of the term in its own slot. | Test (TC-1063) |
+| FR-383-AC-55 | In fixture E-C, `order >= 0` is one graph node that the constraints of `Tried` and of `Picked` both hold. | Test (TC-1063) |
+| FR-383-AC-56 | In fixture E-C the group of `order >= 0` holds exactly one row of the `Picked` constraint's origin (`protocol Composed run Main Picked body`) and one of the `Tried` constraint's origin (`protocol Composed run Main Tried body`). | Test (TC-1063) |
+| FR-383-AC-57 | In fixture E-C the `Picked` row of `order >= 0` has `term_ordinal` 0 and the `Tried` row `term_ordinal` 1 (`Picked` before `Tried` in UTF-8 byte order of the names). | Test (TC-1063) |
+| FR-383-AC-58 | For every application of **W** and fixtures E, L and E-C, the (occurrence ordinal, `term_ordinal`) pairs of a slot's rows of that application, taken along the slot walk's visits, strictly increase. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.
