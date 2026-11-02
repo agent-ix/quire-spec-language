@@ -5,7 +5,9 @@
 //! (FR-322 "Nominal nodes"). Plain data with borrowed accessors; a node key
 //! cannot stand in for these facts.
 
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList, With,
+};
 use quire_exact::{Integer, NodeKey, Rational};
 
 use super::enumeration::EnumDeclarationPreimage;
@@ -13,7 +15,7 @@ use super::semantic_node::NodeOwner;
 use super::unit::{DimensionEquivalencePreimage, DimensionPreimage, UnitPreimage};
 
 /// The payload of one nominal node.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum NominalPayload {
     /// An enum declaration.
     Enum(EnumPayload),
@@ -23,6 +25,29 @@ pub enum NominalPayload {
     Unit(UnitPayload),
     /// A dimension equivalence.
     DimensionEquivalence(DimensionEquivalencePayload),
+}
+
+impl DebugWith for NominalPayload {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Enum(payload) => f.debug_tuple("Enum").field(payload).finish(),
+            Self::Dimension(payload) => f
+                .debug_tuple("Dimension")
+                .field(&With(payload, table))
+                .finish(),
+            Self::Unit(payload) => f.debug_tuple("Unit").field(&With(payload, table)).finish(),
+            Self::DimensionEquivalence(payload) => f
+                .debug_tuple("DimensionEquivalence")
+                .field(&With(payload, table))
+                .finish(),
+        }
+    }
+}
+
+impl std::fmt::Debug for NominalPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
 }
 
 impl NominalPayload {
@@ -87,19 +112,25 @@ pub struct DimensionPayload {
     owner: Option<NodeOwner>,
 }
 
-impl std::fmt::Debug for DimensionPayload {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for DimensionPayload {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self { terms, owner } = self;
         f.debug_struct("DimensionPayload")
             .field(
                 "terms",
                 &terms
                     .iter()
-                    .map(|value| (NodeKeyDebug(&value.0), &value.1))
+                    .map(|value| (NodeKeyDebug(&value.0, table), &value.1))
                     .collect::<Vec<_>>(),
             )
             .field("owner", &owner)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for DimensionPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -143,8 +174,8 @@ pub struct UnitPayload {
     owner: Option<NodeOwner>,
 }
 
-impl std::fmt::Debug for UnitPayload {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for UnitPayload {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             dimension,
             target,
@@ -153,12 +184,21 @@ impl std::fmt::Debug for UnitPayload {
             owner,
         } = self;
         f.debug_struct("UnitPayload")
-            .field("dimension", &NodeKeyDebug(dimension))
-            .field("target", &target.as_ref().map(NodeKeyDebug))
+            .field("dimension", &NodeKeyDebug(dimension, table))
+            .field(
+                "target",
+                &target.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
             .field("factor", &factor)
             .field("offset", &offset)
             .field("owner", &owner)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for UnitPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -229,13 +269,19 @@ pub struct DimensionEquivalencePayload {
     scale: Rational,
 }
 
-impl std::fmt::Debug for DimensionEquivalencePayload {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for DimensionEquivalencePayload {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self { dimensions, scale } = self;
         f.debug_struct("DimensionEquivalencePayload")
-            .field("dimensions", &NodeList(dimensions.iter()))
+            .field("dimensions", &NodeList(dimensions.iter(), table))
             .field("scale", &scale)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for DimensionEquivalencePayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

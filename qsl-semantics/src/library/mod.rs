@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::diagnostic::{Code, ALLOCATION_FAILED};
-use qsl_foundation::source::node_table::{scoped, NodeMap};
+use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, NodeMap};
 use quire_exact::NodeKey;
 
 pub mod bundle;
@@ -296,19 +296,19 @@ pub struct ImportView {
     exports: BTreeMap<NodeKey, String>,
 }
 
-/// Debug writes each export's complete node identity, without relying on
-/// hidden formatting state.
+/// Debug writes each export's node once, in the enclosing [`scoped`] table, so
+/// the output stays linear however deeply the exported identities nest.
+impl DebugWith for ImportView {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("ImportView")
+            .field("exports", &NodeMap(self.exports.iter(), table))
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for ImportView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        struct Body<'a>(&'a ImportView);
-        impl std::fmt::Debug for Body<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct("ImportView")
-                    .field("exports", &NodeMap(self.0.exports.iter()))
-                    .finish()
-            }
-        }
-        scoped(f, &Body(self))
+        scoped(f, self)
     }
 }
 

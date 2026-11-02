@@ -28,6 +28,7 @@ use quire_contract_model::{
 use serde::Deserialize;
 
 use ix_trace_rs::string_edge;
+use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, With};
 use qsl_foundation::source::provenance::{
     OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -389,7 +390,7 @@ thread_local! {
 }
 
 /// The emitted package and the nodes it omits.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Emission {
     /// The v2 bytes and their manifest package name.
     pub(crate) package: EmittedPackage,
@@ -421,6 +422,62 @@ pub struct Emission {
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
+}
+
+/// Debug writes the source map's node keys into the enclosing table, so a
+/// package that retains its emission stays linear.
+impl DebugWith for Emission {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        let Self {
+            package,
+            omitted,
+            evidence,
+            capability_report,
+            source_map,
+            selected_operation_member_rows,
+            selected_tuple_declaration_rows,
+            selected_source_unit_rows,
+            selected_model_enum_declaration_rows,
+            selected_model_enum_member_rows,
+            equality_producer_identity_rows,
+            equality_fact_witness_rows,
+        } = self;
+        f.debug_struct("Emission")
+            .field("package", package)
+            .field("omitted", omitted)
+            .field("evidence", evidence)
+            .field("capability_report", capability_report)
+            .field("source_map", &With(source_map, table))
+            .field(
+                "selected_operation_member_rows",
+                selected_operation_member_rows,
+            )
+            .field(
+                "selected_tuple_declaration_rows",
+                selected_tuple_declaration_rows,
+            )
+            .field("selected_source_unit_rows", selected_source_unit_rows)
+            .field(
+                "selected_model_enum_declaration_rows",
+                selected_model_enum_declaration_rows,
+            )
+            .field(
+                "selected_model_enum_member_rows",
+                selected_model_enum_member_rows,
+            )
+            .field(
+                "equality_producer_identity_rows",
+                equality_producer_identity_rows,
+            )
+            .field("equality_fact_witness_rows", equality_fact_witness_rows)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for Emission {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        scoped(f, self)
+    }
 }
 
 /// A producer-side equality fact paired with its exact structural key and

@@ -10,117 +10,252 @@
 //! then print only a [`NodeRef`]. The output is complete (no depth or size
 //! cap) and linear in the number of distinct nodes and their direct segments.
 //!
-//! A type that holds a [`NodeKey`] writes it through [`NodeKeyDebug`]. The
-//! outermost value to format opens one table with [`scoped`] and every key
-//! written under it, whatever type holds it, joins that table, so a node
-//! shared by many collections of one package is written once for the whole
-//! package. Without `std` there is no scope and a key is written in full.
+//! The table is passed explicitly. A type that holds a [`NodeKey`] implements
+//! [`DebugWith`], receives the [`DebugTable`] of the formatting call, and
+//! writes each key through [`NodeKeyDebug`]; a container passes the same table
+//! on to each [`DebugWith`] value it holds, through [`With`]. The outermost
+//! value to format opens one table with [`scoped`], so a node shared by many
+//! collections of one package is written once for the whole package. No state
+//! lives outside the formatting call: there is no thread-local, no `static`
+//! and no registry. A value formatted on its own, outside any [`scoped`]
+//! call, writes its keys in full. Without `std` there is no table and a key is
+//! written in full everywhere. Keys stay complete as data in every case; only
+//! this debug text is shared.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::{string::String, vec::Vec};
+use core::cell::RefCell;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 
 use quire_exact::{NodeKey, PathSegment};
 
-#[cfg(all(feature = "std", not(kani)))]
-std::thread_local! {
-    /// The table the value being formatted on this thread writes its keys
-    /// into, while a [`scoped`] call is open.
-    static ACTIVE: core::cell::RefCell<Option<NodeTable>> = const {
-        core::cell::RefCell::new(None)
-    };
+/// The node table of one formatting call, or the marker that keys are written
+/// in full.
+pub struct DebugTable {
+    table: RefCell<NodeTable>,
+    shared: bool,
 }
 
-/// Format `value` with one [`NodeTable`] for every [`NodeKeyDebug`] under it.
-/// With `std`, the outermost call writes `WithNodes { value: .., nodes: {..} }`;
-/// a call made while another is open writes only `value`, into the open table.
-/// Without `std`, or under `cfg(kani)`, formats `value` directly; its keys are
-/// written in full. The table is Debug-only output, and Kani 0.68.0 cannot
-/// compile a reachable destructor-bearing thread-local (it reaches the
-/// `catch_unwind` intrinsic, model-checking/kani#4813, fixed on main by #4819
-/// but unreleased), so the verification build takes the no-table path.
-pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn fmt::Debug) -> fmt::Result {
-    #[cfg(all(feature = "std", not(kani)))]
-    {
-        if ACTIVE.with(|active| active.borrow().is_some()) {
-            return value.fmt(f);
+impl DebugTable {
+    /// A table that every key written through it joins.
+    pub fn shared() -> Self {
+        Self {
+            table: RefCell::new(NodeTable::new()),
+            shared: true,
         }
-        struct Close;
-        impl Drop for Close {
-            fn drop(&mut self) {
-                ACTIVE.with(|active| *active.borrow_mut() = None);
-            }
+    }
+
+    /// A marker that writes every key in full.
+    pub fn unshared() -> Self {
+        Self {
+            table: RefCell::new(NodeTable::new()),
+            shared: false,
         }
-        struct Active;
-        impl fmt::Debug for Active {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                ACTIVE.with(|active| match active.borrow().as_ref() {
-                    Some(table) => table.nodes().fmt(f),
-                    None => Ok(()),
-                })
-            }
+    }
+
+    /// The table of a [`scoped`] call: shared with `std`, otherwise a marker
+    /// that writes every key in full.
+    fn for_scope() -> Self {
+        if cfg!(feature = "std") {
+            Self::shared()
+        } else {
+            Self::unshared()
         }
-        ACTIVE.with(|active| *active.borrow_mut() = Some(NodeTable::new()));
-        let _close = Close;
-        f.debug_struct("WithNodes")
-            .field("value", value)
-            .field("nodes", &Active)
+    }
+
+    /// The contents of the table, as a debug value.
+    fn contents(&self) -> TableContents<'_> {
+        TableContents(self)
+    }
+}
+
+struct TableContents<'a>(&'a DebugTable);
+
+impl fmt::Debug for TableContents<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.table.borrow().nodes().fmt(f)
+    }
+}
+
+/// A value whose debug text writes its node keys into the formatting call's
+/// [`DebugTable`].
+pub trait DebugWith {
+    /// Write `self`, with each node key joining `table`.
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result;
+}
+
+impl<T: DebugWith + ?Sized> DebugWith for &T {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        (**self).fmt_with(f, table)
+    }
+}
+
+impl<T: DebugWith + ?Sized> DebugWith for Box<T> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        (**self).fmt_with(f, table)
+    }
+}
+
+impl<T: DebugWith + ?Sized> DebugWith for alloc::sync::Arc<T> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        (**self).fmt_with(f, table)
+    }
+}
+
+impl<T: DebugWith> DebugWith for [T] {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        f.debug_list()
+            .entries(self.iter().map(|value| With(value, table)))
             .finish()
     }
-    #[cfg(any(not(feature = "std"), kani))]
-    value.fmt(f)
 }
 
-/// A key written into an explicitly supplied local table, or in full when
-/// the caller does not supply one.
-pub(super) struct NodeKeyDebugScoped<'a>(
-    pub &'a NodeKey,
-    pub Option<&'a core::cell::RefCell<NodeTable>>,
-);
-
-impl fmt::Debug for NodeKeyDebugScoped<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.1 {
-            Some(table) => table.borrow_mut().intern(self.0).fmt(f),
-            None => NodeKeyDebug(self.0).fmt(f),
-        }
+impl<T: DebugWith> DebugWith for Vec<T> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        self.as_slice().fmt_with(f, table)
     }
 }
 
-/// The contents of an explicitly supplied local node table.
-#[cfg(feature = "std")]
-pub(super) struct NodeTableContents<'a>(pub &'a core::cell::RefCell<NodeTable>);
-
-#[cfg(feature = "std")]
-impl fmt::Debug for NodeTableContents<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.borrow().nodes().fmt(f)
+impl<T: DebugWith> DebugWith for Option<T> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        fmt::Debug::fmt(&self.as_ref().map(|value| With(value, table)), f)
     }
 }
 
-/// A [`NodeKey`] written as its position in the table of the open
-/// [`scoped`] call, or in full when none is open.
-pub struct NodeKeyDebug<'a>(pub &'a NodeKey);
+impl<A: DebugWith, B: DebugWith> DebugWith for (A, B) {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        f.debug_tuple("")
+            .field(&With(&self.0, table))
+            .field(&With(&self.1, table))
+            .finish()
+    }
+}
+
+impl<A: DebugWith, B: DebugWith, C: DebugWith> DebugWith for (A, B, C) {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        f.debug_tuple("")
+            .field(&With(&self.0, table))
+            .field(&With(&self.1, table))
+            .field(&With(&self.2, table))
+            .finish()
+    }
+}
+
+/// A [`DebugWith`] value paired with the table it writes into, as a plain
+/// [`fmt::Debug`] value.
+pub struct With<'a, T: ?Sized>(pub &'a T, pub &'a DebugTable);
+
+impl<T: DebugWith + ?Sized> fmt::Debug for With<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt_with(f, self.1)
+    }
+}
+
+/// Format `value` with one [`DebugTable`] for every key under it. With `std`
+/// this writes `WithNodes { value: .., nodes: {..} }`; without `std` it writes
+/// `value` with every key in full.
+pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn DebugWith) -> fmt::Result {
+    let table = DebugTable::for_scope();
+    if !table.shared {
+        return value.fmt_with(f, &table);
+    }
+    f.debug_struct("WithNodes")
+        .field("value", &With(value, &table))
+        .field("nodes", &table.contents())
+        .finish()
+}
+
+/// Format `value` on its own: every key is written in full.
+pub fn standalone<T: DebugWith + ?Sized>(f: &mut fmt::Formatter<'_>, value: &T) -> fmt::Result {
+    value.fmt_with(f, &DebugTable::unshared())
+}
+
+/// A [`NodeKey`] written as its position in the table it is paired with, or
+/// in full when that table is not shared.
+pub struct NodeKeyDebug<'a>(pub &'a NodeKey, pub &'a DebugTable);
 
 impl fmt::Debug for NodeKeyDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[cfg(all(feature = "std", not(kani)))]
-        {
-            let at = ACTIVE.with(|active| active.borrow_mut().as_mut().map(|t| t.intern(self.0)));
-            if let Some(at) = at {
-                return at.fmt(f);
-            }
+        if self.1.shared {
+            let at = self.1.table.borrow_mut().intern(self.0);
+            at.fmt(f)
+        } else {
+            self.0.fmt(f)
         }
-        self.0.fmt(f)
+    }
+}
+
+/// A map keyed by node identities whose values are [`DebugWith`]: each key is
+/// written as its position and each value into the same table. `I` is the
+/// map's `iter()`.
+pub struct NodeValueMap<'t, I>(pub I, pub &'t DebugTable);
+
+impl<'a, I, V> fmt::Debug for NodeValueMap<'_, I>
+where
+    I: Iterator<Item = (&'a NodeKey, &'a V)> + Clone,
+    V: DebugWith + 'a,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .clone()
+                    .map(|(key, value)| (NodeKeyDebug(key, self.1), With(value, self.1))),
+            )
+            .finish()
+    }
+}
+
+/// A slice of [`DebugWith`] values, each written into the table it is paired
+/// with.
+pub struct Seq<'a, T>(pub &'a [T], pub &'a DebugTable);
+
+impl<T: DebugWith> fmt::Debug for Seq<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|value| With(value, self.1)))
+            .finish()
+    }
+}
+
+/// A map whose values are [`DebugWith`], written into the table they are
+/// paired with; the keys are written as ordinary debug values. `I` is the
+/// map's `iter()`.
+pub struct ValueMap<'t, I>(pub I, pub &'t DebugTable);
+
+impl<'a, I, K, V> fmt::Debug for ValueMap<'_, I>
+where
+    I: Iterator<Item = (K, &'a V)> + Clone,
+    K: fmt::Debug,
+    V: DebugWith + 'a,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .clone()
+                    .map(|(key, value)| (key, With(value, self.1))),
+            )
+            .finish()
+    }
+}
+
+/// An optional [`DebugWith`] value, written into the table it is paired with.
+pub struct Maybe<'a, T>(pub &'a Option<T>, pub &'a DebugTable);
+
+impl<T: DebugWith> fmt::Debug for Maybe<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.as_ref().map(|value| With(value, self.1)).fmt(f)
     }
 }
 
 /// A map keyed by node identities, each key written through [`NodeKeyDebug`].
 /// `I` is the map's `iter()`.
-pub struct NodeMap<I>(pub I);
+pub struct NodeMap<'t, I>(pub I, pub &'t DebugTable);
 
-impl<'a, I, V> fmt::Debug for NodeMap<I>
+impl<'a, I, V> fmt::Debug for NodeMap<'_, I>
 where
     I: Iterator<Item = (&'a NodeKey, V)> + Clone,
     V: fmt::Debug,
@@ -130,7 +265,7 @@ where
             .entries(
                 self.0
                     .clone()
-                    .map(|(key, value)| (NodeKeyDebug(key), value)),
+                    .map(|(key, value)| (NodeKeyDebug(key, self.1), value)),
             )
             .finish()
     }
@@ -138,15 +273,15 @@ where
 
 /// A sequence or set of node identities, each written through
 /// [`NodeKeyDebug`]. `I` is the collection's `iter()`.
-pub struct NodeList<I>(pub I);
+pub struct NodeList<'t, I>(pub I, pub &'t DebugTable);
 
-impl<'a, I> fmt::Debug for NodeList<I>
+impl<'a, I> fmt::Debug for NodeList<'_, I>
 where
     I: Iterator<Item = &'a NodeKey> + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
-            .entries(self.0.clone().map(NodeKeyDebug))
+            .entries(self.0.clone().map(|key| NodeKeyDebug(key, self.1)))
             .finish()
     }
 }
@@ -274,6 +409,48 @@ impl fmt::Debug for Row<'_> {
     }
 }
 
+/// Define [`DebugWith`] for a struct from its field list, and `Debug` for it
+/// as a value formatted on its own (every key in full). Each field is `plain`
+/// (written as an ordinary debug value) or `with` (a [`DebugWith`] value
+/// written into the same table).
+#[macro_export]
+macro_rules! debug_with_struct {
+    ($ty:ty, $name:literal { $($field:ident : $kind:ident),* $(,)? }) => {
+        impl $crate::source::node_table::DebugWith for $ty {
+            fn fmt_with(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+                table: &$crate::source::node_table::DebugTable,
+            ) -> ::core::fmt::Result {
+                let mut out = f.debug_struct($name);
+                $( $crate::debug_with_struct!(@field out, self, table, $field, $kind); )*
+                out.finish()
+            }
+        }
+
+        impl ::core::fmt::Debug for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                $crate::source::node_table::standalone(f, self)
+            }
+        }
+    };
+    (@field $out:ident, $this:ident, $table:ident, $field:ident, plain) => {
+        $out.field(stringify!($field), &$this.$field);
+    };
+    (@field $out:ident, $this:ident, $table:ident, $field:ident, values) => {
+        $out.field(
+            stringify!($field),
+            &$crate::source::node_table::ValueMap($this.$field.iter(), $table),
+        );
+    };
+    (@field $out:ident, $this:ident, $table:ident, $field:ident, with) => {
+        $out.field(
+            stringify!($field),
+            &$crate::source::node_table::With(&$this.$field, $table),
+        );
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,23 +481,109 @@ mod tests {
 
     struct Keys(NodeKey, NodeKey);
 
-    impl fmt::Debug for Keys {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            scoped(f, &(NodeKeyDebug(&self.0), NodeKeyDebug(&self.1)))
+    impl DebugWith for Keys {
+        fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+            f.debug_tuple("")
+                .field(&NodeKeyDebug(&self.0, table))
+                .field(&NodeKeyDebug(&self.1, table))
+                .finish()
         }
     }
 
-    /// With `std` and outside `cfg(kani)`, the outermost `scoped` call writes
-    /// one table and each key as its position in it; the `cfg(kani)` and
-    /// no-`std` path (keys in full) is the only thing the gate changes.
-    #[cfg(all(feature = "std", not(kani)))]
+    impl fmt::Debug for Keys {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            scoped(f, self)
+        }
+    }
+
+    /// With `std`, the outermost `scoped` call writes one table and each key as
+    /// its position in it; without `std` every key is written in full.
     #[test]
-    fn scoped_writes_one_table_and_keys_by_position_outside_kani() {
+    fn scoped_writes_one_table_and_keys_by_position_with_std() {
         let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
         let text = alloc::format!("{:?}", Keys(key.clone(), key));
+        if cfg!(feature = "std") {
+            assert_eq!(
+                text,
+                "WithNodes { value: (#0, #0), nodes: {#0: pkg:[\"k\",]:1} }"
+            );
+        } else {
+            assert_eq!(text, "(NodeKey(pkg:[\"k\",]:1), NodeKey(pkg:[\"k\",]:1))");
+        }
+    }
+
+    /// A value inside a `scoped` call that does not take the table keeps its
+    /// keys complete: the key is written in full, never as an unresolved `#n`.
+    #[test]
+    fn an_unthreaded_value_inside_a_scope_writes_its_key_in_full() {
+        struct Unthreaded(NodeKey);
+        impl DebugWith for Unthreaded {
+            fn fmt_with(&self, f: &mut fmt::Formatter<'_>, _table: &DebugTable) -> fmt::Result {
+                fmt::Debug::fmt(&self.0, f)
+            }
+        }
+        struct Root(Unthreaded);
+        impl fmt::Debug for Root {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                scoped(f, &self.0)
+            }
+        }
+        let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
+        let text = alloc::format!("{:?}", Root(Unthreaded(key)));
+        assert!(text.contains("NodeKey(pkg:[\"k\",]:1)"), "{text}");
+        assert!(!text.contains("#0"), "{text}");
+    }
+
+    /// A value formatted outside any `scoped` call keeps complete keys.
+    #[test]
+    fn a_standalone_value_writes_complete_keys() {
+        let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
+        let keys = Keys(key.clone(), key);
+        struct Alone<'a>(&'a Keys);
+        impl fmt::Debug for Alone<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                standalone(f, self.0)
+            }
+        }
         assert_eq!(
-            text,
-            "WithNodes { value: (#0, #0), nodes: {#0: pkg:[\"k\",]:1} }"
+            alloc::format!("{:?}", Alone(&keys)),
+            "(NodeKey(pkg:[\"k\",]:1), NodeKey(pkg:[\"k\",]:1))"
         );
+    }
+
+    /// A chain of nested nodes written as a collection's keys is linear in the
+    /// chain's depth, not quadratic: each doubling at most doubles the text.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_node_list_of_a_deep_chain_grows_linearly_with_depth() {
+        struct Chain(Vec<NodeKey>);
+        impl DebugWith for Chain {
+            fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+                fmt::Debug::fmt(&NodeList(self.0.iter(), table), f)
+            }
+        }
+        impl fmt::Debug for Chain {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                scoped(f, self)
+            }
+        }
+        let size = |depth: u64| {
+            let mut keys = Vec::new();
+            let mut key = NodeKey::new("pkg", vec![PathSegment::Text("leaf".into())], 0).unwrap();
+            for ordinal in 0..depth {
+                keys.push(key.clone());
+                key = NodeKey::new(
+                    "pkg",
+                    vec![PathSegment::Text("add".into()), PathSegment::Node(key)],
+                    ordinal,
+                )
+                .unwrap();
+            }
+            keys.push(key);
+            alloc::format!("{:?}", Chain(keys)).len()
+        };
+        let (small, middle, large) = (size(250), size(500), size(1_000));
+        assert!(middle < small * 5 / 2, "{small} -> {middle}");
+        assert!(large < middle * 5 / 2, "{middle} -> {large}");
     }
 }

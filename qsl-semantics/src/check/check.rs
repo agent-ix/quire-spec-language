@@ -44,7 +44,9 @@
 //! this ticket. The denial is pointed at the one seam the review actually
 //! flagged.
 
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList,
+};
 use quire_checked::node::{
     Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
 };
@@ -199,8 +201,8 @@ pub struct VariantTypeDeclaration {
     members: Vec<EnumValue>,
 }
 
-impl std::fmt::Debug for VariantTypeDeclaration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for VariantTypeDeclaration {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             key,
             name,
@@ -213,10 +215,16 @@ impl std::fmt::Debug for VariantTypeDeclaration {
             .field("key", &key)
             .field("name", &name)
             .field("declaration", &declaration)
-            .field("node", &NodeKeyDebug(node))
+            .field("node", &NodeKeyDebug(node, table))
             .field("cases", &cases)
             .field("members", &members)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for VariantTypeDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -817,19 +825,30 @@ pub struct ModelRecords {
     events: BTreeSet<quire_exact::NodeKey>,
 }
 
-impl std::fmt::Debug for ModelRecords {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for ModelRecords {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self { renamed, events } = self;
         f.debug_struct("ModelRecords")
             .field(
                 "renamed",
                 &renamed
                     .iter()
-                    .map(|(key, value)| ((NodeKeyDebug(&key.0), NodeKeyDebug(&key.1)), value))
+                    .map(|(key, value)| {
+                        (
+                            (NodeKeyDebug(&key.0, table), NodeKeyDebug(&key.1, table)),
+                            value,
+                        )
+                    })
                     .collect::<Vec<_>>(),
             )
-            .field("events", &NodeList(events.iter()))
+            .field("events", &NodeList(events.iter(), table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for ModelRecords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -876,7 +895,7 @@ impl ModelRecords {
 }
 
 /// Everything names resolve against, apart from function bodies.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Scope {
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
@@ -929,6 +948,8 @@ pub struct Scope {
     /// Each admitted import by its qualifier (ADR-015 D-5).
     imports: BTreeMap<String, super::AdmittedImport>,
 }
+
+qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, model_selections: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
 
 /// Drops the chain of imported checked graphs over an explicit stack
 /// (ADR-030): each import holds its library's graph, whose scope holds that

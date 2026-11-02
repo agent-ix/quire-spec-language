@@ -20,6 +20,7 @@ use quire_contract_model::{
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
+use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, With};
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -579,28 +580,28 @@ pub(crate) struct V2Read {
 
 /// Debug writes every node key of the import view and the source map under
 /// one table, so each node is written once.
+impl DebugWith for V2Read {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        let V2Read {
+            package,
+            source_map,
+            effective_limits,
+            admitted,
+            timed_models,
+        } = self;
+        f.debug_struct("V2Read")
+            .field("package", &With(package, table))
+            .field("source_map", &With(source_map, table))
+            .field("effective_limits", effective_limits)
+            .field("admitted", admitted)
+            .field("timed_models", timed_models)
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for V2Read {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        struct Body<'a>(&'a V2Read);
-        impl std::fmt::Debug for Body<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                let V2Read {
-                    package,
-                    source_map,
-                    effective_limits,
-                    admitted,
-                    timed_models,
-                } = self.0;
-                f.debug_struct("V2Read")
-                    .field("package", package)
-                    .field("source_map", source_map)
-                    .field("effective_limits", effective_limits)
-                    .field("admitted", admitted)
-                    .field("timed_models", timed_models)
-                    .finish()
-            }
-        }
-        qsl_foundation::source::node_table::scoped(f, &Body(self))
+        scoped(f, self)
     }
 }
 

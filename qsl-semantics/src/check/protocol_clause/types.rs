@@ -5,7 +5,9 @@
 use crate::check::protocol_controls::CheckedChannel;
 use crate::check::protocol_obligation::CheckedObligations;
 use crate::check::state_clause::{ClauseOperation, PopulationDomain};
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList, With,
+};
 
 /// The identity of one static protocol node: its index into the
 /// declaration's own [`ProtocolDeclarationForm::declarations`](qsl_forms::ProtocolDeclarationForm::declarations) (FR-113
@@ -41,8 +43,8 @@ pub struct CheckedProtocolNodeKeys {
     pub expressions: Vec<CheckedProtocolExpressionBindings>,
 }
 
-impl std::fmt::Debug for CheckedProtocolNodeKeys {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedProtocolNodeKeys {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             clause,
             nodes,
@@ -54,33 +56,45 @@ impl std::fmt::Debug for CheckedProtocolNodeKeys {
             expressions,
         } = self;
         f.debug_struct("CheckedProtocolNodeKeys")
-            .field("clause", &clause.as_ref().map(NodeKeyDebug))
+            .field(
+                "clause",
+                &clause.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
             .field(
                 "nodes",
                 &nodes
                     .iter()
-                    .map(|(key, value)| (key, NodeKeyDebug(value)))
+                    .map(|(key, value)| (key, NodeKeyDebug(value, table)))
                     .collect::<Vec<_>>(),
             )
             .field(
                 "channels",
                 &channels
                     .iter()
-                    .map(|(key, value)| (key, NodeKeyDebug(value)))
+                    .map(|(key, value)| (key, NodeKeyDebug(value, table)))
                     .collect::<Vec<_>>(),
             )
             .field(
                 "roles",
                 &roles
                     .iter()
-                    .map(|(key, value)| (key, NodeKeyDebug(value)))
+                    .map(|(key, value)| (key, NodeKeyDebug(value, table)))
                     .collect::<Vec<_>>(),
             )
-            .field("compensations", &NodeList(compensations.iter()))
-            .field("terminal", &terminal.as_ref().map(NodeKeyDebug))
-            .field("binders", &binders)
-            .field("expressions", &expressions)
+            .field("compensations", &NodeList(compensations.iter(), table))
+            .field(
+                "terminal",
+                &terminal.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
+            .field("binders", &With(binders, table))
+            .field("expressions", &With(expressions, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedProtocolNodeKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -103,8 +117,8 @@ pub struct CheckedProtocolBinderKey {
     pub semantic_type: quire_exact::NodeKey,
 }
 
-impl std::fmt::Debug for CheckedProtocolBinderKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedProtocolBinderKey {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             name,
             level,
@@ -116,20 +130,28 @@ impl std::fmt::Debug for CheckedProtocolBinderKey {
             .field("name", &name)
             .field("level", &level)
             .field("introducing", &introducing)
-            .field("node", &NodeKeyDebug(node))
-            .field("semantic_type", &NodeKeyDebug(semantic_type))
+            .field("node", &NodeKeyDebug(node, table))
+            .field("semantic_type", &NodeKeyDebug(semantic_type, table))
             .finish()
     }
 }
 
+impl std::fmt::Debug for CheckedProtocolBinderKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
 /// Parameter identities captured while lowering one checked protocol body.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedProtocolExpressionBindings {
     /// The checked body's root source location.
     pub location: quire_semantic_value::location::Location,
     /// Its parameter identities in local-slot order.
     pub binders: Vec<CheckedProtocolBinderKey>,
 }
+
+qsl_foundation::debug_with_struct!(CheckedProtocolExpressionBindings, "CheckedProtocolExpressionBindings" { location: plain, binders: with });
 
 /// One protocol `attempt` FR-114's own S3 binding checked: its resolved
 /// operation (already resolved by the FR-091 assembler, `AttemptDeclaration`
@@ -185,8 +207,8 @@ pub struct CheckedAttempt {
     pub contracts: Vec<quire_exact::NodeKey>,
 }
 
-impl std::fmt::Debug for CheckedAttempt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedAttempt {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             declaration,
             operation,
@@ -199,10 +221,16 @@ impl std::fmt::Debug for CheckedAttempt {
             .field("declaration", &declaration)
             .field("operation", &operation)
             .field("receiver", &receiver)
-            .field("anchor", &NodeKeyDebug(anchor))
-            .field("frame", &NodeKeyDebug(frame))
-            .field("contracts", &NodeList(contracts.iter()))
+            .field("anchor", &NodeKeyDebug(anchor, table))
+            .field("frame", &NodeKeyDebug(frame, table))
+            .field("contracts", &NodeList(contracts.iter(), table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedAttempt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -282,8 +310,8 @@ pub struct CheckedProtocol {
     pub owners: Vec<CheckedOwner>,
 }
 
-impl std::fmt::Debug for CheckedProtocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedProtocol {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             name,
             resolved_anchors,
@@ -309,13 +337,16 @@ impl std::fmt::Debug for CheckedProtocol {
         f.debug_struct("CheckedProtocol")
             .field("name", &name)
             .field("resolved_anchors", &resolved_anchors)
-            .field("attempts", &attempts)
+            .field("attempts", &With(attempts, table))
             .field("obligations", &obligations)
             .field("channels", &channels)
             .field("controls", &controls)
             .field("edges", &edges)
             .field("slots", &slots)
-            .field("compensation_operations", &compensation_operations)
+            .field(
+                "compensation_operations",
+                &With(compensation_operations, table),
+            )
             .field("awaits", &awaits)
             .field("requirements", &requirements)
             .field("relationships", &relationships)
@@ -323,11 +354,17 @@ impl std::fmt::Debug for CheckedProtocol {
             .field("roles", &roles)
             .field("parallels", &parallels)
             .field("pending_predicate_joins", &pending_predicate_joins)
-            .field("node", &node.as_ref().map(NodeKeyDebug))
+            .field("node", &node.as_ref().map(|key| NodeKeyDebug(key, table)))
             .field("finish", &finish)
             .field("vias", &vias)
             .field("owners", &owners)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -389,7 +426,7 @@ pub struct CheckedRole {
 }
 
 /// One `parallel`'s join as written (ADR-027 ST-7, QSpec FR-171).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedParallel {
     /// The `parallel` control.
     pub node: ProtocolNodeId,
@@ -401,6 +438,8 @@ pub struct CheckedParallel {
     /// carries no default (QSpec FR-466).
     pub outstanding: Option<CheckedOutstanding>,
 }
+
+qsl_foundation::debug_with_struct!(CheckedParallel, "CheckedParallel" { node: plain, policy: with, joined: plain, outstanding: plain });
 
 /// A checked join policy (QSpec FR-171).
 #[derive(Clone, Eq, PartialEq)]
@@ -419,17 +458,23 @@ pub enum CheckedJoinPolicy {
     },
 }
 
-impl std::fmt::Debug for CheckedJoinPolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedJoinPolicy {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::All => f.write_str("All"),
             Self::Any => f.write_str("Any"),
             Self::Quorum(value0) => f.debug_tuple("Quorum").field(&value0).finish(),
             Self::Predicate { function } => f
                 .debug_struct("Predicate")
-                .field("function", &NodeKeyDebug(function))
+                .field("function", &NodeKeyDebug(function, table))
                 .finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for CheckedJoinPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -637,12 +682,18 @@ pub struct CheckedOperationNodes {
     pub frame: quire_exact::NodeKey,
 }
 
-impl std::fmt::Debug for CheckedOperationNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedOperationNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self { anchor, frame } = self;
         f.debug_struct("CheckedOperationNodes")
-            .field("anchor", &NodeKeyDebug(anchor))
-            .field("frame", &NodeKeyDebug(frame))
+            .field("anchor", &NodeKeyDebug(anchor, table))
+            .field("frame", &NodeKeyDebug(frame, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedOperationNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }

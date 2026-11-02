@@ -46,6 +46,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::sync::OnceLock;
 
+use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, Maybe, With};
 #[cfg(feature = "std")]
 use qsl_foundation::Code;
 use qsl_semantics::check::{
@@ -315,42 +316,63 @@ impl LinkRefusal {
     }
 }
 
-/// Drops the dependency closure over an explicit stack, so a chain of any
-/// length drops on a constant native stack (ADR-030 D-1): the derived drop
-/// would recurse once per link.
-/// Debug writes complete node identities in both `std` and no-`std` builds,
-/// without relying on ambient formatting state.
-impl core::fmt::Debug for CheckedPackage {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        struct Body<'a>(&'a CheckedPackage);
-        impl core::fmt::Debug for Body<'_> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let CheckedPackage {
-                    graph,
-                    dependencies,
-                    selections,
-                    #[cfg(feature = "std")]
-                    direct_imports,
-                    abstraction,
-                    #[cfg(feature = "std")]
-                    emission,
-                } = self.0;
-                let mut out = f.debug_struct("CheckedPackage");
-                out.field("graph", graph)
-                    .field("dependencies", dependencies)
-                    .field("selections", selections);
-                #[cfg(feature = "std")]
-                out.field("direct_imports", direct_imports);
-                out.field("abstraction", abstraction);
-                #[cfg(feature = "std")]
-                out.field("emission", emission);
-                out.finish()
-            }
-        }
-        qsl_foundation::source::node_table::scoped(f, &Body(self))
+/// Debug writes the graph and every dependency's graph under one node table,
+/// so a node is written once for the whole package. Without `std`, keys are
+/// written in full.
+impl DebugWith for CheckedPackage {
+    fn fmt_with(&self, f: &mut core::fmt::Formatter<'_>, table: &DebugTable) -> core::fmt::Result {
+        let CheckedPackage {
+            graph,
+            dependencies,
+            selections,
+            #[cfg(feature = "std")]
+            direct_imports,
+            abstraction,
+            #[cfg(feature = "std")]
+            emission,
+        } = self;
+        let dependencies: BTreeMap<_, _> = dependencies
+            .iter()
+            .map(|(name, package)| (name, With(&**package, table)))
+            .collect();
+        let mut out = f.debug_struct("CheckedPackage");
+        out.field("graph", &With(&**graph, table))
+            .field("dependencies", &dependencies)
+            .field("selections", selections);
+        #[cfg(feature = "std")]
+        out.field("direct_imports", direct_imports);
+        out.field("abstraction", &Maybe(abstraction, table));
+        #[cfg(feature = "std")]
+        out.field("emission", &RetainedEmission(emission, table));
+        out.finish()
     }
 }
 
+/// The retained emission, written as `OnceLock` writes it, into `table`.
+#[cfg(feature = "std")]
+struct RetainedEmission<'a>(&'a OnceLock<Emission>, &'a DebugTable);
+
+#[cfg(feature = "std")]
+impl core::fmt::Debug for RetainedEmission<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut out = f.debug_tuple("OnceLock");
+        match self.0.get() {
+            Some(emission) => out.field(&With(emission, self.1)),
+            None => out.field(&format_args!("<uninit>")),
+        };
+        out.finish()
+    }
+}
+
+impl core::fmt::Debug for CheckedPackage {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        scoped(f, self)
+    }
+}
+
+/// Drops the dependency closure over an explicit stack, so a chain of any
+/// length drops on a constant native stack (ADR-030 D-1): the derived drop
+/// would recurse once per link.
 impl Drop for CheckedPackage {
     fn drop(&mut self) {
         let mut pending = Vec::new();

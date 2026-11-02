@@ -17,7 +17,7 @@
 //! A clause that checks is refused as not emitted until S4 writes its node,
 //! as a `temporal` clause is (`temporal_clause::not_emitted`).
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_forms::{
@@ -667,8 +667,8 @@ pub struct CheckedModelRelation {
     occurrence: Option<OccurrenceKey>,
 }
 
-impl std::fmt::Debug for CheckedModelRelation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedModelRelation {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             name,
             span,
@@ -694,9 +694,18 @@ impl std::fmt::Debug for CheckedModelRelation {
             .field("body_parameters", &body_parameters)
             .field("claim", &claim)
             .field("code_domains", &code_domains)
-            .field("identity", &identity.as_ref().map(NodeKeyDebug))
+            .field(
+                "identity",
+                &identity.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
             .field("occurrence", &occurrence)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedModelRelation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

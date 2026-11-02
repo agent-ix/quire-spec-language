@@ -6,7 +6,7 @@
 //! placeholders before admission. Body terms retain typed semantic content;
 //! they no longer derive identities from canonical preimages or digests.
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug, With};
 use quire_canonical::FixedShape;
 use serde::Serialize;
 
@@ -229,15 +229,21 @@ pub enum NodeRef {
     Pending(PlaceholderId),
 }
 
-impl std::fmt::Debug for NodeRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for NodeRef {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Admitted(node) => f
                 .debug_tuple("Admitted")
-                .field(&NodeKeyDebug(node))
+                .field(&NodeKeyDebug(node, table))
                 .finish(),
             Self::Pending(id) => f.debug_tuple("Pending").field(id).finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for NodeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -326,7 +332,7 @@ impl NodeTag {
 
 /// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
 /// term that holds no other term. Its depth is fixed by the grammar.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum LeafTerm {
     /// A typed literal: its kind and JSON value come from [`LiteralValue`].
     Literal {
@@ -349,7 +355,7 @@ pub enum LeafTerm {
 }
 
 /// `{term: "binding", name, value}`: a named `value` of a lower stratum.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Binding<V> {
     /// The bound name (schema `Nonempty`; an empty name is refused).
     pub name: String,
@@ -358,7 +364,7 @@ pub struct Binding<V> {
 }
 
 /// A member of a [`GroupTerm`]: a Leaf, or a binding whose value is a Leaf.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum GroupMember {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -368,14 +374,14 @@ pub enum GroupMember {
 
 /// The Group stratum: an `aggregate` whose members are each a Leaf or a
 /// binding of a Leaf.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct GroupTerm {
     /// The members, in order.
     pub members: Vec<GroupMember>,
 }
 
 /// A member of a [`TupleTerm`]: a Leaf or a Group.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum TupleMember {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -385,7 +391,7 @@ pub enum TupleMember {
 
 /// The Tuple stratum: an `aggregate` whose members are each a Leaf or a
 /// Group.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct TupleTerm {
     /// The members, in order.
     pub members: Vec<TupleMember>,
@@ -395,7 +401,7 @@ pub struct TupleTerm {
 /// closed nested aggregate where a QSpec body production requires one (for
 /// example FR-477's execution-entry bindings). Other bindings retain the
 /// FR-322 grammar's existing strata.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum BindingValue {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -414,7 +420,7 @@ pub enum BindingValue {
 
 /// The Member stratum: an application argument or a body aggregate's
 /// member.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum MemberTerm {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -426,7 +432,7 @@ pub enum MemberTerm {
 
 /// An operation application: a Body production whose arguments are each a
 /// Member.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ApplicationTerm {
     /// The operator class.
     pub operator: Operator,
@@ -439,7 +445,7 @@ pub struct ApplicationTerm {
 }
 
 /// An ordered aggregate: a Body production whose members are each a Member.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct AggregateTerm {
     /// The members, in order.
     pub members: Vec<MemberTerm>,
@@ -447,7 +453,7 @@ pub struct AggregateTerm {
 
 /// A `state`/`frame` node's own body shape (QSpec FR-340), valid only as a
 /// node's body.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct FrameTerm {
     /// Every field or relationship the operation may write, ascending by
     /// (declaring node identity, field name), a relationship's name being
@@ -468,7 +474,7 @@ pub struct FrameTerm {
 /// (ADR-030 D-2, FR-258). No stratum names itself or a higher one, so every
 /// body nests a depth the grammar fixes, and
 /// every composite subterm is its own node, reached by `reference`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum BodyTerm {
     /// A Leaf.
     Leaf(LeafTerm),
@@ -485,13 +491,266 @@ pub enum BodyTerm {
 /// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
 /// `FrameModifiesEntry`): a field or a navigation relationship the
 /// operation may write.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum FrameModifies {
     /// `{kind: "field", declaration, name, scope}`.
     Field(FrameField),
     /// `{kind: "relationship", declaration}`: the node key of the declared
     /// `relation`/`relationship` node, standing for every link of it.
     Relationship(NodeRef),
+}
+
+/// The term types below write their node references into the enclosing
+/// debug table, so a body of deeply nested nodes stays linear.
+impl DebugWith for LeafTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Literal { ty, value } => f
+                .debug_struct("Literal")
+                .field("ty", &With(ty, table))
+                .field("value", value)
+                .finish(),
+            Self::Reference { target } => f
+                .debug_struct("Reference")
+                .field("target", &With(target, table))
+                .finish(),
+            Self::DependencyReference { node } => f
+                .debug_struct("DependencyReference")
+                .field("node", &With(node, table))
+                .finish(),
+        }
+    }
+}
+
+impl<V: DebugWith> DebugWith for Binding<V> {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("Binding")
+            .field("name", &self.name)
+            .field("value", &With(&self.value, table))
+            .finish()
+    }
+}
+
+impl DebugWith for GroupMember {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Leaf(term) => f.debug_tuple("Leaf").field(&With(term, table)).finish(),
+            Self::Binding(binding) => f
+                .debug_tuple("Binding")
+                .field(&With(binding, table))
+                .finish(),
+        }
+    }
+}
+
+impl DebugWith for GroupTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("GroupTerm")
+            .field("members", &With(&self.members, table))
+            .finish()
+    }
+}
+
+impl DebugWith for TupleMember {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Leaf(term) => f.debug_tuple("Leaf").field(&With(term, table)).finish(),
+            Self::Group(term) => f.debug_tuple("Group").field(&With(term, table)).finish(),
+        }
+    }
+}
+
+impl DebugWith for TupleTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("TupleTerm")
+            .field("members", &With(&self.members, table))
+            .finish()
+    }
+}
+
+impl DebugWith for BindingValue {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Leaf(term) => f.debug_tuple("Leaf").field(&With(term, table)).finish(),
+            Self::Group(term) => f.debug_tuple("Group").field(&With(term, table)).finish(),
+            Self::Tuple(term) => f.debug_tuple("Tuple").field(&With(term, table)).finish(),
+            Self::Aggregate(term) => f
+                .debug_tuple("Aggregate")
+                .field(&With(term, table))
+                .finish(),
+            Self::ExecutionPoint(point) => f.debug_tuple("ExecutionPoint").field(point).finish(),
+        }
+    }
+}
+
+impl DebugWith for MemberTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Leaf(term) => f.debug_tuple("Leaf").field(&With(term, table)).finish(),
+            Self::Group(term) => f.debug_tuple("Group").field(&With(term, table)).finish(),
+            Self::Binding(binding) => f
+                .debug_tuple("Binding")
+                .field(&With(binding, table))
+                .finish(),
+        }
+    }
+}
+
+impl DebugWith for ApplicationTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("ApplicationTerm")
+            .field("operator", &self.operator)
+            .field("operation", &self.operation)
+            .field("result_type", &With(&self.result_type, table))
+            .field("arguments", &With(&self.arguments, table))
+            .finish()
+    }
+}
+
+impl DebugWith for AggregateTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("AggregateTerm")
+            .field("members", &With(&self.members, table))
+            .finish()
+    }
+}
+
+impl DebugWith for FrameTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("FrameTerm")
+            .field("modifies", &With(&self.modifies, table))
+            .field("creates", &With(&self.creates, table))
+            .field("deletes", &With(&self.deletes, table))
+            .field("deletes_scoped", &self.deletes_scoped)
+            .finish()
+    }
+}
+
+impl DebugWith for BodyTerm {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Leaf(term) => f.debug_tuple("Leaf").field(&With(term, table)).finish(),
+            Self::Application(term) => f
+                .debug_tuple("Application")
+                .field(&With(term, table))
+                .finish(),
+            Self::Aggregate(term) => f
+                .debug_tuple("Aggregate")
+                .field(&With(term, table))
+                .finish(),
+            Self::Frame(term) => f.debug_tuple("Frame").field(&With(term, table)).finish(),
+            Self::Abstraction(term) => f
+                .debug_tuple("Abstraction")
+                .field(&With(term, table))
+                .finish(),
+        }
+    }
+}
+
+impl DebugWith for FrameModifies {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Field(field) => f.debug_tuple("Field").field(&With(field, table)).finish(),
+            Self::Relationship(declaration) => f
+                .debug_tuple("Relationship")
+                .field(&With(declaration, table))
+                .finish(),
+        }
+    }
+}
+
+impl DebugWith for FrameField {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        f.debug_struct("FrameField")
+            .field("declaration", &With(&self.declaration, table))
+            .field("name", &self.name)
+            .field("scope", &self.scope)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for LeafTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl<V: DebugWith> std::fmt::Debug for Binding<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for GroupMember {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for GroupTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for TupleMember {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for TupleTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for BindingValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for MemberTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for ApplicationTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for AggregateTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for FrameTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for BodyTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for FrameModifies {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
+impl std::fmt::Debug for FrameField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
 }
 
 impl FrameModifies {
@@ -535,7 +794,7 @@ pub enum FrameDeletesScoped {
 
 /// A `modifies` entry naming a field: the field's declaring node, its own
 /// name and its scope.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct FrameField {
     declaration: NodeRef,
     name: String,

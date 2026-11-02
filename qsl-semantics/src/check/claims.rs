@@ -38,11 +38,12 @@
 
 use quire_checked::node::{Connective, NodeKind, Visit};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt;
 use std::ops::ControlFlow;
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList, With,
+};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -242,12 +243,18 @@ pub struct ResultBound {
     node: NodeKey,
 }
 
-impl fmt::Debug for ResultBound {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DebugWith for ResultBound {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         f.debug_struct("ResultBound")
             .field("value_type", &self.value_type)
-            .field("node", &NodeKeyDebug(&self.node))
+            .field("node", &NodeKeyDebug(&self.node, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for ResultBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -301,17 +308,23 @@ pub struct RequirementRecord {
     extent_roots: BTreeSet<NodeKey>,
 }
 
-impl fmt::Debug for RequirementRecord {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DebugWith for RequirementRecord {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         f.debug_struct("RequirementRecord")
             .field("requirements", &self.requirements)
-            .field("result_bound", &self.result_bound)
+            .field("result_bound", &With(&self.result_bound, table))
             .field("conversion_context", &self.conversion_context)
             .field("path_condition", &self.path_condition)
             .field("references", &self.references)
             .field("owner", &self.owner)
-            .field("extent_roots", &NodeList(self.extent_roots.iter()))
+            .field("extent_roots", &NodeList(self.extent_roots.iter(), table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for RequirementRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

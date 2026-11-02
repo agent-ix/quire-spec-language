@@ -14,6 +14,10 @@ relationships:
 
 Planless gap analysis for QSL-1465 PR #2111. `quoin matrix --repo <repository> --json` completed. The result exceeded the command-output display budget; among the returned rows, FR-001-AC-7 was explicitly `untagged`, and multiple criteria (including FR-001-AC-1) had `no run evidence`. No exact repository-wide count is claimed from the truncated output. The changed admission-corpus classifications are backed by FR-093-AC-19 / TC-416, and the QSL-1451 debug regressions are retained and pass. No TODO/FIXME/unimplemented stubs or new unowned behavior were found in the three changed source/test files. Optional semantic review was skipped. Plan completion: not assessed.
 
+## Superseded
+
+The thread-local node table this review describes was replaced by explicit table threading in PR #2112, because the thread-local violates FR-284-AC-4 (the qualified-core ambient-input scan flags it at qsl-foundation/src/source/node_table.rs). The findings and evidence below remain valid for PR #2111 as reviewed.
+
 ## Verdict
 
 **FAIL** — the computed matrix contains untagged criteria and no bound run evidence for the sampled criteria. These repository-wide trace/evidence gaps predate this PR; the PR does not add or widen them.

@@ -437,7 +437,7 @@ pub(crate) enum NodeClass {
 
 /// The step classes of one checked protocol clause, which an internal list
 /// entry and a step row's `node` right side resolve against.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct ProtocolClasses {
     pub(crate) protocol: String,
     pub(crate) node_keys: Option<super::super::protocol_clause::CheckedProtocolNodeKeys>,
@@ -473,14 +473,18 @@ pub(crate) struct ProtocolClasses {
     pub(crate) trigger_type_nodes: Option<Vec<quire_exact::NodeKey>>,
 }
 
+qsl_foundation::debug_with_struct!(ProtocolClasses, "ProtocolClasses" { protocol: plain, node_keys: with, dependency: plain, nodes: plain, node_ids: plain, records: plain, channels: plain, roles: plain, activates: plain, trigger: plain, memory: plain, memory_models: plain, state_names: plain, binder_type_nodes: plain, trigger_type_nodes: plain });
+
 /// The checked class view retained with a package so a dependent refinement
 /// can resolve a protocol without reparsing its source.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct ImportedProtocolClasses {
     pub(crate) classes: ProtocolClasses,
     pub(crate) model_selections: BTreeSet<String>,
     pub(crate) object_types: BTreeSet<quire_exact::EffectiveId>,
 }
+
+qsl_foundation::debug_with_struct!(ImportedProtocolClasses, "ImportedProtocolClasses" { classes: with, model_selections: plain, object_types: plain });
 
 impl ProtocolClasses {
     /// The classes of the clause `form`, checked as `checked`, whose

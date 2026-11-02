@@ -48,7 +48,7 @@
 //! package's signatures are known, and the clause is emitted as FR-337's
 //! v2 temporal clause node.
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
@@ -497,8 +497,8 @@ pub struct CheckedTemporalClause {
     timed: bool,
 }
 
-impl std::fmt::Debug for CheckedTemporalClause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for CheckedTemporalClause {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             name,
             span,
@@ -531,7 +531,7 @@ impl std::fmt::Debug for CheckedTemporalClause {
             .field("profile_ref", &profile_ref)
             .field("over", &over)
             .field("clock", &clock)
-            .field("clock_binding", &NodeKeyDebug(clock_binding))
+            .field("clock_binding", &NodeKeyDebug(clock_binding, table))
             .field("operators", &operators)
             .field("horizon", &horizon)
             .field("claim", &claim)
@@ -549,6 +549,12 @@ impl std::fmt::Debug for CheckedTemporalClause {
             .field("timed_form", &timed_form)
             .field("timed", &timed)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for CheckedTemporalClause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
