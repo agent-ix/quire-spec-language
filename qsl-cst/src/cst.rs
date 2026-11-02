@@ -117,7 +117,7 @@ productions! {
     EnumMember, RecordDeclaration, Field, TupleDeclaration, UnionDeclaration, UnionMember, AliasDeclaration,
     FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, PopulationBound, Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,
-    Postfix, Primary, CaseExpression, CaseArm, CaseBinder,
+    Postfix, Primary, CaseExpression, CaseArm<qsl_semantics::check::NodeId>, CaseBinder,
     ScrutineeExpression, ScrutineeImplication, ScrutineeDisjunction,
     ScrutineeConjunction, ScrutineeComparison, ScrutineeSum, ScrutineeProduct,
     ScrutineeUnary, ScrutineePostfix, ScrutineePrimary, ExactNumber, FloatValue,

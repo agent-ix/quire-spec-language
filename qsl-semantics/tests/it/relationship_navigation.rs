@@ -7,7 +7,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     AmbiguousMember, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, EndSide, MemberCandidate,
-    NavigationBound, NodeKind, PackageDeclarations,
+    NavigationBound, NodeKind<qsl_semantics::check::NodeId>, PackageDeclarations,
 };
 use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;

@@ -23,8 +23,8 @@ use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
     Arithmetic, AuthoredBound, CheckedGraph, CheckedLiteral, CheckedNode, Connective,
-    DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
-    RecordSlot, Scope, Slot, Visit,
+    DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind<qsl_semantics::check::NodeId>, Operator, OrderedKind,
+    RecordSlot<qsl_semantics::check::NodeId>, Scope, Slot, Visit,
 };
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
@@ -2316,7 +2316,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Record { declaration, slots } => {
                 let present = slots
                     .iter()
-                    .filter(|slot| matches!(slot, RecordSlot::Present(_)))
+                    .filter(|slot| matches!(slot, RecordSlot::<qsl_semantics::check::NodeId>::Present(_)))
                     .count();
                 let mut values = self.pop_many(present)?.into_iter();
                 let Some(CompositeShape::Record(declared)) = self
@@ -2330,9 +2330,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let mut fields = Vec::with_capacity(slots.len());
                 for (slot, field) in slots.iter().zip(declared) {
                     let value = match slot {
-                        RecordSlot::Absent => FieldValue::Absent,
-                        RecordSlot::Null => FieldValue::Null,
-                        RecordSlot::Present(_) => FieldValue::Present(
+                        RecordSlot::<qsl_semantics::check::NodeId>::Absent => FieldValue::Absent,
+                        RecordSlot::<qsl_semantics::check::NodeId>::Null => FieldValue::Null,
+                        RecordSlot::<qsl_semantics::check::NodeId>::Present(_) => FieldValue::Present(
                             values
                                 .next()
                                 .ok_or_else(|| invariant("record-present-value-missing"))?,

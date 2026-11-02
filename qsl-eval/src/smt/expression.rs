@@ -11,7 +11,7 @@
 //! reads.
 
 use qsl_semantics::check::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeKind,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeKind<qsl_semantics::check::NodeId>,
     OrderedKind,
 };
 use qsl_semantics::model::clause_observation::Observation;
@@ -567,7 +567,7 @@ impl<'r, 'a> Reader<'r, 'a> {
 }
 
 /// The name a refusal gives the construct `kind`.
-fn form_name(kind: &NodeKind) -> &'static str {
+fn form_name(kind: &NodeKind<qsl_semantics::check::NodeId>) -> &'static str {
     match kind {
         NodeKind::IntegerDivision { .. } => "integer division",
         NodeKind::Divide { .. } => "division",

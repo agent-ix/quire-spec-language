@@ -1576,7 +1576,7 @@ mod tests {
         for (file, name) in [
             ("qsl-semantics/src/family/mod.rs", "FamilyKind"),
             ("qsl-forms/src/syntax.rs", "ExprNode"),
-            ("qsl-semantics/src/check/ir.rs", "NodeKind"),
+            ("qsl-semantics/src/check/ir.rs", "NodeKind<qsl_semantics::check::NodeId>"),
             ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);

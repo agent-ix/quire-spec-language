@@ -11,7 +11,7 @@ use qsl_foundation::diagnostic::{Code, StageFailure};
 use qsl_foundation::Span;
 use qsl_semantics::check::{
     check_hyper_clauses, Capability, CheckCause, CheckRefusal, CheckedHyper, CheckedHyperClause,
-    CheckedModelRelation, HyperCause, HyperForm, HyperTraceFamily, HyperUnsupported, NodeKind,
+    CheckedModelRelation, HyperCause, HyperForm, HyperTraceFamily, HyperUnsupported, NodeKind<qsl_semantics::check::NodeId>,
     PackageDeclarations, StepRead, TemporalCause, TemporalProfile,
 };
 use qsl_semantics::family::{ClaimExtent, FamilyContract};

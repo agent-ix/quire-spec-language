@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use qsl_semantics::check::{
     Arithmetic, ArithmeticOp, CheckedFunctionRef, CheckedGraph, CheckedNode, CompareOp, Connective,
-    HybridTerm, LogicOp, NodeKind,
+    HybridTerm, LogicOp, NodeKind<qsl_semantics::check::NodeId>,
 };
 use quire_exact::{ArithmeticOperator, Integer, OrderingOperator, Rational, Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;

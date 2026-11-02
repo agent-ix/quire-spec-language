@@ -64,7 +64,7 @@ macro_rules! probe_package {
     }};
 }
 
-fn body(kind: impl FnOnce(&[qsl_semantics::check::NodeId]) -> NodeKind) -> CheckedBody {
+fn body(kind: impl FnOnce(&[qsl_semantics::check::NodeId]) -> NodeKind<qsl_semantics::check::NodeId>) -> CheckedBody {
     CheckedBody::fixture(
         vec![ValueType::Boolean, ValueType::Boolean],
         kind,
@@ -1081,7 +1081,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
     let package = qsl_package::CheckedPackage::link(graph);
     let record = body(|_| NodeKind::Record {
         declaration: key,
-        slots: vec![RecordSlot::Absent],
+        slots: vec![RecordSlot::<qsl_semantics::check::NodeId>::Absent],
     });
     probe_package!(
         "record-construction-rejected",
@@ -2442,7 +2442,7 @@ fn record_present_value_branch_has_a_local_count_and_zip_proof() {
         .split("NodeKind::Collection{")
         .next()
         .unwrap();
-    assert!(record.contains(".filter(|slot|matches!(slot,RecordSlot::Present(_)))"));
+    assert!(record.contains(".filter(|slot|matches!(slot,RecordSlot::<qsl_semantics::check::NodeId>::Present(_)))"));
     assert!(record.contains(".count()"));
     assert!(record.contains("self.pop_many(present)?.into_iter()"));
     assert!(record.contains("slots.iter().zip(declared)"));

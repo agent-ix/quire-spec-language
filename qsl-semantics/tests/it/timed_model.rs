@@ -9,7 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     AggregateTerm, BodyTerm, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, ClockOp,
-    MeasureObligation, NodeKind, StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct,
+    MeasureObligation, NodeKind<qsl_semantics::check::NodeId>, StatePredicate, TemporalCause, TimeSourceKind, TimedConstruct,
     TimedModel,
 };
 use qsl_semantics::model::intake::meaning;

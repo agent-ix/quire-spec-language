@@ -11,7 +11,7 @@ use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     Capability, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, CheckedStateGraphClaim,
-    NodeKind, StateGraphCause, StateGraphForm,
+    NodeKind<qsl_semantics::check::NodeId>, StateGraphCause, StateGraphForm,
 };
 use qsl_semantics::family::ClaimExtent;
 use quire_semantic_value::checking::CheckingLimits;

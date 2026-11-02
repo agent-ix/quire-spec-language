@@ -18,7 +18,7 @@ use qsl_foundation::bound::DomainKey;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind,
+    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind<qsl_semantics::check::NodeId>,
 };
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::clause_observation::Observation;

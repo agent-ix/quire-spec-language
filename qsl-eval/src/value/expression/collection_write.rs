@@ -11,7 +11,7 @@
 //! (see [`WrittenCollection::Computed`]).
 
 use qsl_semantics::check::{
-    CheckedGraph, CheckedNode, ClockId, Connective, NodeKind, Visit, Written,
+    CheckedGraph, CheckedNode, ClockId, Connective, NodeKind<qsl_semantics::check::NodeId>, Visit, Written,
 };
 use quire_eval::FamilyOutcome;
 use quire_exact::{Outcome, Rational, Value};

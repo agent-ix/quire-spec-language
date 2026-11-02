@@ -7,7 +7,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, EndSide, MemberCandidate, NodeKind,
+    CheckCause, CheckRefusal, CheckedGraph, EndSide, MemberCandidate, NodeKind<qsl_semantics::check::NodeId>,
 };
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,

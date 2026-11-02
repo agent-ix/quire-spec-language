@@ -8,7 +8,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::diagnostic::category_of;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    checked_dispatch_operation, CheckCause, CheckedGraph, DispatchRoot, DispatchTable, NodeKind,
+    checked_dispatch_operation, CheckCause, CheckedGraph, DispatchRoot, DispatchTable, NodeKind<qsl_semantics::check::NodeId>,
     OperationClauses, PackageDeclarations,
 };
 use qsl_semantics::family::FamilyKind;
