@@ -2575,15 +2575,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                     let Some(source) = self.units.resolve(quantity) else {
                         return Err(unresolved_unit());
                     };
-                    let (unit_id, target) = match target_type {
-                        ValueType::Quantity(unit) => (unit.clone(), QuantityTarget::Exact),
-                        ValueType::CarriedQuantity(target) => (
+                    let (unit_id, target) = if let ValueType::Quantity(unit) = target_type {
+                        (unit.clone(), QuantityTarget::Exact)
+                    } else if let ValueType::CarriedQuantity(target) = target_type {
+                        (
                             target.unit().clone(),
                             QuantityTarget::Carried(target.carrier().clone()),
-                        ),
-                        _ => {
-                            return Err(invariant("carried-quantity-conversion-target-expected"));
-                        }
+                        )
+                    } else {
+                        return Err(invariant("carried-quantity-conversion-target-expected"));
                     };
                     if !matches!(
                         source_type,
