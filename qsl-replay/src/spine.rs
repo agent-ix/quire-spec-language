@@ -79,9 +79,10 @@ pub use clause::{
     run_clause, run_clause_with_temporal_selections, ClauseArgument, ClauseArgumentValue,
     ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
     ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
-    ConsequentSourceEvents, ConsequentState, OperationName, OverObject, TemporalPositionRefusal,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
-    TraceInput,
+    ConsequentSourceEvents, ConsequentState, OperationName, OverObject,
+    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedObservation,
+    TimestampedOrderKey, TimestampedTraceInput, TraceInput,
 };
 mod refinement;
 pub use refinement::{

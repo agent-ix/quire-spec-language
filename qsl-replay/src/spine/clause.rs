@@ -30,7 +30,8 @@ use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
 pub use temporal::{
-    OverObject, TimestampedObservation, TimestampedOrderKey, TimestampedTraceInput, TraceInput,
+    OverObject, TemporalIndeterminateReason, TimestampedObservation, TimestampedOrderKey,
+    TimestampedTraceInput, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};
