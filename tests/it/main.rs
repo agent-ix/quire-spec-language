@@ -74,6 +74,8 @@ mod formatter_identity;
 mod string_edge_marker;
 mod value_parity_profile_selections;
 // The handoff writer is behind its feature; the all-features lane runs this.
+#[cfg(feature = "checked-handoff")]
+mod checked_handoff;
 mod fairness_item_path;
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;

@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile p = "quire.protocol.finite-global/v1";
+profile t = "quire.temporal.event-position.false-extension/v1";
+import "agent-ix/checked-handoff-library" as L;
+model M = "agent-ix/checked-handoff";
+
+invariant Healthy using v on M::Workflow at current {
+    L::WideBounded(self.wide)
+    and self.wide >= -9223372036854775808 and self.wide <= 9223372036854775807
+    and size(self.receipts) <= 5
+    and sum<M::Total>(receipt in self.receipts: receipt) <= self.total
+}
+
+pre BeforeApply using v on M::Workflow::apply { amount >= 1 }
+post AfterApply using v on M::Workflow::apply { result }
+
+temporal Due using t over (view: M::Workflow) clock "events" on origin {
+    always[0,30] holds(L::Ready(view.ready))
+}
+temporal DueLate using t over (view: M::Workflow) clock "events" on origin {
+    always[0,60] holds(L::Ready(view.ready))
+}
+
+protocol Flow using p over (view: M::Workflow) on origin {
+    role Service on M::Workflow;
+    role Provider on M::Provider;
+    channel Decisions from Provider to Service carries M::Notice
+        ordering unordered delivery at-least-once capacity 4 overflow reject;
+
+    compensate Full for Main::Applied as (forwardFull: M::Workflow)
+        by Service on M::Workflow::apply using t clock "full-recovery" {
+        capture targetFull: M::Total = forwardFull.total;
+        activate first (triggerFull: M::Notice) when { not triggerFull.ready } {
+            capture activatedFull: Boolean = triggerFull.ready;
+        }
+        within [0,30]; attempts 3 of M::Attempt;
+        retry (earlierFull: M::Attempt, laterFull: M::Attempt) {
+            earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1
+            and not activatedFull
+        };
+        commit Main::Committed;
+        recover (recoveredFull: M::Recovery) {
+            size(recoveredFull.receipts) <= 5 and not activatedFull
+        };
+    }
+
+    requires temporal Due;
+
+    compensate Partial for Main::Applied as (forwardPartial: M::Workflow)
+        by Service on M::Workflow::apply using t clock "partial-recovery" {
+        capture targetPartial: M::Total = forwardPartial.total;
+        activate first (triggerPartial: M::Notice) when { not triggerPartial.ready } {
+            capture activatedPartial: Boolean = triggerPartial.ready;
+        }
+        within [0,30]; attempts 3 of M::Attempt;
+        retry (earlierPartial: M::Attempt, laterPartial: M::Attempt) {
+            earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1
+            and not activatedPartial
+        };
+        commit never;
+        recover (recoveredPartial: M::Recovery) {
+            size(recoveredPartial.receipts) > 0 and size(recoveredPartial.receipts) < 5
+            and not activatedPartial
+        };
+    }
+
+    run sequence Main {
+        check Gate using v { true };
+        parallel Gather {
+            branch left sequence Left {
+                send LeftSent via Decisions as (leftSent: M::Notice) { true };
+                receive LeftReply via Decisions of LeftSent as (leftReply: M::Notice) { true };
+            }
+            branch right sequence Right {
+                send RightSent via Decisions as (rightSent: M::Notice) { true };
+                receive RightReply via Decisions of RightSent as (rightReply: M::Notice) { true };
+            }
+        } join all [left,right];
+        choice Outcome by Service visible (leftReply.ready,rightReply.ready) {
+            case ready when { leftReply.ready and rightReply.ready }
+                event Confirmed by Service as (confirmed: M::Notice) { true };
+            case notReady when { not (leftReply.ready and rightReply.ready) }
+                event Unconfirmed by Service as (unconfirmed: M::Notice) { true };
+        }
+        attempt Tried by Service on M::Workflow::apply contracts [BeforeApply,AfterApply]
+            as (attempted: M::Notice) { attempted.ready };
+        effect Applied of Tried as (applied: M::Workflow) { L::Ready(applied.ready) };
+        event Recovered by Service for Full as (recoveryEvent: M::Notice) { recoveryEvent.ready };
+        commit Committed by Service as (committed: M::Notice) { committed.ready };
+    }
+    finish Closed as (closed: M::Workflow) { L::Ready(closed.ready) };
+}

@@ -4,9 +4,9 @@
 //! [`emit`] reads a complete-V1 (`1-draft`) QSL source file, the domain
 //! package documents its `model` declarations select and the library sources
 //! its `import`s name, and returns the bytes
-//! [`qsl_replay::compile_package`] emits for them. It adds no emit logic of
-//! its own, so the bytes follow the producer as it changes; nothing here
-//! freezes a shape or a digest. The `emit_checked_v2` example is a thin
+//! the spine's parse, select, check and package operations emit for them. It
+//! adds no emit logic of its own, so the bytes follow the producer as it
+//! changes; nothing here freezes a shape or a digest. The `emit_checked_v2` example is a thin
 //! caller of [`run`].
 //!
 //! Every failure (usage, unreadable file, write failure, refusal) exits with
@@ -28,11 +28,15 @@ use std::path::{Path, PathBuf};
 use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_replay::{
-    compile_package_with_execution_points,
-    spine::{DependencyInput, DependencyInputRefusal, StateClauseExecutionPoints, SuppliedLibrary},
-    ReplayLimits, ReplayRefusal, StageLimits,
+    spine::{
+        self, CheckedUnit, DependencyInput, DependencyInputRefusal, EmittedUnit, PackageLimits,
+        ParseRequest, SpineLimits, StateClauseExecutionPoints, SuppliedLibrary,
+    },
+    ReplayRefusal,
 };
-use quire_contract_model::ExecutionPoint;
+use qsl_semantics::library::LibraryName;
+use quire_contract_model::{ClockConfiguration, ExecutionPoint};
+use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
 
 /// The usage line, shown on a malformed command line.
@@ -85,6 +89,18 @@ pub enum Error {
     /// The producer refused the source.
     #[error("{}", without_limit_hint(.0))]
     Producer(Box<ReplayRefusal>),
+    /// A temporal clock selection names no `temporal` clause of the unit.
+    #[error("clock selection {clause:?} names no temporal clause of the unit")]
+    UnknownClause {
+        /// The selected clause name.
+        clause: String,
+    },
+    /// Two temporal clock selections name one clause.
+    #[error("clock selection {clause:?} is given more than once")]
+    DuplicateClause {
+        /// The repeated clause name.
+        clause: String,
+    },
 }
 
 impl Error {
@@ -98,12 +114,24 @@ impl Error {
             | Self::Read { .. }
             | Self::Write { .. }
             | Self::TooLarge { .. }
-            | Self::Points { .. } => None,
+            | Self::Points { .. }
+            | Self::UnknownClause { .. }
+            | Self::DuplicateClause { .. } => None,
         };
         code.map_or(Category::Refusal.exit_code(), |code| {
             code.category().exit_code()
         })
     }
+}
+
+/// The clock configuration of one `temporal` clause, selected by the
+/// clause's authored name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockSelection {
+    /// The exact authored clause name.
+    pub clause: String,
+    /// The clock configuration the clause's temporal profile takes.
+    pub clock: ClockConfiguration,
 }
 
 /// One parsed command line.
@@ -121,6 +149,10 @@ pub struct Request {
     /// an object from exact authored clause name to an execution point such
     /// as `{"kind": "post", "operation": "set"}`.
     pub execution_points: Option<PathBuf>,
+    /// The clock configuration of each temporal clause whose profile takes
+    /// one. The command line has no flag for it, so a parsed request holds
+    /// none.
+    pub temporal_selections: Vec<ClockSelection>,
     /// Where to write the bytes instead of stdout.
     pub out: Option<PathBuf>,
 }
@@ -171,6 +203,7 @@ impl Request {
             models,
             libraries,
             execution_points,
+            temporal_selections: Vec::new(),
             out,
         })
     }
@@ -277,9 +310,33 @@ fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
     Ok(points)
 }
 
-/// Emit the `quire.checked-package/v2` bytes of `request`'s source through
-/// [`qsl_replay::compile_package`].
-pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
+/// What one compile read and produced: the exact bytes of every input, the
+/// in-process checked unit and its emitted package.
+#[derive(Debug)]
+pub(crate) struct Compiled {
+    /// The unit's source bytes.
+    pub(crate) source: Vec<u8>,
+    /// The domain package documents, in request order.
+    pub(crate) models: Vec<Vec<u8>>,
+    /// The supplied libraries with the bytes they were compiled from.
+    pub(crate) libraries: Vec<SuppliedLibrary>,
+    /// The checked unit the package was emitted from.
+    pub(crate) checked: CheckedUnit,
+    /// The emitted package and the evidence its reader needs.
+    pub(crate) emitted: EmittedUnit,
+}
+
+/// The refusal a failed stage becomes.
+fn refusal(failure: spine::FrontEndFailure) -> Error {
+    Error::Producer(Box::new(match spine::refusal_or_fault(failure) {
+        Ok(refusal) => ReplayRefusal::Recompile(refusal),
+        Err(fault) => ReplayRefusal::Fault(fault),
+    }))
+}
+
+/// Read `request`'s inputs and run the spine over them: parse, select, check
+/// and emit, with each temporal clock selection joined to its clause.
+pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     let source = read(&request.source, false)?;
     let models = request
         .models
@@ -298,26 +355,101 @@ pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;
-    let dependencies = DependencyInput::new(libraries).map_err(Error::Dependencies)?;
+    let dependencies = DependencyInput::new(libraries.clone()).map_err(Error::Dependencies)?;
     let points = request
         .execution_points
         .as_deref()
         .map(execution_points)
         .transpose()?
         .unwrap_or_default();
-    let compiled = compile_package_with_execution_points(
-        identity("source", &request.source),
-        request.package_name.clone(),
-        &request.source.display().to_string(),
-        &source,
-        models.iter().map(Vec::as_slice),
-        &dependencies,
-        &points,
-        StageLimits::default(),
-        ReplayLimits::default(),
+    let unit = identity("source", &request.source);
+    let path = request.source.display().to_string();
+    let package = LibraryName::new(request.package_name.clone())
+        .map_err(|invalid| Error::Producer(Box::new(ReplayRefusal::InvalidPackageName(invalid))))?;
+    let packages = qsl_semantics::model::intake::package_input(models.iter().map(Vec::as_slice))
+        .map_err(|refused| {
+            Error::Producer(Box::new(ReplayRefusal::DomainPackages(Box::new(refused))))
+        })?;
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &unit,
+            path: &path,
+            bytes: &source,
+        },
+        limits.source,
+        &cancel,
     )
-    .map_err(|refusal| Error::Producer(Box::new(refusal)))?;
-    Ok(compiled.bytes().to_vec())
+    .map_err(refusal)?
+    .into_value();
+    let admitted = spine::select(&parsed, &packages, limits.model, &cancel)
+        .map_err(refusal)?
+        .into_value();
+    let checked = spine::check_with_execution_points(
+        &parsed,
+        package.as_str().to_owned(),
+        &points,
+        &admitted,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let selections = clock_selections(&checked, &request.temporal_selections)?;
+    let emitted = spine::package_with_temporal_selections(
+        &checked,
+        &selections,
+        PackageLimits::default(),
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    Ok(Compiled {
+        source,
+        models,
+        libraries,
+        checked,
+        emitted,
+    })
+}
+
+/// Join each named clock selection to the checked clause of that name.
+fn clock_selections(
+    checked: &CheckedUnit,
+    selections: &[ClockSelection],
+) -> Result<Vec<qsl_package::TemporalClockSelection>, Error> {
+    let clauses = checked.package().graph().temporal_clauses();
+    let mut joined = Vec::with_capacity(selections.len());
+    for (position, selection) in selections.iter().enumerate() {
+        if selections[..position]
+            .iter()
+            .any(|earlier| earlier.clause == selection.clause)
+        {
+            return Err(Error::DuplicateClause {
+                clause: selection.clause.clone(),
+            });
+        }
+        let clause = clauses
+            .iter()
+            .find(|node| node.clause().name() == selection.clause)
+            .ok_or_else(|| Error::UnknownClause {
+                clause: selection.clause.clone(),
+            })?;
+        joined.push(qsl_package::TemporalClockSelection {
+            source: checked.source().reference().clone(),
+            declaration_span: clause.clause().span(),
+            clock: selection.clock.clone(),
+        });
+    }
+    Ok(joined)
+}
+
+/// Emit the `quire.checked-package/v2` bytes of `request`'s source through
+/// the spine's parse, select, check and package operations.
+pub fn emit(request: &Request) -> Result<Vec<u8>, Error> {
+    Ok(compile(request)?.emitted.package().bytes().to_vec())
 }
 
 /// Parse `arguments`, emit, and write the bytes to `--out` or `stdout`.
