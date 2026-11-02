@@ -197,6 +197,47 @@ pub enum EmitRefusal {
         /// The exact checked application key retained by QSL lowering.
         application: NodeKey,
     },
+    /// A temporal declaration whose selected profile requires a clock
+    /// configuration has no exact producer selection.
+    #[error(
+        "temporal declaration at {source_ref:?} bytes {span:?} has no selected clock configuration"
+    )]
+    MissingTemporalClockSelection {
+        /// The checked source document.
+        source_ref: qsl_foundation::source::provenance::RawSourceRef,
+        /// The exact declaration locus.
+        span: qsl_foundation::Span,
+    },
+    /// A temporal clock selection does not name a configured declaration in
+    /// the checked source.
+    #[error(
+        "temporal clock selection at {source_ref:?} bytes {span:?} has no configured declaration"
+    )]
+    SurplusTemporalClockSelection {
+        /// The selected source document.
+        source_ref: qsl_foundation::source::provenance::RawSourceRef,
+        /// The selected declaration locus.
+        span: qsl_foundation::Span,
+    },
+    /// A temporal clock selection repeats one checked source locus.
+    #[error("temporal clock selection at {source_ref:?} bytes {span:?} is duplicated")]
+    DuplicateTemporalClockSelection {
+        /// The selected source document.
+        source_ref: qsl_foundation::source::provenance::RawSourceRef,
+        /// The selected declaration locus.
+        span: qsl_foundation::Span,
+    },
+    /// The selected configuration alternative does not match the checked
+    /// declaration's selected temporal profile.
+    #[error("temporal clock configuration at {source_ref:?} bytes {span:?} does not match profile {profile}")]
+    TemporalClockProfileMismatch {
+        /// The checked source document.
+        source_ref: qsl_foundation::source::provenance::RawSourceRef,
+        /// The exact declaration locus.
+        span: qsl_foundation::Span,
+        /// The selected temporal profile identity.
+        profile: &'static str,
+    },
     /// A dispatch producer decision has no unique emitted call occurrence or
     /// one of its exact model/function identities is not in the emitted graph.
     #[error("dispatch producer decision for application {application:?} has no complete emitted identity context")]
@@ -204,6 +245,20 @@ pub enum EmitRefusal {
         /// The exact checked application key retained by QSL lowering.
         application: NodeKey,
     },
+}
+
+/// One explicit clock configuration selected for an exact checked temporal
+/// declaration. The emitter obtains the clock name and structural
+/// declaration identity from the checked graph; this selection supplies only
+/// the independent typed clock configuration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalClockSelection {
+    /// The exact source document containing the checked declaration.
+    pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// The declaration's exact half-open source byte span.
+    pub declaration_span: qsl_foundation::Span,
+    /// The independently selected typed clock configuration.
+    pub clock: quire_contract_model::ClockConfiguration,
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -218,7 +273,11 @@ impl EmitRefusal {
         match self {
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
-            | Self::UnknownOccurrenceRole { .. } => Code::UnsupportedProjection,
+            | Self::UnknownOccurrenceRole { .. }
+            | Self::MissingTemporalClockSelection { .. } => Code::UnsupportedProjection,
+            Self::SurplusTemporalClockSelection { .. }
+            | Self::DuplicateTemporalClockSelection { .. }
+            | Self::TemporalClockProfileMismatch { .. } => Code::InvalidProjectionCorrespondence,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
             Self::Abstraction(_) => Code::UnsupportedProjection,
@@ -266,6 +325,10 @@ impl EmitRefusal {
             | Self::UnresolvedNodeReference
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => None,
+            Self::MissingTemporalClockSelection { .. }
+            | Self::SurplusTemporalClockSelection { .. }
+            | Self::DuplicateTemporalClockSelection { .. }
+            | Self::TemporalClockProfileMismatch { .. } => None,
             Self::MissingDispatchIdentityContext { .. } => None,
         }
     }
@@ -3241,6 +3304,39 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
+/// Emit a checked package with explicit clock configurations for every
+/// temporal declaration whose selected profile requires one (FR-050,
+/// FR-322-AC-294). Each selection is joined to the checked graph by its exact
+/// source document and declaration byte span. The checked clause supplies the
+/// clock name, and the emitter supplies its final structural declaration ID.
+///
+/// This entry point does not use or populate the package's remembered
+/// emission: the explicit selections are part of this emission's identity.
+pub fn emit_checked_with_temporal_selections(
+    package: &CheckedPackage,
+    selections: &[TemporalClockSelection],
+) -> Result<Emission, EmitRefusal> {
+    emit_checked_with_temporal_selections_and_cancel(package, selections, &Cancel::new())
+}
+
+/// Emit with exact temporal selections while polling the caller's cancellation
+/// handle at the same points as [`emit_checked_with_cancel`].
+pub fn emit_checked_with_temporal_selections_and_cancel(
+    package: &CheckedPackage,
+    selections: &[TemporalClockSelection],
+    cancel: &Cancel,
+) -> Result<Emission, EmitRefusal> {
+    let graph = package.graph();
+    emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+        selections,
+    )
+}
+
 /// The metadata of a timed clause node with one `expression` occurrence,
 /// keyed `id` until the emitter rekeys it.
 fn clause_metadata(id: CheckedNodeId) -> TimedNodeMetadata {
@@ -3854,7 +3950,7 @@ pub fn emit_timed_models(
             },
             CheckedPackageSidecarsRef {
                 checked_term_data: None,
-                temporal_bindings: None,
+                temporal_bindings: base.temporal_bindings(),
             },
             &capability_report,
             &diagnostics,
@@ -3894,6 +3990,7 @@ pub fn emit_checked_with_cancel(
         |_| None,
         cancel,
         &ir_decodes,
+        &[],
     )?;
     package.remember_emission(&emission);
     Ok(emission)
@@ -3907,7 +4004,25 @@ pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes)
+    emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes, &[])
+}
+
+/// Emit a checked package with caller-placed source regions and explicit
+/// temporal clock selections. The table is joined to the checked source and
+/// declaration spans before any bytes are encoded.
+pub fn emit_package_with_temporal_selections(
+    package: &CheckedPackage,
+    regions: impl Fn(&Location) -> Option<SourceRegion>,
+    selections: &[TemporalClockSelection],
+) -> Result<Emission, EmitRefusal> {
+    emit_package_inner(
+        package,
+        regions,
+        |_| None,
+        &Cancel::new(),
+        &ir_decodes,
+        selections,
+    )
 }
 
 /// As [`emit_package`], but lets a caller force a specific node's wire
@@ -3926,7 +4041,7 @@ fn emit_package_with_fault(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes)
+    emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes, &[])
 }
 
 /// As [`emit_package`], but against an IR whose v2 vocabulary `decodes`
@@ -3940,7 +4055,7 @@ fn emit_package_decoding(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, |_| None, &Cancel::new(), decodes)
+    emit_package_inner(package, regions, |_| None, &Cancel::new(), decodes, &[])
 }
 
 /// As [`emit_checked`], but lets a caller force a specific node's wire
@@ -4152,6 +4267,7 @@ fn emit_package_inner(
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
     cancel: &Cancel,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
+    temporal_selections: &[TemporalClockSelection],
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let denied = || {
@@ -4745,6 +4861,7 @@ fn emit_package_inner(
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
+    let temporal_bindings = temporal_binding_rows(graph, &emitted_node_ids, temporal_selections)?;
     let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
         &emitted_node_ids,
@@ -4850,7 +4967,8 @@ fn emit_package_inner(
             },
             CheckedPackageSidecarsRef {
                 checked_term_data: checked_term_data.as_ref(),
-                temporal_bindings: None,
+                temporal_bindings: (!temporal_bindings.is_empty())
+                    .then_some(temporal_bindings.as_slice()),
             },
             &capability_report,
             &diagnostics,
@@ -4873,6 +4991,188 @@ fn emit_package_inner(
         equality_producer_identity_rows,
         equality_fact_witness_rows,
     })
+}
+
+fn temporal_binding_rows(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    selections: &[TemporalClockSelection],
+) -> Result<Vec<quire_contract_model::TemporalBinding>, EmitRefusal> {
+    use qsl_semantics::check::TemporalProfile;
+    use quire_contract_model::ClockConfiguration;
+
+    let mut selected = BTreeMap::new();
+    for selection in selections {
+        let key = (
+            selection.source.clone(),
+            selection.declaration_span.start,
+            selection.declaration_span.end,
+        );
+        if selected.insert(key, &selection.clock).is_some() {
+            return Err(EmitRefusal::DuplicateTemporalClockSelection {
+                source_ref: selection.source.clone(),
+                span: selection.declaration_span,
+            });
+        }
+    }
+
+    let source = graph.source();
+    let mut rows = Vec::new();
+    for temporal in graph.temporal_clauses() {
+        let clause = temporal.clause();
+        let profile = clause.profile();
+        let configuration_kind_matches = |clock: &ClockConfiguration| {
+            matches!(
+                (profile, clock),
+                (
+                    TemporalProfile::EventPositionFalseExtension,
+                    ClockConfiguration::EventPosition { .. }
+                ) | (
+                    TemporalProfile::FixedSampleFalseExtension,
+                    ClockConfiguration::FixedSample { .. }
+                ) | (
+                    TemporalProfile::TimestampedEventFiniteWindow,
+                    ClockConfiguration::TimestampedEvent { .. }
+                )
+            )
+        };
+        if !matches!(
+            profile,
+            TemporalProfile::EventPositionFalseExtension
+                | TemporalProfile::FixedSampleFalseExtension
+                | TemporalProfile::TimestampedEventFiniteWindow
+        ) {
+            continue;
+        }
+        let span = clause.span();
+        let key = (source.clone(), span.start, span.end);
+        let Some(clock) = selected.remove(&key) else {
+            return Err(EmitRefusal::MissingTemporalClockSelection {
+                source_ref: source.clone(),
+                span,
+            });
+        };
+        if !configuration_kind_matches(clock) {
+            return Err(EmitRefusal::TemporalClockProfileMismatch {
+                source_ref: source.clone(),
+                span,
+                profile: profile.identity(),
+            });
+        }
+        let declaration_key = temporal.identity();
+        let declaration = emitted_node_ids
+            .get(&declaration_key)
+            .cloned()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        rows.push((
+            declaration_key,
+            quire_contract_model::TemporalBinding {
+                declaration,
+                clock_name: clause.clock().into(),
+                clock: clock.clone(),
+            },
+        ));
+    }
+
+    for hyper in graph.hyper_clauses() {
+        let profile = hyper.profile();
+        if !matches!(
+            profile,
+            TemporalProfile::EventPositionFalseExtension
+                | TemporalProfile::FixedSampleFalseExtension
+                | TemporalProfile::TimestampedEventFiniteWindow
+        ) {
+            continue;
+        }
+        let span = hyper.span();
+        let key = (source.clone(), span.start, span.end);
+        let Some(clock) = selected.remove(&key) else {
+            return Err(EmitRefusal::MissingTemporalClockSelection {
+                source_ref: source.clone(),
+                span,
+            });
+        };
+        let kind_matches = matches!(
+            (profile, clock),
+            (
+                TemporalProfile::EventPositionFalseExtension,
+                ClockConfiguration::EventPosition { .. }
+            ) | (
+                TemporalProfile::FixedSampleFalseExtension,
+                ClockConfiguration::FixedSample { .. }
+            ) | (
+                TemporalProfile::TimestampedEventFiniteWindow,
+                ClockConfiguration::TimestampedEvent { .. }
+            )
+        );
+        if !kind_matches {
+            return Err(EmitRefusal::TemporalClockProfileMismatch {
+                source_ref: source.clone(),
+                span,
+                profile: profile.identity(),
+            });
+        }
+        let occurrence = hyper
+            .assembled_occurrence()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let hyper_node = graph
+            .semantic_graph()
+            .node(occurrence.node().clone())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let BodyTerm::Aggregate(aggregate) = hyper_node.body() else {
+            return Err(EmitRefusal::SourceMapInvariant);
+        };
+        let wrapper = aggregate.members.iter().find_map(|member| {
+            let MemberTerm::Binding(binding) = member else {
+                return None;
+            };
+            if binding.name != "body" {
+                return None;
+            }
+            let BindingValue::Leaf(LeafTerm::Reference { target }) = &binding.value else {
+                return None;
+            };
+            target.admitted().cloned()
+        });
+        let wrapper = wrapper.ok_or(EmitRefusal::SourceMapInvariant)?;
+        let clock_name = graph
+            .semantic_graph()
+            .node(wrapper.clone())
+            .and_then(|node| match node.body() {
+                BodyTerm::Application(application) => application.arguments.get(1),
+                _ => None,
+            })
+            .and_then(|argument| match argument {
+                MemberTerm::Leaf(LeafTerm::Literal {
+                    value: LiteralValue::Text(name),
+                    ..
+                }) => Some(name.as_str()),
+                _ => None,
+            })
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let declaration_key = wrapper;
+        let declaration = emitted_node_ids
+            .get(&declaration_key)
+            .cloned()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        rows.push((
+            declaration_key,
+            quire_contract_model::TemporalBinding {
+                declaration,
+                clock_name: clock_name.into(),
+                clock: clock.clone(),
+            },
+        ));
+    }
+
+    if let Some(((source_ref, start, end), _)) = selected.into_iter().next() {
+        return Err(EmitRefusal::SurplusTemporalClockSelection {
+            source_ref,
+            span: qsl_foundation::Span { start, end },
+        });
+    }
+    rows.sort_by(|left, right| left.1.declaration.cmp(&right.1.declaration));
+    Ok(rows.into_iter().map(|(_, row)| row).collect())
 }
 
 /// The ids `node` holds that this emitter can reach through IR's public

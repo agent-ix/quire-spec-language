@@ -59,6 +59,7 @@ pub(crate) struct Case {
     body: String,
     documents: Documents,
     checked: CheckedPackage,
+    temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
     /// The letters of the unit's one claim.
     letters: &'static dyn ModelLetters,
     /// The cell `SB`'s `over` input is bound to, when not the core.
@@ -81,10 +82,13 @@ impl Case {
 
     /// The unit with `body`, its claim's atom read by `letters`.
     pub(crate) fn with_letters(body: &str, letters: &'static dyn ModelLetters) -> Self {
+        let checked = package(body);
+        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&checked);
         Self {
             body: body.to_owned(),
             documents: Documents::new(),
-            checked: package(body),
+            checked,
+            temporal_clock_selections,
             letters,
             over: None,
             profiles: "",
@@ -94,11 +98,12 @@ impl Case {
     /// [`Self::with_letters`] with the protocol profile selected, so `SB`'s
     /// clause has its node.
     pub(crate) fn protocol_profiled(body: &str, letters: &'static dyn ModelLetters) -> Self {
-        Self {
-            checked: protocol_profiled_package(body),
-            profiles: PROTOCOL_PROFILE,
-            ..Self::with_letters(body, letters)
-        }
+        let mut case = Self::with_letters(body, letters);
+        case.checked = protocol_profiled_package(body);
+        case.temporal_clock_selections =
+            crate::fill::tcb_01_event_position_selection(&case.checked);
+        case.profiles = PROTOCOL_PROFILE;
+        case
     }
 
     /// The unit with `body`, `SB` over the object `object` of `population`;
@@ -129,6 +134,10 @@ impl Case {
     /// The unit's checked package.
     pub(crate) fn checked(&self) -> &CheckedPackage {
         &self.checked
+    }
+
+    pub(crate) fn temporal_clock_selections(&self) -> &[qsl_package::TemporalClockSelection] {
+        &self.temporal_clock_selections
     }
 
     pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
@@ -197,6 +206,7 @@ impl Case {
     ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(selection),
                 item,
                 max_depth: None,
@@ -254,6 +264,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
                 subject,
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer,
@@ -285,6 +296,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(selection),
                 item,
                 max_store_buffer,
@@ -307,6 +319,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(selection),
                 item: ModelCheckItem::RaceFreedom,
                 max_store_buffer: None,
@@ -636,7 +649,10 @@ fn unset_bounds_default_to_four_and_stay_out_of_the_obligation() {
         let [clause] = case.checked.graph().temporal_clauses() else {
             panic!("one declared clause");
         };
+        let temporal_clock_selections =
+            crate::fill::tcb_01_event_position_selection(case.checked());
         let request = ProtocolCheckRequest {
+            temporal_clock_selections: &temporal_clock_selections,
             subject: case.subject(&tso),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,

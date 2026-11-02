@@ -178,6 +178,7 @@ pub(super) fn check(
         request.subject.simulation.package,
         request.subject.simulation.packages,
         clause,
+        request.temporal_clock_selections,
         cancel,
     ) {
         Ok(_) => None,
@@ -249,6 +250,7 @@ pub(super) fn check(
                     request.item.instances_for(
                         &request.subject,
                         &system,
+                        request.temporal_clock_selections,
                         cancel,
                         SubjectKind::Ordinary,
                         request.limits.max_automaton_states,
@@ -285,11 +287,16 @@ pub(super) struct ProtocolLivenessOptions {
     pub(super) instance_bound: Option<InstanceBound>,
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "protocol liveness inputs plus the explicit clock selection table"
+)]
 pub(super) fn check_protocol<M: MemoryModel>(
     subject: &ProtocolSubject<'_>,
     system: &ProtocolSystem<'_, M>,
     memory_bound: Option<MemoryBound>,
     item: ModelCheckItem<'_>,
+    temporal_clock_selections: &[qsl_package::TemporalClockSelection],
     max_depth: Option<usize>,
     options: ProtocolLivenessOptions,
     cancel: &Cancel,
@@ -299,12 +306,17 @@ pub(super) fn check_protocol<M: MemoryModel>(
     };
     let model = system.model();
     let simulation = &subject.model.simulation;
-    let root_cancelled =
-        match ClauseIdentity::resolve(simulation.package, simulation.packages, clause, cancel) {
-            Ok(_) => None,
-            Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
-            Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
-        };
+    let root_cancelled = match ClauseIdentity::resolve(
+        simulation.package,
+        simulation.packages,
+        clause,
+        temporal_clock_selections,
+        cancel,
+    ) {
+        Ok(_) => None,
+        Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
+        Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
+    };
     let protocol_fairness: Vec<_> = clause
         .protocol_fairness()
         .map(|(fairness, _)| fairness.clone())
@@ -352,6 +364,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
                     item.instances_for(
                         &subject.model,
                         model,
+                        temporal_clock_selections,
                         cancel,
                         SubjectKind::Protocol,
                         options.limits.max_automaton_states,

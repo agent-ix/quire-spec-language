@@ -65,13 +65,24 @@ struct Compiled {
 /// `unit` through S1, S2, I1, the assembler, check, link and the v2
 /// emitter, with nothing omitted.
 fn compile(unit: &str) -> Compiled {
-    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
-    let graph = assemble_with_models(unit.as_bytes(), &packages)
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let graph = check_graph(unit);
+    let selections = graph
+        .temporal_clauses()
+        .iter()
+        .filter_map(|temporal| {
+            Some(crate::emit::TemporalClockSelection {
+                source: graph.source().clone(),
+                declaration_span: temporal.clause().span(),
+                clock: fixture_clock(temporal.clause().profile())?,
+            })
+        })
+        .collect::<Vec<_>>();
     let clauses = graph.temporal_clauses().to_vec();
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &CheckedPackage::link(graph),
+        &selections,
+    )
+    .expect("the package emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     Compiled {
@@ -79,6 +90,153 @@ fn compile(unit: &str) -> Compiled {
         emission,
         wire,
     }
+}
+
+fn fixture_clock(
+    profile: qsl_semantics::check::TemporalProfile,
+) -> Option<quire_contract_model::ClockConfiguration> {
+    use qsl_semantics::check::TemporalProfile as P;
+    use quire_contract_model::{ClockConfiguration as C, ClockExactNumber as N};
+
+    match profile {
+        P::EventPositionFalseExtension => Some(C::EventPosition {
+            sequence_authority: "test-order-events".into(),
+        }),
+        P::FixedSampleFalseExtension => Some(C::FixedSample {
+            epoch: N::Integer {
+                decimal: "0".into(),
+            },
+            period: N::Rational {
+                numerator: "1".into(),
+                denominator: "10".into(),
+            },
+            unit: "test-milliseconds".into(),
+        }),
+        P::TimestampedEventFiniteWindow => Some(C::TimestampedEvent {
+            timestamp_unit: "test-rfc3339".into(),
+        }),
+        P::InfiniteTrace | P::Timed => None,
+    }
+}
+
+fn check_graph(unit: &str) -> qsl_semantics::check::CheckedGraph {
+    let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"))
+}
+
+/// FR-322-AC-294: the emitter joins each explicit clock selection to one
+/// checked source locus and writes the selected typed clock beside the exact
+/// emitted declaration id. The clock name comes from the checked clause.
+#[trace("TC-134", "FR-322-AC-294")]
+#[test]
+fn event_position_binding_uses_the_exact_checked_selection() {
+    let compiled = compile(&unit(
+        EVENT,
+        &declared("Bound", "eventually[0,1] holds(true)"),
+    ));
+    let bindings = compiled.wire["temporal_bindings"]
+        .as_array()
+        .expect("clock-configured clauses emit bindings");
+    let [binding] = bindings.as_slice() else {
+        panic!("one checked clause produces one selected clock binding: {bindings:?}");
+    };
+    assert_eq!(binding["clock_name"], "model-steps");
+    assert_eq!(
+        binding["clock"],
+        json!({"kind": "event_position", "sequence_authority": "test-order-events"})
+    );
+    assert_eq!(
+        binding["declaration"],
+        clause_node(&compiled.wire)["node_id"]
+    );
+}
+
+/// FR-322-AC-294: the compatibility entry point cannot invent a selection
+/// for a profile whose checked declarations require clock configuration.
+#[trace("TC-134", "FR-322-AC-294")]
+#[test]
+fn configured_temporal_clause_without_selection_refuses_emission() {
+    let source_text = unit(
+        EVENT,
+        &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
+    );
+    let source_len = source_text.len() as u64;
+    let package = CheckedPackage::link(check_graph(&source_text));
+    let refusal = emit_checked(&package)
+        .expect_err("configured temporal clauses require explicit clock selection");
+    assert!(matches!(
+        refusal,
+        crate::emit::EmitRefusal::MissingTemporalClockSelection { .. }
+    ));
+    let refusal = crate::emit::emit_checked_with_cancel(&package, &quire_exact::Cancel::new())
+        .expect_err("the cancelable default also refuses to invent a clock configuration");
+    assert!(matches!(
+        refusal,
+        crate::emit::EmitRefusal::MissingTemporalClockSelection { .. }
+    ));
+    let source = package.graph().source().clone();
+    let refusal = crate::emit::emit_package(&package, move |_| {
+        Some(
+            qsl_foundation::source::provenance::SourceRegion::new(source.clone(), 0, source_len)
+                .unwrap(),
+        )
+    })
+    .expect_err("caller-placed emission also requires an explicit clock configuration");
+    assert!(matches!(
+        refusal,
+        crate::emit::EmitRefusal::MissingTemporalClockSelection { .. }
+    ));
+}
+
+/// FR-322-AC-294: configuration shape is checked against the selected law,
+/// and selections cannot be duplicated or moved to a different source locus.
+#[trace("TC-134", "FR-322-AC-294")]
+#[test]
+fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
+    let graph = check_graph(&unit(
+        EVENT,
+        &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
+    ));
+    let temporal = &graph.temporal_clauses()[0];
+    let event_selection = crate::emit::TemporalClockSelection {
+        source: graph.source().clone(),
+        declaration_span: temporal.clause().span(),
+        clock: fixture_clock(temporal.clause().profile()).expect("event profile selection"),
+    };
+    let package = CheckedPackage::link(graph);
+
+    let duplicate = [event_selection.clone(), event_selection.clone()];
+    assert!(matches!(
+        crate::emit::emit_checked_with_temporal_selections(&package, &duplicate),
+        Err(crate::emit::EmitRefusal::DuplicateTemporalClockSelection { .. })
+    ));
+
+    let wrong_profile = crate::emit::TemporalClockSelection {
+        clock: quire_contract_model::ClockConfiguration::TimestampedEvent {
+            timestamp_unit: "test-rfc3339".into(),
+        },
+        ..event_selection.clone()
+    };
+    assert!(matches!(
+        crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_profile]),
+        Err(crate::emit::EmitRefusal::TemporalClockProfileMismatch { .. })
+    ));
+
+    let wrong_source = crate::emit::TemporalClockSelection {
+        source: qsl_foundation::source::provenance::RawSourceRef::new(
+            "test-authority",
+            "different-source",
+        )
+        .expect("valid fixture source"),
+        ..event_selection
+    };
+    assert!(matches!(
+        crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_source]),
+        Err(crate::emit::EmitRefusal::MissingTemporalClockSelection { .. })
+    ));
 }
 
 /// The I2 evidence for a ConfigVersion package: its required features and

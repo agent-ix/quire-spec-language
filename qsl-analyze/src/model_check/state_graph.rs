@@ -91,6 +91,9 @@ impl<'a> StateGraphItem<'a> {
 pub struct StateGraphRequest<'a> {
     /// The model subject.
     pub subject: ModelSubject<'a>,
+    /// Explicit clock configuration for every configured temporal clause in
+    /// the checked package, keyed by exact source and declaration locus.
+    pub temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
     /// The subject's state-graph items.
     pub items: Vec<StateGraphItem<'a>>,
     /// State-space reductions selected by the request (FR-159, ADR-022 GR-1).
@@ -877,6 +880,7 @@ pub fn check_and_settle_state_graph(
         .collect::<Vec<_>>();
     let simulation = request.subject.simulation.clone();
     let proof_bounds = request.subject.proof_bounds.clone();
+    let temporal_clock_selections = request.temporal_clock_selections.clone();
     let limits = request.limits;
     let run = check_state_graph(request, cancel)?;
     let subject = ModelSubject {
@@ -895,7 +899,15 @@ pub fn check_and_settle_state_graph(
             instances
                 .iter()
                 .map(|instance| {
-                    settle_state_graph(instance, &method, &subject, claim, cancel, &mut replay)
+                    settle_state_graph(
+                        instance,
+                        &method,
+                        &subject,
+                        claim,
+                        &temporal_clock_selections,
+                        cancel,
+                        &mut replay,
+                    )
                 })
                 .collect()
         })

@@ -391,6 +391,7 @@ impl World {
         };
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(),
                 item,
                 max_depth,
@@ -608,6 +609,7 @@ impl World {
             outcome,
             &ModelCheckLimits::default(),
             &CertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(),
                 item: ModelCheckItem::Clause {
                     clause: &self.clauses[clause],

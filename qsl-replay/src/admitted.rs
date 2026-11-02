@@ -26,7 +26,7 @@ use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
 use quire_semantic_value::unit::{NominalUnitForm, NominalUnitNode};
 
 use crate::bounds::ReplayLimits;
-use crate::compile::{recompile_unit, CompileUnit, CompiledPackage};
+use crate::compile::{recompile_unit_with_temporal_selections, CompileUnit, CompiledPackage};
 use crate::execute::{LimitAboveReader, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{CompileRefusal, DependencyInput};
@@ -700,7 +700,33 @@ pub fn compile_admitted<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<AdmittedCompilation, AdmittedRefusal> {
-    let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
+    compile_admitted_with_temporal_selections(
+        unit,
+        packages,
+        dependencies,
+        &[],
+        limits,
+        replay_limits,
+    )
+}
+
+/// [`compile_admitted`] with explicit per-declaration temporal clock selections.
+pub fn compile_admitted_with_temporal_selections<'a>(
+    unit: CompileUnit<'_>,
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<AdmittedCompilation, AdmittedRefusal> {
+    let compiled = recompile_unit_with_temporal_selections(
+        unit,
+        packages,
+        dependencies,
+        temporal_selections,
+        limits,
+        replay_limits,
+    )?;
     let context = context_of(
         compiled.checked.package(),
         &compiled.package,

@@ -68,6 +68,7 @@ fn settled(
         outcome,
         &ModelCheckLimits::default(),
         &CertificateRequest {
+            temporal_clock_selections: &[],
             subject: world.unlimited(),
             item: ModelCheckItem::Clause {
                 clause: &world.clauses[0],

@@ -96,6 +96,7 @@ use crate::model_check::item::{
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
 use qsl_eval::smt::SmtEncodingLimits;
+use qsl_package::TemporalClockSelection;
 
 /// One product state of a certificate: its model state's
 /// `quire.simulation.state-key/v1` state key and its automaton state's
@@ -177,6 +178,9 @@ pub enum TemporalCertificateCheck {
 pub struct CertificateRequest<'a> {
     /// The model subject (FR-125).
     pub subject: ModelSubject<'a>,
+    /// Explicit clock configurations selected for this subject's checked
+    /// temporal declarations.
+    pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
     /// The encoding limits used by the backend for this item's queries
@@ -319,6 +323,7 @@ fn check_model(
         SubjectKind::Ordinary,
         &request.subject,
         &request.item,
+        request.temporal_clock_selections,
         proof,
         limits,
         cancel,
@@ -331,6 +336,9 @@ fn check_model(
 pub struct ProtocolCertificateRequest<'a> {
     /// The protocol subject (FR-205).
     pub subject: ProtocolSubject<'a>,
+    /// Explicit clock configurations selected for this subject's checked
+    /// temporal declarations.
+    pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
     /// The `max_store_buffer` the run used; `None` for the default 4
@@ -419,6 +427,7 @@ fn check_protocol(
                 SubjectKind::Protocol,
                 &subject.model,
                 item,
+                request.temporal_clock_selections,
                 proof,
                 limits,
                 cancel,
@@ -442,6 +451,7 @@ fn check_protocol(
                 SubjectKind::Protocol,
                 &subject.model,
                 item,
+                request.temporal_clock_selections,
                 proof,
                 limits,
                 cancel,
@@ -465,6 +475,7 @@ fn check_protocol(
                 SubjectKind::Protocol,
                 &subject.model,
                 item,
+                request.temporal_clock_selections,
                 proof,
                 limits,
                 cancel,
@@ -491,6 +502,7 @@ fn check_system<S: SubjectSystem>(
     subject_kind: SubjectKind,
     subject: &ModelSubject<'_>,
     item: &ModelCheckItem<'_>,
+    temporal_clock_selections: &[TemporalClockSelection],
     proof: Proof<'_>,
     limits: &ModelCheckLimits,
     cancel: &Cancel,
@@ -500,6 +512,7 @@ fn check_system<S: SubjectSystem>(
     let mut instances = match item.instances_for(
         subject,
         model,
+        temporal_clock_selections,
         cancel,
         subject_kind,
         limits.max_automaton_states,

@@ -1786,6 +1786,10 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(emission.package().name(), emitted_package["name"]);
+    assert_eq!(
+        emitted_package["temporal_bindings"], original["temporal_bindings"],
+        "rewriting timed model nodes preserves the admitted temporal selections"
+    );
     let (_, writer_outcome) = read_fixture_wire(TIMED_MODEL_NODES, &emitted_package);
     assert!(
         matches!(writer_outcome, Read::Verified { .. }),

@@ -19,11 +19,11 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
-    replay_model_trace, settle_model_check, CertificateRequest, DisagreementCause,
-    InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
-    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits,
-    ReplayRefusal, ResultLabel, TemporalCounterexample, TerminalValue, UndefinedEvaluation,
-    UndefinedLocus,
+    replay_model_trace_with_temporal_selections, settle_model_check, CertificateRequest,
+    DisagreementCause, InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
+    ModelTraceValue, ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
+    TerminalValue, UndefinedEvaluation, UndefinedLocus,
 };
 use quire_exact::{Cancel, NodeKey};
 
@@ -70,7 +70,7 @@ pub(crate) fn replay_with(
     atom: fn(i64) -> Option<bool>,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     let (node, occurrence) = clause_identity(fixture);
-    replay_model_trace(
+    replay_model_trace_with_temporal_selections(
         request(
             &fixture.documents.document,
             fixture.documents.snapshot_bytes(),
@@ -79,6 +79,7 @@ pub(crate) fn replay_with(
         &subject_of(fixture),
         &envelope_at(payload, node, occurrence),
         &Letters { atom },
+        &fixture.temporal_clock_selections,
         ReplayLimits::default(),
     )
 }
@@ -175,8 +176,10 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
         .collect();
     let mut documents = Documents::new(document.clone());
     let initial = vec![documents.start("s0", &[("c", 0)])];
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&package);
     let fixture = Fixture {
         package,
+        temporal_clock_selections,
         clauses,
         documents,
         initial,
@@ -209,6 +212,7 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
         )));
     let outcome = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &fixture.temporal_clock_selections,
             subject: subject(
                 &fixture.package,
                 &fixture.documents,
@@ -239,11 +243,12 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
         &fixture.unit,
     );
     let envelope = envelope_at(payload, node_id, occurrence);
-    let result = replay_model_trace(
+    let result = replay_model_trace_with_temporal_selections(
         wire,
         &subject_of(&fixture),
         &envelope,
         &letters,
+        &fixture.temporal_clock_selections,
         ReplayLimits::default(),
     )
     .expect("the lasso replays");
@@ -382,7 +387,7 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
     let payload = found(&fixture, is_three);
     let (node, occurrence) = clause_identity(&fixture);
     let replay_at = |node, occurrence| {
-        replay_model_trace(
+        replay_model_trace_with_temporal_selections(
             request(
                 &fixture.documents.document,
                 fixture.documents.snapshot_bytes(),
@@ -391,6 +396,7 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
             &subject_of(&fixture),
             &envelope_at(payload.clone(), node, occurrence),
             &Letters { atom: is_three },
+            &fixture.temporal_clock_selections,
             ReplayLimits::default(),
         )
     };
@@ -430,6 +436,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
         &outcome,
         &ModelCheckLimits::default(),
         &CertificateRequest {
+            temporal_clock_selections: &fixture.temporal_clock_selections,
             subject: subject(
                 &fixture.package,
                 &fixture.documents,
@@ -445,7 +452,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
         },
         &Cancel::new(),
         |counterexample| {
-            replay_model_trace(
+            replay_model_trace_with_temporal_selections(
                 request(
                     &fixture.documents.document,
                     fixture.documents.snapshot_bytes(),
@@ -454,6 +461,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                 &subject_of(&fixture),
                 &envelope_at(counterexample.clone(), node.clone(), occurrence.clone()),
                 &letters,
+                &fixture.temporal_clock_selections,
                 ReplayLimits::default(),
             )
         },
@@ -466,6 +474,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
         &outcome,
         &ModelCheckLimits::default(),
         &CertificateRequest {
+            temporal_clock_selections: &fixture.temporal_clock_selections,
             subject: subject(
                 &fixture.package,
                 &fixture.documents,
@@ -483,7 +492,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
         |counterexample| {
             let mut open = counterexample.clone();
             open.prefix.pop();
-            replay_model_trace(
+            replay_model_trace_with_temporal_selections(
                 request(
                     &fixture.documents.document,
                     fixture.documents.snapshot_bytes(),
@@ -492,6 +501,7 @@ fn a_liveness_violation_settles_refuted_through_replay() {
                 &subject_of(&fixture),
                 &envelope_at(open, node.clone(), occurrence.clone()),
                 &letters,
+                &fixture.temporal_clock_selections,
                 ReplayLimits::default(),
             )
         },
@@ -529,8 +539,10 @@ pub(crate) fn bounded_fixture(formula: &str) -> Fixture {
         .collect();
     let mut documents = Documents::new(doc);
     let initial = vec![documents.start("s0", &[("c", 0)])];
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&package);
     Fixture {
         package,
+        temporal_clock_selections,
         clauses,
         documents,
         initial,
@@ -842,6 +854,7 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
     let letters = system.clause_letters(node).expect("the clause has letters");
     let outcome = qsl_analyze::model_check::check_model(
         qsl_analyze::model_check::ModelCheckRequest {
+            temporal_clock_selections: &fixture.temporal_clock_selections,
             subject: subject(
                 &fixture.package,
                 &fixture.documents,
@@ -864,7 +877,7 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
         panic!("expected a violation, got {outcome:?}");
     };
     let (clause_node, occurrence) = clause_identity(&fixture);
-    let result = replay_model_trace(
+    let result = replay_model_trace_with_temporal_selections(
         request(
             &fixture.documents.document,
             fixture.documents.snapshot_bytes(),
@@ -873,6 +886,7 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
         &subject_of(&fixture),
         &envelope_at(*counterexample, clause_node, occurrence),
         &letters,
+        &fixture.temporal_clock_selections,
         ReplayLimits::default(),
     )
     .expect("replays");

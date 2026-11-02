@@ -81,9 +81,10 @@ mod witness;
 mod witness_entry_name;
 
 pub use admitted::{
-    compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
-    AdmittedContext, AdmittedDimension, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal,
-    AdmittedRefusal, AdmittedResource, AdmittedUnionMember, AdmittedUnit,
+    compile_admitted, compile_admitted_with_temporal_selections, AdmittedCompilation,
+    AdmittedComposite, AdmittedCompositeForm, AdmittedContext, AdmittedDimension, AdmittedEnum,
+    AdmittedEnumCase, AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource,
+    AdmittedUnionMember, AdmittedUnit,
 };
 pub use application::{
     acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
@@ -147,7 +148,9 @@ pub use clause_evaluation::{
     ClauseObservation, ClauseRefusal,
 };
 pub use compile::{
-    compile_package, compile_package_with_execution_points, CompileUnit, CompiledPackage,
+    compile_package, compile_package_with_execution_points,
+    compile_package_with_temporal_selections,
+    compile_package_with_temporal_selections_and_execution_points, CompileUnit, CompiledPackage,
 };
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -191,7 +194,11 @@ pub use model_check::counterexample::{
     TemporalCounterexample, TimedPoint, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
-pub use model_check::graph_replay::{replay_model_graph, replay_model_graph_with_cancel};
+pub use model_check::graph_replay::{
+    replay_model_graph, replay_model_graph_with_cancel,
+    replay_model_graph_with_cancel_and_temporal_selections,
+    replay_model_graph_with_temporal_selections,
+};
 pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
     StateGraphRecord,
@@ -211,7 +218,7 @@ pub use model_check::hyper_smt_query::{
     encode_hyper_query, HyperProductIdentity, HyperQuery, HyperQueryRequest,
 };
 pub use model_check::identity::{
-    node_occurrence, ClauseIdentity, ClauseRootRefusal, StateGraphIdentity,
+    node_occurrence, ClauseIdentity, ClauseRootRefusal, HyperIdentity, StateGraphIdentity,
 };
 pub use model_check::item::{
     Instance, ItemRefusal, LivenessTranslation, ModelCheckItem, Translation,
@@ -240,9 +247,10 @@ pub use model_check::refinement_settle::{
 #[doc(hidden)]
 pub use model_check::replay::replay_timed_counterexample;
 pub use model_check::replay::{
-    replay_model_trace, replay_protocol_trace, DelayBar, ModelTraceRefusal, ModelTraceReplayResult,
-    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
-    StrongFairnessHint, TimedReplay,
+    replay_model_trace, replay_model_trace_with_temporal_selections, replay_protocol_trace,
+    replay_protocol_trace_with_temporal_selections, DelayBar, ModelTraceRefusal,
+    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
+    ProtocolTraceSubject, StrongFairnessHint, TimedReplay,
 };
 pub use model_check::settle::{
     settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, RecordWarning,

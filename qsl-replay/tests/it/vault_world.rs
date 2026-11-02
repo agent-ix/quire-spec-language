@@ -691,6 +691,7 @@ mod tp4 {
 
         pub fn request(&self) -> CertificateRequest<'_> {
             CertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.world.subject(),
                 item: ModelCheckItem::Clause {
                     clause: self.clause(),
@@ -773,6 +774,7 @@ mod tp4 {
                 subject.simulation.package,
                 subject.simulation.packages,
                 self.clause(),
+                &[],
                 &Cancel::new(),
             )
             .expect("the clause resolves in its package");
