@@ -83,7 +83,6 @@ mod layer_crate_reexports;
 mod limit_name_patterns;
 mod linking;
 mod located_json;
-mod mapped;
 mod model_source;
 mod name_resolution_confinement;
 mod native_boundaries;

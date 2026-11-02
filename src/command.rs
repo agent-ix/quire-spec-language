@@ -3,8 +3,6 @@
 
 mod clause;
 mod compilation;
-#[cfg(feature = "quire-extraction")]
-pub mod extraction;
 mod output;
 mod wire;
 
@@ -179,10 +177,6 @@ pub enum RunCause {
     /// Request format was not selected.
     #[error("unsupported native command format")]
     Format,
-    /// Extraction selection, context or actual Quire/native compilation failure.
-    #[cfg(feature = "quire-extraction")]
-    #[error("{0}")]
-    Extraction(#[from] Box<extraction::ExtractionError>),
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
     Limit(LimitKind),
@@ -248,9 +242,6 @@ pub enum CompleteRunSelection {
     ExpressionStepsLimit,
     /// The program carries clause bindings.
     Clauses,
-    /// The program carries an extraction selection.
-    #[cfg(feature = "quire-extraction")]
-    Extraction,
     /// The request selects a model source in a native rule-model format.
     NativeModel,
     /// The request carries no `call`.
@@ -267,8 +258,6 @@ impl std::fmt::Display for CompleteRunSelection {
             Self::ValidationWorkLimit => "a validation_work limit",
             Self::ExpressionStepsLimit => "an expression_steps limit",
             Self::Clauses => "clause bindings",
-            #[cfg(feature = "quire-extraction")]
-            Self::Extraction => "an extraction selection",
             Self::NativeModel => "a native rule-model source",
             Self::NoCall => "no call",
         })
@@ -304,8 +293,6 @@ impl RunCause {
             Self::ClauseRequest { .. } => Code::InvalidRequest,
             Self::Output(_) | Self::ClauseOutput(_) => Code::OutputFailure,
             Self::Format => Code::UnknownWire,
-            #[cfg(feature = "quire-extraction")]
-            Self::Extraction(error) => error.code(),
             Self::Limit(_) => Code::ResourceExhausted,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
@@ -850,15 +837,8 @@ fn run_bytes(directory: &Path, bytes: &[u8], dependent_bytes: usize) -> Result<R
         },
         dependent_bytes,
     )?;
-    // The program source is read exactly once, regardless of extraction
-    // (FND-004/FND-011/FND-014): its declared edition decides the runner
-    // before any model or library source is read (FR-100), with the same
-    // reader `compile` uses. Extraction (FR-031) is a `run`-only,
-    // native-only feature with its own source frontend (I3) over these same
-    // bytes; `extraction::select`'s `Selected::compile` now takes this
-    // already-read source rather than reading `program.source` again. A
-    // `1-draft` source carrying `extraction` refuses (`run_complete`'s
-    // `CompleteRunSelection::Extraction`) rather than running natively.
+    // The program source is read exactly once; its declared edition decides
+    // the runner before any model or library source is read (FR-100).
     let source = intake.source(&request.program.source)?;
     match Edition::of(source.source())? {
         Edition::Native => Err(RunCause::ClauseRequest {
@@ -918,12 +898,6 @@ fn run_complete(
     if request.program.clauses.is_some() {
         return Err(RunCause::CompleteRunSelection(
             CompleteRunSelection::Clauses,
-        ));
-    }
-    #[cfg(feature = "quire-extraction")]
-    if request.program.extraction.is_some() {
-        return Err(RunCause::CompleteRunSelection(
-            CompleteRunSelection::Extraction,
         ));
     }
     if request.models.iter().any(|model| !is_domain_package(model)) {

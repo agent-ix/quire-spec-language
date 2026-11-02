@@ -241,9 +241,6 @@ pub(super) struct Model {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Program {
-    #[cfg(feature = "quire-extraction")]
-    #[serde(default, deserialize_with = "extraction")]
-    pub extraction: Option<Extraction>,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
     /// A `0-draft` program's authored clause bindings, required (FR-026); a
@@ -251,21 +248,6 @@ pub(super) struct Program {
     /// including an empty array -- is "carrying" `clauses` and refuses.
     #[serde(default, deserialize_with = "deserialize_objects_opt")]
     pub clauses: Option<Vec<Binding>>,
-}
-
-#[cfg(feature = "quire-extraction")]
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Extraction {
-    #[serde(deserialize_with = "from_object")]
-    pub body: Identity,
-}
-
-#[cfg(feature = "quire-extraction")]
-fn extraction<'de, D: serde::Deserializer<'de>>(
-    decoder: D,
-) -> Result<Option<Extraction>, D::Error> {
-    from_object(decoder).map(Some)
 }
 
 #[derive(Deserialize)]
