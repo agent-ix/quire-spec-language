@@ -7,7 +7,6 @@ use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::Diagnostic;
-use quire_contract_model as ir;
 use serde_json::Value;
 
 /// Immutable JSON produced from the typed native result schema.

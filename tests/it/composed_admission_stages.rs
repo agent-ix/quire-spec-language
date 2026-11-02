@@ -6,7 +6,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{Code, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use qsl_semantics::check::Capability;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;

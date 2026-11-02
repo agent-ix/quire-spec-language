@@ -1120,7 +1120,7 @@ fn assembler_checked_owner_and_declaration_variants_keep_format_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
-    let mut fixtures: Vec<(String, Vec<u8>)> = vec![
+    let fixtures: Vec<(String, Vec<u8>)> = vec![
         (
             "composed-choreography.native".to_owned(),
             include_bytes!("../fixtures/composed-choreography.native").to_vec(),

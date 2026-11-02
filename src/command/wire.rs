@@ -4,7 +4,7 @@
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use qsl_foundation::AccountingSetting;
 use quire_contract_model as ir;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::value::RawValue;
 
 /// The selected request shape owns its admitted envelope format.

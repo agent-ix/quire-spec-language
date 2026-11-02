@@ -18,8 +18,8 @@ use crate::native_model::{NativeModel, ObjectRole, OperationRole};
 use crate::syntax::ExprId;
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
+pub(crate) use types::Catalog;
 pub(crate) use types::{domain_value_type, DomainField};
-pub(crate) use types::{Catalog, FrameIndex};
 pub use types::{DomainType, NativeType};
 
 type Result<T> = std::result::Result<T, Box<CheckingError>>;
@@ -261,10 +261,6 @@ pub struct CheckedClause<'a> {
 }
 
 impl<'a> CheckedClause<'a> {
-    /// Borrow each established type once for complete package feature discovery.
-    pub(crate) fn expression_types(&self) -> impl Iterator<Item = &NativeType<'a>> {
-        self.nodes.iter().map(|node| &node.ty)
-    }
     /// Exact authored clause mapping retained in source order.
     pub fn binding(&self) -> &ClauseBinding {
         &self.binding
@@ -308,13 +304,9 @@ pub struct CheckedPackage<'a> {
     bindings: CheckBindings,
     clauses: Vec<CheckedClause<'a>>,
     usage: CheckUsage,
-    catalogs: Vec<Catalog<'a>>,
 }
 
 impl<'a> CheckedPackage<'a> {
-    pub(crate) fn catalogs(&self) -> &[Catalog<'a>] {
-        &self.catalogs
-    }
     /// Original native syntax, source, imports and model occurrences.
     pub fn linked(&self) -> &LinkedPackage<'a> {
         &self.linked
@@ -422,6 +414,5 @@ pub fn check<'a>(
         bindings,
         clauses,
         usage,
-        catalogs,
     })
 }
