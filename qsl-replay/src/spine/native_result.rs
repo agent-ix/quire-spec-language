@@ -2228,7 +2228,9 @@ impl Disposition {
             }
             // `write_clause_run_result` refuses a temporal disposition before
             // it builds this record.
-            ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_) => {}
+            ClauseDisposition::Temporal(_)
+            | ClauseDisposition::TemporalRefusal(_)
+            | ClauseDisposition::ProgressContradiction(_) => {}
         }
         result
     }
@@ -2248,7 +2250,9 @@ fn format_model_selection(
 pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
     if matches!(
         report.disposition,
-        ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_)
+        ClauseDisposition::Temporal(_)
+            | ClauseDisposition::TemporalRefusal(_)
+            | ClauseDisposition::ProgressContradiction(_)
     ) {
         return Err(NativeRunResultError::TemporalDisposition);
     }

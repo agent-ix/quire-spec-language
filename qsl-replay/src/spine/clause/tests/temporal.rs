@@ -1174,7 +1174,10 @@ fn with_ledger(
 
 fn assert_admit_invalid_value(report: &ClauseRunReport) {
     let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
-        panic!("expected an admission refusal, got {:?}", report.disposition);
+        panic!(
+            "expected an admission refusal, got {:?}",
+            report.disposition
+        );
     };
     assert_eq!(record.catalog.code(), "invalid_runtime_input");
     assert_eq!(record.catalog.cause(), "invalid-value");

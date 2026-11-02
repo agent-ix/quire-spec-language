@@ -763,7 +763,7 @@ fn a_clause_run_compile_type_admission_limit_names_the_limit() {
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
         consequent_source_events: Default::default(),
-            ledger: None,
+        ledger: None,
         disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
             code: Code::StageLimitExceeded,
             cause: "type-limit",
@@ -894,7 +894,7 @@ fn a_cancelled_argument_refusal_is_refused_at_admit() {
         basis: crate::proof_result::SettlementBasis::Unavailable,
         witness: None,
         consequent_source_events: Default::default(),
-            ledger: None,
+        ledger: None,
         disposition: ClauseDisposition::ArgumentRefusal(Box::new(RunRefusal::Cancelled(
             quire_exact::CancelCause::Requested,
         ))),

@@ -128,9 +128,9 @@ pub enum ContradictedDimension {
     Watermark,
     /// A completeness assertion that retreats from the retained one, or a
     /// position the retained assertion did not cover.
-    ProgressCompleteness,
+    Completeness,
     /// A closure that reopens.
-    ProgressClosure,
+    Closure,
 }
 
 /// One side of a contradiction.
@@ -139,7 +139,7 @@ pub enum ProgressValue {
     /// A watermark.
     Watermark(u64),
     /// A completeness assertion.
-    ProgressCompleteness(ProgressCompleteness),
+    Completeness(ProgressCompleteness),
     /// The decision scope's closure.
     DecisionScope(ProgressClosure),
     /// The surrounding execution's closure.
@@ -298,32 +298,32 @@ fn check_progress(
         };
         if retreats {
             return Err(contradiction(
-                ContradictedDimension::ProgressCompleteness,
-                ProgressValue::ProgressCompleteness(retained.completeness),
-                ProgressValue::ProgressCompleteness(assertion.completeness),
+                ContradictedDimension::Completeness,
+                ProgressValue::Completeness(retained.completeness),
+                ProgressValue::Completeness(assertion.completeness),
             ));
         }
-        if let Some(position) = positions
-            .iter()
-            .find(|position| position.stamp <= through && !retained.covered.contains(&position.identity))
-        {
+        if let Some(position) = positions.iter().find(|position| {
+            position.stamp <= through && !retained.covered.contains(&position.identity)
+        }) {
             return Err(contradiction(
-                ContradictedDimension::ProgressCompleteness,
-                ProgressValue::ProgressCompleteness(retained.completeness),
+                ContradictedDimension::Completeness,
+                ProgressValue::Completeness(retained.completeness),
                 ProgressValue::Position(position.clone()),
             ));
         }
     }
     if retained.scope == ProgressClosure::Closed && assertion.scope == ProgressClosure::Open {
         return Err(contradiction(
-            ContradictedDimension::ProgressClosure,
+            ContradictedDimension::Closure,
             ProgressValue::DecisionScope(retained.scope),
             ProgressValue::DecisionScope(assertion.scope),
         ));
     }
-    if retained.execution == ProgressClosure::Closed && assertion.execution == ProgressClosure::Open {
+    if retained.execution == ProgressClosure::Closed && assertion.execution == ProgressClosure::Open
+    {
         return Err(contradiction(
-            ContradictedDimension::ProgressClosure,
+            ContradictedDimension::Closure,
             ProgressValue::SurroundingExecution(retained.execution),
             ProgressValue::SurroundingExecution(assertion.execution),
         ));
@@ -388,10 +388,7 @@ mod tests {
         }
     }
 
-    fn retaining(
-        assertion: ProgressAssertion,
-        positions: &[ObservedPosition],
-    ) -> ProgressLedger {
+    fn retaining(assertion: ProgressAssertion, positions: &[ObservedPosition]) -> ProgressLedger {
         admit(&ProgressLedger::new(), &binding(), assertion, positions).expect("first assertion")
     }
 
@@ -399,8 +396,13 @@ mod tests {
     #[test]
     fn a_regressing_watermark_is_refused_and_the_ledger_keeps_the_retained_one() {
         let ledger = retaining(assertion(100, ProgressCompleteness::Incomplete), &[]);
-        let refusal = admit(&ledger, &binding(), assertion(60, ProgressCompleteness::Incomplete), &[])
-            .expect_err("regression");
+        let refusal = admit(
+            &ledger,
+            &binding(),
+            assertion(60, ProgressCompleteness::Incomplete),
+            &[],
+        )
+        .expect_err("regression");
         assert_eq!(
             contradiction(refusal),
             ProgressContradiction {
@@ -410,12 +412,28 @@ mod tests {
                 asserted: ProgressValue::Watermark(60),
             }
         );
-        assert_eq!(ledger.entry(&binding()).map(LedgerEntry::watermark), Some(100));
-        let same = admit(&ledger, &binding(), assertion(100, ProgressCompleteness::Incomplete), &[])
-            .expect("equal watermark");
-        let later = admit(&same, &binding(), assertion(130, ProgressCompleteness::Incomplete), &[])
-            .expect("later watermark");
-        assert_eq!(later.entry(&binding()).map(LedgerEntry::watermark), Some(130));
+        assert_eq!(
+            ledger.entry(&binding()).map(LedgerEntry::watermark),
+            Some(100)
+        );
+        let same = admit(
+            &ledger,
+            &binding(),
+            assertion(100, ProgressCompleteness::Incomplete),
+            &[],
+        )
+        .expect("equal watermark");
+        let later = admit(
+            &same,
+            &binding(),
+            assertion(130, ProgressCompleteness::Incomplete),
+            &[],
+        )
+        .expect("later watermark");
+        assert_eq!(
+            later.entry(&binding()).map(LedgerEntry::watermark),
+            Some(130)
+        );
     }
 
     #[trace("FR-502-AC-2", "TC-1296")]
@@ -423,7 +441,11 @@ mod tests {
     fn a_retreating_completeness_or_an_uncovered_position_is_refused() {
         let ledger = retaining(assertion(100, complete(100)), &zero_to_three());
         for (asserted, positions, value) in [
-            (complete(60), Vec::new(), ProgressValue::Completeness(complete(60))),
+            (
+                complete(60),
+                Vec::new(),
+                ProgressValue::Completeness(complete(60)),
+            ),
             (
                 ProgressCompleteness::Incomplete,
                 Vec::new(),
@@ -458,8 +480,13 @@ mod tests {
     #[test]
     fn an_incomplete_assertion_after_an_incomplete_one_is_accepted() {
         let ledger = retaining(assertion(5, ProgressCompleteness::Incomplete), &[]);
-        let next = admit(&ledger, &binding(), assertion(5, ProgressCompleteness::Incomplete), &[])
-            .expect("incomplete after incomplete");
+        let next = admit(
+            &ledger,
+            &binding(),
+            assertion(5, ProgressCompleteness::Incomplete),
+            &[],
+        )
+        .expect("incomplete after incomplete");
         assert_eq!(
             next.entry(&binding()).map(LedgerEntry::completeness),
             Some(ProgressCompleteness::Incomplete)
@@ -483,12 +510,17 @@ mod tests {
             scope: ProgressClosure::Open,
             ..closed
         };
-        let found = contradiction(
-            admit(&ledger, &binding(), reopen_scope, &[]).expect_err("scope reopen"),
-        );
+        let found =
+            contradiction(admit(&ledger, &binding(), reopen_scope, &[]).expect_err("scope reopen"));
         assert_eq!(found.dimension, ContradictedDimension::Closure);
-        assert_eq!(found.retained, ProgressValue::DecisionScope(ProgressClosure::Closed));
-        assert_eq!(found.asserted, ProgressValue::DecisionScope(ProgressClosure::Open));
+        assert_eq!(
+            found.retained,
+            ProgressValue::DecisionScope(ProgressClosure::Closed)
+        );
+        assert_eq!(
+            found.asserted,
+            ProgressValue::DecisionScope(ProgressClosure::Open)
+        );
 
         let reopen_execution = ProgressAssertion {
             execution: ProgressClosure::Open,
@@ -515,17 +547,34 @@ mod tests {
         let base = retaining(assertion(100, complete(100)), &zero_to_three());
         let before = base.entry(&binding()).cloned();
         let variants = [
-            LedgerBinding { package: "other".to_owned(), ..binding() },
-            LedgerBinding { clause: "Other".to_owned(), ..binding() },
-            LedgerBinding { clock: "us".to_owned(), ..binding() },
-            LedgerBinding { profile: "other".to_owned(), ..binding() },
+            LedgerBinding {
+                package: "other".to_owned(),
+                ..binding()
+            },
+            LedgerBinding {
+                clause: "Other".to_owned(),
+                ..binding()
+            },
+            LedgerBinding {
+                clock: "us".to_owned(),
+                ..binding()
+            },
+            LedgerBinding {
+                profile: "other".to_owned(),
+                ..binding()
+            },
         ];
         let mut ledger = base.clone();
         for variant in &variants {
             // A lower watermark and Incomplete would contradict `binding()`,
             // so acceptance shows the variant is a different key.
-            ledger = admit(&ledger, variant, assertion(1, ProgressCompleteness::Incomplete), &[])
-                .expect("foreign binding");
+            ledger = admit(
+                &ledger,
+                variant,
+                assertion(1, ProgressCompleteness::Incomplete),
+                &[],
+            )
+            .expect("foreign binding");
         }
         assert_eq!(ledger.len(), 5);
         assert_eq!(ledger.entry(&binding()).cloned(), before);
@@ -536,7 +585,8 @@ mod tests {
 
     #[trace("FR-502-AC-6", "TC-1296")]
     #[test]
-    fn the_returned_ledger_replays_the_same_sequence_and_a_fresh_ledger_accepts_a_lower_watermark() {
+    fn the_returned_ledger_replays_the_same_sequence_and_a_fresh_ledger_accepts_a_lower_watermark()
+    {
         let first = assertion(100, ProgressCompleteness::Incomplete);
         let second = assertion(60, ProgressCompleteness::Incomplete);
         let empty = ProgressLedger::new();
@@ -547,7 +597,11 @@ mod tests {
         let after_first = admit(&empty, &binding(), first, &[]).expect("first");
         assert!(admit(&after_first, &binding(), second, &[]).is_err());
         // The same sequence from the same initial ledger gives the same outcomes.
-        let sequence = [first, assertion(130, ProgressCompleteness::Incomplete), second];
+        let sequence = [
+            first,
+            assertion(130, ProgressCompleteness::Incomplete),
+            second,
+        ];
         let run = || {
             let mut ledger = ProgressLedger::new();
             let mut outcomes = Vec::new();
@@ -563,7 +617,10 @@ mod tests {
             (outcomes, ledger)
         };
         assert_eq!(run(), run());
-        assert_eq!(run().1.entry(&binding()).map(LedgerEntry::watermark), Some(130));
+        assert_eq!(
+            run().1.entry(&binding()).map(LedgerEntry::watermark),
+            Some(130)
+        );
     }
 
     #[trace("FR-502-AC-7", "TC-1296")]
@@ -571,12 +628,22 @@ mod tests {
     fn a_new_position_inside_the_retained_extent_is_refused_and_one_beyond_it_is_covered() {
         let ledger = retaining(assertion(100, complete(100)), &zero_to_three());
         let found = contradiction(
-            admit(&ledger, &binding(), assertion(100, complete(100)), &[at("p80", 80)])
-                .expect_err("uncovered position at 80"),
+            admit(
+                &ledger,
+                &binding(),
+                assertion(100, complete(100)),
+                &[at("p80", 80)],
+            )
+            .expect_err("uncovered position at 80"),
         );
         assert_eq!(found.dimension, ContradictedDimension::Completeness);
-        let next = admit(&ledger, &binding(), assertion(120, complete(120)), &[at("p120", 120)])
-            .expect("position at 120");
+        let next = admit(
+            &ledger,
+            &binding(),
+            assertion(120, complete(120)),
+            &[at("p120", 120)],
+        )
+        .expect("position at 120");
         let covered: Vec<&str> = next.entry(&binding()).expect("entry").covered().collect();
         assert_eq!(covered, ["p0", "p1", "p120", "p2", "p3"]);
     }
@@ -603,12 +670,22 @@ mod tests {
             .admit(&binding(), assertion(3, complete(3)), &three, 4)
             .expect("three positions");
         let next = held
-            .admit(&binding(), assertion(9, complete(3)), &[at("p0", 0), at("far", 9)], 4)
+            .admit(
+                &binding(),
+                assertion(9, complete(3)),
+                &[at("p0", 0), at("far", 9)],
+                4,
+            )
             .expect("omits p1 and p2, adds one beyond through");
         let covered: Vec<&str> = next.entry(&binding()).expect("entry").covered().collect();
         assert_eq!(covered, ["far", "p0", "p1", "p2"]);
         let refused = next
-            .admit(&binding(), assertion(10, complete(10)), &[at("more", 10)], 4)
+            .admit(
+                &binding(),
+                assertion(10, complete(10)),
+                &[at("more", 10)],
+                4,
+            )
             .expect_err("fifth covered position");
         assert!(matches!(refused, LedgerRefusal::LimitReached(_)));
         assert_eq!(next.entry(&binding()).expect("entry").covered().count(), 4);

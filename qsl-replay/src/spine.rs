@@ -76,14 +76,14 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    admit_progress, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
+    admit_progress, run_clause, run_clause_with_temporal_selections, ClauseArgument,
+    ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
+    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, LedgerBinding,
+    ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
     ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLimitReached,
-    ProgressRefusal, ProgressValue, run_clause, run_clause_with_temporal_selections, ClauseArgument, ClauseArgumentValue,
-    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
-    ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
-    ConsequentSourceEvents, ConsequentState, OperationName, OverObject, TemporalPositionRefusal,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
-    TraceInput,
+    ProgressRefusal, ProgressValue, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
 };
 mod refinement;
 pub use refinement::{

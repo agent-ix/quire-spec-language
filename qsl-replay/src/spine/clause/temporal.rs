@@ -7,13 +7,14 @@
 
 use std::collections::BTreeMap;
 
+use qsl_eval::temporal::{
+    evaluate_observed, ContradictedDimension, HoldsStop, LedgerRefusal, PositionRefusal,
+    TemporalOutcome, TemporalRefusal, TemporalTrace, UndefinedCause, UndefinedEvaluation,
+    WindowRefusal,
+};
 pub use qsl_eval::temporal::{
     LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
     ProgressContradiction, ProgressLedger, ProgressValue,
-};
-use qsl_eval::temporal::{
-    evaluate_observed, ContradictedDimension, LedgerRefusal, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
-    UndefinedCause, UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
@@ -207,10 +208,7 @@ fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> Claus
 }
 
 /// FR-330: run the temporal clause `name` over `trace`.
-pub(super) fn run_temporal(
-    run: &CompiledRun<'_>,
-    request: &TemporalRun<'_>,
-) -> ClauseRunReport {
+pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> ClauseRunReport {
     let TemporalRun {
         name,
         trace,
