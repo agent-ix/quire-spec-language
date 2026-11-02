@@ -728,33 +728,124 @@ fn unwritten(document: &[u8], body: &str) -> (qsl_semantics::check::UnwrittenTim
     found.unwrap_or_else(|| panic!("{body}: {refusals:?}"))
 }
 
-/// FR-230-AC-50, QSpec FR-322-AC-263 (`QN-01`): the guard `forall(e in
-/// self.ts: e.x < 5 ms)` quantified over a clock collection refuses `unsupported_construct`/`not-yet-implemented`
-/// at the quantifier, naming STD-554, and is never written unquantified.
-/// A guard disjunct that constrains no clock refuses at the precondition.
-#[trace("TC-685", "FR-230-AC-50", "QSpec-FR-322-AC-263")]
+/// FR-230-AC-55, QSpec FR-322-AC-295 and FR-415-AC-24: bounded `forall`
+/// guards encode each live length as a conjunction with one slot binder per
+/// constraint, while `exists` encodes selected slots as disjunctions and has
+/// no matching branch for an empty collection.
+#[trace("TC-685", "FR-230-AC-55", "QSpec-FR-322-AC-295", "QSpec-FR-415-AC-24")]
 #[test]
-fn an_unwritten_guard_refuses_at_its_member() {
-    use qsl_semantics::check::UnwrittenTimedMember as Member;
-    let quantifier = "forall(e in self.ts: e.x < 5 ms)";
-    let (member, text) = unwritten(
-        &vector_document(),
-        &format!("pre All using v on Config::ConfigVersion::attemptUpdate {{ {quantifier} }}\n"),
-    );
-    assert_eq!(
-        (member, text.as_str()),
-        (Member::QuantifiedClause, quantifier)
-    );
-    assert!(member.description().contains("STD-554"));
-    let cause = qsl_semantics::check::TemporalCause::TimedModelNotEmitted {
-        model: "Config".to_owned(),
-        member,
-        span: qsl_foundation::Span { start: 0, end: 1 },
-    };
-    assert_eq!(
-        (cause.code(), cause.tag()),
-        (Code::UnsupportedConstruct, "not-yet-implemented")
-    );
+fn quantified_clock_guards_emit_ordered_slot_binders() {
+    use qsl_foundation::node_wire::node_key_from_json;
+    use qsl_semantics::check::builtin_integer_type_key;
+
+    for (quantifier, empty_part) in [("forall", true), ("exists", false)] {
+        let query = format!("{quantifier}(e in self.ts: e.x < 5 ms)");
+        let (unit, wire) = emitted(
+            &timer_document(),
+            &format!("pre Timed using v on Config::ConfigVersion::attemptUpdate {{ {query} }}\n"),
+        );
+        let [guard] = timed(&wire, "clock_guard")[..] else {
+            panic!("one guard");
+        };
+        let parts = member(&guard["body"], "parts")["members"]
+            .as_array()
+            .expect("guard parts");
+        assert!(!parts.is_empty(), "the collection sizes have branches");
+        let mut saw_empty = false;
+        let integer = builtin_integer_type_key("pkg").unwrap();
+
+        for part in parts {
+            let members = part["members"].as_array().expect("part members");
+            let binder_member = members.iter().find(|member| member["name"] == "binders");
+            let binders = binder_member
+                .and_then(|member| member["value"]["members"].as_array())
+                .cloned()
+                .unwrap_or_default();
+            let constraints: Vec<&Value> = members
+                .iter()
+                .filter(|member| {
+                    member["term"] == "reference"
+                        && target(&wire, member)["semantic_form"] == "clock_constraint"
+                })
+                .map(|reference| target(&wire, reference))
+                .collect();
+
+            assert_eq!(constraints.len(), binders.len());
+            if !binders.is_empty() {
+                let binder_index = members
+                    .iter()
+                    .position(|member| member["name"] == "binders")
+                    .expect("binder member is in the aggregate");
+                let first_constraint = members
+                    .iter()
+                    .position(|member| {
+                        member["term"] == "reference"
+                            && target(&wire, member)["semantic_form"] == "clock_constraint"
+                    })
+                    .expect("a binder-bearing part has a constraint");
+                assert!(
+                    binder_index < first_constraint,
+                    "binders precede constraints"
+                );
+            }
+            if constraints.is_empty() {
+                saw_empty = true;
+                assert_eq!(quantifier, "forall", "exists has no empty branch");
+                let predicate_reference = members
+                    .iter()
+                    .find(|member| member["name"] == "predicate")
+                    .expect("the vacuous branch retains its size predicate");
+                let predicate = target(&wire, &predicate_reference["value"]);
+                assert_eq!(
+                    predicate["body"]["operation"]["identity"],
+                    "quire.op.integer.eq"
+                );
+                let [size, zero] = predicate["body"]["arguments"]
+                    .as_array()
+                    .expect("size-zero equality")
+                    .as_slice()
+                else {
+                    panic!("size-zero equality has two operands: {predicate}");
+                };
+                let size = target(&wire, size);
+                assert_eq!(
+                    size["body"]["operation"]["identity"],
+                    "quire.op.collection.size"
+                );
+                let [collection] = size["body"]["arguments"]
+                    .as_array()
+                    .expect("collection size")
+                    .as_slice()
+                else {
+                    panic!("collection size has one operand: {size}");
+                };
+                let collection = target(&wire, collection);
+                assert_eq!(
+                    collection["body"]["operation"]["identity"],
+                    "quire.op.record.project"
+                );
+                assert_eq!(collection["body"]["operation"]["member"]["name"], "ts");
+                assert_eq!(zero["term"], "literal");
+                assert_eq!(zero["value"], "0");
+            }
+            for (binder_reference, constraint) in binders.iter().zip(constraints) {
+                let binder = target(&wire, binder_reference);
+                assert_eq!(binder["semantic_form"], "parameter");
+                assert_eq!(
+                    node_key_from_json(&binder["semantic_type"]).unwrap(),
+                    integer
+                );
+                let slots = &member(&constraint["body"], "slots")["members"];
+                assert_eq!(slots, &json!([binder_reference]));
+            }
+        }
+        assert_eq!(
+            saw_empty, empty_part,
+            "{quantifier} empty-collection branch semantics"
+        );
+        assert_declared_order(&wire);
+        assert!(unit.contains(&query));
+    }
 }
 
 /// FR-230-AC-50: element-presence reads remain unavailable in timed guards,
@@ -793,8 +884,8 @@ fn element_presence_in_timed_predicates_refuses_without_emitting_partial_nodes()
 }
 
 /// FR-230-AC-50, QSpec FR-342-AC-11: a clock-reading clause bound to an
-/// execution point refuses `not-yet-implemented` at the clause, naming
-/// STD-555, and is never written with a point-qualified anchor.
+/// execution point refuses `not-yet-implemented` at the clause and is never
+/// written with a point-qualified anchor.
 #[trace("TC-685", "FR-230-AC-50", "QSpec-FR-342-AC-11")]
 #[test]
 fn a_point_qualified_clock_clause_refuses_at_the_clause() {
@@ -853,7 +944,7 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
         member,
         qsl_semantics::check::UnwrittenTimedMember::PointQualifiedClause
     );
-    assert!(member.description().contains("STD-555"));
+    assert!(member.description().contains("execution point"));
     assert!(text.starts_with("pre Late"), "{text}");
 }
 

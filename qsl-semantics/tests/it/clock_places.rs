@@ -728,7 +728,7 @@ type Template = (Vec<SlotRef>, Vec<(Vec<SlotRef>, ClockOp)>);
 /// family of the entries indexed by size: the body read once at the
 /// template slot, every slot enabling it for a `forall` (`each`), some slot
 /// for an `exists` or a negated `forall` (SR-1659002 FND-001).
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-55", "QSpec-FR-415-AC-24")]
 #[test]
 fn a_quantified_guard_records_one_entry_per_size_or_slot() {
     let document = timer_collection(Some(3), true, false);

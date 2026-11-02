@@ -1227,18 +1227,17 @@ pub enum TimedOmission {
 /// `unsupported_construct`/`not-yet-implemented` at the member.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UnwrittenTimedMember {
-    /// A guard or time invariant quantified over a clock collection, which
-    /// has no binder form in a `clock_guard` or `time_invariant` until
-    /// STD-554 (QSpec FR-322-AC-263, `QN-01`, `QN-02`).
+    /// A quantified timed-clause form the current producer does not write,
+    /// such as an unbounded clock family or an unsupported element-data read.
     QuantifiedClause,
     /// A clock-reading clause bound to an execution point: a timed clause
-    /// names its operation's no-point anchor, and STD-555 rules the
-    /// point-qualified anchor (QSpec FR-342-AC-11).
+    /// needs a point-qualified operation anchor, while this producer writes
+    /// only the point-free operation anchor (QSpec FR-342-AC-11).
     PointQualifiedClause,
     /// A guard part, time invariant or `urgent when` predicate that reads
     /// the presences of a clock collection's elements (`forall(e in self.q:
-    /// present(e))`), whose quantifier over the collection's slots has no
-    /// checked form until STD-554.
+    /// present(e))`), whose quantified presence form this producer does not
+    /// admit yet.
     ElementPresence,
     /// A postcondition requiring a clock presence by a comparison with
     /// `absent` (`self.v != absent`, `not (self.v = absent)`), whose
@@ -1254,14 +1253,12 @@ impl UnwrittenTimedMember {
     /// The member, as the refusal names it.
     pub const fn description(self) -> &'static str {
         match self {
-            Self::QuantifiedClause => {
-                "a quantified guard or time invariant has no binder form until STD-554"
-            }
+            Self::QuantifiedClause => "a quantified timed clause is not written by this producer",
             Self::PointQualifiedClause => {
-                "a clock-reading clause bound to an execution point waits on STD-555"
+                "a clock-reading clause bound to an execution point is not written by this producer"
             }
             Self::ElementPresence => {
-                "a predicate reading a clock collection's element presences waits on STD-554"
+                "a predicate reading a clock collection's element presences is not written by this producer"
             }
             Self::ComparedPresence => {
                 "a postcondition requiring a clock presence by comparison with `absent`"
