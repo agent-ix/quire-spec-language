@@ -32,9 +32,10 @@ Build a checked package through the supported source pipeline and evaluate an
 exact selected expression through its family entry point. Exercise one Boolean,
 exact number, text, enum, record, option, ordered sequence, reference and object
 value, including nested values. For each kind, mutate its checked type, unit,
-bounds or exported member independently; offer a foreign expression handle and
-an out-of-range handle. Attempt to enter using raw bytes and freely constructed
-wire records without the checked package/session.
+bounds or exported member independently; offer a checked expression produced
+by a different checked graph and an out-of-range handle. Attempt to enter using
+raw bytes and freely constructed wire records without the checked
+package/session.
 
 ### Handle and byte admission (FR-049-AC-1)
 
@@ -54,6 +55,7 @@ name nothing in the selected package are offered at run time:
 | H2 | `call` | the name of a declaration the package holds that is not callable by name | the same `UnknownFunction` refusal as H1 |
 | H3 | `evaluate_holds` | a formula node id that is no `holds` atom of the clause, and an id beyond the clause's node count | an `Err` fault naming the node; no `Evaluation` |
 | H4 | `evaluate_protocol_slot` | a `ProtocolSlot` selected from another package's protocol, and a slot whose supply is for a different slot | refusal before any charge (FR-390), the meter unchanged |
+| H5 | `evaluate` | a valid `CheckedExpression` produced by checking package A's graph, supplied to package B's evaluator; both packages and the expression are otherwise valid and have distinct identities | a typed caller-input/admission refusal with a stable code and cause identifying the expression/package identity mismatch; no `Evaluation`, no internal fault, and the meter unchanged |
 
 Each row asserts the typed refusal or fault as a field and the unchanged meter,
 never message text.
