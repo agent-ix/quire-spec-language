@@ -14,7 +14,6 @@
 //! counter of a thread that is no longer running leaves it (PS-6). The key
 //! is then a function of what the protocol can still do (PS-8).
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
@@ -41,15 +40,15 @@ use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::footprint::Location;
 use crate::simulation::model::encode::{reference_enc, value_enc, Enc};
 use crate::simulation::model::{
-    Applied, Budget, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
+    Applied, Budget, FirstApplication, ModelFinding, ModelSimState, Observed, OperationRef, Verdict,
 };
 use crate::simulation::subject::Cut;
 
 /// One application of an attempt, the observation it was applied over and
 /// the message it read there (FR-229).
-struct Observation<'s> {
+struct Observation<'o, 's> {
     applied: Applied,
-    observed: Cow<'s, ModelSimState>,
+    observed: &'o Observed<'s>,
     read: Option<ReadChoice>,
 }
 
@@ -452,46 +451,64 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     else {
                         continue;
                     };
+                    // Every attempt of the observation reads the same probe
+                    // and the same messages of a location, so each is
+                    // observed, and its memo identity encoded, once.
+                    let probe = self.model.observed(self.memory.observe(
+                        &state.memory,
+                        &observation_path,
+                        &state.model,
+                    ));
+                    let mut reads_at: BTreeMap<&Location, Vec<Observed<'_>>> = BTreeMap::new();
                     for node in attempt_nodes.iter().copied() {
                         let Some(attempt) = self.program.attempts.get(&node) else {
                             continue;
                         };
                         let operation = self.operation(node)?;
                         let select = |clause| attempt.contracts.contains(&clause);
-                        let probe =
-                            self.memory
-                                .observe(&state.memory, &observation_path, &state.model);
-                        let mut observations = vec![(probe.clone(), None)];
-                        let mut read_locations = BTreeSet::new();
                         let load_candidates = self.potential.load_candidates(node);
-                        if let Some(candidates) = load_candidates {
-                            for location in candidates.keys() {
-                                let Some(cell) = self.potential.cell(location) else {
-                                    continue;
-                                };
-                                let shared = super::memory::SharedCell {
-                                    location,
-                                    cell,
-                                    non_atomic: self.non_atomic.contains(location),
-                                };
-                                let reads = self.memory.reads(
-                                    &state.memory,
-                                    &observation_path,
-                                    &state.model,
-                                    &shared,
-                                );
-                                if !reads.is_empty() {
-                                    observations.extend(
-                                        reads
-                                            .into_iter()
-                                            .map(|read| (read.observed, Some(location.clone()))),
-                                    );
-                                    read_locations.insert(location.clone());
-                                }
+                        let readable: Vec<(&Location, _)> = load_candidates
+                            .into_iter()
+                            .flat_map(|candidates| candidates.keys())
+                            .filter_map(|location| {
+                                self.potential.cell(location).map(|cell| (location, cell))
+                            })
+                            .collect();
+                        for &(location, cell) in &readable {
+                            if reads_at.contains_key(location) {
+                                continue;
+                            }
+                            let shared = super::memory::SharedCell {
+                                location,
+                                cell,
+                                non_atomic: self.non_atomic.contains(location),
+                            };
+                            let reads = self.memory.reads(
+                                &state.memory,
+                                &observation_path,
+                                &state.model,
+                                &shared,
+                            );
+                            reads_at.insert(
+                                location,
+                                reads
+                                    .into_iter()
+                                    .map(|read| self.model.observed(read.observed))
+                                    .collect(),
+                            );
+                        }
+                        let mut observations = vec![(&probe, None)];
+                        let mut read_locations = BTreeSet::new();
+                        for (location, _) in readable {
+                            let reads = reads_at.get(location).map_or(&[][..], Vec::as_slice);
+                            if !reads.is_empty() {
+                                observations
+                                    .extend(reads.iter().map(|read| (read, Some(location))));
+                                read_locations.insert(location.clone());
                             }
                         }
                         for (observed, read_location) in observations {
-                            let selected_transitions = read_location.as_ref().map(|location| {
+                            let selected_transitions = read_location.map(|location| {
                                 load_candidates
                                     .and_then(|candidates| candidates.get(location))
                                     .unwrap_or(&empty_transitions)
@@ -501,7 +518,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                     self.model
                                         .apply_attempt(
                                             &format!("{node:?}"),
-                                            &observed,
+                                            observed,
                                             &operation,
                                             &select,
                                             selected_transitions,
@@ -515,7 +532,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                     self.model
                                         .enabled_attempt(
                                             &format!("{node:?}"),
-                                            &observed,
+                                            observed,
                                             &operation,
                                             &select,
                                             selected_transitions,
@@ -536,11 +553,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         location: Some(location),
                                     }) => Some(location),
                                     Some(InstanceAccess::Shape { locations }) => read_location
-                                        .as_ref()
-                                        .filter(|location| locations.contains(location)),
+                                        .filter(|location| locations.contains(*location)),
                                     _ => None,
                                 };
-                                if let Some(location) = &read_location {
+                                if let Some(location) = read_location {
                                     if potential_read != Some(location) {
                                         continue;
                                     }
@@ -559,7 +575,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                                         }
                                     }
                                     if !matches!(
-                                        self.evaluate(constraint, frame, &observed)?,
+                                        self.evaluate_observed(constraint, frame, observed)?,
                                         Verdict::True
                                     ) {
                                         continue;
@@ -1219,7 +1235,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let operation = self.operation(node)?;
         let select = |clause| attempt.contracts.contains(&clause);
         let reading = self.reading(state, ordinal, path, node, accesses);
-        let probe = self.memory.observe(&state.memory, path, &state.model);
+        let probe = self
+            .model
+            .observed(self.memory.observe(&state.memory, path, &state.model));
         let attempt_tag = format!("{node:?}");
         let applications = self.model.apply_attempt(
             &attempt_tag,
@@ -1230,7 +1248,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             &mut gathered.budget,
         )?;
         gathered.findings.extend(applications.findings);
-        let mut observations: Vec<Observation<'_>> = applications
+        let mut observations: Vec<Observation<'_, '_>> = applications
             .successors
             .into_iter()
             .filter(|applied| {
@@ -1239,18 +1257,28 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             })
             .map(|applied| Observation {
                 applied,
-                observed: probe.clone(),
+                observed: &probe,
                 read: None,
             })
             .collect();
         // FR-229: a load or read-modify-write of a location the memory
         // model gives several messages is enabled by its precondition over
         // each message separately.
+        let reading: Vec<(&Location, Vec<(Observed<'_>, ReadChoice)>)> = reading
+            .into_iter()
+            .map(|(location, reads)| {
+                let reads = reads
+                    .into_iter()
+                    .map(|read| (self.model.observed(read.observed), read.choice))
+                    .collect();
+                (location, reads)
+            })
+            .collect();
         for (location, reads) in &reading {
-            for read in reads {
+            for (observed, choice) in reads {
                 let applications = self.model.apply_attempt(
                     &attempt_tag,
-                    &read.observed,
+                    observed,
                     &operation,
                     &select,
                     None,
@@ -1266,8 +1294,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         })
                         .map(|applied| Observation {
                             applied,
-                            observed: read.observed.clone(),
-                            read: Some(read.choice),
+                            observed,
+                            read: Some(*choice),
                         }),
                 );
             }
@@ -1296,7 +1324,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         *entry = bound.value.clone();
                     }
                 }
-                match self.evaluate(constraint, frame, &observed)? {
+                match self.evaluate_observed(constraint, frame, observed)? {
                     Verdict::True => {}
                     Verdict::False => continue,
                     Verdict::Undecided(outcome) => {
@@ -1329,8 +1357,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     ),
                 })
             });
-            let access = self.access(ordinal, path, node, &applied, &observed, accesses)?;
-            let memory_access = self.memory_access(node, &applied, &observed, access, accesses)?;
+            let access = self.access(ordinal, path, node, &applied, observed.state(), accesses)?;
+            let memory_access =
+                self.memory_access(node, &applied, observed.state(), access, accesses)?;
             let written = self.memory.write(
                 &state.memory,
                 path,

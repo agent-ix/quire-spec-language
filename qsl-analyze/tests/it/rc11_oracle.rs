@@ -3,10 +3,11 @@
 //! `ra`, against an RC11 execution-graph checker (`crate::rc11_support`)
 //! that shares no code with `qsl-eval`'s `Ra`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::protocol::{MemoryModel, Ra, Sc, Tso};
+use qsl_eval::simulation::{StateKey, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
 
 use crate::fill::reachable;
@@ -40,12 +41,11 @@ fn case_of(threads: &[Vec<Op>]) -> Case {
     Case::with_three_cells(&sb_unit(&litmus_run(&branches, "")))
 }
 
-fn under<M: MemoryModel>(
-    case: &Case,
-    model: MemoryModelName,
-    memory: M,
-    select_it: bool,
-) -> BTreeSet<Vec<i64>> {
+fn under<M>(case: &Case, model: MemoryModelName, memory: M, select_it: bool) -> BTreeSet<Vec<i64>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
     let selection = [select("SB::Main::Both", model)];
     let selection: &[_] = if select_it { &selection } else { &[] };
     outcomes(&case.system(selection, memory).expect("builds"))
@@ -221,6 +221,67 @@ fn lt16_collected_sc_predecessors_still_constrain_the_sc_load() {
 fn lt12_reaches_its_weak_outcome_under_ra_only() {
     let rc11 = compare("LT-12", &lt12(), &[vec![1, 0, 0, 3]]);
     assert_eq!(rc11.len(), 7);
+}
+
+/// The parallel `reachable` explorer admits states in the order a sequential
+/// FIFO search would: the same indices, steps and edges on LT-12 under `ra`.
+#[test]
+fn the_parallel_explorer_matches_a_sequential_fifo_search() {
+    let case = case_of(&lt12());
+    let selection = [select("SB::Main::Both", MemoryModelName::Ra)];
+    let system = case.system(&selection, Ra::default()).expect("builds");
+    let parallel = reachable(&system);
+
+    let key_of = |state: &_| SubjectSystem::canonical_state_key(&system, state).expect("a key");
+    let mut known: HashMap<StateKey, usize> = HashMap::new();
+    let mut queue = VecDeque::new();
+    let mut keys: Vec<Vec<u8>> = Vec::new();
+    let mut edges: Vec<Vec<usize>> = Vec::new();
+    for state in system.initial() {
+        let key = key_of(&state);
+        if !known.contains_key(&key) {
+            known.insert(key.clone(), keys.len());
+            keys.push(key.as_bytes().to_vec());
+            edges.push(Vec::new());
+            queue.push_back((keys.len() - 1, state));
+        }
+    }
+    while let Some((at, state)) = queue.pop_front() {
+        let mut successors: Vec<_> = system
+            .successors(&state)
+            .expect("the state expands")
+            .successors
+            .into_iter()
+            .map(|(transition, next)| {
+                (
+                    system.transition_key(&transition).expect("an identity"),
+                    next,
+                )
+            })
+            .collect();
+        successors.sort_by(|left, right| left.0.cmp(&right.0));
+        for (_, next) in successors {
+            let key = key_of(&next);
+            let index = if let Some(&index) = known.get(&key) {
+                index
+            } else {
+                let index = keys.len();
+                known.insert(key.clone(), index);
+                keys.push(key.as_bytes().to_vec());
+                edges.push(Vec::new());
+                queue.push_back((index, next));
+                index
+            };
+            edges[at].push(index);
+        }
+    }
+
+    assert_eq!(parallel.len(), keys.len(), "state count");
+    for (index, reached) in parallel.iter().enumerate() {
+        assert_eq!(reached.key, keys[index], "state {index} key");
+        let steps: Vec<usize> = reached.steps.iter().map(|(_, next)| *next).collect();
+        assert_eq!(steps, edges[index], "state {index} successor indices");
+    }
 }
 
 /// LT-13: an SC access pair against a `relaxed` store, an SC fence and a

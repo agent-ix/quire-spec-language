@@ -8,6 +8,7 @@
 //! snapshots and protocol subjects the protocol tests build from it.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
@@ -575,19 +576,105 @@ pub(crate) fn class_of<M: MemoryModel>(
     SubjectSystem::terminal_class(system, state, &expansion, cut).expect("a class")
 }
 
+/// One expanded state's successors in transition-identity order, each with
+/// its canonical state key.
+type Expanded<M> = Vec<(ProtocolTransition, ProtocolState<M>, StateKey)>;
+
+/// The successors of `state` sorted by transition identity, each with its
+/// canonical state key.
+fn expand<M: MemoryModel>(system: &ProtocolSystem<'_, M>, state: &ProtocolState<M>) -> Expanded<M> {
+    let expansion = system.successors(state).expect("the state expands");
+    let mut successors: Vec<(Vec<u8>, ProtocolTransition, ProtocolState<M>)> = expansion
+        .successors
+        .into_iter()
+        .map(|(transition, state)| {
+            (
+                system.transition_key(&transition).expect("an identity"),
+                transition,
+                state,
+            )
+        })
+        .collect();
+    successors.sort_by(|left, right| left.0.cmp(&right.0));
+    successors
+        .into_iter()
+        .map(|(_, transition, state)| {
+            let key = SubjectSystem::canonical_state_key(system, &state).expect("a key");
+            (transition, state, key)
+        })
+        .collect()
+}
+
+/// Expands every state of `frontier` across the available cores, returning
+/// each expansion at its frontier position.
+fn expand_level<M>(
+    system: &ProtocolSystem<'_, M>,
+    reached: &[Reached<M>],
+    frontier: &[usize],
+) -> Vec<Expanded<M>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
+    let workers = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(frontier.len());
+    if workers <= 1 {
+        return frontier
+            .iter()
+            .map(|&at| expand(system, &reached[at].state))
+            .collect();
+    }
+    let next = AtomicUsize::new(0);
+    let mut expanded: Vec<Option<Expanded<M>>> = std::iter::repeat_with(|| None)
+        .take(frontier.len())
+        .collect();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let position = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(&at) = frontier.get(position) else {
+                            return done;
+                        };
+                        done.push((position, expand(system, &reached[at].state)));
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            for (position, successors) in handle.join().expect("an expansion worker") {
+                expanded[position] = Some(successors);
+            }
+        }
+    });
+    expanded
+        .into_iter()
+        .map(|successors| successors.expect("every frontier state expanded"))
+        .collect()
+}
+
 /// Every reachable state of `system`, breadth-first from its initial states,
-/// each once by its state key, successors in the engine's order.
-pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
+/// each once by its state key, successors in transition-identity order. Each
+/// breadth-first level expands in parallel and is admitted in frontier
+/// order, so indices and steps equal a sequential FIFO search's.
+pub(crate) fn reachable<M>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>>
+where
+    M: MemoryModel + Sync,
+    M::Component: Send + Sync,
+{
     // State identity is the full canonical key, so equality cannot collapse
     // distinct states through a state key collision.
     let mut known: HashMap<StateKey, usize> = HashMap::new();
     let mut reached: Vec<Reached<M>> = Vec::new();
-    let mut queue = std::collections::VecDeque::new();
+    let mut frontier = Vec::new();
     let mut admit = |state: ProtocolState<M>,
+                     key: StateKey,
                      reached: &mut Vec<Reached<M>>,
-                     queue: &mut std::collections::VecDeque<usize>|
+                     frontier: &mut Vec<usize>|
      -> usize {
-        let key = SubjectSystem::canonical_state_key(system, &state).expect("a key");
         if let Some(index) = known.get(&key) {
             return *index;
         }
@@ -599,31 +686,21 @@ pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<R
             key: bytes,
             steps: Vec::new(),
         });
-        queue.push_back(index);
+        frontier.push(index);
         index
     };
     for state in system.initial() {
-        admit(state, &mut reached, &mut queue);
+        let key = SubjectSystem::canonical_state_key(system, &state).expect("a key");
+        admit(state, key, &mut reached, &mut frontier);
     }
-    while let Some(at) = queue.pop_front() {
-        let expansion = system
-            .successors(&reached[at].state)
-            .expect("the state expands");
-        let mut successors: Vec<(Vec<u8>, ProtocolTransition, ProtocolState<M>)> = expansion
-            .successors
-            .into_iter()
-            .map(|(transition, state)| {
-                (
-                    system.transition_key(&transition).expect("an identity"),
-                    transition,
-                    state,
-                )
-            })
-            .collect();
-        successors.sort_by(|left, right| left.0.cmp(&right.0));
-        for (_, transition, state) in successors {
-            let next = admit(state, &mut reached, &mut queue);
-            reached[at].steps.push((transition, next));
+    while !frontier.is_empty() {
+        let level = std::mem::take(&mut frontier);
+        let expanded = expand_level(system, &reached, &level);
+        for (at, successors) in level.into_iter().zip(expanded) {
+            for (transition, state, key) in successors {
+                let next = admit(state, key, &mut reached, &mut frontier);
+                reached[at].steps.push((transition, next));
+            }
         }
     }
     reached

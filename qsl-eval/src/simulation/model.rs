@@ -72,7 +72,7 @@ use crate::simulation::sample::{sample_request, sample_request_until, SampleRequ
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
-pub(crate) use application::{FirstApplication, OperationRef};
+pub(crate) use application::{FirstApplication, Observed, OperationRef};
 pub use cells::Cell;
 pub use contract::{
     ContractClause, ContractClauseKind, DeclaredStates, DeclaredStatesRefusal, OperationCases,
@@ -462,6 +462,9 @@ pub struct ModelSystem<'a> {
     /// The attempts' applications already computed, by observed state and
     /// attempt: see [`application::AppliedMemo`].
     applied: application::AppliedMemo,
+    /// The map-key names of the run's state keys: see
+    /// [`encode::KeyNames`].
+    key_names: encode::KeyNames,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
     /// QSpec FR-154's unit bounds on fields, each an invariant of every
@@ -571,6 +574,7 @@ impl<'a> ModelSystem<'a> {
     pub(crate) fn typing(&self) -> encode::Typing<'_> {
         self.value_typing()
             .with_clock_members(&self.clock_counts, &self.clock_bits)
+            .with_names(&self.key_names)
     }
 
     /// [`Self::typing`] for values alone, which hold no element-count
@@ -898,6 +902,7 @@ impl<'a> ModelSystem<'a> {
             footprints: footprints::FootprintCache::default(),
             declaring: std::sync::Mutex::default(),
             applied: application::AppliedMemo::default(),
+            key_names: encode::KeyNames::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
             member_bounds,
             record_orders,
