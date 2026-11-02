@@ -754,6 +754,10 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-498
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-499
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-500
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-501
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-502
@@ -1299,6 +1303,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-496](functional/FR-496-emit-model-operation-effects-into-checked-packages.md) | FR |
 | [FR-497](functional/FR-497-check-and-emit-carried-quantities-and-their-conversion.md) | FR |
 | [FR-498](functional/FR-498-carry-a-probabilistic-claim-s-checked-package-identity.md) | FR |
+| [FR-499](functional/FR-499-delete-each-retired-family-only-behind-its-named-successor.md) | FR |
+| [FR-500](functional/FR-500-map-each-fr-042-criterion-to-its-checked-package-successor.md) | FR |
 | [FR-501](functional/FR-501-evaluate-a-temporal-clause-under-the-timestamped-event-finite-window-profile.md) | FR |
 | [FR-502](functional/FR-502-reject-a-regressing-watermark-and-a-conflicting-completeness-revision-on-the-spine.md) | FR |
 | [FR-503](functional/FR-503-confine-a-protocol-declaration-s-refusal-to-that-declaration-at-every-stage.md) | FR |
