@@ -41,10 +41,10 @@ use crate::proof_result::{
 use qsl_eval::model_subject::ProtocolSubject;
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::protocol::{
-    activates_on_each, live_instance_bound, load_buffering_shapes, ProtocolTransition,
-    SubjectMemory, WeakAccessShape,
+    activates_on_each, live_instance_bound, load_buffering_shapes, ProtocolRefusal,
+    ProtocolTransition, SubjectMemory, WeakAccessShape,
 };
-use qsl_eval::simulation::SubjectTransition;
+use qsl_eval::simulation::{ExpansionStop, SubjectTransition};
 use quire_semantic_value::model_transition::ModelTransition;
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -288,8 +288,13 @@ pub fn settle_protocol_check(
         }),
     };
     match load_buffering_warnings(&certificate.subject) {
-        Some(warnings) => record.warnings = warnings,
-        None => {
+        Ok(warnings) => record.warnings = warnings,
+        // FR-220, FR-126: the pre-check stopped on the budget the run's own
+        // construction stopped on, before any state was explored. It decided
+        // no shared location, so FR-226 has no shape to warn of, and the
+        // record is the run's `Stopped`.
+        Err(Some(_)) if matches!(outcome, ModelCheckOutcome::Stopped { .. }) => {}
+        Err(_) => {
             // The pre-check could not classify a subject the run explored:
             // an internal fault, so the item fails rather than settle
             // without the warnings it owes.
@@ -341,26 +346,36 @@ pub fn settle_protocol_check(
 }
 
 /// FR-226: EN-1's pre-check warnings for `subject`, one per load-buffering
-/// shape of a `parallel` resolved to `ra`; `None` when the pre-check cannot
-/// classify the subject, which the run already did.
-fn load_buffering_warnings(subject: &ProtocolSubject<'_>) -> Option<Vec<RecordWarning>> {
+/// shape of a `parallel` resolved to `ra`.
+///
+/// # Errors
+///
+/// The stop when the pre-check stops on a budget (FR-220), and `None` when
+/// it cannot classify the subject otherwise, which the run already did.
+fn load_buffering_warnings(
+    subject: &ProtocolSubject<'_>,
+) -> Result<Vec<RecordWarning>, Option<ExpansionStop>> {
     let protocol = subject
         .model
         .simulation
         .package
         .graph()
-        .protocol(&subject.protocol)?;
-    let model = ModelSystem::new(subject.model.simulation.clone()).ok()?;
-    let shapes = load_buffering_shapes(&model, protocol, &subject.memory, &subject.over).ok()?;
-    Some(
-        shapes
-            .into_iter()
-            .map(|shape| RecordWarning::LoadBufferingShape {
-                load: shape.load,
-                store: shape.store,
-            })
-            .collect(),
-    )
+        .protocol(&subject.protocol)
+        .ok_or(None)?;
+    let model = ModelSystem::new(subject.model.simulation.clone()).map_err(|_| None)?;
+    let shapes = load_buffering_shapes(&model, protocol, &subject.memory, &subject.over).map_err(
+        |refusal| match refusal {
+            ProtocolRefusal::InitialStop(stop) if !stop.is_internal_failure() => Some(stop),
+            _ => None,
+        },
+    )?;
+    Ok(shapes
+        .into_iter()
+        .map(|shape| RecordWarning::LoadBufferingShape {
+            load: shape.load,
+            store: shape.store,
+        })
+        .collect())
 }
 
 /// FR-439's `weak-access-shape` cause of `shape`: its site, its

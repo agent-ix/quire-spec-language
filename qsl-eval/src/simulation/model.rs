@@ -109,7 +109,8 @@ pub(crate) use walk::{Applied, Budget};
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").
-const EXHAUSTED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
+pub(crate) const EXHAUSTED: CatalogCode =
+    CatalogCode::new("resource_exhausted", "insufficient-next-charge");
 /// `runtime_invariant`/`established-invariant-broken`: the simulator built an
 /// input itself, so a refusal of it is a broken internal invariant.
 pub(crate) const BROKEN: CatalogCode =

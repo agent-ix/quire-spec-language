@@ -230,9 +230,10 @@ pub enum ProtocolRefusal {
         /// Why its reads have no footprint.
         refusal: qsl_semantics::check::footprint::FootprintRefusal,
     },
-    /// An initial state's settling stopped: a guard's evaluation ran out of
-    /// a budget, or broke.
-    #[error("{}/{}: settling an initial state", .0.cause.code(), .0.cause.cause())]
+    /// Building over an initial state stopped: settling it, or EN-1's
+    /// classification of its attempts, ran out of a budget (FR-120
+    /// "Post-states"), or a guard's evaluation broke while settling.
+    #[error("{}/{}: building over an initial state", .0.cause.code(), .0.cause.cause())]
     InitialStop(ExpansionStop),
     /// An invariant of the checked protocol broke.
     #[error("the protocol system broke invariant {0:?}")]
