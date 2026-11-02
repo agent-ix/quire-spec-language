@@ -44,7 +44,7 @@
 //! direction (ADR-011 §6.1).
 
 use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
-use quire_checked::node::NodeKind;
+use quire_checked::node::{NodeKind, OrderedKind};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
@@ -953,8 +953,10 @@ pub(crate) enum Application<'a> {
         /// type in it is package-independent.
         signature: &'a Signature,
     },
-    /// The reserved IEEE square-root intrinsic.
-    IeeeSquareRoot {
+    /// A reserved `quire::value::ieee::*` intrinsic (FR-397 "Intrinsics").
+    Ieee {
+        /// The intrinsic the call names.
+        intrinsic: IeeeIntrinsic,
         /// Expected float type, when the surrounding expression supplies one.
         expected: Option<ValueType>,
     },
@@ -995,11 +997,50 @@ fn is_package_independent(value_type: &ValueType) -> bool {
     }
 }
 
-/// Whether `name` is the authored spelling of the IEEE square-root function.
-/// `#[string_edge]`: reads a written call name before it is resolved.
-#[ix_trace_rs::string_edge]
-fn is_ieee_sqrt(name: &str) -> bool {
-    name == "quire::value::ieee::sqrt"
+/// A reserved IEEE intrinsic of the `quire::value::ieee::` family.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IeeeIntrinsic {
+    /// `sqrt(x)`: one float operand, a float result.
+    SquareRoot,
+    /// `fma(a, b, c)`: three float operands, a float result.
+    FusedMultiplyAdd,
+    /// `numericEqual(a, b)`: two float operands, a `Boolean`.
+    NumericEqual,
+    /// `totalOrder(a, b)`: two float operands, a `Boolean`.
+    TotalOrder,
+    /// `bitIdentical(a, b)`: two float operands, a `Boolean`.
+    BitIdentical,
+}
+
+impl IeeeIntrinsic {
+    /// The intrinsic whose authored qualified spelling is `name`, if any.
+    /// `#[string_edge]`: reads a written call name before it is resolved.
+    #[ix_trace_rs::string_edge]
+    fn named(name: &str) -> Option<Self> {
+        Some(match name.strip_prefix("quire::value::ieee::")? {
+            "sqrt" => Self::SquareRoot,
+            "fma" => Self::FusedMultiplyAdd,
+            "numericEqual" => Self::NumericEqual,
+            "totalOrder" => Self::TotalOrder,
+            "bitIdentical" => Self::BitIdentical,
+            _ => return None,
+        })
+    }
+
+    /// The number of arguments the intrinsic takes.
+    fn arity(self) -> usize {
+        match self {
+            Self::SquareRoot => 1,
+            Self::FusedMultiplyAdd => 3,
+            Self::NumericEqual | Self::TotalOrder | Self::BitIdentical => 2,
+        }
+    }
+
+    /// Whether the result is a float of the operands' type rather than a
+    /// `Boolean`.
+    fn yields_float(self) -> bool {
+        matches!(self, Self::SquareRoot | Self::FusedMultiplyAdd)
+    }
 }
 
 impl<'a> Application<'a> {
@@ -1013,8 +1054,8 @@ impl<'a> Application<'a> {
         hint: Option<&ValueType>,
         location: &CheckLocation,
     ) -> Result<Self, CheckRefusal> {
-        if is_ieee_sqrt(name) {
-            if arity != 1 {
+        if let Some(intrinsic) = IeeeIntrinsic::named(name) {
+            if arity != intrinsic.arity() {
                 return Err(CheckRefusal::ill_typed(
                     location,
                     IllTypedCause::TypeMismatch,
@@ -1026,8 +1067,9 @@ impl<'a> Application<'a> {
                     cause: CheckCause::IeeeProfileNotAdmitted,
                 });
             }
-            return Ok(Self::IeeeSquareRoot {
-                expected: hint.cloned(),
+            return Ok(Self::Ieee {
+                intrinsic,
+                expected: hint.filter(|_| intrinsic.yields_float()).cloned(),
             });
         }
         if let Some((qualifier, member)) = name.split_once("::") {
@@ -1154,10 +1196,9 @@ impl<'a> Application<'a> {
                 .get(index)
                 .map(|(_, parameter)| parameter.clone()),
             Self::Tuple { positions, .. } => positions.get(index).cloned(),
-            Self::IeeeSquareRoot { expected } => expected
+            Self::Ieee { expected, .. } => expected
                 .as_ref()
                 .filter(|value_type| matches!(value_type, ValueType::Float(_)))
-                .filter(|_| index == 0)
                 .cloned(),
         }
     }
@@ -1207,22 +1248,52 @@ impl<'a> Application<'a> {
                 location: location.clone(),
                 equality_producer: None,
             }),
-            Self::IeeeSquareRoot { .. } => {
-                let [operand] = arguments.as_slice() else {
-                    return Err(CheckRefusal::ill_typed(
-                        location,
-                        IllTypedCause::TypeMismatch,
-                    ));
-                };
-                let [ValueType::Float(float)] = argument_types.as_slice() else {
+            Self::Ieee { intrinsic, .. } => {
+                // Every operand is a float of the first operand's type;
+                // the first one that is not refuses at its own position.
+                let Some(first @ ValueType::Float(float)) = argument_types.first() else {
                     return Err(CheckRefusal::ill_typed(
                         &location.child(0),
                         IllTypedCause::TypeMismatch,
                     ));
                 };
+                if let Some(index) = argument_types.iter().position(|each| each != first) {
+                    return Err(CheckRefusal::ill_typed(
+                        &location.child(index),
+                        IllTypedCause::TypeMismatch,
+                    ));
+                }
+                let kind = match (intrinsic, arguments.as_slice()) {
+                    (IeeeIntrinsic::SquareRoot, [operand]) => {
+                        NodeKind::IeeeSquareRoot(float.rounding(), *operand)
+                    }
+                    (IeeeIntrinsic::FusedMultiplyAdd, [a, b, c]) => match float.width() {
+                        quire_exact::IeeeWidth::Binary32 => {
+                            NodeKind::IeeeFloat32Fma(float.rounding(), *a, *b, *c)
+                        }
+                        quire_exact::IeeeWidth::Binary64 => {
+                            NodeKind::IeeeFloat64Fma(float.rounding(), *a, *b, *c)
+                        }
+                    },
+                    (IeeeIntrinsic::NumericEqual, [a, b]) => NodeKind::IeeeNumericEquality(*a, *b),
+                    (IeeeIntrinsic::TotalOrder, [a, b]) => {
+                        NodeKind::IeeeTotalOrder(OrderedKind::Float, *a, *b)
+                    }
+                    (IeeeIntrinsic::BitIdentical, [a, b]) => NodeKind::IeeeBitIdentical(*a, *b),
+                    _ => {
+                        return Err(CheckRefusal::ill_typed(
+                            location,
+                            IllTypedCause::TypeMismatch,
+                        ))
+                    }
+                };
                 Ok(Node {
-                    kind: NodeKind::IeeeSquareRoot(float.rounding(), *operand),
-                    value_type: ValueType::Float(*float),
+                    kind,
+                    value_type: if intrinsic.yields_float() {
+                        ValueType::Float(*float)
+                    } else {
+                        ValueType::Boolean
+                    },
                     location: location.clone(),
                     equality_producer: None,
                 })

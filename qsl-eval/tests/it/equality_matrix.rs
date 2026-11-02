@@ -2467,7 +2467,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
 #[test]
-fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
+fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     let package = expression_package(TypeEnvironment::default(), true);
     let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
     let parameters = [
@@ -2556,9 +2556,19 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         ))
     };
     let ill = |cause| CheckCause::IllTyped(cause);
+    // FR-397-AC-12: a same-type float ordering checks as the IEEE
+    // comparison composition; unlike widths are a mismatch.
+    assert!(check_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Less, "f", "g"),
+        None,
+        CheckMode::Kernel,
+    )
+    .is_ok());
     assert_eq!(
-        cause(&package, &operation(BinaryOperator::Less, "f", "g")),
-        ill(IllTypedCause::OperatorIneligible)
+        cause(&package, &operation(BinaryOperator::Less, "f", "h")),
+        ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&package, &negation("f")),
@@ -2568,15 +2578,15 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         cause(&package, &operation(BinaryOperator::Add, "f", "h")),
         ill(IllTypedCause::TypeMismatch)
     );
-    // FR-397-AC-6: arithmetic over a float and an exact type is a mismatch,
-    // while any comparison with a float operand is ineligible.
+    // FR-397-AC-6, FR-397-AC-12: arithmetic or ordering over a float and an
+    // exact type is a mismatch.
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Add, "f", "i")),
         ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Less, "f", "i")),
-        ill(IllTypedCause::OperatorIneligible)
+        ill(IllTypedCause::TypeMismatch)
     );
     assert_eq!(
         cause(&plain_package(), &operation(BinaryOperator::Add, "f", "g")),

@@ -1813,14 +1813,22 @@ impl<'a> Typer<'a> {
                 },
                 Goal::Infer(first, None, first_location),
             ),
-            PeerOperator::Arithmetic(operator) => (
-                PeerForm::Arithmetic {
-                    operator,
-                    hint,
-                    pair: Pair::First(second, second_location),
-                },
-                Goal::Infer(first, None, first_location),
-            ),
+            // A float result type is the rounding mode of a contextual
+            // float literal operand (FR-397-AC-24): `float32(bits: ..) + x`
+            // under a `Float32[nearest-even]` result rounds by it.
+            PeerOperator::Arithmetic(operator) => {
+                let first_hint = hint
+                    .clone()
+                    .filter(|each| matches!(**each, ValueType::Float(_)));
+                (
+                    PeerForm::Arithmetic {
+                        operator,
+                        hint,
+                        pair: Pair::First(second, second_location),
+                    },
+                    Goal::Infer(first, first_hint, first_location),
+                )
+            }
             PeerOperator::Ordering(operator) => (
                 PeerForm::Ordering {
                     operator,

@@ -3107,6 +3107,11 @@ impl<'a> Typer<'a> {
         right: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if matches!(left.value_type, ValueType::Float(_))
+            || matches!(right.value_type, ValueType::Float(_))
+        {
+            return self.float_ordering(operator, left, right, location);
+        }
         let kind = match (&left.value_type, &right.value_type) {
             (l, r) if is_integer(l) && is_integer(r) => OrderedKind::Integers,
             (ValueType::Rational(_), ValueType::Rational(_)) => OrderedKind::Rationals,
@@ -3134,11 +3139,7 @@ impl<'a> Typer<'a> {
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 OrderedKind::Quantities
             }
-            // FR-148 selects IEEE ordering only through the `totalOrder`
-            // intrinsic; the grammar's orderings select none.
-            (ValueType::Float(_), _)
-            | (_, ValueType::Float(_))
-            | (ValueType::Boolean, ValueType::Boolean)
+            (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))
             | (ValueType::Collection(_), ValueType::Collection(_))
@@ -3153,6 +3154,60 @@ impl<'a> Typer<'a> {
         };
         Ok(node(
             NodeKind::Order(operator, kind, self.push(left), self.push(right)),
+            ValueType::Boolean,
+            location,
+        ))
+    }
+
+    /// FR-397 "Comparison": an ordering over two operands of one float type
+    /// is the IEEE quiet comparison, a Boolean composition of
+    /// `numericEqual` and `totalOrder`. With `N(x)` for `numericEqual(x, x)`,
+    /// `a < b` is `N(a) and N(b) and (totalOrder(a, b) and not
+    /// numericEqual(a, b))` and `a <= b` is `N(a) and N(b) and
+    /// (totalOrder(a, b) or numericEqual(a, b))`; `a > b` and `a >= b` are
+    /// `b < a` and `b <= a` over the same operand nodes.
+    fn float_ordering(
+        &mut self,
+        operator: OrderingOperator,
+        left: Node,
+        right: Node,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let (ValueType::Float(left_type), ValueType::Float(right_type)) =
+            (&left.value_type, &right.value_type)
+        else {
+            return Err(mismatch(location));
+        };
+        if left_type != right_type {
+            return Err(mismatch(location));
+        }
+        let (left, right) = (self.push(left), self.push(right));
+        let (lesser, greater, strict) = match operator {
+            OrderingOperator::Less => (left, right, true),
+            OrderingOperator::LessOrEqual => (left, right, false),
+            OrderingOperator::Greater => (right, left, true),
+            OrderingOperator::GreaterOrEqual => (right, left, false),
+        };
+        let boolean = |this: &mut Self, kind| this.push(node(kind, ValueType::Boolean, location));
+        let lesser_ordinary = boolean(self, NodeKind::IeeeNumericEquality(lesser, lesser));
+        let greater_ordinary = boolean(self, NodeKind::IeeeNumericEquality(greater, greater));
+        let both_ordinary = boolean(
+            self,
+            NodeKind::Connective(Connective::And, lesser_ordinary, greater_ordinary),
+        );
+        let precedes = boolean(
+            self,
+            NodeKind::IeeeTotalOrder(OrderedKind::Float, lesser, greater),
+        );
+        let equal = boolean(self, NodeKind::IeeeNumericEquality(lesser, greater));
+        let relation = if strict {
+            let apart = boolean(self, NodeKind::Not(equal));
+            boolean(self, NodeKind::Connective(Connective::And, precedes, apart))
+        } else {
+            boolean(self, NodeKind::Connective(Connective::Or, precedes, equal))
+        };
+        Ok(node(
+            NodeKind::Connective(Connective::And, both_ordinary, relation),
             ValueType::Boolean,
             location,
         ))

@@ -1022,6 +1022,8 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         | NodeKind::Order(_, _, left, right)
         | NodeKind::Equality(_, _, left, right)
         | NodeKind::IeeeNumericEquality(left, right)
+        | NodeKind::IeeeTotalOrder(_, left, right)
+        | NodeKind::IeeeBitIdentical(left, right)
         | NodeKind::Connective(_, left, right)
         | NodeKind::Contains(left, right)
         | NodeKind::Reaches {
@@ -1035,6 +1037,8 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
             ..
         } => vec![*left, *right],
         NodeKind::IeeeSquareRoot(_, operand) => vec![*operand],
+        NodeKind::IeeeFloat32Fma(_, first, second, third)
+        | NodeKind::IeeeFloat64Fma(_, first, second, third) => vec![*first, *second, *third],
         NodeKind::Call { arguments, .. }
         | NodeKind::ImportedCall { arguments, .. }
         | NodeKind::Tuple { arguments, .. }

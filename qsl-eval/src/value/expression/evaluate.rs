@@ -42,6 +42,9 @@ use quire_eval::{
 };
 use quire_exact::Rational;
 use quire_exact::{
+    compare_ieee, evaluate_ieee, ieee_to_exact, IeeeComparison, IeeeFlags, IeeeOperation,
+};
+use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
     CompositeValue, FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value,
     ValueType,
@@ -53,7 +56,6 @@ use quire_exact::{
     OrderingOperator, RationalArithmetic,
 };
 use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
-use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
     BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, PopulationId,
@@ -2150,6 +2152,45 @@ impl<'a, 'm> Machine<'a, 'm> {
                     self.record(node, ValueLoss::IeeeFlags(result.flags()));
                 }
                 Value::Float(result.value())
+            }
+            NodeKind::IeeeFloat32Fma(rounding, ..) | NodeKind::IeeeFloat64Fma(rounding, ..) => {
+                let (Value::Float(addend), Value::Float(right), Value::Float(left)) =
+                    (self.pop()?, self.pop()?, self.pop()?)
+                else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                let result = outcome_into_stop(
+                    evaluate_ieee(
+                        IeeeOperation::FusedMultiplyAdd(left, right, addend),
+                        *rounding,
+                        self.meter,
+                    )
+                    .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?;
+                if result.flags() != IeeeFlags::EMPTY {
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                }
+                Value::Float(result.value())
+            }
+            NodeKind::IeeeTotalOrder(..) | NodeKind::IeeeBitIdentical(..) => {
+                let comparison = if matches!(node.kind(), NodeKind::IeeeTotalOrder(..)) {
+                    IeeeComparison::TotalOrder
+                } else {
+                    IeeeComparison::BitIdentical
+                };
+                let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
+                    return Err(invariant("ieee-float-value-expected"));
+                };
+                if self.scope.ieee_profile().is_none() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                Value::Boolean(outcome_into_stop(
+                    compare_ieee(comparison, left, right, self.meter)
+                        .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?)
             }
             NodeKind::Quantity(operator, _, _) => {
                 let (Value::Quantity(right), Value::Quantity(left)) = (self.pop()?, self.pop()?)

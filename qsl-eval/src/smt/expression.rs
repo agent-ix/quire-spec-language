@@ -413,6 +413,10 @@ impl<'r, 'a> Reader<'r, 'a> {
                 node,
                 "IEEE numeric equality is not in the scalar SMT subset",
             )),
+            NodeKind::IeeeTotalOrder(..) | NodeKind::IeeeBitIdentical(..) => Err(self.refuse(
+                node,
+                "IEEE total order and bit identity are not in the scalar SMT subset",
+            )),
             NodeKind::Connective(connective, left, right) => {
                 let (left, left_defined) = self.boolean_operand(node, *left, depth)?;
                 let (right, right_defined) = self.boolean_operand(node, *right, depth)?;

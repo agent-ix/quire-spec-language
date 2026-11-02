@@ -192,10 +192,6 @@ fn same_width_float_equality_lowers_as_ieee_numeric_equal() {
                     .any(|node| node["body"]["operation"]["identity"] == "quire.op.boolean.not"));
             }
         }
-        for operator in ["<", "<=", ">", ">="] {
-            let source = format!("{HEADER}function compare using v(a: {ty}, b: {ty}): Boolean pure {{ a {operator} b }}");
-            refusal(&source, Code::IllTyped, "operator-ineligible");
-        }
         for other in ["Float64[nearest-even]", "Float32[nearest-even]"] {
             if ty == other {
                 continue;
@@ -238,25 +234,243 @@ fn mixed_float_widths_and_exact_arithmetic_refuse_type_mismatch() {
     }
 }
 
+fn operations<'a>(wire: &'a Value, identity: &str) -> Vec<&'a Value> {
+    wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == identity)
+        .collect()
+}
+
 #[trace("TC-1091", "FR-397-AC-7")]
 #[test]
-fn reserved_ieee_intrinsic_calls_refuse_with_the_named_missing_identity() {
-    for (intrinsic, arguments) in [
-        ("fma", "a, b, a"),
-        ("numericEqual", "a, b"),
-        ("totalOrder", "a, b"),
-        ("bitIdentical", "a, b"),
+fn relation_intrinsics_lower_to_boolean_ieee_nodes_with_the_law_and_no_mode() {
+    for (width, ty) in [
+        ("float32", "Float32[nearest-even]"),
+        ("float64", "Float64[nearest-even]"),
     ] {
-        let identity = format!("quire::value::ieee::{intrinsic}");
-        let source = format!("{HEADER}function call using v(a: Float64[nearest-even], b: Float64[nearest-even]): Boolean pure {{ {identity}({arguments}) }}");
-        let refusal = refusal(&source, Code::MissingDeclaration, "missing-name");
-        let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
-            panic!("the intrinsic refuses at checking");
+        let _ = width;
+        for (intrinsic, identity) in [
+            ("numericEqual", "quire.op.ieee.numeric_equal"),
+            ("totalOrder", "quire.op.ieee.total_order"),
+            ("bitIdentical", "quire.op.ieee.bit_identical"),
+        ] {
+            let source = format!("{HEADER}function call using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::{intrinsic}(a, b) }}");
+            let wire = wire(&source);
+            let nodes = operations(&wire, identity);
+            assert_eq!(nodes.len(), 1, "{identity}");
+            assert_ieee_law(&wire, nodes[0]);
+            assert!(
+                nodes[0]["body"]["operation"]["mode"].is_null(),
+                "{identity}"
+            );
+            assert_eq!(nodes[0]["body"]["arguments"].as_array().unwrap().len(), 2);
+            let first = &nodes[0]["body"]["arguments"][0];
+            let second = &nodes[0]["body"]["arguments"][1];
+            assert_ne!(first, second, "{identity}: arguments are in call order");
+        }
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-12")]
+#[test]
+fn float_comparisons_lower_to_numeric_equal_and_total_order_compositions() {
+    for ty in ["Float32[nearest-even]", "Float64[nearest-even]"] {
+        let lower = |expression: &str| {
+            wire(&format!("{HEADER}function compare using v(a: {ty}, b: {ty}): Boolean pure {{ {expression} }}"))
         };
-        assert!(matches!(
-            &refusals[0].cause,
-            CheckCause::MissingQualifiedName(name) if name.name == identity
-        ));
+        let count = |wire: &Value, identity: &str| operations(wire, identity).len();
+        let equal = lower("a = b");
+        assert_eq!(count(&equal, "quire.op.ieee.numeric_equal"), 1);
+        assert_eq!(count(&equal, "quire.op.boolean.not"), 0);
+        let unequal = lower("a != b");
+        assert_eq!(count(&unequal, "quire.op.ieee.numeric_equal"), 1);
+        assert_eq!(count(&unequal, "quire.op.boolean.not"), 1);
+        for expression in ["a < b", "a <= b", "a > b", "a >= b", "b < a", "b <= a"] {
+            let wire = lower(expression);
+            // numericEqual(a, a), numericEqual(b, b) and numericEqual(a, b)
+            // (or its exchange), one totalOrder, and no bit identity.
+            assert_eq!(
+                count(&wire, "quire.op.ieee.numeric_equal"),
+                3,
+                "{expression}"
+            );
+            assert_eq!(count(&wire, "quire.op.ieee.total_order"), 1, "{expression}");
+            assert_eq!(
+                count(&wire, "quire.op.ieee.bit_identical"),
+                0,
+                "{expression}"
+            );
+            for identity in ["quire.op.ieee.numeric_equal", "quire.op.ieee.total_order"] {
+                for node in operations(&wire, identity) {
+                    assert_ieee_law(&wire, node);
+                }
+            }
+            let strict = expression.contains('<') && !expression.contains("<=")
+                || expression.contains('>') && !expression.contains(">=");
+            assert_eq!(
+                count(&wire, "quire.op.boolean.not"),
+                usize::from(strict),
+                "{expression}"
+            );
+            assert_eq!(
+                count(&wire, "quire.op.boolean.or"),
+                usize::from(!strict),
+                "{expression}"
+            );
+        }
+        // `a > b` is the node of `b < a`, and `a >= b` of `b <= a`.
+        let node_identities = |wire: &Value| {
+            let mut identities: Vec<String> = wire["semantic_graph"]["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|node| node["body"]["operation"]["identity"].as_str())
+                .map(str::to_owned)
+                .collect();
+            identities.sort();
+            identities
+        };
+        assert_eq!(
+            node_identities(&lower("a > b")),
+            node_identities(&lower("b < a"))
+        );
+        assert_eq!(
+            node_identities(&lower("a >= b")),
+            node_identities(&lower("b <= a"))
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-12")]
+#[test]
+fn float_orderings_refuse_unlike_operands_at_the_operator() {
+    for operator in ["<", "<=", ">", ">="] {
+        for (left, right) in [
+            ("Float32[nearest-even]", "Float64[nearest-even]"),
+            ("Float64[nearest-even]", "Float64[toward-zero]"),
+            ("Float64[nearest-even]", "Int[0, 10]"),
+            ("Int[0, 10]", "Float32[nearest-even]"),
+        ] {
+            refusal(
+                &format!("{HEADER}function compare using v(a: {left}, b: {right}): Boolean pure {{ a {operator} b }}"),
+                Code::IllTyped,
+                "type-mismatch",
+            );
+        }
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-16")]
+#[test]
+fn ieee_intrinsic_calls_refuse_bad_arity_types_and_unknown_names() {
+    let f64_ty = "Float64[nearest-even]";
+    let compile_call = |parameters: &str, call: &str| {
+        format!("{HEADER}function call using v({parameters}): Boolean pure {{ {call} }}")
+    };
+    let ab = format!("a: {f64_ty}, b: {f64_ty}");
+    // Argument counts refuse at the call.
+    for call in [
+        "quire::value::ieee::sqrt(a, b)",
+        "quire::value::ieee::fma(a, b)",
+        "quire::value::ieee::numericEqual(a)",
+        "quire::value::ieee::totalOrder(a, b, a)",
+    ] {
+        refusal(&compile_call(&ab, call), Code::IllTyped, "type-mismatch");
+    }
+    // Argument types refuse at the argument.
+    for (parameters, call) in [
+        (
+            format!("i: Int[0, 10], a: {f64_ty}"),
+            "quire::value::ieee::sqrt(i)".to_owned(),
+        ),
+        (
+            "f32: Float32[nearest-even], f64: Float64[nearest-even]".to_owned(),
+            "quire::value::ieee::totalOrder(f32, f64)".to_owned(),
+        ),
+        (
+            "f32: Float32[nearest-even], f64: Float64[nearest-even]".to_owned(),
+            "quire::value::ieee::numericEqual(f32, f64)".to_owned(),
+        ),
+        (
+            "f32: Float32[nearest-even], f64: Float64[nearest-even]".to_owned(),
+            "quire::value::ieee::bitIdentical(f32, f64)".to_owned(),
+        ),
+        (
+            format!("a: {f64_ty}, b: Float64[toward-zero]"),
+            "quire::value::ieee::numericEqual(a, b)".to_owned(),
+        ),
+        (
+            format!("a: {f64_ty}, b: {f64_ty}, i: Int[0, 10]"),
+            "quire::value::ieee::fma(a, b, i)".to_owned(),
+        ),
+    ] {
+        refusal(
+            &compile_call(&parameters, &call),
+            Code::IllTyped,
+            "type-mismatch",
+        );
+    }
+    // Any other name under the namespace is not an intrinsic.
+    let refusal = refusal(
+        &compile_call(&ab, "quire::value::ieee::cbrt(a)"),
+        Code::MissingDeclaration,
+        "missing-name",
+    );
+    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("an unknown intrinsic refuses at checking");
+    };
+    assert!(matches!(
+        &refusals[0].cause,
+        CheckCause::MissingQualifiedName(name) if name.name == "quire::value::ieee::cbrt"
+    ));
+}
+
+#[trace("TC-1091", "FR-397-AC-24")]
+#[test]
+fn f20_cross_width_and_exact_operands_refuse_before_any_charge() {
+    let f32_ty = "Float32[nearest-even]";
+    let f64_ty = "Float64[nearest-even]";
+    let params = format!("a: {f32_ty}, b: {f64_ty}, i: Int[0, 10]");
+    for (result, body) in [
+        ("Boolean", "quire::value::ieee::numericEqual(a, b)"),
+        ("Boolean", "quire::value::ieee::totalOrder(a, b)"),
+        ("Boolean", "quire::value::ieee::bitIdentical(a, b)"),
+        (f32_ty, "a + b"),
+        (f32_ty, "a + i"),
+        (
+            "Decimal[0, 10; 0, 0; nearest-even]",
+            "convert<Decimal[0, 10; 0, 0; nearest-even]>(a)",
+        ),
+        ("Int[0, 1]", "convert<Int[0, 1]>(a)"),
+    ] {
+        refusal(
+            &format!("{HEADER}function refused using v({params}): {result} pure {{ {body} }}"),
+            Code::IllTyped,
+            "type-mismatch",
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-15")]
+#[test]
+fn fused_multiply_add_lowers_with_its_float_width_rounding_mode_and_profile_law() {
+    for (width, ty) in [
+        ("float32", "Float32[nearest-even]"),
+        ("float64", "Float64[nearest-even]"),
+    ] {
+        let source = format!(
+            "{HEADER}function fused using v(a: {ty}, b: {ty}, c: {ty}): {ty} pure {{ quire::value::ieee::fma(a, b, c) }}"
+        );
+        let wire = wire(&source);
+        let operation = operation(&wire, &format!("quire.op.ieee.{width}.fma"));
+        assert_ieee_law(&wire, operation);
+        assert_eq!(
+            operation["body"]["operation"]["mode"],
+            json!({"kind": "rounding", "value": "nearest-even"}),
+        );
+        assert_eq!(operation["body"]["arguments"].as_array().unwrap().len(), 3);
     }
 }
 
