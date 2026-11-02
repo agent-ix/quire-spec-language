@@ -172,11 +172,9 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
         .filter(|node| node.get("recursion_group").is_some())
         .collect();
     assert_eq!(members.len(), group_size);
-    assert!(
-        members
-            .iter()
-            .all(|node| node["recursion_group"] == members[0]["recursion_group"])
-    );
+    assert!(members
+        .iter()
+        .all(|node| node["recursion_group"] == members[0]["recursion_group"]));
     let member_refs: Vec<_> = members.iter().copied().collect();
     let label = members[0]["recursion_group"].clone();
     let mut saw_group_reference = false;
@@ -395,16 +393,12 @@ fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
         "the mixed function/protocol SCC has 100,000 control members plus five protocol/function members: {}",
         group.len()
     );
-    assert!(
-        group
-            .iter()
-            .any(|node| node.semantic_form() == "protocol_clause")
-    );
-    assert!(
-        group
-            .iter()
-            .any(|node| node.semantic_form() == "protocol_reference")
-    );
+    assert!(group
+        .iter()
+        .any(|node| node.semantic_form() == "protocol_clause"));
+    assert!(group
+        .iter()
+        .any(|node| node.semantic_form() == "protocol_reference"));
 
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("package emits");
     assert!(emission.omitted.is_empty());

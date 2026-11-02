@@ -3112,13 +3112,13 @@ impl<'a> Lowering<'a> {
     ) -> Vec<CheckRefusal> {
         let mut refusals = Vec::new();
         for (index, function) in group.members.iter().zip(functions) {
-            let placeholder = self.functions.get(*index).and_then(|key| *key);
+            let placeholder = self.functions.get(*index).cloned().flatten();
             match self.function(*index, function) {
                 Ok(key) => {
-                    if let Some(placeholder) =
-                        placeholder.filter(|key| self.placeholders.contains_key(key))
-                    {
-                        self.placeholders.insert(placeholder, Some(key));
+                    if let Some(NodeRef::Pending(placeholder)) = placeholder {
+                        if self.placeholders.contains_key(&placeholder) {
+                            self.placeholders.insert(placeholder, Some(key));
+                        }
                     }
                 }
                 Err(refusal) => refusals.push(refusal),
@@ -3315,7 +3315,7 @@ impl<'a> Lowering<'a> {
         }
         for index in unsettled_protocols {
             if let Some(protocol::ProtocolKey::Keyed(key)) = self.protocol_keys.get_mut(index) {
-                *key = resolve(*key).map_err(|()| unresolved(&root))?;
+                *key = resolve(key).map_err(|()| unresolved(&root))?;
             }
         }
         for declaration in unsettled_composites {
