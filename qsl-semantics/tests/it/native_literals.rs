@@ -435,7 +435,7 @@ fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
 fn text_literals_require_a_text_position_and_one_quoted_argument() {
     for (parameters, result, body, path) in [
         ("", "String", "Text(\"a\")", vec![]),
-        ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0, 0]),
+        ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0]),
         ("x: String", "Boolean", "x = Text(\"a\")", vec![1]),
         ("x: String", "Text[0, 8; nfc]", "Text(x)", vec![0]),
         ("", "Text[0, 8; nfc]", "Text()", vec![]),
