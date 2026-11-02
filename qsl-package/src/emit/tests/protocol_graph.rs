@@ -1367,10 +1367,12 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
             ProtocolEmissionResult::Refused {
                 declaration: refused,
                 refusal: primary,
+                ..
             },
             ProtocolEmissionResult::Refused {
                 declaration: dependent_name,
                 refusal: dependent_refusal,
+                ..
             }
         ] if first == "Flow"
             && refused == "Broken"
