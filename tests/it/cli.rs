@@ -139,8 +139,8 @@ fn cli_preserves_non_utf8_os_paths() {
     )
     .unwrap();
     let reference = parsed.value().source().reference();
-    assert_eq!(reference.authority, "agent-ix");
-    assert_eq!(reference.identity, "exact:é");
+    assert_eq!(reference.authority(), "agent-ix");
+    assert_eq!(reference.identity(), "exact:é");
 }
 
 #[trace("TC-012", "FR-002-AC-1")]
