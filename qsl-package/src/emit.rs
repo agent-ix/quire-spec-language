@@ -28,7 +28,6 @@ use quire_contract_model::{
 use serde::Deserialize;
 
 use ix_trace_rs::string_edge;
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, With};
 use qsl_foundation::source::provenance::{
     OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
@@ -48,6 +47,7 @@ use qsl_semantics::value::{
     ModelRole, NodeOwner, TemporalRole,
 };
 use quire_exact::{Cancel, NodeKey, Origin, PathSegment, Role};
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -317,6 +317,7 @@ impl EmitRefusal {
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
             Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
             Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::ProtocolResultInvariant => Code::RuntimeInvariant,
         }
     }
 
@@ -350,6 +351,7 @@ impl EmitRefusal {
             | Self::TemporalClockProfileMismatch { .. } => None,
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. } => None,
+            Self::ProtocolResultInvariant => None,
         }
     }
 }
@@ -449,6 +451,13 @@ pub enum ProtocolEmissionResult {
         /// The first typed refusal attributed to this declaration.
         refusal: qsl_semantics::check::CheckRefusal,
     },
+    /// The protocol could not finish within its shared checking budget.
+    Incomplete {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The typed S3 work-limit refusal.
+        limit: qsl_semantics::check::StageLimitCause,
+    },
 }
 
 /// The unit-level result of emitting independent protocol results.
@@ -460,6 +469,11 @@ pub enum ProtocolEmissionAggregate {
     Refused {
         /// The first refused protocol's primary record.
         primary: qsl_semantics::check::CheckRefusal,
+    },
+    /// No protocol was refused, but at least one is incomplete.
+    Incomplete {
+        /// The first incomplete protocol's typed limit.
+        primary: qsl_semantics::check::StageLimitCause,
     },
 }
 
@@ -493,6 +507,7 @@ impl ProtocolEmission {
         self.results.iter().filter_map(|result| match result {
             ProtocolEmissionResult::Emitted { .. } => None,
             ProtocolEmissionResult::Refused { refusal, .. } => Some(refusal),
+            ProtocolEmissionResult::Incomplete { .. } => None,
         })
     }
 
@@ -503,6 +518,7 @@ impl ProtocolEmission {
             ProtocolEmissionResult::Refused { refusal, .. } => {
                 refusal.cause.code().category().exit_code()
             }
+            ProtocolEmissionResult::Incomplete { .. } => Category::Incomplete.exit_code(),
         }))
         .unwrap_or_else(|| Category::Success.exit_code())
     }
@@ -3537,6 +3553,7 @@ pub fn emit_checked_with_protocol_results(
     let ids = StructuralIds::default();
     let mut results = Vec::with_capacity(graph.protocol_order().len());
     let mut first_refusal = None;
+    let mut first_incomplete = None;
     for declaration in graph.protocol_order() {
         if let Some(refused) = graph
             .protocol_refusals()
@@ -3548,6 +3565,16 @@ pub fn emit_checked_with_protocol_results(
                 .first()
                 .cloned()
                 .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+            if let qsl_semantics::check::CheckCause::ResourceExhausted(limit) = &refusal.cause {
+                if limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget {
+                    first_incomplete.get_or_insert_with(|| (**limit).clone());
+                    results.push(ProtocolEmissionResult::Incomplete {
+                        declaration: declaration.clone(),
+                        limit: (**limit).clone(),
+                    });
+                    continue;
+                }
+            }
             first_refusal.get_or_insert_with(|| refusal.clone());
             results.push(ProtocolEmissionResult::Refused {
                 declaration: declaration.clone(),
@@ -3563,10 +3590,12 @@ pub fn emit_checked_with_protocol_results(
             .clone()
             .ok_or(EmitRefusal::ProtocolResultInvariant)?;
         let mut owned_ids = std::collections::HashSet::new();
-        let mut insert_key = |key: &NodeKey| {
-            owned_ids.insert(node_id(&ids, key));
+        let mut insert_key = |key: &NodeKey| -> Result<(), EmitRefusal> {
+            let id = serde_json::to_value(node_id(&ids, key)).map_err(encoding)?;
+            owned_ids.insert(serde_json::to_string(&id).map_err(encoding)?);
+            Ok(())
         };
-        insert_key(&clause_key);
+        insert_key(&clause_key)?;
         for key in keys
             .nodes
             .values()
@@ -3575,14 +3604,14 @@ pub fn emit_checked_with_protocol_results(
             .chain(keys.compensations.iter())
             .chain(keys.terminal.iter())
         {
-            insert_key(key);
+            insert_key(key)?;
         }
         for binder in &keys.binders {
-            insert_key(&binder.node);
+            insert_key(&binder.node)?;
         }
         for expression in &keys.expressions {
             for binder in &expression.binders {
-                insert_key(&binder.node);
+                insert_key(&binder.node)?;
             }
         }
         let nodes = wire_nodes
@@ -3591,7 +3620,7 @@ pub fn emit_checked_with_protocol_results(
             .flatten()
             .filter(|node| {
                 node.get("node_id")
-                    .and_then(|id| serde_json::from_value::<CheckedNodeId>(id.clone()).ok())
+                    .and_then(|id| serde_json::to_string(id).ok())
                     .is_some_and(|id| owned_ids.contains(&id))
             })
             .cloned()
@@ -3604,12 +3633,15 @@ pub fn emit_checked_with_protocol_results(
     }
     let aggregate = if let Some(primary) = first_refusal {
         ProtocolEmissionAggregate::Refused { primary }
+    } else if let Some(primary) = first_incomplete {
+        ProtocolEmissionAggregate::Incomplete { primary }
     } else {
         ProtocolEmissionAggregate::Emitted
     };
     let emission = match aggregate {
         ProtocolEmissionAggregate::Emitted => emission,
-        ProtocolEmissionAggregate::Refused { .. } => None,
+        ProtocolEmissionAggregate::Refused { .. }
+        | ProtocolEmissionAggregate::Incomplete { .. } => None,
     };
     Ok(ProtocolEmission {
         results,

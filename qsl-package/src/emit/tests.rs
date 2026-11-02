@@ -1631,6 +1631,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         SurplusTemporalClockSelection,
         DuplicateTemporalClockSelection,
         TemporalClockProfileMismatch,
+        ProtocolResultInvariant,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1661,6 +1662,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::TemporalClockProfileMismatch { .. }) => {
                 Seen::TemporalClockProfileMismatch
             }
+            Err(EmitRefusal::ProtocolResultInvariant) => Seen::ProtocolResultInvariant,
             Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
             }
