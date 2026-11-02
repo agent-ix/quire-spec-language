@@ -25,6 +25,7 @@ jobs:
         with:
           repository: agent-ix/quire-specification
           path: quire-specification
+          token: ${{ secrets.QSPEC_READ_TOKEN }}
       - name: No committed binaries
         run: tools/check-no-committed-binaries.sh
       # rust-toolchain.toml selects the toolchain and its CI components.
