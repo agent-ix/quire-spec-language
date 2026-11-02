@@ -1843,6 +1843,8 @@ pub enum TaskTimeMember {
     Period,
     /// The relative deadline.
     Deadline,
+    /// The best-case execution time lower bound.
+    Bcet,
     /// The `wcet` budget: `C`, or `C(LO)` for a `hi` task.
     Wcet,
     /// The `wcet_hi` budget `C(HI)`.
@@ -1867,6 +1869,8 @@ pub enum TaskSetDefect {
     Negative(TaskTimeMember),
     /// A `hi` task's `C(LO)` exceeds its `C(HI)`.
     BudgetOrder,
+    /// A best-case execution time exceeds the task's applicable WCET.
+    BcetExceedsBudget,
     /// A `lo` task states a `wcet_hi`.
     LoDualBudgets,
     /// A priority is past the largest natural number S3 holds.

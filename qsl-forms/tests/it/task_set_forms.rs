@@ -49,7 +49,7 @@ fn quantity(form: &SignedQuantityForm) -> (bool, u64, &str) {
 fn s2_builds_task_sets_and_claims_as_written() {
     let (text, unit) = build(
         "taskset Ctl {\n\
-         task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n\
+         task a periodic 4 ms deadline 4 ms bcet 1 ms wcet 1 ms priority 1 lo;\n\
          task b sporadic 6 ms deadline 5 ms wcet 2 ms priority 2 jitter 1 ms blocking 3 ms hi wcet_hi 3 ms;\n\
          }\n\
          schedulable CtlFp on Ctl under fixed_priority;\n\
@@ -72,6 +72,10 @@ fn s2_builds_task_sets_and_claims_as_written() {
     assert_eq!(a.arrival, ArrivalForm::Periodic);
     assert_eq!(quantity(&a.interval), (false, 4, "ms"));
     assert_eq!(quantity(&a.wcet), (false, 1, "ms"));
+    assert_eq!(
+        quantity(a.bcet.as_ref().expect("explicit bcet")),
+        (false, 1, "ms")
+    );
     assert_eq!(
         a.priority.as_ref().map(|p| p.value.clone()),
         Some(Integer::from(1_i64))
