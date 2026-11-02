@@ -177,24 +177,22 @@ Fixture **E-C** is its own package, separate from fixture E: a domain package
 9]>, items: Sequence<Int[0, 9]>[0, 3]}`, the union `Choice` with the members
 `Left(Int[0, 9])` and `Right(Boolean)`, `Total = Int[0, 1000]`, the object type
 `Node{total: Total}` with population `nodes`, and one protocol `Composed` over
-`view: M::Node`, which is protocol position 0 of that package. It shares nothing
-with fixture E's protocol `Refunds`. `Composed` declares the capture
+`view: M::Node`. It shares nothing with fixture E's protocol `Refunds`. `Composed` declares the capture
 `order: M::Total = view.total` and a run `Main` whose attempt controls, in
-ascending node key and so in attempt-position order, are:
+declaration order, are:
 
-- `Tried` (attempt 0), whose constraint is `order >= 0`;
-- `Picked` (attempt 1), whose constraint is `order >= 0`;
-- one further attempt control per row of the table below (attempts 2 onward, in
-  table order), whose only constraint is that row's expression. Its result
-  binder is `(m: M::Mix)`, except that of `Composed.case`, which is `(choice:
-  M::Choice)`.
+- `Tried`, with the result binder `(t: M::Mix)`, whose constraint is `order >= 0`;
+- `Picked`, with the result binder `(p: M::Mix)`, whose constraint is `order >= 0`;
+- one further attempt control per row of the table below, in table order, whose
+  only constraint is that row's expression. Its result binder is `(m: M::Mix)`,
+  except that of `Composed.case`, which is `(choice: M::Choice)`.
 
 Each attempt control has one constraint slot, as FR-390's slot table gives it.
 Shapes are written in checked-term form, not QSL surface syntax; whether each is
 expressible in QSL's surface syntax is a check for the code lane. The
 constraints of `Tried` and `Picked` both read the one protocol-level capture
 `order`, so the application `order >= 0` is a single graph node held by two
-slots of two origins (the checker builds equal applications over one binder as
+slots of two origins (`protocol Composed run Main Picked body` and `protocol Composed run Main Tried body`) (the checker builds equal applications over one binder as
 one node). Each table slot is the only slot of its attempt, so its origin is its
 own and its binder `m` or `choice` is shared with no other slot.
 
@@ -214,14 +212,14 @@ own and its binder `m` or `choice` is shared with no other slot.
 | C1 | each slot of AC-28 (fixtures E and L), rows 4 to 22 and 29 to 33 supplies | as in those rows | reader value, outcome category and ordered charge log equal the checked package's (AC-28); `read_node` returns a `NodeRead` for every walk position (AC-29) |
 | C2 | `Refund.retry.relation`, handles of `earlier.tally` | row 8's supply | two distinct handles; their `Location` values equal the in-process `Location` of the term in `earlier.tally < 3` and in `earlier.tally + 1`, and differ (AC-31) |
 | C3 | `Refund.retry.relation` | `earlier` unavailable, `later = Attempt(tally 1)`, `target = 5`, `activated = false` | halts at the first `earlier.tally` visit; the reader result's `Location` equals the in-process one, that of the term in `earlier.tally < 3` (AC-32) |
-| C4 | C2's handles on the package with the two `Refund`-origin `earlier.tally` rows' `Location` values swapped | row 8's supply | the handles read the swapped locations; row 8's value is unchanged (AC-33) |
+| C4 | C2's handles on the package with the two retry-origin `earlier.tally` rows' `Location` values swapped | row 8's supply | the handles read the swapped locations; row 8's value is unchanged (AC-33) |
 | C4a | C3 on the package of C4 | C3's supply | the halt reports the location of the term in `earlier.tally + 1` (AC-34) |
-| C5 | package with the highest-`term_ordinal` `Refund`-origin `earlier.tally` row removed | any | `ViewFailure::Unsupported`/`MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, `Refund` origin, visit number 1, two visits, one row (AC-35) |
+| C5 | package with the highest-`term_ordinal` retry-origin `earlier.tally` row removed | any | `ViewFailure::Unsupported`/`MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, retry origin of `Refund`, visit number 1, two visits, one row (AC-35) |
 | C5a | the package of C5 | any slot, any meter | no slot has a view; the meter is unchanged (AC-36) |
-| C6 | package with a `Refund`-origin `earlier.tally` row appended at `term_ordinal` 2 | any | `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application; no meter charge (AC-37) |
-| C6a | package with a `Refund`-origin row added at `term_ordinal` 1 for `order >= 0` of `Applied.constraint` | any | `MissingLocationProjection` at the `Node` locus of that application; no meter charge (AC-38) |
-| C7 | package with the ordinal-zero `Refund`-origin `earlier.tally` row removed | any | refused at I2 by the QSpec reader, `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`; view creation not attempted (AC-39) |
-| C7a | package with a `Refund`-origin `earlier.tally` row duplicated | any | refused at I2 with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>`; view creation not attempted (AC-40) |
+| C6 | package with a retry-origin `earlier.tally` row appended at `term_ordinal` 2 | any | `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application; no meter charge (AC-37) |
+| C6a | package with a retry-origin row added at `term_ordinal` 1 for `order >= 0` of `Applied.constraint` | any | `MissingLocationProjection` at the `Node` locus of that application; no meter charge (AC-38) |
+| C7 | package with the ordinal-zero retry-origin `earlier.tally` row removed | any | refused at I2 by the QSpec reader, `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`; view creation not attempted (AC-39) |
+| C7a | package with a retry-origin `earlier.tally` row duplicated | any | refused at I2 with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>`; view creation not attempted (AC-40) |
 | C8 | package whose `Refund.recovery.predicate` slot descriptor holds the real `CheckedBody` of `Refund.retry.relation`, taken through the checked package's existing API | row 12's supply | the reader value, `NodeRead` values and charge log equal the unaltered view's (AC-30) |
 | C9 | Inspection: list FR-322's admitted expression operation identities and FR-400's `NodeKind` variants | n/a | every identity maps to a variant; no identity is left to `MissingOperationProjection` (AC-41) |
 | C10 | `Composed.let`, `Composed.if`, `Composed.case` (E-C) | `m = Mix(ready true, count 4, note present 2, items [4])`, `choice = Left(3)`; then the `ready false` and `Right(true)` variants | value and ordered charge log equal the checked package's; each position's `Location` equals the checked package's (AC-42) |
@@ -233,11 +231,11 @@ own and its binder `m` or `choice` is shared with no other slot.
 | C11c | each E-C slot on a package with the node ids relabelled (ascending `dependencies` and identities recomputed) so that a slot's ascending-id order differs from its walk order | as C10 | every handle's `Location` is unchanged (AC-49) |
 | C12 | Inspection of the reader's `read_node`, pairing and descriptor | n/a | root and origin come only from the descriptor; no `NodeRead` is built from a `CheckedBody` (AC-50) |
 | C13 | Inspection of the reader's `NodeKind` match | n/a | exhaustive, no wildcard arm (AC-51) |
-| C14 | `Refund.retry.relation` and `Refund.trigger.guard` (E), handles of `target >= 0` | row 8's and row 4's supplies | the two handles read the `Refund`-origin rows of `term_ordinal` 0 and 1 respectively, each equal to the in-process `Location` of its term (AC-52) |
+| C14 | `Refund.retry.relation` and `Refund.trigger.guard` (E), handles of `target >= 0` | row 8's and row 4's supplies | the retry handle reads the retry-origin row (`term_ordinal` 0), the trigger-guard handle the trigger-guard row (`term_ordinal` 1), each equal to the in-process `Location` of its term (AC-52) |
 | C14a | C14 on the package with those two rows' `Location` values swapped | as C14 | each handle reads the other's location (AC-53) |
-| C14b | `Tried.constraint` and `Picked.constraint` (E-C), handles of `order >= 0` | `order = 5` | the `Tried` handle reads the `Tried`-origin row (`term_ordinal` 0), the `Picked` handle the `Picked`-origin row (`term_ordinal` 1) (AC-54) |
-| C14c | E-C package with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Picked` row) | any | `MissingLocationProjection` at the `Node` locus of `order >= 0`, `Picked` origin, visit number 0, one visit, zero rows, pointer `/checked_term_data/protocol_locations` (AC-55) |
-| C14d | the package of C14c | any | the `Tried` origin's visit is paired and not reported unpaired (AC-56) |
+| C14b | `Picked` and `Tried` constraints (E-C), handles of `order >= 0` | `order = 5` | the `Picked` handle reads the `Picked`-origin row (`term_ordinal` 0), the `Tried` handle the `Tried`-origin row (`term_ordinal` 1) (AC-54) |
+| C14c | E-C package with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Tried` row) | any | `MissingLocationProjection` at the `Node` locus of `order >= 0`, `Tried` constraint's origin name, visit number 0, one visit, zero rows, pointer `/checked_term_data/protocol_locations` (AC-55) |
+| C14d | the package of C14c | any | the `Picked` constraint's visit is paired and not reported unpaired (AC-56) |
 
 ## Fixture E-P: reference-population provenance extension
 
