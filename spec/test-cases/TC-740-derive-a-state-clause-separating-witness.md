@@ -43,9 +43,9 @@ reports and the observation to the derivation.
    snapshots hold that `history`.
 8. `FloatOrder` over `high`.
 9. `FloatAndOperand` over `high` with `self` `mid`.
-10. Two checked trees of one `and` with equal locations, one `Authored` and
-    one `Synthesized`, run once each over one observation; read the recorded
-    decisions of the root.
+10. Two checked trees of one `and` whose left operand is `true`, with equal
+    locations, one `Authored` and one `Synthesized`, run once each over one
+    observation; read the recorded decisions of the root.
 
 Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
 
@@ -75,5 +75,5 @@ Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
   observation.
 - Step 8: `true`, basis `closed-scope`, no record.
 - Step 9: `true`, basis `closed-scope`, no record.
-- Step 10: the `Authored` tree records `true` or `false` for the left
+- Step 10: the `Authored` tree records the decision `true` for the left
   operand; the `Synthesized` tree records none.

@@ -65,6 +65,12 @@ record the same way.
   otherwise the right operand), and for `implies` the antecedent with the
   polarity flipped when it is `false`, otherwise the consequent.
 - The walk SHALL end at the first node of any other kind.
+- The walk SHALL visit each node of the claim at most once.
+- If the walk ends at a quantifier occurrence that has a stop report, then
+  the derivation SHALL settle the decisive basis for the clause's truth:
+  `decisive-counterexample` for `false`, `decisive-witness` for `true`.
+- If the walk ends at a quantifier occurrence that has a stop report, then
+  the derivation SHALL build the record from that occurrence's stop report.
 - A connective node SHALL record a decision for its left operand if and
   only if its origin is `Authored`. A `Synthesized` connective, such as the
   composition the checker builds for a Float ordering (`<`, `<=`, `>`,
@@ -165,7 +171,7 @@ criteria `self` is `mid`, its `history` is given with each criterion, and
 | FR-265-AC-7 | Member domains: `MemberAll` with `history` `[0, 600, 700]` names 600 at `index` 1, with a value path rooted at `mid` in the current observation whose one step selects the member `history`. `ConvertedAll` with `history` `[700, 0, 600]` names 600 at `index` 2, its position in the stored member, on the same path. `MaybeAll` with `[0, 600, 700]` names 600 at `index` 1 on the path whose steps select the member `maybeHistory` and then the option's value. `MemberPre` over a pre-call observation, and over an invocation, derives the same record, whose path names the pre observation, not the invocation's post one. | Test (TC-740) |
 | FR-265-AC-8 | `FloatOrder` over `high` evaluates `true` and derives basis `closed-scope` and no record. | Test (TC-740) |
 | FR-265-AC-9 | `FloatAndOperand` over `high` with `self` `mid` evaluates `true`; its authored `and` stopped on the right operand, the walk ends at the Float ordering's synthesized connective, and the derivation yields basis `closed-scope` and no record. | Test (TC-740) |
-| FR-265-AC-10 | Two checked trees with the same source locations that differ only in the `ConnectiveOrigin` of their root `and` connective, evaluated over one observation, record a decision for the left operand when the origin is `Authored` and record none when it is `Synthesized`. | Test (TC-740) |
+| FR-265-AC-10 | Two checked trees with the same source locations that differ only in the `ConnectiveOrigin` of their root `and` connective, whose left operand is `true`, evaluated over one observation, record the decision `true` for the left operand when the origin is `Authored` and record no decision when it is `Synthesized`. | Test (TC-740) |
 
 ## Dependencies
 

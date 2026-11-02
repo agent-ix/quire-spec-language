@@ -12,7 +12,7 @@ relationships:
 
 Verify the two checked-package views that succeed the retired
 `checked_predicate` and `temporal_subject` modules. Scope: FR-515-AC-1 to
-FR-515-AC-14. **R** is the package FR-517 emits from the ported IT-001 recipe.
+FR-515-AC-16. **R** is the package FR-517 emits from the ported IT-001 recipe.
 
 ## Test Procedure
 
@@ -23,17 +23,19 @@ FR-515-AC-14. **R** is the package FR-517 emits from the ported IT-001 recipe.
 | 3 | 3 | `Due`: `always[0,30] holds(Allowed(view.ratio))`; a formula with three `holds` atoms | `always` with `[0, 30]` then `holds`; one leaf; three leaves in pre-order |
 | 4 | 4 | `checked_predicate` of the `Due` leaf | kind `HoldsLeaf`; `binders()` = `[view]`; span inside the formula root's source regions |
 | 5 | 5 | the id of a `protocol_clause`; an id not in the package; a leaf of another clause; an integer-typed node | `UnresolvedClause`; `UnresolvedClause`; `LeafNotInClause`; `LeafNotBoolean`; no partial view |
-| 6 | 6 | two packages with a clause of the same name; `belongs_to` | true for the source package, false for the other |
+| 6 | 6 | two packages emitted from the same source; `belongs_to` | true for the source package, false for the other |
 | 7 | 7 | two structurally equal clauses under an infinite-trace profile; a changed interval; an added comment | one node, two occurrences with different ordinals; `formula()` and the node id change; the comment changes neither |
 | 8 | 8 | compile-fail: construct either view outside the module; call `digest()`, `bytes()`, `identity()`, `package_digest()` and a closure-taking method | none compiles |
-| 9 | 9 | `git grep` for the two module paths | no match |
+| 9 | 9 | compile-fail `use` of each of the two module paths | neither resolves |
 | 10 | 10 | a guard `g` that is no `holds` operand; `checked_predicate` of `g` | `ActivationGuard`; `g` absent from `predicate_leaves()` |
 | 11 | 11 | a guard equal to a `holds` operand (one node); `checked_predicate` of it | `ActivationGuard`; the node present in `predicate_leaves()` once per reading `holds` atom |
 | 12 | 12 | a leaf the clause reads whose source map entry is removed | `LeafHasNoSource`; no partial view |
 | 13 | 13 | two structurally equal clauses under a clock-configured profile | one node, two occurrences, admitted; gated on the Contract IR decision |
 | 14 | 14 | a reader that implements IR-1278; `name()` | the declared name, equal to the sidecar's; gated on IR-1278 |
+| 15 | 15 | a clause named by no protocol `requirements` entry; a clause named by one | empty; the protocol clause's node id |
+| 16 | 16 | `checked_predicate` of an activation guard | `source_span` is an entry of the guard node |
 
-Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-14", "TC-1310")]` for the criteria each row covers.
+Tag the test `#[trace("FR-515-AC-1", ..., "FR-515-AC-16", "TC-1310")]` for the criteria each row covers.
 
 ## Expected Results
 

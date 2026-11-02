@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the causal relation, the protocol view and the record-to-node map.
-Scope: FR-519-AC-1 to FR-519-AC-9. **R** is the package of FR-517.
+Scope: FR-519-AC-1 to FR-519-AC-10. **R** is the package of FR-517.
 
 ## Test Procedure
 
@@ -26,6 +26,7 @@ Scope: FR-519-AC-1 to FR-519-AC-9. **R** is the package of FR-517.
 | 7 | 7 | `linear issue view QSL-1549`, relations | project and milestone set; blocks QSL-1501; blocked by QSL-1546, QSL-1547 and QSL-1548; three obligations listed |
 | 8 | 8 | for each view function over a node, lock or source map, a copy with the member removed | `ViewRefusal` naming the member; no partial value |
 | 9 | 9 | compile-fail use of `ExportRef`, `ArtifactKind`, `Revision`, `Language`, `Definition` | none resolves |
+| 10 | 10 | compile a test that passes a `CheckedPackageV2` and a `CheckedNodeId` to `protocol_view`, `causal_relation` and `binder`; read the returned ids | compiles; the ids are `CheckedNodeId` |
 
 Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-7", "TC-1314")]`; row 1 also carries FR-383-AC-16.
 

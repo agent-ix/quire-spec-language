@@ -109,23 +109,23 @@ node, lock or source map they read.
 
 | `wire` record used by quire-protocol | Successor | Disposition |
 | --- | --- | --- |
-| `Package` | `CheckedPackageV2` | Successor; the typed link view over it is quire-protocol's |
-| `Handle` (index into a table) | `CheckedNodeId` | Successor |
-| `Declaration`, `Body::Protocol { .. }` | the `protocol_clause`, `role`, `channel`, `queue`, `obligation`, `control` and `compensation` nodes and their arguments (FR-383-AC-1 to AC-8), with the declaration's identity triple | Successor |
+| `Package` | `CheckedPackageV2` | Successor, consumed by name: the argument of every view function; the typed link view over it is quire-protocol's |
+| `Handle` (index into a table) | `CheckedNodeId` | Successor, consumed by name: the id every view and relation returns |
+| `Declaration`, `Body::Protocol { .. }` | the `protocol_clause`, `role`, `channel`, `queue`, `obligation`, `control` and `compensation` nodes and their arguments (FR-383-AC-1 to AC-8), with the declaration's identity triple | Successor, read by `protocol_view` and `declaration` |
 | `ControlOperation`, `TemporalOperation`, `ValueOperation` | the `quire.op.protocol.control`, `quire.op.temporal.*` and FR-093 value operation identities of the applications | Successor, read by `control_operation` and `operation_identity` |
 | `Binder` (and its level) | the binder node and level of FR-383-AC-10 | Successor, read by `binder` |
 | `Locus` | the package source-map entry of the node | Successor, read by `locus` |
 | `Type`, `Value`, `Number` | `semantic_type` nodes, literal and reference terms; numbers in the FR-322 encoding (the FR-038 codec is not used by the checked package, FR-511-AC-3) | Successor, consumed by name through `CheckedPackageV2::term`; no QSL view |
 | `Delivery` | the channel node's delivery text: a policy word or, for a declared interval, FR-509's `[lo,hi]` | Successor, read by `delivery` |
 | `EdgeKind`, `CausalEdge` | `CausalRelation` above | Successor, read by `causal_relation` |
-| `ActivationMapping` | the FR-449 activation rows | Successor |
+| `ActivationMapping` | the FR-449 activation rows | Successor, read by `protocol_view` (`activation`) |
 | `TemporalBinding`, `ClockConfiguration` | the Contract IR types of the same names | Successor, read by `temporal_binding` |
 | `Model` | the `model` node and the clause's `owner_model` (FR-383-AC-26) | Successor, read by `owner_model` |
 | `Dependency` | the lock `dependency_selections` | Successor, read by `dependency` |
 | `ArtifactRef`, `ArtifactKind`, `Revision`, `Language`, `Definition` | `CheckedSourceRef`, `CheckedArtifactRef` and `CheckedSelection` (`{ authority, identity }` only) | The `digest`, `revision` and kind fields end with QSL-1270; the `Definition` table ends because definitions are lock selections. `source` reads a `CheckedSourceRef` by identity and `selection` reads a `CheckedArtifactRef` by selection role |
 | `BindingKind::Population` | the population declaration node of the model (FR-106, FR-513-AC-14) | Successor, consumed by node id; no QSL view |
-| `BindingKind::Clock` | the `temporal_bindings` row | Successor |
-| `BindingKind::Window` | none: a window is an evaluation input (FR-049-AC-5, FR-516), not a package member | Keep the `wire.rs` spelling until QSL-1506 (FR-513's row) |
+| `BindingKind::Clock` | the `temporal_bindings` row | Successor, read by `temporal_binding` |
+| `BindingKind::Window` | none: a window is an evaluation input (FR-049-AC-5, FR-516), not a package member | No QSL view; keep the `wire.rs` spelling until QSL-1506 (FR-513's row) |
 | `ExportRef` | none: exports are the domain package document's declarations, selected by node id | Ended; no consumer use after QSL-1549 |
 
 ### Required of quire-protocol (not QSL code; ticket QSL-1549)
@@ -152,6 +152,7 @@ node, lock or source map they read.
 | FR-519-AC-7 | The cross-repository ticket QSL-1549 exists in the QSL V1 Architecture Spine project, blocks QSL-1501, is blocked by the QSL tickets of this batch, and its description lists the three obligations above. | Inspection (TC-1314) |
 | FR-519-AC-8 | For each view function that takes a node, a lock or a source map, a copy of that value with the member the view reads removed is refused with a `ViewRefusal` that names the member and returns no partial value. An admitted package never lacks a member, so the removal is made on the value the view reads and not on an admitted package. | Test (TC-1314) |
 | FR-519-AC-9 | No QSL export names a record the map marks Ended after QSL-838; a compile-fail use of each of `ExportRef`, `ArtifactKind`, `Revision`, `Language` and `Definition` through `qsl_package` fails to resolve. | Test (TC-1314) |
+| FR-519-AC-10 | Each of `protocol_view`, `causal_relation` and `binder` takes `&CheckedPackageV2`, and every node reference a view or relation returns is a `CheckedNodeId`; a test that passes a `CheckedPackageV2` and a `CheckedNodeId` to each compiles. | Test (TC-1314) |
 
 ## Dependencies
 
