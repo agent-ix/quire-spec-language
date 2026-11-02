@@ -46,6 +46,9 @@ pub struct ObservedRun {
     pub stopped: Option<HoldsStop>,
     /// The first undefined atom read, with its trace position and cause.
     pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+    /// The first unresolved finite-window activation and its establishment
+    /// deadline, if the run contains a pending activation.
+    pub pending_activation: Option<(TemporalPosition, quire_exact::Rational)>,
 }
 
 /// Evaluate `clause`, a temporal clause of `package`, over `environments`,
@@ -125,20 +128,97 @@ pub fn evaluate_observed_finite_window(
         stopped: None,
         undefined: None,
     };
-    let result = super::evaluate_finite_window_at(
-        clause.clause(),
-        trace,
-        TemporalPosition::new(0),
-        watermark,
-        complete_through,
-        uncertainty_margin,
-        &mut letters,
-        meter,
-    );
+    let clause_body = clause.clause();
+    let positions: Vec<usize> = match clause_body.activation() {
+        qsl_semantics::check::Activation::Origin => vec![0],
+        qsl_semantics::check::Activation::Each { guarded: false } => {
+            (0..environments.len()).collect()
+        }
+        qsl_semantics::check::Activation::Each { guarded: true } => {
+            return ObservedRun {
+                result: Err(TemporalRefusal::Fault(InternalFault::new(
+                    "temporal.finite-window",
+                    "guarded-activation-not-evaluated",
+                ))),
+                stopped: None,
+                undefined: None,
+                pending_activation: None,
+            };
+        }
+    };
+    let mut first_violation = None;
+    let mut first_pending = None;
+    let mut first_undefined = None;
+    let mut incomplete = None;
+    for index in positions {
+        let position = TemporalPosition::new(u64::try_from(index).unwrap_or(u64::MAX));
+        let current = super::evaluate_finite_window_at(
+            clause_body,
+            trace,
+            position,
+            watermark,
+            complete_through,
+            uncertainty_margin,
+            &mut letters,
+            meter,
+        );
+        match current {
+            Ok(TemporalOutcome::Violated { at }) => {
+                first_violation.get_or_insert(TemporalOutcome::Violated { at });
+            }
+            Ok(TemporalOutcome::Pending) => {
+                if first_pending.is_none() {
+                    first_pending = super::finite_window_deadline(
+                        clause_body,
+                        trace,
+                        position,
+                        uncertainty_margin,
+                    )
+                    .ok()
+                    .map(|deadline| (position, deadline));
+                }
+            }
+            Ok(TemporalOutcome::Undefined(undefined)) => {
+                first_undefined.get_or_insert(undefined);
+            }
+            Ok(TemporalOutcome::Incomplete(stopped)) => {
+                incomplete.get_or_insert(stopped);
+            }
+            Ok(TemporalOutcome::Holds) => {}
+            Ok(other) => {
+                return ObservedRun {
+                    result: Ok(other),
+                    stopped: letters.stopped,
+                    undefined: letters.undefined,
+                    pending_activation: first_pending,
+                };
+            }
+            Err(refusal) => {
+                return ObservedRun {
+                    result: Err(refusal),
+                    stopped: letters.stopped,
+                    undefined: letters.undefined,
+                    pending_activation: first_pending,
+                };
+            }
+        }
+    }
+    let result = if let Some(violation) = first_violation {
+        Ok(violation)
+    } else if let Some(undefined) = first_undefined {
+        Ok(TemporalOutcome::Undefined(undefined))
+    } else if let Some(incomplete) = incomplete {
+        Ok(TemporalOutcome::Incomplete(incomplete))
+    } else if first_pending.is_some() {
+        Ok(TemporalOutcome::Pending)
+    } else {
+        Ok(TemporalOutcome::Holds)
+    };
     ObservedRun {
         result,
         stopped: letters.stopped,
         undefined: letters.undefined,
+        pending_activation: first_pending,
     }
 }
 
@@ -171,6 +251,7 @@ fn evaluate_observed_goal(
         result,
         stopped: letters.stopped,
         undefined: letters.undefined,
+        pending_activation: None,
     }
 }
 
