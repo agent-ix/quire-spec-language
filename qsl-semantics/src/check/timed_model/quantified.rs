@@ -323,7 +323,9 @@ pub(super) fn invariant_bound(
 /// The generated cardinality expression belongs to the written quantifier.
 /// Divide that source range among its nodes so each expression occurrence
 /// produced by typing the synthetic size read has a non-empty provenance
-/// region.
+/// region. A quantifier located at a point (read through a clock-reading
+/// declaration, located at its call) has no range to divide: every node of
+/// the expression is then an empty span at that point.
 fn expression_spans_at(
     expression: &Expression,
     span: Span,
@@ -693,4 +695,43 @@ pub(super) fn reset(
             condition: predicate,
         }),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn size_read() -> Expression {
+        Expression::binary(
+            BinaryOperator::Equal,
+            Expression::size(Expression::field(Expression::self_ref(), "ts")),
+            Expression::integer(0_u64),
+        )
+    }
+
+    /// FR-230-AC-21: the generated size read of a quantifier located at a
+    /// point (its call, for a clock-reading declaration) places every node at
+    /// that point; a quantifier with a source range divides it, so no node
+    /// span is empty.
+    #[test]
+    fn a_point_located_quantifier_places_every_generated_node_at_the_point() {
+        let expression = size_read();
+        let point = Span { start: 7, end: 7 };
+        let at_point = expression_spans_at(&expression, point)
+            .expect("a point span places the nodes")
+            .of_nodes(&expression)
+            .expect("one span for each node");
+        assert_eq!(at_point.len(), expression.len());
+        assert!(at_point.iter().all(|span| *span == point), "{at_point:?}");
+
+        let range = Span { start: 7, end: 40 };
+        let divided = expression_spans_at(&expression, range)
+            .expect("a range is divided")
+            .of_nodes(&expression)
+            .expect("one span for each node");
+        assert!(
+            divided.iter().all(|span| span.end > span.start),
+            "{divided:?}"
+        );
+    }
 }

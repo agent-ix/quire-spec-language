@@ -567,7 +567,7 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
     }
 }
 
-/// A linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
+/// A linear redefinition chain `model.A/op0 <- model.A/op1 <- ... <-
 /// model.A/op{edges}` (`op{i}` redefines `op{i-1}`): exactly `edges`
 /// `redefines` edges. Every operation is owned by `model.A`, so every
 /// dispatch/dominance conformance check is the trivial `s == t` case and
