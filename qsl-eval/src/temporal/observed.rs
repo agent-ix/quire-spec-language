@@ -98,6 +98,48 @@ pub fn evaluate_observed_at(
     )
 }
 
+/// Evaluate a timestamped finite-window activation over admitted snapshots.
+/// The timestamp trace and environments must have the same represented
+/// length; stamps are read by the timed finite-window evaluator, while atom
+/// values still come from the ordinary observed-letter adapter.
+pub fn evaluate_observed_finite_window(
+    package: &CheckedPackage,
+    clause: &TemporalClauseNode,
+    environments: &[ObjectEnvironment],
+    trace: &super::TimedTrace,
+    over: &ObjectReference,
+    watermark: &quire_exact::Rational,
+    complete_through: Option<&quire_exact::Rational>,
+    meter: &mut Meter,
+) -> ObservedRun {
+    let shape = TemporalTrace::Finite {
+        len: u64::try_from(environments.len()).unwrap_or(u64::MAX),
+    };
+    let mut letters = ObservedLetters {
+        package,
+        clause,
+        environments,
+        trace: shape,
+        over,
+        stopped: None,
+        undefined: None,
+    };
+    let result = super::evaluate_finite_window_at(
+        clause.clause(),
+        trace,
+        TemporalPosition::new(0),
+        watermark,
+        complete_through,
+        &mut letters,
+        meter,
+    );
+    ObservedRun {
+        result,
+        stopped: letters.stopped,
+        undefined: letters.undefined,
+    }
+}
+
 fn evaluate_observed_goal(
     package: &CheckedPackage,
     clause: &TemporalClauseNode,

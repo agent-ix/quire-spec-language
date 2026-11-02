@@ -29,7 +29,9 @@ use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
-pub use temporal::{OverObject, TraceInput};
+pub use temporal::{
+    OverObject, TimestampedObservation, TimestampedOrderKey, TimestampedTraceInput, TraceInput,
+};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};

@@ -45,6 +45,8 @@ enum Unit {
     Guarded,
     /// An on-each activation guard that becomes undefined at value 2.
     GuardUndefined,
+    /// Timestamped finite-window evaluation (FR-501).
+    Timestamped,
 }
 
 impl Unit {
@@ -54,6 +56,9 @@ impl Unit {
             Self::Infinite => "profile t = \"quire.temporal.infinite-trace/v1\";\n",
             Self::Undefined | Self::Guarded | Self::GuardUndefined => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
+            }
+            Self::Timestamped => {
+                "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
         }
     }
@@ -85,8 +90,46 @@ impl Unit {
                  on each (q: Counters::Counter) when (3 mod (2 - q.value) >= 0) \
                  { always[0,0] holds(c.value = c.value) }\n"
             }
+            Self::Timestamped => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[0,5] holds(c.value > 0) }\n"
+            }
         }
     }
+}
+
+/// `Window` over timestamped finite-window positions.
+fn timestamped(
+    stamps: &[u64],
+    values: &[i64],
+    watermark: u64,
+    complete_through: Option<u64>,
+) -> ClauseRunRequest {
+    assert_eq!(stamps.len(), values.len());
+    request(
+        Unit::Timestamped,
+        |labels| ClauseRunSelection::Temporal {
+            name: "Window".to_owned(),
+            trace: TraceInput::Timestamped(crate::spine::TimestampedTraceInput {
+                positions: labels
+                    .iter()
+                    .zip(stamps)
+                    .map(|(document, stamp)| crate::spine::TimestampedObservation {
+                        document: document.clone(),
+                        stamp: *stamp,
+                        order: None,
+                    })
+                    .collect(),
+                watermark,
+                complete_through,
+                scope_closed: true,
+                uncertainty: 0,
+                authoritative_origin: true,
+            }),
+            over: over("c1"),
+        },
+        values,
+    )
 }
 
 /// The `Counter` unit and a request for `selection` over snapshots with
@@ -213,14 +256,23 @@ fn temporal_clock_selections(
                 .iter()
                 .find(|profile| profile.alias == clause.profile.alias)
                 .expect("the temporal profile is selected");
-            (selected.identity == "quire.temporal.event-position.false-extension/v1").then(|| {
-                TemporalClockSelection {
-                    source: parsed.source().reference().clone(),
-                    declaration_span: form.span(),
-                    clock: ClockConfiguration::EventPosition {
+            let clock = match selected.identity.as_str() {
+                "quire.temporal.event-position.false-extension/v1" => {
+                    ClockConfiguration::EventPosition {
                         sequence_authority: "counter-event-sequence".into(),
-                    },
+                    }
                 }
+                "quire.temporal.timestamped-event.finite-window/v1" => {
+                    ClockConfiguration::TimestampedEvent {
+                        timestamp_unit: "ms".into(),
+                    }
+                }
+                _ => return None,
+            };
+            Some(TemporalClockSelection {
+                source: parsed.source().reference().clone(),
+                declaration_span: form.span(),
+                clock,
             })
         })
         .collect()
@@ -1114,6 +1166,37 @@ fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
         )),
         Category::InternalFailure
     );
+}
+
+/// FR-501-AC-1/2 (TC-1295): timestamp distances select a sparse finite
+/// window, and a closed window does not synthesize a false tail.
+#[trace("TC-1295", "FR-501-AC-1", "FR-501-AC-2")]
+#[test]
+fn timestamped_windows_use_ticks_and_close_without_false_extension() {
+    let outside = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
+    assert_eq!(outside.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(outcome(&outside), &TemporalVerdict::Holds);
+
+    let boundary = report(timestamped(&[0, 5], &[0, 1], 5, Some(5)));
+    assert_eq!(outcome(&boundary), &TemporalVerdict::Holds);
+
+    let sparse = report(timestamped(&[0], &[1], 1, Some(1)));
+    assert_eq!(outcome(&sparse), &TemporalVerdict::Holds);
+}
+
+/// FR-501-AC-3 (TC-1295): an open future window remains pending until its
+/// deadline, while a witness already inside it is decisive.
+#[trace("TC-1295", "FR-501-AC-3")]
+#[test]
+fn timestamped_windows_pending_and_decisive_witnesses() {
+    let pending = report(timestamped(&[0, 1], &[0, 0], 1, Some(1)));
+    assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
+
+    let settled = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
+    assert_eq!(outcome(&settled), &TemporalVerdict::Violated { at: 0 });
+
+    let witness = report(timestamped(&[0, 1], &[0, 1], 1, Some(1)));
+    assert_eq!(outcome(&witness), &TemporalVerdict::Holds);
 }
 
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace
