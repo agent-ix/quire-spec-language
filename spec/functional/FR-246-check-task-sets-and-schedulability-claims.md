@@ -44,8 +44,11 @@ changing one gives a different obligation.
   under P;` and `response N on S.τ <= d under fixed_priority;` claims, `N`
   the claim's name, `S` the task set and `P` one of `fixed_priority`, `edf`
   and `amc`, in the spelling QSpec's shared grammar fixes. The grammar admits
-  a task set with no task, a negative time value and a `lo` task with
-  `wcet_hi`, so that S3 refuses them below.
+  a task set with no task, a negative time value, a negative `bcet`, a
+  `bcet` above the task's upper execution bound and a `lo` task with
+  `wcet_hi`, so that S3 refuses them below. A task may write `bcet <time>`
+  once, after `deadline` and before `wcet`; it is the task's lower bound on
+  actual job demand (QSpec FR-419), and a task that omits it has `bcet` zero.
 
 ## Outputs
 
@@ -55,6 +58,7 @@ pub struct Task {
     pub name: Name,
     pub arrival: Arrival,                   // Periodic { period } | Sporadic { min_interarrival }
     pub deadline: ExactRational,
+    pub bcet: ExactRational,                // default 0
     pub wcet: Wcet,                         // Single(c) | Dual { lo, hi }
     pub priority: Option<u64>,
     pub criticality: Criticality,           // Lo | Hi
@@ -90,7 +94,8 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
   declares none): a task set that declares
   no task; a period or minimum inter-arrival time that is not positive; a
   deadline that is not positive; a WCET that is not positive; a jitter or
-  blocking term that is negative; a `HI` task whose `C(LO)` exceeds `C(HI)`;
+  blocking term that is negative; a `bcet` that is negative; a `bcet` above
+  `C` for a `LO` task or above `C(HI)` for a `HI` task; a `HI` task whose `C(LO)` exceeds `C(HI)`;
   a `LO` task with dual budgets. QSpec FR-419 states the code and every
   one of these conditions, the claim-dependent ones below included, so that
   one invalid task set refuses under one code.
@@ -115,7 +120,11 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
   priority, `edf`, `amc` and `response` conditions), in source order of
   their spans. A task set refused for its own defects is still checked
   against each claim.
-- The task set, including every WCET, blocking term and jitter, SHALL be
+- A task that omits `bcet` SHALL check as the same task written
+  `bcet 0 ms`: the checked value is zero, and the claim's identity is the
+  same. The task set's unit conversion SHALL apply to `bcet` as to every
+  other time value.
+- The task set, including every BCET, WCET, blocking term and jitter, SHALL be
   part of the claim's subject and obligation identity (ADR-013 O-09): S4
   emits each checked claim as one QSpec FR-482 `claim`/`schedulability`
   node holding the task set (FR-454), and the identity is keyed from that
@@ -128,8 +137,8 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-246-AC-1 | ADR-026 §12's `Ctl` (periodic, `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms, priorities by period) checks; `schedulable CtlFp on Ctl under fixed_priority;` and `schedulable CtlEdf on Ctl under edf;` route to EN-7 under `schedulability`. The `Ctl` with the third WCET 6 gives a different obligation identity. | Test (TC-701) |
-| FR-246-AC-2 | Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task (the task set for the empty one), and both tasks for a clash: a task set with no task; a period of 0 ms; a deadline of 0 ms; a WCET of 0 ms; a jitter of -1 ms; a blocking term of -1 ms; a sporadic task with minimum inter-arrival time 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; a `LO` task with dual budgets; a task with no priority under `fixed_priority`; two tasks with priority 1 under `fixed_priority`; a task with blocking 1 ms under `edf`; a task with jitter 1 ms under `edf`; a task with no priority and two tasks with priority 1 under `amc`; a task with no priority under `response R on Ctl.c <= 12 ms under fixed_priority;`; two tasks with priority 1 under `response R on Ctl.c <= 12 ms under fixed_priority;`; a task with deadline above its period under `amc`. Two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response R on Ctl.zz <= 5 ms under fixed_priority;` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash and a task with no priority under `edf` check. | Test (TC-701) |
+| FR-246-AC-1 | ADR-026 §12's `Ctl` (periodic, `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms, priorities by period) checks; `schedulable CtlFp on Ctl under fixed_priority;` and `schedulable CtlEdf on Ctl under edf;` route to EN-7 under `schedulability`. The `Ctl` with the third WCET 6, or with a task's `bcet` 1 ms, gives a different obligation identity; a task with `bcet` omitted and the same task with `bcet 0 ms` check to one value and one identity. | Test (TC-701) |
+| FR-246-AC-2 | Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task (the task set for the empty one), and both tasks for a clash: a task set with no task; a period of 0 ms; a deadline of 0 ms; a WCET of 0 ms; a BCET of -1 ms; a `LO` task whose BCET exceeds its WCET and a `HI` task whose BCET exceeds its `C(HI)`; a jitter of -1 ms; a blocking term of -1 ms; a sporadic task with minimum inter-arrival time 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; a `LO` task with dual budgets; a task with no priority under `fixed_priority`; two tasks with priority 1 under `fixed_priority`; a task with blocking 1 ms under `edf`; a task with jitter 1 ms under `edf`; a task with no priority and two tasks with priority 1 under `amc`; a task with no priority under `response R on Ctl.c <= 12 ms under fixed_priority;`; two tasks with priority 1 under `response R on Ctl.c <= 12 ms under fixed_priority;`; a task with deadline above its period under `amc`. Two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response R on Ctl.zz <= 5 ms under fixed_priority;` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash and a task with no priority under `edf` check. | Test (TC-701) |
 | FR-246-AC-3 | `Ctl` written in `ms` has unit `ms`, and FR-248 settles `CtlFp` with fixpoints `(1, 3, 12)`; `Ctl` with task `a`'s period written `4000 us` has unit `us`, every value and `response R on Ctl.c <= 12 ms under fixed_priority;`'s bound converted exactly (`12 ms` is `12000`), and fixpoints `(1000, 3000, 12000)`. Reordering those same tasks so `c` is first in source, while task `a` still has period `4000 us`, keeps unit `us`, all checked values and claim identity unchanged. `Ctl` with the first task's jitter `-1 ms` and the second's blocking `-1 ms`, under `CtlEdf`, reports four `invalid_timed_model`/`invalid-task-set` refusals in this order: the first task, the second task (the task set's own), then the first task and the second task (`edf`'s non-zero terms); with tasks declared in the order `a` (valid), `a` (valid) and `z` (period 0 ms), it reports `conflicting_declaration`/`duplicate-declaration` at the second `a`, then `invalid_timed_model`/`invalid-task-set` at `z`, in that order. `taskset Empty { }` with `response R on Empty.c <= 12 ms under fixed_priority;` has no unit, refuses `invalid-task-set` naming `Empty` and `missing_declaration`/`missing-name` at `c`, and keeps the bound `12 ms`. | Test (TC-701) |
 
 ## Dependencies

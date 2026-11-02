@@ -24,7 +24,7 @@ Fixtures: ADR-026 §12's `Ctl` in a unit declaring the dimension `Time` and
 the unit `ms`, tasks `a`, `b`, `c` with priorities 1, 2, 3; the claims
 `CtlFp`, `CtlEdf` and `response R on Ctl.c <= 12 ms under fixed_priority;`;
 `Ctl` with the third WCET 6; `Ctl` with its tasks listed `c`, `a`, `b`; `Ctl`
-with `jitter 0 ms` on `a`; a unit declaring `CtlFp`'s claim twice.
+with `jitter 0 ms` and `bcet 0 ms` on `a`; `Ctl` with `bcet 1 ms` on `c`; a unit declaring `CtlFp`'s claim twice.
 
 1. Compile the unit, read the three nodes and read each back through the I2
    reader.
@@ -44,8 +44,8 @@ Tag the tests `#[trace("TC-1202", "FR-454-AC-n")]`.
 - Step 1: the bodies FR-454-AC-1 states, `dependencies` `[]`, occurrences
   of role `claim`; the reader returns each claim and its task set.
 - Step 2: `CtlFp` and `CtlEdf` differ in node id and identity; the WCET-6
-  variant differs in node id and `package_id`; the reordered and
-  `jitter 0 ms` variants keep `CtlFp`'s node id; the doubled claim is one
+  and `bcet 1 ms` variants differ in node id and `package_id`; the reordered,
+  `jitter 0 ms` and `bcet 0 ms` variants keep `CtlFp`'s node id; the doubled claim is one
   node with ordinals 0 and 1.
 - Step 3: the claim and its task set; `clause-root-unresolved` for each bad
   triple and for the other lookups; `Failed` with no evidence checked.
