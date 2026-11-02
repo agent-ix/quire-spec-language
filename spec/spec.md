@@ -1336,7 +1336,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-509](functional/FR-509-declare-a-channel-s-delivery-count-interval.md) | FR |
 | [FR-510](functional/FR-510-compare-the-static-subject-of-two-checked-units.md) | FR |
 | [FR-511](functional/FR-511-keep-the-exact-protocol-number-codec-as-a-root-module.md) | FR |
-| [FR-512](functional/FR-512-refuse-a-repeated-operation-role-or-frame-entry-at-intake.md) | FR |
+| [FR-512](functional/FR-512-keep-operation-names-parameters-and-frame-entries-unique-at-intake.md) | FR |
 | [FR-513](functional/FR-513-name-the-successor-or-keep-of-each-retained-criterion-that-rides-a-retired-path.md) | FR |
 | [FR-514](functional/FR-514-specify-the-spine-type-report-the-inventory-on-exhaustion-and-the-multi-unit-cycle-refusals.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
