@@ -46,6 +46,10 @@ pub struct ObservedRun {
     pub stopped: Option<HoldsStop>,
     /// The first undefined atom read, with its trace position and cause.
     pub undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+    /// Boolean atom readings in formula-node and trace-position order.
+    pub atom_readings: Vec<(FormulaNodeId, TemporalPosition, AtomReading)>,
+    /// Admitted `temporal.visit` charges made by finite-window evaluation.
+    pub temporal_visits: u64,
     /// The first unresolved finite-window activation and its establishment
     /// deadline, if the run contains a pending activation.
     pub pending_activation: Option<(TemporalPosition, quire_exact::Rational)>,
@@ -125,6 +129,8 @@ pub fn evaluate_observed_finite_window(
         over,
         stopped: None,
         undefined: None,
+        atom_readings: Vec::new(),
+        missing_valuations: progress.missing_valuations(),
     };
     let clause_body = clause.clause();
     let positions: Vec<usize> = match clause_body.activation() {
@@ -143,6 +149,8 @@ pub fn evaluate_observed_finite_window(
                             result: Ok(TemporalOutcome::Incomplete(incomplete)),
                             stopped: letters.stopped,
                             undefined: letters.undefined,
+                            atom_readings: letters.atom_readings,
+                            temporal_visits: 0,
                             pending_activation: None,
                         };
                     }
@@ -151,6 +159,8 @@ pub fn evaluate_observed_finite_window(
                             result: Ok(TemporalOutcome::WindowLimitReached(limit)),
                             stopped: letters.stopped,
                             undefined: letters.undefined,
+                            atom_readings: letters.atom_readings,
+                            temporal_visits: 0,
                             pending_activation: None,
                         };
                     }
@@ -159,6 +169,8 @@ pub fn evaluate_observed_finite_window(
                             result: Err(TemporalRefusal::Window(refusal)),
                             stopped: letters.stopped,
                             undefined: letters.undefined,
+                            atom_readings: letters.atom_readings,
+                            temporal_visits: 0,
                             pending_activation: None,
                         };
                     }
@@ -167,6 +179,8 @@ pub fn evaluate_observed_finite_window(
                             result: Err(TemporalRefusal::Fault(fault)),
                             stopped: letters.stopped,
                             undefined: letters.undefined,
+                            atom_readings: letters.atom_readings,
+                            temporal_visits: 0,
                             pending_activation: None,
                         };
                     }
@@ -179,6 +193,7 @@ pub fn evaluate_observed_finite_window(
     let mut first_pending = None;
     let mut first_undefined = None;
     let mut incomplete = None;
+    let mut temporal_visits = 0_u64;
     for index in positions {
         let position = TemporalPosition::new(u64::try_from(index).unwrap_or(u64::MAX));
         let current = super::evaluate_finite_window_at(
@@ -189,6 +204,11 @@ pub fn evaluate_observed_finite_window(
             &mut letters,
             meter,
         );
+        let (current, visits) = match current {
+            Ok((outcome, visits)) => (Ok(outcome), visits),
+            Err(refusal) => (Err(refusal), 0),
+        };
+        temporal_visits = temporal_visits.saturating_add(visits);
         match current {
             Ok(TemporalOutcome::Violated { at }) => {
                 first_violation.get_or_insert(TemporalOutcome::Violated { at });
@@ -217,6 +237,8 @@ pub fn evaluate_observed_finite_window(
                     result: Ok(other),
                     stopped: letters.stopped,
                     undefined: letters.undefined,
+                    atom_readings: letters.atom_readings,
+                    temporal_visits,
                     pending_activation: first_pending,
                 };
             }
@@ -225,6 +247,8 @@ pub fn evaluate_observed_finite_window(
                     result: Err(refusal),
                     stopped: letters.stopped,
                     undefined: letters.undefined,
+                    atom_readings: letters.atom_readings,
+                    temporal_visits,
                     pending_activation: first_pending,
                 };
             }
@@ -245,6 +269,8 @@ pub fn evaluate_observed_finite_window(
         result,
         stopped: letters.stopped,
         undefined: letters.undefined,
+        atom_readings: letters.atom_readings,
+        temporal_visits,
         pending_activation: first_pending,
     }
 }
@@ -266,6 +292,8 @@ fn evaluate_observed_goal(
         over,
         stopped: None,
         undefined: None,
+        atom_readings: Vec::new(),
+        missing_valuations: &[],
     };
     let result = super::engine::run(
         super::engine::Subject::of_clause(clause.clause()),
@@ -278,6 +306,8 @@ fn evaluate_observed_goal(
         result,
         stopped: letters.stopped,
         undefined: letters.undefined,
+        atom_readings: letters.atom_readings,
+        temporal_visits: 0,
         pending_activation: None,
     }
 }
@@ -305,6 +335,8 @@ struct ObservedLetters<'a> {
     over: &'a ObjectReference,
     stopped: Option<HoldsStop>,
     undefined: Option<(FormulaNodeId, TemporalPosition, UndefinedCause)>,
+    atom_readings: Vec<(FormulaNodeId, TemporalPosition, AtomReading)>,
+    missing_valuations: &'a [(u64, u64)],
 }
 
 impl ObservedLetters<'_> {
@@ -396,6 +428,17 @@ impl TemporalLetters for ObservedLetters<'_> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
+        let missing_atom = u64::try_from(atom.index()).ok();
+        if missing_atom
+            .is_some_and(|atom| self.missing_valuations.contains(&(position.index(), atom)))
+        {
+            let cause = UndefinedCause::Kernel(quire_exact::Undefined::NoneValue);
+            self.undefined
+                .get_or_insert((atom, position, cause.clone()));
+            let reading = AtomReading::Undefined(cause);
+            self.atom_readings.push((atom, position, reading.clone()));
+            return Ok(reading);
+        }
         let objects = self.environment(position)?;
         let evaluation = self.package.evaluate_holds(
             self.clause,
@@ -410,6 +453,7 @@ impl TemporalLetters for ObservedLetters<'_> {
                 self.undefined = Some((atom, position, cause.clone()));
             }
         }
+        self.atom_readings.push((atom, position, reading.clone()));
         Ok(reading)
     }
 

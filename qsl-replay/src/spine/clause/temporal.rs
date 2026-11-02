@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
-    HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace, UndefinedCause,
-    UndefinedEvaluation, WindowRefusal,
+    AtomReading, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
+    UndefinedCause, UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
@@ -62,10 +62,98 @@ pub struct TimestampedTraceInput {
     pub complete_through: Option<u64>,
     /// Whether the decision scope has closed.
     pub scope_closed: bool,
-    /// Counter uncertainty in ticks; zero is exact timestamp coverage.
-    pub uncertainty: u64,
+    /// The clock binding's point or counter cover for each stamp.
+    pub cover: TimestampedCover,
+    /// Atom readings absent from an admitted observation. Atom identifies
+    /// the zero-based `holds` formula node in the checked clause.
+    pub missing_valuations: Vec<TimestampedMissingValuation>,
     /// Whether the first represented position is an authoritative origin.
     pub authoritative_origin: bool,
+}
+
+/// One explicitly absent timestamped atom reading.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimestampedMissingValuation {
+    /// Zero-based trace position.
+    pub position: u64,
+    /// Zero-based checked formula node of the `holds` atom.
+    pub atom: u64,
+}
+
+/// The declared meaning of an integer timestamp stamp.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TimestampedCover {
+    /// The stamp names an exact instant.
+    Exact,
+    /// The stamp covers `[k-u, k+1+u)` ticks.
+    Counter {
+        /// The counter reading's uncertainty in ticks.
+        uncertainty: u64,
+    },
+}
+
+impl TimestampedCover {
+    fn uncertainty_margin(self) -> Option<u64> {
+        match self {
+            Self::Exact => Some(0),
+            Self::Counter { uncertainty } => uncertainty.checked_mul(2),
+        }
+    }
+
+    /// Compare the difference `ack - request` with an inclusive upper bound.
+    pub fn within_bound(self, request: u64, ack: u64, bound: i64) -> CoverComparison {
+        if self == Self::Exact {
+            return if i128::from(ack) - i128::from(request) <= i128::from(bound) {
+                CoverComparison::True
+            } else {
+                CoverComparison::False
+            };
+        }
+        let (request_lower, request_upper) = self.interval(request);
+        let (ack_lower, ack_upper) = self.interval(ack);
+        let difference_lower = ack_lower - request_upper;
+        let difference_upper = ack_upper - request_lower;
+        let lower_open = true;
+        if difference_upper <= i128::from(bound) {
+            CoverComparison::True
+        } else if difference_lower > i128::from(bound)
+            || (difference_lower == i128::from(bound) && lower_open)
+        {
+            CoverComparison::False
+        } else {
+            CoverComparison::StraddlesBound
+        }
+    }
+
+    /// Whether every instant in `first` precedes every instant in `second`.
+    pub fn definitely_before(self, first: u64, second: u64) -> bool {
+        if self == Self::Exact {
+            return first < second;
+        }
+        let (_, first_upper) = self.interval(first);
+        let (second_lower, _) = self.interval(second);
+        first_upper <= second_lower
+    }
+
+    fn interval(self, tick: u64) -> (i128, i128) {
+        let uncertainty = match self {
+            Self::Exact => unreachable!("exact covers use direct comparisons"),
+            Self::Counter { uncertainty } => i128::from(uncertainty),
+        };
+        let tick = i128::from(tick);
+        (tick - uncertainty, tick + 1 + uncertainty)
+    }
+}
+
+/// The possibility result of comparing counter-tick covers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CoverComparison {
+    /// Every covered difference is within the bound.
+    True,
+    /// Every covered difference is outside the bound.
+    False,
+    /// The covered differences straddle the bound.
+    StraddlesBound,
 }
 
 /// One timestamped position and its optional same-stamp order key.
@@ -242,12 +330,25 @@ pub(super) fn run_temporal(
     }
     if let TraceInput::Timestamped(input) = trace {
         if input.positions.is_empty()
-            || input.uncertainty.checked_mul(2).is_none()
+            || input.cover.uncertainty_margin().is_none()
             || input
                 .positions
                 .windows(2)
                 .any(|positions| positions[0].stamp > positions[1].stamp)
         {
+            return early(refused("invalid-value", BTreeMap::new()));
+        }
+        if input.missing_valuations.iter().any(|missing| {
+            usize::try_from(missing.position)
+                .ok()
+                .is_none_or(|position| position >= input.positions.len())
+                || usize::try_from(missing.atom).ok().is_none_or(|atom| {
+                    !matches!(
+                        clause.formula().nodes().get(atom),
+                        Some(FormulaNode::Holds { .. })
+                    )
+                })
+        }) {
             return early(refused("invalid-value", BTreeMap::new()));
         }
     }
@@ -362,16 +463,29 @@ pub(super) fn run_temporal(
             match qsl_eval::temporal::TimedTrace::new(stamps) {
                 Ok(timed_trace) => {
                     let margin = Rational::from_integer(Integer::from(
-                        input.uncertainty.checked_mul(2).unwrap_or_default(),
+                        input.cover.uncertainty_margin().unwrap_or_default(),
                     ));
                     let watermark = Rational::from_integer(Integer::from(input.watermark));
                     let complete_through = input
                         .complete_through
                         .map(|through| Rational::from_integer(Integer::from(through)));
+                    let missing_valuations = input
+                        .missing_valuations
+                        .iter()
+                        .map(|missing| {
+                            let original = &input.positions[missing.position as usize];
+                            let position = ordered_positions
+                                .iter()
+                                .position(|candidate| std::ptr::eq(*candidate, original))
+                                .unwrap_or(missing.position as usize);
+                            (u64::try_from(position).unwrap_or(u64::MAX), missing.atom)
+                        })
+                        .collect();
                     let progress = qsl_eval::temporal::FiniteWindowProgress::new(
                         watermark,
                         complete_through,
                         margin,
+                        missing_valuations,
                     );
                     qsl_eval::temporal::evaluate_observed_finite_window(
                         run.package,
@@ -398,6 +512,8 @@ pub(super) fn run_temporal(
         ),
     };
     let pending_activation = observed.pending_activation;
+    let atom_readings = observed.atom_readings;
+    let temporal_visits = observed.temporal_visits;
     let disposition = match (observed.stopped, observed.result) {
         // A condition's refusal is reported as FR-109 reports a state
         // clause's (`convert_outcome`); a failed call as `check_clause` does.
@@ -416,9 +532,13 @@ pub(super) fn run_temporal(
         },
         (None, Ok(outcome)) => {
             let verdict = match trace {
-                TraceInput::Timestamped(input) => {
-                    finite_window_verdict(outcome, input, clause, pending_activation)
-                }
+                TraceInput::Timestamped(input) => finite_window_verdict(
+                    outcome,
+                    input,
+                    clause,
+                    pending_activation,
+                    &atom_readings,
+                ),
                 TraceInput::Finite(_) | TraceInput::Lasso { .. } => verdict(outcome),
             };
             ClauseDisposition::Temporal(verdict)
@@ -426,7 +546,9 @@ pub(super) fn run_temporal(
         (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
         (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
     };
-    report(disposition, ClauseRunUsage::from_meter(&meter, admitted))
+    let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
+    usage.temporal_visits = temporal_visits;
+    report(disposition, usage)
 }
 
 fn finite_window_verdict(
@@ -434,6 +556,11 @@ fn finite_window_verdict(
     input: &TimestampedTraceInput,
     clause: &qsl_semantics::check::CheckedTemporalClause,
     pending_activation: Option<(qsl_eval::temporal::TemporalPosition, Rational)>,
+    atom_readings: &[(
+        qsl_semantics::check::FormulaNodeId,
+        qsl_eval::temporal::TemporalPosition,
+        AtomReading,
+    )],
 ) -> TemporalVerdict {
     let ordered_positions = ordered_timestamped_positions(input);
     let stamps = ordered_positions
@@ -443,8 +570,9 @@ fn finite_window_verdict(
     let Ok(trace) = qsl_eval::temporal::TimedTrace::new(stamps) else {
         return verdict(outcome);
     };
-    let uncertainty = input.uncertainty.checked_mul(2).unwrap_or_default();
-    let margin = Rational::from_integer(Integer::from(uncertainty));
+    let margin = Rational::from_integer(Integer::from(
+        input.cover.uncertainty_margin().unwrap_or_default(),
+    ));
     let (position, deadline) = if let Some((position, deadline)) = pending_activation {
         (position, deadline.numerator().to_u64().unwrap_or(u64::MAX))
     } else {
@@ -481,15 +609,65 @@ fn finite_window_verdict(
             at: position,
             deadline,
         },
-        TemporalOutcome::Undefined(undefined) => TemporalVerdict::Indeterminate {
-            at: position,
-            reason: TemporalIndeterminateReason::MissingValuation {
-                position: undefined.at.index(),
-                atom: format!("holds-node@{}", undefined.at.index()),
-            },
-        },
+        TemporalOutcome::Undefined(undefined)
+            if input.missing_valuations.iter().any(|missing| {
+                missing.position == undefined.at.index()
+                    && undefined.cause == UndefinedCause::Kernel(quire_exact::Undefined::NoneValue)
+            }) && input.watermark < deadline =>
+        {
+            TemporalVerdict::PendingWindow {
+                at: position,
+                deadline,
+            }
+        }
+        TemporalOutcome::Undefined(undefined)
+            if input.missing_valuations.iter().any(|missing| {
+                missing.position == undefined.at.index()
+                    && undefined.cause == UndefinedCause::Kernel(quire_exact::Undefined::NoneValue)
+            }) && input
+                .complete_through
+                .is_none_or(|through| through < deadline) =>
+        {
+            TemporalVerdict::Indeterminate {
+                at: position,
+                reason: TemporalIndeterminateReason::IncompleteInput,
+            }
+        }
+        TemporalOutcome::Undefined(undefined) => {
+            if let Some(missing) = input.missing_valuations.iter().find(|missing| {
+                missing.position == undefined.at.index()
+                    && undefined.cause == UndefinedCause::Kernel(quire_exact::Undefined::NoneValue)
+            }) {
+                TemporalVerdict::Indeterminate {
+                    at: position,
+                    reason: TemporalIndeterminateReason::MissingValuation {
+                        position: missing.position,
+                        atom: format!("holds-node@{}", missing.atom),
+                    },
+                }
+            } else {
+                verdict(TemporalOutcome::Undefined(undefined))
+            }
+        }
         other => verdict(other),
     };
+    if counter_straddles_bound(input, clause, atom_readings).is_some() {
+        return TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: TemporalIndeterminateReason::StraddlesBound,
+        };
+    }
+    if let Some((conflict_position, atom)) =
+        conflicting_timestamped_valuation(input, clause, atom_readings)
+    {
+        return TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: TemporalIndeterminateReason::ConflictingValuation {
+                position: conflict_position,
+                atom,
+            },
+        };
+    }
     if !input.authoritative_origin
         && input.positions[0].stamp > 0
         && has_past_operator(clause)
@@ -502,6 +680,141 @@ fn finite_window_verdict(
     } else {
         verdict
     }
+}
+
+fn conflicting_timestamped_valuation(
+    input: &TimestampedTraceInput,
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    readings: &[(
+        qsl_semantics::check::FormulaNodeId,
+        qsl_eval::temporal::TemporalPosition,
+        AtomReading,
+    )],
+) -> Option<(u64, String)> {
+    let nodes = clause.formula().nodes();
+    let FormulaNode::Unary {
+        operator: UnaryTemporal::Eventually,
+        interval: Some(qsl_semantics::check::CheckedInterval::Timed(interval)),
+        operand,
+    } = nodes.get(clause.formula().root().index())?
+    else {
+        return None;
+    };
+    if !matches!(nodes.get(operand.index()), Some(FormulaNode::Holds { .. })) {
+        return None;
+    }
+    let ordered = ordered_timestamped_positions(input);
+    let first_stamp = ordered.first()?.stamp;
+    let atom_index = operand.index();
+    for left in 0..ordered.len() {
+        let delta = i128::from(ordered[left].stamp) - i128::from(first_stamp);
+        if delta < 0 {
+            continue;
+        }
+        let delta = Rational::from_integer(Integer::from(u64::try_from(delta).ok()?));
+        if !interval.contains(&delta) {
+            continue;
+        }
+        let left_at = u64::try_from(left).ok()?;
+        let left_true = readings.iter().any(|(atom, at, value)| {
+            atom.index() == atom_index && at.index() == left_at && *value == AtomReading::True
+        });
+        if !left_true {
+            continue;
+        }
+        for right in left + 1..ordered.len() {
+            if ordered[right].stamp != ordered[left].stamp {
+                break;
+            }
+            let right_at = u64::try_from(right).ok()?;
+            let right_false = readings.iter().any(|(atom, at, value)| {
+                atom.index() == atom_index && at.index() == right_at && *value == AtomReading::False
+            });
+            if right_false {
+                let decisive_true_elsewhere = readings.iter().any(|(atom, at, value)| {
+                    if atom.index() != atom_index || *value != AtomReading::True {
+                        return false;
+                    }
+                    let index = usize::try_from(at.index()).ok();
+                    index.is_some_and(|index| {
+                        ordered.get(index).is_some_and(|position| {
+                            position.stamp != ordered[left].stamp
+                                && interval.contains(&Rational::from_integer(Integer::from(
+                                    position.stamp - first_stamp,
+                                )))
+                        })
+                    })
+                });
+                if !decisive_true_elsewhere {
+                    return Some((left_at, format!("holds-node@{atom_index}")));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn counter_straddles_bound(
+    input: &TimestampedTraceInput,
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    readings: &[(
+        qsl_semantics::check::FormulaNodeId,
+        qsl_eval::temporal::TemporalPosition,
+        AtomReading,
+    )],
+) -> Option<u64> {
+    let TimestampedCover::Counter { .. } = input.cover else {
+        return None;
+    };
+    let nodes = clause.formula().nodes();
+    let FormulaNode::Implies(antecedent, consequent) =
+        nodes.get(clause.formula().root().index())?
+    else {
+        return None;
+    };
+    let FormulaNode::Holds { .. } = nodes.get(antecedent.index())? else {
+        return None;
+    };
+    let FormulaNode::Unary {
+        operator: UnaryTemporal::Eventually,
+        interval: Some(qsl_semantics::check::CheckedInterval::Timed(interval)),
+        operand,
+    } = nodes.get(consequent.index())?
+    else {
+        return None;
+    };
+    let FormulaNode::Holds { .. } = nodes.get(operand.index())? else {
+        return None;
+    };
+    let bound = interval.upper().numerator().to_u64()?;
+    if interval.upper().denominator().to_u64() != Some(1) {
+        return None;
+    }
+    let antecedent_id = *antecedent;
+    let consequent_id = *operand;
+    let is_true = |node, position| {
+        readings.iter().any(|(candidate, at, value)| {
+            *candidate == node && at.index() == position && *value == AtomReading::True
+        })
+    };
+    if !is_true(antecedent_id, 0) {
+        return None;
+    }
+    let ordered = ordered_timestamped_positions(input);
+    let request = ordered.first()?.stamp;
+    for (index, observation) in ordered.iter().enumerate() {
+        if !is_true(consequent_id, u64::try_from(index).ok()?) {
+            continue;
+        }
+        if input
+            .cover
+            .within_bound(request, observation.stamp, i64::try_from(bound).ok()?)
+            == CoverComparison::StraddlesBound
+        {
+            return u64::try_from(index).ok();
+        }
+    }
+    None
 }
 
 fn has_past_operator(clause: &qsl_semantics::check::CheckedTemporalClause) -> bool {
