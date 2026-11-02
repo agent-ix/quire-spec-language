@@ -4343,10 +4343,10 @@ impl PackageDeclarations {
             })
             .collect();
         let order = lowering::dependency_order(&function_edges, &protocol_edges, &temporal_edges);
-        let lower_protocol = |lowering: &mut lowering::Lowering<'_>,
-                              refusals: &mut Vec<CheckRefusal>,
-                              index: usize,
-                              cyclic: bool| {
+        let mut lower_protocol = |lowering: &mut lowering::Lowering<'_>,
+                                  _refusals: &mut Vec<CheckRefusal>,
+                                  index: usize,
+                                  cyclic: bool| {
             let Some(protocol) = protocol_list.get(index) else {
                 return;
             };
@@ -4354,11 +4354,17 @@ impl PackageDeclarations {
                 // The refusal of a protocol with an unwritten construct is
                 // this check's emission gate, as the refinement's is.
                 Ok(unsupported) => {
-                    if !self.emit_unwritten_protocols {
-                        refusals.extend(unsupported);
+                    if !self.emit_unwritten_protocols && !unsupported.is_empty() {
+                        protocol_check_refusals.push(ProtocolCheckRefusal {
+                            declaration: protocol.form.name.name.clone(),
+                            refusals: unsupported,
+                        });
                     }
                 }
-                Err(refusal) => refusals.push(refusal),
+                Err(refusal) => protocol_check_refusals.push(ProtocolCheckRefusal {
+                    declaration: protocol.form.name.name.clone(),
+                    refusals: vec![refusal],
+                }),
             }
         };
         let lower_functions = |lowering: &mut lowering::Lowering<'_>,

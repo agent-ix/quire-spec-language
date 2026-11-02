@@ -1177,7 +1177,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     };
     assert!(matches!(
         refusal.cause,
-        qsl_semantics::check::CheckCause::UnsupportedFeature { .. }
+        qsl_semantics::check::CheckCause::ProtocolReference(ref cause)
+            if cause.construct() == Some(ProtocolConstruct::NoOwnerModel)
     ));
 }
 
