@@ -420,7 +420,7 @@ fn a_scrutinee_matching_no_arm_is_an_s6a_internal_fault() {
 /// arguments, for the value's occurrences; a `case` charges its scrutinee and
 /// then its selected body and nothing for selection, binding or an unselected
 /// arm; one work unit below the total stops at the body's last work point.
-#[trace("FR-322-AC-3", "TC-832")]
+#[trace("FR-322-AC-3", "TC-832", "QSpec-TC-399", "QSpec-FR-143-AC-14")]
 #[trace("QSpec-FR-146-AC-13", "QSpec-TC-399")]
 #[test]
 fn construction_and_case_charge_exactly_their_accounting_points() {
@@ -581,7 +581,13 @@ fn elements_of(world: &World, kind: CollectionKind, members: &[(&str, &[i64])]) 
 /// (member identifier bytes, then payload positions) whatever the input
 /// order, a bag keeps both equal values, an ordered set keeps first
 /// occurrences in input order, and a sequence keeps every occurrence.
-#[trace("FR-323-AC-1", "FR-323-AC-2", "TC-833")]
+#[trace(
+    "FR-323-AC-1",
+    "FR-323-AC-2",
+    "TC-833",
+    "QSpec-TC-262",
+    "QSpec-FR-143-AC-12"
+)]
 #[test]
 fn collections_of_unions_order_dedupe_and_count_by_the_union_key() {
     let world = world();

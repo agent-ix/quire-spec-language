@@ -1416,7 +1416,13 @@ fn a_surviving_object_compares_equal_across_pre_and_post() {
 /// operands denote `b1`, so the comparison is `true`; the same query for a
 /// reference to `a1` against `b1` is `false`.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6", "QSpec-FR-149-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-6",
+    "QSpec-FR-149-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1584,7 +1590,12 @@ fn integer_of(value: Value) -> Integer {
 /// holds a `B` resolves `x`, a field `A` declares and `B` inherits, and
 /// reads `b1`'s inherited slot.
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-6",
+    "QSpec-TC-188",
+    "QSpec-FR-143-AC-11"
+)]
 fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
     let scenario = scenario();
     let (package, objects) = attribute_world(

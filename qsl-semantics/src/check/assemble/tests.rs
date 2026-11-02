@@ -3442,7 +3442,13 @@ fn recursion_refusals(
     (text, refusals)
 }
 
-#[trace("FR-316-AC-2", "TC-817", "TC-818")]
+#[trace(
+    "FR-316-AC-2",
+    "TC-817",
+    "TC-818",
+    "QSpec-TC-263",
+    "QSpec-FR-143-AC-13"
+)]
 #[test]
 fn a_union_recurses_only_through_an_escaping_edge() {
     let (_, tree) = assemble(
@@ -3464,7 +3470,7 @@ fn a_union_recurses_only_through_an_escaping_edge() {
     );
 }
 
-#[trace("FR-316-AC-2", "TC-818")]
+#[trace("FR-316-AC-2", "TC-818", "QSpec-TC-263", "QSpec-FR-143-AC-13")]
 #[test]
 fn a_cycle_through_a_record_and_a_union_is_refused_at_both_declarations() {
     let (text, refusals) = recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
