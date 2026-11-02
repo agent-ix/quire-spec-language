@@ -7,7 +7,7 @@
 //! that selects it as `M` with their contracts, protocols over it, and the
 //! snapshots and protocol subjects the protocol tests build from it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -716,8 +716,9 @@ where
     M::Component: Send + Sync,
 {
     // State identity is the full canonical key, so equality cannot collapse
-    // distinct states through a state key collision.
-    let mut known: HashMap<StateKey, usize> = HashMap::new();
+    // distinct states through a state key collision. An ordered map compares
+    // keys with `memcmp` rather than hashing every byte of every key.
+    let mut known: BTreeMap<StateKey, usize> = BTreeMap::new();
     let mut reached: Vec<Reached<M>> = Vec::new();
     let mut frontier = Vec::new();
     let mut max_workers = 1;
