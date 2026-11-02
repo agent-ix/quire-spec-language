@@ -963,9 +963,7 @@ pub(crate) fn checked_operators(
             (
                 Some(OperatorInterval::Steps(written)),
                 true,
-                IntervalReading::Timed(_)
-                | IntervalReading::Timestamped
-                | IntervalReading::TimedUnread,
+                IntervalReading::Timed(_) | IntervalReading::TimedUnread,
             ) => {
                 // ADR-014 TR-3 refuses `[a, *]` where every interval needs a
                 // finite upper bound; a closed step interval's bounds have no
