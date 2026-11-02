@@ -367,13 +367,13 @@ pub(crate) struct ParentSlot {
 /// Why a parent slot could not be read.
 pub(crate) enum ParentSlotFailure {
     /// A conformance walk reached its ancestor-edge ceiling.
-    Incomplete(crate::model::accounting::Incomplete),
+    Incomplete(crate::model::accounting::NormalizationIncomplete),
     /// The staged admission refused the read.
     Pending(quire_semantic_value::declaration::PendingFieldFailure),
 }
 
-impl From<crate::model::accounting::Incomplete> for ParentSlotFailure {
-    fn from(incomplete: crate::model::accounting::Incomplete) -> Self {
+impl From<crate::model::accounting::NormalizationIncomplete> for ParentSlotFailure {
+    fn from(incomplete: crate::model::accounting::NormalizationIncomplete) -> Self {
         Self::Incomplete(incomplete)
     }
 }

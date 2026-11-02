@@ -4093,9 +4093,9 @@ impl PackageDeclarations {
         // is still a whole-package call-graph analysis over every
         // declaration's own `calls` at once (see `check_declaration_body`'s
         // own doc for why it cannot move alongside typing/definedness).
-        let members: Vec<termination::Member<'_>> = drafts
+        let members: Vec<termination::TerminationSubject<'_>> = drafts
             .iter()
-            .map(|(signature, body, _)| termination::Member {
+            .map(|(signature, body, _)| termination::TerminationSubject {
                 name: &signature.name,
                 parameters: &signature.parameters,
                 measure: body.measure.as_ref().map(CheckedBody::root),

@@ -101,7 +101,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::model::accounting::{
-    Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
+    Charge, ChargePoint, LimitKind, Meter, ModelNormalizationLimits, NormalizationIncomplete,
 };
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, NativeValueType, PopulationRecord,

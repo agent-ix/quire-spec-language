@@ -34,7 +34,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
+use crate::model::accounting::{Charge, ChargePoint, Meter, NormalizationIncomplete};
 use crate::model::conformance::multiplicity_conforms;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,

@@ -29,7 +29,9 @@ use super::{
     FrameChange, FrameVerdict, FrameWitness, LinkDifference, ModelView, SelectedObject,
     SnapshotValue, INSUFFICIENT_NEXT_CHARGE,
 };
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
+use crate::model::accounting::{
+    Charge, ChargePoint, Meter, ModelNormalizationLimits, NormalizationIncomplete,
+};
 use crate::model::domain_package::OperationEffect;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{

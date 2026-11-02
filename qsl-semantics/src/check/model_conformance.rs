@@ -5,7 +5,7 @@
 use super::field_refinement::{checked_refinement_failures, RefinementObligation};
 use super::lowering::{AdmittedModel, ParentSlotFailure};
 use super::state_clause::{StateClauseDeclaration, TypedStateClause};
-use crate::model::accounting::{Incomplete, Meter};
+use crate::model::accounting::{Meter, NormalizationIncomplete};
 use crate::model::conformance::{self, ConformanceCheckOutcome, ConformanceOutcome};
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::SelectedModel;

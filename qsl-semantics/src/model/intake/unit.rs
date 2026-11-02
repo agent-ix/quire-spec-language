@@ -20,7 +20,9 @@ use quire_exact::{Cancel, MemberId, MemberOwner};
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::{admit_located, read_domain_package, PackageInput};
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
+use crate::model::accounting::{
+    Charge, ChargePoint, Meter, ModelNormalizationLimits, NormalizationIncomplete,
+};
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, ParsedOperationClause, ParsedTypeInvariant,
 };

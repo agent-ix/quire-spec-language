@@ -30,7 +30,7 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline for typed model-admission failures"
 )]
 
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
+use crate::model::accounting::{Charge, ChargePoint, Meter, NormalizationIncomplete};
 use crate::model::domain_package::Multiplicity;
 use crate::model::index::ModelIndex;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};

@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::accounting::{Incomplete, Meter};
+use crate::model::accounting::{Meter, NormalizationIncomplete};
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, OriginalDeclaration,
 };

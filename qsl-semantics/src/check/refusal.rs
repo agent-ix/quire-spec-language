@@ -2575,7 +2575,7 @@ pub enum CheckCause {
     /// A completed model conformance stage retains every axis failure.
     ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
     /// An unfinished model stage exposes its exact five-field denial.
-    ModelIncomplete(crate::model::accounting::Incomplete),
+    ModelIncomplete(crate::model::accounting::NormalizationIncomplete),
     /// Completing the staged type admission after a conformance stage that
     /// found nothing refused, or reading it while pending, reached a type
     /// environment refusal or ceiling.
