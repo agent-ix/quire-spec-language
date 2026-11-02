@@ -66,6 +66,7 @@ mod protocol_recursion;
 mod protocol_reference;
 mod protocol_requirements;
 mod protocol_terminal;
+mod protocol_view;
 mod reachability;
 mod receiver_frames;
 mod refinement_adverse;

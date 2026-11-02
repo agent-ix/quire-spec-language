@@ -29,6 +29,8 @@ mod export;
 #[cfg(feature = "std")]
 mod protocol_activation;
 mod protocol_selection;
+#[cfg(feature = "std")]
+pub mod protocol_view;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
