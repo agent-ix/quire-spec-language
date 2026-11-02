@@ -28,6 +28,7 @@ pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
 mod protocol_activation;
+mod protocol_selection;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
@@ -55,9 +56,11 @@ pub use emit::{
     OmissionCause, OmittedNode, TemporalClockSelection, TimedOrderFault,
 };
 pub use evaluation_view::{
-    AdmittedEvaluationView, AdmittedProtocolObservation, TermHandle, ViewFailure,
+    AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,
+    TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 
 #[cfg(feature = "std")]
 pub use quire_contract_model::ClockConfiguration;

@@ -2206,7 +2206,7 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
 /// the same checked protocol term, while foreign and dangling references
 /// refuse before changing any meter counter.
 #[test]
-#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14", "FR-390-AC-15")]
+#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14")]
 fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence() {
     let (package, model_view) = fixture_with_view();
     let domain_bytes = serde_json::to_vec(&document()).unwrap();
@@ -2223,10 +2223,44 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         .evaluation_view()
         .expect("the admitted graph is bound to its emitting checked package");
     assert!(reader_view.is_reader_backed());
+    let second_read = qsl_package::read_evaluation_package(
+        &package,
+        qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
+        &domain_packages,
+        qsl_package::V2ReadLimits::default(),
+    )
+    .expect("a second strict reader independently admits the same source package");
+    let second_reader_view = second_read
+        .evaluation_view()
+        .expect("the second admitted graph is bound to the same source package");
     let (observation, reference) =
         observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
     let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
     let mut meter = Meter::new(UNLIMITED);
+
+    let before = meter.clone();
+    let mismatched = second_reader_view.evaluate_protocol_slot(
+        &capture,
+        &supply(
+            &package,
+            "Refunds",
+            vec![("view", Value::Reference(reference.clone()))],
+            Some(&observation),
+        ),
+        &mut meter,
+    );
+    assert_eq!(
+        meter, before,
+        "a foreign view cannot consume evaluation budget"
+    );
+    let Err(CallFailure::Admission(failure)) = mismatched else {
+        panic!("a reader authority from another view must refuse: {mismatched:?}");
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("a mismatched view is a typed refusal: {failure:?}");
+    };
+    assert_eq!(record.record.catalog.code(), "invalid_model_binding");
+    assert_eq!(record.record.catalog.cause(), "wrong-model-selection");
 
     assert_value_eq!(
         completed(
@@ -2309,8 +2343,8 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
             CallAdmissionLocus::Binder(binder(&package, "Refunds", "view"))
         );
         if expected_code == "foreign_reference" {
-            let required = reference.universe().root_type().to_string();
-            let supplied = value.universe().root_type().to_string();
+            let required = independent_universe_hex(reference.universe());
+            let supplied = independent_universe_hex(value.universe());
             assert_eq!(
                 record.record.fields.get("required").map(String::as_str),
                 Some(required.as_str())
@@ -2321,6 +2355,17 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
             );
         }
     }
+}
+
+fn independent_universe_hex(universe: &quire_exact::UniverseId) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let identity = qsl_foundation::node_wire::node_key_to_text(universe.root_type()).unwrap();
+    let mut output = String::with_capacity(identity.len().saturating_mul(2));
+    for byte in identity.as_bytes() {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 /// TC-1071 row 20: an incomplete sole population is named before checking the

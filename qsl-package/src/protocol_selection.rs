@@ -1,0 +1,780 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! The single FR-390 protocol-slot selector owned by the admitted package view.
+use crate::CheckedPackage;
+use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
+use qsl_semantics::check::{
+    BindingValue, BodyTerm, CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime,
+    CheckedOrdering, CheckedProtocol, CheckedRetry, CheckedSlots, GroupMember, LeafTerm,
+    MemberTerm, ProtocolNodeId, TupleMember,
+};
+use quire_exact::{NodeKey, ValueType};
+use quire_semantic_value::catalog::InternalFault;
+
+/// Plain-data request for one protocol expression member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolSlotDescriptor {
+    node: NodeKey,
+    member: String,
+    index: Option<usize>,
+}
+
+impl ProtocolSlotDescriptor {
+    /// Construct a selector request; validity is checked by the evaluation view.
+    pub fn new(node: NodeKey, member: impl Into<String>, index: Option<usize>) -> Self {
+        Self {
+            node,
+            member: member.into(),
+            index,
+        }
+    }
+    /// The requested protocol node identity.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
+    }
+    /// The exact requested protocol member.
+    pub fn member(&self) -> &str {
+        &self.member
+    }
+    /// The requested list position, when the member is indexed.
+    pub fn index(&self) -> Option<usize> {
+        self.index
+    }
+}
+
+/// Why a view could not select the requested checked expression.
+#[derive(Debug)]
+pub enum SlotSelectionFailure {
+    /// The requested node does not exist in the source package.
+    MissingNode(NodeKey),
+    /// The requested node exists but is not a protocol node.
+    MalformedNode(NodeKey),
+    /// The member or list position is absent.
+    MissingMember {
+        /// Requested member name.
+        name: String,
+        /// Requested list index, if present.
+        index: Option<usize>,
+    },
+    /// A checked-package invariant failed during selection.
+    Fault(InternalFault),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FrameSlot {
+    pub(crate) name: String,
+    pub(crate) level: usize,
+    pub(crate) value_type: ValueType,
+    pub(crate) node: Option<NodeKey>,
+}
+
+pub(crate) struct Selected<'a> {
+    pub(crate) body: &'a CheckedBody,
+    pub(crate) frame: Vec<FrameSlot>,
+    pub(crate) root_node: NodeKey,
+}
+
+#[derive(Clone, Copy)]
+enum Node<'a> {
+    Clause,
+    Role(&'a str),
+    Channel(&'a str),
+    Compensation(usize),
+    Terminal,
+    Run(ProtocolNodeId),
+}
+fn missing_node(key: NodeKey) -> SlotSelectionFailure {
+    SlotSelectionFailure::MissingNode(key)
+}
+
+fn malformed_node(key: NodeKey) -> SlotSelectionFailure {
+    SlotSelectionFailure::MalformedNode(key)
+}
+
+fn missing_member(member: &str, index: Option<usize>) -> SlotSelectionFailure {
+    SlotSelectionFailure::MissingMember {
+        name: member.to_owned(),
+        index,
+    }
+}
+
+fn identify<'a>(
+    package: &'a CheckedPackage,
+    key: NodeKey,
+    member: &str,
+    index: Option<usize>,
+) -> Result<(&'a CheckedProtocol, Node<'a>), SlotSelectionFailure> {
+    let graph = package.graph();
+    let Some(wire) = graph.semantic_graph().node(key.clone()) else {
+        return Err(missing_node(key));
+    };
+    if wire.node_tag() != qsl_semantics::check::NodeTag::Protocol {
+        return Err(malformed_node(key));
+    }
+    for protocol in graph.protocols() {
+        let Some(keys) = graph.protocol_node_keys(&protocol.name) else {
+            continue;
+        };
+        if keys.clause == Some(key.clone()) {
+            return Ok((protocol, Node::Clause));
+        }
+        if let Some((name, _)) = keys.roles.iter().find(|(_, candidate)| **candidate == key) {
+            return Ok((protocol, Node::Role(name)));
+        }
+        if let Some((name, _)) = keys
+            .channels
+            .iter()
+            .find(|(_, candidate)| **candidate == key)
+        {
+            return Ok((protocol, Node::Channel(name)));
+        }
+        if let Some(index) = keys
+            .compensations
+            .iter()
+            .position(|candidate| *candidate == key)
+        {
+            return Ok((protocol, Node::Compensation(index)));
+        }
+        if keys.terminal == Some(key.clone()) {
+            return Ok((protocol, Node::Terminal));
+        }
+        if let Some((node, _)) = keys.nodes.iter().find(|(_, candidate)| **candidate == key) {
+            return Ok((protocol, Node::Run(*node)));
+        }
+    }
+    // A protocol-tagged node outside the checked protocol member table has
+    // no FR-390 expression member.
+    Err(missing_member(member, index))
+}
+
+fn checked_slots(slots: &CheckedSlots) -> Vec<FrameSlot> {
+    slots
+        .binders
+        .iter()
+        .enumerate()
+        .map(|(level, binder)| FrameSlot {
+            name: binder.name.clone(),
+            level,
+            value_type: binder.value_type.clone(),
+            node: None,
+        })
+        .collect()
+}
+
+fn capture_entries(protocol: &CheckedProtocol, indexes: &[usize]) -> Vec<FrameSlot> {
+    indexes
+        .iter()
+        .filter_map(|index| protocol.obligations.captures.get(*index))
+        .map(|capture| FrameSlot {
+            name: capture.name.clone(),
+            level: 0, // The enclosing protocol's checked parameter key supplies the canonical level.
+            value_type: capture.declared_type.clone(),
+            node: None,
+        })
+        .collect()
+}
+
+fn protocol_captures(protocol: &CheckedProtocol) -> Vec<FrameSlot> {
+    protocol
+        .obligations
+        .captures
+        .iter()
+        .filter(|capture| capture.owner == CaptureOwner::Protocol)
+        .map(|capture| FrameSlot {
+            name: capture.name.clone(),
+            level: 0,
+            value_type: capture.declared_type.clone(),
+            node: None,
+        })
+        .collect()
+}
+
+fn protocol_input(protocol: &CheckedProtocol) -> Vec<FrameSlot> {
+    protocol
+        .slots
+        .binders
+        .first()
+        .map(|binder| {
+            vec![FrameSlot {
+                name: binder.name.clone(),
+                level: 0,
+                value_type: binder.value_type.clone(),
+                node: None,
+            }]
+        })
+        .unwrap_or_default()
+}
+
+fn activation_binder(protocol: &CheckedProtocol) -> Vec<FrameSlot> {
+    match &protocol.obligations.activation {
+        CheckedActivation::Origin => Vec::new(),
+        CheckedActivation::OnEach {
+            binder,
+            record_type,
+            ..
+        } => vec![FrameSlot {
+            name: binder.clone(),
+            level: 1,
+            value_type: (**record_type).clone(),
+            node: None,
+        }],
+    }
+}
+
+fn compensation_frame(
+    _protocol: &CheckedProtocol,
+    _index: usize,
+    names: Vec<(String, ValueType)>,
+) -> Vec<FrameSlot> {
+    names
+        .into_iter()
+        .enumerate()
+        .map(|(level, (name, value_type))| FrameSlot {
+            level,
+            name,
+            value_type,
+            node: None,
+        })
+        .collect()
+}
+
+fn compensation_retry(compensation: &CheckedRetry) -> Vec<(String, ValueType)> {
+    vec![
+        (
+            compensation.earlier.name.clone(),
+            compensation.earlier.value_type.clone(),
+        ),
+        (
+            compensation.later.name.clone(),
+            compensation.later.value_type.clone(),
+        ),
+    ]
+}
+
+/// `#[string_edge]`: the member names and checked control labels are the
+/// protocol slot's declared discriminator vocabulary (FR-390), not values
+/// decoded from arbitrary text.
+fn run_body<'a>(
+    package: &'a CheckedPackage,
+    protocol: &'a CheckedProtocol,
+    node: ProtocolNodeId,
+    member: &str,
+    index: Option<usize>,
+) -> Option<(&'a CheckedBody, Vec<FrameSlot>)> {
+    let slots = checked_slots(&protocol.slots);
+    if protocol
+        .finish
+        .as_ref()
+        .is_some_and(|(finish, _)| *finish == node)
+    {
+        if member != "constraint" {
+            return None;
+        }
+        return Some((
+            &protocol
+                .slots
+                .bodies
+                .iter()
+                .find(|body| body.node == node)?
+                .body,
+            slots,
+        ));
+    }
+    let kind = protocol.controls.control(node)?.kind.label();
+    match (kind, member) {
+        ("choice" | "repeat", "visible") => {
+            let index = index?;
+            let body = match kind {
+                "choice" => protocol
+                    .slots
+                    .choices
+                    .iter()
+                    .find(|choice| choice.node == node)?
+                    .visible
+                    .get(index)?,
+                "repeat" => protocol
+                    .slots
+                    .repeats
+                    .iter()
+                    .find(|repeat| repeat.node == node)?
+                    .visible
+                    .get(index)?,
+                _ => return None,
+            };
+            Some((body, slots))
+        }
+        ("choice", "cases.guard") => {
+            let mut cases = protocol
+                .slots
+                .choices
+                .iter()
+                .find(|choice| choice.node == node)?
+                .cases
+                .iter()
+                .collect::<Vec<_>>();
+            cases.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
+            let case = *cases.get(index?)?;
+            Some((&case.guard, slots))
+        }
+        ("repeat", "guard") => Some((
+            &protocol
+                .slots
+                .repeats
+                .iter()
+                .find(|repeat| repeat.node == node)?
+                .guard,
+            slots,
+        )),
+        ("check", "condition") => Some((
+            &protocol
+                .slots
+                .bodies
+                .iter()
+                .find(|body| body.node == node)?
+                .body,
+            slots,
+        )),
+        ("send" | "receive" | "attempt" | "effect" | "event" | "commit", "constraint") => Some((
+            &protocol
+                .slots
+                .bodies
+                .iter()
+                .find(|body| body.node == node)?
+                .body,
+            slots,
+        )),
+        ("send" | "receive" | "attempt" | "effect" | "event", "related.from" | "related.to") => {
+            // The emitted records are canonically sorted and deduplicated.
+            // Select their checked expression identity before locating its
+            // executable body; source declaration order is not a slot index.
+            let keys = package.graph().protocol_node_keys(&protocol.name)?;
+            let control = package
+                .graph()
+                .semantic_graph()
+                .node(keys.nodes.get(&node)?.clone())?;
+            let BodyTerm::Application(application) = control.body() else {
+                return None;
+            };
+            let records = application
+                .arguments
+                .iter()
+                .find_map(|argument| match argument {
+                    MemberTerm::Binding(binding) if binding.name == "related" => {
+                        match &binding.value {
+                            BindingValue::Tuple(records) => Some(records),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                })?;
+            let TupleMember::Group(record) = records.members.get(index?)? else {
+                return None;
+            };
+            let end = if member == "related.from" {
+                "from"
+            } else {
+                "to"
+            };
+            let target = record.members.iter().find_map(|entry| match entry {
+                GroupMember::Binding(binding) if binding.name == end => match &binding.value {
+                    LeafTerm::Reference { target } => target.admitted(),
+                    _ => None,
+                },
+                _ => None,
+            })?;
+            let body = protocol
+                .slots
+                .related
+                .iter()
+                .filter(|related| related.node == node)
+                .flat_map(|related| &related.ends)
+                .find(|body| {
+                    package
+                        .graph()
+                        .occurrences()
+                        .any(|(key, origin, location)| {
+                            key == *target
+                                && origin.role().as_str() == "expression"
+                                && location == body.root().location()
+                        })
+                })?;
+            Some((body, slots))
+        }
+        _ => None,
+    }
+}
+
+/// `#[string_edge]`: dispatches the caller's exact FR-390 member key against
+/// the checked protocol member and slot table.
+pub(crate) fn select<'a>(
+    package: &'a CheckedPackage,
+    slot: &ProtocolSlotDescriptor,
+) -> Result<Selected<'a>, SlotSelectionFailure> {
+    let (protocol, node) = identify(package, slot.node.clone(), &slot.member, slot.index)?;
+    let absent = || missing_member(&slot.member, slot.index);
+    let indexed = match node {
+        Node::Clause => slot.member == "captures",
+        Node::Compensation(_) => {
+            matches!(
+                slot.member.as_str(),
+                "registration_captures" | "activation_captures"
+            )
+        }
+        Node::Run(node) => matches!(
+            (
+                protocol
+                    .controls
+                    .control(node)
+                    .map(|control| control.kind.label()),
+                slot.member.as_str()
+            ),
+            (Some("choice"), "cases.guard" | "visible")
+                | (Some("repeat"), "visible")
+                | (
+                    Some("send" | "receive" | "attempt" | "effect" | "event"),
+                    "related.from" | "related.to"
+                )
+        ),
+        Node::Role(_) | Node::Channel(_) | Node::Terminal => false,
+    };
+    if indexed != slot.index.is_some() {
+        return Err(absent());
+    }
+    let (body, frame) = match node {
+        Node::Clause => match slot.member.as_str() {
+            "activation.guard" => {
+                let CheckedActivation::OnEach {
+                    guard: Some(body),
+                    binder,
+                    record_type,
+                } = &protocol.obligations.activation
+                else {
+                    return Err(absent());
+                };
+                let over = protocol.slots.binders.first().ok_or_else(absent)?;
+                (
+                    body,
+                    vec![
+                        FrameSlot {
+                            name: binder.clone(),
+                            level: 0,
+                            value_type: (**record_type).clone(),
+                            node: None,
+                        },
+                        FrameSlot {
+                            name: over.name.clone(),
+                            level: 1,
+                            value_type: over.value_type.clone(),
+                            node: None,
+                        },
+                    ],
+                )
+            }
+            "captures" => {
+                let source_index = slot.index.ok_or_else(absent)?;
+                let capture = protocol
+                    .obligations
+                    .captures
+                    .iter()
+                    .filter(|capture| capture.owner == CaptureOwner::Protocol)
+                    .nth(source_index)
+                    .ok_or_else(absent)?;
+                (&capture.initializer, checked_slots(&protocol.slots))
+            }
+            _ => return Err(absent()),
+        },
+        Node::Role(name) if slot.member == "replication.until" && slot.index.is_none() => {
+            let role = protocol
+                .roles
+                .iter()
+                .find(|role| role.name == name)
+                .ok_or_else(absent)?;
+            let checked = protocol
+                .slots
+                .roles
+                .iter()
+                .find(|role| {
+                    role.role
+                        == protocol
+                            .roles
+                            .iter()
+                            .position(|candidate| candidate.name == name)
+                            .unwrap_or(usize::MAX)
+                })
+                .ok_or_else(absent)?;
+            let CheckedLifetime::Until(body) = &checked.lifetime else {
+                return Err(absent());
+            };
+            let mut frame = protocol_input(protocol);
+            frame.extend(activation_binder(protocol));
+            frame.extend(protocol_captures(protocol));
+            frame.push(FrameSlot {
+                name: role.name.clone(),
+                level: frame.len(),
+                value_type: quire_exact::ValueType::Reference(
+                    role.context.clone().ok_or_else(absent)?,
+                ),
+                node: None,
+            });
+            for (level, source) in frame.iter_mut().enumerate() {
+                source.level = level;
+            }
+            (body, frame)
+        }
+        Node::Channel(name) if slot.member == "ordering.key" && slot.index.is_none() => {
+            let channel = protocol
+                .channels
+                .iter()
+                .find(|channel| channel.name == name)
+                .ok_or_else(absent)?;
+            let CheckedOrdering::Fifo { binder, key } = &channel.ordering else {
+                return Err(absent());
+            };
+            (
+                key.as_ref(),
+                vec![FrameSlot {
+                    name: binder.name.clone(),
+                    level: 0,
+                    value_type: binder.value_type.clone(),
+                    node: None,
+                }],
+            )
+        }
+        Node::Compensation(index) => {
+            let compensation = protocol
+                .obligations
+                .compensations
+                .get(index)
+                .ok_or_else(absent)?;
+            match slot.member.as_str() {
+                "registration_captures" => {
+                    let capture_index = slot.index.ok_or_else(absent)?;
+                    let capture = protocol
+                        .obligations
+                        .captures
+                        .get(
+                            *compensation
+                                .registration_captures
+                                .get(capture_index)
+                                .ok_or_else(absent)?,
+                        )
+                        .ok_or_else(absent)?;
+                    let mut frame = Vec::new();
+                    frame.push((
+                        compensation.forward.name.clone(),
+                        compensation.forward.value_type.clone(),
+                    ));
+                    frame.extend(
+                        protocol_input(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        activation_binder(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(
+                            protocol,
+                            &compensation.registration_captures[..capture_index],
+                        )
+                        .into_iter()
+                        .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.push((capture.name.clone(), capture.declared_type.clone()));
+                    (
+                        &capture.initializer,
+                        compensation_frame(protocol, index, frame),
+                    )
+                }
+                "trigger.guard" if slot.index.is_none() => {
+                    let mut frame = vec![(
+                        compensation.trigger.name.clone(),
+                        compensation.trigger.value_type.clone(),
+                    )];
+                    frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(protocol, &compensation.registration_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        protocol_input(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    (
+                        &compensation.guard,
+                        compensation_frame(protocol, index, frame),
+                    )
+                }
+                "activation_captures" => {
+                    let capture_index = slot.index.ok_or_else(absent)?;
+                    let capture = protocol
+                        .obligations
+                        .captures
+                        .get(
+                            *compensation
+                                .activation_captures
+                                .get(capture_index)
+                                .ok_or_else(absent)?,
+                        )
+                        .ok_or_else(absent)?;
+                    let mut frame = vec![(
+                        compensation.trigger.name.clone(),
+                        compensation.trigger.value_type.clone(),
+                    )];
+                    frame.extend(
+                        protocol_input(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(protocol, &compensation.registration_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(
+                            protocol,
+                            &compensation.activation_captures[..capture_index],
+                        )
+                        .into_iter()
+                        .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.push((capture.name.clone(), capture.declared_type.clone()));
+                    (
+                        &capture.initializer,
+                        compensation_frame(protocol, index, frame),
+                    )
+                }
+                "retry.relation" if slot.index.is_none() => {
+                    let mut frame = compensation_retry(&compensation.retry);
+                    frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(protocol, &compensation.registration_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(protocol, &compensation.activation_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    (
+                        &compensation.retry.relation,
+                        compensation_frame(protocol, index, frame),
+                    )
+                }
+                "recovery.predicate" if slot.index.is_none() => {
+                    let mut frame = vec![(
+                        compensation.recover.binder.name.clone(),
+                        compensation.recover.binder.value_type.clone(),
+                    )];
+                    frame.extend(
+                        protocol_captures(protocol)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(protocol, &compensation.registration_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    frame.extend(
+                        capture_entries(protocol, &compensation.activation_captures)
+                            .into_iter()
+                            .map(|source| (source.name, source.value_type)),
+                    );
+                    (
+                        &compensation.recover.predicate,
+                        compensation_frame(protocol, index, frame),
+                    )
+                }
+                _ => return Err(absent()),
+            }
+        }
+        Node::Terminal if slot.member == "condition" && slot.index.is_none() => {
+            let qsl_semantics::check::CheckedTerminalMember::When(body) = &protocol.slots.terminal
+            else {
+                return Err(absent());
+            };
+            (body, checked_slots(&protocol.slots))
+        }
+        Node::Terminal => return Err(absent()),
+        Node::Role(_) | Node::Channel(_) => return Err(absent()),
+        Node::Run(node) => {
+            let Some((body, frame)) = run_body(package, protocol, node, &slot.member, slot.index)
+            else {
+                return Err(absent());
+            };
+            (body, frame)
+        }
+    };
+    let mut frame = frame;
+    if let Some(keys) = package.graph().protocol_node_keys(&protocol.name) {
+        let location = body.root().location();
+        let expression = keys
+            .expressions
+            .iter()
+            .find(|expression| expression.location == *location);
+        for source in &mut frame {
+            let binder = expression
+                .and_then(|expression| expression.binders.get(source.level))
+                .filter(|binder| binder.name == source.name);
+            source.node = binder.map(|binder| binder.node.clone());
+            if let Some(binder) = binder {
+                source.level = keys
+                    .binders
+                    .iter()
+                    .find(|keyed| keyed.node == binder.node)
+                    .map(|keyed| keyed.level)
+                    .ok_or_else(|| {
+                        SlotSelectionFailure::Fault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "FR-390",
+                                "checked-protocol-source-has-a-canonical-binder-level",
+                            ),
+                        )
+                    })?;
+            }
+        }
+    }
+    let root_location = body.root().location();
+    let root_node = package
+        .graph()
+        .occurrences()
+        .find_map(|(key, origin, location)| {
+            (origin.role().as_str() == "expression" && location == root_location)
+                .then(|| key.clone())
+        })
+        .ok_or_else(|| {
+            SlotSelectionFailure::Fault(InternalFault::new(
+                "FR-390",
+                "selected-protocol-expression-has-a-keyed-root",
+            ))
+        })?;
+    Ok(Selected {
+        body,
+        frame,
+        root_node,
+    })
+}

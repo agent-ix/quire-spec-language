@@ -811,6 +811,14 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<ProtocolSlotEvaluation, CallFailure>;
 
+    /// Evaluate a slot already selected by one admitted evaluation view.
+    fn evaluate_selected_protocol_slot(
+        &self,
+        selected: &qsl_package::SelectedProtocolTerm<'_, '_>,
+        supply: &ProtocolSupply<'_>,
+        meter: &mut Meter,
+    ) -> Result<ProtocolSlotEvaluation, CallFailure>;
+
     /// FR-327 "Bounded-profile evaluation": evaluate the condition of the
     /// `holds` atom `atom` of the temporal clause `clause` over `objects`,
     /// the observation at one position, with `over` the clause's `over`
@@ -999,6 +1007,53 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 ///
 /// The view resolves a borrowed term handle before delegating to the same
 /// `CheckedPackage` protocol-slot evaluator used for in-process calls.
+/// A qsl-eval consumer also cannot mint that package-owned handle:
+///
+/// ```compile_fail
+/// use qsl_package::{AdmittedEvaluationView, TermHandle};
+/// use quire_exact::NodeKey;
+/// fn direct(view: &AdmittedEvaluationView<'_>, node: NodeKey) {
+///     let _ = TermHandle { view, node, body: todo!() };
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_package::TermHandle;
+/// use qsl_semantics::check::{CheckedBody, CheckedNode};
+/// fn from_checked(node: &CheckedNode<'_>, term: &CheckedBody) {
+///     let _ = TermHandle::from(node);
+///     let _ = TermHandle::from(term);
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_package::TermHandle;
+/// use quire_exact::NodeKey;
+/// fn from_node(node: NodeKey) { let _ = TermHandle::from(node); }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_package::TermHandle;
+/// use quire_contract_model::CheckedPackageV2;
+/// fn from_graph(graph: &CheckedPackageV2) { let _ = TermHandle::from(graph); }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_package::TermHandle;
+/// use qsl_semantics::library::ImportView;
+/// fn from_import(view: &ImportView) { let _ = TermHandle::from(view); }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_package::TermHandle;
+/// fn from_bytes(bytes: &[u8]) { let _ = TermHandle::from(bytes); }
+/// fn from_integer(value: usize) { let _ = TermHandle::from(value); }
+/// ```
+///
+/// ```compile_fail
+/// use qsl_package::{AdmittedEvaluationView, TermHandle};
+/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _ = TermHandle::from(view); }
+/// ```
 pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
     /// Evaluate one protocol slot selected through this exact admitted view.
     fn evaluate_protocol_slot(
@@ -1016,14 +1071,29 @@ impl AdmittedEvaluationViewEvaluation for qsl_package::AdmittedEvaluationView<'_
         supply: &ProtocolSupply<'_>,
         meter: &mut Meter,
     ) -> Result<ProtocolSlotEvaluation, CallFailure> {
-        let Some(handle) = self.term_handle(slot.node.clone()) else {
-            return Err(protocol_slot::resolve::refused(
-                "missing_declaration",
-                "missing-name",
-                CallAdmissionLocus::Node(slot.node.clone()),
-            ));
-        };
-        handle.package().evaluate_protocol_slot(slot, supply, meter)
+        if let Some(quire_semantic_value::admission::ObservationAdmission::Admitted(observation)) =
+            supply.observation
+        {
+            if !observation.is_for_view(self) {
+                return Err(protocol_slot::resolve::refused(
+                    "invalid_model_binding",
+                    "wrong-model-selection",
+                    CallAdmissionLocus::Binder(slot.node.clone()),
+                ));
+            }
+        }
+        let descriptor = qsl_package::ProtocolSlotDescriptor::new(
+            slot.node.clone(),
+            slot.member.clone(),
+            slot.index,
+        );
+        let selected = self
+            .select_protocol_slot(&descriptor)
+            .map_err(protocol_slot::resolve::selection_failure)?;
+        selected
+            .root()
+            .package()
+            .evaluate_selected_protocol_slot(&selected, supply, meter)
     }
 }
 
@@ -1389,26 +1459,35 @@ impl CheckedPackageEvaluation for CheckedPackage {
         supply: &ProtocolSupply<'_>,
         meter: &mut Meter,
     ) -> Result<ProtocolSlotEvaluation, CallFailure> {
-        let selected = protocol_slot::resolve::select(self, slot)?;
-        let mut sources = selected
-            .frame
+        let view =
+            match supply.observation {
+                Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
+                    observation,
+                )) if observation.is_for_package(self) => observation.evaluation_view(),
+                _ => self.evaluation_view(),
+            };
+        let descriptor = qsl_package::ProtocolSlotDescriptor::new(
+            slot.node.clone(),
+            slot.member.clone(),
+            slot.index,
+        );
+        let selected = view
+            .select_protocol_slot(&descriptor)
+            .map_err(protocol_slot::resolve::selection_failure)?;
+        self.evaluate_selected_protocol_slot(&selected, supply, meter)
+    }
+
+    fn evaluate_selected_protocol_slot(
+        &self,
+        selected: &qsl_package::SelectedProtocolTerm<'_, '_>,
+        supply: &ProtocolSupply<'_>,
+        meter: &mut Meter,
+    ) -> Result<ProtocolSlotEvaluation, CallFailure> {
+        let sources = selected
+            .sources()
             .iter()
-            .enumerate()
-            .filter(|(index, _)| selected.body.reads_local(*index))
-            .map(|(index, source)| {
-                source
-                    .node
-                    .clone()
-                    .map(|node| (index, source, node))
-                    .ok_or_else(|| {
-                        CallFailure::Fault(InternalFault::new(
-                            "FR-390",
-                            "checked-protocol-slot-source-has-a-keyed-binder",
-                        ))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        sources.sort_by_key(|(_, source, key)| (source.level, key.clone()));
+            .map(|source| (source.index(), source, source.binder().clone()))
+            .collect::<Vec<_>>();
         let mut supplied = supply.binders.iter().collect::<Vec<_>>();
         supplied.sort_by_key(|(key, _)| {
             (
@@ -1449,7 +1528,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 ));
             }
         }
-        let mut frame = vec![None; selected.frame.len()];
+        let mut frame = vec![None; selected.frame_len()];
         let mut unavailable = std::collections::BTreeMap::new();
         for (index, source, key) in sources {
             let Some((_, supplied)) = supply
@@ -1478,7 +1557,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                                     .environment()
                                     .has_population_universe(reference.universe())
                         }) {
-                            let required = match &source.value_type {
+                            let required = match source.value_type() {
                                 quire_exact::ValueType::Reference(expected) => observation
                                     .environment()
                                     .population_universe_for_type(expected),
@@ -1505,7 +1584,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                         .graph()
                         .scope()
                         .types()
-                        .admits(&source.value_type, value)
+                        .admits(source.value_type(), value)
                         .map_err(|failure| CallFailure::Storage {
                             parameter: index,
                             failure,
@@ -1514,7 +1593,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                         return Err(protocol_slot::resolve::refused(
                             "invalid_runtime_input",
                             if protocol_slot::resolve::shape_matches(
-                                &source.value_type,
+                                source.value_type(),
                                 value,
                                 self.graph().scope().types(),
                             ) {
@@ -1672,7 +1751,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                                 CallAdmissionLocus::Binder(key),
                             ));
                         }
-                        if !observation.is_for_package(self) {
+                        if !observation.is_for_view(selected.root().view()) {
                             return Err(protocol_slot::resolve::refused(
                                 "invalid_model_binding",
                                 "wrong-model-selection",
@@ -1696,7 +1775,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                                     .environment()
                                     .has_population_universe(reference.universe())
                             {
-                                let required = match &source.value_type {
+                                let required = match source.value_type() {
                                     quire_exact::ValueType::Reference(expected) => observation
                                         .environment()
                                         .population_universe_for_type(expected),
@@ -1745,7 +1824,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .and_then(|admission| admission.authority().ok())
             .map(|observation| observation.environment())
             .unwrap_or(&empty);
-        frame.resize(selected.body.frame_slots(frame.len()), None);
+        frame.resize(selected.checked_body().frame_slots(frame.len()), None);
         let result = Machine::with_pre(
             self.graph().scope(),
             self.graph(),
@@ -1755,7 +1834,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             meter,
             self.graph().dispatch_tables(),
         )
-        .run_protocol_frame(selected.body.root(), frame, unavailable)
+        .run_protocol_frame(selected.checked_body().root(), frame, unavailable)
         .map_err(CallFailure::Fault)?;
         match result {
             Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),
