@@ -26,16 +26,24 @@ fn assert_quantity(term: &Value, expected: &str, time_unit: &Value) {
     assert_eq!(value["type"], *time_unit);
 }
 
+/// Semantic type ids that the claim body literals reference.
+struct Types<'a> {
+    text: &'a Value,
+    integer: &'a Value,
+    time_unit: &'a Value,
+}
+
 fn assert_task_body(
     task: &Value,
     name: &str,
     period: &str,
     wcet: &str,
     priority: &str,
-    text_type: &Value,
-    integer_type: &Value,
-    time_unit: &Value,
+    types: &Types<'_>,
 ) {
+    let text_type = types.text;
+    let integer_type = types.integer;
+    let time_unit = types.time_unit;
     assert_eq!(task["term"], "aggregate");
     let members = task["members"].as_array().expect("task aggregate members");
     assert_eq!(members.len(), 11);
@@ -223,9 +231,11 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
             "4/1",
             "1/1",
             "1",
-            &text_node["node_id"],
-            &integer_node["node_id"],
-            &time_unit,
+            &Types {
+                text: &text_node["node_id"],
+                integer: &integer_node["node_id"],
+                time_unit: &time_unit,
+            },
         );
         assert_task_body(
             &task_terms[1],
@@ -233,9 +243,11 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
             "6/1",
             "2/1",
             "2",
-            &text_node["node_id"],
-            &integer_node["node_id"],
-            &time_unit,
+            &Types {
+                text: &text_node["node_id"],
+                integer: &integer_node["node_id"],
+                time_unit: &time_unit,
+            },
         );
         assert_task_body(
             &task_terms[2],
@@ -243,9 +255,11 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
             "12/1",
             "5/1",
             "3",
-            &text_node["node_id"],
-            &integer_node["node_id"],
-            &time_unit,
+            &Types {
+                text: &text_node["node_id"],
+                integer: &integer_node["node_id"],
+                time_unit: &time_unit,
+            },
         );
         assert_eq!(type_id_for_term(&task_terms[1], "period"), &time_unit);
         assert_eq!(type_id_for_term(&task_terms[2], "period"), &time_unit);
@@ -291,9 +305,11 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
         "4/1",
         "1/1",
         "1",
-        &text_node["node_id"],
-        &integer_node["node_id"],
-        &time_unit,
+        &Types {
+            text: &text_node["node_id"],
+            integer: &integer_node["node_id"],
+            time_unit: &time_unit,
+        },
     );
     assert_task_body(
         &response_tasks[1],
@@ -301,9 +317,11 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
         "6/1",
         "2/1",
         "2",
-        &text_node["node_id"],
-        &integer_node["node_id"],
-        &time_unit,
+        &Types {
+            text: &text_node["node_id"],
+            integer: &integer_node["node_id"],
+            time_unit: &time_unit,
+        },
     );
     assert_task_body(
         &response_tasks[2],
@@ -311,9 +329,11 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
         "12/1",
         "5/1",
         "3",
-        &text_node["node_id"],
-        &integer_node["node_id"],
-        &time_unit,
+        &Types {
+            text: &text_node["node_id"],
+            integer: &integer_node["node_id"],
+            time_unit: &time_unit,
+        },
     );
 }
 

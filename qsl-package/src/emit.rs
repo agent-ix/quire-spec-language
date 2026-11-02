@@ -4313,6 +4313,7 @@ pub fn emit_timed_models(
                 temporal_bindings: base.temporal_bindings(),
                 operation_effects: operation_effects.as_deref(),
                 schedulability_claims: None,
+                operation_effects: None,
             },
             &capability_report,
             &diagnostics,
@@ -5347,6 +5348,7 @@ fn emit_package_inner(
                 operation_effects: graph.operation_effects(),
                 schedulability_claims: (!schedulability_claim_rows.is_empty())
                     .then_some(schedulability_claim_rows.as_slice()),
+                operation_effects: None,
             },
             &capability_report,
             &diagnostics,

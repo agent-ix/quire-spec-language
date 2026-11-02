@@ -109,11 +109,14 @@ enum Fixture {
     Hybrid,
     /// FR-180 / FR-477: an HP-1 relation over two ConfigVersion executions.
     StepRelation,
+    /// TC-1202: [`SCHEDULABILITY_UNIT`], a task set with a schedulability and a
+    /// response claim.
+    Schedulability,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 29] = [
+    const ALL: [Self; 30] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -143,6 +146,7 @@ impl Fixture {
         Self::Terminal,
         Self::Hybrid,
         Self::StepRelation,
+        Self::Schedulability,
     ];
 }
 
@@ -237,6 +241,18 @@ const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
 /// The complete-V1 header shared by every model source unit below.
 const COMPLETE_V1_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.model.complete/v1\";\n";
+
+/// ADR-026 section 12's `Ctl` task set with a schedulability claim and a
+/// response claim, after the complete-V1 header.
+const SCHEDULABILITY_UNIT: &str = "profile t = \"quire.temporal.complete/v1\";\n\
+     dimension Time;\n\
+     unit ms : Time = rational(1, 1);\n\
+     taskset Ctl {\n\
+     task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n\
+     task b periodic 6 ms deadline 6 ms wcet 2 ms priority 2 lo;\n\
+     }\n\
+     schedulable CtlFp on Ctl under fixed_priority;\n\
+     response R on Ctl.b <= 6 ms under fixed_priority;\n";
 
 /// FR-447's use case: `Braking2` with its two initial entries, and the
 /// `Slows` and `Recent` claims over it, after [`COMPLETE_V1_HEADER`].
@@ -393,6 +409,7 @@ impl Fixture {
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::Hybrid => text(HYBRID_UNIT),
+            Self::Schedulability => text(SCHEDULABILITY_UNIT),
             Self::StepRelation => Emitted::placed_owned(
                 CheckedPackage::link(super::step_relation::checked_graph()),
                 vec![super::step_relation::document().to_vec()],
@@ -668,6 +685,7 @@ fn rows() -> Vec<Row> {
         row(K::Claim(ClaimForm::Hyperproperty), F::HyperClause),
         row(K::Claim(ClaimForm::StateGraph), F::StateGraphClaim),
         row(K::Claim(ClaimForm::StepRelation), F::StepRelation),
+        row(K::Claim(ClaimForm::Schedulability), F::Schedulability),
         row(K::Temporal(TemporalForm::Terminal), F::Terminal),
         row(K::Hybrid(HybridForm::Model), F::Hybrid),
         row(K::Hybrid(HybridForm::Mode), F::Hybrid),
@@ -726,6 +744,8 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
+        (K::Claim(ClaimForm::ProbabilisticClaim), NO_TAG),
+        (K::ScalarType(ScalarTypeForm::CarriedQuantity), NO_TAG),
         (K::Correspondence(CorrespondenceForm::SourceLocus), NO_TAG),
         (
             K::Correspondence(CorrespondenceForm::ModelCorrespondence),
@@ -2351,6 +2371,25 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
                     assert_eq!(members[1]["value"]["term"], "aggregate");
                     assert_eq!(members[2]["value"]["term"], "aggregate");
                     assert_eq!(members[3]["value"]["term"], "reference");
+                    continue;
+                }
+                if node["node_tag"] == "claim" && node["semantic_form"] == "schedulability" {
+                    // FR-482 defines a closed claim body whose `tasks` member
+                    // is an aggregate of task aggregates; it is checked by
+                    // the schedulability claim reader, not the ordinary term
+                    // stratum.
+                    assert_eq!(node["body"]["term"], "aggregate");
+                    let names: Vec<_> = node["body"]["members"]
+                        .as_array()
+                        .expect("the FR-482 body members")
+                        .iter()
+                        .map(|member| member["name"].as_str().expect("member name"))
+                        .collect();
+                    assert!(
+                        names == ["kind", "policy", "tasks"]
+                            || names == ["kind", "policy", "task", "bound", "tasks"],
+                        "unexpected schedulability body members {names:?}"
+                    );
                     continue;
                 }
                 if matches!(
