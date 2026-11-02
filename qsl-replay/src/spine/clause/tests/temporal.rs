@@ -47,6 +47,14 @@ enum Unit {
     GuardUndefined,
     /// Timestamped finite-window evaluation (FR-501).
     Timestamped,
+    /// Timestamped finite-window `[0,1]` property.
+    TimestampedOne,
+    /// Timestamped finite-window `[0,2]` property.
+    TimestampedTwo,
+    /// Timestamped finite-window `[2,3]` existential.
+    TimestampedLaterEventually,
+    /// Timestamped finite-window `[2,3]` universal.
+    TimestampedLaterAlways,
 }
 
 impl Unit {
@@ -58,6 +66,12 @@ impl Unit {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
             Self::Timestamped => {
+                "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
+            }
+            Self::TimestampedOne
+            | Self::TimestampedTwo
+            | Self::TimestampedLaterEventually
+            | Self::TimestampedLaterAlways => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
         }
@@ -94,6 +108,22 @@ impl Unit {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { eventually[0,5] holds(c.value > 0) }\n"
             }
+            Self::TimestampedOne => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[0,1] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedTwo => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[0,2] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedLaterEventually => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { eventually[2,3] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedLaterAlways => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { always[2,3] holds(c.value > 0) }\n"
+            }
         }
     }
 }
@@ -105,9 +135,25 @@ fn timestamped(
     watermark: u64,
     complete_through: Option<u64>,
 ) -> ClauseRunRequest {
+    timestamped_with(
+        Unit::Timestamped,
+        stamps,
+        values,
+        watermark,
+        complete_through,
+    )
+}
+
+fn timestamped_with(
+    unit: Unit,
+    stamps: &[u64],
+    values: &[i64],
+    watermark: u64,
+    complete_through: Option<u64>,
+) -> ClauseRunRequest {
     assert_eq!(stamps.len(), values.len());
     request(
-        Unit::Timestamped,
+        unit,
         |labels| ClauseRunSelection::Temporal {
             name: "Window".to_owned(),
             trace: TraceInput::Timestamped(crate::spine::TimestampedTraceInput {
@@ -1182,6 +1228,45 @@ fn timestamped_windows_use_ticks_and_close_without_false_extension() {
 
     let sparse = report(timestamped(&[0], &[1], 1, Some(1)));
     assert_eq!(outcome(&sparse), &TemporalVerdict::Holds);
+
+    let excluded = report(timestamped(&[0, 6], &[0, 1], 6, Some(6)));
+    assert_eq!(outcome(&excluded), &TemporalVerdict::Violated { at: 0 });
+
+    let bound_one = report(timestamped_with(
+        Unit::TimestampedOne,
+        &[0, 2],
+        &[0, 1],
+        2,
+        Some(2),
+    ));
+    assert_eq!(outcome(&bound_one), &TemporalVerdict::Violated { at: 0 });
+
+    let bound_two = report(timestamped_with(
+        Unit::TimestampedTwo,
+        &[0, 2],
+        &[0, 1],
+        2,
+        Some(2),
+    ));
+    assert_eq!(outcome(&bound_two), &TemporalVerdict::Holds);
+
+    let empty_exists = report(timestamped_with(
+        Unit::TimestampedLaterEventually,
+        &[0],
+        &[1],
+        3,
+        Some(3),
+    ));
+    assert_eq!(outcome(&empty_exists), &TemporalVerdict::Violated { at: 0 });
+
+    let empty_forall = report(timestamped_with(
+        Unit::TimestampedLaterAlways,
+        &[0],
+        &[1],
+        3,
+        Some(3),
+    ));
+    assert_eq!(outcome(&empty_forall), &TemporalVerdict::Holds);
 }
 
 /// FR-501-AC-3 (TC-1295): an open future window remains pending until its
