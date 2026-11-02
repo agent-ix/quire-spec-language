@@ -1399,6 +1399,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
                             && refused_dependency.cause == "missing-name"
                     )
             )
+            && dependent_refusal.cause.code() == qsl_foundation::diagnostic::Code::MissingDeclaration
+            && dependent_refusal.cause.cause() == Some("missing-name")
     ));
 }
 
@@ -1438,8 +1440,8 @@ fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
             && third_limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget
     ));
 
-    let reversed = format!("{}\n{}\n{}", renamed("Flaw"), protocol, renamed("Flew"));
-    let reversed = checked_protocols_with_budget(&reversed, empty_budget + protocol_work)
+    let reversed_protocols = format!("{}\n{}\n{}", renamed("Flaw"), protocol, renamed("Flew"));
+    let reversed = checked_protocols_with_budget(&reversed_protocols, empty_budget + protocol_work)
         .expect("reordered protocol checks complete as individual results");
     let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(reversed))
         .expect("the first protocol's nodes are retained");
@@ -1461,6 +1463,21 @@ fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
         ProtocolEmissionAggregate::Emitted
     ));
     assert_eq!(sufficient.exit_code(), 0);
+
+    let reversed_sufficient =
+        checked_protocols_with_budget(&reversed_protocols, empty_budget + 3 * protocol_work)
+            .expect("three equal protocols fit three times the measured work in either order");
+    let reversed_sufficient =
+        emit_checked_with_protocol_results(&CheckedPackage::link(reversed_sufficient))
+            .expect("all reversed results are emitted");
+    assert!(matches!(
+        reversed_sufficient.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration: first, .. },
+            ProtocolEmissionResult::Emitted { declaration: second, .. },
+            ProtocolEmissionResult::Emitted { declaration: third, .. }
+        ] if first == "Flaw" && second == "Flow" && third == "Flew"
+    ));
 }
 
 /// The `control` node of `wire` whose declaration is `path`.
