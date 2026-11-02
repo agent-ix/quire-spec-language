@@ -13,9 +13,9 @@ use super::protocol_requirements::fixture_w::{
 };
 use super::*;
 use crate::protocol_view::{
-    binder, causal_relation, control_operation, declaration, definition, delivery, dependency,
-    locus, operation_identity, owner_model, protocol_view, queue_capacity, source,
-    temporal_binding, ControlOperation, Delivery, QueueCapacity, Scheduling, ViewRefusal,
+    binder, causal_relation, control_operation, declaration, delivery, dependency, locus,
+    operation_identity, owner_model, protocol_view, queue_capacity, relation_over, selection,
+    source, temporal_binding, ControlOperation, Delivery, QueueCapacity, Scheduling, ViewRefusal,
 };
 
 /// The TC-134 workflow plus an `await` anchored at an event, so every edge
@@ -206,13 +206,35 @@ fn derived_pairs(package: &CheckedPackageV2) -> Vec<Pair> {
         .collect()
 }
 
-/// FR-519-AC-1, AC-2, FR-383-AC-16 (TC-1314 rows 1 and 2; this is the
-/// FR-383-AC-16 check and it calls `protocol_view::causal_relation`): the relation derived from the
-/// emitted nodes holds the (source port, target port) pairs of the checked
+/// The controls of the checked tree in the order the nodes carry them: a
+/// control before the controls it holds, the cases and branches in label
+/// order, the `branch` and `case` positions themselves omitted.
+fn in_process_layout(protocol: &CheckedProtocol) -> Vec<Vec<String>> {
+    use qsl_forms::ProtocolNodeKind as Kind;
+    let tree = &protocol.controls;
+    let mut layout = Vec::new();
+    let mut pending = vec![tree.root().expect("a run root").node];
+    while let Some(id) = pending.pop() {
+        let control = tree.control(id).expect("a control of the tree");
+        if !matches!(control.kind, Kind::Branch | Kind::Case) {
+            layout.push(emitted_name(protocol, control));
+        }
+        let mut held = control.children.clone();
+        if matches!(control.kind, Kind::Choice | Kind::Parallel) {
+            held.sort_by_key(|child| tree.control(*child).expect("a child").name.clone());
+        }
+        pending.extend(held.into_iter().rev());
+    }
+    layout
+}
+
+/// FR-519-AC-1, FR-383-AC-16 (TC-1314 row 1; it calls
+/// `protocol_view::causal_relation`; FR-519-AC-2's "no second derivation" is
+/// not checked here): the relation derived from the emitted nodes holds the (source port, target port) pairs of the checked
 /// clause's compiled edge relation, every edge rule present, the `repeat` back
 /// edge included, strictly ascending and duplicate-free; the package read by IR
 /// and the package read by QSL's I2 reader derive the same relation.
-#[trace("FR-519-AC-1", "FR-519-AC-2", "FR-383-AC-16", "TC-1314")]
+#[trace("FR-519-AC-1", "FR-383-AC-16", "TC-1314")]
 #[test]
 fn the_causal_relation_equals_the_checked_clauses_edge_relation() {
     let fixture = fixture();
@@ -316,10 +338,14 @@ fn the_protocol_view_lists_the_nodes_the_checked_clause_rebuilds() {
         .all(|id| node(package, id).declaration.is_none()));
     assert_eq!(
         sorted(names(view.compensations())),
-        [
-            prefix("compensate", "PartialRefund"),
-            prefix("compensate", "Refund")
-        ]
+        sorted(
+            protocol
+                .obligations
+                .compensations
+                .iter()
+                .map(|template| prefix("compensate", &template.name))
+                .collect()
+        )
     );
     let [required] = view.requirements() else {
         panic!("one required temporal clause");
@@ -374,22 +400,10 @@ fn the_protocol_view_lists_the_nodes_the_checked_clause_rebuilds() {
             "Finalized",
         ]
     );
-    let in_process: BTreeSet<Vec<String>> = protocol
-        .controls
-        .controls
-        .iter()
-        .filter(|control| {
-            !matches!(
-                control.kind,
-                qsl_forms::ProtocolNodeKind::Branch | qsl_forms::ProtocolNodeKind::Case
-            )
-        })
-        .map(|control| emitted_name(protocol, control))
-        .collect();
     assert_eq!(
-        names(view.controls()).into_iter().collect::<BTreeSet<_>>(),
-        in_process,
-        "the controls are the checked control tree's"
+        names(view.controls()),
+        in_process_layout(protocol),
+        "the controls are the checked control tree's, in layout order"
     );
 
     // The activation rows are the in-process rows, node for node.
@@ -407,18 +421,166 @@ fn the_protocol_view_lists_the_nodes_the_checked_clause_rebuilds() {
     let [expected] = fixture.activation_rows.as_slice() else {
         panic!("one in-process row");
     };
-    assert_eq!(structural(&row.clause), expected.clause);
+    use quire_contract_model::{
+        CheckedProtocolActivation as Activation, CheckedProtocolActivationRow,
+    };
     assert_eq!(
-        structural(&row.required_temporal),
-        expected.required_temporal
+        CheckedProtocolActivationRow {
+            clause: structural(&row.clause),
+            activation: match &row.activation {
+                Activation::Origin => Activation::Origin,
+                Activation::Each { trigger } => Activation::Each {
+                    trigger: structural(trigger),
+                },
+            },
+            required_temporal: structural(&row.required_temporal),
+        },
+        *expected,
+        "the whole row: clause, activation trigger and required clause"
     );
-    assert!(matches!(
-        (&row.activation, &expected.activation),
-        (
-            quire_contract_model::CheckedProtocolActivation::Each { .. },
-            quire_contract_model::CheckedProtocolActivation::Each { .. }
-        )
-    ));
+}
+
+/// FR-519-AC-1 (TC-1314 row 1): a `parallel` whose join names only some of its
+/// branches gets a `join` edge from those branch bodies alone, and the relation
+/// still equals the checked clause's.
+#[trace("FR-519-AC-1", "FR-383-AC-16", "TC-1314")]
+#[test]
+fn a_parallel_joins_only_the_branches_its_join_names() {
+    let fixture = fixture_over(
+        "protocol Flow using P over (view: M::OrderView) on origin {\n\
+         role Orders on M::OrderView;\n\
+         run sequence Main {\n\
+         parallel Par { branch a sequence Ay { } branch b sequence Bee { } } join any [a];\n\
+         }\n\
+         finish End as (outcome: Boolean) { true };\n}",
+    );
+    let derived = derived_pairs(&fixture.admitted);
+    assert_eq!(
+        derived.iter().cloned().collect::<BTreeSet<_>>(),
+        in_process_pairs(&fixture.protocol)
+    );
+    let joins: Vec<_> = derived
+        .iter()
+        .filter(|pair| pair.4 == InEdge::Join)
+        .collect();
+    assert_eq!(
+        joins,
+        [&(
+            path(&["Flow", "run", "Main", "Par", "Ay"]),
+            InPort::Exit,
+            path(&["Flow", "run", "Main", "Par"]),
+            InPort::Exit,
+            InEdge::Join
+        )],
+        "only branch a is joined"
+    );
+    let branches = derived
+        .iter()
+        .filter(|pair| pair.4 == InEdge::Branch)
+        .count();
+    assert_eq!(branches, 2, "the fork enters both branches");
+}
+
+/// FR-519-AC-1 (TC-1314 row 1): an `await` anchored at a compensation takes its
+/// anchor edge from the enter port of the template's forward effect. The
+/// checker cannot yet build that source, so the fixture's `await` node is
+/// edited to name the `Refund` template.
+#[trace("FR-519-AC-1", "TC-1314")]
+#[test]
+fn an_await_after_a_compensation_is_anchored_at_the_forward_effect() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let clause_id = clause(package).node_id.clone();
+    let refund = by_name(package, "Refund").node_id.clone();
+    let forward = by_name(package, "Applied").node_id.clone();
+    let wait = by_name(package, "WaitEvent").node_id.clone();
+
+    let mut nodes = package.graph().nodes.clone();
+    let node = nodes.iter_mut().find(|node| node.node_id == wait).unwrap();
+    let CheckedTerm::Application { arguments, .. } = &mut node.body else {
+        panic!("an application body");
+    };
+    for argument in arguments {
+        let CheckedTerm::Binding { name, value } = argument else {
+            continue;
+        };
+        if &**name != "after" {
+            continue;
+        }
+        let CheckedTerm::Aggregate { members } = &mut **value else {
+            panic!("after is a group");
+        };
+        for member in members {
+            match member {
+                CheckedTerm::Binding { name, value } if &**name == "kind" => {
+                    let CheckedTerm::Literal { value, .. } = &mut **value else {
+                        panic!("a text kind");
+                    };
+                    *value = json!("compensation");
+                }
+                CheckedTerm::Binding { name, value } if &**name == "target" => {
+                    **value = CheckedTerm::reference(refund.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+    let anchors: Vec<_> = relation_over(&nodes, &clause_id)
+        .unwrap()
+        .edges()
+        .iter()
+        .filter(|edge| edge.kind == InEdge::AwaitAnchor)
+        .map(|edge| (edge.from.clone(), edge.to.clone()))
+        .collect();
+    use crate::protocol_view::PortRef;
+    assert_eq!(
+        anchors,
+        [(
+            PortRef {
+                node: forward,
+                port: InPort::Enter
+            },
+            PortRef {
+                node: wait,
+                port: InPort::Enter
+            }
+        )],
+        "the forward effect's enter port, not an event's exit port"
+    );
+}
+
+/// FR-519-AC-3 (TC-1314 row 3): a control held by two positions is refused
+/// rather than listed twice.
+#[trace("FR-519-AC-3", "TC-1314")]
+#[test]
+fn a_control_held_twice_is_refused_not_listed_twice() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let clause_id = clause(package).node_id.clone();
+    let main = by_name(package, "Main").node_id.clone();
+    let requested = by_name(package, "Requested").node_id.clone();
+    let mut nodes = package.graph().nodes.clone();
+    let node = nodes.iter_mut().find(|node| node.node_id == main).unwrap();
+    let CheckedTerm::Application { arguments, .. } = &mut node.body else {
+        panic!("an application body");
+    };
+    for argument in arguments {
+        if let CheckedTerm::Binding { name, value } = argument {
+            if &**name == "children" {
+                let CheckedTerm::Aggregate { members } = &mut **value else {
+                    panic!("children is a list");
+                };
+                members.push(CheckedTerm::reference(requested.clone()));
+            }
+        }
+    }
+    assert_eq!(
+        relation_over(&nodes, &clause_id).unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: clause_id,
+            member: "run"
+        }
+    );
 }
 
 /// FR-519-AC-4 (TC-1314 row 4): an absent id and a non-protocol node refuse
@@ -813,67 +975,132 @@ fn the_locus_and_the_clock_binding_are_the_packages_entries() {
     );
 }
 
-/// FR-519-AC-5, lock members: the locked source, the selected definition and
-/// the dependency selection, each equal to the wire's lock row, each refused
+/// FR-519-AC-5, lock members: the locked source, the profile selection and
+/// the dependency selection each equal the wire's lock row, and each is refused
 /// by name once absent.
 #[trace("FR-519-AC-5", "TC-1314")]
 #[test]
 fn the_lock_views_return_the_selections_and_refuse_an_absent_one() {
+    use quire_contract_model::CheckedSelectionRole as Role;
     let fixture = fixture();
     let lock = fixture.admitted.lock();
-    let locked = &lock.sources[0];
-    assert_eq!(source(lock, locked).unwrap(), locked);
-    let selected = &lock.profile_selections[0].definition;
-    assert_eq!(
-        definition(lock, selected).unwrap_err(),
-        ViewRefusal::MissingSelection {
-            member: "definition_selections",
-            name: selected.identity.to_string(),
-        },
-        "a profile selection is not a definition selection"
-    );
-    let mut with_definition = lock.clone();
-    with_definition.definition_selections.push(selected.clone());
-    assert_eq!(definition(&with_definition, selected).unwrap(), selected);
-    assert_eq!(
-        serde_json::to_value(&lock.sources).unwrap(),
-        fixture.wire["lock"]["sources"],
-        "the locked sources are the wire's"
-    );
+    let wire_lock = &fixture.wire["lock"];
 
-    let mut without = lock.clone();
-    without.sources.clear();
+    let wire_source = &wire_lock["sources"][0];
+    let identity = wire_source["identity"].as_str().unwrap();
     assert_eq!(
-        source(&without, locked).unwrap_err(),
+        serde_json::to_value(source(lock, identity).unwrap()).unwrap(),
+        *wire_source
+    );
+    assert_eq!(
+        source(lock, "no/such/source").unwrap_err(),
         ViewRefusal::MissingSelection {
             member: "sources",
-            name: locked.identity.to_string()
+            name: "no/such/source".into()
         }
     );
+
+    for (role, wire_role) in [
+        (Role::ProtocolProfile, "protocol_profile"),
+        (Role::TemporalProfile, "temporal_profile"),
+    ] {
+        let expected = wire_lock["profile_selections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["role"] == wire_role)
+            .expect("the wire selects the profile");
+        assert_eq!(
+            serde_json::to_value(selection(lock, role).unwrap()).unwrap(),
+            expected["definition"]
+        );
+    }
+    let mut without = lock.clone();
+    without.profile_selections.clear();
     assert_eq!(
-        dependency(lock, "acme/lib").unwrap_err(),
+        selection(&without, Role::TemporalProfile).unwrap_err(),
+        ViewRefusal::MissingSelection {
+            member: "profile_selections",
+            name: "TemporalProfile".into()
+        }
+    );
+
+    // A package that imports a library carries its dependency selection.
+    let middle = linked(
+        "test/b",
+        vec![import("test/units", super::dependency("test/units"))],
+    );
+    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", middle)])
+        .expect("the root links");
+    let emission = emit(&root);
+    let mut evidence = read_evidence(&emission);
+    crate::checked_v2::supply_closure(
+        &root,
+        &std::collections::BTreeMap::new(),
+        crate::V2ReadLimits::default(),
+        &mut evidence,
+    )
+    .expect("each dependency reads back");
+    let Read::Verified { admitted, .. } = read_with(&emission, &evidence) else {
+        panic!("the root reads back");
+    };
+    let wire_dependency = &wire(&emission)["lock"]["dependency_selections"][0];
+    assert_eq!(wire_dependency["identity"], "test/b");
+    assert_eq!(
+        serde_json::to_value(dependency(admitted.lock(), "test/b").unwrap()).unwrap(),
+        *wire_dependency
+    );
+    assert_eq!(
+        dependency(admitted.lock(), "test/units").unwrap_err(),
         ViewRefusal::MissingSelection {
             member: "dependency_selections",
-            name: "acme/lib".into()
-        }
-    );
-    let mut with_dependency = lock.clone();
-    with_dependency
-        .dependency_selections
-        .push(quire_contract_model::CheckedDependencySelection {
-            identity: "acme/lib".into(),
-        });
-    assert_eq!(
-        &*dependency(&with_dependency, "acme/lib").unwrap().identity,
-        "acme/lib"
+            name: "test/units".into()
+        },
+        "only the direct dependency is selected"
     );
 }
 
-/// FR-519-AC-6 (TC-1314 row 6): no function of the view module reads package
-/// bytes; the module names no byte reader, canonical form or JSON parser.
+/// FR-519-AC-6 (TC-1314 row 6): the resolved dependency graph of `qsl-package`
+/// (`Cargo.lock`) holds no `quire-protocol`, and the view module names no
+/// byte reader.
 #[trace("FR-519-AC-6", "TC-1314")]
 #[test]
-fn the_view_module_reads_no_package_bytes() {
+fn the_dependency_graph_holds_no_quire_protocol_and_the_views_read_no_bytes() {
+    use std::collections::BTreeMap;
+    let lock = include_str!("../../../../Cargo.lock");
+    let mut edges: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut current = "";
+    let mut listing = false;
+    for line in lock.lines() {
+        if let Some(name) = line.strip_prefix("name = \"") {
+            current = name.trim_end_matches('"');
+            edges.entry(current).or_default();
+        } else if line.starts_with("dependencies = [") {
+            listing = true;
+        } else if listing && line.trim() == "]" {
+            listing = false;
+        } else if listing {
+            let entry = line.trim().trim_matches(|c| c == '"' || c == ',');
+            edges
+                .entry(current)
+                .or_default()
+                .push(entry.split(' ').next().unwrap_or(entry));
+        }
+    }
+    assert!(
+        edges.contains_key("qsl-package"),
+        "the lock lists qsl-package"
+    );
+    let mut seen = BTreeSet::new();
+    let mut pending = vec!["qsl-package"];
+    while let Some(package) = pending.pop() {
+        if seen.insert(package) {
+            pending.extend(edges.get(package).into_iter().flatten().copied());
+        }
+    }
+    assert!(seen.len() > 10, "the closure is read: {}", seen.len());
+    assert!(!seen.contains("quire-protocol"), "{seen:?}");
+
     let text = include_str!("../../protocol_view.rs");
     for reader in [
         "read_checked_package",
@@ -884,6 +1111,4 @@ fn the_view_module_reads_no_package_bytes() {
     ] {
         assert!(!text.contains(reader), "protocol_view.rs names {reader}");
     }
-    let manifest = include_str!("../../../Cargo.toml");
-    assert!(!manifest.contains("quire-protocol"));
 }

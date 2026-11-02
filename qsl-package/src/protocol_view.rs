@@ -11,6 +11,12 @@
 //! `ExportRef`, an `ArtifactKind`, a `Revision`, a `Language` and a `Definition`
 //! table each fail to resolve.
 //!
+//! The control: the names the module does export resolve.
+//!
+//! ```
+//! use qsl_package::protocol_view::{ControlOperation, Delivery, ViewRefusal};
+//! ```
+//!
 //! ```compile_fail,E0432
 //! use qsl_package::protocol_view::ExportRef;
 //! ```
@@ -35,12 +41,13 @@
 //! layout states, naming the node and the member, and never returns a partial
 //! view or relation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model::{
     CheckedArtifactRef, CheckedDependencySelection, CheckedNodeId, CheckedOperationMember,
-    CheckedPackageLockV2, CheckedPackageV2, CheckedProtocolActivationRow, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedTerm, LiteralKind, TemporalBinding,
+    CheckedPackageLockV2, CheckedPackageV2, CheckedProtocolActivationRow, CheckedSelectionRole,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef, CheckedTerm, LiteralKind,
+    TemporalBinding,
 };
 use serde_json::Value;
 
@@ -293,13 +300,12 @@ struct Index<'p> {
 
 impl<'p> Index<'p> {
     fn new(package: &'p CheckedPackageV2) -> Self {
+        Self::of(&package.graph().nodes)
+    }
+
+    fn of(nodes: &'p [Node]) -> Self {
         Self {
-            nodes: package
-                .graph()
-                .nodes
-                .iter()
-                .map(|node| (&node.node_id, node))
-                .collect(),
+            nodes: nodes.iter().map(|node| (&node.node_id, node)).collect(),
         }
     }
 
@@ -551,13 +557,7 @@ pub fn protocol_view<'p>(
         Some(_) => return Err(malformed(&clause.node_id, "scheduling")),
     };
 
-    let mut controls = Vec::new();
-    let mut pending = vec![run];
-    while let Some(id) = pending.pop() {
-        controls.push(id);
-        let node = index.target(&clause.node_id, "run", id)?;
-        pending.extend(children(node)?.into_iter().rev());
-    }
+    let controls = control_tree(&index, clause)?;
     let activation = package
         .protocol_activation_relation()
         .into_iter()
@@ -579,6 +579,27 @@ pub fn protocol_view<'p>(
     })
 }
 
+/// The controls of `clause`'s `run` tree in layout order. A control held by two
+/// positions is refused: the tree holds each control once (QSpec FR-464
+/// "Membership and containment"), and the walk never revisits one.
+fn control_tree<'p>(
+    index: &Index<'p>,
+    clause: &'p Node,
+) -> Result<Vec<&'p CheckedNodeId>, ViewRefusal> {
+    let mut controls = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut pending = vec![single(clause, "run")?];
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            return Err(malformed(&clause.node_id, "run"));
+        }
+        controls.push(id);
+        let node = index.target(&clause.node_id, "run", id)?;
+        pending.extend(children(node)?.into_iter().rev());
+    }
+    Ok(controls)
+}
+
 /// The optional text argument `name`.
 fn optional_text<'n>(node: &'n Node, name: &'static str) -> Result<Option<&'n str>, ViewRefusal> {
     optional(node, name)?
@@ -597,14 +618,22 @@ pub fn causal_relation(
     package: &CheckedPackageV2,
     protocol: &CheckedNodeId,
 ) -> Result<CausalRelation, ViewRefusal> {
-    let view = protocol_view(package, protocol)?;
-    let index = Index::new(package);
+    relation_over(&package.graph().nodes, protocol)
+}
+
+/// [`causal_relation`] over the graph nodes themselves.
+pub(crate) fn relation_over(
+    nodes: &[CheckedSemanticNodeV2],
+    protocol: &CheckedNodeId,
+) -> Result<CausalRelation, ViewRefusal> {
+    let index = Index::of(nodes);
+    let clause = index.clause(protocol)?;
     let mut derive = Derive {
         index: &index,
         edges: Vec::new(),
     };
-    for &control in view.controls() {
-        derive.control(index.target(view.clause, "run", control)?)?;
+    for control in control_tree(&index, clause)? {
+        derive.control(index.target(&clause.node_id, "run", control)?)?;
     }
     let mut edges = derive.edges;
     edges.sort_unstable();
@@ -955,38 +984,40 @@ pub fn dependency<'l>(
         })
 }
 
-/// The locked source document `source`.
+/// The locked source document of `identity`.
 ///
 /// # Errors
 ///
 /// [`ViewRefusal::MissingSelection`] naming `sources`.
 pub fn source<'l>(
     lock: &'l CheckedPackageLockV2,
-    source: &CheckedSourceRef,
+    identity: &str,
 ) -> Result<&'l CheckedSourceRef, ViewRefusal> {
     lock.sources
         .iter()
-        .find(|locked| *locked == source)
+        .find(|locked| &*locked.identity == identity)
         .ok_or_else(|| ViewRefusal::MissingSelection {
             member: "sources",
-            name: source.identity.to_string(),
+            name: identity.to_owned(),
         })
 }
 
-/// The selected definition `definition`.
+/// The selection the lock makes for `role`: the profile selection a node's law
+/// names (`{ authority, identity }` of the definition only).
 ///
 /// # Errors
 ///
-/// [`ViewRefusal::MissingSelection`] naming `definition_selections`.
-pub fn definition<'l>(
-    lock: &'l CheckedPackageLockV2,
-    definition: &CheckedArtifactRef,
-) -> Result<&'l CheckedArtifactRef, ViewRefusal> {
-    lock.definition_selections
+/// [`ViewRefusal::MissingSelection`] naming `profile_selections`.
+pub fn selection(
+    lock: &CheckedPackageLockV2,
+    role: CheckedSelectionRole,
+) -> Result<&CheckedArtifactRef, ViewRefusal> {
+    lock.profile_selections
         .iter()
-        .find(|selected| *selected == definition)
+        .find(|selected| selected.role == role)
+        .map(|selected| &selected.definition)
         .ok_or_else(|| ViewRefusal::MissingSelection {
-            member: "definition_selections",
-            name: definition.identity.to_string(),
+            member: "profile_selections",
+            name: format!("{role:?}"),
         })
 }
