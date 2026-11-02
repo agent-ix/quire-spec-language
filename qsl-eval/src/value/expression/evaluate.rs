@@ -5381,4 +5381,109 @@ mod tests {
             Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
         );
     }
+    /// FR-265 records a decision for each authored `and`; the connectives a
+    /// float ordering lowers to carry none, so a claim's trail holds exactly
+    /// the authored decision.
+    #[trace("TC-1091", "FR-397-AC-12")]
+    #[test]
+    fn a_float_ordering_records_no_decision_but_an_authored_connective_does() {
+        use qsl_forms::BinaryOperator;
+        use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
+        use quire_exact::{FloatType, IeeeValue, IeeeWidth};
+        let package = qsl_package::CheckedPackage::link(
+            PackageDeclarations {
+                ieee_profile: Some(
+                    admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap(),
+                ),
+                ..PackageDeclarations::new(
+                    qsl_semantics::check::fixture_source(),
+                    "fixture".to_owned(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
+            }
+            .check(CheckingLimits::default())
+            .unwrap(),
+        );
+        let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
+        let ordering =
+            |operator| Expression::binary(operator, Expression::name("f"), Expression::name("g"));
+        let run = |expression: &Expression| {
+            let checked = package
+                .graph()
+                .check_clause_expression(
+                    vec![
+                        ("f".to_owned(), double.clone()),
+                        ("g".to_owned(), double.clone()),
+                    ],
+                    expression,
+                    None,
+                    qsl_forms::ClauseKind::Invariant,
+                    CheckMode::Kernel,
+                    CheckingLimits::default(),
+                )
+                .unwrap();
+            let objects = ObjectEnvironment::default();
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let trail = Trail::new(
+                super::super::s6a::separation::ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                None,
+            );
+            let (evaluation, trail) = Machine::new(
+                package.graph().scope(),
+                package.graph(),
+                &objects,
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(
+                checked.root(),
+                checked.slots(),
+                vec![
+                    Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000)),
+                    Value::Float(IeeeValue::binary64(0x4000_0000_0000_0000)),
+                ],
+            )
+            .unwrap();
+            assert!(matches!(
+                evaluation.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+            ));
+            let mut nodes = vec![checked.root()];
+            let mut decisions = Vec::new();
+            while let Some(node) = nodes.pop() {
+                let children: Vec<_> = match node.kind() {
+                    NodeKind::Connective(_, left, right) => vec![*left, *right],
+                    NodeKind::Not(operand) => vec![*operand],
+                    _ => Vec::new(),
+                };
+                if matches!(node.kind(), NodeKind::Connective(..)) {
+                    decisions.push(trail.decision(node.location()));
+                }
+                nodes.extend(children.into_iter().map(|child| node.at(child)));
+            }
+            decisions
+        };
+        // 1.0 < 2.0 and 1.0 <= 2.0: no connective carries a decision.
+        for operator in [BinaryOperator::Less, BinaryOperator::LessOrEqual] {
+            let decisions = run(&ordering(operator));
+            assert!(!decisions.is_empty(), "the ordering lowers to connectives");
+            assert!(decisions.iter().all(Option::is_none), "{decisions:?}");
+        }
+        // An authored `and` over two orderings records exactly its own
+        // decision, the value of its left operand.
+        let authored = Expression::binary(
+            BinaryOperator::And,
+            ordering(BinaryOperator::Less),
+            ordering(BinaryOperator::Less),
+        );
+        let decisions = run(&authored);
+        assert_eq!(decisions.iter().flatten().count(), 1, "{decisions:?}");
+        assert!(decisions.contains(&Some(true)));
+    }
 }

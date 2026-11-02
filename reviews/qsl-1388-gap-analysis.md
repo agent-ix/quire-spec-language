@@ -37,3 +37,13 @@ Every listed TC-193 row (F01, F02, F02b, F04b, F05, F11, F20, F34) has a test ta
 ## Verdict
 
 Not clean, with one low gap. All other listed ACs and TC-193 rows are asserted by tagged tests; no source code was found without an owning requirement (the OrderedKind::Float lowering arm is an unreachable fault and the SMT refusal arms are sound incomplete outcomes).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-397-AC-16 and AC-25 on main now state sqrt() and bitIdentical() refuse invalid_syntax at the closing parenthesis before the checker runs, so the zero-argument case needs no spec-lane routing. Tests zero_argument_intrinsic_calls_are_refused_by_the_parser and zero_argument_sqrt_is_a_parse_refusal_with_and_without_a_float_form assert it; a_supplied_library_never_replaces_an_ieee_intrinsic covers the conflicting-definition call-site refusal for sqrt and fma and went red with the check disabled. numericEqual and totalOrder call-site conflict is not separately tested, which is not a defect since the same code path serves every intrinsic. |
+
+## Verdict (round 1)
+
+No new gaps over the fix round. Every listed TC-193 row and AC remains asserted by a tagged test, and the new AC-25 and AC-26 tests are present and green.
