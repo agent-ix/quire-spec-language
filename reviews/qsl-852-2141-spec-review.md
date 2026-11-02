@@ -73,6 +73,11 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-026 | fixed | round 5: PR 2141's body states "MERGE ORDER: ... Merge #603 first, then this PR"; QSpec PR 603 is still open. |
 | FND-027 | fixed | round 5: FR-383-AC-51 now states only the ordinal values 0, 1, 2 with no gap and no restart; the order is in AC-52. |
 | FND-028 | fixed | round 5: TC-1070 declares Composed (protocol position 0), the capture order, run Main and attempts Tried 0 and Picked 1. New conflicts: FND-029, FND-030. |
+| FND-029 | fixed | round 6: the shared-origin vectors move to fixture E (FR-383-AC-49/50, FR-390-AC-52/53, C14/C14a: `target >= 0` is held by Refund's `retry.relation` and `trigger.guard`, both in fixture E's source) and E-C uses one `constraint` slot per attempt control, as FR-390's table gives. Slot order uses member names `registration_captures`, `trigger.guard`, `activation_captures`, `retry.relation`, `recovery.predicate`, `constraint`, all in FR-390's slot table. |
+| FND-030 | fixed | round 6: E-C is its own package with Composed at protocol position 0 and shares nothing with Refunds. |
+| FND-031 | fixed | round 6: the occurrence rule is normative (non-decreasing occurrence ordinal, consecutive ordinals within an occurrence) and FR-383-AC-54 and L9 test strictly increasing pairs. |
+| FND-032 | fixed | round 6: FR-390-AC-53 is split into AC-52, 53 and 54. Residual: FND-036. |
+| FND-033 | fixed | round 6: FR-383-AC-32 now names W, fixture E and protocol L. |
 
 ## New findings (disposition pass 2)
 
@@ -117,6 +122,20 @@ Head e2aaf6de4 on main c18814e85 (unchanged). quire validate: no errors. No id c
 | FND-032 | low | compound: FR-390-AC-53 and FR-383-AC-52 each join two claims | spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md |
 | FND-033 | low | other: FR-383-AC-32 covers W and L only, while L1 and the text apply it to fixture E | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 
-## Verdict (disposition pass 5)
+## Verdict (disposition pass 5, superseded by pass 6)
 
 FND-024 to FND-028 are fixed. FND-029 is a high defect: the fixture slots the shared-origin vectors need are not slots in FR-390's table. The PR is not mergeable until FND-029 is fixed and FND-030 resolved. It must also merge after QSpec PR 603 (stated in the PR body). Open questions for the planner, not defects: the origin-walk reading, assumption A2, and whether a compensation such as Refund counts as a protocol attempt in FR-322's origin.
+
+## New findings (disposition pass 6)
+
+Head c0eb6c213 on main 38f3020e8 (includes PR 2145). quire validate: no errors. No id collision with main or open PRs. Every FR-390-AC-28 to 56 and FR-383-AC-32 to 54 has a TC row; scope lines match. PR body states merge order (603 first), the attempt-position QSpec question and the coverage gap.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-034 | high | soundness: FR-383 gives every slot a protocol_attempt origin, but only attempt controls and compensate templates have an attempt position; other slots (clause, role, channel, effect, commit, finish, choice, check) and all of protocol L have none | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-035 | low | ambiguous: E-C Tried and Picked are attempt controls with no result binder declared | spec/test-cases/TC-1070-evaluate-the-expressions-of-protocol-nodes-from-a-checked-package.md |
+| FND-036 | low | compound: FR-383-AC-52 joins row counts and ordinals; AC-53 repeats AC-52's ordinals | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+
+## Verdict (disposition pass 6)
+
+FND-029 to FND-033 are fixed. FND-034 is a high defect: fixture L (in FR-383-AC-32) has no attempt-bearing node, and fixture E's effect, commit and finish constraints have none, so the origin the spec requires does not exist for those slots. Not mergeable until FND-034 is fixed. It must also merge after QSpec PR 603. Open questions: the origin-walk reading, whether a compensation is an attempt position in FR-322 (in the PR body), and whether the producer-defect classification `invalid_package`/`invalid-value` with a pointer fits as evidence on `ViewFailure::Unsupported`.
