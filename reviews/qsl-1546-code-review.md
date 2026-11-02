@@ -64,6 +64,12 @@ ruling, plus low findings. FND-001 depends on the spec ruling in SR-2160003 FND-
 | FND-012 | low | `SelectionAxis` gained four variants (`clock.kind`, `clock.name`, `clause.binding`, `package.nodes`) that the merged FR-518 Outputs axis list (twelve names) does not contain, so `Selection::check` can return an axis the spec never names; `clock.name`, `clause.binding` and `package.nodes` have no corpus case. Carry the four names into the spec PR. | src/checked_handoff/selection.rs:SelectionAxis; FR-518 Outputs | spec-code mismatch pending spec PR | missing-requirement |
 | FND-013 | low | `tree::claim_and_move` creates the destination with `create_dir` and then renames the temporary tree onto that empty directory. POSIX allows it; on Windows renaming a directory onto an existing one fails, so `write` could never succeed there, and a crash between the two calls leaves an empty directory at the requested path that every later `write` refuses as `Exists`. | src/checked_handoff/tree.rs:claim_and_move | implementation-bug-despite-evidence |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-014 | medium | The sidecar gained a `compensations` member (node, name and expected `TemporalBinding` row per `compensate` template), `Selection::check` compares those rows and counts them in the row total, `ClockSelection` can name a compensation template, and the event-position package has four binding rows (two clauses, two compensations; six rows over the three packages). Merged FR-517 states none of it: the sidecar paragraph lists per-clause rows only, FR-517-AC-3 and TC-1312 row 3 say three rows (one per clock kind), and AC-2 compares clause rows only. The tests now assert four rows, so merged FR-517-AC-3 and TC-1312 row 3 contradict them. Spec amendment first (FR-517 sidecar paragraph, Inputs `temporal_selections`, recipe table temporal row, AC-2, AC-3, TC-1312 row 3); FR-518 needs no change. | src/checked_handoff/selection.rs:CompensationRow,check; tests/it/checked_handoff.rs; FR-517 sidecar paragraph, AC-2, AC-3 | spec-code mismatch pending spec PR | missing-requirement |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -78,6 +84,11 @@ ruling, plus low findings. FND-001 depends on the spec ruling in SR-2160003 FND-
 | FND-008 | fixed | The AC-4 test now reads the cases from the written directory and asserts the axes and the `unknown_profile` refusal; the rational test (ignored, QSL-1522) asserts both rationals in the package; the AC-9 tag is removed from the ignored test so no running coverage is claimed. |
 | FND-009 | fixed | Distinct axes `clock.name`, `clause.binding`, `clock.kind`, `package.nodes`; the unused `_package` parameter is gone; the silent pass without a `declaration` is commented as unreachable on a temporal clause node and shown by a test. The four new names are FND-012. |
 | FND-010 | fixed | `claim_and_move` claims the destination with an atomic `create_dir`; `an_existing_directory_...` leaves an existing empty directory as it was; reviewer mutation removing the temp-tree cleanup still turns that test red. New residue is FND-013. |
+| FND-004 | fixed | The merged-pending FR-517 note now states the sidecar records the trigger binder's name of an `on each` activation, not its type, and `derive` carries a comment saying so; code and spec agree. |
+| FND-006 | fixed | Two doctests on `checked_handoff` (a `no_run` downstream consumer using only `write`, `Selection::read` and `Selection::check`; a `compile_fail` for `tree::Files`) pass: `cargo test --features checked-handoff --doc checked_handoff` 2 passed. FR-518-AC-8 still counts `pub const` lines (low, accepted). |
+| FND-011 | fixed | Spec PR 2161 is merged (FR-518 rows 8 and 13 reader cases, 21 reader and 10 selection, AC-11 gated on IR-1278, AC-12, TC-1313 rows 2 to 4 and 11); the head is rebased on it and `every_case_gets_the_refusal_of_its_row`, the manifest test (31 cases) and the AC-4 and AC-12 tests pass against it. |
+| FND-012 | fixed | The merged FR-518 names the sixteen axes including `clock.kind`, `clock.name`, `clause.binding`, `package.nodes`; `SelectionAxis` has the same sixteen. |
+| FND-013 | fixed | `claim_and_move` is gone: the move is a rename onto a path that does not exist, so a crash leaves the finished tree or nothing; POSIX reliance is documented (macOS and Linux only) and `crash_residue_does_not_block_a_write_and_leaves_no_claim` passes. The residual race with an empty directory is stated in the doc comment. |
 
 ## Review method
 

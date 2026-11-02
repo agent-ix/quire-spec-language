@@ -67,6 +67,9 @@ amendments (dropped coverage, stale TC-1313) is not resolved.
 | FND-003 | deferred | Row 8 mutation text and the Verification status paragraph are in the merged text and change in the spec PR. |
 | FND-004 | fixed | The build-log sentence is no longer in this PR. |
 | FND-005 | fixed | The FR-517 note now lists each departure with its ticket (QSL-1555 to QSL-1558, QSL-1522); inventory.json is covered by the ignored full-list test (QSL-1512). |
+| FND-001 | fixed | Spec PR 2161 merged: TC-1313 rows 2 to 4 and 11 match the amended FR-518 (rows read from the manifest, row 4 over rows 12 and 29, row 11 gated on IR-1278). |
+| FND-002 | fixed | FR-518 as merged keeps row 12 a selection case, makes rows 8 and 13 reader cases with successors FR-518-AC-11 (IR-1278) and AC-12, and lists the 16 axes; the revision and name properties have a named test or gated test. |
+| FND-003 | fixed | Row 8 text and the verification paragraph are amended in the merged FR-518. |
 
 ## Review method
 

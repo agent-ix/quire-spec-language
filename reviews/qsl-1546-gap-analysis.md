@@ -51,6 +51,7 @@ Coverage gaps are tracked except FND-001 (inventory) and FND-003.
 | FND-002 | deferred | AC-9 is untagged until IR-1273 lands; the real-reader half of AC-1 stays an ignored test; the 28m double remains a double. Tracked by IR-1273. |
 | FND-003 | fixed | `a_sidecar_that_does_not_parse_is_refused` (wrong format, malformed, unknown field) and `bad_requests_get_their_own_error` (UnknownClause, DuplicateClause, Label, Exists); Dependency, Unnameable and Encode remain unreachable from a request. |
 
+
 ## Verification
 
 Read `quire matrix` expectations from the AC tables by hand (tags `#[trace("FR-517-AC-n", "TC-1312")]`); ran the

@@ -1338,6 +1338,23 @@ fn each_sidecar_value_is_compared_on_its_own_axis() {
         }),
         Some(A::ClauseBinding)
     );
+    // A `compensations` value of the sidecar is compared on its own axis too.
+    assert_eq!(
+        edit(&|v| v["compensations"][0]["binding"]["clock_name"] = "other".into()),
+        Some(A::ClockName)
+    );
+    assert_eq!(
+        edit(&|v| v["compensations"][1]["binding"]["clock"]["sequence_authority"] = "other".into()),
+        Some(A::ClockSequenceAuthority)
+    );
+    assert_eq!(
+        edit(&|v| v["compensations"][0]["node"]["ordinal"] = 7.into()),
+        Some(A::ClauseBinding)
+    );
+    assert_eq!(
+        edit(&|v| v["compensations"][0]["binding"] = Value::Null),
+        Some(A::ClauseBinding)
+    );
     assert_eq!(
         edit(&|v| v["clauses"][1]["node"]["ordinal"] = 7.into()),
         Some(A::ClauseNode)
