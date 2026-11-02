@@ -46,7 +46,7 @@ use crate::result::ReplayResult;
 use crate::spine::kernel_undefined_reason;
 use crate::spine::{
     CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
-    FrontEndFailure, ParsedSource, RunRefusal, SpineStage,
+    FrontEndFailure, ParsedUnitSource, RunRefusal, SpineStage,
 };
 use crate::statistical::{self, Decision, StatisticalVerdict};
 use crate::ReplayRefusal;
@@ -1253,7 +1253,7 @@ impl OutcomeDocument {
     /// The document of a `parse` outcome: success at S2, with no items,
     /// diagnostics, artifacts or evaluation result; a failure uses the
     /// front-end's category, stage and diagnostic without running a stage.
-    pub fn from_parse(result: &Result<Staged<ParsedSource>, FrontEndFailure>) -> Self {
+    pub fn from_parse(result: &Result<Staged<ParsedUnitSource>, FrontEndFailure>) -> Self {
         match result {
             Ok(_) => Self::new(Operation::Parse, Some(OutcomeStage::S2), Category::Success),
             Err(failure) => Self::from_failure(Operation::Parse, failure),

@@ -26,7 +26,9 @@
 //! state object as `self`, as a `terminal when` predicate does (FR-124): the
 //! one object type the model's populations range over.
 
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList, With,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
@@ -913,13 +915,19 @@ pub(crate) struct UrgencyPredicate {
     pub(crate) node: Option<NodeKey>,
 }
 
-impl std::fmt::Debug for UrgencyPredicate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for UrgencyPredicate {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self { sites, node } = self;
         f.debug_struct("UrgencyPredicate")
             .field("sites", &sites)
-            .field("node", &node.as_ref().map(NodeKeyDebug))
+            .field("node", &node.as_ref().map(|key| NodeKeyDebug(key, table)))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for UrgencyPredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -936,7 +944,7 @@ pub(crate) fn urgency_site(model: &str, index: usize, alternative: usize) -> Str
 /// nodes"): one [`GuardNodes`] for each guarded operation, one
 /// [`ResetNodes`] for each reset, one [`InvariantNodes`] for each time
 /// invariant, each in the order the model lists them.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct TimedClauseNodes {
     /// The guards, in [`TimedModel::guards`] order.
     pub guards: Vec<GuardNodes>,
@@ -946,6 +954,8 @@ pub struct TimedClauseNodes {
     /// The time invariants, in [`TimedModel::invariants`] order.
     pub invariants: Vec<InvariantNodes>,
 }
+
+qsl_foundation::debug_with_struct!(TimedClauseNodes, "TimedClauseNodes" { guards: with, resets: with, invariants: with });
 
 /// The nodes of one operation's guard.
 #[derive(Clone, Eq, PartialEq)]
@@ -958,18 +968,24 @@ pub struct GuardNodes {
     pub parts: Vec<PartNodes>,
 }
 
-impl std::fmt::Debug for GuardNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for GuardNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             operation,
             span,
             parts,
         } = self;
         f.debug_struct("GuardNodes")
-            .field("operation", &NodeKeyDebug(operation))
+            .field("operation", &NodeKeyDebug(operation, table))
             .field("span", &span)
-            .field("parts", &parts)
+            .field("parts", &With(parts, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for GuardNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -982,21 +998,27 @@ pub struct PartNodes {
     pub constraints: Vec<ConstraintNodes>,
 }
 
-impl std::fmt::Debug for PartNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for PartNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             predicate,
             constraints,
         } = self;
         f.debug_struct("PartNodes")
-            .field("predicate", &NodeKeyDebug(predicate))
+            .field("predicate", &NodeKeyDebug(predicate, table))
             .field("constraints", &constraints)
             .finish()
     }
 }
 
+impl std::fmt::Debug for PartNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
 /// The nodes of one clock constraint.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ConstraintNodes {
     /// What it constrains.
     pub target: ConstraintTargetNodes,
@@ -1007,6 +1029,8 @@ pub struct ConstraintNodes {
     /// The constraint's span as written.
     pub span: Span,
 }
+
+qsl_foundation::debug_with_struct!(ConstraintNodes, "ConstraintNodes" { target: with, comparison: plain, bound: plain, span: plain });
 
 /// What a clock constraint constrains.
 #[derive(Clone, Eq, PartialEq)]
@@ -1029,8 +1053,8 @@ pub enum ConstraintTargetNodes {
     },
 }
 
-impl std::fmt::Debug for ConstraintTargetNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for ConstraintTargetNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Place {
                 clock,
@@ -1039,18 +1063,24 @@ impl std::fmt::Debug for ConstraintTargetNodes {
             } => f
                 .debug_struct("Place")
                 .field("clock", &clock)
-                .field("owner", &NodeKeyDebug(owner))
-                .field("slots", &NodeList(slots.iter()))
+                .field("owner", &NodeKeyDebug(owner, table))
+                .field("slots", &NodeList(slots.iter(), table))
                 .finish(),
             Self::Parameter {
                 operation,
                 parameter,
             } => f
                 .debug_struct("Parameter")
-                .field("operation", &NodeKeyDebug(operation))
+                .field("operation", &NodeKeyDebug(operation, table))
                 .field("parameter", &parameter)
                 .finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for ConstraintTargetNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -1067,8 +1097,8 @@ pub struct ResetNodes {
     pub span: Span,
 }
 
-impl std::fmt::Debug for ResetNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for ResetNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             operation,
             target,
@@ -1076,11 +1106,17 @@ impl std::fmt::Debug for ResetNodes {
             span,
         } = self;
         f.debug_struct("ResetNodes")
-            .field("operation", &NodeKeyDebug(operation))
-            .field("target", &target)
+            .field("operation", &NodeKeyDebug(operation, table))
+            .field("target", &With(target, table))
             .field("value", &value)
             .field("span", &span)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for ResetNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -1108,8 +1144,8 @@ pub enum ResetTargetNodes {
     },
 }
 
-impl std::fmt::Debug for ResetTargetNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for ResetTargetNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Place {
                 clock,
@@ -1120,16 +1156,22 @@ impl std::fmt::Debug for ResetTargetNodes {
             } => f
                 .debug_struct("Place")
                 .field("clock", &clock)
-                .field("owner", &NodeKeyDebug(owner))
-                .field("slots", &NodeList(slots.iter()))
-                .field("binders", &NodeList(binders.iter()))
-                .field("condition", &NodeKeyDebug(condition))
+                .field("owner", &NodeKeyDebug(owner, table))
+                .field("slots", &NodeList(slots.iter(), table))
+                .field("binders", &NodeList(binders.iter(), table))
+                .field("condition", &NodeKeyDebug(condition, table))
                 .finish(),
             Self::Parameter { parameter } => f
                 .debug_struct("Parameter")
                 .field("parameter", &parameter)
                 .finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for ResetTargetNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -1144,18 +1186,24 @@ pub struct InvariantNodes {
     pub span: Span,
 }
 
-impl std::fmt::Debug for InvariantNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for InvariantNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             predicate,
             bounds,
             span,
         } = self;
         f.debug_struct("InvariantNodes")
-            .field("predicate", &NodeKeyDebug(predicate))
+            .field("predicate", &NodeKeyDebug(predicate, table))
             .field("bounds", &bounds)
             .field("span", &span)
             .finish()
+    }
+}
+
+impl std::fmt::Debug for InvariantNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -1212,8 +1260,8 @@ pub struct TimedModel {
     place_nodes: Vec<NodeKey>,
 }
 
-impl std::fmt::Debug for TimedModel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for TimedModel {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             model,
             clocks,
@@ -1237,11 +1285,17 @@ impl std::fmt::Debug for TimedModel {
             .field("resets", &resets)
             .field("invariants", &invariants)
             .field("urgency", &urgency)
-            .field("urgency_predicates", &urgency_predicates)
+            .field("urgency_predicates", &With(urgency_predicates, table))
             .field("sites", &sites)
-            .field("clause_nodes", &clause_nodes)
-            .field("place_nodes", &NodeList(place_nodes.iter()))
+            .field("clause_nodes", &With(clause_nodes, table))
+            .field("place_nodes", &NodeList(place_nodes.iter(), table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for TimedModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

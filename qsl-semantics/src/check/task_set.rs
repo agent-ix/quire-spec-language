@@ -23,7 +23,7 @@
 //! its bound to the time dimension's root unit, and the claim is never
 //! observable because the set is refused.
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use std::collections::BTreeMap;
 
 use qsl_forms::{
@@ -183,8 +183,8 @@ pub struct TaskSetUnit {
     pub dimension: NodeKey,
 }
 
-impl std::fmt::Debug for TaskSetUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for TaskSetUnit {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             name,
             node,
@@ -192,14 +192,20 @@ impl std::fmt::Debug for TaskSetUnit {
         } = self;
         f.debug_struct("TaskSetUnit")
             .field("name", &name)
-            .field("node", &NodeKeyDebug(node))
-            .field("dimension", &NodeKeyDebug(dimension))
+            .field("node", &NodeKeyDebug(node, table))
+            .field("dimension", &NodeKeyDebug(dimension, table))
             .finish()
     }
 }
 
+impl std::fmt::Debug for TaskSetUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
 /// A checked task set for one preemptive uniprocessor (QSL FR-246).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct TaskSet {
     /// The task set's name.
     pub name: String,
@@ -210,6 +216,8 @@ pub struct TaskSet {
     /// The span of the declaration.
     pub span: Span,
 }
+
+qsl_foundation::debug_with_struct!(TaskSet, "TaskSet" { name: plain, unit: with, tasks: plain, span: plain });
 
 /// A scheduling policy (QSL FR-246).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -294,12 +302,14 @@ impl CheckedScheduleClaim {
 
 /// The unit's checked task sets and the claims over them (QSL FR-246), in
 /// source order.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct CheckedTaskSets {
     task_sets: Vec<TaskSet>,
     claims: Vec<CheckedScheduleClaim>,
     releases: Vec<Release>,
 }
+
+qsl_foundation::debug_with_struct!(CheckedTaskSets, "CheckedTaskSets" { task_sets: with, claims: plain, releases: plain });
 
 impl CheckedTaskSets {
     /// Every checked task set, in source order.

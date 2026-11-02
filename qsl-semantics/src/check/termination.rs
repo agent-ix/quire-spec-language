@@ -31,7 +31,7 @@ impl Element {
 }
 
 /// What termination needs of one checked function.
-pub(crate) struct Member<'a> {
+pub(crate) struct TerminationSubject<'a> {
     pub(crate) name: &'a str,
     pub(crate) parameters: &'a [(String, ValueType)],
     pub(crate) measure: Option<CheckedNode<'a>>,
@@ -46,7 +46,7 @@ fn unwrap_coerce(node: CheckedNode<'_>) -> CheckedNode<'_> {
 }
 
 /// The measure elements, `None` at a position that is not an element.
-fn elements(member: &Member<'_>, measure: CheckedNode<'_>) -> Vec<Option<Element>> {
+fn elements(member: &TerminationSubject<'_>, measure: CheckedNode<'_>) -> Vec<Option<Element>> {
     let parts: Vec<CheckedNode<'_>> = match measure.kind() {
         NodeKind::Tuple { arguments, .. } => arguments.iter().map(|id| measure.at(*id)).collect(),
         _ => vec![measure],
@@ -171,7 +171,7 @@ struct Frame {
 
 /// Tarjan's strongly-connected-component traversal over the call graph.
 struct Tarjan<'m, 'a> {
-    members: &'m [Member<'a>],
+    members: &'m [TerminationSubject<'a>],
     /// Visit order of each member, `None` until visited.
     order: Vec<Option<usize>>,
     /// Lowest visit order reachable from each member through the members
@@ -185,7 +185,7 @@ struct Tarjan<'m, 'a> {
 }
 
 impl<'m, 'a> Tarjan<'m, 'a> {
-    fn new(members: &'m [Member<'a>]) -> Self {
+    fn new(members: &'m [TerminationSubject<'a>]) -> Self {
         let count = members.len();
         Self {
             members,
@@ -292,7 +292,7 @@ impl<'m, 'a> Tarjan<'m, 'a> {
 /// depth does not grow with the length of a call chain: FR-146, "a host
 /// stack overflow is not a Complete-V1 outcome". A callee index with no
 /// member has no calls, so it lies on no cycle and is skipped.
-fn recursive_components(members: &[Member<'_>]) -> Components {
+fn recursive_components(members: &[TerminationSubject<'_>]) -> Components {
     let mut tarjan = Tarjan::new(members);
     for root in 0..members.len() {
         if tarjan.order_of(root).is_none() {
@@ -306,14 +306,17 @@ fn recursive_components(members: &[Member<'_>]) -> Components {
 }
 
 /// Check every recursive component, in first-declaration order.
-pub(crate) fn check(members: &[Member<'_>]) -> Vec<CheckRefusal> {
+pub(crate) fn check(members: &[TerminationSubject<'_>]) -> Vec<CheckRefusal> {
     check_components(members, &recursive_components(members))
 }
 
 /// The refusals of `components`, one at most per component, in order. The
 /// refusal-cycle search shares one parent buffer across components, so the
 /// whole pass is O(V + E).
-fn check_components(members: &[Member<'_>], components: &Components) -> Vec<CheckRefusal> {
+fn check_components(
+    members: &[TerminationSubject<'_>],
+    components: &Components,
+) -> Vec<CheckRefusal> {
     let mut parent: Vec<Option<usize>> = vec![None; members.len()];
     let mut refusals = Vec::new();
     for component in components.iter() {
@@ -334,7 +337,10 @@ fn check_components(members: &[Member<'_>], components: &Components) -> Vec<Chec
 /// Operation bodies and contract clauses have no `decreases` form, so this
 /// is checked ahead of, and instead of, [`check_component`]; an ordinary
 /// (all-[`EdgeKind::Ordinary`]) component is entirely unaffected.
-fn dispatch_cycle_refusal(members: &[Member<'_>], component: &Component) -> Option<CheckRefusal> {
+fn dispatch_cycle_refusal(
+    members: &[TerminationSubject<'_>],
+    component: &Component,
+) -> Option<CheckRefusal> {
     let mut located: Vec<((usize, usize), Location)> = component
         .members
         .iter()
@@ -377,7 +383,7 @@ fn dispatch_cycle_refusal(members: &[Member<'_>], component: &Component) -> Opti
 /// only this component's entries are cleared and written, so one search
 /// costs O(component), not O(V).
 fn path(
-    members: &[Member<'_>],
+    members: &[TerminationSubject<'_>],
     component: &Component<'_>,
     parent: &mut [Option<usize>],
     from: usize,
@@ -427,7 +433,7 @@ fn path(
 type Failure<'m> = (usize, &'m CallSite, MeasureObligation);
 
 fn check_component(
-    members: &[Member<'_>],
+    members: &[TerminationSubject<'_>],
     component: &Component<'_>,
     parent: &mut [Option<usize>],
 ) -> Result<(), CheckRefusal> {
@@ -450,7 +456,7 @@ fn check_component(
 
 /// The first failed obligation of `component`, in FR-146 check order.
 fn component_obligations<'m>(
-    members: &'m [Member<'_>],
+    members: &'m [TerminationSubject<'_>],
     component: &Component<'_>,
 ) -> Result<(), Failure<'m>> {
     let edges: Vec<(usize, &CallSite)> = component
@@ -585,7 +591,7 @@ mod tests {
     /// The earlier component partition, kept only as this module's
     /// differential oracle: a reachability set per member, then an
     /// all-pairs mutual-reachability filter, O(V^2) time and memory.
-    fn closure_components(members: &[Member<'_>]) -> Vec<Vec<usize>> {
+    fn closure_components(members: &[TerminationSubject<'_>]) -> Vec<Vec<usize>> {
         let count = members.len();
         let callees = |caller: usize| -> BTreeSet<usize> {
             members
@@ -629,7 +635,7 @@ mod tests {
 
     /// `check` as it was before Tarjan's components: the oracle partition, then the
     /// same per-component obligations.
-    fn closure_check(members: &[Member<'_>]) -> Vec<CheckRefusal> {
+    fn closure_check(members: &[TerminationSubject<'_>]) -> Vec<CheckRefusal> {
         check_components(
             members,
             &Components::new(closure_components(members), members.len()),
@@ -750,11 +756,11 @@ mod tests {
         calls
     }
 
-    fn members<'a>(names: &'a [String], calls: &'a [Vec<CallSite>]) -> Vec<Member<'a>> {
+    fn members<'a>(names: &'a [String], calls: &'a [Vec<CallSite>]) -> Vec<TerminationSubject<'a>> {
         names
             .iter()
             .zip(calls)
-            .map(|(name, calls)| Member {
+            .map(|(name, calls)| TerminationSubject {
                 name,
                 parameters: &[],
                 measure: None,
@@ -831,12 +837,12 @@ mod tests {
         parameters: &'a [(String, ValueType)],
         measures: &'a [Option<CheckedBody>],
         calls: &'a [Vec<CallSite>],
-    ) -> Vec<Member<'a>> {
+    ) -> Vec<TerminationSubject<'a>> {
         names
             .iter()
             .zip(measures)
             .zip(calls)
-            .map(|((name, measure), calls)| Member {
+            .map(|((name, measure), calls)| TerminationSubject {
                 name,
                 parameters,
                 measure: measure.as_ref().map(CheckedBody::root),
@@ -984,10 +990,10 @@ mod scaling {
                     }]
                 })
                 .collect();
-            let members: Vec<Member<'_>> = names
+            let members: Vec<TerminationSubject<'_>> = names
                 .iter()
                 .zip(&calls)
-                .map(|(name, calls)| Member {
+                .map(|(name, calls)| TerminationSubject {
                     name,
                     parameters: &[],
                     measure: None,

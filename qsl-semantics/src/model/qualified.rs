@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
+use crate::model::accounting::{Charge, ChargePoint, Meter, NormalizationIncomplete};
 use crate::model::admitted::AdmittedPackage;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::key::EffectiveId;
@@ -67,7 +67,7 @@ pub enum ResolveFailure {
     /// condition, in table order.
     Connection(Vec<ConditionFailure>),
     /// A charge was denied.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
 }
 
 fn unresolved(name: &str, segment: usize, reason: &str) -> ResolveFailure {

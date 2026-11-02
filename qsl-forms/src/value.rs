@@ -223,7 +223,16 @@ fn function_like(
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
-    let identifiers = tokens_of(&items, TokenKind::Identifier);
+    let mut identifiers = tokens_of(&items, TokenKind::Identifier);
+    // `Text` is normally a reserved type keyword. FR-091-AC-69 also permits
+    // a function with that name so a `Text(...)` use can be refused as an
+    // ambiguous native constructor call during checking.
+    if let Some(name) = items.iter().find_map(|item| match item {
+        Item::Token(token) if token.spelling() == b"Text" => Some(*token),
+        Item::Token(_) | Item::Node(_) => None,
+    }) {
+        identifiers.insert(0, name);
+    }
     let (name, alias) = match identifiers.as_slice() {
         [name] => (*name, None),
         [name, alias] => (*name, Some(*alias)),
@@ -629,7 +638,8 @@ pub(crate) fn type_form(cst: &LosslessCst, root: &CstNode) -> Result<TypeForm, F
 }
 
 /// The argument nodes of a type-form node: a `TypeReference`'s element or
-/// payload `TypeReference`s, or a `Reference<Q>`'s `QualifiedName`. A
+/// payload `TypeReference`s, including a `Quantity<U, C>` carrier, or a
+/// `Reference<Q>`'s `QualifiedName`. A
 /// `TypeReference` headed by a qualified name, and a bare `QualifiedName`,
 /// have none.
 fn type_arguments<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<&'c CstNode> {
@@ -1724,6 +1734,11 @@ impl<'c> Mapping<'c> {
         operands.extend(nodes_of(items, Production::HyperExpression));
         match items.first() {
             Some(Item::Node(child)) => self.primary_node(task, child),
+            Some(Item::Token(token)) if token.spelling() == b"Text" => self.with_children(
+                Shape::Call(NameForm::new("Text", token.span())),
+                &task,
+                operands,
+            ),
             Some(Item::Token(token)) => match token.kind() {
                 TokenKind::Integer => {
                     let value = integer(&text(token, node)?, node)?;

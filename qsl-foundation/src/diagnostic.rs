@@ -785,9 +785,9 @@ pub fn refusal_record(cause: &dyn CatalogCoded, locus: Option<Locus>) -> Option<
     ))
 }
 
-/// FR-096-AC-8: a kernel [`quire_exact::Refusal`] as O-17's
-/// [`RefusalRecord`] raised at `locus`, for each of the kernel causes
-/// the key table gives a code and fields. The code and cause are the
+/// FR-096-AC-8 and FR-497-AC-7: a kernel [`quire_exact::Refusal`] as O-17's
+/// [`RefusalRecord`] raised at `locus`, for each kernel cause the key table
+/// gives a code and fields. The code and cause are the
 /// refusal's own [`quire_exact::Refusal::code`]/[`cause`](quire_exact::Refusal::cause);
 /// the fields are read from the variant, never from a message: each domain
 /// or width is spelled exactly as the catalog spells it (FR-096 "A kernel

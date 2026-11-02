@@ -26,9 +26,9 @@ use super::refusal::{CheckCause, CheckRefusal};
 use qsl_forms::{BuiltinType, NameForm, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, DecimalType, EffectiveId, FloatType,
-    IeeeWidth, IllTypedCause, Integer, IntegerInterval, RationalDomain, RoundingMode, TextProfile,
-    TextType, UnitId, ValueType,
+    CardinalityBound, CarriedQuantityType, CollectionKind, CollectionType, DecimalType,
+    EffectiveId, FloatType, IeeeWidth, IllTypedCause, Integer, IntegerInterval, QuantityCarrier,
+    RationalDomain, RoundingMode, TextProfile, TextType, UnitId, ValueType,
 };
 use quire_semantic_value::location::Location;
 
@@ -362,7 +362,10 @@ fn resolve_builtin<'f>(
     let leaf = match builtin {
         BuiltinType::Boolean => Ok(ValueType::Boolean),
         BuiltinType::Integer => Ok(ValueType::Integer),
-        BuiltinType::Int => int_interval(form).map(ValueType::Int),
+        BuiltinType::Int => {
+            optional_bounds(form, 2)?;
+            int_interval(form).map(ValueType::Int)
+        }
         BuiltinType::Rational => RationalDomain::new(interval(form, 0)?, interval(form, 2)?)
             .map(ValueType::Rational)
             .map_err(|_| fault(form, TypeFormFault::DenominatorBelowOne)),
@@ -417,24 +420,67 @@ fn resolve_builtin<'f>(
                 })
         }
         BuiltinType::Quantity => {
-            let target = only_argument(form)?;
+            let (target, carrier) = match form.arguments.as_slice() {
+                [target] => (target, None),
+                [target, carrier] => (target, Some(carrier)),
+                _ => return Err(malformed(form)),
+            };
             let TypeFormHead::Name(name) = &target.head else {
                 return Err(malformed(form));
             };
-            names
-                .unit_named(&name.name)
-                .map(ValueType::Quantity)
-                .ok_or_else(|| {
-                    let cause = if name.is_qualified() {
-                        TypeFormFault::MissingQualifiedName(name.clone())
-                    } else {
-                        TypeFormFault::MissingName(name.name.clone())
-                    };
-                    fault(target, cause)
-                })
+            let unit = names.unit_named(&name.name).ok_or_else(|| {
+                let cause = if name.is_qualified() {
+                    TypeFormFault::MissingQualifiedName(name.clone())
+                } else {
+                    TypeFormFault::MissingName(name.name.clone())
+                };
+                fault(target, cause)
+            })?;
+            match carrier {
+                None => Ok(ValueType::Quantity(unit)),
+                Some(carrier) => {
+                    carried_quantity_type(names, unit, carrier).map(ValueType::carried_quantity)
+                }
+            }
         }
     };
     leaf.map(Step::Leaf)
+}
+
+/// Resolve `Quantity<u, C>`'s bounded scalar carrier. The `Int` spelling may
+/// add a rounding mode because an integer type by itself has no rounding
+/// metadata; an omitted mode is exact.
+fn carried_quantity_type(
+    names: &impl TypeNames,
+    unit: UnitId,
+    form: &TypeForm,
+) -> Result<CarriedQuantityType, TypeFormError> {
+    let carrier = match &form.head {
+        TypeFormHead::Builtin(BuiltinType::Int) if form.arguments.is_empty() => {
+            if !matches!(form.bounds.len(), 2 | 3) {
+                return Err(malformed(form));
+            }
+            let domain = int_interval(form)?;
+            let rounding = match form.bounds.get(2) {
+                Some(text) => parse_rounding_mode(text).ok_or_else(|| malformed(form))?,
+                None => RoundingMode::Exact,
+            };
+            QuantityCarrier::Integer { domain, rounding }
+        }
+        TypeFormHead::Builtin(BuiltinType::Decimal) if form.arguments.is_empty() => {
+            optional_bounds(form, 5)?;
+            let decimal = match resolve_builtin(names, BuiltinType::Decimal, form)? {
+                Step::Leaf(value) => match &value {
+                    ValueType::Decimal(decimal) => decimal.clone(),
+                    _ => return Err(malformed(form)),
+                },
+                Step::Option { .. } | Step::Collection { .. } => return Err(malformed(form)),
+            };
+            QuantityCarrier::Decimal(decimal)
+        }
+        _ => return Err(malformed(form)),
+    };
+    Ok(CarriedQuantityType::new(unit, carrier))
 }
 
 /// The object type `T` of a `Population<T>[N]` form, by its effective
@@ -613,6 +659,27 @@ mod tests {
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
+    struct OneUnit(UnitId);
+
+    impl TypeNames for OneUnit {
+        fn named_types(&self, _name: &str) -> &[ValueType] {
+            &[]
+        }
+
+        fn object_type_named(&self, _name: &str) -> Option<EffectiveId> {
+            None
+        }
+
+        fn unit_named(&self, name: &str) -> Option<UnitId> {
+            (name == "m").then(|| self.0.clone())
+        }
+    }
+
+    fn quantity_form(carrier: TypeForm) -> TypeForm {
+        TypeForm::builtin(BuiltinType::Quantity, SPAN)
+            .with_arguments(vec![TypeForm::name("m", SPAN), carrier])
+    }
+
     /// FR-091-AC-11 (TC-398 step 3): the assembler's resolution `match` has
     /// no catch-all arm, neither `_` nor a bare binding.
     #[ix_trace_rs::trace("FR-091-AC-11", "TC-398")]
@@ -765,6 +832,130 @@ mod tests {
         ));
         assert_mismatch(&builtin(BuiltinType::Text, &["1", "5", "Nfc"]));
         assert_mismatch(&builtin(BuiltinType::Text, &["1", "5", "unicode"]));
+    }
+
+    /// FR-497-AC-1: carrier bounds and rounding are part of the carried
+    /// quantity type identity; an omitted Int mode means exact.
+    #[ix_trace_rs::trace("FR-497-AC-1", "TC-1287")]
+    #[test]
+    fn carried_quantity_resolution_retains_carrier_identity() {
+        let unit = UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".to_owned())],
+                1,
+            )
+            .expect("a fixture node key is well formed"),
+        );
+        let names = OneUnit(unit.clone());
+        let int_form = |bounds: &[&str]| {
+            TypeForm::builtin(BuiltinType::Int, SPAN)
+                .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
+        };
+        let exact = resolve_form(&names, &quantity_form(int_form(&["-2", "2"])))
+            .expect("a bounded Int carrier resolves");
+        let nearest = resolve_form(
+            &names,
+            &quantity_form(int_form(&["-2", "2", "nearest-even"])),
+        )
+        .expect("an Int carrier may carry a rounding mode");
+        let decimal = resolve_form(
+            &names,
+            &quantity_form(
+                TypeForm::builtin(BuiltinType::Decimal, SPAN).with_bounds(
+                    ["0", "1", "0", "4", "nearest-even"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                ),
+            ),
+        )
+        .expect("a bounded Decimal carrier resolves");
+
+        let ValueType::CarriedQuantity(exact) = &exact else {
+            panic!("carried quantity, not {exact:?}");
+        };
+        assert_eq!(exact.unit(), &unit);
+        assert_eq!(
+            exact.carrier(),
+            &QuantityCarrier::Integer {
+                domain: IntegerInterval::new(Integer::from(-2_i64), Integer::from(2_i64))
+                    .expect("ordered bounds"),
+                rounding: RoundingMode::Exact,
+            }
+        );
+        assert_ne!(
+            exact.as_ref(),
+            match &nearest {
+                ValueType::CarriedQuantity(nearest) => nearest.as_ref(),
+                other => panic!("carried quantity, not {other:?}"),
+            }
+        );
+        assert!(matches!(
+            &decimal,
+            ValueType::CarriedQuantity(carried)
+                if matches!(carried.carrier(), QuantityCarrier::Decimal(decimal)
+                    if decimal.rounding() == RoundingMode::NearestEven)
+        ));
+    }
+
+    /// FR-497-AC-1/2: only bounded Int and Decimal forms are carriers; a
+    /// bare numeric type and an inverted carrier bound refuse.
+    #[ix_trace_rs::trace("FR-497-AC-1", "FR-497-AC-2", "TC-1287")]
+    #[test]
+    fn carried_quantity_rejects_unbounded_or_invalid_carriers() {
+        let names = OneUnit(UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".to_owned())],
+                1,
+            )
+            .expect("a fixture node key is well formed"),
+        ));
+        let bare_integer = quantity_form(TypeForm::builtin(BuiltinType::Integer, SPAN));
+        assert!(resolve_form(&names, &bare_integer).is_err());
+        let bare_decimal = quantity_form(TypeForm::builtin(BuiltinType::Decimal, SPAN));
+        assert!(resolve_form(&names, &bare_decimal).is_err());
+        let rational = quantity_form(
+            TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(
+                ["0", "9", "1", "9"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+            ),
+        );
+        assert!(resolve_form(&names, &rational).is_err());
+        let text = quantity_form(
+            TypeForm::builtin(BuiltinType::Text, SPAN)
+                .with_bounds(["0", "8", "nfc"].into_iter().map(str::to_owned).collect()),
+        );
+        assert!(resolve_form(&names, &text).is_err());
+        let record = quantity_form(TypeForm::name("Record", SPAN));
+        assert!(resolve_form(&names, &record).is_err());
+        let inverted = quantity_form(
+            TypeForm::builtin(BuiltinType::Int, SPAN)
+                .with_bounds(vec!["2".to_owned(), "-2".to_owned()]),
+        );
+        assert!(matches!(
+            resolve_form(&names, &inverted)
+                .expect_err("an inverted interval refuses")
+                .fault,
+            TypeFormFault::EmptyInterval
+        ));
+        let reversed_scale = quantity_form(
+            TypeForm::builtin(BuiltinType::Decimal, SPAN).with_bounds(
+                ["0", "1", "4", "2", "exact"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+            ),
+        );
+        assert!(matches!(
+            resolve_form(&names, &reversed_scale)
+                .expect_err("a reversed scale interval refuses")
+                .fault,
+            TypeFormFault::MalformedDecimal
+        ));
     }
 
     /// Inverted, missing and non-numeric bounds are refused as a type

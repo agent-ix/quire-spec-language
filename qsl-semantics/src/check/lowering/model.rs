@@ -14,7 +14,10 @@
 use quire_checked::node::{AuthoredBound, EndSide};
 use std::collections::BTreeMap;
 
-use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
+use quire_exact::{
+    CarriedQuantityType, EffectiveId, Integer, NodeKey, QuantityCarrier, UnitDomain, UnitId,
+    ValueType,
+};
 
 use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
 use crate::check::assemble::DimensionEquivalence;
@@ -364,13 +367,13 @@ pub(crate) struct ParentSlot {
 /// Why a parent slot could not be read.
 pub(crate) enum ParentSlotFailure {
     /// A conformance walk reached its ancestor-edge ceiling.
-    Incomplete(crate::model::accounting::Incomplete),
+    Incomplete(crate::model::accounting::NormalizationIncomplete),
     /// The staged admission refused the read.
     Pending(quire_semantic_value::declaration::PendingFieldFailure),
 }
 
-impl From<crate::model::accounting::Incomplete> for ParentSlotFailure {
-    fn from(incomplete: crate::model::accounting::Incomplete) -> Self {
+impl From<crate::model::accounting::NormalizationIncomplete> for ParentSlotFailure {
+    fn from(incomplete: crate::model::accounting::NormalizationIncomplete) -> Self {
         Self::Incomplete(incomplete)
     }
 }
@@ -2441,6 +2444,38 @@ impl<'a> Lowering<'a> {
                 )
             }
         }
+    }
+
+    /// A `Quantity<u, C>` type node with its exact carrier and rounding
+    /// identity (QSpec FR-322-AC-301).
+    pub(super) fn carried_quantity_type(
+        &mut self,
+        carried: &CarriedQuantityType,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let unit = self.quantity_type(carried.unit().clone(), location)?;
+        let carrier_type = match carried.carrier() {
+            QuantityCarrier::Decimal(decimal) => ValueType::Decimal(decimal.clone()),
+            QuantityCarrier::Integer { domain, .. } => ValueType::Int(domain.clone()),
+        };
+        let carrier = self.type_node(&carrier_type, location)?;
+        let rounding_mode = match carried.carrier() {
+            QuantityCarrier::Decimal(decimal) => decimal.rounding(),
+            QuantityCarrier::Integer { rounding, .. } => *rounding,
+        };
+        let rounding = self.text_literal(rounding_mode.as_str(), location)?;
+        self.insert(
+            location,
+            NodeTag::ScalarType,
+            "carried_quantity",
+            None,
+            None,
+            BodyTerm::aggregate(vec![
+                MemberTerm::bound("unit", LeafTerm::reference(unit)),
+                MemberTerm::bound("carrier", LeafTerm::reference(carrier)),
+                MemberTerm::bound("rounding", rounding),
+            ]),
+        )
     }
 
     /// FR-094, FR-092 rule 1: add the declared unit node `unit` to the

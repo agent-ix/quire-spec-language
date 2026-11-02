@@ -429,6 +429,15 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
         })
         .collect::<Vec<_>>()
     });
+    let schedulability_claims = read
+        .schedulability_claims()
+        .map(
+            |claim| quire_contract_model::CheckedSchedulabilityClaimRow {
+                declaration: claim.declaration().clone(),
+                occurrence: claim.occurrence().ordinal,
+            },
+        )
+        .collect::<Vec<_>>();
     quire_contract_model::encode_checked_package_v2(
         read.name(),
         read.lock(),
@@ -441,6 +450,8 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
             checked_term_data: None,
             temporal_bindings: None,
             operation_effects: operation_effects.as_deref(),
+            schedulability_claims: (!schedulability_claims.is_empty())
+                .then_some(schedulability_claims.as_slice()),
         },
         read.capability_report(),
         read.diagnostics(),

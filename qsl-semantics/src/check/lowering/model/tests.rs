@@ -1254,6 +1254,123 @@ mod quantities {
         assert_eq!(operation["leaves"], json!([]));
     }
 
+    /// FR-497-AC-3 (TC-1287): the conversion operation carries the target
+    /// carrier's rounding mode and names the carried type as its result.
+    #[trace("FR-497-AC-3", "TC-1287")]
+    #[test]
+    fn a_carried_quantity_conversion_uses_the_target_rounding_mode() {
+        use quire_exact::{CarriedQuantityType, IntegerInterval, QuantityCarrier, RoundingMode};
+
+        let carried = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Integer {
+                domain: IntegerInterval::new(Integer::from(-2_i64), Integer::from(2_i64))
+                    .expect("ordered bounds"),
+                rounding: RoundingMode::NearestEven,
+            },
+        ));
+        let checked = check_declarations(PackageDeclarations {
+            types: TypeEnvironment::default().with_units(units()),
+            aliases: vec![
+                ("Length".to_owned(), quantity(METRE)),
+                ("CarriedLength".to_owned(), carried.clone()),
+            ],
+            functions: vec![function(
+                "to_carried",
+                &[("a", named("Length"))],
+                named("CarriedLength"),
+                Expression::convert(named("CarriedLength"), name("a")),
+            )],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        });
+        let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
+        assert_eq!(convert.len(), 1);
+        let convert = preimage(convert[0]);
+        let operation = &convert["body"]["operation"];
+        assert_eq!(
+            operation["mode"],
+            json!({"kind": "rounding", "value": "nearest-even"})
+        );
+        let target = operation["member"]["declaration"]["digest"]
+            .as_str()
+            .expect("a type-argument target key");
+        let target_node = checked
+            .semantic_graph()
+            .nodes()
+            .find(|node| node.key().to_string() == target)
+            .expect("the target carried type node");
+        assert_eq!(target_node.semantic_form(), "carried_quantity");
+    }
+
+    /// FR-497-AC-1 (TC-1287): the carried type's node identity retains its
+    /// unit, carrier and rounding; structurally equal forms share a node.
+    #[trace("FR-497-AC-1", "TC-1287")]
+    #[test]
+    fn carried_quantity_types_lower_with_their_complete_carrier_identity() {
+        use quire_exact::{CarriedQuantityType, DecimalType, QuantityCarrier, RoundingMode};
+
+        let unit = UnitId::declared(node_key(METRE));
+        let integer_carrier = QuantityCarrier::Integer {
+            domain: IntegerInterval::new(Integer::from(-2_i64), Integer::from(2_i64))
+                .expect("ordered bounds"),
+            rounding: RoundingMode::Exact,
+        };
+        let exact = ValueType::carried_quantity(CarriedQuantityType::new(
+            unit.clone(),
+            integer_carrier.clone(),
+        ));
+        let same = exact.clone();
+        let rounded = ValueType::carried_quantity(CarriedQuantityType::new(
+            unit,
+            QuantityCarrier::Integer {
+                domain: IntegerInterval::new(Integer::from(-2_i64), Integer::from(2_i64))
+                    .expect("ordered bounds"),
+                rounding: RoundingMode::NearestEven,
+            },
+        ));
+        let decimal = ValueType::carried_quantity(CarriedQuantityType::new(
+            UnitId::declared(node_key(METRE)),
+            QuantityCarrier::Decimal(
+                DecimalType::new(
+                    Integer::from(-100_i64),
+                    Integer::from(100_i64),
+                    2,
+                    2,
+                    RoundingMode::Exact,
+                )
+                .expect("ordered bounds"),
+            ),
+        ));
+        let (keys, graph) = lower(&[], units(), |lowering| {
+            [&exact, &same, &rounded, &decimal].map(|value_type| {
+                lowering
+                    .type_node(value_type, &generated_location())
+                    .expect("the carried quantity type lowers")
+            })
+        });
+        assert_eq!(keys[0], keys[1]);
+        assert_ne!(keys[0], keys[2]);
+        assert_ne!(keys[0], keys[3]);
+        for key in [&keys[0], &keys[2], &keys[3]] {
+            let node = graph.node((*key).clone()).expect("the carried type node");
+            assert_eq!(node.node_tag(), NodeTag::ScalarType);
+            assert_eq!(node.semantic_form(), "carried_quantity");
+            let node_preimage = preimage(node);
+            let members = node_preimage["body"]["members"]
+                .as_array()
+                .expect("the carried node body bindings");
+            let names: Vec<_> = members
+                .iter()
+                .map(|member| member["name"].as_str().expect("a binding name"))
+                .collect();
+            assert_eq!(names, ["unit", "carrier", "rounding"]);
+        }
+    }
+
     /// TC-419 step 3 (FR-094-AC-7): a compound `UnitId` the unit scope does
     /// not hold is an internal fault naming it, with no key.
     #[trace("FR-094-AC-7", "TC-419")]

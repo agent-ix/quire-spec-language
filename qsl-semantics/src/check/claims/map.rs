@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, With};
 use qsl_foundation::source::provenance::OccurrenceKey;
 
 use super::RequirementRecord;
@@ -157,10 +158,23 @@ impl PartialEq for RequirementMap {
 
 impl Eq for RequirementMap {}
 
-/// Formatted as a map in key order, the same as a `BTreeMap`.
+/// Formatted as a map in key order, the same as a `BTreeMap`; each key's node
+/// and each record's nodes join the enclosing table.
+impl DebugWith for RequirementMap {
+    fn fmt_with(&self, formatter: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        formatter
+            .debug_map()
+            .entries(
+                self.iter()
+                    .map(|(key, record)| (With(key, table), With(record, table))),
+            )
+            .finish()
+    }
+}
+
 impl fmt::Debug for RequirementMap {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_map().entries(self.iter()).finish()
+        standalone(formatter, self)
     }
 }
 

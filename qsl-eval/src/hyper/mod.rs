@@ -44,4 +44,4 @@ pub use seam::{
     StepMatch,
 };
 pub(crate) use step_value::slot_value;
-pub use witness::{Member, Partner, PartnerStep, WitnessInputs, WitnessProduct, WitnessSet};
+pub use witness::{Partner, PartnerStep, WitnessInputs, WitnessMember, WitnessProduct, WitnessSet};

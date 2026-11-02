@@ -30,7 +30,7 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 use super::{
     check, check_with_refinement_internals, execute, failure_of, package, parse, refusal_or_fault,
     select, temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit,
-    ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
+    ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -111,7 +111,7 @@ fn geometry() -> SuppliedLibrary {
 
 /// Every operation's output over one source, from a live handle.
 struct Chain {
-    parsed: ParsedSource,
+    parsed: ParsedUnitSource,
     models: AdmittedModels,
     checked: CheckedUnit,
     emitted: EmittedUnit,
@@ -220,7 +220,7 @@ fn the_chain_over_the_compile_fixture_returns_a_package_that_executes() {
 fn each_operation_takes_exactly_its_predecessors_output() {
     let chain = fixture_chain();
     let cancel = Cancel::new();
-    // `check` takes the `ParsedSource` and `AdmittedModels` of one source,
+    // `check` takes the `ParsedUnitSource` and `AdmittedModels` of one source,
     // `package` the `CheckedUnit` of that check, and `execute` the same.
     let rechecked = check(
         &chain.parsed,
@@ -542,7 +542,7 @@ const DECLARATIONS: usize = 200_000;
 
 /// The unit of `count` declarations, parsed and with its models selected,
 /// under limits raised to fit it.
-fn parsed_declarations(count: usize) -> (ParsedSource, AdmittedModels, SpineLimits) {
+fn parsed_declarations(count: usize) -> (ParsedUnitSource, AdmittedModels, SpineLimits) {
     let source = declarations(count);
     let limits = wide(source.len());
     let live = Cancel::new();
@@ -559,7 +559,7 @@ fn parsed_declarations(count: usize) -> (ParsedSource, AdmittedModels, SpineLimi
 /// charge `at`: the check returns `Cancelled(cause)` and no package, and
 /// exactly one charge saw the cancellation.
 fn assert_check_cancelled_at(
-    (parsed, models, limits): &(ParsedSource, AdmittedModels, SpineLimits),
+    (parsed, models, limits): &(ParsedUnitSource, AdmittedModels, SpineLimits),
     at: u64,
     cause: CancelCause,
 ) {
@@ -1121,7 +1121,7 @@ fn the_provision_names_every_source_the_package_was_compiled_from() {
 
 /// FR-275-AC-5 (TC-755 step 7): each operation reports the work of its own
 /// stages. `parse` reports S1 work and none for S3, `check` over the same
-/// `ParsedSource` reports S3 work and zero for S1 and S2, and `package` over
+/// `ParsedUnitSource` reports S3 work and zero for S1 and S2, and `package` over
 /// its `CheckedUnit` reports E4 work and zero for S1 to S4. (`execute`
 /// returns the evaluation of FR-277, whose counters are the S6a meter's.)
 #[trace("TC-755", "FR-275-AC-5")]

@@ -49,7 +49,7 @@ pub use lifecycle::{
     check, check_with_execution_points, check_with_execution_points_and_refinement_internals,
     check_with_refinement_internals, check_with_temporal_selections_and_execution_points, package,
     package_with_temporal_selections, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit,
-    EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
+    EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
 };
 
 /// Accepted execution points keyed by the exact authored state-clause name

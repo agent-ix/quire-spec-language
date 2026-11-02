@@ -42,7 +42,7 @@
 
 use std::collections::HashSet;
 
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
+use crate::model::accounting::{Charge, ChargePoint, LimitKind, Meter, NormalizationIncomplete};
 use crate::model::index::ModelIndex;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
@@ -151,7 +151,7 @@ pub enum LinkCheckOutcome {
     /// outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-link.
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
     /// The generalization closure was not [`GeneralizationClosure::Closed`].
     OpenClosure(UnclosedMethodSet),
 }

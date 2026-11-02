@@ -5,7 +5,9 @@
 //! from the refinement's authored step rows. Its node association remains an
 //! S3 identity until S4 lowers the corresponding declaration to a node key.
 
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList,
+};
 use std::collections::BTreeMap;
 
 use qsl_foundation::MemoryModelName;
@@ -208,8 +210,8 @@ pub enum KeyedCatalogClass {
     Memory(KeyedMemoryClass),
 }
 
-impl std::fmt::Debug for KeyedCatalogClass {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for KeyedCatalogClass {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Declared {
                 class,
@@ -219,12 +221,18 @@ impl std::fmt::Debug for KeyedCatalogClass {
             } => f
                 .debug_struct("Declared")
                 .field("class", &class)
-                .field("node", &NodeKeyDebug(node))
-                .field("binder_types", &NodeList(binder_types.iter()))
+                .field("node", &NodeKeyDebug(node, table))
+                .field("binder_types", &NodeList(binder_types.iter(), table))
                 .field("dependency", &dependency)
                 .finish(),
             Self::Memory(value0) => f.debug_tuple("Memory").field(&value0).finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for KeyedCatalogClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -250,11 +258,13 @@ impl KeyedCatalogClass {
 
 /// A refinement's class catalog lowered to node keys, each side in the
 /// checked catalog's canonical order.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct KeyedClassCatalog {
     pub(crate) concrete: Vec<KeyedCatalogClass>,
     pub(crate) abstract_side: Vec<KeyedCatalogClass>,
 }
+
+qsl_foundation::debug_with_struct!(KeyedClassCatalog, "KeyedClassCatalog" { concrete: with, abstract_side: with });
 
 impl KeyedClassCatalog {
     /// Concrete classes.

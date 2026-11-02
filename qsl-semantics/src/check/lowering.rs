@@ -37,7 +37,9 @@ use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::ops::ControlFlow;
 
-use qsl_foundation::source::node_table::{scoped, NodeKeyDebug, NodeList};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeList, With,
+};
 
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
@@ -131,13 +133,19 @@ pub struct NodeRecursion {
     members: std::sync::Arc<[NodeKey]>,
 }
 
-impl fmt::Debug for NodeRecursion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DebugWith for NodeRecursion {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         f.debug_struct("NodeRecursion")
             .field("ordinal", &self.ordinal)
             .field("size", &self.size)
-            .field("members", &NodeList(self.members.iter()))
+            .field("members", &NodeList(self.members.iter(), table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for NodeRecursion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -177,14 +185,20 @@ pub struct SemanticNode {
     content: NodeContent,
 }
 
-impl fmt::Debug for SemanticNode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DebugWith for SemanticNode {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         f.debug_struct("SemanticNode")
-            .field("key", &NodeKeyDebug(&self.key))
-            .field("recursion", &self.recursion)
-            .field("nominal", &self.nominal)
-            .field("content", &self.content)
+            .field("key", &NodeKeyDebug(&self.key, table))
+            .field("recursion", &With(&self.recursion, table))
+            .field("nominal", &With(&self.nominal, table))
+            .field("content", &With(&self.content, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for SemanticNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -337,25 +351,29 @@ pub struct SemanticGraph {
     order: Vec<NodeKey>,
 }
 
-impl fmt::Debug for SemanticGraph {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Ordered<'g>(&'g SemanticGraph);
+impl DebugWith for SemanticGraph {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, table: &DebugTable) -> fmt::Result {
+        struct Ordered<'g>(&'g SemanticGraph, &'g DebugTable);
         impl fmt::Debug for Ordered<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_map()
-                    .entries(self.0.nodes().map(|node| (NodeKeyDebug(&node.key), node)))
+                    .entries(
+                        self.0
+                            .nodes()
+                            .map(|node| (NodeKeyDebug(&node.key, self.1), With(node, self.1))),
+                    )
                     .finish()
             }
         }
-        struct Body<'g>(&'g SemanticGraph);
-        impl fmt::Debug for Body<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("SemanticGraph")
-                    .field("nodes", &Ordered(self.0))
-                    .finish()
-            }
-        }
-        scoped(f, &Body(self))
+        f.debug_struct("SemanticGraph")
+            .field("nodes", &Ordered(self, table))
+            .finish()
+    }
+}
+
+impl fmt::Debug for SemanticGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -592,8 +610,8 @@ pub(crate) struct NodeContent {
     pub(crate) body: BodyTerm,
 }
 
-impl std::fmt::Debug for NodeContent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for NodeContent {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             node_tag,
             semantic_form,
@@ -609,9 +627,18 @@ impl std::fmt::Debug for NodeContent {
             .field("semantic_type", &semantic_type)
             .field("declaration", &declaration)
             .field("owner", &owner)
-            .field("owner_model", &owner_model.as_ref().map(NodeKeyDebug))
-            .field("body", &body)
+            .field(
+                "owner_model",
+                &owner_model.as_ref().map(|key| NodeKeyDebug(key, table)),
+            )
+            .field("body", &With(body, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for NodeContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -2470,14 +2497,15 @@ impl<'a> Lowering<'a> {
             ValueType::Quantity(unit) => self
                 .quantity_type(unit.clone(), location)
                 .map(NodeRef::from),
-            // No checked type node carries a map, a bounded quantity or a
-            // carried quantity yet: a typed refusal, never a guessed node.
-            ValueType::Map(_) | ValueType::BoundedQuantity(_) | ValueType::CarriedQuantity(_) => {
-                Err(refuse(
-                    location,
-                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-                ))
-            }
+            ValueType::CarriedQuantity(carried) => self
+                .carried_quantity_type(carried, location)
+                .map(NodeRef::from),
+            // No checked type node carries a map or a bounded quantity yet:
+            // a typed refusal, never a guessed node.
+            ValueType::Map(_) | ValueType::BoundedQuantity(_) => Err(refuse(
+                location,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+            )),
             ValueType::Reference(target) => self
                 .reference_type(target.clone(), location)
                 .map(NodeRef::from),
@@ -4318,13 +4346,23 @@ impl<'a> Lowering<'a> {
                 };
                 let target = target.clone();
                 let member = self.type_argument(&target, node.location())?;
-                let operation = if let ValueType::Quantity(_) = node.at(*operand).value_type() {
-                    // FR-093 `quire.op.quantity.convert`: a quantity's
-                    // magnitude is an exact rational, and its conversion is
-                    // exact (`value::quantity`'s `QuantityTarget::Exact`).
+                let operation = if matches!(
+                    node.at(*operand).value_type(),
+                    ValueType::Quantity(_) | ValueType::CarriedQuantity(_)
+                ) {
+                    // FR-093 / FR-497 quantity conversions carry the target
+                    // carrier's mode, or exact for an uncarried Quantity.
+                    let rounding = if let ValueType::CarriedQuantity(carried) = &target {
+                        match carried.carrier() {
+                            quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
+                            quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
+                        }
+                    } else {
+                        quire_exact::RoundingMode::Exact
+                    };
                     Operation {
                         member: Some(member),
-                        mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                        mode: Some(OperationMode::Rounding(rounding)),
                         ..plain("quire.op.quantity.convert")
                     }
                 } else {
@@ -5571,8 +5609,10 @@ impl<'a> Lowering<'a> {
             // `absent` (STD-493 ruling): QSpec FR-322's `none` literal,
             // typed by its option node.
             Value::Option(option) if option.payload().is_none() => LiteralValue::None,
+            // FR-093-AC-50: Text retains the profile-normalized sequence,
+            // while its semantic type points at the declared text_bounds node.
+            Value::Text(value) => LiteralValue::Text(value.retained().to_owned()),
             Value::Decimal(_)
-            | Value::Text(_)
             | Value::Option(_)
             | Value::Composite(_)
             | Value::Collection(_)

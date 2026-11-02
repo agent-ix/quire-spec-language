@@ -18,7 +18,7 @@
 //! (`qsl_forms::AbstractionDeclarationForm`) carries each spelling as
 //! written.
 
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug, With};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -184,13 +184,19 @@ pub struct FrameNodes {
     anchor: NodeKey,
 }
 
-impl std::fmt::Debug for FrameNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for FrameNodes {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self { frame, anchor } = self;
         f.debug_struct("FrameNodes")
-            .field("frame", &NodeKeyDebug(frame))
-            .field("anchor", &NodeKeyDebug(anchor))
+            .field("frame", &NodeKeyDebug(frame, table))
+            .field("anchor", &NodeKeyDebug(anchor, table))
             .finish()
+    }
+}
+
+impl std::fmt::Debug for FrameNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -208,11 +214,13 @@ impl FrameNodes {
 
 /// A checked frame binding: the authored binding and, when the unit has the
 /// operation's frame, its nodes (FR-305).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedFrameBinding {
     binding: FrameBinding,
     frame_nodes: Option<FrameNodes>,
 }
+
+qsl_foundation::debug_with_struct!(CheckedFrameBinding, "CheckedFrameBinding" { binding: plain, frame_nodes: with });
 
 impl CheckedFrameBinding {
     /// The authored binding.
@@ -228,7 +236,7 @@ impl CheckedFrameBinding {
 }
 
 /// A checked binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum CheckedBinding {
     /// An object type's binding.
     Object(ObjectBinding),
@@ -238,14 +246,32 @@ pub enum CheckedBinding {
     Frame(CheckedFrameBinding),
 }
 
+impl DebugWith for CheckedBinding {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
+        match self {
+            Self::Object(binding) => f.debug_tuple("Object").field(binding).finish(),
+            Self::Population(binding) => f.debug_tuple("Population").field(binding).finish(),
+            Self::Frame(binding) => f.debug_tuple("Frame").field(&With(binding, table)).finish(),
+        }
+    }
+}
+
+impl std::fmt::Debug for CheckedBinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
+    }
+}
+
 /// The checked abstraction relation: at most one binding per key.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct CheckedAbstractionRelation {
     bindings: BTreeMap<AbstractionKey, CheckedBinding>,
     /// The location of each `abstraction` declaration the bindings were read
     /// from, in source order; empty for a relation bound without source.
     sites: Vec<Location>,
 }
+
+qsl_foundation::debug_with_struct!(CheckedAbstractionRelation, "CheckedAbstractionRelation" { bindings: values, sites: plain });
 
 impl CheckedAbstractionRelation {
     /// This relation read from the declarations located at `sites`: the

@@ -195,7 +195,7 @@ impl Out {
 
 /// One member's value: a typed canonical form, or RFC 8785 bytes already
 /// written.
-enum Member<'m> {
+enum EncodedMember<'m> {
     Enc(&'m Enc),
     Bytes(&'m [u8]),
 }
@@ -255,8 +255,8 @@ impl Canonicalizer {
         let mut out = Out::new(limits.max_bytes());
         let members = members
             .iter()
-            .map(|(name, value)| (*name, Member::Enc(value)))
-            .chain(std::iter::once((name, Member::Bytes(bytes))));
+            .map(|(name, value)| (*name, EncodedMember::Enc(value)))
+            .chain(std::iter::once((name, EncodedMember::Bytes(bytes))));
         self.object(members, &mut out)?;
         out.finish()
     }
@@ -294,7 +294,7 @@ impl Canonicalizer {
             Enc::Object(members) => self.object(
                 members
                     .iter()
-                    .map(|(name, value)| (*name, Member::Enc(value))),
+                    .map(|(name, value)| (*name, EncodedMember::Enc(value))),
                 out,
             ),
             Enc::Map(entries) => self.map(entries, out),
@@ -345,7 +345,7 @@ impl Canonicalizer {
     /// The members written in the order held, then arranged by name.
     fn object<'m>(
         &self,
-        members: impl Iterator<Item = (&'static str, Member<'m>)>,
+        members: impl Iterator<Item = (&'static str, EncodedMember<'m>)>,
         out: &mut Out,
     ) -> Option<()> {
         out.push(b"{")?;
@@ -359,8 +359,8 @@ impl Canonicalizer {
             Self::string(name, out)?;
             out.push(b":")?;
             match value {
-                Member::Enc(value) => self.write(value, out)?,
-                Member::Bytes(bytes) => out.push(bytes)?,
+                EncodedMember::Enc(value) => self.write(value, out)?,
+                EncodedMember::Bytes(bytes) => out.push(bytes)?,
             }
             spans.push((name, from, out.bytes.len()));
         }

@@ -30,7 +30,7 @@
 //!
 //! # Wrong-stage input does not compile
 //!
-//! Raw source bytes are not a [`ParsedSource`], and the control with the
+//! Raw source bytes are not a [`ParsedUnitSource`], and the control with the
 //! right type compiles:
 //!
 //! ```compile_fail
@@ -47,10 +47,10 @@
 //!
 //! ```
 //! # use qsl_replay::spine::{
-//! #     check, AdmittedModels, DependencyInput, ParsedSource, SpineLimits,
+//! #     check, AdmittedModels, DependencyInput, ParsedUnitSource, SpineLimits,
 //! # };
 //! # use quire_exact::Cancel;
-//! fn control(parsed: &ParsedSource) {
+//! fn control(parsed: &ParsedUnitSource) {
 //!     let _ = check(
 //!         parsed,
 //!         "fixture".to_owned(),
@@ -62,12 +62,12 @@
 //! }
 //! ```
 //!
-//! A [`ParsedSource`] is not a [`CheckedUnit`], so it cannot be emitted:
+//! A [`ParsedUnitSource`] is not a [`CheckedUnit`], so it cannot be emitted:
 //!
 //! ```compile_fail
-//! # use qsl_replay::spine::{package, PackageLimits, ParsedSource};
+//! # use qsl_replay::spine::{package, PackageLimits, ParsedUnitSource};
 //! # use quire_exact::Cancel;
-//! fn emit(parsed: &ParsedSource) {
+//! fn emit(parsed: &ParsedUnitSource) {
 //!     let _ = package(parsed, PackageLimits::default(), &Cancel::new());
 //! }
 //! ```
@@ -351,12 +351,12 @@ pub struct ParseRequest<'a> {
 
 /// A unit read into syntax (S1) and forms (S2).
 #[derive(Clone, Debug)]
-pub struct ParsedSource {
+pub struct ParsedUnitSource {
     syntax: qsl_cst::ParsedSource,
     unit: ParsedUnit,
 }
 
-impl ParsedSource {
+impl ParsedUnitSource {
     /// The unit's source, exactly as S1 read it.
     pub fn source(&self) -> &Source {
         self.syntax.source()
@@ -485,7 +485,7 @@ pub fn parse(
     request: &ParseRequest<'_>,
     limits: SourceLimits,
     cancel: &Cancel,
-) -> Result<Staged<ParsedSource>, FrontEndFailure> {
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
     let source_len =
         |identity: &SourceIdentity| (identity == request.source).then_some(request.bytes.len());
     stage(cancel, &source_len, |work| {
@@ -506,7 +506,7 @@ pub fn parse(
 /// (FR-056, FR-278). Refuses at the first `model` declaration that does not
 /// admit.
 pub fn select(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
@@ -527,7 +527,7 @@ pub fn select(
 /// each library the unit's `import`s reach, against the same package input,
 /// dependency input and `limits`.
 pub fn check(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     package_name: String,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
@@ -548,7 +548,7 @@ pub fn check(
 /// S3 and S4 with the unit's unchecked internal-list value and each
 /// dependency library's own value carried to its source owner (FR-147/FR-099).
 pub fn check_with_refinement_internals(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     package_name: String,
     refinement_internals: Option<serde_json::Value>,
     models: &AdmittedModels,
@@ -572,7 +572,7 @@ pub fn check_with_refinement_internals(
 /// clause name (FR-104-AC-15). The map applies only to `parsed`, never to
 /// independently compiled libraries.
 pub fn check_with_execution_points(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     models: &AdmittedModels,
@@ -599,7 +599,7 @@ pub fn check_with_execution_points(
     reason = "check inputs plus refinement internals"
 )]
 pub fn check_with_execution_points_and_refinement_internals(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     refinement_internals: Option<serde_json::Value>,
@@ -628,7 +628,7 @@ pub fn check_with_execution_points_and_refinement_internals(
     reason = "check inputs plus explicit selections"
 )]
 pub fn check_with_temporal_selections_and_execution_points(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     temporal_selections: &[qsl_package::TemporalClockSelection],
@@ -655,7 +655,7 @@ pub fn check_with_temporal_selections_and_execution_points(
     reason = "check inputs plus temporal selections and refinement internals"
 )]
 fn check_with_context_and_temporal_selections(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     refinement_internals: Option<serde_json::Value>,
@@ -831,7 +831,7 @@ fn parse_unit(
     bytes: &[u8],
     limits: SourceLimits,
     cancel: &Cancel,
-) -> Result<ParsedSource, Box<CompileRefusal>> {
+) -> Result<ParsedUnitSource, Box<CompileRefusal>> {
     let parsed = qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
         .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     if let Some(first) = parsed.diagnostics().first() {
@@ -844,7 +844,7 @@ fn parse_unit(
             failure,
         })
     })?;
-    Ok(ParsedSource {
+    Ok(ParsedUnitSource {
         syntax: parsed,
         unit,
     })
@@ -852,7 +852,7 @@ fn parse_unit(
 
 /// I1 over one unit's `model` declarations.
 fn select_models(
-    parsed: &ParsedSource,
+    parsed: &ParsedUnitSource,
     packages: &qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
@@ -1108,7 +1108,7 @@ struct Frame {
 
 impl Frame {
     fn new(
-        parsed: &ParsedSource,
+        parsed: &ParsedUnitSource,
         package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,
@@ -1365,7 +1365,7 @@ impl<'a> Resolution<'a> {
     /// (ADR-030 D-1).
     fn check_unit(
         &mut self,
-        parsed: &ParsedSource,
+        parsed: &ParsedUnitSource,
         package_name: String,
         models: SelectedModels,
         execution_points: super::StateClauseExecutionPoints,

@@ -116,7 +116,9 @@ pub(crate) fn shape_matches(
             | (ValueType::Decimal(_), Value::Decimal(_))
             | (ValueType::Float(_), Value::Float(_))
             | (
-                ValueType::Quantity(_) | ValueType::BoundedQuantity(_),
+                ValueType::Quantity(_)
+                    | ValueType::CarriedQuantity(_)
+                    | ValueType::BoundedQuantity(_),
                 Value::Quantity(_)
             )
             | (ValueType::Text(_), Value::Text(_))

@@ -6,6 +6,7 @@ mod category_facade;
 mod checked_body_failure;
 mod compile_ieee_profile;
 mod compile_protocol_profile;
+mod compile_text_literals;
 mod format_outcome_facade;
 mod hyper_identity;
 mod hyper_query;

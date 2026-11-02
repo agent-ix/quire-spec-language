@@ -1390,7 +1390,14 @@ impl<'a> Typer<'a> {
                     ));
                 }
                 if let Some(constructor) = NativeConstructor::named(&name.name) {
-                    self.native_literal(constructor, &name.name, expression, arguments, &location)?
+                    self.native_literal(
+                        constructor,
+                        &name.name,
+                        expression,
+                        arguments,
+                        hint.as_deref(),
+                        &location,
+                    )?
                 } else {
                     let arity = arguments.len();
                     let application = match resolve_target(self, &name.name, &location, || {

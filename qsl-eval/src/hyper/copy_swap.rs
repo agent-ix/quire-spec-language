@@ -89,13 +89,13 @@ impl CopySwap {
 /// A member of an orbit: the state, its key, and where its components came
 /// from. Component `k` of the state is component `positions[k]` of the first
 /// member.
-struct Member {
+struct OrbitMember {
     state: HyperState,
     key: Vec<u8>,
     positions: Vec<usize>,
 }
 
-impl Member {
+impl OrbitMember {
     /// This member after `generator` exchanges its two variables.
     fn after(&self, generator: &CopyGenerator, state: HyperState, key: Vec<u8>) -> Self {
         let mut positions = self.positions.clone();
@@ -121,7 +121,7 @@ impl HyperProduct<'_, '_> {
         swap: &CopySwap,
         state: &HyperState,
     ) -> Result<(HyperState, Permutation), ExpansionStop> {
-        let mut orbit = vec![Member {
+        let mut orbit = vec![OrbitMember {
             key: self.key_bytes(state)?,
             state: state.clone(),
             positions: (0..state.components.len()).collect(),
@@ -156,10 +156,10 @@ impl HyperProduct<'_, '_> {
     /// components exchanged and the automaton state renamed to match.
     fn exchange(
         &self,
-        member: &Member,
+        member: &OrbitMember,
         index: usize,
         generator: &CopyGenerator,
-    ) -> Result<Member, ExpansionStop> {
+    ) -> Result<OrbitMember, ExpansionStop> {
         let mut components = member.state.components.clone();
         components.swap(generator.first, generator.second);
         let property = match &member.state.property {

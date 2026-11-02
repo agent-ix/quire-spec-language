@@ -16,7 +16,7 @@
 //! [`SelectedModel::type_invariants`]: crate::model::intake::SelectedModel::type_invariants
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::source::node_table::NodeKeyDebug;
+use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeKeyDebug};
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -39,15 +39,21 @@ pub enum TypeSlot {
     Object(EffectiveId),
 }
 
-impl std::fmt::Debug for TypeSlot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DebugWith for TypeSlot {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Composite(value0) => f
                 .debug_tuple("Composite")
-                .field(&NodeKeyDebug(value0))
+                .field(&NodeKeyDebug(value0, table))
                 .finish(),
             Self::Object(value0) => f.debug_tuple("Object").field(&value0).finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for TypeSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -161,7 +167,6 @@ impl CheckRefusal {
 /// One checked type invariant: its owner's clause, the types it is an
 /// effective invariant of, and the checked Boolean body evaluation runs with
 /// `self` bound to a value of the type.
-#[derive(Debug)]
 pub struct CheckedTypeInvariant {
     pub(crate) clause: DeclarationKey,
     pub(crate) owner: DeclarationKey,
@@ -170,6 +175,8 @@ pub struct CheckedTypeInvariant {
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
 }
+
+qsl_foundation::debug_with_struct!(CheckedTypeInvariant, "CheckedTypeInvariant" { clause: plain, owner: plain, applies_to: with, parameters: plain, body: plain, slots: plain });
 
 impl CheckedTypeInvariant {
     /// The clause's declaration key.

@@ -368,7 +368,7 @@ impl ModelIndex {
         s: &DeclarationKey,
         t: &DeclarationKey,
         limit: u64,
-    ) -> Result<bool, crate::model::accounting::Incomplete> {
+    ) -> Result<bool, crate::model::accounting::NormalizationIncomplete> {
         if s == t {
             return Ok(true);
         }
@@ -384,7 +384,7 @@ impl ModelIndex {
             }
             for general in &self.records.generals[current.0] {
                 if consumed == limit {
-                    return Err(crate::model::accounting::Incomplete {
+                    return Err(crate::model::accounting::NormalizationIncomplete {
                         limit_kind: crate::model::accounting::LimitKind::AncestorSteps,
                         limit,
                         consumed,
@@ -423,7 +423,7 @@ impl ModelIndex {
         s: &ValueTypeRef,
         t: &ValueTypeRef,
         limit: u64,
-    ) -> Result<bool, crate::model::accounting::Incomplete> {
+    ) -> Result<bool, crate::model::accounting::NormalizationIncomplete> {
         match (s, t) {
             (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
             (ValueTypeRef::Unit(a), ValueTypeRef::Unit(b)) => Ok(a == b),

@@ -65,9 +65,10 @@
 //! reads it back.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
-use qsl_foundation::source::node_table::{NodeKeyDebug, NodeMap};
+use qsl_foundation::source::node_table::{
+    standalone, DebugTable, DebugWith, NodeKeyDebug, NodeMap,
+};
 
 use quire_exact::{
     DecimalType, EnumShape, FloatType, Identifier, IntegerInterval, NodeKey, RationalDomain,
@@ -275,19 +276,25 @@ pub struct ModelCorrespondence {
     nodes: BTreeMap<DeclarationKey, NodeKey>,
 }
 
-impl fmt::Debug for ModelCorrespondence {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DebugWith for ModelCorrespondence {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         f.debug_struct("ModelCorrespondence")
-            .field("entries", &NodeMap(self.entries.iter()))
+            .field("entries", &NodeMap(self.entries.iter(), table))
             .field(
                 "nodes",
                 &self
                     .nodes
                     .iter()
-                    .map(|(declaration, node)| (declaration, NodeKeyDebug(node)))
+                    .map(|(declaration, node)| (declaration, NodeKeyDebug(node, table)))
                     .collect::<BTreeMap<_, _>>(),
             )
             .finish()
+    }
+}
+
+impl std::fmt::Debug for ModelCorrespondence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 
@@ -577,12 +584,12 @@ pub enum CheckedTypeNode {
     },
 }
 
-impl fmt::Debug for CheckedTypeNode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DebugWith for CheckedTypeNode {
+    fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         match self {
             Self::Scalar { node, shape } => f
                 .debug_struct("Scalar")
-                .field("node", &NodeKeyDebug(node))
+                .field("node", &NodeKeyDebug(node, table))
                 .field("shape", shape)
                 .finish(),
             Self::Composite {
@@ -591,21 +598,27 @@ impl fmt::Debug for CheckedTypeNode {
                 form,
             } => f
                 .debug_struct("Composite")
-                .field("node", &NodeKeyDebug(node))
-                .field("declaration", &NodeKeyDebug(declaration))
+                .field("node", &NodeKeyDebug(node, table))
+                .field("declaration", &NodeKeyDebug(declaration, table))
                 .field("form", form)
                 .finish(),
             Self::BoundedDomain { node, bound } => f
                 .debug_struct("BoundedDomain")
-                .field("node", &NodeKeyDebug(node))
+                .field("node", &NodeKeyDebug(node, table))
                 .field("bound", bound)
                 .finish(),
             Self::Sum { node, variants } => f
                 .debug_struct("Sum")
-                .field("node", &NodeKeyDebug(node))
+                .field("node", &NodeKeyDebug(node, table))
                 .field("variants", variants)
                 .finish(),
         }
+    }
+}
+
+impl std::fmt::Debug for CheckedTypeNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        standalone(f, self)
     }
 }
 

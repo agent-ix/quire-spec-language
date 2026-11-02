@@ -5,7 +5,7 @@
 use super::field_refinement::{checked_refinement_failures, RefinementObligation};
 use super::lowering::{AdmittedModel, ParentSlotFailure};
 use super::state_clause::{StateClauseDeclaration, TypedStateClause};
-use crate::model::accounting::{Incomplete, Meter};
+use crate::model::accounting::{Meter, NormalizationIncomplete};
 use crate::model::conformance::{self, ConformanceCheckOutcome, ConformanceOutcome};
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::SelectedModel;
@@ -57,14 +57,14 @@ impl std::hash::Hash for ModelConformanceFailure {
 
 pub(crate) enum StageDenial {
     Refused(Vec<ModelConformanceFailure>),
-    Incomplete(Incomplete),
+    Incomplete(NormalizationIncomplete),
     MissingModel(String),
     /// A staged-admission read was refused.
     Pending(PendingFieldFailure),
 }
 
-impl From<Incomplete> for StageDenial {
-    fn from(incomplete: Incomplete) -> Self {
+impl From<NormalizationIncomplete> for StageDenial {
+    fn from(incomplete: NormalizationIncomplete) -> Self {
         Self::Incomplete(incomplete)
     }
 }
@@ -123,7 +123,7 @@ fn append(
     member: &DeclarationKey,
     parent: &DeclarationKey,
     failures: &mut Vec<ModelConformanceFailure>,
-) -> Result<(), Incomplete> {
+) -> Result<(), NormalizationIncomplete> {
     let axes = match outcome {
         ConformanceCheckOutcome::Incomplete(incomplete) => return Err(incomplete),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => return Ok(()),
@@ -389,7 +389,7 @@ mod tests {
         };
         assert_eq!(
             incomplete,
-            Incomplete {
+            NormalizationIncomplete {
                 limit_kind: LimitKind::WorkUnits,
                 limit: normalization_work + 3,
                 consumed: normalization_work + 3,
