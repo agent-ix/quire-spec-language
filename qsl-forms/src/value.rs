@@ -223,7 +223,16 @@ fn function_like(
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
-    let identifiers = tokens_of(&items, TokenKind::Identifier);
+    let mut identifiers = tokens_of(&items, TokenKind::Identifier);
+    // `Text` is normally a reserved type keyword. FR-091-AC-69 also permits
+    // a function with that name so a `Text(...)` use can be refused as an
+    // ambiguous native constructor call during checking.
+    if let Some(name) = items.iter().find_map(|item| match item {
+        Item::Token(token) if token.spelling() == b"Text" => Some(*token),
+        Item::Token(_) | Item::Node(_) => None,
+    }) {
+        identifiers.insert(0, name);
+    }
     let (name, alias) = match identifiers.as_slice() {
         [name] => (*name, None),
         [name, alias] => (*name, Some(*alias)),
