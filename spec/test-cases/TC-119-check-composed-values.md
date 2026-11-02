@@ -67,7 +67,7 @@ representation, runtime prerequisites or assertions are still unavailable.
    an intermediate prefix can exceed the selected total. Verify these proof
    obligations from domains/lengths rather than executing sample observations.
    Refuse declared model sequence maximum 0 at model admission, and 10,001 at
-   the default `sequence_maximum`, naming that limit; admit 10,001 with the
+   the default `model.sequence_maximum`, naming that limit; admit 10,001 with the
    limit raised to fit it. Check all
    eight forms, including sum, at maximum 10,000 with suitable authored element
    and result domains and sufficient effective proof limits. Independently lower

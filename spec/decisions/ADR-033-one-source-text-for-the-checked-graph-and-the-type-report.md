@@ -90,7 +90,8 @@ Measured on main when this was written.
 - **Two `CheckedUnit` types.** `spine::CheckedUnit` holds a checked package
   and its sources. The root crate's `checking::source_inventory::CheckedUnit`
   holds a graph, a type report and a formal identity, built by a label-only
-  match; `qsl_inventory` lives beside it.
+  match (the spine's `CheckedUnit` carries the formal identity in neither
+  form: `qsl_inventory` takes it as a parameter, FR-514); `qsl_inventory` lives beside it.
 - **The grammars differ.** The shared header is `language "ix:native" edition
   "1-draft";`. After it, complete-V1 reads `profile <alias> = "<identity>";`: a
   definition resolves by identity alone, with no version in the
@@ -170,7 +171,8 @@ Measured on main when this was written.
   constructor that accepts a formal source, graph and type report separately
   are deleted when the producer lands; no mismatch refusal replaces them.
 - *One `CheckedUnit`:* the spine's `spine::CheckedUnit` is the one type. It
-  carries the type report, the formal identity and the source's one reference. The
+  carries the checked package, the type report (FR-514) and the source's one
+  reference; the formal identity is a parameter of `qsl_inventory`, not a member. The
   type report is one-unit by construction, so a report that covers two units
   cannot be built. The inventory's own `CheckedUnit` is deleted; `qsl_inventory`
   lives in `qsl_replay` and reads `spine::CheckedUnit`, no longer in the root
@@ -242,9 +244,10 @@ text. These points follow from it and are decided.
   there is no caller definition inventory parameter, and the source never
   carries a revision.
 - **Refusal and exhaustion.** A unit the S3 type phase refuses is an error
-  outcome of `check` and yields no partial inventory rows. The exhaustion stops
-  `TypeWorkExhausted` and `TypeAdmissionUnfinished` are a different case: they
-  stay `Incomplete` with the retained partial rows and the typed cause
+  outcome of `check` and yields no partial inventory rows. The exhaustion stop
+  `TypeWorkExhausted`, which the spine produces as a stage limit outcome, is a
+  different case (`TypeAdmissionUnfinished` is never produced, FR-514): it
+  stays `Incomplete` with the retained partial rows and the typed cause
   (IR FR-052-AC-10). The inventory's identity binds the whole `RawSourceRef`;
   the row identity encoding belongs to the owning FR.
 - **One checked unit.** `spine::CheckedUnit` is extended; the inventory's own
