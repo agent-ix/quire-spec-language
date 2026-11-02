@@ -190,6 +190,17 @@ pub enum EmitRefusal {
         /// Its operand.
         operand: Box<CheckedNodeId>,
     },
+    /// A dimension equivalence names a dimension of another package. IR
+    /// admits that only as a Package operand against a direct dependency
+    /// selection, which the emitter does not yet establish (QSL-1177); a
+    /// Local operand must not carry a foreign package.
+    #[error("dimension equivalence {node:?} names operand {operand:?} of another package")]
+    ForeignDimensionOperand {
+        /// The dimension-equivalence node.
+        node: Box<CheckedNodeId>,
+        /// The operand from another package.
+        operand: Box<CheckedNodeId>,
+    },
     /// An equality producer identity row has no unique emitted application
     /// occurrence to which it can be attached.
     #[error("equality producer identity for application {application:?} has no unique emitted occurrence")]
@@ -297,6 +308,7 @@ impl EmitRefusal {
             | Self::UnresolvedNodeReference
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
             Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
         }
     }
@@ -329,6 +341,7 @@ impl EmitRefusal {
             | Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
             | Self::TemporalClockProfileMismatch { .. } => None,
+            Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. } => None,
         }
     }
@@ -1023,7 +1036,7 @@ fn checked_body(
         node.nominal_payload(),
         matches!(node.owner(), Some(Owner::Model(_))),
     ) {
-        return nominal_term(ids, nominal);
+        return nominal_term(ids, &node.key(), nominal);
     }
     let BodyTerm::Aggregate(aggregate) = node.body() else {
         return checked_term(ids, node.body());
@@ -1071,7 +1084,11 @@ fn checked_rational(value: &quire_exact::Rational) -> CheckedRational {
 
 /// Convert admitted nominal facts without reading an identity back out of a
 /// structural key. Enum ordering and conversion factors are payload facts.
-fn nominal_term(ids: &StructuralIds, payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
+fn nominal_term(
+    ids: &StructuralIds,
+    node: &NodeKey,
+    payload: &NominalPayload,
+) -> Result<CheckedTerm, EmitRefusal> {
     let body = match payload {
         NominalPayload::Enum(enumeration) => NominalBody::try_enum(
             enumeration.is_ordered(),
@@ -1098,6 +1115,20 @@ fn nominal_term(ids: &StructuralIds, payload: &NominalPayload) -> Result<Checked
             checked_rational(unit.offset()),
         ),
         NominalPayload::DimensionEquivalence(equivalence) => {
+            // A Local operand is a node of the importing package's own graph
+            // (QSpec FR-322-AC-299). A dimension of another package is a
+            // Package operand, which IR checks against a direct dependency
+            // selection; the emitter does not establish that selection here
+            // (QSL-1177 owns it), so it refuses rather than mint a foreign
+            // package into a Local id.
+            for operand in equivalence.dimensions() {
+                if operand.package() != node.package() {
+                    return Err(EmitRefusal::ForeignDimensionOperand {
+                        node: Box::new(node_id(ids, node)),
+                        operand: Box::new(node_id(ids, operand)),
+                    });
+                }
+            }
             NominalBody::try_dimension_equivalence(
                 [
                     CheckedDimensionOperand::Local(node_id(ids, &equivalence.dimensions()[0])),
@@ -1886,30 +1917,14 @@ fn equality_producer_emission_rows(
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     source_map: &[CheckedSourceMapEntry],
 ) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
-    equality_producer_emission_rows_inner(
-        graph,
-        emitted_node_ids,
-        source_map,
-        &HashSet::new(),
-        false,
-    )
+    equality_producer_emission_rows_excluding(graph, emitted_node_ids, source_map, &HashSet::new())
 }
 
-fn emitted_equality_producer_emission_rows(
+fn equality_producer_emission_rows_excluding(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     source_map: &[CheckedSourceMapEntry],
     omitted_nodes: &HashSet<NodeKey>,
-) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
-    equality_producer_emission_rows_inner(graph, emitted_node_ids, source_map, omitted_nodes, true)
-}
-
-fn equality_producer_emission_rows_inner(
-    graph: &CheckedGraph,
-    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
-    source_map: &[CheckedSourceMapEntry],
-    omitted_nodes: &HashSet<NodeKey>,
-    omit_unemitted: bool,
 ) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
     let producer_data = graph.equality_producer_data();
     let producer_identities = graph.equality_producer_identities();
@@ -1930,9 +1945,6 @@ fn equality_producer_emission_rows_inner(
         .filter(|((application, _), _)| !omitted_nodes.contains(application))
         .map(|((application, expression_location), producer_identity)| {
             let Some(checked_node) = emitted_node_ids.get(application).cloned() else {
-                if omit_unemitted {
-                    return Ok(None);
-                }
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: application.clone(),
                 });
@@ -1989,7 +2001,7 @@ fn equality_producer_emission_rows_inner(
                     application: application.clone(),
                 });
             }
-            Ok(Some(EqualityProducerEmissionRow {
+            Ok(EqualityProducerEmissionRow {
                 application: application.clone(),
                 checked_node,
                 occurrence,
@@ -1997,10 +2009,9 @@ fn equality_producer_emission_rows_inner(
                 source_map_entry,
                 producer_identity: producer_identity.clone(),
                 producer_data,
-            }))
+            })
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|rows| rows.into_iter().flatten().collect())
+        .collect()
 }
 
 /// Resolves each enum witness key independently through the emitter's exact
@@ -2027,31 +2038,11 @@ fn enum_member_node_ids(
     ))
 }
 
-#[cfg(test)]
 fn equality_fact_witness_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     wire_nodes: &[CheckedSemanticNodeV2],
     rows: &[EqualityProducerEmissionRow],
-) -> Result<Vec<EqualityFactWitnessRow>, EmitRefusal> {
-    equality_fact_witness_rows_inner(graph, emitted_node_ids, wire_nodes, rows, false)
-}
-
-fn emitted_equality_fact_witness_rows(
-    graph: &CheckedGraph,
-    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
-    wire_nodes: &[CheckedSemanticNodeV2],
-    rows: &[EqualityProducerEmissionRow],
-) -> Result<Vec<EqualityFactWitnessRow>, EmitRefusal> {
-    equality_fact_witness_rows_inner(graph, emitted_node_ids, wire_nodes, rows, true)
-}
-
-fn equality_fact_witness_rows_inner(
-    graph: &CheckedGraph,
-    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
-    wire_nodes: &[CheckedSemanticNodeV2],
-    rows: &[EqualityProducerEmissionRow],
-    omit_unemitted: bool,
 ) -> Result<Vec<EqualityFactWitnessRow>, EmitRefusal> {
     let graph_nodes = graph
         .semantic_graph()
@@ -2063,17 +2054,15 @@ fn equality_fact_witness_rows_inner(
         let mut add = |key: &NodeKey,
                        fact: EqualityFactWitness,
                        value_type: Option<quire_exact::ValueType>| {
-            // A selected Exact identity can name a dependency declaration
-            // that is not part of this package's admitted graph. IR's typed
-            // equality reader accepts only package-local structural facts, so
-            // retain rows only for declarations in the emitted graph.
-            if !graph_nodes.contains_key(key) {
+            // A selected Exact identity can name a declaration of a
+            // dependency package. IR's typed equality reader accepts only
+            // package-local structural facts, so rows whose key belongs to
+            // another package than the application are the one deliberate
+            // omission; every package-local key must still resolve.
+            if key.package() != row.application().package() {
                 return Ok(());
             }
             let Some(structural_node) = emitted_node_ids.get(key).cloned() else {
-                if omit_unemitted {
-                    return Ok(());
-                }
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
                 });
@@ -2082,9 +2071,6 @@ fn equality_fact_witness_rows_inner(
                 .iter()
                 .find(|node| node.node_id == structural_node)
             else {
-                if omit_unemitted {
-                    return Ok(());
-                }
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
                 });
@@ -4739,7 +4725,7 @@ fn emit_package_inner(
                     match (nominal.form.as_str(), nominal.nominal_payload()) {
                         ("dimension", Some(payload @ NominalPayload::Dimension(_)))
                         | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
-                            nominal_term(ids, payload)?
+                            nominal_term(ids, &nominal.key, payload)?
                         }
                         _ => {
                             return Err(EmitRefusal::TimedModelWriterInvariant(
@@ -4915,13 +4901,13 @@ fn emit_package_inner(
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
     let temporal_bindings = temporal_binding_rows(graph, &emitted_node_ids, temporal_selections)?;
-    let equality_producer_identity_rows = emitted_equality_producer_emission_rows(
+    let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
         graph,
         &emitted_node_ids,
         &source_map,
         &omitted_keys,
     )?;
-    let equality_fact_witness_rows = emitted_equality_fact_witness_rows(
+    let equality_fact_witness_rows = equality_fact_witness_rows(
         graph,
         &emitted_node_ids,
         &nodes,
