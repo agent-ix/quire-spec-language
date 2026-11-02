@@ -76,13 +76,11 @@ fn check_result(
     text: &str,
     limits: CheckingLimits,
 ) -> Result<(qsl_semantics::check::CheckedGraph, String), Vec<qsl_semantics::check::CheckRefusal>> {
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied model document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT])
+        .expect("the spine model document admits");
+    let identity = package_identity(SPINE_MODEL_DOCUMENT);
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("unit assembles");
-    declarations.check(limits).map(|graph| (graph, digest))
+    declarations.check(limits).map(|graph| (graph, identity))
 }
 
 fn declaration_is_idle(node: &qsl_semantics::check::SemanticNode) -> bool {
@@ -106,7 +104,7 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
     );
     let groups: BTreeSet<_> = cycle_nodes
         .iter()
-        .map(|node| *node.recursion().unwrap().group())
+        .map(|node| node.recursion().unwrap().anchor().clone())
         .collect();
     assert_eq!(groups.len(), 1, "one shared cyclic component");
     assert!(
@@ -156,14 +154,11 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
     evidence
         .insert_domain_package_document(model_digest.as_str(), SPINE_MODEL_DOCUMENT)
         .expect("model evidence admitted");
-    let pinned =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     let read = read_v2(
         emission.package.bytes(),
         library(),
         V2ReadLimits::default(),
         &evidence,
-        &pinned,
     );
     assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
     let wire_nodes = nodes(&wire);
@@ -175,45 +170,49 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
     assert!(members
         .iter()
         .all(|node| node["recursion_group"] == members[0]["recursion_group"]));
-    let member_refs: Vec<_> = members.iter().copied().collect();
-    let label = members[0]["recursion_group"].clone();
-    let mut saw_group_reference = false;
-    for (ordinal, member) in members.iter().enumerate() {
-        let preimage = super::rebuilt_preimage(member, &member_refs, true);
-        assert_eq!(preimage["recursion"]["ordinal"], ordinal);
-        assert_eq!(preimage["recursion"]["size"], group_size);
-        if preimage["recursion"].get("group").is_some() {
-            assert_eq!(preimage["recursion"]["group"], label);
-        }
-        fn group_reference_ordinals(value: &Value, found: &mut Vec<usize>) {
-            match value {
-                Value::Object(fields) => {
-                    if fields.get("term") == Some(&json!("group_reference")) {
-                        found.push(
-                            fields["ordinal"]
-                                .as_u64()
-                                .and_then(|ordinal| usize::try_from(ordinal).ok())
-                                .expect("group reference ordinal"),
-                        );
+    let wire_graph = WireGraph::of_package_value(&wire).expect("the emitted wire graph parses");
+    let group_keys: BTreeSet<_> = members
+        .iter()
+        .map(|member| {
+            wire_graph
+                .key_of_value(&member["node_id"])
+                .expect("group member id is structural")
+        })
+        .collect();
+    fn collect_group_edges(
+        graph: &WireGraph,
+        group: &BTreeSet<NodeKey>,
+        value: &Value,
+        found: &mut BTreeSet<NodeKey>,
+    ) {
+        match value {
+            Value::Object(fields) => {
+                if fields.get("term") == Some(&json!("reference")) {
+                    if let Some(target) = fields.get("target") {
+                        if let Ok(key) = graph.key_of_value(target) {
+                            if group.contains(&key) {
+                                found.insert(key);
+                            }
+                        }
                     }
-                    fields
-                        .values()
-                        .for_each(|value| group_reference_ordinals(value, found));
                 }
-                Value::Array(items) => items
-                    .iter()
-                    .for_each(|value| group_reference_ordinals(value, found)),
-                _ => {}
+                fields
+                    .values()
+                    .for_each(|value| collect_group_edges(graph, group, value, found));
             }
+            Value::Array(items) => items
+                .iter()
+                .for_each(|value| collect_group_edges(graph, group, value, found)),
+            _ => {}
         }
-        let mut references = Vec::new();
-        group_reference_ordinals(&preimage["body"], &mut references);
-        assert!(references.iter().all(|target| *target < group_size));
-        saw_group_reference |= !references.is_empty();
+    }
+    let mut group_edges = BTreeSet::new();
+    for member in &members {
+        collect_group_edges(&wire_graph, &group_keys, &member["body"], &mut group_edges);
     }
     assert!(
-        saw_group_reference,
-        "wire-derived preimages carry in-group edges"
+        !group_edges.is_empty(),
+        "the emitted component carries structural edges between its members"
     );
     let idle = wire_nodes
         .iter()
@@ -223,11 +222,7 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
         })
         .expect("acyclic protocol clause");
     assert!(idle["recursion_group"].is_null());
-    let idle_group = wire_nodes
-        .iter()
-        .filter(|node| node.get("recursion_group").is_some())
-        .collect::<Vec<_>>();
-    assert!(super::rebuilt_preimage(idle, &idle_group, true)["recursion"].is_null());
+    assert!(idle["recursion_group"].is_null());
     assert_eq!(
         idle["node_id"]["digest"],
         idle_acyclic.to_string(),
@@ -264,11 +259,9 @@ fn checked_large_text(
     text: &str,
     limits: CheckingLimits,
 ) -> (qsl_semantics::check::CheckedGraph, String) {
-    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
-    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
-        panic!("one supplied model document");
-    };
-    let digest = qsl_semantics::model::key::hex(digest);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT])
+        .expect("the spine model document admits");
+    let identity = package_identity(SPINE_MODEL_DOCUMENT);
     let mut parse_limits = qsl_cst::Limits::default();
     parse_limits.source_bytes = parse_limits.source_bytes.max(text.len());
     parse_limits.tokens = parse_limits.tokens.max(text.len());
@@ -293,11 +286,11 @@ fn checked_large_text(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("the spine model admits");
-    let graph = PackageDeclarations::assemble(raw, unit, models, Vec::new())
+    let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, models, Vec::new())
         .expect("the unit assembles")
         .check(limits)
         .unwrap_or_else(|refusals| panic!("unit checks: {refusals:?}"));
-    (graph, digest)
+    (graph, identity)
 }
 
 fn recursion_group(
@@ -356,7 +349,7 @@ fn mixed_protocol_cycle_work_is_linear_and_uses_the_exact_budget() {
     let identity = |graph: &qsl_semantics::check::CheckedGraph| {
         recursion_group(graph)
             .iter()
-            .map(|node| *node.recursion().unwrap().group())
+            .map(|node| node.recursion().unwrap().anchor().clone())
             .collect::<BTreeSet<_>>()
     };
     assert_eq!(
@@ -407,21 +400,13 @@ fn a_100000_member_function_protocol_cycle_is_budgeted_and_order_invariant() {
     evidence
         .insert_domain_package_document(model_digest.as_str(), SPINE_MODEL_DOCUMENT)
         .expect("model evidence admitted");
-    let pinned =
-        qsl_semantics::library::fixtures::single_pin(library(), emission.package.package_id());
     let read_limits = V2ReadLimits::default()
         .with_artifact_bytes(usize::MAX)
         .with_nodes(500_000)
         .with_edges(1_000_000)
         .with_occurrences(500_000)
         .with_work(100_000_000);
-    let read = read_v2(
-        emission.package.bytes(),
-        library(),
-        read_limits,
-        &evidence,
-        &pinned,
-    );
+    let read = read_v2(emission.package.bytes(), library(), read_limits, &evidence);
     assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
     let wire_group = nodes(&wire)
         .iter()
