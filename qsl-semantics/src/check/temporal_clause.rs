@@ -896,6 +896,8 @@ pub(crate) enum IntervalReading<'r> {
     },
     /// Timed intervals in the binding's unit.
     Timed(&'r timed::TimedReader<'r>),
+    /// Numeric tick intervals under the timestamped finite-window profile.
+    Timestamped,
     /// The timed profile in a clause that has no timed reading, a hyper
     /// clause: a step interval refuses as under [`Self::Timed`] and a timed
     /// interval is not checked.
@@ -914,7 +916,10 @@ pub(crate) fn checked_operators(
     reading: &IntervalReading<'_>,
     refusals: &mut Vec<TemporalCause>,
 ) -> Result<(Vec<CheckedOperator>, Vec<Span>), StageFailure<CheckRefusal>> {
-    let bounded = matches!(reading, IntervalReading::Steps { bounded: true });
+    let bounded = matches!(
+        reading,
+        IntervalReading::Steps { bounded: true } | IntervalReading::Timestamped
+    );
     let mut operators = Vec::new();
     let mut punctual = Vec::new();
     for (id, node) in formula.iter() {
@@ -948,7 +953,9 @@ pub(crate) fn checked_operators(
             (
                 Some(OperatorInterval::Timed(timed)),
                 true,
-                IntervalReading::Steps { .. } | IntervalReading::TimedUnread,
+                IntervalReading::Steps { .. }
+                | IntervalReading::Timestamped
+                | IntervalReading::TimedUnread,
             ) => {
                 refusals.push(TemporalCause::TimedIntervalNotChecked { span: timed.span });
                 None
@@ -956,7 +963,9 @@ pub(crate) fn checked_operators(
             (
                 Some(OperatorInterval::Steps(written)),
                 true,
-                IntervalReading::Timed(_) | IntervalReading::TimedUnread,
+                IntervalReading::Timed(_)
+                | IntervalReading::Timestamped
+                | IntervalReading::TimedUnread,
             ) => {
                 // ADR-014 TR-3 refuses `[a, *]` where every interval needs a
                 // finite upper bound; a closed step interval's bounds have no
@@ -981,6 +990,28 @@ pub(crate) fn checked_operators(
                         }
                         Some(CheckedInterval::Steps(interval))
                     }
+                }
+            }
+            (Some(OperatorInterval::Steps(written)), true, IntervalReading::Timestamped) => {
+                match build_interval(written) {
+                    Err(cause) => {
+                        refusals.push(cause);
+                        None
+                    }
+                    Ok(interval) => match interval.upper() {
+                        TemporalUpper::Finite(upper) => {
+                            let lower = Rational::from_integer(Integer::from(interval.lower()));
+                            let upper = Rational::from_integer(Integer::from(upper));
+                            match TimedInterval::new(lower, true, upper, true) {
+                                Ok(interval) => Some(CheckedInterval::Timed(interval)),
+                                Err(_) => return Err(fault("validated-tick-interval-is-valid")),
+                            }
+                        }
+                        TemporalUpper::Open => {
+                            refusals.push(TemporalCause::OpenInterval { span: written.span });
+                            None
+                        }
+                    },
                 }
             }
         };
@@ -1162,9 +1193,10 @@ fn check_clause(
         }),
         None => None,
     };
-    let reading = match &reader {
-        Some(reader) => IntervalReading::Timed(reader),
-        None => IntervalReading::Steps { bounded },
+    let reading = match (&reader, profile) {
+        (Some(reader), _) => IntervalReading::Timed(reader),
+        (None, TemporalProfile::TimestampedEventFiniteWindow) => IntervalReading::Timestamped,
+        (None, _) => IntervalReading::Steps { bounded },
     };
     let mut refusals: Vec<TemporalCause> = Vec::new();
     let (operators, punctual) = checked_operators(&form.formula, &reading, &mut refusals)?;
