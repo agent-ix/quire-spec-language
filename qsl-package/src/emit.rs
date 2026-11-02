@@ -16,14 +16,14 @@ use quire_contract_model::{
     CheckedAbstractionFrame, CheckedAbstractionObject, CheckedAbstractionParameter,
     CheckedAbstractionPopulation, CheckedArtifactRef, CheckedCapability,
     CheckedCapabilityDisposition, CheckedDeclaration, CheckedDependencySelection,
-    CheckedDiagnosticsV2, CheckedFieldScope, CheckedFrameModification, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedOperationAnchorBody, CheckedPackageEvidence, CheckedPackageLockV2,
-    CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef, CheckedPackageV2,
-    CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm, LiteralKind, NominalBody,
-    ProtocolForm, StateForm, ValueForm,
+    CheckedDiagnosticsV2, CheckedDimensionOperand, CheckedFieldScope, CheckedFrameModification,
+    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedOperationAnchorBody, CheckedPackageEvidence,
+    CheckedPackageLockV2, CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef,
+    CheckedPackageV2, CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion,
+    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm,
+    LiteralKind, NominalBody, ProtocolForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -190,6 +190,17 @@ pub enum EmitRefusal {
         /// Its operand.
         operand: Box<CheckedNodeId>,
     },
+    /// A dimension equivalence names a dimension of another package. IR
+    /// admits that only as a Package operand against a direct dependency
+    /// selection, which the emitter does not yet establish (QSL-1177); a
+    /// Local operand must not carry a foreign package.
+    #[error("dimension equivalence {node:?} names operand {operand:?} of another package")]
+    ForeignDimensionOperand {
+        /// The dimension-equivalence node.
+        node: Box<CheckedNodeId>,
+        /// The operand from another package.
+        operand: Box<CheckedNodeId>,
+    },
     /// An equality producer identity row has no unique emitted application
     /// occurrence to which it can be attached.
     #[error("equality producer identity for application {application:?} has no unique emitted occurrence")]
@@ -238,6 +249,7 @@ impl EmitRefusal {
             | Self::UnresolvedNodeReference
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
             Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
         }
     }
@@ -266,6 +278,7 @@ impl EmitRefusal {
             | Self::UnresolvedNodeReference
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => None,
+            Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. } => None,
         }
     }
@@ -960,7 +973,7 @@ fn checked_body(
         node.nominal_payload(),
         matches!(node.owner(), Some(Owner::Model(_))),
     ) {
-        return nominal_term(ids, nominal);
+        return nominal_term(ids, &node.key(), nominal);
     }
     let BodyTerm::Aggregate(aggregate) = node.body() else {
         return checked_term(ids, node.body());
@@ -1008,7 +1021,11 @@ fn checked_rational(value: &quire_exact::Rational) -> CheckedRational {
 
 /// Convert admitted nominal facts without reading an identity back out of a
 /// structural key. Enum ordering and conversion factors are payload facts.
-fn nominal_term(ids: &StructuralIds, payload: &NominalPayload) -> Result<CheckedTerm, EmitRefusal> {
+fn nominal_term(
+    ids: &StructuralIds,
+    node: &NodeKey,
+    payload: &NominalPayload,
+) -> Result<CheckedTerm, EmitRefusal> {
     let body = match payload {
         NominalPayload::Enum(enumeration) => NominalBody::try_enum(
             enumeration.is_ordered(),
@@ -1035,11 +1052,25 @@ fn nominal_term(ids: &StructuralIds, payload: &NominalPayload) -> Result<Checked
             checked_rational(unit.offset()),
         ),
         NominalPayload::DimensionEquivalence(equivalence) => {
+            // A Local operand is a node of the importing package's own graph
+            // (QSpec FR-322-AC-299). A dimension of another package is a
+            // Package operand, which IR checks against a direct dependency
+            // selection; the emitter does not establish that selection here
+            // (QSL-1177 owns it), so it refuses rather than mint a foreign
+            // package into a Local id.
+            for operand in equivalence.dimensions() {
+                if operand.package() != node.package() {
+                    return Err(EmitRefusal::ForeignDimensionOperand {
+                        node: Box::new(node_id(ids, node)),
+                        operand: Box::new(node_id(ids, operand)),
+                    });
+                }
+            }
             NominalBody::try_dimension_equivalence(
-                equivalence
-                    .dimensions()
-                    .each_ref()
-                    .map(|key| node_id(ids, key)),
+                [
+                    CheckedDimensionOperand::Local(node_id(ids, &equivalence.dimensions()[0])),
+                    CheckedDimensionOperand::Local(node_id(ids, &equivalence.dimensions()[1])),
+                ],
                 checked_rational(equivalence.scale()),
             )
         }
@@ -1960,6 +1991,14 @@ fn equality_fact_witness_rows(
         let mut add = |key: &NodeKey,
                        fact: EqualityFactWitness,
                        value_type: Option<quire_exact::ValueType>| {
+            // A selected Exact identity can name a declaration of a
+            // dependency package. IR's typed equality reader accepts only
+            // package-local structural facts, so rows whose key belongs to
+            // another package than the application are the one deliberate
+            // omission; every package-local key must still resolve.
+            if key.package() != row.application().package() {
+                return Ok(());
+            }
             let Some(structural_node) = emitted_node_ids.get(key).cloned() else {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
                     application: row.application().clone(),
@@ -4570,7 +4609,7 @@ fn emit_package_inner(
                     match (nominal.form.as_str(), nominal.nominal_payload()) {
                         ("dimension", Some(payload @ NominalPayload::Dimension(_)))
                         | ("unit", Some(payload @ NominalPayload::Unit(_))) => {
-                            nominal_term(ids, payload)?
+                            nominal_term(ids, &nominal.key, payload)?
                         }
                         _ => {
                             return Err(EmitRefusal::TimedModelWriterInvariant(
