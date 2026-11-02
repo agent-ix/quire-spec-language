@@ -424,7 +424,7 @@ fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
                 retained_length,
             }
         );
-        assert_eq!(refusal.location.path(), [0]);
+        assert!(refusal.location.path().is_empty());
     }
 }
 
@@ -434,9 +434,9 @@ fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
 #[test]
 fn text_literals_require_a_text_position_and_one_quoted_argument() {
     for (parameters, result, body, path) in [
-        ("", "String", "Text(\"a\")", vec![0]),
+        ("", "String", "Text(\"a\")", vec![]),
         ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0, 0]),
-        ("x: String", "Boolean", "x = Text(\"a\")", vec![0, 1]),
+        ("x: String", "Boolean", "x = Text(\"a\")", vec![1]),
         ("x: String", "Text[0, 8; nfc]", "Text(x)", vec![0]),
         ("", "Text[0, 8; nfc]", "Text()", vec![]),
         ("", "Text[0, 8; nfc]", "Text(\"a\", \"b\")", vec![]),
