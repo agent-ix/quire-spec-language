@@ -71,6 +71,7 @@ mod refinement_query;
 mod request;
 mod result;
 mod scalar;
+pub mod source_inventory;
 pub mod spine;
 pub mod statistical;
 mod supplied_limits;
