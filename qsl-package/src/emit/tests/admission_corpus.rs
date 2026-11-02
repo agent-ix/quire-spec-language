@@ -1520,7 +1520,10 @@ fn the_internal_list_value_hosts_abstract_internal() {
         );
     }
     let empty = emit_with_internals(&unit, &documents, Some(internal("R", &[])));
-    assert_ne!(listed["R"]["node_id"], empty["R"]["node_id"]);
+    assert!(
+        empty["R"]["body"].get("abstract_internal").is_none(),
+        "an empty internal list for R writes no member"
+    );
     // A value naming only another refinement, the model subject `R2`.
     let two = format!("{unit}{MODEL_SUBJECT_R2}");
     let nodes = emit_with_internals(&two, &documents, Some(internal("R2", &[])));
