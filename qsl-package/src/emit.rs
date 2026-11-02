@@ -1817,6 +1817,7 @@ fn recorded_occurrences(
 /// Joins each equality producer row to the exact occurrence and checked id
 /// emitted for its application. The join starts from QSL's retained key and
 /// expression location; it never reconstructs a key from a checked id.
+#[cfg(test)]
 fn equality_producer_emission_rows(
     graph: &CheckedGraph,
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
