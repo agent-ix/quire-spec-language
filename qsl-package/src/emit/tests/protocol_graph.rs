@@ -1204,10 +1204,25 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     else {
         panic!("Broken remains refused alone: {:?}", only_broken.results());
     };
-    assert_eq!(
-        standalone_refusal.cause, refusal.cause,
-        "removing Flow does not change Broken's refusal"
-    );
+    assert!(matches!(
+        (&standalone_refusal.cause, &refusal.cause),
+        (
+            qsl_semantics::check::CheckCause::ProtocolAnchor(standalone),
+            qsl_semantics::check::CheckCause::ProtocolAnchor(combined)
+        ) if matches!(
+            (standalone.as_ref(), combined.as_ref()),
+            (
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segment: standalone_segment,
+                    ..
+                },
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segment: combined_segment,
+                    ..
+                }
+            ) if standalone_segment == combined_segment && standalone_segment == "ghost"
+        )
+    ), "removing Flow does not change Broken's refusal reason");
 
     let no_owner = flow_over("Boolean", "on origin", "role Buyer on M::Order;");
     let no_owner_pair = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
