@@ -4327,12 +4327,13 @@ impl<'a> Lowering<'a> {
                 ) {
                     // FR-093 / FR-497 quantity conversions carry the target
                     // carrier's mode, or exact for an uncarried Quantity.
-                    let rounding = match &target {
-                        ValueType::CarriedQuantity(carried) => match carried.carrier() {
+                    let rounding = if let ValueType::CarriedQuantity(carried) = &target {
+                        match carried.carrier() {
                             quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
                             quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
-                        },
-                        _ => quire_exact::RoundingMode::Exact,
+                        }
+                    } else {
+                        quire_exact::RoundingMode::Exact
                     };
                     Operation {
                         member: Some(member),
