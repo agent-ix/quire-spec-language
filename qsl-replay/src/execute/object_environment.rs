@@ -149,6 +149,7 @@ pub(super) fn holds_reference(types: &TypeEnvironment, declared: &[ValueType]) -
             | ValueType::Float(_)
             | ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::String
             | ValueType::Text(_)
             | ValueType::Enum(_)

@@ -417,7 +417,9 @@ pub fn classify_domains(
             ValueType::Population(None) => {
                 domains.insert(key(), DomainKind::Population);
             }
-            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
+            ValueType::Quantity(_)
+            | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_) => {
                 domains.insert(key(), DomainKind::Quantity);
             }
             ValueType::Map(map) => {

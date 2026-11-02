@@ -2191,6 +2191,7 @@ fn holds_reference(
         | ValueType::Float(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid
@@ -2228,6 +2229,7 @@ fn lift(lifting: &BTreeMap<EffectiveId, EffectiveId>, value_type: &ValueType) ->
         | ValueType::Float(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid

@@ -77,6 +77,7 @@ use super::{DeclarationRegions, DispatchTable, Scope};
 use crate::family::ClassifyFailure;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
+use quire_exact::QuantityCarrier;
 use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
 use quire_exact::ValueType;
@@ -337,6 +338,27 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                             out.write_str(&bound.magnitude().to_string());
                         }
                         None => out.write_str("unbounded"),
+                    }
+                }
+            }
+            ValueType::CarriedQuantity(carried) => {
+                out.write_str("carried-quantity");
+                encode_quantity_unit(out, carried.unit().clone());
+                // The carrier is part of the type identity (QExact FR-497).
+                match carried.carrier() {
+                    QuantityCarrier::Decimal(decimal) => {
+                        out.write_str("decimal");
+                        out.write_str(&decimal.lower().to_string());
+                        out.write_str(&decimal.upper().to_string());
+                        out.write_u64(u64::from(decimal.min_scale()));
+                        out.write_u64(u64::from(decimal.max_scale()));
+                        out.write_str(rounding_mode_tag(decimal.rounding()));
+                    }
+                    QuantityCarrier::Integer { domain, rounding } => {
+                        out.write_str("int");
+                        out.write_str(&domain.lower().to_string());
+                        out.write_str(&domain.upper().to_string());
+                        out.write_str(rounding_mode_tag(*rounding));
                     }
                 }
             }
@@ -964,6 +986,7 @@ fn is_package_independent(value_type: &ValueType) -> bool {
             ValueType::Map(map) => current = map.values(),
             ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Enum(_)
             | ValueType::Composite(_)
             | ValueType::Reference(_)
@@ -4116,6 +4139,33 @@ mod locus_tests {
         ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(metre(), min, max).expect("in the unit"),
         ))
+    }
+
+    /// A carried quantity is its own type: its tag differs from a bounded
+    /// quantity's, and the carrier is part of its identity (FR-497).
+    #[test]
+    fn a_carried_quantity_is_encoded_with_its_unit_and_carrier() {
+        let carried = |domain: quire_exact::IntegerInterval| {
+            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+                metre(),
+                quire_exact::QuantityCarrier::Integer {
+                    domain,
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            )))
+        };
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::spanning(
+                quire_exact::Integer::from(low),
+                quire_exact::Integer::from(high),
+            )
+        };
+        let small = measured(&carried(interval(-2, 2)));
+        let wide = measured(&carried(interval(-200, 2000)));
+        assert_ne!(small, measured(&bounded(None, None)));
+        assert_ne!(small, measured(&ValueType::Quantity(metre())));
+        assert_eq!(small, measured(&carried(interval(-2, 2))));
+        assert!(wide.1 > small.1, "a wider carrier writes more bytes");
     }
 
     /// A bounded quantity is its own type, not a `Quantity` (quire-exact

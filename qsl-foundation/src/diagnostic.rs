@@ -703,7 +703,7 @@ pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -723,6 +723,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("ambiguous_dispatch", Category::Refusal),
     ("cardinality_out_of_bound", Category::Refusal),
     ("inexact_decimal", Category::Refusal),
+    ("inexact_conversion", Category::Refusal),
     ("decimal_out_of_domain", Category::Refusal),
     ("division_out_of_domain", Category::Refusal),
     ("modulo_out_of_domain", Category::Refusal),
@@ -785,7 +786,7 @@ pub fn refusal_record(cause: &dyn CatalogCoded, locus: Option<Locus>) -> Option<
 }
 
 /// FR-096-AC-8: a kernel [`quire_exact::Refusal`] as O-17's
-/// [`RefusalRecord`] raised at `locus`, for each of the twelve kernel causes
+/// [`RefusalRecord`] raised at `locus`, for each of the kernel causes
 /// the key table gives a code and fields. The code and cause are the
 /// refusal's own [`quire_exact::Refusal::code`]/[`cause`](quire_exact::Refusal::cause);
 /// the fields are read from the variant, never from a message: each domain
@@ -825,13 +826,15 @@ pub fn kernel_refusal_record(
             ("required", required.root_type().to_string()),
             ("supplied", supplied.root_type().to_string()),
         ]),
-        Refusal::InexactDecimal { target } => BTreeMap::from([(
-            "expected",
-            match target {
-                InexactTarget::Decimal(decimal) => spell_decimal(decimal),
-                InexactTarget::Integer(interval) => spell_int(interval),
-            },
-        )]),
+        Refusal::InexactDecimal { target } | Refusal::InexactConversion { target } => {
+            BTreeMap::from([(
+                "expected",
+                match target {
+                    InexactTarget::Decimal(decimal) => spell_decimal(decimal),
+                    InexactTarget::Integer(interval) => spell_int(interval),
+                },
+            )])
+        }
         Refusal::DecimalOutOfDomain { target } => {
             BTreeMap::from([("expected", spell_decimal(target))])
         }

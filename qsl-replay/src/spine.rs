@@ -1950,6 +1950,19 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
         ValueType::BoundedQuantity(bounded) => {
             format!("BoundedQuantity[{}]", unit_spelling(bounded.unit()))
         }
+        // FR-497: `Quantity<unit, carrier>`, the rounding mode written
+        // inside the carrier bracket.
+        ValueType::CarriedQuantity(carried) => {
+            let carrier = match carried.carrier() {
+                quire_exact::QuantityCarrier::Decimal(decimal) => {
+                    carrier_with_mode(&spell_decimal(decimal), decimal.rounding())
+                }
+                quire_exact::QuantityCarrier::Integer { domain, rounding } => {
+                    carrier_with_mode(&spell_int(domain), *rounding)
+                }
+            };
+            format!("Quantity<{}, {carrier}>", unit_spelling(carried.unit()))
+        }
         ValueType::Map(map) => {
             let values = value_type_source(map.values());
             match map.bound() {
@@ -1994,6 +2007,13 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
         ValueType::Population(Some(maximum)) => format!("Population<_>[{maximum}]"),
         ValueType::Population(None) => "Population<_>".to_owned(),
     }
+}
+
+/// `Decimal[..; mode]` or `Int[..; mode]`: `bracketed` (`Name[..]`) with the
+/// rounding mode written as its last bracket member (FR-497).
+fn carrier_with_mode(bracketed: &str, mode: quire_exact::RoundingMode) -> String {
+    let inner = bracketed.strip_suffix(']').unwrap_or(bracketed);
+    format!("{inner}; {}]", mode.as_str())
 }
 
 /// A structural spelling of a unit: the declared node's key, or the
@@ -2052,7 +2072,7 @@ mod tests {
     /// source-syntax spelling is a message aid); quire-exact FR-386 and FR-387
     /// define the types.
     #[test]
-    fn map_and_bounded_quantity_types_have_a_source_spelling() {
+    fn map_bounded_and_carried_quantity_types_have_a_source_spelling() {
         let map = |bound| {
             ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
                 ValueType::Boolean,
@@ -2080,6 +2100,42 @@ mod tests {
         assert_eq!(
             super::value_type_source(&bounded),
             format!("BoundedQuantity[{}]", super::unit_spelling(&unit))
+        );
+        // FR-497: the rounding mode sits inside the carrier bracket.
+        let carried = |carrier| {
+            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+                unit.clone(),
+                carrier,
+            )))
+        };
+        let decimal = quire_exact::DecimalType::new(
+            quire_exact::Integer::from(-100_i64),
+            quire_exact::Integer::from(100_i64),
+            2,
+            2,
+            quire_exact::RoundingMode::Exact,
+        )
+        .expect("a decimal type");
+        assert_eq!(
+            super::value_type_source(&carried(quire_exact::QuantityCarrier::Decimal(decimal))),
+            format!(
+                "Quantity<{}, Decimal[-100, 100; 2, 2; exact]>",
+                super::unit_spelling(&unit)
+            )
+        );
+        let domain = quire_exact::IntegerInterval::spanning(
+            quire_exact::Integer::from(-2_i64),
+            quire_exact::Integer::from(2_i64),
+        );
+        assert_eq!(
+            super::value_type_source(&carried(quire_exact::QuantityCarrier::Integer {
+                domain,
+                rounding: quire_exact::RoundingMode::NearestEven,
+            })),
+            format!(
+                "Quantity<{}, Int[-2, 2; nearest-even]>",
+                super::unit_spelling(&unit)
+            )
         );
     }
 

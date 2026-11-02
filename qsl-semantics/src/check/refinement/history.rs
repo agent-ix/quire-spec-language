@@ -82,6 +82,7 @@ fn bounded(declared: &ValueType) -> bool {
         | ValueType::Float(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::String
         | ValueType::Uuid
         | ValueType::Timestamp
