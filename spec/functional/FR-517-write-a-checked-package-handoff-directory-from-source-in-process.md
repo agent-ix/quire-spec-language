@@ -40,7 +40,7 @@ quire-protocol never reads a checked package (GAP-10, GAP-15). This requirement
 specifies the successor writer. FR-518 specifies the mutation corpus it writes.
 
 The legacy writer, its two examples, the `handoff-writer` feature and the
-`expected*.json` files stay until FR-517-AC-1 to AC-9 and FR-518 are green and
+`expected*.json` files stay until FR-517-AC-1 to AC-9, AC-11 and FR-518 are green and
 QSL-1549 has repointed quire-protocol (FR-499's keep row, FR-521 row 2); the
 change that deletes them replaces nothing: this writer is already its successor.
 
@@ -75,7 +75,7 @@ A new directory containing exactly:
 | `checked-package.json` | the exact bytes `emit_checked_v2::emit` returns |
 | `sources/<label>` | the unit and library sources, exact bytes; `<label>` is the `source:<path>` label the package embeds |
 | `models/<n>.json` | each domain package document, exact bytes, in selection order |
-| `inventory.json` | `qsl_replay::qsl_inventory` over the unit, with the selected formal identity (FR-514) |
+| `inventory.json` | `qsl_replay::qsl_inventory` over the unit, with the selected formal identity (FR-514); written once QSL-1512 provides `qsl_inventory` over the spine unit (FR-517-AC-11) |
 | `selection.json` | the selection sidecar, `quire.checked-handoff.selection/1` |
 | `mutations/manifest.json`, `mutations/<case>.json` | present only for `corpus = Standard` (FR-518) |
 
@@ -136,17 +136,32 @@ ported recipe is **R**; its elements and their spine requirements:
 | `temporal`/`temporal-v2` bodies, three clock kinds: event position, fixed sample, timestamped event | three `temporal` clauses, each under its own `profile` selection; `temporal_bindings` holds one row per temporal clause and per compensation template, in ascending `NodeRef` order |
 | `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, `Full` (receipt sum equals the captured target, commit `Main::Committed`) and `Partial` (positive sum below the target, commit `never`) compensations | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383) |
 
-A recipe element the spine refuses is a finding filed against the spine (a
-ticket), never a deletion from **R**. If the emitter does not admit three
-temporal profile selections in one lock, **R** splits into one package per
-clock kind and the sidecar lists the packages; FR-518's cases then run in the
-package of their clock kind.
+**R** is three packages, one per clock kind, because the emitter admits one
+temporal profile selection per unit and the checker refuses a unit that selects
+three. `write` writes one handoff directory for each package. The
+event-position package holds two clauses so the row-ordering case can swap
+them, and the other two hold one each. FR-518's cases run in the package of
+their clock kind, so the corpus is split by kind across the three directories.
+FR-517-AC-3 and the Outputs table hold for each package.
+
+**R** departs from the legacy recipe in these ways, each with its ticket:
+
+- the compensation `recover` conditions test `size` of the receipts instead of
+  the receipt sum (QSL-1555);
+- a compensation's `attempts`, `retry` and `recover` range over the record
+  value types `Attempt` and `Recovery` (QSL-1556);
+- the clock configurations are given in the request, because the command line
+  has no flag for them (QSL-1557);
+- the `Amount` and `Total` unit `U` is not ported (QSL-1558);
+- the bounded rationals are not ported (QSL-1522).
+
+The sidecar records the trigger binder's name of an `on each` activation.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-517-AC-1 | `write(&request_for_R, dir)` creates exactly the paths of the Outputs table (with no `mutations/` for `corpus = None`), and `checked-package.json` equals the bytes `emit_checked_v2::emit` returns for the same request. | Test (TC-1312) |
+| FR-517-AC-1 | `write(&request_for_R, dir)` creates exactly the paths of the Outputs table other than `inventory.json` (with no `mutations/` for `corpus = None`), and `checked-package.json` equals the bytes `emit_checked_v2::emit` returns for the same request. | Test (TC-1312) |
 | FR-517-AC-2 | The package read from `checked-package.json` with `read_checked_package` and evidence assembled from the written files is admitted, and `Selection::check` passes; the sidecar's clause ids, names, requirement entries, activation forms, profile selections, definition authority and `TemporalBinding` rows, those of clauses and those of compensation templates, equal the values read from the checked unit held in memory by the writer. | Test (TC-1312) |
 | FR-517-AC-3 | **R** emits one `protocol_clause`, a `Full` and a `Partial` compensation node with different keys, three temporal clauses, and one `temporal_bindings` row per temporal clause and per compensation template in ascending `NodeRef` order (four in the event-position package, one each in the fixed-sample and timestamped-event packages) covering the clock kinds `EventPosition`, `FixedSample` and `TimestampedEvent`; `Full` and `Partial` pair with the one `Main::Applied` effect. | Test (TC-1312) |
 | FR-517-AC-4 | **R** carries, as values of the emitted package, the extrema `-9223372036854775808` and `9223372036854775807` as `Wide` values and the rationals `9223372036854775807/9223372036854775806` and `-9223372036854775808/9223372036854775807` as `Exact` values, and no declared bound is widened to admit them. | Test (TC-1312) |
@@ -155,10 +170,11 @@ package of their clock kind.
 | FR-517-AC-7 | A request whose source the compiler refuses returns the compiler's refusal and writes nothing; a request whose emitted package the reader refuses, and a request for which `ReadBackDiffers` is injected, write nothing. | Test (TC-1312) |
 | FR-517-AC-8 | `checked_handoff` is behind the feature `checked-handoff`, adds no entry to `Cargo.lock`, and a downstream crate with only that feature enabled compiles `write` and `Selection::check` without building this crate's examples or dev-dependencies. | Test (TC-1312) |
 | FR-517-AC-9 | A package with one `temporal_bindings` clock value changed to another well-formed value is admitted by `read_checked_package` and refused by `Selection::check` naming its `SelectionAxis`; no function of the module parses a checked package except through `read_checked_package` (`git grep` finds no second reader). | Test (TC-1312) |
-| FR-517-AC-10 | Until FR-517-AC-1 to AC-9 and FR-518-AC-1 to AC-12 are green, `handoff::write_v1`, `write_v2`, the five `PUBLISHED_*` constants (`PUBLISHED_V1_OFFER_FILE`, `PUBLISHED_V1_SELECTION_FILE`, `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`, `PUBLISHED_MUTATION_MANIFEST_FILE`), the `handoff-writer` feature, the two examples and `examples/protocol-handoff` are present; the change that removes any of them cannot merge while FR-521 row 2 is not green. | Inspection (TC-1312, TC-1316) |
+| FR-517-AC-10 | Until FR-517-AC-1 to AC-9, AC-11 and FR-518-AC-1 to AC-12 are green, `handoff::write_v1`, `write_v2`, the five `PUBLISHED_*` constants (`PUBLISHED_V1_OFFER_FILE`, `PUBLISHED_V1_SELECTION_FILE`, `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`, `PUBLISHED_MUTATION_MANIFEST_FILE`), the `handoff-writer` feature, the two examples and `examples/protocol-handoff` are present; the change that removes any of them cannot merge while FR-521 row 2 is not green. | Inspection (TC-1312, TC-1316) |
+| FR-517-AC-11 | With `qsl_inventory` over the spine unit available (QSL-1512), each handoff directory written for **R** contains `inventory.json` equal to `qsl_replay::qsl_inventory` over the unit with the selected formal identity. | Test (TC-1312) |
 
 ## Dependencies
 
-- **Upstream:** FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
+- **Upstream:** QSL-1512 (`qsl_inventory` over the spine unit, FR-517-AC-11), FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
   FR-505, FR-514, FR-515, `emit_checked_v2`, `qsl_package::emit_checked_with_temporal_selections`.
 - **Downstream:** quire-protocol IT-001 (QSL-1549).
