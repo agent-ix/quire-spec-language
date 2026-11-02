@@ -2683,6 +2683,7 @@ fn checked_equality_term_data(
         equality_decisions,
         protocol_locations: Vec::new(),
         dispatch_tables: Vec::new(),
+        probabilistic_claims: Vec::new(),
     }))
 }
 
