@@ -50,13 +50,16 @@ mod window;
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
-pub use observed::{evaluate_observed, evaluate_observed_at, HoldsStop, ObservedRun};
+pub use observed::{
+    evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window, HoldsStop,
+    ObservedRun,
+};
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
 pub use outcome::{
     InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
 };
 pub use position::{PositionRefusal, TemporalPosition};
-pub use timed::{evaluate_timed_at, TimedTrace};
+pub use timed::{evaluate_finite_window_at, evaluate_timed_at, TimedTrace};
 pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
 };

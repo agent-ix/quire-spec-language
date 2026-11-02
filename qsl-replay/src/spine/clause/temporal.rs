@@ -18,7 +18,7 @@ use qsl_semantics::model::observation::{
     admit_trace_snapshot, population_universe_for, AdmissionFailure, AdmissionRecord,
     AdmissionUsage, DocumentRef,
 };
-use quire_exact::{Meter, ValueType};
+use quire_exact::{Integer, Meter, Rational, ValueType};
 use quire_semantic_value::catalog::CatalogCode;
 
 use super::{
@@ -45,16 +45,58 @@ pub enum TraceInput {
         /// lasso, which the evaluator refuses.
         repeat: Vec<DocumentRef>,
     },
+    /// A finite trace whose positions carry non-negative timestamp ticks and
+    /// whose watermark and completeness assertion describe window closure.
+    Timestamped(TimestampedTraceInput),
+}
+
+/// The timestamped observations and progress premises for FR-501.
+#[derive(Clone, Debug)]
+pub struct TimestampedTraceInput {
+    /// Positions in admitted order. Stamps must be non-decreasing.
+    pub positions: Vec<TimestampedObservation>,
+    /// Inclusive progress watermark.
+    pub watermark: u64,
+    /// Completeness assertion through an inclusive tick, or no completeness.
+    pub complete_through: Option<u64>,
+    /// Whether the decision scope has closed.
+    pub scope_closed: bool,
+    /// Counter uncertainty in ticks; zero is exact timestamp coverage.
+    pub uncertainty: u64,
+    /// Whether the first represented position is an authoritative origin.
+    pub authoritative_origin: bool,
+}
+
+/// One timestamped position and its optional same-stamp order key.
+#[derive(Clone, Debug)]
+pub struct TimestampedObservation {
+    /// The admitted snapshot at this position.
+    pub document: DocumentRef,
+    /// Non-negative timestamp tick in the selected clock's unit.
+    pub stamp: u64,
+    /// Authority-scoped order for positions sharing a stamp.
+    pub order: Option<TimestampedOrderKey>,
+}
+
+/// An admitted order key comparable only within one authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimestampedOrderKey {
+    /// Identity of the authority that assigned the key.
+    pub authority: String,
+    /// Key within that authority's ordered domain.
+    pub key: i64,
 }
 
 impl TraceInput {
     /// Every observation, in position order.
-    fn documents(&self) -> impl Iterator<Item = &DocumentRef> {
-        let (prefix, repeat): (&[DocumentRef], &[DocumentRef]) = match self {
-            Self::Finite(positions) => (positions, &[]),
-            Self::Lasso { prefix, repeat } => (prefix, repeat),
-        };
-        prefix.iter().chain(repeat)
+    fn documents(&self) -> Box<dyn Iterator<Item = &DocumentRef> + '_> {
+        match self {
+            Self::Finite(positions) => Box::new(positions.iter()),
+            Self::Lasso { prefix, repeat } => Box::new(prefix.iter().chain(repeat)),
+            Self::Timestamped(trace) => {
+                Box::new(trace.positions.iter().map(|position| &position.document))
+            }
+        }
     }
 
     /// The trace's shape, or `None` when its length exceeds `u64`.
@@ -66,6 +108,9 @@ impl TraceInput {
             Self::Lasso { prefix, repeat } => Some(TemporalTrace::Lasso {
                 prefix: u64::try_from(prefix.len()).ok()?,
                 loop_len: u64::try_from(repeat.len()).ok()?,
+            }),
+            Self::Timestamped(trace) => Some(TemporalTrace::Finite {
+                len: u64::try_from(trace.positions.len()).ok()?,
             }),
         }
     }
@@ -125,6 +170,22 @@ pub(super) fn run_temporal(
         });
     };
     let clause = node.clause();
+
+    let timestamped_profile = clause.profile() == TemporalProfile::TimestampedEventFiniteWindow;
+    let timestamped_input = matches!(trace, TraceInput::Timestamped(_));
+    if timestamped_profile != timestamped_input {
+        return early(refused("invalid-value", BTreeMap::new()));
+    }
+    if let TraceInput::Timestamped(input) = trace {
+        if input.positions.is_empty()
+            || input
+                .positions
+                .windows(2)
+                .any(|positions| positions[0].stamp > positions[1].stamp)
+        {
+            return early(refused("invalid-value", BTreeMap::new()));
+        }
+    }
 
     // A bounded profile reads a closed finite trace.
     if matches!(trace, TraceInput::Lasso { .. })
@@ -218,14 +279,48 @@ pub(super) fn run_temporal(
     };
 
     let mut meter = Meter::new(run.accounting);
-    let observed = evaluate_observed(
-        run.package,
-        node,
-        &environments,
-        shape,
-        reference,
-        &mut meter,
-    );
+    let observed = match trace {
+        TraceInput::Timestamped(input) => {
+            let stamps = input
+                .positions
+                .iter()
+                .map(|position| Rational::from_integer(Integer::from(position.stamp)))
+                .collect();
+            match qsl_eval::temporal::TimedTrace::new(stamps) {
+                Ok(timed_trace) => {
+                    let margin = input.uncertainty.saturating_mul(2);
+                    let watermark = Rational::from_integer(Integer::from(
+                        input.watermark.saturating_sub(margin),
+                    ));
+                    let complete_through = input.complete_through.map(|through| {
+                        Rational::from_integer(Integer::from(through.saturating_sub(margin)))
+                    });
+                    let observed = qsl_eval::temporal::evaluate_observed_finite_window(
+                        run.package,
+                        node,
+                        &environments,
+                        &timed_trace,
+                        &reference,
+                        &watermark,
+                        complete_through.as_ref(),
+                        &mut meter,
+                    );
+                    observed
+                }
+                Err(refusal) => {
+                    return late(ClauseDisposition::TemporalRefusal(trace_refusal(refusal)));
+                }
+            }
+        }
+        TraceInput::Finite(_) | TraceInput::Lasso { .. } => qsl_eval::temporal::evaluate_observed(
+            run.package,
+            node,
+            &environments,
+            shape,
+            &reference,
+            &mut meter,
+        ),
+    };
     let disposition = match (observed.stopped, observed.result) {
         // A condition's refusal is reported as FR-109 reports a state
         // clause's (`convert_outcome`); a failed call as `check_clause` does.
