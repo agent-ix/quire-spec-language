@@ -666,7 +666,7 @@ fn wire_node<'w>(wire: &'w Value, id: &CheckedNodeId) -> &'w Value {
 /// FR-519-AC-5 (TC-1314 row 5), declaration, operation, binder and model:
 /// each view returns the member the map names, equal to the value the emitted
 /// wire carries, and refuses naming the member once the node lacks it.
-#[trace("FR-519-AC-5", "TC-1314")]
+#[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
 #[test]
 fn the_node_views_return_the_map_successors_and_refuse_a_removed_member() {
     let fixture = fixture();
@@ -808,13 +808,27 @@ fn the_node_views_return_the_map_successors_and_refuse_a_removed_member() {
 
 /// FR-519-AC-5, channel delivery and queue capacity: the delivery policy word
 /// and a declared interval (FR-509), the literal and the symbolic capacity.
-#[trace("FR-519-AC-5", "TC-1314")]
+#[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
 #[test]
 fn the_channel_and_queue_views_return_delivery_and_capacity() {
     let fixture = fixture();
     let package = &*fixture.admitted;
     let charges = by_name(package, "Charges");
     assert_eq!(delivery(charges).unwrap(), Delivery::AtLeastOnce);
+    let held = fixture
+        .protocol
+        .channels
+        .iter()
+        .find(|channel| channel.name == "Charges")
+        .expect("the checked clause holds the channel");
+    assert_eq!(
+        (held.delivery, &held.capacity),
+        (
+            qsl_forms::ChannelDelivery::AtLeastOnce,
+            &qsl_forms::ChannelCapacity::Literal(4)
+        ),
+        "the value the checked clause holds in memory"
+    );
     let view = protocol_view(package, &clause(package).node_id).unwrap();
     let [queue] = view.queues() else {
         panic!("one queue");
@@ -927,7 +941,7 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
 
 /// FR-519-AC-5, locus: the package source-map entry of a node; and the clock
 /// binding row of a temporal clause.
-#[trace("FR-519-AC-5", "TC-1314")]
+#[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
 #[test]
 fn the_locus_and_the_clock_binding_are_the_packages_entries() {
     let fixture = fixture();
@@ -963,11 +977,22 @@ fn the_locus_and_the_clock_binding_are_the_packages_entries() {
         .iter()
         .find(|node| &*node.semantic_form == "temporal_clause")
         .expect("a temporal clause");
-    let row = temporal_binding(package, &temporal.node_id).unwrap();
+    let rows = package
+        .temporal_bindings()
+        .expect("the timed package carries bindings");
+    let row = temporal_binding(rows, &temporal.node_id).unwrap();
     assert_eq!(row.clock, tc134_clock());
     assert_eq!(&*row.clock_name, "model-steps");
     assert_eq!(
-        temporal_binding(package, clause_id).unwrap_err(),
+        temporal_binding(&[], &temporal.node_id).unwrap_err(),
+        ViewRefusal::MissingMember {
+            node: temporal.node_id.clone(),
+            member: "temporal_bindings"
+        },
+        "the row removed"
+    );
+    assert_eq!(
+        temporal_binding(rows, clause_id).unwrap_err(),
         ViewRefusal::MissingMember {
             node: clause_id.clone(),
             member: "temporal_bindings"
@@ -978,7 +1003,7 @@ fn the_locus_and_the_clock_binding_are_the_packages_entries() {
 /// FR-519-AC-5, lock members: the locked source, the profile selection and
 /// the dependency selection each equal the wire's lock row, and each is refused
 /// by name once absent.
-#[trace("FR-519-AC-5", "TC-1314")]
+#[trace("FR-519-AC-5", "FR-519-AC-8", "TC-1314")]
 #[test]
 fn the_lock_views_return_the_selections_and_refuse_an_absent_one() {
     use quire_contract_model::CheckedSelectionRole as Role;

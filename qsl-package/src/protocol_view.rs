@@ -7,7 +7,7 @@
 //! relation". This module reads the borrowed [`CheckedPackageV2`] Contract IR
 //! has already admitted; it never reads package bytes and wraps no reader.
 //!
-//! The records QSL's record-to-node map marks Ended name nothing here: an
+//! The records QSL's record-to-node map marks Ended (FR-519-AC-9) name nothing here: an
 //! `ExportRef`, an `ArtifactKind`, a `Revision`, a `Language` and a `Definition`
 //! table each fail to resolve.
 //!
@@ -797,11 +797,12 @@ pub enum Delivery {
     AtLeastOnce,
     /// `exactly-once-premise`.
     ExactlyOncePremise,
-    /// `[lower,upper]`: a declared delivery interval, both bounds inclusive.
+    /// `[lower,upper]`: a declared delivery count interval (QSL FR-509), both
+    /// bounds inclusive.
     Between {
-        /// The least delay.
+        /// The least count.
         lower: u64,
-        /// The greatest delay.
+        /// The greatest count.
         upper: u64,
     },
 }
@@ -950,19 +951,19 @@ pub fn locus<'p>(
     }
 }
 
-/// The clock binding row of the temporal clause `clause`.
+/// The clock binding row of the temporal clause `clause` among the package's
+/// `temporal_bindings` rows (`CheckedPackageV2::temporal_bindings`).
 ///
 /// # Errors
 ///
-/// [`ViewRefusal::MissingMember`] naming `temporal_bindings` when the package
-/// has no row of the clause.
+/// [`ViewRefusal::MissingMember`] naming `temporal_bindings` when `rows` has no
+/// row of the clause.
 pub fn temporal_binding<'p>(
-    package: &'p CheckedPackageV2,
+    rows: &'p [TemporalBinding],
     clause: &CheckedNodeId,
 ) -> Result<&'p TemporalBinding, ViewRefusal> {
-    package
-        .temporal_bindings()
-        .and_then(|rows| rows.iter().find(|row| &row.declaration == clause))
+    rows.iter()
+        .find(|row| &row.declaration == clause)
         .ok_or_else(|| missing(clause, "temporal_bindings"))
 }
 
