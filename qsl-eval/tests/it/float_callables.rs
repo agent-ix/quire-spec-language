@@ -362,3 +362,31 @@ fn f04b_leftmost_nan_payload_is_kept_and_a_signaling_nan_raises_invalid() {
         assert_eq!(flags(&losses), [IeeeFlag::Invalid], "{body}");
     }
 }
+
+/// Trace: FR-397-AC-12, FR-397-AC-13
+///
+/// A signaling NaN sum records one `invalid` flag per evaluation, so the
+/// number of flag records counts how often an operand is evaluated.
+#[trace("TC-1091", "FR-397-AC-12", "FR-397-AC-13")]
+#[test]
+fn each_ordering_operand_is_evaluated_exactly_once() {
+    let signaling_sum = format!(
+        "{} + {}",
+        constant(32, 0x7f80_0001),
+        constant(32, 0x3f80_0000)
+    );
+    let one = constant(32, 0x3f80_0000);
+    for operator in ["<", "<=", ">", ">="] {
+        for body in [
+            format!("({signaling_sum}) {operator} {one}"),
+            format!("{one} {operator} ({signaling_sum})"),
+        ] {
+            let (outcome, losses) = run("Boolean", &body);
+            assert!(
+                matches!(outcome, Outcome::Completed(Value::Boolean(false))),
+                "{body}: {outcome:?}"
+            );
+            assert_eq!(flags(&losses), [IeeeFlag::Invalid], "{body}");
+        }
+    }
+}

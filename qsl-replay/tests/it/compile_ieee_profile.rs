@@ -157,6 +157,52 @@ fn strict_ir_reader_admits_the_genuine_float_source_packages() {
     }
 }
 
+#[trace("TC-1091", "FR-397-AC-7", "FR-397-AC-12", "FR-397-AC-15")]
+#[test]
+fn strict_ir_reader_admits_fma_relations_and_float_orderings() {
+    for (width, ty) in [
+        ("float32", "Float32[nearest-even]"),
+        ("float64", "Float64[nearest-even]"),
+    ] {
+        let fused = format!("{HEADER}function fused using v(a: {ty}, b: {ty}, c: {ty}): {ty} pure {{ quire::value::ieee::fma(a, b, c) }}");
+        let sources = [
+            fused,
+            format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::totalOrder(a, b) }}"),
+            format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::bitIdentical(a, b) }}"),
+            format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::numericEqual(a, b) }}"),
+            format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ a < b }}"),
+            format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ a >= b }}"),
+            format!("{HEADER}function f using v(a: {ty}, b: {ty}, c: {ty}): Boolean pure {{ quire::value::ieee::fma(a, b, c) > a }}"),
+        ];
+        for source in sources {
+            let compiled = compile(&source).expect("source compiles");
+            let wire: Value = serde_json::from_slice(compiled.package().bytes()).unwrap();
+            let mut evidence = CheckedPackageEvidence::new();
+            for feature in wire["lock"]["required_features"].as_array().unwrap() {
+                evidence.support_feature(feature.as_str().unwrap());
+            }
+            let read = CheckedPackageV2::read(
+                compiled.package().bytes(),
+                CheckedPackageReadLimits::bounded(),
+                &evidence,
+            );
+            let CheckedPackageV2ReadResult::Admitted(package) = read else {
+                panic!("strict IR admission failed for {source}: {read:?}");
+            };
+            assert_eq!(
+                package.graph().nodes.len(),
+                wire["semantic_graph"]["nodes"].as_array().unwrap().len(),
+                "{source}"
+            );
+        }
+        let wire = wire(&format!("{HEADER}function fused using v(a: {ty}, b: {ty}, c: {ty}): {ty} pure {{ quire::value::ieee::fma(a, b, c) }}"));
+        let node = operation(&wire, &format!("quire.op.ieee.{width}.fma"));
+        assert_eq!(node["body"]["operation"]["identity"], format!("quire.op.ieee.{width}.fma"));
+        assert_eq!(node["body"]["operator"], "call");
+        assert_eq!(node["body"]["arguments"].as_array().unwrap().len(), 3);
+    }
+}
+
 #[trace("TC-1091", "FR-397-AC-5")]
 #[test]
 fn ieee_profile_is_not_header_selectable_with_or_without_float_functions() {
@@ -424,6 +470,48 @@ fn ieee_intrinsic_calls_refuse_bad_arity_types_and_unknown_names() {
     assert!(matches!(
         &refusals[0].cause,
         CheckCause::MissingQualifiedName(name) if name.name == "quire::value::ieee::cbrt"
+    ));
+}
+
+#[trace("TC-1091", "FR-397-AC-16")]
+#[test]
+fn zero_argument_intrinsic_calls_are_refused_by_the_parser() {
+    for call in [
+        "quire::value::ieee::sqrt()",
+        "quire::value::ieee::bitIdentical()",
+    ] {
+        let source = format!(
+            "{HEADER}function call using v(a: Float64[nearest-even]): Boolean pure {{ {call} }}"
+        );
+        let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
+            panic!("{call}: expected a package refusal");
+        };
+        assert_eq!(refusal.code(), Code::InvalidSyntax, "{call}: {refusal:?}");
+        // The refusal is at the closing parenthesis.
+        let close = source.find("()").unwrap() + 1;
+        assert!(
+            format!("{refusal:?}").contains(&format!("start: {close}")),
+            "{call}: {refusal:?}"
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-16")]
+#[test]
+fn profile_admission_precedes_intrinsic_argument_typing() {
+    // No float is declared, so the IEEE profile is not selected and the
+    // call refuses before its argument is typed.
+    let source = format!("{HEADER}function call using v(i: Int[0, 10]): Boolean pure {{ quire::value::ieee::sqrt(i) }}");
+    let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
+        panic!("expected a package refusal from {source}");
+    };
+    assert_eq!(refusal.code(), Code::InvalidPackage, "{refusal:?}");
+    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("the call refuses at checking");
+    };
+    assert!(matches!(
+        refusals[0].cause,
+        CheckCause::IeeeProfileNotAdmitted
     ));
 }
 

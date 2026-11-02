@@ -3181,7 +3181,22 @@ impl<'a> Typer<'a> {
         if left_type != right_type {
             return Err(mismatch(location));
         }
-        let (left, right) = (self.push(left), self.push(right));
+        // Each operand is evaluated once and read by every part of the
+        // composition: an operand that is not already a slot read or a
+        // literal is bound by a `let` around the composition, the left one
+        // outermost so evaluation keeps source order.
+        let mut bindings = Vec::new();
+        let mut operand = |this: &mut Self, operand: Node| {
+            if matches!(operand.kind, NodeKind::Local(_) | NodeKind::Literal(_)) {
+                return this.push(operand);
+            }
+            let value_type = operand.value_type.clone();
+            let value = this.push(operand);
+            let slot = this.fresh_slot("ieee_operand");
+            bindings.push((slot, value));
+            this.push(node(NodeKind::Local(slot), value_type, location))
+        };
+        let (left, right) = (operand(self, left), operand(self, right));
         let (lesser, greater, strict) = match operator {
             OrderingOperator::Less => (left, right, true),
             OrderingOperator::LessOrEqual => (left, right, false),
@@ -3206,11 +3221,29 @@ impl<'a> Typer<'a> {
         } else {
             boolean(self, NodeKind::Connective(Connective::Or, precedes, equal))
         };
-        Ok(node(
+        let mut composed = node(
             NodeKind::Connective(Connective::And, both_ordinary, relation),
             ValueType::Boolean,
             location,
-        ))
+        );
+        for (slot, value) in bindings.into_iter().rev() {
+            let body = self.push(composed);
+            composed = node(
+                NodeKind::Let { slot, value, body },
+                ValueType::Boolean,
+                location,
+            );
+        }
+        Ok(composed)
+    }
+
+    /// A slot that no source name can read, for a value the checker binds
+    /// itself.
+    fn fresh_slot(&mut self, name: &str) -> Slot {
+        let slot = self.slots;
+        self.slots = self.slots.saturating_add(1);
+        self.slot_names.push(format!("{name}_{slot}"));
+        slot
     }
 
     /// `left op right` for `+`, `-`, `*` and `/`, over its two typed
