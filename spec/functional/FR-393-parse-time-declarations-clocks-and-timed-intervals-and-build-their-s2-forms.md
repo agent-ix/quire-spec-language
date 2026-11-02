@@ -74,9 +74,23 @@ pub enum TimeSourceSyntax {
 pub struct TimeInvariantForm {          // time-invariant
     pub name: Spanned<Identifier>,
     pub guard: Expression,              // the `when` block
-    pub bounds: Vec<ClockBoundForm>,    // clock-bound, declared order
+    pub bounds: Vec<TimeInvariantBoundForm>, // declared source order
     pub span: Span,
 }
+pub enum TimeInvariantBoundForm {
+    Clock(ClockBoundForm),
+    Quantified(QuantifiedClockBoundForm),
+}
+pub struct QuantifiedClockBoundForm {
+    pub quantifier: QuantifierKind,     // ForAll | Exists; S3 decides admission
+    pub binder: Spanned<Identifier>,   // the element name
+    pub collection: Expression,       // the traversed collection
+    pub clock: Expression,            // the bound element's clock place
+    pub strict: bool,                 // `<` (true) or `<=` (false)
+    pub bound: QuantityForm,
+    pub span: Span,
+}
+pub enum QuantifierKind { ForAll, Exists }
 pub struct ClockBoundForm {
     pub clock: Expression,              // the postfix operand, as written
     pub strict: bool,                   // `<` (true) or `<=` (false)
@@ -103,6 +117,16 @@ pub enum OperatorInterval {
     Timed(TimedIntervalForm),
 }
 ```
+
+The `time-invariant` production's final block SHALL contain one or more
+`TimeInvariantBound` items in source order. An item is either an ordinary
+`ClockBound` (`postfix (< | <=) quantity-literal`) or a quantified bound
+`(forall | exists) (identifier in expression : postfix (< | <=)
+quantity-literal)`. The quantified form SHALL retain the quantifier kind,
+binder, collection expression, element clock expression, comparison, bound
+and complete source span in `QuantifiedClockBoundForm`; it SHALL not lower to
+an ordinary bound or discard the binder at S2. S2 builds both quantifier
+kinds; S3 admits only the invariant form FR-230 defines.
 
 `ExactValue` is the `exact-value` that a `uint`, a `decimal-literal` or an
 `exact-number` spells, held as written: a spelling kind (`uint`,
@@ -172,6 +196,7 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
 | FR-393-AC-6 | The `Rpc` unit of AC-1, once with no facet selected and once with the complete facets selected, builds equal forms under `PartialEq`; S2 reports no facet diagnostic for either. | Test (TC-1078) |
 | FR-393-AC-7 | `x: Clock` builds `TypeForm::Clock`; `x: M::Clock` builds a named type form for the qualified name and no `TypeForm::Clock`; a unit that declares an unqualified type named `Clock` fails at S1 with a parse diagnostic at the declared name. | Test (TC-1078) |
 | FR-393-AC-8 | `Clock` and `Quantity<ms>` each build their type form (`TypeForm::Clock` and the `Quantity` type form over `ms`) in every type position: a function parameter and result (`function f(c: Clock): Clock`), a predicate parameter, an operation parameter, a record field, a tuple element, a union payload, a `type Alias = Clock;` target and the argument of `Option`, `Set`, `Sequence`, `Bag`, `OrderedSet` and a map, each with the span of the word; the forms are the same under every facet selection. | Test (TC-1078) |
+| FR-393-AC-9 | In `time invariant All when { true } { forall(e in self.ts: e.x <= 9 ms) and self.x < 12 ms }`, S2 builds the ordinary and quantified bounds in source order; the quantified item is `QuantifiedClockBoundForm{quantifier: ForAll, binder: e, collection: self.ts, clock: e.x, strict: false, bound: 9 ms}` and each form carries its source span. The corresponding `exists(e in self.ts: e.x <= 9 ms)` builds `quantifier: Exists` without an S1/S2 diagnostic so S3 can report its semantic refusal. | Test |
 
 ## Dependencies
 

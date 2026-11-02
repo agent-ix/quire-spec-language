@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-53. Every unit of steps 1 to 7 and 10 to 36 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
+Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-56. Every unit of steps 1 to 7 and 10 to 37 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
 
 ## Test Procedure
 
@@ -97,3 +97,4 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 34: each presence is a `Boolean` data predicate of the named owner and slot (the second object's `v` independent of the first's), `forall` true and `exists` false on an empty `q`, no `Option<Boolean>` or other member declared, and the model declaration keys unchanged by `v` (AC-51); a wrong slot count or owner type refused.
 - Step 35: each vector's successors are its `expected` (presence and clock), `FP-11` and `FP-12` refuse `invalid_timed_model`/`clock-presence-unwritten`, and the pairs `FP-05`/`FP-06` and `FP-13`/`FP-14` differ while every other pair agrees (AC-52).
 - Step 36: two `urgency` nodes in declared order, each located at its declaration, the `when` one referencing the located expression node of its predicate with `self` a level-0 `parameter`, the `operation` one naming the model node and `attemptUpdate`, both read back by I2; the presence urgency refused `TimedModelNotEmitted` (AC-53).
+- Step 37: S2 retains a quantified invariant bound as the typed `ForAll` form with binder, collection, clock expression, comparison, quantity and source span, in source order alongside any ordinary bound (FR-393-AC-9). At S3, the bounded sequence fixture emits one invariant binder reference and one template upper-bound constraint whose slot term is that binder; the bound applies only to live slots and imposes no bound for an empty sequence (AC-56; CL-59/CL-62). The `Exists` invariant parses then refuses `invalid_timed_model`/`time-invariant-shape`; element-presence quantified invariant refusal emits no partial nodes (AC-56; FR-322-AC-295; FR-415-AC-24). The point-qualified clause control remains refused under FR-230-AC-50 / FR-342-AC-11.
