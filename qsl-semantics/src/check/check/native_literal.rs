@@ -9,7 +9,9 @@
 //! the typing loop.
 
 use quire_checked::node::{CheckedLiteral, NodeKind};
-use quire_exact::{Integer, Timestamp, Uuid, Value, ValueType};
+use quire_exact::{
+    admit_text, Integer, Meter, Outcome, TextPayload, Timestamp, Uuid, Value, ValueType,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{mismatch, node, Typer};
@@ -133,8 +135,16 @@ impl Typer<'_> {
                     });
                 }
                 let text_type = *text_type;
+                let payload = TextPayload::from_source_literal(text.as_str(), format!("{text:?}"));
+                let Outcome::Completed(text) = admit_text(
+                    &payload,
+                    &text_type,
+                    &mut Meter::new(crate::check::UNBOUNDED_SCALAR_LIMITS),
+                ) else {
+                    return Err(mismatch(location));
+                };
                 Ok(node(
-                    NodeKind::Literal(CheckedLiteral(Value::Text(retained))),
+                    NodeKind::Literal(CheckedLiteral(Value::Text(text))),
                     ValueType::Text(text_type),
                     location,
                 ))
