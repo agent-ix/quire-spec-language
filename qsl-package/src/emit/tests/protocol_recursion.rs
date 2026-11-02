@@ -316,7 +316,7 @@ fn minimum_mixed_cycle_work(calls: usize) -> u64 {
             Err(refusals) if upper == u64::MAX => {
                 panic!("the mixed cycle refuses even at unlimited work: {refusals:?}")
             }
-            Err(_) => upper = upper.checked_mul(2).unwrap_or(u64::MAX),
+            Err(_) => upper = upper.saturating_mul(2),
         }
     }
     let mut lower = 0_u64;
