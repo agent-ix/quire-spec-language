@@ -22,6 +22,15 @@ fn default_event_rate(unit_seconds: &Rational) -> Rational {
     unit_seconds.mul(&Rational::from_integer(ExactInteger::from(1_000_000_i64)))
 }
 
+/// The span of ticks an entry of an interval operator is kept for (FR-251
+/// "Buffers", AC-13): the interval's upper bound plus the width of the tick
+/// cover widened by the uncertainty on both sides, `1 + 2u`.
+pub fn retention_window(upper: &Rational, uncertainty: &Rational) -> Rational {
+    let one = Rational::from_integer(ExactInteger::from(1_i64));
+    let two = Rational::from_integer(ExactInteger::from(2_i64));
+    upper.add(&one).add(&two.mul(uncertainty))
+}
+
 /// FR-251's per-window capacity: `ceil(rate * window) + 1`.
 fn buffer_capacity(rate: &Rational, window: &Rational) -> Result<u64, MonitorPlanRefusal> {
     let zero = Rational::from_integer(ExactInteger::from(0_i64));
@@ -130,7 +139,7 @@ pub fn produce(
             upper.clone(),
             interval.upper_closed(),
         );
-        let window = upper.sub(&lower);
+        let window = retention_window(&upper, &target.uncertainty);
         intervals.push((id, tick_interval));
         buffers.push((id, buffer_capacity(&rate_limit, &window)?));
     }
@@ -240,6 +249,9 @@ mod tests {
     #[test]
     fn event_buffer_capacity_rounds_up_then_adds_one() {
         assert_eq!(buffer_capacity(&ratio(2, 1), &ratio(10, 1)), Ok(21));
+        // FR-251-AC-2 and AC-13: 1 MHz ticks, 2 events per ms.
+        let window = retention_window(&ratio(10_000, 1), &ratio(0, 1));
+        assert_eq!(buffer_capacity(&ratio(2, 1000), &window), Ok(22));
         assert_eq!(buffer_capacity(&ratio(1, 3), &ratio(10, 1)), Ok(5));
     }
 

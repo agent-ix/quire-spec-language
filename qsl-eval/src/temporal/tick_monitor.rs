@@ -255,8 +255,6 @@ struct Op {
     /// `true` for the dual operators (`always`, `historically`, `release`,
     /// `triggered`), which negate their operands and their result.
     dual: bool,
-    /// Whether the operator has a left operand (`until`-like).
-    binary: bool,
 }
 
 fn q(value: i128) -> Rational {
@@ -275,16 +273,7 @@ fn operator(node: &FormulaNode) -> Option<(Op, Option<usize>, usize, Option<usiz
                 UnaryTemporal::Once => (Dir::Past, false),
                 UnaryTemporal::Historically => (Dir::Past, true),
             };
-            Some((
-                Op {
-                    dir,
-                    dual,
-                    binary: false,
-                },
-                None,
-                operand.index(),
-                None,
-            ))
+            Some((Op { dir, dual }, None, operand.index(), None))
         }
         FormulaNode::Binary {
             operator,
@@ -298,16 +287,7 @@ fn operator(node: &FormulaNode) -> Option<(Op, Option<usize>, usize, Option<usiz
                 BinaryTemporal::Since => (Dir::Past, false),
                 BinaryTemporal::Triggered => (Dir::Past, true),
             };
-            Some((
-                Op {
-                    dir,
-                    dual,
-                    binary: true,
-                },
-                Some(left.index()),
-                right.index(),
-                None,
-            ))
+            Some((Op { dir, dual }, Some(left.index()), right.index(), None))
         }
         _ => None,
     }
@@ -326,6 +306,9 @@ pub struct TickMonitorReference<'f> {
     settled: BTreeMap<(usize, usize), Val>,
     past_values: BTreeMap<(usize, usize), Val>,
     failed: BTreeSet<(usize, usize)>,
+    /// The unwrapped tick history restarts at after a reading-gap fault
+    /// (FR-251-AC-15); past operators reaching before it are indeterminate.
+    history_start: Option<i128>,
     emitted: BTreeMap<(usize, usize), TickOutcome>,
 }
 
@@ -348,6 +331,7 @@ impl<'f> TickMonitorReference<'f> {
             settled: BTreeMap::new(),
             past_values: BTreeMap::new(),
             failed: BTreeSet::new(),
+            history_start: None,
             emitted: BTreeMap::new(),
         }
     }
@@ -433,6 +417,10 @@ impl<'f> TickMonitorReference<'f> {
     fn event_cells(&self, upto: Option<usize>, from: usize) -> Vec<Cell> {
         let end = upto.map_or(self.events.len(), |last| last + 1);
         (from..end)
+            .filter(|position| {
+                self.history_start
+                    .is_none_or(|start| self.events[*position].tick >= start)
+            })
             .map(|position| Cell {
                 first: position,
                 last: position,
@@ -502,6 +490,14 @@ impl<'f> TickMonitorReference<'f> {
                 }
             }
         }
+        if let (Dir::Past, Some(start)) = (op.dir, self.history_start) {
+            // History before the marker is gone: an event there could have
+            // been in the window, and nothing says whether it was.
+            let before = start - 1;
+            if self.member(node, tick - before, tick - before, false) != Member::No {
+                acc = acc.or(Val::UNKNOWN);
+            }
+        }
         polar(acc)
     }
 
@@ -557,7 +553,7 @@ impl<'f> TickMonitorReference<'f> {
             TickStep::Watermark { boundary } => {
                 self.watermark = self.watermark.max(i128::from(*boundary));
                 self.expire();
-                Ok(self.settle_and_emit())
+                Ok(self.settle_and_emit(true))
             }
             TickStep::Reading {
                 reading,
@@ -611,7 +607,7 @@ impl<'f> TickMonitorReference<'f> {
         for node in nodes {
             self.add_event(node, position);
         }
-        Ok(self.settle_and_emit())
+        Ok(self.settle_and_emit(false))
     }
 
     fn add_event(&mut self, node: usize, position: usize) {
@@ -627,18 +623,12 @@ impl<'f> TickMonitorReference<'f> {
             t_last: tick,
             lost: false,
         };
-        if !future {
-            let mut cells = self.buffers.get(&node).cloned().unwrap_or_default();
-            cells.push(cell);
-            let value = self.temporal(node, position, &cells, &mut Memo::new());
-            self.past_values.insert((node, position), value);
-        }
         let Some(buffer) = self.buffers.get_mut(&node) else {
             return;
         };
         if buffer.len() >= capacity.max(1) {
             if let Some(last) = buffer.last_mut() {
-                let (first, was_lost) = (last.first, last.lost);
+                let first = last.first;
                 last.last = position;
                 last.t_last = tick;
                 last.lost = true;
@@ -651,10 +641,16 @@ impl<'f> TickMonitorReference<'f> {
                         self.settled.insert((node, lost_position), lost);
                     }
                 }
-                let _ = was_lost;
             }
         } else {
             buffer.push(cell);
+        }
+        if !future {
+            // The event that overflows is merged first: its own result then
+            // depends on a lost entry and settles `Incomplete` (FR-251-AC-2).
+            let cells = self.buffers.get(&node).cloned().unwrap_or_default();
+            let value = self.temporal(node, position, &cells, &mut Memo::new());
+            self.past_values.insert((node, position), value);
         }
     }
 
@@ -694,7 +690,10 @@ impl<'f> TickMonitorReference<'f> {
         out
     }
 
-    fn settle_and_emit(&mut self) -> Vec<TickResult> {
+    /// Settle what can no longer change and report. An instance is reported
+    /// once when its outcome settles; the pending ones are reported again at
+    /// every watermark step (FR-251-AC-14).
+    fn settle_and_emit(&mut self, watermark: bool) -> Vec<TickResult> {
         // Settle future instances of buffered nodes that can no longer change.
         let nodes: Vec<usize> = self.buffers.keys().copied().collect();
         for node in &nodes {
@@ -737,8 +736,14 @@ impl<'f> TickMonitorReference<'f> {
             let outcome = self
                 .eval(node, position, &mut memo)
                 .outcome(&self.spec.capacities);
-            if self.emitted.get(&(node, position)) != Some(&outcome) {
-                self.emitted.insert((node, position), outcome);
+            let changed = self.emitted.get(&(node, position)) != Some(&outcome);
+            self.emitted.insert((node, position), outcome);
+            let report = if outcome == TickOutcome::Pending {
+                watermark
+            } else {
+                changed
+            };
+            if report {
                 results.push(TickResult {
                     subformula: node,
                     position,
@@ -765,6 +770,23 @@ impl<'f> TickMonitorReference<'f> {
                 open.push((node, position));
             }
         }
+        // Open instances that are not pending keep their value; the history
+        // they read is about to go.
+        let keep: Vec<(usize, usize)> = self
+            .reported()
+            .into_iter()
+            .filter(|key| !self.failed.contains(key) && !open.contains(key))
+            .collect();
+        for (node, position) in keep {
+            if self.buffers.contains_key(&node) && self.is_future(node) {
+                let value = self.eval(node, position, &mut memo);
+                self.settled.entry((node, position)).or_insert(value);
+            }
+        }
+        for cells in self.buffers.values_mut() {
+            cells.clear();
+        }
+        self.history_start = Some(self.now);
         let mut results = Vec::new();
         for (node, position) in open {
             self.failed.insert((node, position));

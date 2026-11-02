@@ -121,7 +121,7 @@ fn producer_keeps_checked_formula_atoms_and_converts_intervals_to_ticks() {
     assert_eq!(plan.intervals().len(), 1);
     assert_eq!(plan.intervals()[0].1.lower(), &ratio(0, 1));
     assert_eq!(plan.intervals()[0].1.upper(), &ratio(3, 1));
-    assert_eq!(plan.buffers(), &[(plan.intervals()[0].0, 7)]);
+    assert_eq!(plan.buffers(), &[(plan.intervals()[0].0, 9)]);
     assert!(matches!(
         obligations[0],
         TimingObligation::MonitorAgreement { events: 8, .. }
@@ -154,7 +154,7 @@ fn producer_sizes_the_ten_millisecond_past_window_as_twenty_one_events() {
     )
     .expect("checked timed clause derives a plan");
     assert_eq!(plan.buffers().len(), 1);
-    assert_eq!(plan.buffers()[0].1, 21);
+    assert_eq!(plan.buffers()[0].1, 23);
 }
 
 #[trace("TC-706", "FR-251")]
@@ -179,7 +179,7 @@ fn producer_converts_the_default_one_per_microsecond_rate_to_target_units() {
     )
     .expect("checked timed clause derives a plan");
     assert_eq!(plan.rate_limit(), &ratio(1_000, 1));
-    assert_eq!(plan.buffers()[0].1, 1_001);
+    assert_eq!(plan.buffers()[0].1, 2_001);
 }
 
 #[trace("TC-706", "FR-251")]
@@ -282,6 +282,28 @@ fn each_premise_alone_changes_the_complete_plan_identity() {
         &base_target(),
     );
     assert_ne!(base.id(), swapped.id());
+}
+
+/// FR-251-AC-2 and AC-13: on a 1 MHz counter `once[0 ms, 10 ms]` and
+/// `once[5 ms, 10 ms]` both get capacity 22 (upper bound, not width).
+#[trace("TC-706", "FR-251-AC-13")]
+#[test]
+fn capacity_uses_the_upper_bound_plus_the_tick_cover() {
+    for formula in [
+        "once[0 ms, 10 ms] holds(c.versionNumber = 2)",
+        "once[5 ms, 10 ms] holds(c.versionNumber = 2)",
+    ] {
+        let target = MonitorTarget {
+            unit: "us".to_owned(),
+            max_event_rate: Some(ratio(2, 1000)),
+            ..base_target()
+        };
+        assert_eq!(
+            premise_plan(formula, &target).buffers()[0].1,
+            22,
+            "{formula}"
+        );
+    }
 }
 
 /// FR-487-AC-4 premise ranges (MP-18, MP-21, MP-34, MP-36, MP-38): the

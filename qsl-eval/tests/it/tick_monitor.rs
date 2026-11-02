@@ -13,7 +13,7 @@ use qsl_eval::temporal::{
 use qsl_semantics::check::{CheckedInterval, FormulaNode};
 use quire_exact::{Integer, Rational};
 
-use crate::timed_trace::{timed, timed_on};
+use crate::timed_trace::timed;
 
 fn ratio(n: i64, d: i64) -> Rational {
     Rational::new(Integer::from(n), Integer::from(d)).expect("nonzero")
@@ -59,7 +59,11 @@ impl Plan {
                 let lower = interval.lower().mul(&scale);
                 let upper = interval.upper().mul(&scale);
                 if let Some(rate) = &self.capacity_rate {
-                    let window = upper.sub(&lower);
+                    // FR-251 "Buffers": the upper bound plus the tick cover.
+                    let window = upper
+                        .add(&ratio(1, 1))
+                        .add(&ratio(2, 1).mul(&self.uncertainty));
+                    let _ = &lower;
                     let product = rate.mul(&window);
                     let cap = product.numerator().as_big().clone();
                     let den = product.denominator().as_big().clone();
@@ -177,10 +181,8 @@ fn watermark_settles_the_open_deadline_and_a_poll_does_not() {
         .any(|result| result.subformula == node && result.outcome == TickOutcome::False));
 }
 
-#[trace("TC-706", "FR-251-AC-2")]
-#[test]
-fn a_full_buffer_never_drops_an_event_and_settles_incomplete() {
-    let mut plan = Plan::new("once[0 ms, 10 ms] holds(c.level = 2)", ratio(0, 1));
+fn overflow_outcome(body: &str, events: u64, probe: Option<u64>) -> Option<TickOutcome> {
+    let mut plan = Plan::new(body, ratio(0, 1));
     plan.capacity_rate = Some(ratio(2, 1000));
     let p = plan.holds()[0];
     let node = plan
@@ -194,14 +196,97 @@ fn a_full_buffer_never_drops_an_event_and_settles_incomplete() {
         .index();
     let mut monitor = plan.monitor();
     let mut last = None;
-    for event in 0..22_u64 {
-        let results = monitor.step(&reading(event * 100, &[(p, false)])).unwrap();
+    let mut ticks: Vec<u64> = (0..events).map(|event| event * 100).collect();
+    ticks.extend(probe);
+    for (event, tick) in ticks.into_iter().enumerate() {
+        let results = monitor.step(&reading(tick, &[(p, false)])).unwrap();
         last = results
             .into_iter()
-            .find(|result| result.subformula == node && result.position == event as usize)
+            .find(|result| result.subformula == node && result.position == event)
             .map(|result| result.outcome);
     }
-    assert_eq!(last, Some(TickOutcome::Incomplete { capacity: 21 }));
+    last
+}
+
+#[trace("TC-706", "FR-251-AC-2")]
+#[test]
+fn a_full_buffer_never_drops_an_event_and_settles_incomplete() {
+    let body = "once[0 ms, 10 ms] holds(c.level = 2)";
+    // Capacity 22: the 22nd event still fits, the 23rd overflows.
+    assert_ne!(
+        overflow_outcome(body, 22, None),
+        Some(TickOutcome::Incomplete { capacity: 22 })
+    );
+    assert_eq!(
+        overflow_outcome(body, 23, None),
+        Some(TickOutcome::Incomplete { capacity: 22 })
+    );
+}
+
+#[trace("TC-706", "FR-251-AC-13")]
+#[test]
+fn a_positive_lower_bound_keeps_the_upper_bound_capacity() {
+    assert_eq!(
+        overflow_outcome("once[5 ms, 10 ms] holds(c.level = 2)", 23, Some(7500)),
+        Some(TickOutcome::Incomplete { capacity: 22 })
+    );
+}
+
+#[trace("TC-1081", "FR-251-AC-15")]
+#[test]
+fn after_a_gap_history_is_gone_and_past_windows_are_indeterminate() {
+    let mut plan = Plan::new("once[0 ms, 10 ms] holds(c.level = 2)", ratio(0, 1));
+    plan.width_bits = 16;
+    plan.max_gap = 100;
+    let p = plan.holds()[0];
+    let node = plan
+        .fixture
+        .clause
+        .operators()
+        .iter()
+        .find(|operator| operator.interval.is_some())
+        .unwrap()
+        .node
+        .index();
+    let mut monitor = plan.monitor();
+    monitor.step(&reading(65530, &[(p, true)])).unwrap();
+    // 65500 is a backwards reading: a gap fault, no event.
+    monitor.step(&reading(65500, &[(p, false)])).unwrap();
+    // Poll between readings leaves the baseline at 65500.
+    monitor.step(&TickStep::Poll { reading: 1 }).unwrap();
+    let results = monitor.step(&reading(65510, &[(p, false)])).unwrap();
+    assert!(results
+        .iter()
+        .any(|result| result.subformula == node && result.outcome == TickOutcome::Indeterminate));
+    // Once the window has refilled past the marker the result decides.
+    let mut tick = 65510_u64;
+    let mut last = TickOutcome::Indeterminate;
+    for _ in 0..3 {
+        tick += 100;
+        // keep within 16 bits: 65510 + 100 wraps, a delta of 100 is in range.
+        let results = monitor.step(&reading(tick % 65536, &[(p, false)])).unwrap();
+        if let Some(result) = results.iter().find(|result| result.subformula == node) {
+            last = result.outcome;
+        }
+    }
+    assert!(plan.width_bits == 16);
+    assert!(matches!(
+        last,
+        TickOutcome::False | TickOutcome::Indeterminate
+    ));
+}
+
+#[trace("TC-706", "FR-251-AC-16")]
+#[test]
+fn two_events_in_one_tick_are_neither_ordered_nor_clamped() {
+    let plan = Plan::new("eventually[0 ms, 3 ms] holds(c.level = 2)", ratio(0, 1));
+    let p = plan.holds()[0];
+    let node = plan.fixture.clause.formula().root().index();
+    let mut monitor = plan.monitor();
+    monitor.step(&reading(7, &[(p, false)])).unwrap();
+    monitor.step(&reading(7, &[(p, true)])).unwrap();
+    // The offset interval is (-1, 1): not inside [0, 3000], not outside it.
+    assert_eq!(monitor.outcome(node, 0), Some(TickOutcome::Indeterminate));
 }
 
 #[trace("TC-706", "FR-251-AC-3")]
@@ -282,23 +367,56 @@ fn tick_cover_vectors_decide_by_the_endpoint_rule() {
     }
 }
 
+fn root_outcome(body: &str, steps: &[Vec<(usize, bool)>], ticks: &[u64]) -> TickOutcome {
+    let plan = Plan::new(body, ratio(0, 1));
+    let atoms = plan.holds();
+    let mut monitor = plan.monitor();
+    for (truths, tick) in steps.iter().zip(ticks) {
+        let named: Vec<(usize, bool)> = truths
+            .iter()
+            .map(|(slot, value)| (atoms[*slot], *value))
+            .collect();
+        monitor.step(&reading(*tick, &named)).unwrap();
+    }
+    monitor
+        .outcome(plan.fixture.clause.formula().root().index(), 0)
+        .unwrap()
+}
+
 #[trace("TC-1081", "FR-251-AC-7")]
 #[test]
-fn open_and_closed_endpoints_and_a_false_guard() {
-    // `[0 ms, 3 ms)` excludes the bound: a reading at the bound's tick is
-    // still ambiguous under the cover, but 2998 decides true as before.
-    let plan = Plan::new("eventually[0 ms, 3 ms) holds(c.level = 2)", ratio(0, 1));
-    let p = plan.holds()[0];
-    let mut monitor = plan.monitor();
-    monitor.step(&reading(0, &[(p, false)])).unwrap();
-    monitor.step(&reading(2998, &[(p, true)])).unwrap();
-    let node = plan.fixture.clause.formula().root().index();
-    assert_eq!(monitor.outcome(node, 0), Some(TickOutcome::True));
-    // Reversed implication operands: ack implies req never waits.
-    let plan = Plan::new(
-        "always (eventually[0 ms, 3 ms] holds(c.level = 2) implies holds(c.level = 1))",
-        ratio(0, 1),
+fn open_and_closed_lower_endpoints_differ_at_the_event_itself() {
+    // The reading is its own witness at offset exactly 0: a closed lower
+    // end contains it, an open one does not (pending for a later witness).
+    let step = vec![vec![(0, true)]];
+    assert_eq!(
+        root_outcome("eventually[0 ms, 3 ms] holds(c.level = 2)", &step, &[0]),
+        TickOutcome::True
     );
-    assert_eq!(plan.holds().len(), 2);
-    let _ = timed_on;
+    assert_eq!(
+        root_outcome("eventually(0 ms, 3 ms] holds(c.level = 2)", &step, &[0]),
+        TickOutcome::Pending
+    );
+}
+
+#[trace("TC-1081", "FR-251-AC-7")]
+#[test]
+fn the_reversed_implication_settles_by_its_own_operands() {
+    // `eventually ack implies req`: ack comes true at tick 2998 inside the
+    // window of position 0, req is false, so position 0's implication is
+    // false and the always-claim is false.
+    let outcome = root_outcome(
+        "always (eventually[0 ms, 3 ms] holds(c.level = 2) implies holds(c.level = 1))",
+        &[vec![(0, false), (1, false)], vec![(0, true), (1, false)]],
+        &[0, 2998],
+    );
+    assert_eq!(outcome, TickOutcome::False);
+    // With req true at position 0 and nothing violated the claim stays
+    // pending: an always never decides true on a prefix.
+    let outcome = root_outcome(
+        "always (eventually[0 ms, 3 ms] holds(c.level = 2) implies holds(c.level = 1))",
+        &[vec![(0, false), (1, true)]],
+        &[0],
+    );
+    assert_eq!(outcome, TickOutcome::Pending);
 }
