@@ -4191,6 +4191,10 @@ impl PackageDeclarations {
                     callees.extend(measure.root().callees());
                     protocols.extend(measure.root().protocol_references());
                 }
+                let protocols = protocols
+                    .into_iter()
+                    .filter_map(|source| protocol_places.get(source).copied().flatten())
+                    .collect();
                 (callees, protocols)
             })
             .collect();
@@ -4264,7 +4268,7 @@ impl PackageDeclarations {
                 &[]
             }
         };
-        lowering.begin_protocols(protocol_list.len());
+        lowering.begin_protocols(self.protocols.len());
         let temporal_positions: BTreeMap<usize, usize> = checked_temporal
             .iter()
             .enumerate()
@@ -4273,7 +4277,11 @@ impl PackageDeclarations {
         let mut protocol_edges: Vec<(Vec<usize>, Vec<usize>, Vec<usize>)> = protocol_list
             .iter()
             .map(|protocol| {
-                let (functions, protocols, required) = protocol.dependencies();
+                let (functions, source_protocols, required) = protocol.dependencies();
+                let protocols = source_protocols
+                    .into_iter()
+                    .filter_map(|source| protocol_places.get(source).copied().flatten())
+                    .collect();
                 let required = required
                     .iter()
                     .filter_map(|source| temporal_positions.get(source).copied())
@@ -4302,7 +4310,11 @@ impl PackageDeclarations {
                 for condition in conditions.all() {
                     let root = condition.body.root();
                     functions.extend(root.callees());
-                    protocols.extend(root.protocol_references());
+                    protocols.extend(
+                        root.protocol_references()
+                            .into_iter()
+                            .filter_map(|source| protocol_places.get(source).copied().flatten()),
+                    );
                 }
                 for (fairness, _) in checked.protocol_fairness() {
                     if let Some(index) = protocol_list
@@ -4350,7 +4362,7 @@ impl PackageDeclarations {
             let Some(protocol) = protocol_list.get(index) else {
                 return;
             };
-            match lowering.protocol_node_step(index, protocol, cyclic) {
+            match lowering.protocol_node_step(protocol.source_index, protocol, cyclic) {
                 // The refusal of a protocol with an unwritten construct is
                 // this check's emission gate, as the refinement's is.
                 Ok(unsupported) => {
@@ -4454,7 +4466,12 @@ impl PackageDeclarations {
                         .iter()
                         .flat_map(|group| group.members.iter().copied())
                         .collect();
-                    lowering.begin_mixed_cycle(protocols, &function_indices);
+                    let source_protocols: Vec<usize> = protocols
+                        .iter()
+                        .filter_map(|index| protocol_list.get(*index))
+                        .map(|protocol| protocol.source_index)
+                        .collect();
+                    lowering.begin_mixed_cycle(&source_protocols, &function_indices);
                     for index in protocols {
                         lower_protocol(&mut lowering, &mut refusals, *index, true);
                     }

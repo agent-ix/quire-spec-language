@@ -176,6 +176,9 @@ pub(crate) fn protocol_location(protocol: &str, site: ProtocolSite<'_>) -> Locat
 /// One checked protocol declaration, as lowering reads it: its form and
 /// every fact S3 checked of it.
 pub(crate) struct ProtocolInput<'a> {
+    /// The declaration's index in the original unit, used by authored
+    /// protocol references.
+    pub(crate) source_index: usize,
     /// The declaration as S2 built it.
     pub(crate) form: &'a ProtocolDeclarationForm,
     /// What S3 checked of it.
