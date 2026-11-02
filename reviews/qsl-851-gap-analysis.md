@@ -31,3 +31,13 @@ Planless gap analysis for the QSL-851 diff found static test bindings for both F
 - `quoin matrix --repo . --json` completed successfully. Both criteria are statically `tagged`; the evidence axis reports `no run evidence` for both. This is distinct from the focused local run in this review and is not a static-coverage gap.
 - Changed production code maps to FR-383's cyclic-component behavior. No stub or unrelated unowned behavior was identified in the changed surface.
 - Optional semantic review was skipped; no plan was supplied. Plan completion: not assessed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | rejected | The pre-fix test already required exactly one refusal and asserted `StageLimitExceeded`, `ResourceExhausted`, `WorkBudget`, and `S3WorkUnits` for both zero and one-unit-short bounds (parent of `7c98b4f2`, lines 428-448). The finding's claim that these cases checked only `is_err()` was incorrect. The fix changes the cardinality selection to find the typed refusal among multiple refusals; it does not newly add the typed assertions. |
+
+### Round 2 recheck
+
+At `33fdc7d7695bdac16640875672772a7581930ac2` on `origin/main` `ce9920e5cba44d6a9fc565ff9c0d97b144601cfb`, FND-001's prior `rejected` disposition remains valid. The current zero and one-unit-short cases still require `StageLimitExceeded`, `ResourceExhausted`, `WorkBudget`, `S3WorkUnits`, and the exact bound; exact measured work succeeds. The focused boundary test passes. No new findings were found. Per the reviewer disposition rule, no duplicate outcome row is added for a terminal prior finding.
