@@ -61,8 +61,9 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 
 - Step 1: `r`'s type node keys to R1 over M1 and `s`'s model node to M3,
   byte for byte. M1's preimage has the `ModelOwner` of FR-094-AC-1 and
-  `declaration` `null`; R1's has no `owner`. The correspondence holds exactly
-  (M1, `Order`'s key) and (M3, `Invoice`'s key).
+  `declaration` `null`; R1's has no `owner`. With the model admitted without an alias (no FR-093-AC-27 relationship roots), the correspondence holds exactly
+  (M1, `Order`'s key), (M3, `Invoice`'s key) and (M5, `Sub`'s key): M5 is the
+  declaring node of the `Sub.size` and `Sub.scaled` FR-496 rows.
 - Step 2: the same M1 and R1 as step 1, byte for byte, and the same
   correspondence entry for M1.
 - Step 3: M4.

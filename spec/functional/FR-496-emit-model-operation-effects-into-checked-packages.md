@@ -32,7 +32,8 @@ defined by QSpec [FR-322](ix://agent-ix/quire-specification/FR-322)
 (FR-322-AC-303, "Operation-effect carrier"). QSpec FR-322 owns the wire shape,
 the closed row schema and the reader's joins; QSL owns emission. The member is
 additional checked-package data and does not change semantic graph nodes or
-their identities.
+their identities: FR-094 builds the node of each declaration a row names
+whether or not the member is carried.
 
 ## Inputs
 

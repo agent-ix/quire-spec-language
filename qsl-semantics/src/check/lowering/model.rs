@@ -429,10 +429,11 @@ impl AdmittedModel {
         })
     }
 
-    /// The declarations FR-496's rows name (FR-094): each operation's
-    /// declaring owner and the subjects of its frame, a written field by its
-    /// declaring node. Read from the admitted records alone, so the set does
-    /// not depend on whether the carrier can be formed (FR-496-AC-5).
+    /// The declarations FR-496's rows name, which FR-094 roots: each
+    /// operation's declaring owner and the subjects of its frame, a written
+    /// field by its declaring node. Read from the admitted records alone, so
+    /// the set does not depend on whether the carrier can be formed
+    /// (FR-496-AC-5).
     pub(crate) fn operation_effect_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
         self.operation_effect_inputs()
             .flat_map(move |(_, operation)| {
@@ -2062,13 +2063,14 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
 }
 
 impl<'a> Lowering<'a> {
-    /// FR-094: add the node of each declaration an FR-496 row names, the
-    /// declaring node and the frame subjects of every projected operation,
-    /// independently of authored clauses and of whether the optional
-    /// carrier can be formed, so graph identities do not change when it is
-    /// absent (FR-496-AC-5). Every admitted model projects rows, including
-    /// one admitted without a `model` alias (a dispatch bridge's view,
-    /// QSpec FR-322-AC-303); such a model has no declaration site, so its
+    /// Root the nodes FR-496's `operation_effects` rows name, a further
+    /// FR-094 reachability root: QSpec FR-322-AC-303's reader refuses a row
+    /// whose `declaring` node or effect subject has no node. For each
+    /// operation with a row, its declaring owner, the declaring node of each
+    /// written field or the written relationship, and each `creates` and
+    /// `deletes` subject, whether or not the carrier is emitted
+    /// (FR-496-AC-5). A model admitted without a `model` alias (a dispatch
+    /// bridge's view) projects rows too; it has no declaration site, so its
     /// nodes take the `generated` fallback location.
     pub(crate) fn operation_effect_nodes(&mut self) -> Result<(), CheckRefusal> {
         let mut declarations = BTreeMap::new();
