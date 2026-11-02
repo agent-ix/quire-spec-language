@@ -2709,7 +2709,7 @@ fn each_unit_graph_topology_error_refuses_alone() {
 /// `L` anchors it; a unitless base dimension no unit carries, a derived
 /// dimension without a unit, and the dimensionless `N = L / L` with its
 /// own unit all assemble.
-#[trace("FR-091-AC-45", "TC-483")]
+#[trace("FR-091-AC-45", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-16")]
 #[test]
 fn the_base_dimension_rule_refuses_an_unanchored_base_dimension() {
     let area = "dimension L; dimension A = L ^ 2; unit m2 : A = rational(1, 1);";
@@ -2750,7 +2750,7 @@ const TIME_UNITS: &str = "dimension Time;\n\
 /// FR-091-AC-44 (TC-483 step 5): `Quantity<ms>` resolves to the type of the
 /// unit node `ms` and introduces no declaration; a dimension or an unknown
 /// name refuses `missing_declaration`/`missing-name` at the name.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-11")]
 #[test]
 fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
     let accepted =
@@ -2799,7 +2799,13 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
 
 /// FR-091-AC-44: `f(3 s)` where `f` takes `Quantity<ms>` refuses
 /// `ill_typed`/`type-mismatch`.
-#[trace("FR-091-AC-44", "FR-093-AC-34", "TC-483")]
+#[trace(
+    "FR-091-AC-44",
+    "FR-093-AC-34",
+    "TC-483",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-11"
+)]
 #[test]
 fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
     let source = format!(
@@ -2825,6 +2831,42 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
                 .catalog_code()
                 .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
         "the mismatch is located at the argument: {refusals:?}"
+    );
+}
+
+/// QSpec FR-142-AC-12: `f(d: Quantity<ms>): Quantity<ms>` returning `d`
+/// checks; returning `convert<Quantity<s>>(d)` refuses `ill_typed`/
+/// `type-mismatch` at the returned expression.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-12")]
+#[test]
+fn a_quantity_result_checks_and_a_converted_result_of_another_unit_is_a_mismatch() {
+    let returning = |body: &str| {
+        format!("{TIME_UNITS}function f using v(d: Quantity<ms>): Quantity<ms> pure {{ {body} }}")
+    };
+    assemble(&returning("d"))
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("returning d checks");
+
+    let source = returning("convert<Quantity<s>>(d)");
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = assemble(&source).1.expect("the unit assembles");
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a Quantity<s> result is not a Quantity<ms>");
+    let returned = last(&text, "convert<Quantity<s>>(d)");
+    assert!(
+        refusals.iter().any(|refusal| {
+            regions.region(&refusal.location).is_some_and(|region| {
+                (region.start(), region.end()) == (returned.start as u64, returned.end as u64)
+            }) && refusal
+                .cause
+                .catalog_code()
+                .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")
+        }),
+        "the mismatch is located at the returned expression: {refusals:?}"
     );
 }
 
@@ -3039,7 +3081,7 @@ fn a_quantity_literal_refuses_with_the_first_violated_condition_in_order() {
 /// The strict checked-package reader refuses the emitted package of a unit
 /// and a record that share a name (`AmbiguousDeclaration`); that is
 /// Remaining work: QSL-950, so this test asserts `check` only.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-13")]
 #[test]
 fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
     let both = format!(
@@ -3074,7 +3116,7 @@ fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
 
 /// FR-091-AC-44 (QSpec FR-142-AC-13): a declaration named `Quantity` is
 /// refused at S1.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-13")]
 #[test]
 fn a_declaration_named_quantity_is_invalid_syntax() {
     let source = text(PROFILE_V, "record Quantity { x: Boolean; }");
