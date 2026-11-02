@@ -18,8 +18,8 @@ Scope: FR-517-AC-1 to FR-517-AC-10.
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
 | 1 | 1 | `write(R, new dir)` with `corpus = None`, then with `Standard` | the paths of the Outputs table, no `mutations/` first; `checked-package.json` equals `emit_checked_v2::emit` of the same request |
-| 2 | 2 | read `checked-package.json` with `read_checked_package` and evidence from `models/` and `sources/`; `Selection::check` | admitted; `Ok(())`; sidecar values equal the in-process unit |
-| 3 | 3 | count and list the nodes and `temporal_bindings` of **R** | one `protocol_clause`; two compensation nodes with different keys; three clauses; three rows in ascending `NodeRef` order with kinds `EventPosition`, `FixedSample`, `TimestampedEvent` |
+| 2 | 2 | read `checked-package.json` with `read_checked_package` and evidence from `models/` and `sources/`; `Selection::check` | admitted; `Ok(())`; sidecar values, compensation rows included, equal the in-process unit |
+| 3 | 3 | count and list the nodes and `temporal_bindings` of **R** | one `protocol_clause`; two compensation nodes with different keys; three clauses; one row per clause and per compensation template in ascending `NodeRef` order (four in the event-position package, one each in the other two) with kinds `EventPosition`, `FixedSample`, `TimestampedEvent` |
 | 4 | 4 | read the `Wide` and `Exact` values of **R** | the two extrema and the two extreme rationals present; bounds as declared |
 | 5 | 5 | two writes into two new directories | byte-identical trees |
 | 6 | 6 | write onto an existing directory; inject a failure after the temporary tree | `Error::Exists`, directory unchanged; no directory or temporary directory left |

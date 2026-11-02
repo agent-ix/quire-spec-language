@@ -62,7 +62,8 @@ behind the Cargo feature `checked-handoff` and adding no dependency:
   `emit_checked_v2::emit` entry, not its command line);
 - `package_name`, `execution_points` and `temporal_selections` as
   `emit_checked_v2` and `qsl_package::emit_checked_with_temporal_selections`
-  take them (`temporal_selections` is a new optional member of the request);
+  take them (`temporal_selections` is a new optional member of the request and
+  also selects a `compensate` template by its template name);
 - `corpus`: `None` or `Standard` (FR-518).
 
 ## Outputs
@@ -84,7 +85,9 @@ protocol requirement entries that name it (FR-449), its activation form
 written), the
 profile selection (identity and revision) of its law, the lock definition
 authority, and its expected `TemporalBinding` row (`clock_name` and clock
-configuration); and per package: the contract version, the read limits the
+configuration); per `compensate` template, in the `compensations` member:
+its `node`, `name` and expected `binding` (`TemporalBinding` row with
+`clock_name` and `clock`); and per package: the contract version, the read limits the
 writer used (`CheckedPackageReadLimits`), the evidence rows (which `models/`
 files are domain package documents and which `sources/` files are libraries) and
 the counts of nodes by form. Every value is taken from the in-process checked
@@ -92,7 +95,8 @@ unit and the request, never from the emitted bytes.
 
 `checked_handoff::Selection::read(bytes)` parses the sidecar and
 `Selection::check(&self, &CheckedPackageV2) -> Result<(), SelectionRefusal>`
-compares an admitted package with it; `SelectionRefusal` carries one
+compares an admitted package with it, counting every `temporal_bindings` row,
+those of clauses and those of compensation templates; `SelectionRefusal` carries one
 `SelectionAxis` (FR-518). Both are QSL-owned so a consumer parses and compares
 with no copy of the format.
 
@@ -129,7 +133,7 @@ ported recipe is **R**; its elements and their spine requirements:
 | `model.json` scalars `ObjectId` (text, 128), `Ratio` (rational -1..1, denominator at most 2), `Amount` 1..20 unit `U`, `Total` 0..100 unit `U`, `Tally` 0..5, `Wide` (signed 64-bit), `Exact` (rational, 64-bit numerator range, denominator `i64::MAX`) | one domain package document with the same bounds (FR-505 for the bounded rationals, FR-497 for the unit), selected by a `model` declaration |
 | records `Workflow`, `WorkflowRef`, sequence `receipts` (maximum 5) | the same records and bounded sequence |
 | `predicates` and `state` bodies: cross-unit calls, bounded `sum`/`size` queries, the extrema literals `-9223372036854775808`, `9223372036854775807` and the two extreme rationals | predicates and functions in a library unit imported by the main unit, with the same literals |
-| `temporal`/`temporal-v2` bodies, three clock kinds: event position, fixed sample, timestamped event | three `temporal` clauses, each under its own `profile` selection; one package carries all three `temporal_bindings` rows in ascending `NodeRef` order |
+| `temporal`/`temporal-v2` bodies, three clock kinds: event position, fixed sample, timestamped event | three `temporal` clauses, each under its own `profile` selection; `temporal_bindings` holds one row per temporal clause and per compensation template, in ascending `NodeRef` order |
 | `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, `Full` (receipt sum equals the captured target, commit `Main::Committed`) and `Partial` (positive sum below the target, commit `never`) compensations | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383) |
 
 A recipe element the spine refuses is a finding filed against the spine (a
@@ -143,8 +147,8 @@ package of their clock kind.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-517-AC-1 | `write(&request_for_R, dir)` creates exactly the paths of the Outputs table (with no `mutations/` for `corpus = None`), and `checked-package.json` equals the bytes `emit_checked_v2::emit` returns for the same request. | Test (TC-1312) |
-| FR-517-AC-2 | The package read from `checked-package.json` with `read_checked_package` and evidence assembled from the written files is admitted, and `Selection::check` passes; the sidecar's clause ids, names, requirement entries, activation forms, profile selections, definition authority and `TemporalBinding` rows equal the values read from the checked unit held in memory by the writer. | Test (TC-1312) |
-| FR-517-AC-3 | **R** emits one `protocol_clause`, a `Full` and a `Partial` compensation node with different keys, three temporal clauses, and three `temporal_bindings` rows (`EventPosition`, `FixedSample`, `TimestampedEvent`) in ascending `NodeRef` order; `Full` and `Partial` pair with the one `Main::Applied` effect. | Test (TC-1312) |
+| FR-517-AC-2 | The package read from `checked-package.json` with `read_checked_package` and evidence assembled from the written files is admitted, and `Selection::check` passes; the sidecar's clause ids, names, requirement entries, activation forms, profile selections, definition authority and `TemporalBinding` rows, those of clauses and those of compensation templates, equal the values read from the checked unit held in memory by the writer. | Test (TC-1312) |
+| FR-517-AC-3 | **R** emits one `protocol_clause`, a `Full` and a `Partial` compensation node with different keys, three temporal clauses, and one `temporal_bindings` row per temporal clause and per compensation template in ascending `NodeRef` order (four in the event-position package, one each in the fixed-sample and timestamped-event packages) covering the clock kinds `EventPosition`, `FixedSample` and `TimestampedEvent`; `Full` and `Partial` pair with the one `Main::Applied` effect. | Test (TC-1312) |
 | FR-517-AC-4 | **R** carries, as values of the emitted package, the extrema `-9223372036854775808` and `9223372036854775807` as `Wide` values and the rationals `9223372036854775807/9223372036854775806` and `-9223372036854775808/9223372036854775807` as `Exact` values, and no declared bound is widened to admit them. | Test (TC-1312) |
 | FR-517-AC-5 | Two `write` calls with equal requests give byte-identical trees (every file, in path order). | Test (TC-1312) |
 | FR-517-AC-6 | `write` onto an existing directory returns `Error::Exists` and leaves every byte of the directory unchanged; a failure injected after the temporary tree is built (read-back difference, I/O error on the third file) leaves no directory or temporary directory at or beside the requested path. | Test (TC-1312) |
