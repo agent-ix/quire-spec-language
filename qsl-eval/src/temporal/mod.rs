@@ -59,7 +59,7 @@ pub use outcome::{
     InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
 };
 pub use position::{PositionRefusal, TemporalPosition};
-pub use timed::{evaluate_finite_window_at, evaluate_timed_at, TimedTrace};
+pub use timed::{evaluate_finite_window_at, evaluate_timed_at, finite_window_deadline, TimedTrace};
 pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
 };

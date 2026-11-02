@@ -110,6 +110,7 @@ pub fn evaluate_observed_finite_window(
     over: &ObjectReference,
     watermark: &quire_exact::Rational,
     complete_through: Option<&quire_exact::Rational>,
+    uncertainty_margin: &quire_exact::Rational,
     meter: &mut Meter,
 ) -> ObservedRun {
     let shape = TemporalTrace::Finite {
@@ -130,6 +131,7 @@ pub fn evaluate_observed_finite_window(
         TemporalPosition::new(0),
         watermark,
         complete_through,
+        uncertainty_margin,
         &mut letters,
         meter,
     );
