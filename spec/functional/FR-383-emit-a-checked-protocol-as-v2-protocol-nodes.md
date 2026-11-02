@@ -254,7 +254,13 @@ single source occurrence, so both rows share its key, with `term_ordinal` 0 and
 
 Assumption A1 (leaf locations, one place): a literal or `Local` leaf is not an
 application, has no row, and takes its location from its own admitted node.
-Every clause of this and the reader's text that depends on it refers to A1.
+QSpec FR-322-AC-310 (QSpec PR #603, not yet merged) states this rule:
+`protocol_locations` holds application rows only, and a non-application leaf
+takes its location from its own admitted node, never from a row. FR-322-AC-311
+refuses a row that names a leaf with `invalid_package`/`invalid-value` at the
+row's application member, and FR-322-AC-312 completes the set. Every clause of
+this and the reader's text that depends on A1 refers to it. The QSL PR that
+carries this text SHALL NOT merge before QSpec PR #603.
 
 ### Cyclic reference components
 
@@ -520,9 +526,12 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-40 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
 | FR-383-AC-41 | Removing the highest-index retry-origin `earlier.tally` row from fixture E's emitted package leaves a package QSL's I2 reader admits. | Test (TC-1063) |
 | FR-383-AC-42 | Removing the ordinal-zero retry-origin `earlier.tally` row (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`, and so is a group holding ordinals 0 and 2 only. | Test (TC-1063) |
-| FR-383-AC-43 | Duplicating a retry-origin `earlier.tally` row is refused by QSL's I2 reader at the first mismatching row, with the locus `/checked_term_data/protocol_locations/<index of the duplicate>` and the code the QSpec protocol vectors record for a duplicate key (FR-322-AC-291). | Test (TC-1063) |
-| FR-383-AC-44 | For fixture E-C (TC-1070), every slot's per-application row counts equal its visits in the slot walk and each row's `Location` equals the checked clause's, including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll`, once in `Composed.let`, and the arms of `Composed.if` and `Composed.case` the input never selects. | Test (TC-1063) |
-| FR-383-AC-45 | In fixture E the `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1, and a group that holds rows of two origins has `term_ordinal` values consecutive from zero across both. | Test (TC-1063) |
+| FR-383-AC-43 | Duplicating a retry-origin `earlier.tally` row is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
+| FR-383-AC-44 | For fixture E-C (TC-1070), every slot's per-application row count equals its visits in the slot walk, including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
+| FR-383-AC-45 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
+| FR-383-AC-46 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
+| FR-383-AC-47 | In fixture E the two `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
+| FR-383-AC-48 | In fixture E-C the application `m.count >= 1` is one graph node held by the two slots `Composed.shareA` and `Composed.shareB`; its group holds rows of both slots' origins with `term_ordinal` values consecutive from zero across both, and each origin holds one row of it. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.
