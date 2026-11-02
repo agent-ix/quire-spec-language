@@ -39,7 +39,7 @@ mod controls;
 use controls::RunInputs;
 pub(crate) use controls::{AttemptNodes, CompensationNodes};
 
-use super::{fault, refuse, Binder, Binders, Lowering, NodeContent, NodeRef};
+use super::{fault, refuse, require_admitted, Binder, Binders, Lowering, NodeContent, NodeRef};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::{CheckedBody, CheckedNode};
 use crate::check::node_key::{
@@ -578,11 +578,10 @@ impl Lowering<'_> {
     /// With a profile selected, a protocol that names a construct whose node
     /// is not written yet refuses at its declaration, once for each such
     /// construct (`unsupported_construct`/`not-yet-implemented`), and so
-    /// does a reference to it. `cyclic` is whether the protocol belongs to a
-    /// cyclic component of function calls and protocol references
-    /// ([`ProtocolConstruct::ReferenceCycle`]). Every function and protocol
-    /// the protocol's bodies name must be keyed first (FR-093): the caller
-    /// lowers the unit in dependency order.
+    /// does a reference to it. `cyclic` is true when this protocol has a
+    /// placeholder in a mixed function/protocol recursion component; its
+    /// final key is resolved when every member of that component has been
+    /// lowered. Dependencies outside the component are keyed first (FR-093).
     pub(crate) fn protocol_node_step(
         &mut self,
         index: usize,
@@ -602,9 +601,6 @@ impl Lowering<'_> {
             Err(other) => return Err(other),
         };
         let mut unemitted = protocol.unemitted();
-        if cyclic {
-            unemitted.push(ProtocolConstruct::ReferenceCycle);
-        }
         if self.fifo_key_unstable(protocol, &location)? {
             unemitted.push(ProtocolConstruct::ChannelKeyNotEqualityStable);
         }
@@ -622,8 +618,14 @@ impl Lowering<'_> {
         let Some(owner) = owner else {
             return Err(fault(&location, KeyFault::UncheckedProtocolFact));
         };
+        let placeholder = match self.protocol_keys.get(index) {
+            Some(ProtocolKey::Keyed(NodeRef::Pending(handle))) if cyclic => Some(*handle),
+            _ => None,
+        };
         if protocol.has_attempt() {
-            self.set_protocol_key(index, ProtocolKey::AfterClauses);
+            if placeholder.is_none() {
+                self.set_protocol_key(index, ProtocolKey::AfterClauses);
+            }
             return Ok(Vec::new());
         }
         let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
@@ -642,7 +644,16 @@ impl Lowering<'_> {
             &location,
         ) {
             Ok(key) => {
-                self.set_protocol_key(index, ProtocolKey::Keyed(key));
+                if let Some(placeholder) = placeholder {
+                    self.placeholders.insert(placeholder, Some(key));
+                } else {
+                    if matches!(key, NodeRef::Pending(_))
+                        && !self.unsettled_protocols.contains(&index)
+                    {
+                        self.unsettled_protocols.push(index);
+                    }
+                    self.set_protocol_key(index, ProtocolKey::Keyed(key));
+                }
                 Ok(Vec::new())
             }
             // A protocol this one refers to has no node (its refusal is
@@ -682,10 +693,18 @@ impl Lowering<'_> {
                 compensations.get(index).cloned().unwrap_or_default();
         }
         for (index, protocol) in protocols.iter().enumerate() {
+            if !protocol.has_attempt() {
+                continue;
+            }
+            let placeholder = match self.protocol_keys.get(index) {
+                Some(ProtocolKey::Keyed(NodeRef::Pending(handle))) => Some(*handle),
+                _ => None,
+            };
             if !matches!(
                 self.protocol_keys.get(index),
                 Some(ProtocolKey::AfterClauses)
-            ) {
+            ) && placeholder.is_none()
+            {
                 continue;
             }
             let location = protocol.location();
@@ -710,7 +729,19 @@ impl Lowering<'_> {
                 },
                 &location,
             )?;
-            self.protocol_keys[index] = ProtocolKey::Keyed(key);
+            if let Some(placeholder) = placeholder {
+                self.placeholders.insert(placeholder, Some(key));
+            } else {
+                if matches!(key, NodeRef::Pending(_)) && !self.unsettled_protocols.contains(&index)
+                {
+                    self.unsettled_protocols.push(index);
+                }
+                self.protocol_keys[index] = ProtocolKey::Keyed(key);
+            }
+        }
+        if self.deferred_mixed_settlement {
+            self.deferred_mixed_settlement = false;
+            self.settle()?;
         }
         Ok(())
     }
@@ -852,7 +883,29 @@ impl Lowering<'_> {
         owner_model: Option<NodeKey>,
         body: BodyTerm,
     ) -> Result<NodeKey, CheckRefusal> {
-        let key = self.insert_content_key(
+        require_admitted(
+            self.protocol_member_ref(
+                location,
+                semantic_form,
+                boolean,
+                declaration,
+                owner_model,
+                body,
+            )?,
+            location,
+        )
+    }
+
+    fn protocol_member_ref(
+        &mut self,
+        location: &Location,
+        semantic_form: &'static str,
+        boolean: NodeKey,
+        declaration: Vec<Identifier>,
+        owner_model: Option<NodeKey>,
+        body: BodyTerm,
+    ) -> Result<NodeRef, CheckRefusal> {
+        let key = self.insert_node(
             location,
             NodeContent {
                 owner_model,
@@ -875,7 +928,7 @@ impl Lowering<'_> {
         owner: EffectiveId,
         members: ProtocolClauseMembers<'_>,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         let previous = self
             .active_protocol
             .replace(protocol.form.name.name.clone());
@@ -893,7 +946,7 @@ impl Lowering<'_> {
         owner: EffectiveId,
         members: ProtocolClauseMembers<'_>,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         let name = protocol.form.name.name.as_str();
         let slots = &protocol.checked.slots;
         let owner_model = self.object_node(owner, location)?;
@@ -987,7 +1040,7 @@ impl Lowering<'_> {
         let terminal_key = terminal.clone();
         let finish_node = protocol.checked.finish.as_ref().ok_or_else(unchecked)?.0;
         let mut nodes = run.nodes;
-        nodes.insert(finish_node, finish.clone());
+        nodes.insert(finish_node, NodeRef::Admitted(finish.clone()));
         let run = run.root;
 
         let activation = match &trigger {
@@ -1012,7 +1065,7 @@ impl Lowering<'_> {
                 )]))
             }
         };
-        let clause = self.protocol_member(
+        let clause = self.protocol_member_ref(
             location,
             "protocol_clause",
             boolean.clone(),
@@ -1056,7 +1109,7 @@ impl Lowering<'_> {
                         }),
                     ),
                     MemberTerm::binding("scheduling", scheduling),
-                    MemberTerm::bound("run", LeafTerm::reference(run)),
+                    MemberTerm::bound("run", LeafTerm::reference_node(run)),
                     MemberTerm::bound("finish", LeafTerm::reference(finish)),
                 ],
             ),
@@ -1293,7 +1346,7 @@ impl Lowering<'_> {
         roles: &[(String, NodeKey)],
         controls: &std::collections::BTreeMap<
             crate::check::protocol_clause::ProtocolNodeId,
-            NodeKey,
+            NodeRef,
         >,
         readable: &[Binder],
         boolean: NodeKey,
@@ -1377,7 +1430,10 @@ impl Lowering<'_> {
             }
 
             let mut args = Vec::with_capacity(13);
-            args.push(MemberTerm::bound("forward", LeafTerm::reference(effect)));
+            args.push(MemberTerm::bound(
+                "forward",
+                LeafTerm::reference_node(effect),
+            ));
             let forward = self.compensation_scope(
                 &[(
                     checked.forward.name.clone(),
@@ -1573,10 +1629,12 @@ impl Lowering<'_> {
             ));
             let commit = match checked.commit {
                 CheckedCommit::Never => empty_group(),
-                CheckedCommit::Node(node) => BindingValue::Group(GroupTerm::references([controls
-                    .get(&node)
-                    .cloned()
-                    .ok_or_else(unchecked)?])),
+                CheckedCommit::Node(node) => {
+                    BindingValue::Group(GroupTerm::references_nodes([controls
+                        .get(&node)
+                        .cloned()
+                        .ok_or_else(unchecked)?]))
+                }
             };
             args.push(MemberTerm::binding("commit", commit));
             let mut recovery_entries = vec![(
@@ -2051,9 +2109,9 @@ impl Lowering<'_> {
         node: CheckedNode<'_>,
         protocol: usize,
     ) -> Result<LeafTerm, CheckRefusal> {
-        let target = self.protocol_key(protocol, node.location())?;
+        let target = self.protocol_target(protocol, node.location())?;
         let semantic_type = self.type_node(&ValueType::Boolean, node.location())?;
-        let key = self.insert_content_key(
+        let key = self.insert_node(
             node.location(),
             NodeContent {
                 owner_model: None,
@@ -2062,7 +2120,7 @@ impl Lowering<'_> {
                 semantic_type: Some(semantic_type.into()),
                 declaration: None,
                 owner: None,
-                body: BodyTerm::Leaf(LeafTerm::reference(target)),
+                body: BodyTerm::Leaf(LeafTerm::reference_node(target)),
             },
         )?;
         self.record(
@@ -2070,19 +2128,18 @@ impl Lowering<'_> {
             OccurrenceRole::Expression,
             node.location().clone(),
         );
-        Ok(LeafTerm::reference(key))
+        Ok(LeafTerm::reference_node(key))
     }
 
-    /// The node key of the `protocol`-th declaration, or the refusal that
-    /// the package selected no protocol profile for it to carry, or that it
-    /// names a construct whose node is not written yet.
-    pub(crate) fn protocol_key(
+    /// The node reference of the `protocol`-th declaration, which may be a
+    /// lowering-local placeholder while a mixed recursion component is open.
+    fn protocol_target(
         &self,
         protocol: usize,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<NodeRef, CheckRefusal> {
         match self.protocol_keys.get(protocol) {
-            Some(ProtocolKey::Keyed(key)) => Ok(key.clone()),
+            Some(ProtocolKey::Keyed(target)) => Ok(target.clone()),
             Some(ProtocolKey::NotEmitted(construct)) => Err(not_emitted(*construct, location)),
             Some(ProtocolKey::Unkeyed) => Err(refuse(
                 location,
@@ -2101,6 +2158,17 @@ impl Lowering<'_> {
                 },
             )),
         }
+    }
+
+    /// The node key of the `protocol`-th declaration, or the refusal that
+    /// the package selected no protocol profile for it to carry, or that it
+    /// names a construct whose node is not written yet.
+    pub(crate) fn protocol_key(
+        &self,
+        protocol: usize,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        require_admitted(self.protocol_target(protocol, location)?, location)
     }
 }
 
@@ -2200,7 +2268,7 @@ impl Lowering<'_> {
                     .get(protocol)
                     .and_then(|members| members.nodes.get(node))
                 {
-                    Some(key) => key.clone(),
+                    Some(key) => require_admitted(key.clone(), location)?,
                     None => return Ok(None),
                 }
             }
@@ -2227,7 +2295,7 @@ impl Lowering<'_> {
             }
             Some(RefinementCatalogNode::Trigger(protocol)) => {
                 match self.protocol_members.get(protocol) {
-                    Some(members) => members.clause.clone(),
+                    Some(members) => require_admitted(members.clause.clone(), location)?,
                     None => return Ok(None),
                 }
             }
@@ -2274,6 +2342,41 @@ fn catalog_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
 /// node, so a refinement over it stays not emitted.
 #[derive(Clone, Debug)]
 pub(crate) struct ProtocolMembers {
+    pub(crate) clause: NodeRef,
+    pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeRef>,
+    pub(crate) channels: BTreeMap<String, NodeKey>,
+    pub(crate) roles: BTreeMap<String, NodeKey>,
+    pub(crate) compensations: Vec<NodeKey>,
+    pub(crate) terminal: Option<NodeKey>,
+    pub(crate) binders: Vec<super::super::protocol_clause::CheckedProtocolBinderKey>,
+    pub(crate) expressions: Vec<super::super::protocol_clause::CheckedProtocolExpressionBindings>,
+}
+
+impl ProtocolMembers {
+    pub(crate) fn into_admitted(
+        self,
+        location: &Location,
+    ) -> Result<AdmittedProtocolMembers, CheckRefusal> {
+        let nodes = self
+            .nodes
+            .into_iter()
+            .map(|(node, reference)| require_admitted(reference, location).map(|key| (node, key)))
+            .collect::<Result<_, _>>()?;
+        Ok(AdmittedProtocolMembers {
+            clause: require_admitted(self.clause, location)?,
+            nodes,
+            channels: self.channels,
+            roles: self.roles,
+            compensations: self.compensations,
+            terminal: self.terminal,
+            binders: self.binders,
+            expressions: self.expressions,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AdmittedProtocolMembers {
     pub(crate) clause: NodeKey,
     pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
     pub(crate) channels: BTreeMap<String, NodeKey>,
@@ -2288,7 +2391,7 @@ pub(crate) struct ProtocolMembers {
 #[derive(Clone, Debug)]
 pub(super) enum ProtocolKey {
     /// The key of its `protocol_clause` node.
-    Keyed(NodeKey),
+    Keyed(NodeRef),
     /// The package selects no protocol profile.
     Unselected,
     /// Its node is not keyed yet, or its lowering was refused and the

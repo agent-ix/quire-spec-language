@@ -90,6 +90,7 @@ fn type_nodes(
         scope,
         owner,
         &[],
+        &[],
         scope.types().units().clone(),
         None,
         0,
@@ -105,7 +106,10 @@ fn type_nodes(
                 .expect("the type keys")
         })
         .collect();
-    (lowering.finish(&location).graph, keys)
+    (
+        lowering.finish(&location).expect("lowering finishes").graph,
+        keys,
+    )
 }
 
 /// One node key as its own package, path and ordinal, each nested key
@@ -1154,6 +1158,7 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
     let mut lowering = Lowering::new(
         &scope,
         &owner,
+        &[],
         &[],
         scope.types().units().clone(),
         None,
