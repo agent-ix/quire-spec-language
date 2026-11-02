@@ -1536,6 +1536,7 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Float(_)
             | ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Enum(_)
             | ValueType::Reference(_)
             | ValueType::Population(_) => {}
@@ -1604,6 +1605,7 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
                     | ValueType::BoundedQuantity(_)
+                    | ValueType::CarriedQuantity(_)
                     | ValueType::String
                     | ValueType::Enum(_)
                     | ValueType::Reference(_)
@@ -2468,12 +2470,14 @@ impl<'a> Lowering<'a> {
             ValueType::Quantity(unit) => self
                 .quantity_type(unit.clone(), location)
                 .map(NodeRef::from),
-            // No checked type node carries a map or a bounded quantity yet:
-            // a typed refusal, never a guessed node.
-            ValueType::Map(_) | ValueType::BoundedQuantity(_) => Err(refuse(
-                location,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-            )),
+            // No checked type node carries a map, a bounded quantity or a
+            // carried quantity yet: a typed refusal, never a guessed node.
+            ValueType::Map(_) | ValueType::BoundedQuantity(_) | ValueType::CarriedQuantity(_) => {
+                Err(refuse(
+                    location,
+                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                ))
+            }
             ValueType::Reference(target) => self
                 .reference_type(target.clone(), location)
                 .map(NodeRef::from),
@@ -5657,8 +5661,9 @@ impl<'a> Lowering<'a> {
             ValueType::Enum(_) => "enum",
             ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => "quantity",
             ValueType::Reference(_) => "reference",
-            // QSpec FR-149 states no map equality relation.
-            ValueType::Map(_) => {
+            // QSpec FR-149 states no map equality relation. FR-497-AC-2: the
+            // checker refuses a carried quantity `=` operand before lowering.
+            ValueType::Map(_) | ValueType::CarriedQuantity(_) => {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),

@@ -685,6 +685,7 @@ pub(crate) fn argument_value(
         | ValueType::Float(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)
         | ValueType::Enum(_)
         | ValueType::Option(_)

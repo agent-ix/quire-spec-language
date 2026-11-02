@@ -485,7 +485,10 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Enum(_)
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_) => true,
-        ValueType::Boolean
+        // FR-497-AC-2: `=` refuses a carried quantity operand at check, so
+        // no scalar equality family holds one.
+        ValueType::CarriedQuantity(_)
+        | ValueType::Boolean
         | ValueType::Reference(_)
         | ValueType::Option(_)
         | ValueType::Composite(_)
@@ -1166,3 +1169,41 @@ pub use map::RequirementMap;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod carried_quantity_tests {
+    use super::scalar_equality;
+    use ix_trace_rs::trace;
+
+    fn carried() -> quire_exact::ValueType {
+        let unit = quire_exact::UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                5,
+            )
+            .expect("a key"),
+        );
+        let domain = quire_exact::IntegerInterval::spanning(
+            quire_exact::Integer::from(-2_i64),
+            quire_exact::Integer::from(2_i64),
+        );
+        quire_exact::ValueType::CarriedQuantity(std::sync::Arc::new(
+            quire_exact::CarriedQuantityType::new(
+                unit,
+                quire_exact::QuantityCarrier::Integer {
+                    domain,
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            ),
+        ))
+    }
+
+    /// FR-497-AC-2: `=` refuses a carried quantity, so it is in no scalar
+    /// equality family.
+    #[trace("FR-497-AC-2")]
+    #[test]
+    fn a_carried_quantity_is_in_no_scalar_equality_family() {
+        assert!(!scalar_equality(&carried()));
+    }
+}

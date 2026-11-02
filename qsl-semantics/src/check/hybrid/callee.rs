@@ -32,6 +32,7 @@ pub(super) fn kind_of(declared: &ValueType) -> Option<Kind> {
         | ValueType::Float(_) => Some(Kind::Real),
         ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)
         | ValueType::String
         | ValueType::Uuid

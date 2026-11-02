@@ -359,6 +359,7 @@ pub(super) fn derive(
             | ValueType::Text(_)
             | ValueType::Quantity(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Reference(_)
             | ValueType::Population(_)
             | ValueType::Uuid

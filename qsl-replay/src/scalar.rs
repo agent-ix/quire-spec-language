@@ -627,6 +627,7 @@ pub(crate) fn evaluated(outcome: Outcome<Value>) -> Result<Evaluated, InternalFa
                 Evaluated::Outcome(ScalarOutcome::OutOfRange)
             }
             Refusal::InexactDecimal { .. }
+            | Refusal::InexactConversion { .. }
             | Refusal::IeeeNotExact { .. }
             | Refusal::IeeeNanPayloadNotRepresentable { .. }
             | Refusal::ForeignReference { .. } => Evaluated::Outcome(ScalarOutcome::OtherRefusal),

@@ -818,6 +818,7 @@ impl TypeLeafWire {
             ValueType::Option(_)
             | ValueType::Collection(_)
             | ValueType::BoundedQuantity(_)
+            | ValueType::CarriedQuantity(_)
             | ValueType::Map(_)
             | ValueType::Uuid
             | ValueType::Timestamp => return None,
@@ -1245,7 +1246,8 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                     ValueType::Uuid
                     | ValueType::Timestamp
                     | ValueType::Map(_)
-                    | ValueType::BoundedQuantity(_) => {
+                    | ValueType::BoundedQuantity(_)
+                    | ValueType::CarriedQuantity(_) => {
                         self.unsupported.set(true);
                         return Err(quire_canonical::Error::Serialize(
                             "the selected type has no deciding-element encoding".to_owned(),
@@ -1630,5 +1632,43 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
     match (values.pop(), values.is_empty()) {
         (Some(value), true) => Ok(value),
         _ => Err(underflow()),
+    }
+}
+
+#[cfg(test)]
+mod carried_quantity_tests {
+    use super::TypeLeafWire;
+    use ix_trace_rs::trace;
+
+    fn carried() -> quire_exact::ValueType {
+        let unit = quire_exact::UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                5,
+            )
+            .expect("a key"),
+        );
+        let domain = quire_exact::IntegerInterval::spanning(
+            quire_exact::Integer::from(-2_i64),
+            quire_exact::Integer::from(2_i64),
+        );
+        quire_exact::ValueType::CarriedQuantity(std::sync::Arc::new(
+            quire_exact::CarriedQuantityType::new(
+                unit,
+                quire_exact::QuantityCarrier::Integer {
+                    domain,
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            ),
+        ))
+    }
+
+    /// FR-497: the strict-reader wire has no form for a carried quantity yet,
+    /// so none is written.
+    #[trace("FR-497-AC-2")]
+    #[test]
+    fn a_carried_quantity_has_no_leaf_wire_form() {
+        assert!(TypeLeafWire::of(&carried()).is_none());
     }
 }

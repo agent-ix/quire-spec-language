@@ -2047,9 +2047,9 @@ fn arguments(
 /// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
 /// text) for every other value type, the native `UUID` and `Timestamp`
 /// included. A `Population<T>` and a `Map` are not values, and a
-/// `BoundedQuantity` has no native binding (`argument_value` refuses it too),
-/// so none has a witness form and each refuses `WrongValueKind` before the
-/// call.
+/// `BoundedQuantity` and `CarriedQuantity` have no native binding
+/// (`argument_value` refuses them too), so none has a witness form and each
+/// refuses `WrongValueKind` before the call.
 fn witness_type(
     parameter: usize,
     value_type: &ValueType,
@@ -2070,11 +2070,12 @@ fn witness_type(
         | ValueType::Reference(_)
         | ValueType::Uuid
         | ValueType::Timestamp => Ok(WitnessValueType::Canonical),
-        ValueType::Map(_) | ValueType::BoundedQuantity(_) | ValueType::Population(_) => {
-            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-                parameter,
-            }))
-        }
+        ValueType::Map(_)
+        | ValueType::BoundedQuantity(_)
+        | ValueType::CarriedQuantity(_)
+        | ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+            parameter,
+        })),
     }
 }
 
@@ -2122,3 +2123,46 @@ fn charges(consumed: impl IntoIterator<Item = (LimitKind, u64)>) -> ScalarLimits
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod carried_quantity_tests {
+    use super::{witness_type, InputRefusal, ReplayRefusal};
+    use ix_trace_rs::trace;
+
+    fn carried() -> quire_exact::ValueType {
+        let unit = quire_exact::UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                5,
+            )
+            .expect("a key"),
+        );
+        let domain = quire_exact::IntegerInterval::spanning(
+            quire_exact::Integer::from(-2_i64),
+            quire_exact::Integer::from(2_i64),
+        );
+        quire_exact::ValueType::CarriedQuantity(std::sync::Arc::new(
+            quire_exact::CarriedQuantityType::new(
+                unit,
+                quire_exact::QuantityCarrier::Integer {
+                    domain,
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            ),
+        ))
+    }
+
+    /// FR-497: a carried quantity has no native binding, so no witness form;
+    /// it refuses `WrongValueKind` before the call.
+    #[trace("FR-497-AC-2")]
+    #[test]
+    fn a_carried_quantity_parameter_has_no_witness_form() {
+        assert!(matches!(
+            witness_type(3, &carried()),
+            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+                parameter: 3
+            }))
+        ));
+    }
+}

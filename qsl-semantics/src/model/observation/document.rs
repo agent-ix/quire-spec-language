@@ -1587,6 +1587,7 @@ fn admit_native(
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::BoundedQuantity(_)
+            | quire_exact::ValueType::CarriedQuantity(_)
             | quire_exact::ValueType::Text(_)
             | quire_exact::ValueType::String
             | quire_exact::ValueType::Uuid
@@ -2040,6 +2041,7 @@ fn missing_wire_form(value_type: &quire_exact::ValueType) -> Option<&'static str
             quire_exact::ValueType::Float(_) => return Some("Float"),
             quire_exact::ValueType::Quantity(_) => return Some("Quantity"),
             quire_exact::ValueType::BoundedQuantity(_) => return Some("BoundedQuantity"),
+            quire_exact::ValueType::CarriedQuantity(_) => return Some("CarriedQuantity"),
             quire_exact::ValueType::Map(_) => return Some("Map"),
             quire_exact::ValueType::Population(_) => return Some("Population"),
             quire_exact::ValueType::Option(payload) => pending.push(payload),
@@ -2085,6 +2087,7 @@ fn unsupported_collection_element(value_type: &quire_exact::ValueType) -> Option
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::BoundedQuantity(_)
+            | quire_exact::ValueType::CarriedQuantity(_)
             | quire_exact::ValueType::Text(_)
             | quire_exact::ValueType::String
             | quire_exact::ValueType::Uuid
@@ -3047,6 +3050,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::BoundedQuantity(_)
+            | quire_exact::ValueType::CarriedQuantity(_)
             | quire_exact::ValueType::Text(_)
             | quire_exact::ValueType::String
             | quire_exact::ValueType::Enum(_)
