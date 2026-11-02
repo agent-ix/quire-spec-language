@@ -126,7 +126,7 @@ requirement on a member that carries a retained reader diagnostic does not run.
   a repeat.
 - **Order.** For one operation the first failing check SHALL be the one
   reported, in this order: a reader refusal (including the same-identity and
-  equal-name collisions above); the owner rule; the operation name; the
+  parameter equal-name collisions above); the owner rule; the operation name; the
   parameter name/identity check; the result name; then the frame, in the order
   FR-103 and FR-154 give.
 
