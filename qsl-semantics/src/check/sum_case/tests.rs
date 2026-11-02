@@ -181,6 +181,7 @@ fn exhaustiveness(refusal: &CheckRefusal) -> (&NodeKey, &[String], Exhaustivenes
 }
 
 #[trace("FR-318-AC-1", "TC-821")]
+#[trace("QSpec-FR-146-AC-11", "QSpec-TC-265")]
 #[test]
 fn a_case_over_a_union_checks_with_positional_binders_per_arm() {
     let (unit, typed) = check(
@@ -230,6 +231,7 @@ fn a_case_over_a_union_checks_with_positional_binders_per_arm() {
 }
 
 #[trace("FR-318-AC-1", "TC-821")]
+#[trace("QSpec-FR-146-AC-11", "QSpec-TC-265")]
 #[test]
 fn a_binder_is_visible_only_in_its_own_arm_and_a_case_nests() {
     let (_, refusal) = refused(
@@ -247,6 +249,7 @@ fn a_binder_is_visible_only_in_its_own_arm_and_a_case_nests() {
 }
 
 #[trace("FR-318-AC-2", "TC-821")]
+#[trace("QSpec-FR-146-AC-12", "QSpec-TC-398")]
 #[test]
 fn without_an_expectation_the_arm_bodies_decide_the_result_type() {
     let at = |arm: usize| Unit::body().child(0).child(1 + arm);
@@ -272,6 +275,7 @@ fn without_an_expectation_the_arm_bodies_decide_the_result_type() {
 }
 
 #[trace("FR-318-AC-3", "TC-822")]
+#[trace("QSpec-FR-146-AC-10", "QSpec-TC-264")]
 #[test]
 fn each_exhaustiveness_obligation_refuses_with_its_union_arm_set_and_locus() {
     let arm = |index: usize| Unit::body().child(1 + index);
@@ -314,6 +318,8 @@ fn each_exhaustiveness_obligation_refuses_with_its_union_arm_set_and_locus() {
 }
 
 #[trace("FR-318-AC-4", "TC-823")]
+#[trace("QSpec-FR-146-AC-10", "QSpec-TC-264")]
+#[trace("QSpec-FR-146-AC-14", "QSpec-TC-398")]
 #[test]
 fn a_case_reports_only_its_first_refusal_in_the_fixed_order() {
     let (_, refusal) = refused("Integer", "case s { Empty: 0; Empty: 1; Circle(r): r; }");
@@ -927,3 +933,94 @@ fn union_equality_compares_one_union_and_refuses_two() {
 }
 
 mod keys;
+
+/// `declarations` plus a function `f` over `s: Shape` and `parameters`, typed
+/// as a function body of result type `result`.
+fn check_over(
+    parameters: &str,
+    result: &str,
+    body: &str,
+) -> (Unit, Result<CheckedBody, CheckRefusal>) {
+    let unit = unit(&format!(
+        "{SHAPE}function f using v(s: Shape{parameters}): {result} pure {{ {body} }}"
+    ));
+    let (typed, _) = unit.type_body(ClauseKind::Body, CheckingLimits::default());
+    (unit, typed)
+}
+
+fn refused_over(parameters: &str, result: &str, body: &str) -> CheckRefusal {
+    match check_over(parameters, result, body).1 {
+        Err(refusal) => refusal,
+        Ok(_) => panic!("{body}: the typer refuses"),
+    }
+}
+
+/// QSpec FR-146-AC-12 (TC-398): the result type of a `case` is the declared
+/// type under an expectation and otherwise the type its arm bodies agree on;
+/// disagreeing bodies and an arm body that needs an expected type are refused
+/// at the offending body.
+#[trace("QSpec-FR-146-AC-12", "QSpec-TC-398")]
+#[test]
+fn a_case_result_type_follows_the_expectation_then_the_arm_bodies() {
+    let arm = |index: usize| Unit::body().child(0).child(1 + index);
+    let int = |lower: i64, upper: i64| {
+        ValueType::Int(quire_exact::IntegerInterval::new(lower.into(), upper.into()).unwrap())
+    };
+
+    // An expectation `Int[0, 100]` is the result type.
+    let (_, typed) = check_over(
+        ", w: Int[0, 9]",
+        "Int[0, 100]",
+        "case s { Empty: 0; Circle(r): w; Rect(a, b): w; }",
+    );
+    assert_eq!(typed.expect("checks").root().value_type(), &int(0, 100));
+
+    // Arms of two different `Int` ranges infer `Integer`.
+    let (_, typed) = check_over(
+        ", r: Int[0, 9], w: Int[0, 99]",
+        "Integer",
+        "let c = case s { Empty: r; Circle(a): w; Rect(a, b): r; } in c",
+    );
+    typed.expect("checks");
+
+    // Arms of one `Text` type keep that type.
+    let (_, typed) = check_over(
+        ", p: Text[0, 8; nfc], q: Text[0, 8; nfc]",
+        "Text[0, 8; nfc]",
+        "let c = case s { Empty: p; Circle(a): q; Rect(a, b): p; } in c",
+    );
+    let text = typed.expect("text arms of one type check");
+    assert!(matches!(text.root().value_type(), ValueType::Text(_)));
+
+    // `0` then `"none"` is refused at the `"none"` body, and the reverse at
+    // the `0` body.
+    for (body, at) in [
+        (
+            "let c = case s { Empty: 0; Circle(a): \"none\"; Rect(a, b): 0; } in 0",
+            arm(1),
+        ),
+        (
+            "let c = case s { Empty: \"none\"; Circle(a): 0; Rect(a, b): \"none\"; } in 0",
+            arm(1),
+        ),
+    ] {
+        let refusal = refused_over("", "Integer", body);
+        assert_eq!(
+            refusal.cause,
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+            "{body}"
+        );
+        assert_eq!(refusal.location, at, "{body}");
+    }
+
+    // An empty collection literal body has no expected type to fix it.
+    let refusal = refused_over(
+        "",
+        "Integer",
+        "let c = case s { Empty: sequence[]; Circle(a): sequence[]; Rect(a, b): sequence[]; } in 0",
+    );
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)
+    );
+}
