@@ -224,9 +224,27 @@ const CYCLIC_EQUALITY: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n\
     function same using v(a: Tree, b: Tree): Boolean pure { a = b }\n";
 
 /// The FR-360 domain package, whose variant types the `VariantType` fixture
-/// names.
+/// names, with the process `Fulfilment` declaring the operation `start`: its
+/// FR-496 row names the process's node, so the package emits it (FR-094).
 static VARIANT_DOCUMENT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
-    serde_json::to_vec(&variant_fixture::document()).expect("the fixture serializes")
+    let mut document = variant_fixture::document();
+    let fulfilment = document["types"]
+        .as_array_mut()
+        .expect("the fixture declares types")
+        .iter_mut()
+        .find(|declaration| declaration["displayName"] == "Fulfilment")
+        .expect("the fixture declares the process Fulfilment");
+    let start = variant_fixture::id("Fulfilment/start");
+    fulfilment["operations"] = json!([{
+        "identity": start, "name": "start", "params": [], "pre": [], "post": [],
+        "frame": {"modifies": [], "creates": [], "deletes": []},
+        "origin": {"generated": {
+            "generatorIdentity": start,
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [start],
+        }},
+    }]);
+    serde_json::to_vec(&document).expect("the fixture serializes")
 });
 
 /// The domain package declaring the systems interface `Sensor`.

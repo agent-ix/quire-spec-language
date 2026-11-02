@@ -283,17 +283,10 @@ fn clauses(order: EffectiveId, sub: EffectiveId) -> OperationClauses {
     clauses
 }
 
-/// FR-093-AC-21 (TC-416 step 12), model-owned nodes: `checked_dispatch_operation`
-/// over `acme/orders`' effective view builds the clause functions, and a
-/// declared function over a `Reference<M::Order>` parameter joins them. The
-/// model declaration nodes and every clause function carry their `ModelOwner`
-/// (an operation member or an object type), the declared function its
-/// `SourceOwner` (`a`, `u`), and the reference, parameter and expression nodes
-/// none.
-#[trace("FR-093-AC-21", "TC-416")]
-#[test]
-fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
-    let document = acme_document();
+/// `checked_dispatch_operation` over `acme/orders`' effective view, rooted
+/// at the operation `root`, joined by a declared function over a
+/// `Reference<M::Order>` parameter, checked and linked.
+fn acme_dispatch_package(root: &str) -> CheckedPackage {
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "acme/orders".to_owned(),
@@ -330,42 +323,61 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         None,
         Expression::boolean(true),
     );
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let mut declarations = checked_dispatch_operation(
+        &view,
+        &DispatchRoot {
+            key: model_key(root),
+            closure: GeneralizationClosure::Closed,
+        },
+        &clauses(order, sub),
+        source(),
+        "pkg".to_owned(),
+        &mut meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
+    declarations.types = types;
+    if declarations.models.is_empty() {
+        declarations.models.push(model);
+    }
+    declarations.functions.push(held);
+    CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{root} checks: {refusals:?}")),
+    )
+}
+
+/// IR's v2 reader over `emission`, with the `acme/orders` document selected.
+fn read_acme(emission: &Emission) -> Read {
+    let document = acme_document();
+    let mut evidence = read_evidence(emission);
+    evidence
+        .insert_domain_package_document(package_identity(&document[..]), &document[..])
+        .expect("a fresh evidence key");
+    read_with(emission, &evidence)
+}
+
+/// FR-093-AC-21 (TC-416 step 12), model-owned nodes: `checked_dispatch_operation`
+/// over `acme/orders`' effective view builds the clause functions, and a
+/// declared function over a `Reference<M::Order>` parameter joins them. The
+/// model declaration nodes and every clause function carry their `ModelOwner`
+/// (an operation member or an object type), the declared function its
+/// `SourceOwner` (`a`, `u`), and the reference, parameter and expression nodes
+/// none.
+#[trace("FR-093-AC-21", "TC-416")]
+#[test]
+fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
     let mut seen = BTreeSet::new();
     let mut model_nodes = BTreeSet::new();
     for root in ["Order/size", "Order/count", "Sub/size"] {
-        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-        let mut declarations = checked_dispatch_operation(
-            &view,
-            &DispatchRoot {
-                key: model_key(root),
-                closure: GeneralizationClosure::Closed,
-            },
-            &clauses(order.clone(), sub.clone()),
-            source(),
-            "pkg".to_owned(),
-            &mut meter,
-            qsl_foundation::IdentityLimits::default(),
-        )
-        .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
-        declarations.types = types.clone();
-        if declarations.models.is_empty() {
-            declarations.models.push(model.clone());
-        }
-        declarations.functions.push(held.clone());
-        let checked = CheckedPackage::link(
-            declarations
-                .check(CheckingLimits::default())
-                .unwrap_or_else(|refusals| panic!("{root} checks: {refusals:?}")),
-        );
+        let checked = acme_dispatch_package(root);
         let emission = emit(&checked);
         assert_eq!(emission.omitted, []);
         let read = |emission: &Emission| {
-            let mut evidence = read_evidence(emission);
-            evidence
-                .insert_domain_package_document(package_identity(&document[..]), &document[..])
-                .expect("a fresh evidence key");
             assert!(
-                matches!(read_with(emission, &evidence), Read::Verified { .. }),
+                matches!(read_acme(emission), Read::Verified { .. }),
                 "{root}: IR's v2 reader admits the package"
             );
         };
@@ -411,6 +423,52 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
         ]),
         "the clause functions are owned by their operation members"
     );
+}
+
+/// FR-496-AC-1 (TC-1286): a dispatch bridge admits `acme/orders` with no
+/// `model` alias. Rooted at `Order/count`, whose family never names `Sub`,
+/// the package still carries one row per operation of the document, each
+/// `declaring` its own emitted object-type node (`Sub/size` under `Sub`),
+/// and IR's v2 reader admits it.
+#[trace("FR-496-AC-1", "TC-1286")]
+#[test]
+fn an_aliasless_models_rows_name_emitted_declaring_nodes() {
+    let emission = emit(&acme_dispatch_package("Order/count"));
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let declaring_owner = |row: &Value| {
+        let node = nodes(&wire)
+            .iter()
+            .find(|node| node["node_id"] == row["declaring"])
+            .unwrap_or_else(|| panic!("{}: its declaring node is emitted", row["operation"]));
+        assert_eq!(
+            (node["node_tag"].as_str(), node["semantic_form"].as_str()),
+            (Some("model"), Some("object_type"))
+        );
+        node["owner"]["node"].as_str().unwrap().to_owned()
+    };
+    let carried = wire["operation_effects"]
+        .as_array()
+        .expect("the package carries operation_effects");
+    assert_eq!(carried.len(), 3, "one row per operation");
+    let rows: BTreeSet<(String, String)> = carried
+        .iter()
+        .map(|row| {
+            (
+                declaring_owner(row),
+                row["operation"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        BTreeSet::from([
+            ("ix://acme/orders/Order".to_owned(), "count".to_owned()),
+            ("ix://acme/orders/Order".to_owned(), "size".to_owned()),
+            ("ix://acme/orders/Sub".to_owned(), "size".to_owned()),
+        ])
+    );
+    assert!(matches!(read_acme(&emission), Read::Verified { .. }));
 }
 
 /// FR-092-AC-8: a source enum and its members are written with structural
