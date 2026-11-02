@@ -15,8 +15,16 @@ jobs:
     # a docs build and a clean build. 10 minutes did not have margin for
     # that even before this change.
     timeout-minutes: 45
+    env:
+      # TC-177 reads the FR-331 schema from a live quire-specification checkout.
+      QSPEC_DIR: ${{ github.workspace }}/quire-specification
     steps:
       - uses: actions/checkout@v4
+      - name: Check out quire-specification (TC-177 FR-331 schema)
+        uses: actions/checkout@v4
+        with:
+          repository: agent-ix/quire-specification
+          path: quire-specification
       - name: No committed binaries
         run: tools/check-no-committed-binaries.sh
       # rust-toolchain.toml selects the toolchain and its CI components.
