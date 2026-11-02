@@ -14,6 +14,8 @@ use crate::checked_v2::{clause_roots, resolve_clause_root, ClauseRoot, V2ReadRef
 
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
+const FIXED: &str = "quire.temporal.fixed-sample.false-extension/v1";
+const TIMESTAMPED: &str = "quire.temporal.timestamped-event.finite-window/v1";
 
 /// ADR-018 §6's clause formula.
 const EVENTUALLY_TWO: &str = "always eventually holds(c.versionNumber = 2)";
@@ -152,6 +154,65 @@ fn event_position_binding_uses_the_exact_checked_selection() {
         binding["declaration"],
         clause_node(&compiled.wire)["node_id"]
     );
+    let admitted = admit(&compiled);
+    let [typed] = admitted
+        .temporal_bindings()
+        .expect("IR retains the typed clock binding")
+    else {
+        panic!("one emitted clock binding is admitted");
+    };
+    assert_eq!(typed.clock_name.as_ref(), "model-steps");
+    assert_eq!(
+        typed.clock,
+        quire_contract_model::ClockConfiguration::EventPosition {
+            sequence_authority: "test-order-events".into(),
+        }
+    );
+}
+
+/// FR-322-AC-294: fixed-sample and timestamped-event producer configurations
+/// survive strict I2 admission as their corresponding typed clock variants.
+#[trace("TC-134", "FR-322-AC-294")]
+#[test]
+fn fixed_sample_and_timestamped_bindings_are_admitted_as_typed_clocks() {
+    use quire_contract_model::{ClockConfiguration as C, ClockExactNumber as N};
+
+    let cases = [
+        (
+            FIXED,
+            C::FixedSample {
+                epoch: N::Integer {
+                    decimal: "0".into(),
+                },
+                period: N::Rational {
+                    numerator: "1".into(),
+                    denominator: "10".into(),
+                },
+                unit: "test-milliseconds".into(),
+            },
+        ),
+        (
+            TIMESTAMPED,
+            C::TimestampedEvent {
+                timestamp_unit: "test-rfc3339".into(),
+            },
+        ),
+    ];
+    for (profile, expected_clock) in cases {
+        let compiled = compile(&unit(
+            profile,
+            &declared("Bound", "eventually[0,1] holds(true)"),
+        ));
+        let admitted = admit(&compiled);
+        let [binding] = admitted
+            .temporal_bindings()
+            .expect("IR admits typed temporal bindings")
+        else {
+            panic!("one configured clause has one binding: {profile}");
+        };
+        assert_eq!(binding.clock_name.as_ref(), "model-steps", "{profile}");
+        assert_eq!(binding.clock, expected_clock, "{profile}");
+    }
 }
 
 /// FR-322-AC-294: the compatibility entry point cannot invent a selection

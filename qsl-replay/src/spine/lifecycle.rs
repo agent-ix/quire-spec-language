@@ -1137,6 +1137,7 @@ impl<'a> Resolution<'a> {
         let raw = frame.raw.clone();
         let unit = frame.unit.clone();
         let package_name = frame.package_name.clone();
+        let temporal_selections = self.temporal_selections;
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
@@ -1219,7 +1220,7 @@ impl<'a> Resolution<'a> {
             Box::new(CompileRefusal::Check { region, refusals })
         })?;
         charged(cancel, &mut self.work.s4, || {
-            pkg::CheckedPackage::link_with(graph, links)
+            pkg::CheckedPackage::link_with_temporal_selections(graph, links, temporal_selections)
         })
         .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))
     }

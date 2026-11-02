@@ -8,7 +8,9 @@
 //! `CheckedPackage`, not that one).
 //!
 //! `CheckedPackage`'s constructors ([`CheckedPackage::link`] and
-//! [`CheckedPackage::link_with`]) and its fields are private to this module:
+//! [`CheckedPackage::link_with`] and
+//! [`CheckedPackage::link_with_temporal_selections`]) and its fields are
+//! private to this module:
 //! the only conversion into it is the S4 link step, over an already-checked
 //! [`CheckedGraph`] (S3's own stage output, `qsl_semantics::check`) and
 //! other already-checked `CheckedPackage`s (E4's dependency closure), never
@@ -63,12 +65,16 @@ use qsl_semantics::library::LibraryName;
 pub(crate) const EMIT_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(u64::MAX);
 
 #[cfg(feature = "std")]
-use crate::emit::{emit_checked, Emission, EmitRefusal};
+use crate::emit::{
+    emit_checked, emit_checked_with_temporal_selections, Emission, EmitRefusal,
+    TemporalClockSelection,
+};
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
 /// dependency closure E4 names. Every field is private to this module
-/// (ADR-011 §4); [`Self::link`] and [`Self::link_with`] are the only
+/// (ADR-011 §4); [`Self::link`], [`Self::link_with`] and
+/// [`Self::link_with_temporal_selections`] are the only
 /// constructors.
 ///
 /// TC-244 row 2 (FR-087-AC-2): a `CheckedGraph` never becomes a
@@ -133,7 +139,7 @@ pub struct CheckedPackage {
     graph: Arc<CheckedGraph>,
     /// E4's checked dependency closure: each directly imported package's
     /// own checked package, compiled from its source, by library name
-    /// ([`Self::link_with`]). Shared: one
+    /// ([`Self::link_with`] or [`Self::link_with_temporal_selections`]). Shared: one
     /// library compile serves every import that reaches it (ADR-015 D-1).
     dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>>,
     /// The resolved library closure (FR-307):
@@ -144,7 +150,7 @@ pub struct CheckedPackage {
     selections: BTreeMap<LibraryName, ResolvedDependency>,
     /// Identities named by this unit's imports. Kept separately because a
     /// direct identity may first be reached through another import's lock.
-    /// Only `link_with` and the emitter read it, so it exists with `std`.
+    /// The link methods and emitter read it, so it exists with `std`.
     #[cfg(feature = "std")]
     direct_imports: BTreeSet<LibraryName>,
     /// FR-304, FR-306: this package's checked abstraction relation, when it
@@ -200,7 +206,7 @@ impl ResolvedDependency {
 }
 
 /// How a selection's first dependency path reaches its library.
-// Only `link_with` builds a selection, so without `std` no variant is
+// Only the link methods build a selection, so without `std` no variant is
 // constructed; the type stays because `ResolvedDependency` is public.
 #[cfg_attr(not(feature = "std"), expect(dead_code))]
 #[derive(Clone)]
@@ -380,7 +386,8 @@ impl CheckedPackage {
     /// `CheckedGraph` to `CheckedPackage`. Fed only by already-checked
     /// typestate -- a `CheckedGraph` -- never by an unchecked or
     /// wire-admitted value (R-10). The dependency closure is empty;
-    /// [`Self::link_with`] is the dependency-bearing step.
+    /// [`Self::link_with`] and [`Self::link_with_temporal_selections`] are
+    /// the dependency-bearing steps.
     ///
     /// TC-163 (FR-065-AC-1): the function packaging/lowering
     /// public API accepts only a checked node -- built solely through the
@@ -454,6 +461,18 @@ impl CheckedPackage {
     /// A refusal yields no package.
     #[cfg(feature = "std")]
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
+        Self::link_with_temporal_selections(graph, imports, &[])
+    }
+
+    /// Link with explicit clock selections for temporal declarations in the
+    /// imported packages. Selections are matched to each dependency's exact
+    /// source before validating its complete emitted package.
+    #[cfg(feature = "std")]
+    pub fn link_with_temporal_selections(
+        graph: CheckedGraph,
+        imports: Vec<Import>,
+        temporal_selections: &[TemporalClockSelection],
+    ) -> Result<Self, LinkRefusal> {
         let mut dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>> = BTreeMap::new();
         let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
         let direct_imports = imports
@@ -461,7 +480,7 @@ impl CheckedPackage {
             .map(|import| import.identity.clone())
             .collect();
         for import in imports {
-            check_dependency_emission(&import)?;
+            check_dependency_emission(&import, temporal_selections)?;
             let direct = ResolvedDependency {
                 package: Arc::clone(&import.package),
                 path: DependencyPath::Direct,
@@ -487,10 +506,17 @@ impl CheckedPackage {
                     .chain(transitive)
                     .collect();
             for (identity, resolved) in entries {
-                unify(&mut selections, identity, resolved)?;
+                unify(&mut selections, identity, resolved, temporal_selections)?;
             }
             match dependencies.get(&import.identity) {
-                Some(existing) if !same_package(existing, &import.package, &import.identity)? => {
+                Some(existing)
+                    if !same_package(
+                        existing,
+                        &import.package,
+                        &import.identity,
+                        temporal_selections,
+                    )? =>
+                {
                     return Err(LinkRefusal::ConflictingDefinition {
                         identity: import.identity.clone(),
                         selections: Box::new([
@@ -631,21 +657,49 @@ impl CheckedPackage {
 }
 
 /// Check that the imported package emits complete bytes under the imported
-/// library name. A remembered emission is reused when available.
+/// library name. A remembered emission is reused for legacy/no-selection
+/// calls; explicit temporal selections are validated through a fresh emission.
 #[cfg(feature = "std")]
-fn check_dependency_emission(import: &Import) -> Result<(), LinkRefusal> {
+fn temporal_selections_for_source(
+    selections: &[TemporalClockSelection],
+    source: &qsl_foundation::source::provenance::RawSourceRef,
+) -> Vec<TemporalClockSelection> {
+    selections
+        .iter()
+        .filter(|selection| selection.source == *source)
+        .cloned()
+        .collect()
+}
+
+#[cfg(feature = "std")]
+fn check_dependency_emission(
+    import: &Import,
+    temporal_selections: &[TemporalClockSelection],
+) -> Result<(), LinkRefusal> {
     let fresh;
-    let emission = match import.package.remembered_emission() {
-        Some(emission) => emission,
-        None => {
-            fresh = emit_checked(&import.package).map_err(|refusal| {
-                LinkRefusal::DependencyEmission {
-                    identity: import.identity.clone(),
-                    refusal: Some(refusal),
-                }
-            })?;
-            &fresh
+    let emission = if temporal_selections.is_empty() {
+        match import.package.remembered_emission() {
+            Some(emission) => emission,
+            None => {
+                fresh = emit_checked(&import.package).map_err(|refusal| {
+                    LinkRefusal::DependencyEmission {
+                        identity: import.identity.clone(),
+                        refusal: Some(refusal),
+                    }
+                })?;
+                &fresh
+            }
         }
+    } else {
+        let own_selections =
+            temporal_selections_for_source(temporal_selections, import.package.graph().source());
+        fresh = emit_checked_with_temporal_selections(&import.package, &own_selections).map_err(
+            |refusal| LinkRefusal::DependencyEmission {
+                identity: import.identity.clone(),
+                refusal: Some(refusal),
+            },
+        )?;
+        &fresh
     };
     if !emission.omitted().is_empty() {
         return Err(LinkRefusal::DependencyEmission {
@@ -667,12 +721,20 @@ fn same_package(
     left: &CheckedPackage,
     right: &CheckedPackage,
     identity: &LibraryName,
+    temporal_selections: &[TemporalClockSelection],
 ) -> Result<bool, LinkRefusal> {
     if core::ptr::eq(left, right) {
         return Ok(true);
     }
     let emit = |package: &CheckedPackage| {
-        emit_checked(package).map_err(|refusal| LinkRefusal::DependencyEmission {
+        let result = if temporal_selections.is_empty() {
+            emit_checked(package)
+        } else {
+            let own_selections =
+                temporal_selections_for_source(temporal_selections, package.graph().source());
+            emit_checked_with_temporal_selections(package, &own_selections)
+        };
+        result.map_err(|refusal| LinkRefusal::DependencyEmission {
             identity: identity.clone(),
             refusal: Some(refusal),
         })
@@ -698,9 +760,19 @@ fn unify(
     selections: &mut BTreeMap<LibraryName, ResolvedDependency>,
     identity: LibraryName,
     resolved: ResolvedDependency,
+    temporal_selections: &[TemporalClockSelection],
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if same_package(&existing.package, &resolved.package, &identity)? => Ok(()),
+        Some(existing)
+            if same_package(
+                &existing.package,
+                &resolved.package,
+                &identity,
+                temporal_selections,
+            )? =>
+        {
+            Ok(())
+        }
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
             selections: Box::new([existing.clone(), resolved]),
             identity,

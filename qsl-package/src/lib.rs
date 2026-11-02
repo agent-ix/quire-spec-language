@@ -15,7 +15,7 @@
 
 // NFR-015: with `std` disabled the crate is `no_std` + `alloc` and keeps the
 // in-memory checked-IR path; the `quire.checked-package/v2` emitter and reader
-// (`emit`, `checked_v2`) and the dependency-bearing `link_with` need
+// (`emit`, `checked_v2`) and dependency-bearing link methods need
 // `quire-contract-model` and are behind `std`.
 extern crate alloc;
 

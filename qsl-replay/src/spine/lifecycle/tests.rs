@@ -88,6 +88,155 @@ fn temporal_selection_partition_uses_the_exact_source_reference() {
     );
 }
 
+/// FR-322-AC-294: the source spine partitions temporal clock selections by
+/// the exact source before emitting a root package and its imported library.
+#[trace("TC-134", "FR-322-AC-294")]
+#[test]
+fn the_spine_routes_each_temporal_clock_to_its_own_source_package() {
+    use qsl_foundation::Span;
+    use qsl_package::{ClockConfiguration as C, TemporalClockSelection};
+
+    const LANGUAGE: &str = "language \"ix:native\" edition \"1-draft\";\n";
+    let root_clause = "temporal Root using rootClock over (w: M::Widget) clock \"root-clock\" \
+        on origin { eventually[0,1] holds(true) }";
+    let library_clause = "temporal Library using libraryClock over (w: M::Widget) clock \
+        \"library-clock\" on origin { eventually[0,1] holds(true) }";
+    let root_text = format!(
+        "{LANGUAGE}profile v = \"quire.model.complete/v1\";\n\
+         profile rootClock = \"quire.temporal.event-position.false-extension/v1\";\n\
+         import \"test/temporal-library\" as lib;\n\
+         model M = \"acme/orders\";\n{root_clause}\n"
+    );
+    let library_text = format!(
+        "{LANGUAGE}profile v = \"quire.model.complete/v1\";\n\
+         profile libraryClock = \"quire.temporal.fixed-sample.false-extension/v1\";\n\
+         model M = \"acme/orders\";\n{library_clause}\n"
+    );
+    let library_identity = SourceIdentity::new("test-authority", "temporal-library", "git", "1");
+    let library = SuppliedLibrary {
+        identity: "test/temporal-library".to_owned(),
+        source: library_identity.clone(),
+        path: "temporal-library.native".to_owned(),
+        bytes: library_text.as_bytes().to_vec(),
+    };
+    let dependencies = DependencyInput::new([library]).expect("one supplied library");
+    let library_parsed = parse(
+        &ParseRequest {
+            source: &library_identity,
+            path: "temporal-library.native",
+            bytes: library_text.as_bytes(),
+        },
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the library source parses")
+    .into_value();
+    let root_parsed = parse(
+        &request(root_text.as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the root source parses")
+    .into_value();
+    let span_of = |source: &str, clause: &str| {
+        let start = source.find(clause).expect("the clause is present");
+        let end = start + clause.len();
+        Span { start, end }
+    };
+    let selections = [
+        TemporalClockSelection {
+            source: root_parsed.source().reference().clone(),
+            declaration_span: span_of(&root_text, root_clause),
+            clock: C::EventPosition {
+                sequence_authority: "root-events".into(),
+            },
+        },
+        TemporalClockSelection {
+            source: library_parsed.source().reference().clone(),
+            declaration_span: span_of(&library_text, library_clause),
+            clock: C::FixedSample {
+                epoch: quire_contract_model::ClockExactNumber::Integer {
+                    decimal: "0".into(),
+                },
+                period: quire_contract_model::ClockExactNumber::Rational {
+                    numerator: "1".into(),
+                    denominator: "10".into(),
+                },
+                unit: "library-samples".into(),
+            },
+        },
+    ];
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT]).unwrap();
+    let models = select(
+        &root_parsed,
+        &packages,
+        SpineLimits::default().model,
+        &Cancel::new(),
+    )
+    .expect("the selected model package admits")
+    .into_value();
+    let checked = super::check_with_temporal_selections_and_execution_points(
+        &root_parsed,
+        "fixture".to_owned(),
+        &BTreeMap::new(),
+        &selections,
+        &models,
+        &dependencies,
+        SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap_or_else(|failure| panic!("both sources compile with their own selections: {failure:?}"))
+    .into_value();
+    let root_emitted = super::package_with_temporal_selections(
+        &checked,
+        &selections,
+        PackageLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the root package emits with its source selection")
+    .into_value();
+
+    let root_wire: serde_json::Value =
+        serde_json::from_slice(root_emitted.package().bytes()).expect("the root package is JSON");
+    let [root_binding] = root_wire["temporal_bindings"]
+        .as_array()
+        .expect("root binding rows")
+        .as_slice()
+    else {
+        panic!("the root has one binding: {root_wire}");
+    };
+    assert_eq!(root_binding["clock_name"], "root-clock");
+    assert_eq!(
+        root_binding["clock"],
+        serde_json::json!({"kind": "event_position", "sequence_authority": "root-events"})
+    );
+
+    let library_name = LibraryName::new("test/temporal-library").expect("valid library name");
+    let library_package = checked
+        .shared_library_packages()
+        .get(&library_name)
+        .expect("the imported library was emitted");
+    let library_wire: serde_json::Value =
+        serde_json::from_slice(library_package.bytes()).expect("the library package is JSON");
+    let [library_binding] = library_wire["temporal_bindings"]
+        .as_array()
+        .expect("library binding rows")
+        .as_slice()
+    else {
+        panic!("the library has one binding: {library_wire}");
+    };
+    assert_eq!(library_binding["clock_name"], "library-clock");
+    assert_eq!(
+        library_binding["clock"],
+        serde_json::json!({
+            "kind": "fixed_sample",
+            "epoch": {"kind": "integer", "decimal": "0"},
+            "period": {"kind": "rational", "numerator": "1", "denominator": "10"},
+            "unit": "library-samples"
+        })
+    );
+}
+
 fn request(bytes: &[u8]) -> ParseRequest<'_> {
     // The identity lives for the whole process, so a request can borrow it.
     static IDENTITY: OnceLock<SourceIdentity> = OnceLock::new();
