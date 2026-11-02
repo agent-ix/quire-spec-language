@@ -1227,20 +1227,34 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         "{good}\n{broken}\n{third_good}"
     ))))
     .expect("good protocols remain emit-able around a refused protocol");
-    assert!(matches!(
-        with_two_good.results(),
-        [
-            ProtocolEmissionResult::Emitted { declaration: first, nodes: first_nodes, clause_key: first_key },
-            ProtocolEmissionResult::Refused { declaration: refused, .. },
-            ProtocolEmissionResult::Emitted { declaration: third, nodes: third_nodes, clause_key: third_key }
-        ] if first == "Flow"
-            && refused == "Broken"
-            && third == "ThirdGood"
-            && first_nodes == baseline
-            && third_nodes == third_baseline
-            && first_key == baseline_clause_key
-            && third_key == third_clause_key
-    ), "{:#?}", with_two_good.results());
+    let [ProtocolEmissionResult::Emitted {
+        declaration: first,
+        nodes: first_nodes,
+        clause_key: first_key,
+    }, ProtocolEmissionResult::Refused {
+        declaration: refused,
+        ..
+    }, ProtocolEmissionResult::Emitted {
+        declaration: third,
+        nodes: third_nodes,
+        clause_key: third_key,
+    }] = with_two_good.results()
+    else {
+        panic!(
+            "expected [Emitted, Refused, Emitted]: {:?}",
+            with_two_good.results()
+        );
+    };
+    assert_eq!(first, "Flow");
+    assert_eq!(refused, "Broken");
+    assert_eq!(third, "ThirdGood");
+    assert_eq!(first_nodes, baseline, "Flow remains byte-for-byte stable");
+    assert_eq!(first_key, baseline_clause_key);
+    assert_eq!(
+        third_nodes, third_baseline,
+        "ThirdGood remains byte-for-byte stable"
+    );
+    assert_eq!(third_key, third_clause_key);
 
     let only_broken = emit_checked_with_protocol_results(&CheckedPackage::link(check(&broken)))
         .expect("a refused protocol result is available without Flow");
