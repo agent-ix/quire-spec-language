@@ -236,3 +236,165 @@ fn an_operation_over_a_record_parameter_emits_and_reads_back() {
         other => panic!("expected Verified, got {other:?}"),
     }
 }
+
+/// FR-496-AC-1, FR-496-AC-2 (TC-1286), measured on the relocked IR reader:
+/// the Ledger's `pay` modifies its receiver's `ledger_id` and `payTaxed`
+/// declares no frame entry, so the package carries two `operation_effects`
+/// rows, the second with four empty members; it reads back `Verified` and the
+/// admitted selected type view yields the Ledger's own `pay` and `payTaxed`
+/// with those effects and the producer's provenance.
+#[trace("FR-496-AC-1", "FR-496-AC-2", "TC-1286")]
+#[test]
+fn ledger_operation_effects_read_back_and_project_through_the_selected_type_view() {
+    use quire_contract_model::{
+        CheckedFieldScope, CheckedFrameModification, CheckedNodeOwner, CheckedOperationEffect,
+        CheckedOperationEffectOrigin,
+    };
+
+    let mut document = fixture::document();
+    let ledger = document["types"]
+        .as_array_mut()
+        .expect("the document lists its types")
+        .iter_mut()
+        .find(|declared| declared["identity"] == fixture::id("Ledger"))
+        .expect("the fixture declares the Ledger");
+    ledger["operations"][0]["frame"] = json!({
+        "modifies": [], "creates": [], "deletes": [],
+        "modifies_receiver": [fixture::id("Ledger/ledger_id")],
+    });
+    // The selected type view refuses a document with a type no node names, so
+    // the package keeps only the types the unit below reaches.
+    document["types"]
+        .as_array_mut()
+        .expect("the document lists its types")
+        .retain(|declared| {
+            ["Money", "TaxedMoney", "Ledger"]
+                .iter()
+                .any(|name| declared["identity"] == fixture::id(name))
+        });
+    document["populations"]
+        .as_array_mut()
+        .expect("the document lists its populations")
+        .retain(|population| population["identity"] == fixture::id("ledgers"));
+    document["constructs"]
+        .as_array_mut()
+        .expect("the document lists its constructs")
+        .retain(|construct| construct["kind"]["name"] != "bounded");
+    let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = {package:?};\n\
+         function keep using v(m: M::Money): M::Money pure {{ m }}\n\
+         function passTaxed using v(m: M::TaxedMoney): M::Money pure {{ keep(m) }}\n\
+         pre PayHolds using v on M::Ledger::pay {{ m.amount_minor > 0 }}\n",
+        package = fixture::PACKAGE,
+    );
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let checked = CheckedPackage::link(graph);
+    let emission = emit_checked(&checked).expect("the Ledger package emits");
+    assert_eq!(emission.omitted, []);
+
+    let mut evidence = super::read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(fixture::PACKAGE, bytes.as_slice())
+        .expect("the selected document is retained as evidence");
+    match read_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    ) {
+        Read::Verified { .. } => {}
+        other => panic!("expected Verified, got {other:?}"),
+    }
+    let admitted = match quire_contract_model::read_checked_package(
+        emission.package.bytes(),
+        quire_contract_model::CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => admitted,
+        other => panic!("the emitted Ledger package admits: {other:?}"),
+    };
+
+    let ledger_node = admitted
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| {
+            matches!(
+                &node.owner,
+                Some(CheckedNodeOwner::Model { identity, node })
+                    if identity.as_ref() == fixture::PACKAGE
+                        && node.as_ref() == fixture::id("Ledger")
+            )
+        })
+        .map(|node| node.node_id.clone())
+        .expect("the Ledger is a model node of the package");
+    let pay = CheckedOperationEffect {
+        modifies: vec![CheckedFrameModification::Field {
+            declaration: ledger_node.clone(),
+            name: "ledger_id".into(),
+            scope: CheckedFieldScope::Receiver,
+        }],
+        creates: Vec::new(),
+        deletes: Vec::new(),
+        deletes_scoped: Vec::new(),
+    };
+    let pay_taxed = CheckedOperationEffect {
+        modifies: Vec::new(),
+        creates: Vec::new(),
+        deletes: Vec::new(),
+        deletes_scoped: Vec::new(),
+    };
+    let rows: Vec<_> = admitted
+        .operation_effects()
+        .expect("the package carries operation_effects")
+        .collect();
+    assert_eq!(rows.len(), 2, "one row per Ledger operation");
+    for (row, operation, effect) in [(&rows[0], "pay", &pay), (&rows[1], "payTaxed", &pay_taxed)] {
+        assert_eq!(row.document(), fixture::PACKAGE);
+        assert_eq!(row.declaring(), &ledger_node);
+        assert_eq!(row.operation(), operation);
+        assert_eq!(row.effect(), effect);
+        assert_eq!(
+            row.provenance().origin,
+            CheckedOperationEffectOrigin::ModelDocumentOperationFrame
+        );
+        assert_eq!(
+            row.provenance().member.as_ref(),
+            fixture::id(&format!("Ledger/{operation}"))
+        );
+    }
+
+    let identities = checked
+        .graph()
+        .selected_exact_identities(&admitted)
+        .expect("the selected rows join IR admission");
+    let projected = admitted
+        .project_selected_type_declarations(
+            &identities,
+            emission.selected_tuple_declaration_rows(),
+            emission.selected_source_unit_rows(),
+            10_000,
+        )
+        .expect("the complete selected type view joins");
+    let [object] = projected
+        .objects()
+        .iter()
+        .filter(|object| object.original_identity() == fixture::id("Ledger"))
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("the Ledger is projected exactly once");
+    };
+    let operations: Vec<_> = object
+        .operations()
+        .iter()
+        .map(|operation| (operation.name(), operation.effect()))
+        .collect();
+    assert_eq!(operations, [("pay", &pay), ("payTaxed", &pay_taxed)]);
+}

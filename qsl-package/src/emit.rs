@@ -3979,6 +3979,19 @@ pub fn emit_timed_models(
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
+    // The base package's effects carry over unchanged: only timed nodes are
+    // rewritten, and no effect names one.
+    let operation_effects: Option<Vec<quire_contract_model::CheckedOperationEffectRow>> =
+        base.operation_effects().map(|rows| {
+            rows.map(|row| quire_contract_model::CheckedOperationEffectRow {
+                document: row.document().into(),
+                declaring: row.declaring().clone(),
+                operation: row.operation().into(),
+                effect: row.effect().clone(),
+                provenance: row.provenance().clone(),
+            })
+            .collect()
+        });
     let package = EmittedPackage::new(base.name(), |name| {
         encode_checked_package_v2(
             name,
@@ -3991,6 +4004,7 @@ pub fn emit_timed_models(
             CheckedPackageSidecarsRef {
                 checked_term_data: None,
                 temporal_bindings: base.temporal_bindings(),
+                operation_effects: operation_effects.as_deref(),
             },
             &capability_report,
             &diagnostics,
@@ -4921,6 +4935,7 @@ fn emit_package_inner(
         &equality_producer_identity_rows,
         &source_map,
     )?;
+    let operation_effects = operation_effects::operation_effect_rows(graph, &emitted_node_ids);
     let selected_operation_member_rows = selected_operation_member_rows
         .into_iter()
         .map(|(key, mut row)| {
@@ -5009,6 +5024,7 @@ fn emit_package_inner(
                 checked_term_data: checked_term_data.as_ref(),
                 temporal_bindings: (!temporal_bindings.is_empty())
                     .then_some(temporal_bindings.as_slice()),
+                operation_effects: operation_effects.as_deref(),
             },
             &capability_report,
             &diagnostics,
@@ -5427,5 +5443,6 @@ pub(crate) mod tests;
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
+mod operation_effects;
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;

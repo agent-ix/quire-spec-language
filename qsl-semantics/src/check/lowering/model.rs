@@ -27,8 +27,9 @@ use crate::check::node_key::{
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::VariantTypeDeclaration;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, OperationMemberRecord, PopulationRecord,
 };
+use crate::model::intake::member_identity_name;
 use crate::model::normalize::EffectiveView;
 use crate::value::nominal_payload::{
     DimensionEquivalencePayload, DimensionPayload, NominalPayload, UnitPayload,
@@ -2050,6 +2051,80 @@ impl<'a> Lowering<'a> {
             .end_object(relationship, far)
             .ok_or_else(|| mismatch(location))?;
         self.object_node(object, location)
+    }
+
+    /// FR-496: the declared effect of every operation that an emitted
+    /// `object_type`, `process` or `state_machine` node declares itself, in
+    /// the selected documents. An effect names the model nodes of the
+    /// declarations it grants, so lifting one can add a node whose own
+    /// operations then need a row; this repeats until no node is new.
+    /// `persistence_interface` and `systems_interface` declarations have no
+    /// FR-013 frame and a subtype's inherited operation is its declaring
+    /// node's, so neither gets a row.
+    pub(crate) fn operation_effect_rows(
+        &mut self,
+        location: &Location,
+    ) -> Result<Vec<crate::check::OperationEffectRecord>, CheckRefusal> {
+        let models: &'a [AdmittedModel] = self.models;
+        let mut operations: BTreeMap<&DeclarationKey, Vec<&OperationMemberRecord>> =
+            BTreeMap::new();
+        for model in models {
+            for record in model.records.values() {
+                if let DomainPackageRecord::OperationMember(operation) = record {
+                    operations
+                        .entry(&operation.owner)
+                        .or_default()
+                        .push(operation);
+                }
+            }
+        }
+        let mut lifted: std::collections::BTreeSet<&DeclarationKey> =
+            std::collections::BTreeSet::new();
+        let mut rows = Vec::new();
+        loop {
+            let mut declaring = Vec::new();
+            for model in models {
+                for (key, record) in &model.records {
+                    if lifted.contains(key)
+                        || !matches!(
+                            record_form(record),
+                            Some((_, "object_type" | "process" | "state_machine"))
+                        )
+                    {
+                        continue;
+                    }
+                    let node = record_node_key(record)
+                        .ok()
+                        .flatten()
+                        .ok_or_else(|| fault(location, KeyFault::EmptyNode(key.clone())))?;
+                    if self.graph.nodes.contains_key(&node) {
+                        declaring.push((model, key, node));
+                    }
+                }
+            }
+            if declaring.is_empty() {
+                return Ok(rows);
+            }
+            for (model, key, node) in declaring {
+                lifted.insert(key);
+                for operation in operations.get(key).into_iter().flatten() {
+                    let name =
+                        member_identity_name(&key.node, &operation.key.node).ok_or_else(|| {
+                            fault(
+                                location,
+                                KeyFault::UnknownDeclaration(operation.key.clone()),
+                            )
+                        })?;
+                    rows.push(crate::check::OperationEffectRecord::new(
+                        model.selection.identity.as_str(),
+                        node.clone(),
+                        name,
+                        operation.key.node.as_str(),
+                        self.frame_term(&operation.effect, location)?,
+                    ));
+                }
+            }
+        }
     }
 
     /// The model declaration node of `declaration`, recorded in the model

@@ -381,7 +381,8 @@ pub use settings::{
 };
 pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
-    OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
+    OperationEffectRecord, OperationSelection, PopulationDomain, ProtocolClauseFamily,
+    StateClauseDeclaration,
 };
 pub use step_simulation::StepSimulationEntry;
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
@@ -776,6 +777,9 @@ pub struct CheckedGraph {
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
+    /// FR-496: the declared effect of every operation of every emitted
+    /// `object_type`, `process` and `state_machine` node.
+    operation_effects: Vec<OperationEffectRecord>,
     /// Each `model` alias's object types, by artifact id: the table
     /// [`Self::field_domain`] resolves a field selection's alias and type in.
     model_objects: BTreeMap<String, BTreeMap<Identifier, quire_checked::key::DeclarationKey>>,
@@ -878,6 +882,7 @@ impl fmt::Debug for CheckedGraph {
                     probabilistic,
                     task_sets,
                     operation_frames,
+                    operation_effects,
                     model_objects,
                     model_owners,
                     model_non_owners,
@@ -960,6 +965,7 @@ impl fmt::Debug for CheckedGraph {
                     .field("probabilistic", &probabilistic)
                     .field("task_sets", &task_sets)
                     .field("operation_frames", &operation_frames)
+                    .field("operation_effects", &operation_effects)
                     .field("model_objects", &model_objects)
                     .field("model_owners", &model_owners)
                     .field("model_non_owners", &model_non_owners)
@@ -5301,6 +5307,14 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        let operation_effects =
+            match lowering.operation_effect_rows(&lowering::generated_location()) {
+                Ok(rows) => rows,
+                Err(refusal) => {
+                    refusals.push(refusal);
+                    Vec::new()
+                }
+            };
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -6301,6 +6315,7 @@ impl PackageDeclarations {
             probabilistic: probabilistic_model,
             task_sets: checked_task_sets,
             operation_frames,
+            operation_effects,
             model_objects,
             model_owners,
             model_non_owners,
@@ -7503,6 +7518,12 @@ impl CheckedGraph {
         self.operation_frames
             .iter()
             .find(|operation| operation.anchor == anchor)
+    }
+
+    /// FR-496: the declared effect of every operation of every emitted
+    /// `object_type`, `process` and `state_machine` model node.
+    pub fn operation_effects(&self) -> &[OperationEffectRecord] {
+        &self.operation_effects
     }
 
     /// The `state`/`operation_anchor` node of the operation `name` that

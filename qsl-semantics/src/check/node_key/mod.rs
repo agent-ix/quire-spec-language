@@ -899,23 +899,6 @@ impl BodyTerm {
         })
     }
 
-    /// `{term: "frame", modifies, creates, deletes, deletes_scoped}` (QSpec FR-340).
-    /// `creates` and `deletes` are each ordered lists of object type or
-    /// process node keys.
-    pub(crate) fn frame(
-        modifies: Vec<FrameModifies>,
-        creates: Vec<NodeKey>,
-        deletes: Vec<NodeKey>,
-        deletes_scoped: Vec<FrameDeletesScoped>,
-    ) -> Self {
-        Self::Frame(FrameTerm {
-            modifies,
-            creates: creates.into_iter().map(NodeRef::Admitted).collect(),
-            deletes: deletes.into_iter().map(NodeRef::Admitted).collect(),
-            deletes_scoped,
-        })
-    }
-
     /// The application this body is, when it is one.
     pub fn application_term(&self) -> Option<&ApplicationTerm> {
         match self {

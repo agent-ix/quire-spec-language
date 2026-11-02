@@ -24,12 +24,12 @@ use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
-    BindingValue, BodyTerm, FrameDeletesScoped, FrameField, FrameModifies, FrameScope, GroupTerm,
-    LeafTerm, MemberTerm, NodeRef, NodeTag, Operation, Operator,
+    BindingValue, BodyTerm, FrameDeletesScoped, FrameField, FrameModifies, FrameScope, FrameTerm,
+    GroupTerm, LeafTerm, MemberTerm, NodeRef, NodeTag, Operation, Operator,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, ExecutionPointRefusal, KeyFault};
 use crate::check::state_clause::{ClauseOperation, PopulationDomain};
-use crate::model::domain_package::DomainPackageRecord;
+use crate::model::domain_package::{DomainPackageRecord, OperationEffect};
 use crate::model::intake::member_identity_name;
 use crate::model::operation::OperationDeclaration;
 use crate::value::member::{AcceptedPoint, Member};
@@ -519,7 +519,31 @@ impl Lowering<'_> {
         location: &Location,
     ) -> Result<(NodeKey, NodeKey), CheckRefusal> {
         let declaring = self.object_node(anchor.declaring.clone(), location)?;
-        let effect = anchor.operation.effect();
+        let term = self.frame_term(anchor.operation.effect(), location)?;
+        // FR-340: the frame body is no other term at all -- it holds
+        // no application, and it never nests inside another term (the
+        // schema scopes this shape to a `state`/`frame` node's own body).
+        let frame = self.insert(
+            location,
+            NodeTag::State,
+            "frame",
+            Some(declaring.clone()),
+            None,
+            BodyTerm::Frame(term),
+        )?;
+        Ok((declaring, frame))
+    }
+
+    /// The FR-340 body of `effect`: every entry keyed to its model
+    /// declaration node, each member in canonical order and without a
+    /// duplicate entry. A `frame` node and an operation's emitted
+    /// `operation_effects` row (FR-496) lift one effect through this one
+    /// function, so the two cannot disagree.
+    pub(super) fn frame_term(
+        &mut self,
+        effect: &OperationEffect,
+        location: &Location,
+    ) -> Result<FrameTerm, CheckRefusal> {
         let mut modifies =
             Vec::with_capacity(effect.modifies.len() + effect.receiver_modifies.len());
         for entry in &effect.modifies {
@@ -563,18 +587,12 @@ impl Lowering<'_> {
                     .map(|name| FrameDeletesScoped::Parameter(name.clone())),
             )
             .collect();
-        // FR-340: the frame body is no other term at all -- it holds
-        // no application, and it never nests inside another term (the
-        // schema scopes this shape to a `state`/`frame` node's own body).
-        let frame = self.insert(
-            location,
-            NodeTag::State,
-            "frame",
-            Some(declaring.clone()),
-            None,
-            BodyTerm::frame(modifies, creates, deletes, deletes_scoped),
-        )?;
-        Ok((declaring, frame))
+        Ok(FrameTerm {
+            modifies,
+            creates: creates.into_iter().map(NodeRef::Admitted).collect(),
+            deletes: deletes.into_iter().map(NodeRef::Admitted).collect(),
+            deletes_scoped,
+        })
     }
 
     /// Mint every named operation's frame occurrence up front, in ascending

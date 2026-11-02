@@ -924,6 +924,18 @@ fn every_emitted_node_family_is_admitted() {
         .entry(CheckedNodeKind::Model(ModelForm::TupleValueType))
         .or_default()
         .push("not emitted: QSL lowers no tuple value type node yet".to_owned());
+    // IR-1256: the carried quantity type is an IR kind QSL's emitter does not
+    // write.
+    classified
+        .entry(CheckedNodeKind::ScalarType(ScalarTypeForm::CarriedQuantity))
+        .or_default()
+        .push("not emitted: QSL lowers no carried quantity type node".to_owned());
+    // QSL refuses a probabilistic model rather than emitting its claims
+    // (`EmitRefusal::ProbabilisticModelNotEmitted`).
+    classified
+        .entry(CheckedNodeKind::Claim(ClaimForm::ProbabilisticClaim))
+        .or_default()
+        .push("not emitted: QSL emits no probabilistic claim node".to_owned());
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))

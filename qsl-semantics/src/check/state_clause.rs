@@ -119,6 +119,75 @@ pub struct CheckedOperationFrame {
     pub(crate) frame_origin: Origin,
 }
 
+/// FR-496: the declared effect of one operation member of a selected model
+/// declaration, lifted as an FR-340 frame body. Unlike a
+/// [`CheckedOperationFrame`] it exists for every operation an emitted
+/// `object_type`, `process` or `state_machine` node declares, however few
+/// clauses name it.
+#[derive(Clone, Eq, PartialEq)]
+pub struct OperationEffectRecord {
+    document: String,
+    declaring: NodeKey,
+    operation: String,
+    member: String,
+    effect: super::node_key::FrameTerm,
+}
+
+impl std::fmt::Debug for OperationEffectRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OperationEffectRecord")
+            .field("document", &self.document)
+            .field("declaring", &NodeKeyDebug(&self.declaring))
+            .field("operation", &self.operation)
+            .field("member", &self.member)
+            .field("effect", &self.effect)
+            .finish()
+    }
+}
+
+impl OperationEffectRecord {
+    pub(crate) fn new(
+        document: &str,
+        declaring: NodeKey,
+        operation: &str,
+        member: &str,
+        effect: super::node_key::FrameTerm,
+    ) -> Self {
+        Self {
+            document: document.to_owned(),
+            declaring,
+            operation: operation.to_owned(),
+            member: member.to_owned(),
+            effect,
+        }
+    }
+
+    /// The selected document identity.
+    pub fn document(&self) -> &str {
+        &self.document
+    }
+
+    /// The declaring model node.
+    pub fn declaring(&self) -> &NodeKey {
+        &self.declaring
+    }
+
+    /// The operation's original member name on the declaring node.
+    pub fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    /// The operation member's original IR identity.
+    pub fn member(&self) -> &str {
+        &self.member
+    }
+
+    /// The operation's frame lift, entries in FR-340 order.
+    pub fn effect(&self) -> &super::node_key::FrameTerm {
+        &self.effect
+    }
+}
+
 impl std::fmt::Debug for CheckedOperationFrame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self {
