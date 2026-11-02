@@ -1822,6 +1822,15 @@ fn equality_producer_emission_rows(
     emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
     source_map: &[CheckedSourceMapEntry],
 ) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
+    equality_producer_emission_rows_excluding(graph, emitted_node_ids, source_map, &HashSet::new())
+}
+
+fn equality_producer_emission_rows_excluding(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    source_map: &[CheckedSourceMapEntry],
+    omitted_nodes: &HashSet<NodeKey>,
+) -> Result<Vec<EqualityProducerEmissionRow>, EmitRefusal> {
     let producer_data = graph.equality_producer_data();
     let producer_identities = graph.equality_producer_identities();
     if producer_data.len() != producer_identities.len()
@@ -1838,6 +1847,7 @@ fn equality_producer_emission_rows(
     graph
         .equality_producer_identities()
         .iter()
+        .filter(|((application, _), _)| !omitted_nodes.contains(application))
         .map(|((application, expression_location), producer_identity)| {
             let Some(checked_node) = emitted_node_ids.get(application).cloned() else {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
@@ -4182,6 +4192,10 @@ fn emit_package_inner(
         &model_roots,
         &selected_models,
     );
+    let omitted_keys = omitted
+        .iter()
+        .map(|(position, _)| candidates.order[*position].key.clone())
+        .collect::<HashSet<_>>();
     let dropped: HashSet<usize> = omitted.iter().map(|(position, _)| *position).collect();
     let omitted: Vec<OmittedNode> = omitted.into_iter().map(|(_, omission)| omission).collect();
     stale_protocol_reference(ids, &candidates, &dropped)?;
@@ -4730,8 +4744,12 @@ fn emit_package_inner(
     };
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     let emitted_node_ids = write_index_segments(&mut nodes, &mut source_map, &mut step_rows)?;
-    let equality_producer_identity_rows =
-        equality_producer_emission_rows(graph, &emitted_node_ids, &source_map)?;
+    let equality_producer_identity_rows = equality_producer_emission_rows_excluding(
+        graph,
+        &emitted_node_ids,
+        &source_map,
+        &omitted_keys,
+    )?;
     let equality_fact_witness_rows = equality_fact_witness_rows(
         graph,
         &emitted_node_ids,
