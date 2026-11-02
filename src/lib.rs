@@ -18,9 +18,16 @@ pub mod protocol_artifact;
 pub mod syntax;
 pub mod temporal;
 
+// The shared integration-test support below names this crate by its package
+// name; the alias lets the same file compile as a unit-test module. The module
+// is public under `cfg(test)` only because most of its helpers serve the
+// integration tests that include the same file, not this crate's unit tests.
+#[cfg(test)]
+extern crate self as quire_spec_language;
+
 #[cfg(test)]
 #[path = "../tests/support/native_rule_model.rs"]
-mod native_rule_model_test_support;
+pub mod native_rule_model_test_support;
 
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};
 pub use parser::{parse, parse_native, parse_native_source, parse_source};

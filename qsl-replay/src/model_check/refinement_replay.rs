@@ -272,12 +272,14 @@ pub fn replay_protocol_assumption_witness(
                     refinement,
                     systems,
                     protocol,
-                    &witness.identities,
-                    &concrete_states,
-                    &protocol_states,
-                    &paired_transitions,
-                    loop_entry,
-                    loop_end,
+                    AssumptionLasso {
+                        identities: &witness.identities,
+                        concrete_states: &concrete_states,
+                        protocol_states: &protocol_states,
+                        transitions: &paired_transitions,
+                        loop_entry,
+                        loop_end,
+                    },
                 )?
             {
                 return Ok(ProtocolAssumptionReplaySettlement::Inconclusive(
@@ -406,22 +408,23 @@ fn assumption_sources_match(
     Ok(!identities.is_empty())
 }
 
+/// The protocol candidate an initial closure reaches, with the steps taken
+/// to reach it.
+type InitialClosure = (
+    crate::refinement::ProtocolCandidate,
+    Vec<(
+        qsl_eval::simulation::protocol::ProtocolTransition,
+        crate::refinement::ProtocolCandidate,
+    )>,
+);
+
 fn protocol_initial_closure(
     refinement: &CheckedRefinement,
     systems: &RefinementSystems<'_>,
     protocol: &crate::refinement::AbstractProtocolSystem<'_>,
     concrete: &qsl_eval::simulation::model::ModelSimState,
     target: &[u8],
-) -> Result<
-    Option<(
-        crate::refinement::ProtocolCandidate,
-        Vec<(
-            qsl_eval::simulation::protocol::ProtocolTransition,
-            crate::refinement::ProtocolCandidate,
-        )>,
-    )>,
-    ReplayRefusal,
-> {
+) -> Result<Option<InitialClosure>, ReplayRefusal> {
     use std::collections::{BTreeSet, VecDeque};
 
     let history = initial_history(refinement, &systems.concrete, concrete.state());
@@ -528,20 +531,38 @@ fn protocol_initial_closure(
     Ok(None)
 }
 
+/// One concrete and one protocol step taken together; either side may stay.
+type PairedTransition = (
+    Option<ModelTransition>,
+    Option<qsl_eval::simulation::protocol::ProtocolTransition>,
+);
+
+/// A paired lasso's states and steps with the span `loop_entry..loop_end`
+/// that repeats, and the fairness identities checked against that span.
+#[derive(Clone, Copy)]
+struct AssumptionLasso<'a> {
+    identities: &'a [crate::refinement::AssumptionIdentity],
+    concrete_states: &'a [qsl_eval::simulation::model::ModelSimState],
+    protocol_states: &'a [crate::refinement::ProtocolCandidate],
+    transitions: &'a [PairedTransition],
+    loop_entry: usize,
+    loop_end: usize,
+}
+
 fn assumption_lasso_matches(
     refinement: &CheckedRefinement,
     systems: &RefinementSystems<'_>,
     protocol: &crate::refinement::AbstractProtocolSystem<'_>,
-    identities: &[crate::refinement::AssumptionIdentity],
-    concrete_states: &[qsl_eval::simulation::model::ModelSimState],
-    protocol_states: &[crate::refinement::ProtocolCandidate],
-    transitions: &[(
-        Option<ModelTransition>,
-        Option<qsl_eval::simulation::protocol::ProtocolTransition>,
-    )],
-    loop_entry: usize,
-    loop_end: usize,
+    lasso: AssumptionLasso<'_>,
 ) -> Result<bool, ReplayRefusal> {
+    let AssumptionLasso {
+        identities,
+        concrete_states,
+        protocol_states,
+        transitions,
+        loop_entry,
+        loop_end,
+    } = lasso;
     let mut implementation = false;
     // An empty protocol environment-assumption set is vacuously satisfied.
     let mut specification = true;

@@ -308,7 +308,7 @@ fn a_stronger_concrete_assumption_never_settles_proved() {
     )
     .expect("the assumption lasso replays over its admitted systems");
     assert_eq!(
-        replay_protocol_assumption_witness(world.refinement(), &systems, &witness)
+        replay_protocol_assumption_witness(world.refinement(), &systems, witness)
             .expect("typed lasso replay runs"),
         ProtocolAssumptionReplaySettlement::Reproduced
     );
@@ -1513,10 +1513,6 @@ fn a_terminal_refusal_of_a_protocol_event_replays() {
 #[test]
 fn a_refusal_is_permitted_when_one_stable_protocol_candidate_refuses() {
     let source = cas_twice(false, false)
-        .replace(
-            "protocol Twice using p over (c: Spec::Counter) on origin {",
-            "protocol Twice using p over (c: Spec::Counter) on origin {",
-        )
         .replace(
             "run sequence Main {\n\
          attempt a1 by w on Spec::Counter::inc contracts [] as (r1: Spec::Counter) { true };\n\

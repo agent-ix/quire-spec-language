@@ -1399,34 +1399,6 @@ impl Recompiled {
     }
 }
 
-/// The one S1-to-E4 spine run: parse, select, check and emit `bytes` as
-/// the unit `unit` against `packages` and `dependencies`, under `limits`,
-/// over a handle nobody cancels. [`recompile`] and [`crate::compile_package`]
-/// both run it, so a compile and a replay's recompile refuse alike.
-#[cfg(test)]
-pub(crate) fn run_spine(
-    unit: &SourceIdentity,
-    package: &LibraryName,
-    path: &str,
-    bytes: &[u8],
-    packages: &qsl_semantics::model::intake::PackageInput,
-    dependencies: &DependencyInput,
-    limits: SpineLimits,
-) -> Result<Recompiled, ReplayRefusal> {
-    run_spine_with_execution_points(
-        SpineUnit {
-            identity: unit,
-            package,
-            path,
-            bytes,
-        },
-        packages,
-        dependencies,
-        &spine::StateClauseExecutionPoints::new(),
-        limits,
-    )
-}
-
 /// The one source unit a spine run recompiles: its identity, the library name
 /// its nodes are keyed under, its display path and its bytes.
 pub(crate) struct SpineUnit<'a> {
@@ -1434,26 +1406,6 @@ pub(crate) struct SpineUnit<'a> {
     pub(crate) package: &'a LibraryName,
     pub(crate) path: &'a str,
     pub(crate) bytes: &'a [u8],
-}
-
-/// [`run_spine`] with accepted state-clause execution points
-/// (FR-104-AC-15), checked through `spine::check_with_execution_points`.
-#[cfg(test)]
-pub(crate) fn run_spine_with_execution_points(
-    unit: SpineUnit<'_>,
-    packages: &qsl_semantics::model::intake::PackageInput,
-    dependencies: &DependencyInput,
-    execution_points: &spine::StateClauseExecutionPoints,
-    limits: SpineLimits,
-) -> Result<Recompiled, ReplayRefusal> {
-    run_spine_with_temporal_selections_and_execution_points(
-        unit,
-        packages,
-        dependencies,
-        execution_points,
-        &[],
-        limits,
-    )
 }
 
 #[allow(
