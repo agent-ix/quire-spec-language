@@ -32,6 +32,7 @@ pub(crate) fn deadline_spec() -> EntrySpec {
         activation_capacity: 4,
         root: None,
         clause: None,
+        unprojectable: Vec::new(),
         tick_unit: None,
     }
 }
@@ -143,6 +144,7 @@ fn reference_code(outcome: TickOutcome) -> i64 {
         TickOutcome::Incomplete { .. } => 5,
         TickOutcome::Failed { .. } => 6,
         TickOutcome::ActivationLimit { .. } => 7,
+        TickOutcome::AtomProjection { atom } => 100 + i64::try_from(atom).unwrap(),
     }
 }
 
@@ -174,6 +176,7 @@ fn reference_spec<'p>(plan: &'p TimedMonitorPlan) -> TickMonitorSpec<'p> {
             .map(|(id, c)| (id.index(), *c))
             .collect(),
         activation_capacity: plan.activation_capacity(),
+        unprojectable: Default::default(),
     }
 }
 
@@ -304,9 +307,9 @@ pub(crate) fn run_entries_with(
     let helpers = "function marker using v(): Sequence<Integer> pure { sequence[0 - 1] }\n\
         function pairInts using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Sequence<Integer>> pure { sequence[a, b] }\n\
         function cat using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Integer> pure { flatten(pairInts(a, b)) }\n\
-        function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else 5; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
+        function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else if l.limit = \"atom_projection\" then 100 + l.amount else 5; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
         function dump using v(s: State): Sequence<Integer> pure { map(x in s.buffer_0: 1000000000000 + x.tFirst * 10000 + x.tLast * 10 + (if x.lost then 1 else 0)) }\n\
-        function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: (r.instance.origin_tick * 1000 + r.instance.subformula) * 8 + code(r.outcome)) }\n";
+        function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: ((r.instance.origin_tick * 1000 + r.instance.subformula) * 1000) + code(r.outcome)) }\n";
     let package = package_of(&format!("{}\n{helpers}\n{body}", render(spec)));
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
@@ -337,7 +340,7 @@ pub(crate) fn run_entries_with(
             steps
                 .last_mut()
                 .unwrap()
-                .push((number / 8, i64::try_from(number % 8).unwrap()));
+                .push((number / 1000, i64::try_from(number % 1000).unwrap()));
         }
     }
     steps.pop();
@@ -930,5 +933,75 @@ fn the_entries_evaluate_atoms_from_admitted_values() {
             run_reference(&plan, &nodes, &inputs),
             "seed {seed}"
         );
+    }
+}
+
+/// QSpec FR-487-AC-12, QSL FR-251-AC-17 / TC-1081 step 12: an atom with no
+/// admitted projection makes every instance that reads it settle
+/// `Incomplete(LimitReached{atom_projection, <AtomId>})`, entries and
+/// reference alike.
+#[test]
+fn an_atom_without_a_projection_settles_incomplete_atom_projection() {
+    for shape in [
+        "eventually[0 ms, 3 ms] holds(c.versionNumber = 3)",
+        "holds(c.versionNumber = 2) since[0 ms, 3 ms] holds(c.versionNumber = 3)",
+        ROOT_SHAPES[0],
+    ] {
+        let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+        let plan = premise_plan(shape, &target);
+        let mut spec = spec_from_plan(&plan).unwrap();
+        let atom = *spec.atoms.last().unwrap();
+        spec.unprojectable = vec![atom];
+        let mut nodes = vec![spec.node.subformula];
+        nodes.extend(spec.root.as_ref().map(|root| root.index));
+        let reference = |unprojectable: bool| {
+            let mut ref_spec = reference_spec(&plan);
+            if unprojectable {
+                ref_spec.unprojectable.insert(atom);
+            }
+            ref_spec
+        };
+        let mut saw_projection = false;
+        for seed in 0..15 {
+            let inputs = trace(seed * 7919 + 13, &spec.atoms, target.width_bits, 14);
+            let entries = run_entries_with(&plan, &spec, &inputs);
+            let mut monitor = TickMonitorReference::new(reference(true));
+            let expected: Vec<Vec<(i128, i64)>> = inputs
+                .iter()
+                .map(|input| {
+                    let step = match input {
+                        Input::Reading(reading, atoms) => TickStep::Reading {
+                            reading: *reading,
+                            atoms: atoms.iter().copied().collect(),
+                            guard: true,
+                        },
+                        Input::Watermark(boundary) => TickStep::Watermark {
+                            boundary: *boundary,
+                        },
+                        Input::Poll(reading) => TickStep::Poll { reading: *reading },
+                    };
+                    let mut results: Vec<(i128, i64)> = monitor
+                        .step(&step)
+                        .unwrap()
+                        .into_iter()
+                        .filter(|result| nodes.contains(&result.subformula))
+                        .map(|result| {
+                            (
+                                result.origin * 1000 + i128::try_from(result.subformula).unwrap(),
+                                reference_code(result.outcome),
+                            )
+                        })
+                        .collect();
+                    results.sort_unstable();
+                    results
+                })
+                .collect();
+            saw_projection |= expected
+                .iter()
+                .flatten()
+                .any(|(_, code)| *code == 100 + i64::try_from(atom).unwrap());
+            assert_eq!(entries, expected, "{shape} seed {seed}");
+        }
+        assert!(saw_projection, "{shape}: some instance reads the atom");
     }
 }

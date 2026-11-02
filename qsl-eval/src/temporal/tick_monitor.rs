@@ -64,6 +64,8 @@ pub struct TickMonitorSpec<'f> {
     /// The bound on live activations of the root (`monitor.max_activations`);
     /// an `on origin` root with capacity 0 is never started.
     pub activation_capacity: u64,
+    /// The `holds` atoms with no admitted projection, by formula index.
+    pub unprojectable: std::collections::BTreeSet<usize>,
 }
 
 /// One input of the reference evaluator.
@@ -126,6 +128,13 @@ pub enum TickOutcome {
         /// The capacity that was reached.
         capacity: u64,
     },
+    /// An atom of the formula has no admitted projection, so the instances
+    /// that read it settle `Incomplete(LimitReached{atom_projection})`
+    /// (QSpec FR-487-AC-12).
+    AtomProjection {
+        /// The formula index of the atom.
+        atom: usize,
+    },
     /// The root activation exceeded the activation capacity and was not
     /// started.
     ActivationLimit {
@@ -166,6 +175,9 @@ struct Val {
     closed: Poss,
     /// The node whose buffer lost evidence that this value depends on.
     lost: Option<usize>,
+    /// The lowest atom without an admitted projection that this value
+    /// depends on (QSpec FR-487-AC-12).
+    atom: Option<usize>,
 }
 
 const BOTH: Poss = Poss { t: true, f: true };
@@ -181,6 +193,7 @@ impl Val {
             open: poss,
             closed: poss,
             lost: None,
+            atom: None,
         }
     }
     fn of(value: bool) -> Self {
@@ -196,6 +209,7 @@ impl Val {
             open: flip(self.open),
             closed: flip(self.closed),
             lost: self.lost,
+            atom: self.atom,
         }
     }
     fn and(self, other: Self) -> Self {
@@ -207,6 +221,10 @@ impl Val {
             open: both(self.open, other.open),
             closed: both(self.closed, other.closed),
             lost: self.lost.or(other.lost),
+            atom: match (self.atom, other.atom) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
         }
     }
     fn or(self, other: Self) -> Self {
@@ -216,6 +234,9 @@ impl Val {
         match (self.open.t, self.open.f) {
             (true, false) => TickOutcome::True,
             (false, _) => TickOutcome::False,
+            _ if self.atom.is_some() => TickOutcome::AtomProjection {
+                atom: self.atom.unwrap_or(0),
+            },
             _ => match self.lost {
                 Some(node) => TickOutcome::Incomplete {
                     capacity: capacities.get(&node).copied().unwrap_or(0),
@@ -487,6 +508,7 @@ impl<'f> TickMonitorReference<'f> {
                         open: BOTH,
                         closed: ONLY_F,
                         lost: None,
+                        atom: None,
                     }
                     .and(prefix));
                 }
@@ -524,6 +546,10 @@ impl<'f> TickMonitorReference<'f> {
         }
         let value = match &self.spec.formula.nodes()[node] {
             FormulaNode::Constant(value) => Val::of(*value),
+            FormulaNode::Holds { .. } if self.spec.unprojectable.contains(&node) => Val {
+                atom: Some(node),
+                ..Val::UNKNOWN
+            },
             FormulaNode::Holds { .. } => self.events[position]
                 .atoms
                 .get(&node)
@@ -597,7 +623,10 @@ impl<'f> TickMonitorReference<'f> {
             return Ok(self.gap(u64::try_from(delta).unwrap_or(u64::MAX)));
         }
         for (index, node) in self.spec.formula.nodes().iter().enumerate() {
-            if matches!(node, FormulaNode::Holds { .. }) && !atoms.contains_key(&index) {
+            if matches!(node, FormulaNode::Holds { .. })
+                && !self.spec.unprojectable.contains(&index)
+                && !atoms.contains_key(&index)
+            {
                 return Err(TickStepError::MissingAtom { atom: index });
             }
         }

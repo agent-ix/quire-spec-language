@@ -51,27 +51,30 @@ pub enum BoolExpr {
 impl BoolExpr {
     /// The expression in the value algebra over the inputs `input` and the
     /// interval node's value `node`.
-    fn render_v(&self, input: &str, node: &str) -> String {
+    fn render_v(&self, input: &str, node: &str, unprojectable: &[usize]) -> String {
         match self {
             Self::Const(true) => "vTrue()".to_owned(),
             Self::Const(false) => "vFalse()".to_owned(),
+            Self::Atom(index) if unprojectable.contains(index) => {
+                format!("vAtomLost({})", index + 1)
+            }
             Self::Atom(index) => format!("vOf({input}.a{index})"),
             Self::Node => node.to_owned(),
-            Self::Not(a) => format!("vNot({})", a.render_v(input, node)),
+            Self::Not(a) => format!("vNot({})", a.render_v(input, node, unprojectable)),
             Self::And(a, b) => format!(
                 "vAnd({}, {})",
-                a.render_v(input, node),
-                b.render_v(input, node)
+                a.render_v(input, node, unprojectable),
+                b.render_v(input, node, unprojectable)
             ),
             Self::Or(a, b) => format!(
                 "vOr({}, {})",
-                a.render_v(input, node),
-                b.render_v(input, node)
+                a.render_v(input, node, unprojectable),
+                b.render_v(input, node, unprojectable)
             ),
             Self::Implies(a, b) => format!(
                 "vOr(vNot({}), {})",
-                a.render_v(input, node),
-                b.render_v(input, node)
+                a.render_v(input, node, unprojectable),
+                b.render_v(input, node, unprojectable)
             ),
         }
     }
@@ -179,6 +182,10 @@ pub struct EntrySpec {
     /// The clause's own parameters and `holds` expressions, when the atoms
     /// are evaluated by the entries (QSL FR-251 "Entry bindings").
     pub clause: Option<ClauseSource>,
+    /// The `holds` atoms with no admitted projection (QSpec FR-487-AC-12),
+    /// by formula index: an instance that reads one settles
+    /// `Incomplete(LimitReached{atom_projection})`.
+    pub unprojectable: Vec<usize>,
     /// The declared tick unit, which the generated unit mentions so the
     /// graph holds its node (the plan root's `tick_unit` binding).
     pub tick_unit: Option<String>,
@@ -380,6 +387,7 @@ pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal
         activation_capacity: plan.activation_capacity(),
         root,
         clause: None,
+        unprojectable: Vec::new(),
         tick_unit: Some(plan.binding().unit().to_owned()),
     })
 }
@@ -423,7 +431,10 @@ pub mod code {
     /// `Incomplete(LimitReached{activation})`.
     pub const ACTIVATION: i64 = 7;
     /// Added to a code once the instance can no longer change.
-    pub const SETTLED: i64 = 10;
+    pub const SETTLED: i64 = 100_000;
+    /// An `Incomplete(LimitReached{atom_projection})` outcome is this plus
+    /// the atom's formula index (QSpec FR-487-AC-12).
+    pub const ATOM_BASE: i64 = 1_000;
 }
 
 /// The identifiers of the generated declarations.
@@ -468,6 +479,7 @@ fn atoms_expr(spec: &EntrySpec) -> String {
         .atoms
         .iter()
         .map(|atom| match &spec.clause {
+            _ if spec.unprojectable.contains(atom) => format!("a{atom}: false"),
             None => format!("a{atom}: i.a{atom}"),
             Some(clause) => format!(
                 "a{atom}: atom{atom}({})",
@@ -503,6 +515,37 @@ struct RootConsts {
     future: &'static str,
 }
 
+/// The most an accumulator's `atomLost` can hold: one past the highest atom
+/// index (0 means none).
+fn atom_span(spec: &EntrySpec) -> usize {
+    spec.atoms.iter().max().map_or(0, |max| max + 1)
+}
+
+/// A status packs `flags + M * slot`; `flags` is `t + 2f + 4lost + 8 atom`,
+/// so `M` is eight times one more than the atom span.
+fn status_modulus(spec: &EntrySpec) -> usize {
+    8 * (atom_span(spec) + 1)
+}
+
+fn code_chain(spec: &EntrySpec) -> String {
+    let m = status_modulus(spec);
+    let mut text = String::new();
+    for slot in (1..=8).rev() {
+        let _ = write!(text, "if s >= {} then {slot} else ", m * slot);
+    }
+    text.push('0');
+    text
+}
+
+fn atom_chain(spec: &EntrySpec) -> String {
+    let mut text = String::new();
+    for atom in (1..=atom_span(spec)).rev() {
+        let _ = write!(text, "if f >= {} then {atom} else ", 8 * atom);
+    }
+    text.push('0');
+    text
+}
+
 fn root_consts(root: &RootSpec) -> RootConsts {
     if root.always {
         RootConsts {
@@ -532,11 +575,12 @@ fn root_tail(spec: &EntrySpec, watermark: bool, creatable: bool) -> String {
     format!(
         "let rv = rootV(flags1, pend) in \
          let rcode = codeOf(rv) in \
-         let rreport = {created_check} and not finalPrev and (if rcode = {pending} then {watermark} else rcode != lastcode) in \
-         let status2 = if finalPrev then act.status else flags1 + 8 * rcode in \
+         let rreport = {created_check} and not finalPrev and (if rcode = {pending} then {watermark} else slotOf(rcode) != lastcode) in \
+         let status2 = if finalPrev then act.status else flags1 + {m} * slotOf(rcode) in \
          let acts = if {created_check} then oneAct(Activation {{ subformula: {root}, origin_tick: act.origin_tick, status: status2 }}) else s.activations in \
          let rootRes = if rreport then oneResult(rootResultOf(act.origin_tick, rcode)) else {fail} in ",
         pending = code::PENDING,
+        m = status_modulus(spec),
         root = root.index,
         fail = if creatable {
             format!("if actFail then oneResult(rootResultOf(now2, {})) else noResults()", code::ACTIVATION)
@@ -823,9 +867,10 @@ fn on_gap_body(spec: &EntrySpec) -> String {
          let failRoot = created and lastcode = {pending} in \
          let frozen = {frozen} in \
          let rootRes = if failRoot then oneResult(rootFailedOf(act.origin_tick, gap)) else noResults() in \
-         let acts = if failRoot then noActs() else if created then oneAct(Activation {{ subformula: {root}, origin_tick: act.origin_tick, status: frozen + 8 * lastcode }}) else s.activations in \
+         let acts = if failRoot then noActs() else if created then oneAct(Activation {{ subformula: {root}, origin_tick: act.origin_tick, status: frozen + {m} * lastcode }}) else s.activations in \
          mk({state}, flatten(tripleResults({node_results}, rootRes, noResults())))",
         root = root.index,
+        m = status_modulus(spec),
         state = state_with("now2", "now2", "noCells()", "acts", "s.event_position"),
     )
 }
@@ -843,7 +888,7 @@ pub fn render(spec: &EntrySpec) -> String {
         "type Cells = Sequence<Cell>;
          record Idx {{ j: Integer; ix: Integer; }}
          record Last {{ c: Cell; }}
-         record V {{ oT: Boolean; oF: Boolean; cT: Boolean; cF: Boolean; lost: Boolean; }}\n\
+         record V {{ oT: Boolean; oF: Boolean; cT: Boolean; cF: Boolean; lost: Boolean; atomLost: Integer; }}\n\
          record Cell {{ tFirst: Integer; tLast: Integer; lost: Boolean; inputs: {atoms}; out: Integer; }}\n\
          record Activation {{ subformula: Integer; origin_tick: Integer; status: Integer; }}\n\
          record {state} {{ now: Integer; history_start: Integer; buffer_0: Cells; activations: Sequence<Activation>; event_position: Integer; }}\n\
@@ -891,16 +936,20 @@ pub fn render(spec: &EntrySpec) -> String {
         },
     );
     // The value algebra.
-    let psi_text = format!("vOf({})", node.psi.render("c.inputs", &bits));
+    let psi_text = node
+        .psi
+        .render_v("c.inputs", "vTrue()", &spec.unprojectable);
     let _ = writeln!(
         w,
-        "function vTrue using v(): V pure {{ V {{ oT: true, oF: false, cT: true, cF: false, lost: false }} }}\n\
-         function vFalse using v(): V pure {{ V {{ oT: false, oF: true, cT: false, cF: true, lost: false }} }}\n\
-         function vUnknown using v(): V pure {{ V {{ oT: true, oF: true, cT: true, cF: true, lost: false }} }}\n\
-         function vLost using v(): V pure {{ V {{ oT: true, oF: true, cT: true, cF: true, lost: true }} }}\n\
-         function vFuture using v(): V pure {{ V {{ oT: true, oF: true, cT: false, cF: true, lost: false }} }}\n\
-         function vNot using v(a: V): V pure {{ V {{ oT: a.oF, oF: a.oT, cT: a.cF, cF: a.cT, lost: a.lost }} }}\n\
-         function vAnd using v(a: V, b: V): V pure {{ V {{ oT: a.oT and b.oT, oF: a.oF or b.oF, cT: a.cT and b.cT, cF: a.cF or b.cF, lost: a.lost or b.lost }} }}\n\
+        "function vTrue using v(): V pure {{ V {{ oT: true, oF: false, cT: true, cF: false, lost: false, atomLost: 0 }} }}\n\
+         function vFalse using v(): V pure {{ V {{ oT: false, oF: true, cT: false, cF: true, lost: false, atomLost: 0 }} }}\n\
+         function vUnknown using v(): V pure {{ V {{ oT: true, oF: true, cT: true, cF: true, lost: false, atomLost: 0 }} }}\n\
+         function vLost using v(): V pure {{ V {{ oT: true, oF: true, cT: true, cF: true, lost: true, atomLost: 0 }} }}\n\
+         function vFuture using v(): V pure {{ V {{ oT: true, oF: true, cT: false, cF: true, lost: false, atomLost: 0 }} }}\n\
+         function vNot using v(a: V): V pure {{ V {{ oT: a.oF, oF: a.oT, cT: a.cF, cF: a.cT, lost: a.lost, atomLost: a.atomLost }} }}\n\
+         function vAnd using v(a: V, b: V): V pure {{ V {{ oT: a.oT and b.oT, oF: a.oF or b.oF, cT: a.cT and b.cT, cF: a.cF or b.cF, lost: a.lost or b.lost, atomLost: minPos(a.atomLost, b.atomLost) }} }}\n\
+         function minPos using v(a: Integer, b: Integer): Integer pure {{ if a = 0 then b else if b = 0 then a else if a < b then a else b }}\n\
+         function vAtomLost using v(k: Integer): V pure {{ V {{ oT: true, oF: true, cT: true, cF: true, lost: false, atomLost: k }} }}\n\
          function vOr using v(a: V, b: V): V pure {{ vNot(vAnd(vNot(a), vNot(b))) }}\n\
          function vOf using v(b: Boolean): V pure {{ if b then vTrue() else vFalse() }}\n\
          function vPolar using v(a: V): V pure {{ {polar} }}\n\
@@ -922,8 +971,8 @@ pub fn render(spec: &EntrySpec) -> String {
         none_hi = sig(t.none_hi),
         phi = match &node.phi {
             Some(expr) => format!(
-                "if c.lost then vLost() else vPolar(vOf({}))",
-                expr.render("c.inputs", &bits)
+                "if c.lost then vLost() else vPolar({})",
+                expr.render_v("c.inputs", "vTrue()", &spec.unprojectable)
             ),
             None => "vTrue()".to_owned(),
         },
@@ -968,12 +1017,14 @@ pub fn render(spec: &EntrySpec) -> String {
         "function codeOf using v(a: V): Integer pure {{ \
             if a.oT and not a.oF then {t} \
             else if not a.oT then {f} \
+            else if a.atomLost > 0 then {atom_base} + a.atomLost - 1 \
             else if a.lost then {inc} \
             else if a.cT != a.cF then {pend} \
             else {ind} }}\n\
          function isFinal using v(a: V): Boolean pure {{ a.oT != a.oF }}\n\
          function outcomeOf using v(c: Integer, cap: Integer): {outcome} pure {{ \
-            if c = {t} then {outcome}::True \
+            if c >= {atom_base} then {outcome}::Incomplete(LimitReached {{ limit: \"atom_projection\", amount: c - {atom_base}, setting: \"monitor.atom_projection\" }}) \
+            else if c = {t} then {outcome}::True \
             else if c = {f} then {outcome}::False \
             else if c = {pend} then {outcome}::Pending \
             else if c = {inc} then {outcome}::Incomplete(LimitReached {{ limit: \"event_buffer\", amount: cap, setting: \"monitor.max_event_rate\" }}) \
@@ -996,6 +1047,7 @@ pub fn render(spec: &EntrySpec) -> String {
         cap = cap,
         gapmax = spec.max_reading_gap,
         act = code::ACTIVATION,
+        atom_base = code::ATOM_BASE,
         acap = spec.activation_capacity,
     );
     if let Some(clause) = &spec.clause {
@@ -1005,7 +1057,11 @@ pub fn render(spec: &EntrySpec) -> String {
             .map(|(name, ty)| format!("{name}: {ty}"))
             .collect::<Vec<_>>()
             .join(", ");
-        for (atom, expression) in &clause.atoms {
+        for (atom, expression) in clause
+            .atoms
+            .iter()
+            .filter(|(atom, _)| !spec.unprojectable.contains(atom))
+        {
             let _ = writeln!(
                 w,
                 "function atom{atom} using {profile}({parameters}): Boolean pure {{ {expression} }}",
@@ -1015,7 +1071,7 @@ pub fn render(spec: &EntrySpec) -> String {
     }
     if let Some(root) = &spec.root {
         let consts = root_consts(root);
-        let psi = root.psi.render_v("i", "nv");
+        let psi = root.psi.render_v("i", "nv", &spec.unprojectable);
         let _ = writeln!(
             w,
             "function noActs using v(): Sequence<Activation> pure {{ sequence[] }}\n\
@@ -1023,14 +1079,15 @@ pub fn render(spec: &EntrySpec) -> String {
              function actOf using v(s: Sequence<Activation>): Activation pure {{ \
                 fold<LastAct>(k, x in s: LastAct {{ a: x }}, \
                     identity: LastAct {{ a: Activation {{ subformula: {index}, origin_tick: 0, status: {flags0} }} }}).a }}\n\
-             function codeOfStatus using v(s: Integer): Integer pure {{ \
-                if s >= 56 then 7 else if s >= 48 then 6 else if s >= 40 then 5 else if s >= 32 then 4 \
-                else if s >= 24 then 3 else if s >= 16 then 2 else if s >= 8 then 1 else 0 }}\n\
-             function flagsOfStatus using v(s: Integer): Integer pure {{ s - 8 * codeOfStatus(s) }}\n\
-             function flagT using v(f: Integer): Boolean pure {{ f = 1 or f = 3 or f = 5 or f = 7 }}\n\
-             function flagF using v(f: Integer): Boolean pure {{ f = 2 or f = 3 or f = 6 or f = 7 }}\n\
-             function accV using v(f: Integer): V pure {{ V {{ oT: flagT(f), oF: flagF(f), cT: flagT(f), cF: flagF(f), lost: f >= 4 }} }}\n\
-             function flagsOfV using v(a: V): Integer pure {{ (if a.oT then 1 else 0) + (if a.oF then 2 else 0) + (if a.lost then 4 else 0) }}\n\
+             function codeOfStatus using v(s: Integer): Integer pure {{ {code_chain} }}\n\
+             function flagsOfStatus using v(s: Integer): Integer pure {{ s - {m} * codeOfStatus(s) }}\n\
+             function atomOfFlags using v(f: Integer): Integer pure {{ {atom_chain} }}\n\
+             function baseOf using v(f: Integer): Integer pure {{ f - 8 * atomOfFlags(f) }}\n\
+             function flagT using v(f: Integer): Boolean pure {{ baseOf(f) = 1 or baseOf(f) = 3 or baseOf(f) = 5 or baseOf(f) = 7 }}\n\
+             function flagF using v(f: Integer): Boolean pure {{ baseOf(f) = 2 or baseOf(f) = 3 or baseOf(f) = 6 or baseOf(f) = 7 }}\n\
+             function accV using v(f: Integer): V pure {{ V {{ oT: flagT(f), oF: flagF(f), cT: flagT(f), cF: flagF(f), lost: baseOf(f) >= 4, atomLost: atomOfFlags(f) }} }}\n\
+             function flagsOfV using v(a: V): Integer pure {{ (if a.oT then 1 else 0) + (if a.oF then 2 else 0) + (if a.lost then 4 else 0) + 8 * a.atomLost }}\n\
+             function slotOf using v(c: Integer): Integer pure {{ if c >= {atom_base} then 8 else c }}\n\
              function foldFlags using v(f: Integer, a: V): Integer pure {{ flagsOfV({op}(accV(f), a)) }}\n\
              function psiV using v(i: {atoms}, nv: V): V pure {{ {psi} }}\n\
              function rootV using v(f: Integer, pend: V): V pure {{ {op}({op}(accV(f), pend), {future}) }}\n\
@@ -1042,6 +1099,10 @@ pub fn render(spec: &EntrySpec) -> String {
             op = consts.op,
             future = consts.future,
             flags0 = consts.flags0,
+            m = status_modulus(spec),
+            code_chain = code_chain(spec),
+            atom_chain = atom_chain(spec),
+            atom_base = code::ATOM_BASE,
             index = root.index,
             atoms = names::ATOMS,
             result = names::RESULT,

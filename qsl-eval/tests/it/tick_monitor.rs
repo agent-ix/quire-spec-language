@@ -90,6 +90,7 @@ impl Plan {
             max_reading_gap: self.max_gap,
             capacities,
             activation_capacity: 8,
+            unprojectable: Default::default(),
         })
     }
 }
