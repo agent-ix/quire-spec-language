@@ -25,6 +25,7 @@ pub mod analyze;
 pub mod contract_check;
 pub mod exact_probabilistic;
 pub mod model_check;
+pub mod monitor_entries;
 pub mod monitor_plan;
 pub mod provider;
 pub mod schedulability;
