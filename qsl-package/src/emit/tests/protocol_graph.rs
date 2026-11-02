@@ -1027,6 +1027,42 @@ fn parallel_flow(parallel: &str) -> String {
     )
 }
 
+fn checked_protocols_with_budget(
+    protocols: &str,
+    work_budget: u64,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<CheckRefusal>> {
+    let document = model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+        .expect("the test model admits");
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+         model M = \"acme/orders\";\n{protocols}"
+    );
+    assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check_with_protocol_results(CheckingLimits::default().with_work_budget(work_budget))
+}
+
+fn minimum_protocol_work_budget(protocols: &str) -> u64 {
+    let mut low = 0;
+    let mut high = CheckingLimits::default().work_budget();
+    let complete = |budget| {
+        checked_protocols_with_budget(protocols, budget)
+            .is_ok_and(|graph| graph.protocol_refusals().is_empty())
+    };
+    assert!(complete(high), "the bounded test unit admits");
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if complete(middle) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    low
+}
+
 /// FR-383-AC-18, AC-28 and AC-29 (TC-1297): a refused protocol leaves
 /// independent protocol results readable and makes the aggregate inadmissible.
 #[trace("FR-383-AC-18", "FR-383-AC-28", "FR-383-AC-29", "TC-1297")]
@@ -1105,10 +1141,14 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Broken's result is refused: {:?}", combined.results());
     };
     assert_eq!(declaration, "Broken");
-    assert!(matches!(
-        refusal.cause,
-        qsl_semantics::check::CheckCause::MissingName(_)
-    ));
+    assert!(
+        matches!(
+            refusal.cause,
+            qsl_semantics::check::CheckCause::MissingName(_)
+        ),
+        "missing join label refusal: {:?}",
+        refusal.cause
+    );
     assert_eq!(
         combined
             .results()
@@ -1184,6 +1224,67 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         qsl_semantics::check::CheckCause::ProtocolReference(ref cause)
             if cause.construct() == Some(ProtocolConstruct::NoOwnerModel)
     ));
+}
+
+/// FR-383-AC-30 (TC-1297 rows 9–10): the shared S3 work budget is consumed in
+/// source order; every protocol has equal work and no fixed per-protocol cap.
+#[trace("FR-383-AC-30", "TC-1297")]
+#[test]
+fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
+    let protocol = parallel_flow(
+        "parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, b];",
+    );
+    let renamed = |name: &str| protocol.replace("Flow", name);
+    let empty_budget = minimum_protocol_work_budget("");
+    let one_budget = minimum_protocol_work_budget(&protocol);
+    let protocol_work = one_budget - empty_budget;
+    let three = format!("{}\n{}\n{}", protocol, renamed("Flaw"), renamed("Flew"));
+    let exact = checked_protocols_with_budget(&three, empty_budget + protocol_work)
+        .expect("the work limit is scoped to its protocols");
+    let exact = emit_checked_with_protocol_results(&CheckedPackage::link(exact))
+        .expect("the first protocol's nodes are retained");
+    assert!(matches!(
+        exact.aggregate(),
+        ProtocolEmissionAggregate::Incomplete { .. }
+    ));
+    assert_eq!(exact.exit_code(), 22);
+    assert!(exact.emission().is_none());
+    assert!(matches!(
+        exact.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration, .. },
+            ProtocolEmissionResult::Incomplete { declaration: second, limit },
+            ProtocolEmissionResult::Incomplete { declaration: third, limit: third_limit }
+        ] if declaration == "Flow"
+            && second == "Flaw"
+            && third == "Flew"
+            && limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget
+            && third_limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget
+    ));
+
+    let reversed = format!("{}\n{}\n{}", renamed("Flaw"), protocol, renamed("Flew"));
+    let reversed = checked_protocols_with_budget(&reversed, empty_budget + protocol_work)
+        .expect("reordered protocol checks complete as individual results");
+    let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(reversed))
+        .expect("the first protocol's nodes are retained");
+    assert!(matches!(
+        reversed.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration, .. },
+            ProtocolEmissionResult::Incomplete { declaration: second, .. },
+            ProtocolEmissionResult::Incomplete { declaration: third, .. }
+        ] if declaration == "Flaw" && second == "Flow" && third == "Flew"
+    ));
+
+    let sufficient = checked_protocols_with_budget(&three, empty_budget + 3 * protocol_work)
+        .expect("three equal protocols fit three times the measured work");
+    let sufficient = emit_checked_with_protocol_results(&CheckedPackage::link(sufficient))
+        .expect("all protocol results are emitted");
+    assert!(matches!(
+        sufficient.aggregate(),
+        ProtocolEmissionAggregate::Emitted
+    ));
+    assert_eq!(sufficient.exit_code(), 0);
 }
 
 /// The `control` node of `wire` whose declaration is `path`.
