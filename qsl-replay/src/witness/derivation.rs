@@ -7,7 +7,7 @@
 //! so producer and replay derive the record the same way.
 
 use qsl_semantics::check::{CheckedNode, CheckedStateClause};
-use quire_checked::node::{Connective, NodeKind, Visit};
+use quire_checked::node::{Connective, ConnectiveOrigin, NodeKind, Visit};
 use quire_eval::FamilyOutcome;
 use quire_exact::{Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
@@ -35,7 +35,9 @@ pub(crate) struct Derived {
 /// of a `false` `and`, the first `true` operand of a `true` `or`, otherwise
 /// the right operand), and for `implies` the antecedent when it is `false`,
 /// otherwise the consequent. The walk ends at the first node of any other
-/// kind and descends the claim's tree, so it visits each node at most once.
+/// kind, which includes a connective the checker synthesized for a float
+/// ordering (it records no decision), and descends the claim's tree, so it
+/// visits each node at most once.
 /// A walk that ends at a `forall` or `exists` with a stop report settles
 /// the decisive basis for the clause's truth and builds the record from
 /// that report; any other end settles `closed-scope` with no record. The
@@ -79,7 +81,12 @@ pub(crate) fn derive_separating_witness(
                 }
             }
             NodeKind::Not(operand) => operand,
-            NodeKind::Connective(connective, _, left, right) => {
+            // A connective the checker synthesized (a float ordering's
+            // composition) records no decision: the path ends there.
+            NodeKind::Connective(_, ConnectiveOrigin::Synthesized, _, _) => {
+                return Ok(Some(closed_scope()))
+            }
+            NodeKind::Connective(connective, ConnectiveOrigin::Authored, left, right) => {
                 let left_value = decision(node)?;
                 let stopped_on_left = match connective {
                     Connective::And | Connective::Implies => !left_value,
