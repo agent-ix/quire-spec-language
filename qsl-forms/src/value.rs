@@ -629,7 +629,8 @@ pub(crate) fn type_form(cst: &LosslessCst, root: &CstNode) -> Result<TypeForm, F
 }
 
 /// The argument nodes of a type-form node: a `TypeReference`'s element or
-/// payload `TypeReference`s, or a `Reference<Q>`'s `QualifiedName`. A
+/// payload `TypeReference`s, including a `Quantity<U, C>` carrier, or a
+/// `Reference<Q>`'s `QualifiedName`. A
 /// `TypeReference` headed by a qualified name, and a bare `QualifiedName`,
 /// have none.
 fn type_arguments<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<&'c CstNode> {

@@ -43,7 +43,8 @@ use quire_eval::{
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
-    CompositeValue, FieldValue, ObjectReference, OptionValue, UnionValue, Value, ValueType,
+    CompositeValue, FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value,
+    ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -68,7 +69,8 @@ use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
-    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
+    compare_quantity, convert_quantity, evaluate_quantity_unit, ConvertedValue, QuantityOperation,
+    QuantityTarget, UnitScope,
 };
 use quire_semantic_value::relationship_extent::Resolution;
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
@@ -2560,9 +2562,62 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 value
             }
-            NodeKind::ConvertScalar(operand, _) => {
+            NodeKind::ConvertScalar(operand, source_node) => {
                 let value = self.pop()?;
-                operand_value(self.scope.types(), operand, &value, &self.units, self.meter)?
+                let source_type = node.at(*source_node).value_type();
+                let target_type = node.value_type();
+                let carried_conversion = matches!(source_type, ValueType::CarriedQuantity(_))
+                    || matches!(target_type, ValueType::CarriedQuantity(_));
+                if carried_conversion {
+                    let Value::Quantity(quantity) = &value else {
+                        return Err(invariant("carried-quantity-conversion-source-expected"));
+                    };
+                    let Some(source) = self.units.resolve(quantity) else {
+                        return Err(unresolved_unit());
+                    };
+                    let (unit_id, target) = if let ValueType::Quantity(unit) = target_type {
+                        (unit.clone(), QuantityTarget::Exact)
+                    } else if let ValueType::CarriedQuantity(target) = target_type {
+                        (
+                            target.unit().clone(),
+                            QuantityTarget::Carried(target.carrier().clone()),
+                        )
+                    } else {
+                        return Err(invariant("carried-quantity-conversion-target-expected"));
+                    };
+                    if !matches!(
+                        source_type,
+                        ValueType::Quantity(_) | ValueType::CarriedQuantity(_)
+                    ) {
+                        return Err(invariant(
+                            "carried-quantity-conversion-source-type-expected",
+                        ));
+                    }
+                    let Some(unit) = self.units.get(unit_id.clone()) else {
+                        return Err(unresolved_unit());
+                    };
+                    let conversion = convert_quantity(source, unit, &target, self.meter)
+                        .map_err(|_| invariant("carried-quantity-conversion-rejected"))?;
+                    let conversion = outcome_into_stop(conversion)?;
+                    let magnitude = match conversion.value() {
+                        ConvertedValue::Exact(exact) => exact.clone(),
+                        ConvertedValue::Decimal(result) => {
+                            if let Some(loss) = result.loss() {
+                                self.record(node, ValueLoss::Decimal(loss.clone()));
+                            }
+                            result.value().normalized().to_rational()
+                        }
+                        ConvertedValue::Integer { value, loss } => {
+                            if let Some(loss) = loss {
+                                self.record(node, ValueLoss::Decimal(loss.clone()));
+                            }
+                            Rational::from_integer(value.value().clone())
+                        }
+                    };
+                    Value::Quantity(Quantity::new(magnitude, unit_id))
+                } else {
+                    operand_value(self.scope.types(), operand, &value, &self.units, self.meter)?
+                }
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {

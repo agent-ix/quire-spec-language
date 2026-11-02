@@ -383,6 +383,7 @@ fn source_and_types(g: &mut Grammar) {
                 r(P::SignedInteger),
                 x(","),
                 r(P::SignedInteger),
+                opt(s(vec![x(";"), r(P::RoundingMode)])),
                 x("]"),
             ]),
             s(vec![
@@ -434,7 +435,17 @@ fn source_and_types(g: &mut Grammar) {
                 opt(s(vec![x("["), uint(), x(","), uint(), x("]")])),
             ]),
             s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
-            s(vec![x("Quantity"), x("<"), r(P::QualifiedName), x(">")]),
+            c(vec![
+                s(vec![x("Quantity"), x("<"), r(P::QualifiedName), x(">")]),
+                s(vec![
+                    x("Quantity"),
+                    x("<"),
+                    r(P::QualifiedName),
+                    x(","),
+                    r(P::TypeReference),
+                    x(">"),
+                ]),
+            ]),
             s(vec![
                 x("Population"),
                 x("<"),

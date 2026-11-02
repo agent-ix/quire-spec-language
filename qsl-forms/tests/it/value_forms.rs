@@ -844,6 +844,51 @@ fn a_quantity_type_form_names_its_unit() {
     assert_eq!(&text[unit_name.span.start..unit_name.span.end], "ms");
 }
 
+/// FR-497-AC-1/3 (TC-1287): S2 retains the unit and bounded carrier as
+/// separate type-form arguments, including an optional Int rounding mode.
+#[trace("FR-497-AC-1", "FR-497-AC-3", "TC-1287")]
+#[test]
+fn carried_quantity_type_forms_preserve_bounded_carriers() {
+    let (text, unit) = build(
+        "function f using v(a: Quantity<m, Int[-2, 2]>, b: Quantity<m, Int[-2, 2; nearest-even]>, c: Quantity<m, Decimal[0, 1; 0, 4; nearest-even]>): Boolean pure { true }",
+    );
+    let DeclarationForm::Function(function) = unit.forms()[0].form() else {
+        panic!("a function");
+    };
+    let [(_, integer_exact), (_, integer_rounded), (_, decimal)] = function.parameters.as_slice()
+    else {
+        panic!("three parameters");
+    };
+    for form in [integer_exact, integer_rounded, decimal] {
+        assert!(matches!(
+            form.head,
+            TypeFormHead::Builtin(BuiltinType::Quantity)
+        ));
+        assert_eq!(form.arguments.len(), 2);
+        assert!(matches!(
+            &form.arguments[0].head,
+            TypeFormHead::Name(name) if name.name == "m"
+        ));
+    }
+    assert!(matches!(
+        integer_exact.arguments[1].head,
+        TypeFormHead::Builtin(BuiltinType::Int)
+    ));
+    assert_eq!(integer_exact.arguments[1].bounds, ["-2", "2"]);
+    assert_eq!(
+        integer_rounded.arguments[1].bounds,
+        ["-2", "2", "nearest-even"]
+    );
+    assert_eq!(
+        decimal.arguments[1].bounds,
+        ["0", "1", "0", "4", "nearest-even"]
+    );
+    assert_eq!(
+        &text[decimal.arguments[1].span.start..decimal.arguments[1].span.end],
+        "Decimal[0, 1; 0, 4; nearest-even]"
+    );
+}
+
 #[trace("FR-091-AC-23", "TC-405")]
 #[test]
 fn a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode() {
