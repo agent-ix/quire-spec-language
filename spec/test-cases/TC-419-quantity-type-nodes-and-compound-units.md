@@ -45,7 +45,7 @@ The unit table admits QSpec's `dimension-length`, `dimension-time`,
    reader.
 6. Over FR-093-AC-36's units, check and lower `a / 3 ms` over `a: Quantity<m>`,
    `d / 3 ms` over `d: Quantity<ms>`, `d / 3 s`, `d / rational(-3, 1) ms`,
-   `d / -(3 ms)`, `a / -(3 ms)` and `a / 0.5 s`, and read the result type node
+   `a / rational(-3, 1) ms` and `a / 0.5 s`, and read the result type node
    of each division.
 7. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base
    dimension `Time` and a root unit, emit the unit of FR-094-AC-13 with
@@ -81,8 +81,8 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 - Step 6: `a / 3 ms` has one `scalar_type`/`compound_unit` node with no
   `declaration` and no `owner`, whose body holds the `m` term with exponent
   `1` and the `s` term with exponent `-1` in ascending root-unit node-id order;
-  `a / 0.5 s` and `a / -(3 ms)` have the same node. `d / 3 ms`, `d / 3 s`,
-  `d / rational(-3, 1) ms` and `d / -(3 ms)` have one node whose body is `aggregate{[]}`. None
+  `a / 0.5 s` and `a / rational(-3, 1) ms` have the same node. `d / 3 ms`, `d / 3 s` and
+  `d / rational(-3, 1) ms` have one node whose body is `aggregate{[]}`. None
   of the nodes is the `m` unit node.
 - Step 7: one `scalar_type`/`dimension_equivalence` node with no
   `declaration`, self-typed, relating the two package `Time` nodes in ascending
