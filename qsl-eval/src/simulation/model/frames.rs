@@ -544,7 +544,7 @@ struct Slot {
 }
 
 /// One object of a candidate's object set.
-struct Member {
+struct FrameMember {
     population: DeclarationKey,
     key: String,
     type_key: DeclarationKey,
@@ -757,7 +757,7 @@ impl Run<'_, '_, '_> {
     ) -> Result<bool, ExpansionStop> {
         let initial = successors.len();
         let system = self.walk.system;
-        let mut members: Vec<Member> = Vec::new();
+        let mut members: Vec<FrameMember> = Vec::new();
         for row in &self.walk.rows {
             if deleted.contains(&(&row.population, row.key.as_str())) {
                 continue;
@@ -767,7 +767,7 @@ impl Run<'_, '_, '_> {
                 .type_key(row.type_id())
                 .cloned()
                 .ok_or_else(|| stop(BROKEN))?;
-            members.push(Member {
+            members.push(FrameMember {
                 population: row.population.clone(),
                 key: row.key.clone(),
                 type_key,
@@ -788,7 +788,7 @@ impl Run<'_, '_, '_> {
                 .model
                 .object_reference(&type_key, &slot.key)
                 .map_err(|_| stop(BROKEN))?;
-            members.push(Member {
+            members.push(FrameMember {
                 population: slot.population.clone(),
                 key: slot.key.clone(),
                 type_key,
@@ -877,7 +877,7 @@ impl Run<'_, '_, '_> {
     fn build(
         &self,
         deleted: &BTreeSet<(&DeclarationKey, &str)>,
-        members: &[Member],
+        members: &[FrameMember],
         slots: &[Slot],
         created: &[u128],
         dimensions: &[Dimension<'_>],

@@ -2,7 +2,7 @@
 //! `ModelNormalizationLimitsV1`: exact `u64` limits, named ordered charge
 //! points and the exact incomplete record for FR-150 normalization.
 //!
-//! Mirrors `crate::value::accounting`'s `Meter`/`ChargePoint`/`Incomplete`
+//! Mirrors `crate::value::accounting`'s `Meter`/`ChargePoint`/`NormalizationIncomplete`
 //! shape (same atomic-first-denial semantics), over this rung's own,
 //! independent counter set — `ScalarLimitsV1` is A03's complete-value meter
 //! and is not reused here, per `value-accounting.md`: "These counters are
@@ -364,7 +364,7 @@ impl ChargePoint {
 /// The exact incomplete record: `incomplete { limit_kind, limit, consumed,
 /// next_charge, charge_point }`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Incomplete {
+pub struct NormalizationIncomplete {
     /// First unavailable counter in `ModelNormalizationLimitsV1` field order.
     pub limit_kind: LimitKind,
     /// That counter's configured limit.
@@ -377,7 +377,7 @@ pub struct Incomplete {
     pub charge_point: ChargePoint,
 }
 
-impl Incomplete {
+impl NormalizationIncomplete {
     /// This stop as the caller-budget denial FR-255 Behavior 1 describes
     /// (`resource_exhausted`/`insufficient-next-charge`): the counter's
     /// setting, effective limit, prior usage, the denied amount and the
@@ -515,8 +515,13 @@ impl Meter {
         &self.admitted
     }
 
-    fn incomplete(&self, kind: LimitKind, next: u64, point: ChargePoint) -> Incomplete {
-        Incomplete {
+    fn incomplete(
+        &self,
+        kind: LimitKind,
+        next: u64,
+        point: ChargePoint,
+    ) -> NormalizationIncomplete {
+        NormalizationIncomplete {
             limit_kind: kind,
             limit: kind.limit(&self.counters.limits),
             consumed: self.consumed(kind),
@@ -529,7 +534,7 @@ impl Meter {
     /// `ModelNormalizationLimitsV1` field order. Every counter's resulting
     /// value is computed before any counter is mutated, so a denial leaves
     /// every counter exactly as it was.
-    pub(super) fn charge(&mut self, charge: Charge) -> Result<(), Incomplete> {
+    pub(super) fn charge(&mut self, charge: Charge) -> Result<(), NormalizationIncomplete> {
         let point = charge.point;
         if self.cancel.as_ref().is_some_and(Cancel::poll) {
             return Err(self.incomplete(LimitKind::WorkUnits, charge.work_units, point));
@@ -628,7 +633,7 @@ mod tests {
             .expect_err("11 of 10 declarations is denied");
         assert_eq!(
             denied,
-            Incomplete {
+            NormalizationIncomplete {
                 limit_kind: LimitKind::EffectiveDeclarations,
                 limit: 10,
                 consumed: 6,

@@ -150,12 +150,12 @@ impl fmt::Display for QualifiedName {
     }
 }
 
-/// The wire shape a [`RawSourceRef`] decodes from: `(authority, identity,
+/// The wire shape a [`DefinitionSourceRef`] decodes from: `(authority, identity,
 /// revision namespace, revision)` -- FR-001's four source labels. Named once
 /// here and reused by every envelope's wire struct
 /// (`replay::request::ReplayRequestWire`) that carries a list of these, and
-/// read and written only by [`RawSourceRef::from_wire`] and
-/// [`RawSourceRef::to_wire`].
+/// read and written only by [`DefinitionSourceRef::from_wire`] and
+/// [`DefinitionSourceRef::to_wire`].
 pub type SourceRefWire = (String, String, String, String);
 
 /// One entry of a replay request's `sources` list: FR-001's four labels
@@ -166,14 +166,14 @@ pub type SourceRefWire = (String, String, String, String);
 /// `qsl_foundation::source::provenance::RawSourceRef`, which names a source
 /// by authority and identity alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RawSourceRef {
+pub struct DefinitionSourceRef {
     authority: String,
     identity: String,
     revision_namespace: String,
     revision: String,
 }
 
-impl RawSourceRef {
+impl DefinitionSourceRef {
     /// Name a source document by its four labels.
     pub fn new(
         authority: String,

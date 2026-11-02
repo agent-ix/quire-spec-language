@@ -46,7 +46,7 @@ use quire_semantic_value::supplied_stop::{
 };
 
 use crate::bounds::ReplayLimits;
-use crate::identity::{ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef};
+use crate::identity::{DefinitionSourceRef, ObligationIdentity, ProfileSelection, QualifiedName};
 use crate::limits::CallerLimits;
 use crate::request::StageLimits;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire};
@@ -1524,7 +1524,7 @@ pub(crate) fn recompile_with_temporal_selections(
         .iter()
         .map(|entry| one_source(entry.sources()))
         .collect::<Result<Vec<_>, _>>()?;
-    let provided = |reference: &RawSourceRef| {
+    let provided = |reference: &DefinitionSourceRef| {
         request.byte_provision().get(reference).ok_or_else(|| {
             // `ReplayRequest::decode` refuses an incomplete provision.
             ReplayRefusal::Fault(InternalFault::new(
@@ -1594,7 +1594,7 @@ fn domain_packages(
 
 /// The one source `references` names (ADR-015 D-4 rule 2), else
 /// [`ReplayRefusal::SourceCount`].
-fn one_source(references: &[RawSourceRef]) -> Result<&RawSourceRef, ReplayRefusal> {
+fn one_source(references: &[DefinitionSourceRef]) -> Result<&DefinitionSourceRef, ReplayRefusal> {
     match references {
         [source] => Ok(source),
         _ => Err(ReplayRefusal::SourceCount(references.len())),
@@ -1602,7 +1602,7 @@ fn one_source(references: &[RawSourceRef]) -> Result<&RawSourceRef, ReplayRefusa
 }
 
 /// A source reference's four FR-001 labels.
-fn labels(reference: &RawSourceRef) -> SourceIdentity {
+fn labels(reference: &DefinitionSourceRef) -> SourceIdentity {
     SourceIdentity::new(
         reference.authority(),
         reference.identity(),

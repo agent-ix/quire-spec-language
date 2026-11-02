@@ -185,8 +185,8 @@ pub use hybrid_replay::{
     TraceBefore, TraceFault, TraceJump, TraceRefusal, TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
-    DeclaredDomain, EmptyQualifiedName, ModelIdentity, ObligationIdentity, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition,
+    DeclaredDomain, DefinitionSourceRef, EmptyQualifiedName, ModelIdentity, ObligationIdentity,
+    ProfileSelection, QualifiedName, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
@@ -559,7 +559,7 @@ mod redaction_tests {
             ReplayRequest::decode(valid_wire, crate::ReplayLimits::default()).unwrap();
         let looked_up = valid_request
             .byte_provision()
-            .get(&crate::RawSourceRef::new(
+            .get(&crate::DefinitionSourceRef::new(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
                 "git".to_owned(),

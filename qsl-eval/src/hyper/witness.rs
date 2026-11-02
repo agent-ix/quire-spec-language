@@ -113,13 +113,13 @@ pub type PartnerStep<'a> = (&'a [ComponentStep], &'a [crate::simulation::StateKe
 /// One member of a witness set: an existential tuple of model states and the
 /// safety automaton state it is in.
 #[derive(Clone, Debug)]
-pub struct Member {
+pub struct WitnessMember {
     states: Vec<ModelSimState>,
     automaton: StateId,
     partner: Rc<Partner>,
 }
 
-impl Member {
+impl WitnessMember {
     /// The existential components' model states, in quantifier order.
     pub fn states(&self) -> &[ModelSimState] {
         &self.states
@@ -143,12 +143,12 @@ impl Member {
 /// A witness set `X`: its members sorted by identity.
 #[derive(Clone, Debug)]
 pub struct WitnessSet {
-    members: Vec<Member>,
+    members: Vec<WitnessMember>,
 }
 
 impl WitnessSet {
     /// The members, sorted.
-    pub fn members(&self) -> &[Member] {
+    pub fn members(&self) -> &[WitnessMember] {
         &self.members
     }
 
@@ -201,7 +201,7 @@ pub struct WitnessInputs<'r, 's> {
 }
 
 /// The members a successor's `X'` has collected, by identity.
-type Collected = BTreeMap<(Vec<crate::simulation::StateKey>, usize), Member>;
+type Collected = BTreeMap<(Vec<crate::simulation::StateKey>, usize), WitnessMember>;
 
 /// The existential joint steps of one member in canonical order, each with the
 /// existential components' post-states; `None` when a contract conjunction of
@@ -307,7 +307,7 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                 for automaton in self.viable_successors(start, letter)? {
                     self.admit(
                         &mut members,
-                        Member {
+                        WitnessMember {
                             states: states.clone(),
                             automaton,
                             partner: partner.clone(),
@@ -373,7 +373,7 @@ impl<'r, 's> WitnessProduct<'r, 's> {
 
     /// Add `member` to `collected` unless its identity is already there,
     /// stopping the run when the set would pass `max_witness_set` (FR-184).
-    fn admit(&self, collected: &mut Collected, member: Member) -> Result<(), ExpansionStop> {
+    fn admit(&self, collected: &mut Collected, member: WitnessMember) -> Result<(), ExpansionStop> {
         let identity = (
             member.partner.state_keys().to_vec(),
             member.automaton.index(),
@@ -399,7 +399,7 @@ impl<'r, 's> WitnessProduct<'r, 's> {
 
     /// The existential joint steps of `member`, expanded once for all the
     /// universal steps of a state.
-    fn expand(&self, member: &Member) -> Result<Expanded, ExpansionStop> {
+    fn expand(&self, member: &WitnessMember) -> Result<Expanded, ExpansionStop> {
         let mut options: Vec<Options> = Vec::with_capacity(member.states.len());
         for (offset, model) in member.states.iter().enumerate() {
             let stepping = self.joint.stepping(self.universal + offset, model)?;
@@ -481,7 +481,7 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                 for automaton in self.viable_successors(member.automaton, letter)? {
                     self.admit(
                         &mut next,
-                        Member {
+                        WitnessMember {
                             states: eposts.clone(),
                             automaton,
                             partner: partner.clone(),
