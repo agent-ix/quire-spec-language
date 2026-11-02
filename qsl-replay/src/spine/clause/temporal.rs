@@ -309,7 +309,7 @@ pub(super) fn run_temporal(
                         reference,
                         &progress,
                         &mut meter,
-                    );
+                    )
                 }
                 Err(refusal) => {
                     return late(ClauseDisposition::TemporalRefusal(trace_refusal(refusal)));
