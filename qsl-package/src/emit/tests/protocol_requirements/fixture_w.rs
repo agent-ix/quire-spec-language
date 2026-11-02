@@ -980,9 +980,8 @@ fn tc134_selections(
 /// selected temporal declaration (`OrderClosureBounded`) AND one per
 /// `compensate` node, keyed by that node's own `node_id`, named by the
 /// template's clock text (`refund-clock`), all in the one array in ascending
-/// node order. Read-back is not claimed: the strict reader at the pinned
-/// quire-contract-ir still refuses a compensation row (IR-1262 admits it),
-/// which [`tc134_strict_reader_refuses_compensation_rows_until_ir_1262`] pins.
+/// node order. Read-back is asserted by
+/// [`tc134_strict_reader_admits_compensation_rows`].
 #[trace("FR-048-AC-8", "FR-050-AC-13", "FR-322-AC-305", "TC-134")]
 #[test]
 fn tc134_timed_fixture_binds_every_compensation_node_and_temporal_declaration() {
@@ -1078,51 +1077,54 @@ fn tc134_timed_fixture_binds_every_compensation_node_and_temporal_declaration() 
     );
 }
 
-/// FR-322-AC-305, pending IR-1262: the strict reader at the pinned
-/// quire-contract-ir does not yet admit a `temporal_bindings` row keyed by a
-/// compensation node. It refuses the package as `invalid_package` /
-/// `timed-node-reference` at the first compensation row's `declaration`,
-/// naming that compensation node. When IR-1262 merges this refusal becomes
-/// an admission and this test is restated to assert the retained rows.
+/// FR-322-AC-305: the strict reader admits a `temporal_bindings` row keyed by
+/// a compensation node. The emitted package reads back admitted, and its
+/// rows are the written ones: one per selection, each `compensate` node's
+/// own `node_id` named by the template clock text (`refund-clock`) with the
+/// selected clock configuration.
 #[trace("FR-322-AC-305", "TC-134")]
 #[test]
-fn tc134_strict_reader_refuses_compensation_rows_until_ir_1262() {
+fn tc134_strict_reader_admits_compensation_rows() {
     let graph = tc134_timed_graph();
     let selections = tc134_selections(&graph);
     let package = CheckedPackage::link(graph);
     let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
         .expect("the timed package emits with its selections");
     let wire = wire(&emission);
-    let first_compensation = wire["temporal_bindings"]
-        .as_array()
-        .expect("temporal bindings")
+    let all_nodes = nodes(&wire);
+    let compensation_ids: Vec<&Value> = all_nodes
         .iter()
-        .position(|binding| binding["clock_name"] == "refund-clock")
-        .expect("a compensation row");
+        .filter(|node| node["semantic_form"] == "compensation")
+        .map(|node| &node["node_id"])
+        .collect();
+    assert_eq!(compensation_ids.len(), 2);
     let mut evidence = read_evidence(&emission);
     evidence
         .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
         .expect("a fresh evidence key");
-    match quire_contract_model::read_checked_package(
-        emission.package.bytes(),
-        quire_contract_model::CheckedPackageReadLimits::bounded(),
-        &evidence,
-    ) {
-        quire_contract_model::CheckedPackageDispatchResult::Refused(refusal) => {
-            assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
-            assert_eq!(
-                refusal.cause,
-                Some(CheckedPackageRefusalCause::TimedNodeReference)
-            );
-            let locus = format!("{:?}", refusal.loci);
-            assert!(
-                locus.contains(&format!(
-                    "/temporal_bindings/{first_compensation}/declaration"
-                )),
-                "the refusal names the compensation row: {locus}"
-            );
-        }
-        other => panic!("IR-1262 has merged; restate this test to the read-back: {other:?}"),
+    let quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) =
+        quire_contract_model::read_checked_package(
+            emission.package.bytes(),
+            quire_contract_model::CheckedPackageReadLimits::bounded(),
+            &evidence,
+        )
+    else {
+        panic!("the strict reader admits compensation rows");
+    };
+    let rows = admitted.temporal_bindings().expect("read-back bindings");
+    assert_eq!(rows.len(), selections.len());
+    let compensation_rows: Vec<_> = rows
+        .iter()
+        .filter(|row| &*row.clock_name == "refund-clock")
+        .collect();
+    assert_eq!(compensation_rows.len(), 2);
+    for row in compensation_rows {
+        let declaration = serde_json::to_value(&row.declaration).expect("node id");
+        assert!(
+            compensation_ids.contains(&&declaration),
+            "a read-back row is keyed by a written compensation node: {declaration}"
+        );
+        assert_eq!(row.clock, tc134_clock());
     }
 }
 
