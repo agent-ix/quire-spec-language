@@ -476,9 +476,19 @@ impl TemporalVerdict {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TemporalIndeterminateReason {
     /// A required atom valuation is absent.
-    MissingValuation { position: u64, atom: String },
+    MissingValuation {
+        /// Position containing the absent valuation.
+        position: u64,
+        /// Atom whose valuation is absent.
+        atom: String,
+    },
     /// Conflicting atom valuations were admitted at one position.
-    ConflictingValuation { position: u64, atom: String },
+    ConflictingValuation {
+        /// Position containing conflicting values.
+        position: u64,
+        /// Atom with conflicting values.
+        atom: String,
+    },
     /// The completeness assertion does not cover the established window.
     IncompleteInput,
     /// A past operator reaches before a non-authoritative history cutoff.
