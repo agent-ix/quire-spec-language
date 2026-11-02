@@ -14,7 +14,7 @@ Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
 the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
-FR-390-AC-39. The E-P procedure below verifies FR-390-AC-23 without
+FR-390-AC-50. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -182,7 +182,7 @@ not QSL surface syntax, and `m` is a `Mix` binder.
 | Slot | Shape | Walk positions of interest |
 | --- | --- | --- |
 | `Composed.let` | `let c = m.count in c + c` | `m.count` once; the two `c` are `Local` leaves, not visits |
-| `Composed.if` | `if m.ready then m.count else m.count + 1` | `m.count` three times (then-branch, and inside `+` in the else-branch); the else-branch holds visits when `m.ready` is true |
+| `Composed.if` | `if m.ready then m.count else m.count + 1` | `m.count` twice (then-branch, and inside `+` in the else-branch); the else-branch holds visits when `m.ready` is true |
 | `Composed.case` | `case choice of Left(x) => x; Right(b) => if b then 1 else 0` | both arms walked, in emitted arm order |
 | `Composed.deref` | `deref(view).total` | the dereference and the field read |
 | `Composed.arith` | `-(m.count) + (m.count / 2)`, range-coerced to `Int[0, 9]` where the checker coerces | negate, divide, add and coerce |
@@ -192,17 +192,28 @@ not QSL surface syntax, and `m` is a `Mix` binder.
 
 | # | Slot | Supply | Expected |
 | --- | --- | --- | --- |
-| C1 | each slot of AC-28 (fixtures E and L), rows 4 to 22 and 29 to 33 supplies | as in those rows | reader value, outcome category and ordered charge log equal the checked package's; `read_node` returns a `NodeRead` for every walk position |
-| C2 | `Refund.retry.relation`, handles of `earlier.tally` | row 8's supply | two distinct handles; their `Location` values equal the in-process `Location` of the term in `earlier.tally < 3` and in `earlier.tally + 1`, and differ |
-| C3 | `Refund.retry.relation` | `earlier` unavailable, `later = Attempt(tally 1)`, `target = 5`, `activated = false` | halts at the first `earlier.tally` visit; the reader result's `Location` equals the in-process one, that of the term in `earlier.tally < 3` |
-| C4 | `Refund.retry.relation` on the package of C3 with the two retry-origin `earlier.tally` rows' `Location` values swapped | C3's supply, then row 8's | C2's handles read the swapped locations; C3's halt reports the location of the term in `earlier.tally + 1`; row 8's value is unchanged |
-| C5 | package with the highest-index retry-origin `earlier.tally` row removed | any | `ViewFailure::Unsupported`/`MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, retry origin, visit number 1, two visits, one row; no meter charge; no view for any slot |
-| C6 | package with a retry-origin `earlier.tally` row appended; second package with a retry-origin row added for an application the relation does not hold | any | `MissingLocationProjection` at the `Node` locus of that application; no meter charge |
-| C7 | package with the ordinal-zero retry-origin `earlier.tally` row removed; second package with it duplicated | any | refused at I2 admission by the QSpec reader under FR-322-AC-291; view creation is not attempted |
+| C1 | each slot of AC-28 (fixtures E and L), rows 4 to 22 and 29 to 33 supplies | as in those rows | reader value, outcome category and ordered charge log equal the checked package's (AC-28); `read_node` returns a `NodeRead` for every walk position (AC-29) |
+| C2 | `Refund.retry.relation`, handles of `earlier.tally` | row 8's supply | two distinct handles; their `Location` values equal the in-process `Location` of the term in `earlier.tally < 3` and in `earlier.tally + 1`, and differ (AC-31) |
+| C3 | `Refund.retry.relation` | `earlier` unavailable, `later = Attempt(tally 1)`, `target = 5`, `activated = false` | halts at the first `earlier.tally` visit; the reader result's `Location` equals the in-process one, that of the term in `earlier.tally < 3` (AC-32) |
+| C4 | C2's handles on the package with the two retry-origin `earlier.tally` rows' `Location` values swapped | row 8's supply | the handles read the swapped locations; row 8's value is unchanged (AC-33) |
+| C4a | C3 on the package of C4 | C3's supply | the halt reports the location of the term in `earlier.tally + 1` (AC-34) |
+| C5 | package with the highest-index retry-origin `earlier.tally` row removed | any | `ViewFailure::Unsupported`/`MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, retry origin, visit number 1, two visits, one row (AC-35) |
+| C5a | the package of C5 | any slot, any meter | no slot has a view; the meter is unchanged (AC-36) |
+| C6 | package with a retry-origin `earlier.tally` row appended | any | `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application; no meter charge (AC-37) |
+| C6a | package with a retry-origin row added for an application the relation does not hold | any | `MissingLocationProjection` at the `Node` locus of that application; no meter charge (AC-38) |
+| C7 | package with the ordinal-zero retry-origin `earlier.tally` row removed | any | refused at I2 by the QSpec reader, `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`; view creation not attempted (AC-39) |
+| C7a | package with a retry-origin `earlier.tally` row duplicated | any | refused at I2 at the first mismatching row, locus `/checked_term_data/protocol_locations/<index of the duplicate>`; view creation not attempted (AC-40) |
 | C8 | package whose `Refund.recovery.predicate` slot descriptor holds the real `CheckedBody` of `Refund.retry.relation`, taken through the checked package's existing API | row 12's supply | the reader value, `NodeRead` values and charge log equal the unaltered view's |
-| C9 | package with one expression node's operation identity replaced by an identity FR-322 admits with no `NodeKind` mapping | any | `MissingOperationProjection` at that node's locus with package identity, node key, node location and the operation identity; no meter charge |
-| C10 | each `Composed` slot (E-C) | `m = Mix(ready true, count 4, note present 2, items [4])`, `choice = Left(3)`, `view = n5`; then the `ready false` and `Right(true)` variants | value and ordered charge log equal the checked package's; each position's `Location` equals the in-process one; the untaken arm and branch positions of `Composed.if` and `Composed.case` still hold rows and handles |
-| C11 | `Composed.let`, `Composed.if` | as C10 | `m.count` of `Composed.let` has one row and one visit; `Composed.if` has three visits and three rows of its origin; with the node ids renumbered and the `dependencies` arrays reordered (identities recomputed) every handle's `Location` is unchanged |
+| C9 | Inspection: list FR-322's admitted expression operation identities and FR-400's `NodeKind` variants | n/a | every identity maps to a variant; no identity is left to `MissingOperationProjection` (AC-41) |
+| C10 | `Composed.let`, `Composed.if`, `Composed.case` (E-C) | `m = Mix(ready true, count 4, note present 2, items [4])`, `choice = Left(3)`; then the `ready false` and `Right(true)` variants | value and ordered charge log equal the checked package's; each position's `Location` equals the checked package's (AC-42) |
+| C10a | `Composed.deref`, `Composed.arith` (E-C) | `view = n5` and C10's `m` | as C10 (AC-43) |
+| C10b | `Composed.option`, `Composed.coll`, `Composed.record` (E-C) | C10's supplies | as C10 (AC-44) |
+| C11 | `Composed.let` | as C10 | `m.count` has one visit and one row; the two `c` reads are leaves (AC-45) |
+| C11a | `Composed.if`, `Composed.case` | `ready true`, `Left(3)` | the unselected else-branch and `Right` arm hold visits, rows and handles with the checked package's `Location` values (AC-46) |
+| C11b | `Composed.if` | as C10 | `m.count` has two visits, two rows and two handles with their own `Location` values (AC-47) |
+| C11c | each E-C slot on a package with the node ids relabelled (ascending `dependencies` and identities recomputed) so that a slot's ascending-id order differs from its walk order | as C10 | every handle's `Location` is unchanged (AC-48) |
+| C12 | Inspection of the reader's `read_node`, pairing and descriptor | n/a | root and origin come only from the descriptor; no `NodeRead` is built from a `CheckedBody` (AC-49) |
+| C13 | Inspection of the reader's `NodeKind` match | n/a | exhaustive, no wildcard arm (AC-50) |
 
 ## Fixture E-P: reference-population provenance extension
 

@@ -75,6 +75,7 @@ must not remove its own test coverage by making a counter appear uncharged.
 | 15 | D with every counter at its measured usage, then each charged counter in turn one below | the first completes with 5; each of the others is `Incomplete` naming that counter; D charges `model.deref` then `model.navigate`, each reading one value occurrence; `result_units` is zero by S6a |
 | 16 | R, A, G, T and V separately on fresh unbounded meters | R and A have `result_units` zero by S6a; G, T and V have nonzero `result_units` from exactly the existing retain-point sets listed above |
 | 17 | the literal `Closed.constraint` of TC-1070 row 22 on a fresh unbounded meter | `Completed(true)` with `result_units` zero by S6a and no retain point |
+| 18 | each composed-root slot of FR-390-AC-28 (TC-1070 rows 4 to 22 and 29 to 33), on fresh unbounded meters | the same call over the package read back and over the checked package gives equal value, outcome category, ordered charge log and equal usage per counter (FR-390-AC-28) |
 
 ## Expected Results
 

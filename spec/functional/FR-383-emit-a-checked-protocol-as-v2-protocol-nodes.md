@@ -224,12 +224,18 @@ The emitter SHALL give every protocol slot an origin that no other slot of the
 package shares, so the rows of one slot are separable from the rows of every
 other slot that holds the same application.
 
-The emitter SHALL order the rows of one application and one slot origin so that
-their ascending (occurrence ordinal, `term_ordinal`) order is the order of that
-application's visits in the slot walk: the row at index `k` of that order
-belongs to the visit numbered `k`. It SHALL assign `term_ordinal` values
-consecutive from zero in each (application, occurrence) group, as QSpec
-FR-322-AC-291 requires.
+A row's *occurrence* is the source occurrence key (`node_id`, role, ordinal) of
+QSpec FR-322 that the checker associated with the term, and its *occurrence
+ordinal* is the third component of that key. The group of FR-322-AC-291 is the
+rows of one application and one occurrence, and its `term_ordinal` values run
+consecutively from zero across every origin the group holds; they do not
+restart for each origin. The emitter SHALL order the rows of one application
+and one slot origin so that their ascending (occurrence ordinal,
+`term_ordinal`) order is the order of that application's visits in the slot
+walk: the row at index `k` of that order, counting only the rows of that origin,
+belongs to the visit numbered `k`. The visits of one application that the
+checker associates with one source occurrence share that occurrence's key and
+take consecutive `term_ordinal` values in visit order.
 
 The emitter SHALL NOT derive a row's location from a source region, a node
 order, an operand position or a default value.
@@ -242,8 +248,13 @@ In TC-1070 fixture E the retry relation of `Refund` holds one `earlier.tally`
 application node reached at two positions, in `earlier.tally < 3` (visit 0) and
 in `earlier.tally + 1` (visit 1). It therefore has two rows of the retry site's
 origin: the first carries the location of the term in `earlier.tally < 3` and
-the second that in `earlier.tally + 1`. A literal or `Local` leaf is not an
+the second that in `earlier.tally + 1`. The `earlier.tally` application has a
+single source occurrence, so both rows share its key, with `term_ordinal` 0 and
+1, and no other origin holds rows of that group.
+
+Assumption A1 (leaf locations, one place): a literal or `Local` leaf is not an
 application, has no row, and takes its location from its own admitted node.
+Every clause of this and the reader's text that depends on it refers to A1.
 
 ### Cyclic reference components
 
@@ -498,13 +509,20 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte, and removing **W** changes **X**'s refusal record in no field; an `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
 | FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
 | FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
-| FR-383-AC-32 | For every protocol slot of **W** and of protocol L (TC-1070 fixture L), the `protocol_locations` rows of that slot's origin, grouped by application, number the visits of that application in the slot walk, and no row of that origin names an application the walk does not visit. In the retry relation of fixture E's `Refund`, one `earlier.tally` application node has exactly two rows of the retry origin and the `Partial` retry relation's `partialEarlier.tally` application exactly two of its own. | Test (TC-1063) |
-| FR-383-AC-33 | Each row of AC-32, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the in-process checked clause, and the two rows of `earlier.tally` carry different `Location` values, the first that of the term in `earlier.tally < 3`. | Test (TC-1063) |
-| FR-383-AC-34 | A unit with no protocol slot expression writes `protocol_locations` as an empty array, and a package with no checked-term data keeps `checked_term_data` absent; neither writes a row. | Test (TC-1063) |
-| FR-383-AC-35 | No two protocol slots of **W**, of fixture E or of protocol L carry the same origin, including the two retry relations and the trigger guard and recovery predicate of one compensation. | Test (TC-1063) |
-| FR-383-AC-36 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
-| FR-383-AC-37 | The mutated emitted package of fixture E with the highest-ordinal `earlier.tally` row of the retry origin removed is admitted by QSL's I2 reader; with the ordinal-zero row removed, with a row duplicated, or with an ordinal gap, the reader refuses at the QSpec FR-322-AC-291 code and locus (`invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` for the missing predecessor). | Test (TC-1063) |
-
+| FR-383-AC-32 | For every protocol slot of **W** and of protocol L (TC-1070 fixture L), the number of `protocol_locations` rows of that slot's origin for an application equals the number of that application's visits in the slot walk. | Test (TC-1063) |
+| FR-383-AC-33 | No `protocol_locations` row of a slot's origin names an application that slot's walk does not visit. | Test (TC-1063) |
+| FR-383-AC-34 | In fixture E, the retry relation of `Refund` has one `earlier.tally` application node with exactly two retry-origin rows, and the retry relation of `Partial` has one `partialEarlier.tally` node with exactly two of its own. | Test (TC-1063) |
+| FR-383-AC-35 | Each row, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the in-process checked clause. | Test (TC-1063) |
+| FR-383-AC-36 | The two retry-origin `earlier.tally` rows carry different `Location` values, the first that of the term in `earlier.tally < 3` and the second that in `earlier.tally + 1`. | Test (TC-1063) |
+| FR-383-AC-37 | A unit with no protocol slot expression writes `protocol_locations` as an empty array. | Test (TC-1063) |
+| FR-383-AC-38 | A package with no checked-term data keeps `checked_term_data` absent. | Test (TC-1063) |
+| FR-383-AC-39 | No two protocol slots of **W**, of fixture E, of fixture E-C or of protocol L carry the same origin, including the two retry relations and the trigger guard and recovery predicate of one compensation. | Test (TC-1063) |
+| FR-383-AC-40 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
+| FR-383-AC-41 | Removing the highest-index retry-origin `earlier.tally` row from fixture E's emitted package leaves a package QSL's I2 reader admits. | Test (TC-1063) |
+| FR-383-AC-42 | Removing the ordinal-zero retry-origin `earlier.tally` row (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`, and so is a group holding ordinals 0 and 2 only. | Test (TC-1063) |
+| FR-383-AC-43 | Duplicating a retry-origin `earlier.tally` row is refused by QSL's I2 reader at the first mismatching row, with the locus `/checked_term_data/protocol_locations/<index of the duplicate>` and the code the QSpec protocol vectors record for a duplicate key (FR-322-AC-291). | Test (TC-1063) |
+| FR-383-AC-44 | For fixture E-C (TC-1070), every slot's per-application row counts equal its visits in the slot walk and each row's `Location` equals the checked clause's, including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll`, once in `Composed.let`, and the arms of `Composed.if` and `Composed.case` the input never selects. | Test (TC-1063) |
+| FR-383-AC-45 | In fixture E the `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1, and a group that holds rows of two origins has `term_ordinal` values consecutive from zero across both. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.

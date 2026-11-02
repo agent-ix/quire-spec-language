@@ -15,7 +15,7 @@ with an S3 refusal emits no node of its own and no package for the unit while
 the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-37.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-45.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a
@@ -70,12 +70,20 @@ traced only once that file exists.
 
 | # | Unit or graph | Expected |
 | --- | --- | --- |
-| L1 | fixture E and protocol L (TC-1070) emitted and read through QSL's I2 reader | for every slot, the rows of its origin number the visits of each application in the slot walk, and no row names an application the walk does not visit; `Refund.retry.relation` has one `earlier.tally` node with two retry-origin rows, `Partial.retry.relation` one `partialEarlier.tally` node with two of its own |
-| L2 | row L1's package | each row's `Location` equals the in-process `Location` of the term at the position it numbers; the two `earlier.tally` rows differ |
-| L3 | a unit with no protocol slot expression; a package with no checked-term data | `protocol_locations` empty; `checked_term_data` absent |
-| L4 | row L1's package | no two slots share an origin |
-| L5 | row L1's package with the highest-index retry-origin `earlier.tally` row removed | admitted by the reader |
-| L6 | row L1's package with the ordinal-zero retry-origin `earlier.tally` row removed; with it duplicated; with the ordinals 0 and 2 only | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` for the missing predecessor and the gap, and at the first mismatching row under FR-322-AC-291 for the duplicate |
+| L1 | fixture E and protocol L (TC-1070) emitted and read through QSL's I2 reader | for every slot, the rows of its origin for an application number that application's visits in the slot walk (FR-383-AC-32) |
+| L1a | row L1's package | no row of a slot's origin names an application the walk does not visit (AC-33) |
+| L1b | row L1's package | `Refund.retry.relation` has one `earlier.tally` node with two retry-origin rows; `Partial.retry.relation` one `partialEarlier.tally` node with two of its own (AC-34) |
+| L2 | row L1's package | each row's `Location` equals the in-process `Location` of the term at the position it numbers (AC-35) |
+| L2a | row L1's package | the two `earlier.tally` rows differ, the first that of the term in `earlier.tally < 3` (AC-36) |
+| L3 | a unit with no protocol slot expression | `protocol_locations` empty (AC-37) |
+| L3a | a package with no checked-term data | `checked_term_data` absent (AC-38) |
+| L4 | row L1's package and fixture E-C's | no two slots share an origin (AC-39) |
+| L4a | Inspection of the emitter | no row derived from a source region, node order or operand position, and none defaulted (AC-40) |
+| L5 | row L1's package with the highest-index retry-origin `earlier.tally` row removed | admitted by the reader (AC-41) |
+| L6 | row L1's package with the ordinal-zero retry-origin `earlier.tally` row removed; with ordinals 0 and 2 only | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-42) |
+| L6a | row L1's package with a retry-origin `earlier.tally` row duplicated | refused at the first mismatching row, locus `/checked_term_data/protocol_locations/<index of the duplicate>`, with the code the QSpec protocol vectors record for a duplicate key (AC-43) |
+| L7 | fixture E-C emitted and read back | per-slot row counts equal the walk's visits, with `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll`, once in `Composed.let`, rows for the unselected arms of `Composed.if` and `Composed.case`; each `Location` equals the checked clause's (AC-44) |
+| L8 | fixture E's package | the `earlier.tally` rows share one occurrence key with `term_ordinal` 0 and 1; a group with rows of two origins has `term_ordinal` consecutive from zero across both (AC-45) |
 
 ### Limits and nesting
 
