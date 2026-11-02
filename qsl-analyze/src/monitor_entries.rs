@@ -658,7 +658,14 @@ impl<'a> Gen<'a> {
             ("CAP", self.cap(node).to_string()),
             ("ELAPSED", elapsed),
             ("PSI", psi),
-            ("PHI", phi),
+            (
+                "PHIBODY",
+                if binary {
+                    format!("if x.lost then vLostBy({id} + 1) else {phi}")
+                } else {
+                    "vTrue()".to_owned()
+                },
+            ),
         ];
         let expand = |text: &str| tpl(text, &pairs);
         let mut pairs = pairs.clone();
@@ -674,8 +681,7 @@ impl<'a> Gen<'a> {
              function member_@N@ using v(dmin: Integer, dmax: Integer, same: Boolean): V pure { \
                 let k = memberKind_@N@(dmin, dmax, same) in \
                 if k = 2 then vTrue() else if k = 0 then vFalse() else vUnknown() }\n\
-             function phi_@N@ using v(s: State, x: Cell, hz: Integer): V pure { \
-                if x.lost then vLostBy(@N@ + 1) else @PHI@ }\n\
+             function phi_@N@ using v(s: State, x: Cell, hz: Integer): V pure { @PHIBODY@ }\n\
              function psi_@N@ using v(s: State, x: Cell, hz: Integer): V pure { \
                 if x.lost then vLostBy(@N@ + 1) else @PSI@ }\n\
              function inst_@N@ using v(s: State, cells: Cells, ip: Integer, it: Integer, hz: Integer): V pure { @INSTANCE@ }\n\
@@ -692,16 +698,18 @@ impl<'a> Gen<'a> {
                          let ok = isFinal(v) or (@ELAPSED@) in \
                          CellsAcc { cells: push(a.cells, if ok then setCell(x, v) else x) }, \
                     identity: CellsAcc { cells: noCells() }).cells) }\n\
-             function needed_@N@ using v(cells: Cells, x: Cell): Boolean pure { \
-                fold<Flag>(a, z in cells: \
+             function inert_@N@ using v(s: State, x: Cell, hz: Integer): Boolean pure { \
+                x.hasSet and not x.lost and vIsFalse(psi_@N@(s, x, hz)) and vIsTrue(phi_@N@(s, x, hz)) }\n\
+             function needed_@N@ using v(s: State, cells: Cells, x: Cell, hz: Integer): Boolean pure { \
+                not inert_@N@(s, x, hz) and fold<Flag>(a, z in cells: \
                     Flag { b: a.b or (not z.hasSet and not z.lost and @NEEDED@) }, \
                     identity: Flag { b: false }).b }\n\
-             function droppable_@N@ using v(cells: Cells, x: Cell, hz: Integer): Boolean pure { \
-                x.hasSet and x.rep = codeOf(x.fv) and hz - x.tl >= @RETAIN@ and not needed_@N@(cells, x) }\n\
+             function droppable_@N@ using v(s: State, cells: Cells, x: Cell, hz: Integer): Boolean pure { \
+                x.hasSet and x.rep = codeOf(x.fv) and hz - x.tl >= @RETAIN@ and not needed_@N@(s, cells, x, hz) }\n\
              function gone_@N@ using v(s: State, hz: Integer): Cells pure { \
-                filter(x in s.buffer_@B@: droppable_@N@(s.buffer_@B@, x, hz)) }\n\
+                filter(x in s.buffer_@B@: droppable_@N@(s, s.buffer_@B@, x, hz)) }\n\
              function kept_@N@ using v(s: State, hz: Integer): Cells pure { \
-                filter(x in s.buffer_@B@: not droppable_@N@(s.buffer_@B@, x, hz)) }\n\
+                filter(x in s.buffer_@B@: not droppable_@N@(s, s.buffer_@B@, x, hz)) }\n\
              function report_@N@ using v(s: State, wm: Boolean, hz: Integer): StepR pure { \
                 let r = fold<RepAcc>(a, x in s.buffer_@B@: \
                     if x.lost then RepAcc { cells: push(a.cells, x), results: a.results } \
@@ -1251,7 +1259,9 @@ pub fn render(spec: &EntrySpec) -> String {
          function vAtomLost using v(k: Integer): V pure {{ V {{ oT: true, oF: true, cT: true, cF: true, lost: 0, atomLost: k }} }}\n\
          function vOr using v(a: V, b: V): V pure {{ vNot(vAnd(vNot(a), vNot(b))) }}\n\
          function vOf using v(b: Boolean): V pure {{ if b then vTrue() else vFalse() }}\n\
-         function isFinal using v(a: V): Boolean pure {{ a.oT != a.oF }}"
+         function isFinal using v(a: V): Boolean pure {{ a.oT != a.oF }}\n\
+         function vIsFalse using v(a: V): Boolean pure {{ not a.oT and a.oF and not a.cT and a.cF and a.lost = 0 and a.atomLost = 0 }}\n\
+         function vIsTrue using v(a: V): Boolean pure {{ a.oT and not a.oF and a.cT and not a.cF and a.lost = 0 and a.atomLost = 0 }}"
     );
     // Outcome codes.
     let cap_of = {

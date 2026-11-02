@@ -39,6 +39,16 @@ pub(crate) fn checked_clause_in(
     extra: &str,
     real_time: bool,
 ) -> (CheckedPackage, usize) {
+    checked_clause_on(formula, extra, real_time, "on origin")
+}
+
+/// [`checked_clause_in`] with the clause's `activation` spelled out.
+pub(crate) fn checked_clause_on(
+    formula: &str,
+    extra: &str,
+    real_time: bool,
+    activation: &str,
+) -> (CheckedPackage, usize) {
     let domain = Domain::config_version();
     let packages =
         qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
@@ -51,7 +61,7 @@ pub(crate) fn checked_clause_in(
          model M = \"{}\";\n\
          {TIME_UNITS}\
          {time_decl}\
-         temporal C using t over (c: M::ConfigVersion) clock \"model-time\" on origin {{ {formula} }}\n\
+         temporal C using t over (c: M::ConfigVersion) clock \"model-time\" {activation} {{ {formula} }}\n\
          {extra}\n",
         domain.package,
         complete = if real_time { "profile tc = \"quire.temporal.complete/v1\";\n" } else { "" },
@@ -237,7 +247,16 @@ fn producer_refuses_a_gap_at_least_one_full_counter_wrap() {
 }
 
 pub(crate) fn premise_plan(formula: &str, target: &MonitorTarget) -> qsl_replay::TimedMonitorPlan {
-    let (package, _) = checked_clause(formula);
+    premise_plan_on(formula, "on origin", target)
+}
+
+/// [`premise_plan`] for a clause activated by `activation`.
+pub(crate) fn premise_plan_on(
+    formula: &str,
+    activation: &str,
+    target: &MonitorTarget,
+) -> qsl_replay::TimedMonitorPlan {
+    let (package, _) = checked_clause_on(formula, "", false, activation);
     let clause = package.graph().temporal_clauses()[0].clause();
     produce(
         &package,

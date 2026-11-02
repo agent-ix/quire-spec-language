@@ -334,3 +334,39 @@ fn the_written_plan_is_admitted_by_the_reader_order() {
         .collect::<Vec<_>>());
     assert_eq!(read(&plan), Verdict::Admitted);
 }
+
+/// MP-81 and MP-82 (FR-487-AC-8): the reader does not constrain the type of
+/// an activation's `status`, so the record holding the integer `position` of
+/// an "on each" instance (FR-251-AC-17) is admitted, as is a text scalar.
+#[trace("TC-978", "FR-487-AC-8")]
+#[test]
+fn the_status_type_is_not_constrained_by_the_reader() {
+    let all = vectors();
+    let mut seen = Vec::new();
+    for case in all["cases"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        if id != "MP-81" && id != "MP-82" {
+            continue;
+        }
+        let mut plan = all["base"].clone();
+        for edit in case["set"].as_array().unwrap() {
+            set(&mut plan, edit[0].as_str().unwrap(), &edit[1]);
+        }
+        assert_eq!(read(&plan), Verdict::Admitted, "{id}");
+        seen.push(id.to_owned());
+    }
+    assert_eq!(seen, ["MP-81", "MP-82"]);
+    // The status this producer writes.
+    let mut plan = all["base"].clone();
+    plan["buffers"] = json!([{ "subformula": 1, "capacity": 5, "reached": true }]);
+    plan["state"]["fields"] = json!(expected_state(1)
+        .into_iter()
+        .map(|(n, k)| json!([n, k]))
+        .collect::<Vec<_>>());
+    set(
+        &mut plan,
+        "state.activation_status",
+        &json!("record{position:integer}"),
+    );
+    assert_eq!(read(&plan), Verdict::Admitted);
+}

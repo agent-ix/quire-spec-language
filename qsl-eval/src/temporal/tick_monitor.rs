@@ -687,11 +687,33 @@ impl<'f> TickMonitorReference<'f> {
         }
     }
 
+    /// Whether the settled entry `index` of `node` contributes nothing to any
+    /// instance: its operand is definitely false and its left operand
+    /// definitely true.
+    fn inert(&self, node: usize, index: usize) -> bool {
+        let (Some(info), Some(cells)) = (self.shape.node(node), self.cells.get(&node)) else {
+            return false;
+        };
+        let cell = &cells[index];
+        if cell.lost || cell.set.is_none() {
+            return false;
+        }
+        let polar = |value: Val| if info.dual { value.not() } else { value };
+        let psi = polar(self.operand(node, info.right, cell));
+        let phi = info
+            .left
+            .map_or(Val::TRUE, |left| polar(self.operand(node, left, cell)));
+        psi == Val::FALSE && phi == Val::TRUE
+    }
+
     /// Whether an unsettled instance of `node` can still read cell `index`.
     fn needed(&self, node: usize, index: usize) -> bool {
         let Some(cells) = self.cells.get(&node) else {
             return false;
         };
+        if self.inert(node, index) {
+            return false;
+        }
         let cell = &cells[index];
         let future = self.is_future(node);
         cells.iter().enumerate().any(|(other, open)| {

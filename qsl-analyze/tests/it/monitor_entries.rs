@@ -207,6 +207,29 @@ pub(crate) fn run_entries_with(
     spec: &EntrySpec,
     inputs: &[Input],
 ) -> Vec<Vec<(i128, i64)>> {
+    run_entries_core(plan, spec, inputs, None).0
+}
+
+/// [`run_entries_with`], also evaluating `probe` (a `Sequence<Integer>`
+/// expression over the state `s`) after every input that calls an entry; the
+/// probe values of an input that only polls are those of the previous call.
+pub(crate) fn run_entries_probe(
+    plan: &TimedMonitorPlan,
+    spec: &EntrySpec,
+    inputs: &[Input],
+    probe: &str,
+) -> (Vec<Vec<(i128, i64)>>, Vec<Vec<i128>>) {
+    run_entries_core(plan, spec, inputs, Some(probe))
+}
+
+const PROBE_BASE: i128 = 1_000_000_000_000_000_000;
+
+fn run_entries_core(
+    plan: &TimedMonitorPlan,
+    spec: &EntrySpec,
+    inputs: &[Input],
+    probe: Option<&str>,
+) -> (Vec<Vec<(i128, i64)>>, Vec<Vec<i128>>) {
     let mut body = String::from(
         "function scenario using v(): Sequence<Integer> pure { let s0 = monitorInit() in ",
     );
@@ -216,6 +239,9 @@ pub(crate) fn run_entries_with(
     for input in inputs {
         let call = match input {
             Input::Poll(_) => {
+                if probe.is_some() {
+                    encoded.push(format!("probe(s{step_no})"));
+                }
                 encoded.push("marker()".to_owned());
                 continue;
             }
@@ -280,6 +306,9 @@ pub(crate) fn run_entries_with(
             "let t{step_no} = {call} in let s{step_no} = t{step_no}.state in "
         );
         encoded.push(format!("encode(t{step_no}.results)"));
+        if probe.is_some() {
+            encoded.push(format!("probe(s{step_no})"));
+        }
         encoded.push("marker()".to_owned());
     }
     let joined = encoded
@@ -290,9 +319,16 @@ pub(crate) fn run_entries_with(
     let helpers = "function marker using v(): Sequence<Integer> pure { sequence[0 - 1] }\n\
         function pairInts using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Sequence<Integer>> pure { sequence[a, b] }\n\
         function cat using v(a: Sequence<Integer>, b: Sequence<Integer>): Sequence<Integer> pure { flatten(pairInts(a, b)) }\n\
+        function ints1 using v(a: Integer): Sequence<Integer> pure { sequence[a] }\n\
+        function ints4 using v(a: Integer, b: Integer, c: Integer, d: Integer): Sequence<Integer> pure { sequence[a, b, c, d] }\n\
         function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else if l.limit = \"atom_projection\" then 1000 + l.amount else 2000 + l.amount; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
         function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: ((r.instance.origin_tick * 1000 + r.instance.subformula) * 100000) + code(r.outcome)) }\n";
-    let package = package_of(&format!("{}\n{helpers}\n{body}", render(spec)));
+    let probe_fn = probe.map_or_else(String::new, |probe| {
+        format!(
+            "function probe using v(s: State): Sequence<Integer> pure {{ map(x in {probe}: x + {PROBE_BASE}) }}\n"
+        )
+    });
+    let package = package_of(&format!("{}\n{helpers}{probe_fn}\n{body}", render(spec)));
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
         .call(
@@ -307,6 +343,7 @@ pub(crate) fn run_entries_with(
         panic!("a completed sequence, not {:?}", evaluation.outcome);
     };
     let mut steps: Vec<Vec<(i128, i64)>> = vec![Vec::new()];
+    let mut probes: Vec<Vec<i128>> = vec![Vec::new()];
     for element in flat.elements() {
         let Value::Integer(value) = element else {
             panic!("integers")
@@ -314,6 +351,9 @@ pub(crate) fn run_entries_with(
         let number: i128 = value.as_big().try_into().expect("small");
         if number < 0 {
             steps.push(Vec::new());
+            probes.push(Vec::new());
+        } else if number >= PROBE_BASE / 2 {
+            probes.last_mut().unwrap().push(number - PROBE_BASE);
         } else {
             steps
                 .last_mut()
@@ -322,7 +362,8 @@ pub(crate) fn run_entries_with(
         }
     }
     steps.pop();
-    steps
+    probes.pop();
+    (steps, probes)
 }
 
 pub(crate) fn deadline_plan() -> TimedMonitorPlan {
@@ -653,6 +694,9 @@ fn the_plan_root_is_written_with_seventeen_bindings() {
     assert_eq!(fields("Instance"), ["subject", "subformula", "origin"]);
     assert_eq!(fields("Activation"), ["subformula", "origin", "status"]);
     assert_eq!(fields("LimitReached"), ["limit", "value", "setting"]);
+    // The status of an activation is a record holding the integer position
+    // of the instance (QSpec FR-487-AC-8, MP-81).
+    assert_eq!(fields("ActStatus")[0], "position");
     assert_eq!(
         fields("State"),
         [
@@ -672,10 +716,24 @@ fn root_wire(
     target: &qsl_replay::MonitorTarget,
     edit: impl Fn(&mut Premises),
 ) -> serde_json::Value {
+    root_wire_with(formula, target, edit, |_| {}, |source| source)
+}
+
+/// [`root_wire`] over the entries of `spec` as edited by `edit_spec`, with
+/// their rendered source passed through `tweak`.
+fn root_wire_with(
+    formula: &str,
+    target: &qsl_replay::MonitorTarget,
+    edit: impl Fn(&mut Premises),
+    edit_spec: impl Fn(&mut EntrySpec),
+    tweak: impl Fn(String) -> String,
+) -> serde_json::Value {
     use qsl_package::{emit_checked, emit_monitor_plan_over, MonitorPlanWire};
     let plan = premise_plan(formula, target);
-    let spec = spec_from_plan(&plan).unwrap();
-    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &render(&spec), true);
+    let mut spec = spec_from_plan(&plan).unwrap();
+    edit_spec(&mut spec);
+    let (package, _) =
+        crate::monitor_plan::checked_clause_in(formula, &tweak(render(&spec)), true);
     let emission = emit_checked(&package).expect("the unit emits");
     let name = qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap();
     let domain = crate::units::Domain::config_version();
@@ -1011,4 +1069,446 @@ fn the_runtime_calls_baseline_event_gap_event() {
     );
     let (second, _) = rt_call(Some(65530), 65500, 16, 100);
     assert_eq!(second, RtCall::OnGap(65506));
+}
+
+// ---------------------------------------------------------------------
+// FR-251 capacity, overflow-order and retention vectors on a 1 MHz counter.
+
+use ix_trace_rs::trace;
+
+/// A 1 MHz-counter target at `rate` events per millisecond.
+fn tick_target(rate: i64, activations: u64) -> qsl_replay::MonitorTarget {
+    qsl_replay::MonitorTarget {
+        unit: "us".to_owned(),
+        width_bits: 20,
+        max_reading_gap: 100_000,
+        max_activations: activations,
+        max_event_rate: Some(crate::monitor_plan::ratio(rate, 1000)),
+        ..base_target()
+    }
+}
+
+fn capacities(plan: &TimedMonitorPlan) -> Vec<u64> {
+    let mut buffers: Vec<(usize, u64)> = plan
+        .buffers()
+        .iter()
+        .map(|(id, capacity)| (id.index(), *capacity))
+        .collect();
+    buffers.sort_unstable();
+    buffers.into_iter().map(|(_, capacity)| capacity).collect()
+}
+
+fn evenly(count: u64, spacing: u64, atom: usize, truth: impl Fn(u64) -> bool) -> Vec<Input> {
+    (0..count)
+        .map(|n| Input::Reading(n * spacing, vec![(atom, truth(n))]))
+        .collect()
+}
+
+/// FR-251-AC-18: the inner operator of `once[0 ms, 10 ms] once[0 ms, 5 ms]`
+/// keeps its entries for the sum of the bounds plus a cover per level, and
+/// its 33rd entry overflows.
+#[trace("TC-706", "FR-251-AC-18")]
+#[test]
+fn a_nested_once_is_retained_for_the_sum_of_the_bounds_plus_a_cover_per_level() {
+    let plan = premise_plan(&format!("once[0 ms, 10 ms] once[0 ms, 5 ms] {P}"), &tick_target(2, 8));
+    assert_eq!(capacities(&plan), [22, 32]);
+    let spec = spec_from_plan(&plan).unwrap();
+    let inner = i128::try_from(plan.intervals()[1].0.index()).unwrap();
+    let inputs = evenly(34, 100, spec.atoms[0], |_| false);
+    let entries = run_entries(&plan, &inputs);
+    assert_eq!(entries, run_reference(&plan, &inputs));
+    let overflowed = |step: usize| {
+        entries[step]
+            .iter()
+            .any(|(key, code)| key % 1000 == inner && *code == 2032)
+    };
+    assert!(!overflowed(31), "the 32nd entry still fits");
+    assert!(overflowed(32), "the 33rd entry overflows");
+}
+
+/// FR-251-AC-20: two sibling operators that both overflow at one position
+/// are reported lowest `subformula` first, each with its own result.
+#[trace("TC-706", "FR-251-AC-20")]
+#[test]
+fn simultaneous_overflows_are_reported_lowest_subformula_first() {
+    let plan = premise_plan(
+        &format!("once[0 ms, 10 ms] {P} and once[0 ms, 10 ms] {Q}"),
+        &tick_target(2, 8),
+    );
+    assert_eq!(capacities(&plan), [22, 22]);
+    let spec = spec_from_plan(&plan).unwrap();
+    let nodes: Vec<i128> = plan
+        .intervals()
+        .iter()
+        .map(|(id, _)| i128::try_from(id.index()).unwrap())
+        .collect();
+    let inputs: Vec<Input> = (0..23)
+        .map(|n| Input::Reading(n * 100, spec.atoms.iter().map(|a| (*a, false)).collect()))
+        .collect();
+    let entries = run_entries(&plan, &inputs);
+    assert_eq!(entries, run_reference(&plan, &inputs));
+    let overflow: Vec<i128> = entries[22]
+        .iter()
+        .filter(|(_, code)| *code == 2022)
+        .map(|(key, _)| key % 1000)
+        .collect();
+    assert_eq!(overflow, nodes);
+    assert!(nodes[0] < nodes[1]);
+}
+
+/// FR-251-AC-21: the retention rule holds for mixed-direction nesting, and
+/// the tick-0 entry is still read at tick 14999.
+#[trace("TC-1081", "FR-251-AC-21")]
+#[test]
+fn mixed_direction_nesting_keeps_the_inner_entry_until_every_reader_settled() {
+    for (formula, outer) in [
+        (format!("once[0 ms, 10 ms] eventually[0 ms, 5 ms] {P}"), 22),
+        (format!("eventually[0 ms, 5 ms] once[0 ms, 10 ms] {P}"), 12),
+    ] {
+        let plan = premise_plan(&formula, &tick_target(2, 8));
+        assert_eq!(capacities(&plan), [outer, 32], "{formula}");
+        let spec = spec_from_plan(&plan).unwrap();
+        let atom = spec.atoms[0];
+        let mut inputs: Vec<Input> = (0..30)
+            .map(|n| Input::Reading(n * 517, vec![(atom, n == 0)]))
+            .collect();
+        inputs.push(Input::Reading(14_999, vec![(atom, false)]));
+        inputs.push(Input::Reading(15_001, vec![(atom, false)]));
+        inputs.push(Input::Reading(15_003, vec![(atom, false)]));
+        let probe = "map(x in s.buffer_1: x.tf)";
+        let (entries, buffer) = run_entries_probe(&plan, &spec, &inputs, probe);
+        assert_eq!(entries, run_reference(&plan, &inputs), "{formula}");
+        let incomplete: Vec<_> = entries
+            .iter()
+            .enumerate()
+            .flat_map(|(step, results)| {
+                results
+                    .iter()
+                    .filter(|(_, code)| *code >= 1000)
+                    .map(move |result| (step, *result))
+            })
+            .collect();
+        assert!(incomplete.is_empty(), "{formula}: Incomplete {incomplete:?}");
+        assert_eq!(buffer[30].first(), Some(&0), "tick 14999 still holds tick 0");
+        assert_eq!(buffer[31].first(), Some(&0), "tick 15001 still holds tick 0");
+        assert_ne!(buffer[32].first(), Some(&0), "tick 15003 has dropped tick 0");
+        // The decision that needs the tick-0 entry: some reading inside the
+        // outer window of tick 0 decides true on it.
+        assert!(entries.iter().flatten().any(|(_, code)| *code == 1));
+    }
+}
+
+/// FR-251-AC-19: an unbounded `eventually` under `once[0 ms, 10 ms]` counts
+/// against the shared activation capacity; the third start is refused.
+#[trace("TC-1081", "FR-251-AC-19")]
+#[test]
+fn a_nested_unbounded_operator_shares_the_activation_capacity() {
+    let plan = premise_plan(&format!("once[0 ms, 10 ms] eventually {P}"), &tick_target(2, 2));
+    let spec = spec_from_plan(&plan).unwrap();
+    let eventually = spec.nodes.iter().find(|n| n.interval.is_none()).unwrap().id;
+    let inputs: Vec<Input> = [0, 1000, 2000]
+        .into_iter()
+        .map(|tick| Input::Reading(tick, vec![(spec.atoms[0], false)]))
+        .collect();
+    let entries = run_entries(&plan, &inputs);
+    assert_eq!(entries, run_reference(&plan, &inputs));
+    let refused = |step: usize| {
+        entries[step].iter().filter(|(key, code)| {
+            key % 1000 == i128::try_from(eventually).unwrap() && *code == 7
+        })
+    };
+    assert_eq!(refused(0).count() + refused(1).count(), 0);
+    assert_eq!(
+        refused(2).map(|(key, _)| key / 1000).collect::<Vec<_>>(),
+        [2000],
+        "the third instance is not started"
+    );
+}
+
+// ---------------------------------------------------------------------
+// "On each" activations, instance limits, gap vectors and plan identity.
+
+use crate::monitor_plan::premise_plan_on;
+use qsl_analyze::monitor_entries::{ActivationKind, ClauseSource};
+
+const ON_EACH: &str = "on each (q: M::ConfigVersion)";
+
+/// FR-251-AC-17 / TC-1081 step 12 (QSpec FR-487 "status", MP-81): an "on
+/// each" instance records the position it was created at in the `position`
+/// field of its `status` record, read from `State.event_position`; two events
+/// in one tick get distinct positions.
+#[trace("TC-1081", "FR-251-AC-17")]
+#[test]
+fn an_on_each_instance_records_the_event_position_it_was_created_at() {
+    let plan = premise_plan_on(ROOT_SHAPES[0], ON_EACH, &tick_target(2, 8));
+    let spec = spec_from_plan(&plan).unwrap();
+    assert_eq!(spec.activation, ActivationKind::Each);
+    let truths = |req: bool| vec![(spec.atoms[0], req), (spec.atoms[1], false)];
+    let inputs = vec![
+        Input::Reading(0, truths(false)),
+        Input::Reading(7, truths(false)),
+        Input::Reading(7, truths(false)),
+    ];
+    let (entries, positions) = run_entries_probe(
+        &plan,
+        &spec,
+        &inputs,
+        "map(e in s.activations: e.status.position)",
+    );
+    assert_eq!(positions, [vec![1], vec![1, 2], vec![1, 2, 3]]);
+    assert_eq!(sorted(entries), sorted(run_reference(&plan, &inputs)));
+}
+
+/// A guarded "on each" activation starts an instance only where the guard
+/// holds.
+#[trace("TC-1081", "FR-251-AC-17")]
+#[test]
+fn a_guarded_on_each_activation_starts_instances_where_the_guard_holds() {
+    let plan = premise_plan_on(
+        ROOT_SHAPES[0],
+        "on each (q: M::ConfigVersion) when (q.versionNumber = 2)",
+        &tick_target(2, 8),
+    );
+    let spec = spec_from_plan(&plan).unwrap();
+    assert_eq!(spec.activation, ActivationKind::EachGuarded);
+}
+
+/// FR-251-AC-14 / TC-1081 step 10: with an activation capacity of 2 the
+/// third live instance is not started and settles
+/// `Incomplete(LimitReached{activation})`; the two live ones stay pending and
+/// are reported at every watermark.
+#[trace("TC-1081", "FR-251-AC-14")]
+#[test]
+fn the_third_live_instance_is_refused_by_the_activation_capacity() {
+    let plan = premise_plan_on(ROOT_SHAPES[0], ON_EACH, &tick_target(2, 2));
+    let spec = spec_from_plan(&plan).unwrap();
+    let root = i128::try_from(spec.root).unwrap();
+    let req = vec![(spec.atoms[0], true), (spec.atoms[1], false)];
+    let inputs = vec![
+        Input::Reading(0, req.clone()),
+        Input::Reading(100, req.clone()),
+        Input::Reading(200, req),
+        Input::Watermark(300),
+    ];
+    let entries = run_entries(&plan, &inputs);
+    assert_eq!(sorted(entries.clone()), sorted(run_reference(&plan, &inputs)));
+    assert!(entries[2].contains(&(200 * 1000 + root, 7)), "{:?}", entries[2]);
+    assert!(!entries[1].iter().any(|(_, code)| *code == 7));
+    // The live ones stay pending and are reported at the watermark.
+    let pending: Vec<_> = entries[3]
+        .iter()
+        .filter(|(key, code)| key % 1000 == root && *code == 3)
+        .map(|(key, _)| key / 1000)
+        .collect();
+    assert_eq!(pending, [0, 100]);
+}
+
+/// FR-251-AC-11 / TC-1081 step 8: after a gap fault `now` has advanced by the
+/// gap and is the history start; the next reading is differenced from the
+/// faulting one.
+#[trace("TC-1081", "FR-251-AC-11")]
+#[test]
+fn a_gap_advances_now_by_the_gap_and_the_next_reading_is_a_delta_of_ten() {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 16, 100);
+    let plan = premise_plan("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)", &target);
+    let spec = spec_from_plan(&plan).unwrap();
+    let truths = vec![(spec.atoms[0], false)];
+    let inputs = vec![
+        Input::Reading(65_530, truths.clone()),
+        Input::Reading(65_500, truths.clone()),
+        Input::Reading(65_510, truths),
+    ];
+    let (entries, probes) = run_entries_probe(
+        &plan,
+        &spec,
+        &inputs,
+        "ints4(s.now, s.history_start, s.event_position, size(s.buffer_0))",
+    );
+    assert_eq!(entries, run_reference(&plan, &inputs));
+    assert_eq!(probes[0], [0, -1, 1, 1]);
+    assert_eq!(probes[1], [65_506, 65_506, 1, 0]);
+    assert_eq!(probes[2], [65_516, 65_506, 2, 1]);
+}
+
+/// FR-251-AC-15 / TC-1081 step 11: after a gap the buffers are empty and
+/// `history_start` is the faulting reading's tick; `once[0 ms, 10 ms]` is
+/// indeterminate until its window has refilled past the marker, then decides.
+#[trace("TC-1081", "FR-251-AC-15")]
+#[test]
+fn a_past_window_is_indeterminate_until_it_has_refilled_past_the_marker() {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 16, 2000);
+    let plan = premise_plan("once[0 ms, 10 ms] holds(c.versionNumber = 3)", &target);
+    let spec = spec_from_plan(&plan).unwrap();
+    let node = i128::try_from(interval_node(&plan)).unwrap();
+    let truths = |p: bool| vec![(spec.atoms[0], p)];
+    let mut inputs = vec![
+        Input::Reading(65_530, truths(true)),
+        Input::Reading(65_500, truths(false)),
+        Input::Poll(1),
+    ];
+    let mut raw = 65_500_u64;
+    for _ in 0..13 {
+        raw = (raw + 1000) % 65_536;
+        inputs.push(Input::Reading(raw, truths(false)));
+    }
+    let (entries, probes) = run_entries_probe(&plan, &spec, &inputs, "ints1(s.history_start)");
+    assert_eq!(entries, run_reference(&plan, &inputs));
+    assert_eq!(probes[1], [65_506], "the marker is the faulting reading's tick");
+    let codes: Vec<i64> = entries[3..]
+        .iter()
+        .map(|step| step.iter().find(|(key, _)| key % 1000 == node).unwrap().1)
+        .collect();
+    assert_eq!(codes[0], 4, "the first window reaches before the marker");
+    assert_eq!(codes.last(), Some(&2), "the refilled window decides");
+    assert!(codes.windows(2).all(|w| !(w[0] == 2 && w[1] == 4)));
+}
+
+/// FR-251-AC-6 / TC-1081 step 3: two monitors built from one plan share no
+/// state, and each result keeps its subject and obligation origin.
+#[trace("TC-1081", "FR-251-AC-6")]
+#[test]
+fn two_monitors_from_one_plan_share_no_state() {
+    let plan = deadline_plan();
+    let spec = spec_from_plan(&plan).unwrap();
+    let atom = spec.atoms[0];
+    let source = format!(
+        "{}\nfunction scenario using v(): Sequence<Integer> pure {{ \
+            let a0 = monitorInit() in let b0 = monitorInit() in \
+            let a1 = onEventR(a0, 0, Inputs {{ a{atom}: false }}) in \
+            sequence[size(a1.state.buffer_0), size(b0.buffer_0), size(a1.state.activations), size(b0.activations), \
+                     size(map(r in a1.results: r.instance.subject))] }}",
+        render(&spec)
+    );
+    let package = package_of(&source);
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("scenario").unwrap(),
+            Vec::new(),
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap();
+    let FamilyOutcome::Evaluated(Outcome::Completed(Value::Collection(sizes))) = evaluation.outcome
+    else {
+        panic!("a completed sequence");
+    };
+    let sizes: Vec<i128> = sizes
+        .elements()
+        .iter()
+        .map(|value| match value {
+            Value::Integer(value) => value.as_big().try_into().unwrap(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(sizes[..4], [1, 0, 0, 0], "the second monitor holds nothing");
+}
+
+/// FR-251-AC-9 / TC-1081 step 6: each of the four entries is a function node
+/// of the plan root, and changing the body of any one changes the emitted
+/// function graph under it. (The plan-root content key is rebuilt from the
+/// graph by the strict reader, IR-721; a path holds index segments only, so
+/// the key cannot be compared here.)
+#[trace("TC-1081", "FR-251-AC-9")]
+#[test]
+fn changing_any_one_entry_body_changes_the_function_it_names() {
+    let formula = ROOT_SHAPES[0];
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let body_of = |wire: &serde_json::Value, name: &str| -> String {
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let node = nodes
+            .iter()
+            .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+            .unwrap_or_else(|| panic!("{name}"));
+        node["body"].to_string()
+    };
+    let init_body = |wire: &serde_json::Value| -> String {
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let root = nodes
+            .iter()
+            .find(|n| n["node_tag"] == "temporal" && n["semantic_form"] == "monitor_plan")
+            .unwrap();
+        let member = root["body"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["name"] == "init")
+            .unwrap();
+        let entry = nodes
+            .iter()
+            .find(|n| n["node_id"] == member["value"]["target"])
+            .unwrap();
+        entry["body"].to_string()
+    };
+    let base = root_wire(formula, &target, |_| {});
+    for (from, to, helper) in [
+        ("history_start: 0 - 1", "history_start: 0 - 2", None),
+        (
+            "let pos = s.event_position + 1 in",
+            "let pos = s.event_position + 2 in",
+            Some("onEventR"),
+        ),
+        (
+            "else boundary + 1 in",
+            "else boundary + 2 in",
+            Some("onWatermarkR"),
+        ),
+        (
+            "let now2 = s.now + gap in",
+            "let now2 = s.now + gap + 1 in",
+            Some("onGapR"),
+        ),
+    ] {
+        let variant = root_wire_with(formula, &target, |_| {}, |_| {}, |source| {
+            assert!(source.contains(from), "{from}");
+            source.replacen(from, to, 1)
+        });
+        let (before, after) = match helper {
+            Some(name) => (body_of(&base, name), body_of(&variant, name)),
+            None => (init_body(&base), init_body(&variant)),
+        };
+        assert_ne!(before, after, "{from}");
+    }
+}
+
+/// FR-251-AC-4 / TC-1081 step 1: the closed program holds both atom bodies,
+/// the entries and the state type as nodes of the emitted package.
+#[trace("TC-1081", "FR-251-AC-4")]
+#[test]
+fn the_emitted_program_holds_the_atom_bodies_the_entries_and_the_state_type() {
+    let formula = ROOT_SHAPES[0];
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let wire = root_wire_with(
+        formula,
+        &target,
+        |_| {},
+        |spec| {
+            spec.clause = Some(ClauseSource {
+                parameters: vec![("versionNumber".to_owned(), "Integer".to_owned())],
+                atoms: spec
+                    .atoms
+                    .iter()
+                    .zip(["versionNumber = 2", "versionNumber = 3"])
+                    .map(|(atom, text)| (*atom, text.to_owned()))
+                    .collect(),
+                guard: None,
+                profile: "v".to_owned(),
+            });
+        },
+        |source| source,
+    );
+    let names: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|node| node["declaration"]["qualified_name"][0].as_str())
+        .map(str::to_owned)
+        .collect();
+    for wanted in ["State", "Inputs", "Scope", "Result", "Outcome"] {
+        assert!(names.iter().any(|n| n == wanted), "{wanted}");
+    }
+    let atoms = spec_from_plan(&premise_plan(formula, &target)).unwrap().atoms;
+    for atom in atoms {
+        assert!(names.contains(&format!("atom{atom}")), "atom{atom}");
+    }
 }
