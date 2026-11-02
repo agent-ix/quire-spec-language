@@ -119,14 +119,14 @@ The per-criterion map of FR-042 is FR-500. Rows for the rest of the module:
 
 | Behavior | Successor | Disposition |
 | --- | --- | --- |
-| `read`, `v2::read`, `v3::read` strict reader and refusal of mutated bytes (FR-042-AC-7) | FR-383-AC-19, AC-20 over the I2 reader (FR-264) | COVERED for the checked package only; the 25 legacy `/1` per-axis mutation tests have no analogue. KEEP until QSL-1501 |
+| `read`, `v2::read`, `v3::read` strict reader and refusal of mutated bytes (FR-042-AC-7) | FR-383-AC-19, AC-20 over the I2 reader (FR-264) | COVERED for the checked package only; the 25 legacy `/1` per-axis mutation tests have no analogue. KEEP until FR-521 row 7 is green (FR-515, FR-517, FR-518) |
 | v2 refusal vocabulary `v2.header.*`, `v2.binding.*` (FR-050-AC-2, AC-3); `v2::encode_candidate` byte determinism (FR-050-AC-5) | none | PORT QSL-1506 (quire-protocol `tc_011` matches the code strings) |
 | `ProtocolNumber`, `NUMERIC_PROFILE="quire.protocol.numeric/1"` codec (FR-038, TC-117) | none (FR-497 and FR-322 cover carried quantities, not this codec); FR-511 states the disposition | PORT QSL-1506; KEEP `number.rs` as the root module `number` (FR-511) until that port is green |
 | Occurrence-key schema, `NodeRole`, nested repeat ordinals (FR-048-AC-1, FR-384, `occurrence.rs`, TC-132, TC-1064) | FR-384 specified; no code or test carries FR-384 | PORT QSL-1506 |
 | `ArtifactKind`/`BindingKind` wire spellings (FR-049-AC-2, AC-5; TC-136) | none | PORT QSL-1506 |
 | `/3` authored control-temporal map (FR-054-AC-1 to AC-4) | FR-449, TC-1194 | PARTIAL: one legacy test (`compiled_protocol_v2.rs:1313`) tags AC-1 to AC-4; AC-2 to AC-4 PORT QSL-1506 |
-| Format identity constants `quire.compiled-protocol/1`, `/2`, media, schema strings | none | KEEP until QSL-1501 |
-| Handoff writer `write_v1`, `write_v2`, `PUBLISHED_*` files, `expected.json`, `expected-v2.json`, `mutations/manifest.json`, the two examples, `examples/protocol-handoff`, feature `handoff-writer`, committed snapshots, writer errors | none: quire-protocol never reads a checked package | KEEP until QSL-1501 closes (ruling 4); then replace by a checked-package writer, not delete |
+| Format identity constants `quire.compiled-protocol/1`, `/2`, media, schema strings | `quire.checked-package/v2` (Contract IR) | KEEP until FR-521 row 15 is green |
+| Handoff writer `write_v1`, `write_v2`, `PUBLISHED_*` files, `expected.json`, `expected-v2.json`, `mutations/manifest.json`, the two examples, `examples/protocol-handoff`, feature `handoff-writer`, committed snapshots, writer errors | FR-517, FR-518 (TC-1312, TC-1313): the checked-package writer, selection sidecar and mutation manifest | KEEP until FR-521 row 2 is green; the writer is already its successor, so the legacy one is then deleted, not replaced |
 | `intake.rs` independent exact inventories (FR-042-AC-3, FR-050) | I2 evidence map | PARTIAL; one-axis rows in FR-500 |
 | Existing red test `tests/it/protocol_artifact.rs:777` (`Limits` default mismatch) | none | fix in QSL-838 before any deletion |
 
@@ -202,7 +202,7 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | FR-499-AC-4 | After QSL-499, `src/native_model` is absent and TC-469 passes. | Test (TC-1293) |
 | FR-499-AC-5 | After QSL-868 and QSL-830, TC-1027 steps 2 and 3 pass, the CLI `parse` runs on `qsl_cst::parse` with its flags and exits unchanged, and the interim FR-362 items 8 and 9 wording is gone. | Test (TC-1027, TC-1293) |
 | FR-499-AC-6 | `quire matrix` after each deleting change lists no criterion of a retained requirement untagged because its test went with a retired path. | Test (TC-1276 step 5) |
-| FR-499-AC-7 | The handoff writer, its examples, snapshots and feature remain until QSL-1501 closes. | Inspection |
+| FR-499-AC-7 | The handoff writer, its examples, snapshots and feature remain until FR-521 row 2 is green. | Inspection |
 
 ## Dependencies
 
