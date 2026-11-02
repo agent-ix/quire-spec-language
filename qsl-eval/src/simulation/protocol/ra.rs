@@ -74,7 +74,9 @@ use super::race::{
 };
 use super::tso::DEFAULT_MEMORY_BOUND;
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::{map_enc, sorted_map_enc, untyped_value_enc, Enc};
+use crate::simulation::model::encode::{
+    keyed_name, map_enc, sorted_map_enc, untyped_value_enc, Enc, KeyName,
+};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// A message's or an SC event's id: stable inside one state lineage, never
@@ -271,33 +273,28 @@ fn canonical(value: &Enc) -> Option<Vec<u8>> {
 /// maps they key, encoded once per encoding rather than once per map.
 #[derive(Default)]
 struct Names {
-    locations: RefCell<BTreeMap<Location, (Vec<u8>, Enc)>>,
-    threads: RefCell<BTreeMap<ThreadPath, (Vec<u8>, Enc)>>,
+    locations: RefCell<BTreeMap<Location, KeyName>>,
+    threads: RefCell<BTreeMap<ThreadPath, KeyName>>,
 }
 
 impl Names {
     /// `location`'s map-key bytes and form, `named` by the component.
-    fn location(&self, location: &Location, named: impl FnOnce() -> Enc) -> (Vec<u8>, Enc) {
+    fn location(&self, location: &Location, named: impl FnOnce() -> Enc) -> KeyName {
         self.locations
             .borrow_mut()
             .entry(location.clone())
-            .or_insert_with(|| keyed(named()))
+            .or_insert_with(|| keyed_name(named()))
             .clone()
     }
 
     /// `thread`'s map-key bytes and form.
-    fn thread(&self, thread: &ThreadPath) -> (Vec<u8>, Enc) {
+    fn thread(&self, thread: &ThreadPath) -> KeyName {
         self.threads
             .borrow_mut()
             .entry(thread.clone())
-            .or_insert_with(|| keyed(thread.enc()))
+            .or_insert_with(|| keyed_name(thread.enc()))
             .clone()
     }
-}
-
-/// A map key with the bytes [`map_enc`] orders it by.
-fn keyed(key: Enc) -> (Vec<u8>, Enc) {
-    (canonical(&key).unwrap_or_default(), key)
 }
 
 /// The depth of position `position` in a sequence of `len` messages.
@@ -1080,7 +1077,7 @@ impl RaComponent {
     }
 
     /// `location` as a map key of this component, through `names`.
-    fn location_name(&self, names: &Names, location: &Location) -> (Vec<u8>, Enc) {
+    fn location_name(&self, names: &Names, location: &Location) -> KeyName {
         names.location(location, || self.location_enc(location))
     }
 

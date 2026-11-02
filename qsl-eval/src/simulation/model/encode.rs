@@ -392,10 +392,10 @@ pub(crate) struct KeyNames {
 }
 
 /// A map key's RFC 8785 bytes and form.
-type KeyName = (Vec<u8>, Enc);
+pub(crate) type KeyName = (Vec<u8>, Enc);
 
 /// A map key with the bytes [`map_enc`] orders it by.
-fn keyed_name(key: Enc) -> KeyName {
+pub(crate) fn keyed_name(key: Enc) -> KeyName {
     (
         quire_canonical::to_vec(&key, Limits::new(u64::MAX)).unwrap_or_default(),
         key,
