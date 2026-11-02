@@ -22,8 +22,8 @@ the FR-421 causes carry it. Scope: FR-498-AC-1 to FR-498-AC-4.
 2. Read each `CheckedProbabilisticClaim` and compare its identity with its row.
 3. Check an elapsed-time claim with an unsupported form and a punctual interval
    in a non-admitted form over those claims and read the settled causes.
-4. Check a claim for which the producer supplies no identity and compare the
-   package, the cause and the graph with a package carrying rows.
+4. Check a claim without emission and compare its identity and cause; compare
+   an emitted package with its rows against the graph of one without them.
 
 Tag the test `#[trace("FR-498-AC-1", "FR-498-AC-2", "FR-498-AC-3", "FR-498-AC-4", "TC-1288")]`.
 Vectors are referenced by QSpec case ID, never copied.
@@ -33,4 +33,4 @@ Vectors are referenced by QSpec case ID, never copied.
 - Step 1: two rows, two distinct declarations, equal across permutations.
 - Step 2: each claim's identity equals its row.
 - Step 3: each cause carries the selected claim's identity and member path.
-- Step 4: no row, internal `Span` refusal, no synthesized locus, equal graph.
+- Step 4: the unemitted claim exposes no identity and keeps the span-locus refusal with no synthesized locus; the graphs are equal.

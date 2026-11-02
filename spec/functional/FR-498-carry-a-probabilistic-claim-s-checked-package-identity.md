@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-204
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-235
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-421
@@ -24,8 +26,8 @@ resolved through `checked_term_data.probabilistic_claims` (QSpec FR-322-AC-297).
 [FR-186](./FR-186-check-probabilistic-claim-forms-at-s3.md)'s
 `CheckedProbabilisticClaim` holds only a `name`, a `span` and a normal form,
 neither of which is an identity (ADR-013 R-04), so the exact plan cannot name
-the locus and its `TimedFormShape` and `PunctualInterval` causes are
-documented unwired (FR-204). This requirement owns carrying the claim's
+the locus of its `TimedFormShape` (FR-203, FR-204) and `PunctualInterval`
+(FR-235) causes; QSL-1416 records that gap. This requirement owns carrying the claim's
 checked-package identity from the producer to the carrier and to those causes.
 
 ## Inputs
@@ -54,15 +56,19 @@ checked-package identity from the producer to the carrier and to those causes.
   claim. The identity SHALL NOT be derived from `name`, `span`, normal form,
   display text or declaration order: two claims with equal names and equal
   spans keep two identities.
-- When the producer has no identity for a claim, the claim SHALL expose no
-  identity and the emitter SHALL write no row for it. No identity is
-  synthesized, and no protocol-location row is substituted.
-- The `TimedFormShape` and `PunctualInterval` causes of FR-204 and FR-203 SHALL
+- Every probabilistic claim declaration of an emitted package has exactly one
+  row (QSpec FR-322-AC-297), so a package SHALL NOT carry a probabilistic claim
+  node without its row. A `CheckedProbabilisticClaim` checked without emission
+  (no package is produced) has no identity and exposes none. No identity is
+  synthesized from its name or span, and no protocol-location row is
+  substituted.
+- The `TimedFormShape` cause (FR-203, FR-204) and the `PunctualInterval` cause
+  (FR-235) SHALL
   carry the claim's `{declaration, occurrence}` and the member path of the
   unsupported form or interval operator within that declaration's body, as QSpec
-  FR-421 states its loci. A claim with no identity SHALL keep the internal
-  `Span` refusal and document it as pending the producer identity; it SHALL NOT
-  report a locus built from the span.
+  FR-421 states its loci. A claim with no identity (checked without emission) SHALL keep the
+  refusal that carries the claim's `span` as its locus (FR-186) and SHALL NOT
+  report a package locus built from the span.
 - Adding rows leaves the semantic graph nodes and node identities equal to those
   emitted for the same package without the carrier.
 - QSL emission SHALL NOT claim reader admission; QSpec FR-322 and TC-233 own the
@@ -75,12 +81,12 @@ checked-package identity from the producer to the carrier and to those causes.
 | FR-498-AC-1 | A unit with two probabilistic claims that have equal display names and equal source spans emits two `probabilistic_claims` rows with distinct declaration `NodeRef`s, each naming one declared `claim` occurrence, in ascending structural order (QSpec FR-322-AC-297 `PC-01`, `PC-02`); permuting source order emits equal rows. | Test (TC-1288) |
 | FR-498-AC-2 | `CheckedProbabilisticClaim` for each of those claims exposes the same `{declaration, occurrence}` as its emitted row, and an equal name and span on the two claims do not make the identities equal. | Test (TC-1288) |
 | FR-498-AC-3 | An elapsed-time claim with an unsupported form and a claim with a punctual interval in a non-admitted form settle `Unsupported(TimedFormShape)` and `Unsupported(PunctualInterval)` carrying the claim's `{declaration, occurrence}` and the member path of the unsupported form or interval operator (QSpec FR-421-AC-7); for two claims with equal names and spans the cause names the selected claim only. | Test (TC-1288) |
-| FR-498-AC-4 | A claim with no producer identity writes no row and its cause stays the internal `Span` refusal; no row, locus or key is synthesized from its name or span. A package with the rows has the same semantic graph nodes and identities as one without. | Test (TC-1288) |
+| FR-498-AC-4 | A package that emits probabilistic claim nodes has exactly one row per claim and none without a node; a claim checked without emission exposes no identity and its cause keeps the span-locus refusal of FR-186, with no row, locus or key synthesized from its name or span. A package with the rows has the same semantic graph nodes and identities as one without. | Test (TC-1288) |
 
 ## Dependencies
 
-- **Upstream:** FR-186 defines `CheckedProbabilisticClaim`; FR-204 and FR-203 own
-  the causes this wires; QSpec FR-322 (FR-322-AC-297), TC-233 and FR-421 own the
+- **Upstream:** FR-186 defines `CheckedProbabilisticClaim`; FR-203 and FR-204 own
+  `TimedFormShape` and FR-235 owns `PunctualInterval`, the causes this wires; QSpec FR-322 (FR-322-AC-297), TC-233 and FR-421 own the
   carrier, its reader checks and the locus.
 - **Open:** no QSL requirement states the emission of the `claim` node with
   `semantic_form` `probabilistic_claim` that the row joins (see QSL-1416); this
