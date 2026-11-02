@@ -46,8 +46,11 @@ const FUNCTIONS: &str = "\
     function carried_exact_failure using v(): Quantity<m, Int[-2, 2]> pure { convert<Quantity<m, Int[-2, 2]>>(1 inch) }\n\
     function carried_decimal_exact_failure using v(): Quantity<m, Decimal[-100, 100; 2, 2; exact]> pure { convert<Quantity<m, Decimal[-100, 100; 2, 2; exact]>>(1 inch) }\n\
     function carried_integer_outside using v(): Quantity<m, Int[-2, 2]> pure { convert<Quantity<m, Int[-2, 2]>>(3 m) }\n\
+    function carried_inexact_outside using v(): Quantity<m, Int[-2, 2]> pure { convert<Quantity<m, Int[-2, 2]>>(3 m + convert<Quantity<m>>(1 inch)) }\n\
     function carried_decimal_outside using v(): Quantity<m, Decimal[-2, 2; 0, 0; exact]> pure { convert<Quantity<m, Decimal[-2, 2; 0, 0; exact]>>(3 m) }\n\
     function carried_back using v(): Quantity<m> pure { convert<Quantity<m>>(convert<Quantity<m, Int[-2, 2]>>(2 m)) }\n\
+    function carried_decimal_exact using v(): Quantity<m, Decimal[-100, 100; 2, 2; exact]> pure { convert<Quantity<m, Decimal[-100, 100; 2, 2; exact]>>(0.03 m) }\n\
+    function carried_carried_rounded using v(): Quantity<m, Decimal[-100, 100; 1, 1; nearest-even]> pure { convert<Quantity<m, Decimal[-100, 100; 1, 1; nearest-even]>>(carried_decimal_exact()) }\n\
     function carried_two using v(): Quantity<m, Int[-2, 2]> pure { convert<Quantity<m, Int[-2, 2]>>(2 m) }\n\
     function carried_one using v(): Quantity<m, Int[-2, 2]> pure { convert<Quantity<m, Int[-2, 2]>>(1 m) }\n\
     function carried_record_equal using v(): Boolean pure { Carried{ amount: carried_two() } = Carried{ amount: carried_two() } }\n\
@@ -195,6 +198,15 @@ fn carried_quantity_rounding_refusal_and_back_conversion() {
         }
         other => panic!("an out-of-domain carried Int refusal, not {other:?}"),
     }
+    match call("carried_inexact_outside").outcome {
+        FamilyOutcome::Evaluated(Outcome::Refused(quire_exact::Refusal::InexactConversion {
+            target: quire_exact::InexactTarget::Integer(target),
+        })) => {
+            assert_eq!(target.lower().to_string(), "-2");
+            assert_eq!(target.upper().to_string(), "2");
+        }
+        other => panic!("inexactness precedes out-of-domain refusal, got {other:?}"),
+    }
     match call("carried_decimal_outside").outcome {
         FamilyOutcome::Evaluated(Outcome::Refused(quire_exact::Refusal::DecimalOutOfDomain {
             target,
@@ -209,6 +221,18 @@ fn carried_quantity_rounding_refusal_and_back_conversion() {
             assert_eq!(quantity.magnitude().to_string(), "2/1");
         }
         other => panic!("a carried-to-Quantity conversion, not {other:?}"),
+    }
+    let carried_to_carried = call("carried_carried_rounded");
+    assert_eq!(carried_to_carried.losses.len(), 1);
+    assert!(matches!(
+        carried_to_carried.losses[0].loss,
+        ValueLoss::Decimal(_)
+    ));
+    match carried_to_carried.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(quantity))) => {
+            assert_eq!(quantity.magnitude().to_string(), "0/1");
+        }
+        other => panic!("a rounded carried-to-carried conversion, not {other:?}"),
     }
     let rounded = call("carried_rounded");
     assert_eq!(rounded.losses.len(), 1, "the carrier rounding is retained");
@@ -258,4 +282,25 @@ fn a_carried_quantity_is_not_an_arithmetic_operand() {
         )),
         "the expression is ill typed: {refusals:?}"
     );
+}
+
+/// FR-497-AC-2 (TC-1287): exponentiation spelling is refused by the source
+/// reader, so a carried quantity can never reach an evaluator as `a ** 2`.
+#[trace("FR-497-AC-2", "TC-1287")]
+#[test]
+fn a_carried_quantity_exponent_expression_is_not_admitted() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         {FUNCTIONS}\
+         function illegal_power using v(a: Quantity<m, Int[-2, 2]>): Quantity<m, Int[-2, 2]> pure {{ a ** 2 }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(!parsed.is_admissible(), "the unsupported exponent refuses");
 }
