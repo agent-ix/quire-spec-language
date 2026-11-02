@@ -285,10 +285,12 @@ fn one_candidate_package(
         types: types(receiver_type.clone()),
         functions,
         dispatch_operations: vec![DispatchOperation {
-            receiver_type,
+            receiver_type: receiver_type.clone(),
             member: "size".to_owned(),
             parameters: Vec::new(),
             result,
+            selected_operation_owner: receiver_type,
+            selected_operation: "size".to_owned(),
             table: 0,
         }],
         dispatch_tables: vec![table],
@@ -1114,8 +1116,8 @@ fn ab_bridge_clauses(
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> OperationClauses {
-    let a = DeclarationKey::fixture("model.A.size");
-    let b = DeclarationKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A/size");
+    let b = DeclarationKey::fixture("model.B/size");
     let mut clauses = OperationClauses::default();
     // Both members get a `member` entry (not only the family's original
     // `a`): M5 (#204 round 1) roots a call through `B` at `b` itself, since
@@ -1166,9 +1168,9 @@ fn ab_bridge_declarations(
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root_key = if receiver_type == b_type {
-        DeclarationKey::fixture("model.B.size")
+        DeclarationKey::fixture("model.B/size")
     } else {
-        DeclarationKey::fixture("model.A.size")
+        DeclarationKey::fixture("model.A/size")
     };
     let root = DispatchRoot {
         key: root_key,
@@ -1321,7 +1323,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
             reason: UndefinedReason::PreconditionFalse,
             fields: BTreeMap::from([
                 ("operation", "size".to_owned()),
-                ("selected", "model.A.size".to_owned()),
+                ("selected", "model.A/size".to_owned()),
                 ("receiver", "a1".to_owned()),
             ]),
         }
@@ -1435,6 +1437,8 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
                 member: "size".to_owned(),
                 parameters: Vec::new(),
                 result: ValueType::Integer,
+                selected_operation_owner: receiver_type.clone(),
+                selected_operation: "size".to_owned(),
                 table: 0,
             },
             DispatchOperation {
@@ -1442,6 +1446,8 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
                 member: "weight".to_owned(),
                 parameters: Vec::new(),
                 result: ValueType::Integer,
+                selected_operation_owner: receiver_type.clone(),
+                selected_operation: "weight".to_owned(),
                 table: 0,
             },
         ],
@@ -1590,7 +1596,7 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
             reason: UndefinedReason::PreconditionFalse,
             fields: BTreeMap::from([
                 ("operation", "size".to_owned()),
-                ("selected", "model.B.size".to_owned()),
+                ("selected", "model.B/size".to_owned()),
                 ("receiver", "b1".to_owned()),
             ]),
         }
@@ -1662,7 +1668,7 @@ fn self_recursive_precondition() -> Expression {
 /// `A`'s own precondition dispatches back into `A.size` itself
 /// (`self.size() >= 0`); `B` declares no own precondition. The static
 /// FR-146 ancestry the bridge builds gives exactly one cycle edge,
-/// `model.A.size.precondition -> model.A.size.precondition`.
+/// `model.A/size.precondition -> model.A/size.precondition`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-3")]
 #[test]
 fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
@@ -1679,17 +1685,17 @@ fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
         refusal.cause,
         CheckCause::DefinitionCycle {
             edges: vec![(
-                "model.A.size.precondition".to_owned(),
-                "model.A.size.precondition".to_owned(),
+                "model.A/size.precondition".to_owned(),
+                "model.A/size.precondition".to_owned(),
             )],
         }
     );
 }
 
 /// D08, with `B` also declaring its own precondition (`false`): this forces
-/// the "own OR ancestor" combinator (`model.B.size.precondition.effective`)
+/// the "own OR ancestor" combinator (`model.B/size.precondition.effective`)
 /// the bridge only builds for a genuine multi-term disjunction. The cycle
-/// is still exactly `model.A.size.precondition -> model.A.size.precondition`
+/// is still exactly `model.A/size.precondition -> model.A/size.precondition`
 /// — `B`'s combinator dispatches into the same family but never back into
 /// itself, so it never joins the cycle. This case is the one that
 /// regresses if `DispatchTable::callees` ever goes back to reading
@@ -1718,8 +1724,8 @@ fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
         refusal.cause,
         CheckCause::DefinitionCycle {
             edges: vec![(
-                "model.A.size.precondition".to_owned(),
-                "model.A.size.precondition".to_owned(),
+                "model.A/size.precondition".to_owned(),
+                "model.A/size.precondition".to_owned(),
             )],
         }
     );
@@ -1739,8 +1745,8 @@ fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
 fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_capture() {
     let a_type = ab_type("model.A");
     let b_type = ab_type("model.B");
-    let a = DeclarationKey::fixture("model.A.size");
-    let b = DeclarationKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A/size");
+    let b = DeclarationKey::fixture("model.B/size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
     clauses.member.insert(b.clone(), "size".to_owned());
@@ -1908,8 +1914,8 @@ fn bridge_bundle() -> DomainPackage {
         vec![
             object_type_record("model.A", vec![]),
             object_type_record("model.B", vec!["model.A"]),
-            operation_record("model.A.size", "model.A", true, None),
-            operation_record("model.B.size", "model.B", true, Some("model.A.size")),
+            operation_record("model.A/size", "model.A", true, None),
+            operation_record("model.B/size", "model.B", true, Some("model.A/size")),
         ],
     )
 }
@@ -1996,10 +2002,11 @@ fn type_identities_hold_only_type_level_declarations() {
 }
 
 fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
-    let a = DeclarationKey::fixture("model.A.size");
-    let b = DeclarationKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A/size");
+    let b = DeclarationKey::fixture("model.B/size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
+    clauses.member.insert(b.clone(), "size".to_owned());
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
@@ -2043,7 +2050,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
-        key: DeclarationKey::fixture("model.A.size"),
+        key: DeclarationKey::fixture("model.A/size"),
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
@@ -2173,8 +2180,8 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
             object_type_record("model.B", vec!["model.A"]),
             object_type_record("model.C", vec!["model.A"]),
             object_type_record("model.D", vec!["model.B", "model.C"]),
-            operation_record("model.A.size", "model.A", true, None),
-            operation_record("model.B.size", "model.B", true, Some("model.A.size")),
+            operation_record("model.A/size", "model.A", true, None),
+            operation_record("model.B/size", "model.B", true, Some("model.A/size")),
         ],
     );
     let view = bridge_view(&domain_package);
@@ -2184,16 +2191,13 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         view_type(&view, "model.C"),
         view_type(&view, "model.D"),
     );
-    let mut clauses = bridge_clauses(a_type.clone());
-    clauses
-        .member
-        .insert(DeclarationKey::fixture("model.B.size"), "size".to_owned());
+    let clauses = bridge_clauses(a_type.clone());
     let mut normalization_meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations_a = checked_dispatch_operation(
         &view,
         &DispatchRoot {
-            key: DeclarationKey::fixture("model.A.size"),
+            key: DeclarationKey::fixture("model.A/size"),
             closure: GeneralizationClosure::Closed,
         },
         &clauses,
@@ -2469,13 +2473,13 @@ fn inherited_only_bridge_bundle() -> DomainPackage {
         vec![
             object_type_record("model.A", vec![]),
             object_type_record("model.C", vec!["model.A"]),
-            operation_record("model.A.size", "model.A", true, None),
+            operation_record("model.A/size", "model.A", true, None),
         ],
     )
 }
 
 fn inherited_only_clauses(receiver_type: EffectiveId) -> OperationClauses {
-    let a = DeclarationKey::fixture("model.A.size");
+    let a = DeclarationKey::fixture("model.A/size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
     clauses.parameters.insert(
@@ -2512,7 +2516,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
-        key: DeclarationKey::fixture("model.A.size"),
+        key: DeclarationKey::fixture("model.A/size"),
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
@@ -2587,7 +2591,7 @@ fn not_a_query_bundle(result: Option<OperationResult>, effect: OperationEffect) 
         vec![
             object_type_record("model.A", vec![]),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: DeclarationKey::fixture("model.A.size"),
+                key: DeclarationKey::fixture("model.A/size"),
                 owner: DeclarationKey::fixture("model.A"),
                 parameters: Vec::new(),
                 result,
@@ -2610,7 +2614,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
-        key: DeclarationKey::fixture("model.A.size"),
+        key: DeclarationKey::fixture("model.A/size"),
         closure: GeneralizationClosure::Closed,
     };
     checked_dispatch_operation(
@@ -2638,7 +2642,7 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_no_result() {
             assert_eq!(refusal.code, Code::IllTyped);
             assert_eq!(refusal.cause, ModelRefusalCause::OperatorIneligible);
             assert!(
-                refusal.detail.contains("model.A.size"),
+                refusal.detail.contains("model.A/size"),
                 "detail must name the offending operation: {}",
                 refusal.detail
             );
@@ -2675,7 +2679,7 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect(
             assert_eq!(refusal.code, Code::IllTyped);
             assert_eq!(refusal.cause, ModelRefusalCause::OperatorIneligible);
             assert!(
-                refusal.detail.contains("model.A.size"),
+                refusal.detail.contains("model.A/size"),
                 "detail must name the offending operation: {}",
                 refusal.detail
             );
@@ -2741,7 +2745,7 @@ fn checked_dispatch_operation_refuses_a_target_with_only_a_receiver_scoped_effec
                 assert_eq!(refusal.code, Code::IllTyped, "{effect:?}");
                 assert_eq!(refusal.cause, ModelRefusalCause::OperatorIneligible);
                 assert!(
-                    refusal.detail.contains("model.A.size"),
+                    refusal.detail.contains("model.A/size"),
                     "{}",
                     refusal.detail
                 );
@@ -2770,7 +2774,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
             object_type_record("model.A", vec![]),
             object_type_record("model.B", vec!["model.A"]),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: DeclarationKey::fixture("model.B.size"),
+                key: DeclarationKey::fixture("model.B/size"),
                 owner: DeclarationKey::fixture("model.B"),
                 parameters: Vec::new(),
                 result: None,
@@ -2778,10 +2782,10 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
                 requires: Vec::new(),
                 ensures: Vec::new(),
                 has_body: true,
-                redefines: Some(DeclarationKey::fixture("model.A.size")),
+                redefines: Some(DeclarationKey::fixture("model.A/size")),
             }),
             DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: DeclarationKey::fixture("model.A.size"),
+                key: DeclarationKey::fixture("model.A/size"),
                 owner: DeclarationKey::fixture("model.A"),
                 parameters: Vec::new(),
                 result: None,
@@ -2797,8 +2801,8 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
     let a_type = view_type(&view, "model.A");
     let b_type = view_type(&view, "model.B");
     let mut clauses = OperationClauses::default();
-    let a = DeclarationKey::fixture("model.A.size");
-    let b = DeclarationKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A/size");
+    let b = DeclarationKey::fixture("model.B/size");
     for (operation, receiver) in [(&a, a_type), (&b, b_type)] {
         clauses.member.insert(operation.clone(), "size".to_owned());
         clauses.parameters.insert(
@@ -2828,7 +2832,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
     match refusal {
         DispatchBridgeRefusal::NotAQuery(refusal) => {
             assert!(
-                refusal.detail.contains("model.A.size"),
+                refusal.detail.contains("model.A/size"),
                 "root.key (model.A.size) must be the one reported, not model.B.size \
                  (declared first in domain_package.records): {}",
                 refusal.detail
@@ -2895,8 +2899,8 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
             Expression::integer(Integer::from(bound)),
         )
     };
-    let a = DeclarationKey::fixture("model.A.size");
-    let b = DeclarationKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A/size");
+    let b = DeclarationKey::fixture("model.B/size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
     clauses.member.insert(b.clone(), "size".to_owned());
@@ -3061,7 +3065,7 @@ fn a_redeclared_subtype_body_runs_with_a_child_argument() {
     );
     let record = undefined_record(run_money_call(true, true, taxed_money(4)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
-    assert_eq!(record.fields["selected"], "model.B.size");
+    assert_eq!(record.fields["selected"], "model.B/size");
     let parent = run_money_call(true, true, |keys| (keys[0].clone(), vec![("amount", 7)])).unwrap();
     assert_eq!(completed_integer(parent), Integer::from(107_i64));
     let refusal = run_money_call(true, true, |keys| (keys[2].clone(), vec![("amount", 7)]))
@@ -3091,7 +3095,7 @@ fn dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argu
     );
     let record = undefined_record(run_money_call(false, true, taxed_money(4)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
-    assert_eq!(record.fields["selected"], "model.B.size");
+    assert_eq!(record.fields["selected"], "model.B/size");
     let refusal = run_money_call(false, true, |keys| (keys[2].clone(), vec![("amount", 9)]))
         .expect_err("a Fee at a Money parameter is refused");
     assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
@@ -3116,5 +3120,5 @@ fn dispatch_selects_the_ancestor_body_for_an_ancestor_receiver_over_a_child_argu
     // 9 satisfies B's guard but A's is the one in force for an A receiver.
     let record = undefined_record(run_money_call(false, false, taxed_money(9)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
-    assert_eq!(record.fields["selected"], "model.A.size");
+    assert_eq!(record.fields["selected"], "model.A/size");
 }
