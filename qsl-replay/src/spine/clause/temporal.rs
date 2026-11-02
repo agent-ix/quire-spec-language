@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
-    evaluate_observed, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
-    UndefinedCause, UndefinedEvaluation, WindowRefusal,
+    HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace, UndefinedCause,
+    UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
