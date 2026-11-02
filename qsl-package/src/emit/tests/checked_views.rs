@@ -110,8 +110,11 @@ fn text(value: &Value) -> &str {
     value.as_str().expect("text")
 }
 
+/// An integer interval's rendered lower and optional upper bound.
+type Bounds = Option<(String, Option<String>)>;
+
 /// The integer bounds of `interval`, rendered.
-fn bounds(interval: &Option<CheckedOperationInterval>) -> Option<(String, Option<String>)> {
+fn bounds(interval: &Option<CheckedOperationInterval>) -> Bounds {
     match interval.as_ref()? {
         CheckedOperationInterval::Integer { lower, upper } => {
             Some((lower.to_string(), upper.as_ref().map(ToString::to_string)))
@@ -121,9 +124,7 @@ fn bounds(interval: &Option<CheckedOperationInterval>) -> Option<(String, Option
 }
 
 /// The ops of `view`'s formula, each with its rendered bounds.
-fn ops(
-    view: &crate::checked_views::TemporalSubjectView<'_>,
-) -> Vec<(String, Option<(String, Option<String>)>)> {
+fn ops(view: &crate::checked_views::TemporalSubjectView<'_>) -> Vec<(String, Bounds)> {
     view.formula()
         .iter()
         .map(|used| (used.operation.to_owned(), bounds(&used.interval)))
