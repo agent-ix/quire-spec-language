@@ -2694,7 +2694,6 @@ impl<'a> Typer<'a> {
                 | ValueType::Decimal(_)
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
-                | ValueType::CarriedQuantity(_)
                 | ValueType::BoundedQuantity(_)
                 | ValueType::CarriedQuantity(_)
                 | ValueType::Text(_)
@@ -2970,7 +2969,6 @@ impl<'a> Typer<'a> {
         ] {
             let unit_id = match value_type {
                 ValueType::Quantity(unit) => Some(unit.clone()),
-                ValueType::CarriedQuantity(carried) => Some(carried.unit().clone()),
                 ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
                 ValueType::CarriedQuantity(quantity) => Some(quantity.unit().clone()),
                 ValueType::Boolean
@@ -3026,7 +3024,6 @@ impl<'a> Typer<'a> {
                 });
                 let unit_id = match value_type {
                     ValueType::Quantity(unit) => Some(unit.clone()),
-                    ValueType::CarriedQuantity(carried) => Some(carried.unit().clone()),
                     ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
                     ValueType::CarriedQuantity(quantity) => Some(quantity.unit().clone()),
                     _ => None,
@@ -3310,7 +3307,6 @@ impl<'a> Typer<'a> {
                     ValueType::Decimal(target),
                 )
             }
-            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
             ValueType::Float(_) | ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
                 return Err(ineligible(location))
             }
@@ -3552,7 +3548,6 @@ impl<'a> Typer<'a> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
-            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Population(_) => false,
@@ -4535,7 +4530,6 @@ fn holds_float(mut ty: &ValueType) -> bool {
             | ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Quantity(_)
-            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Text(_)

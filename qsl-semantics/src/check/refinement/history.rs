@@ -81,7 +81,6 @@ fn bounded(declared: &ValueType) -> bool {
         ValueType::Integer
         | ValueType::Float(_)
         | ValueType::Quantity(_)
-        | ValueType::CarriedQuantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
         | ValueType::String

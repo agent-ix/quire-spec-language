@@ -1535,7 +1535,6 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
-            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Enum(_)
@@ -1605,7 +1604,6 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
-                    | ValueType::CarriedQuantity(_)
                     | ValueType::BoundedQuantity(_)
                     | ValueType::CarriedQuantity(_)
                     | ValueType::String
@@ -5672,9 +5670,7 @@ impl<'a> Lowering<'a> {
                 });
             }
             ValueType::Enum(_) => "enum",
-            ValueType::Quantity(_)
-            | ValueType::CarriedQuantity(_)
-            | ValueType::BoundedQuantity(_) => "quantity",
+            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => "quantity",
             ValueType::Reference(_) => "reference",
             // QSpec FR-149 states no map equality relation. FR-497-AC-2: the
             // checker refuses a carried quantity `=` operand before lowering.

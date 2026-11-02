@@ -327,26 +327,6 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                 out.write_str("quantity");
                 encode_quantity_unit(out, unit.clone());
             }
-            ValueType::CarriedQuantity(carried) => {
-                out.write_str("carried-quantity");
-                encode_quantity_unit(out, carried.unit().clone());
-                match carried.carrier() {
-                    quire_exact::QuantityCarrier::Decimal(decimal) => {
-                        out.write_str("decimal");
-                        out.write_str(&decimal.lower().to_string());
-                        out.write_str(&decimal.upper().to_string());
-                        out.write_u64(u64::from(decimal.min_scale()));
-                        out.write_u64(u64::from(decimal.max_scale()));
-                        out.write_str(rounding_mode_tag(decimal.rounding()));
-                    }
-                    quire_exact::QuantityCarrier::Integer { domain, rounding } => {
-                        out.write_str("integer");
-                        out.write_str(&domain.lower().to_string());
-                        out.write_str(&domain.upper().to_string());
-                        out.write_str(rounding_mode_tag(*rounding));
-                    }
-                }
-            }
             ValueType::BoundedQuantity(bounded) => {
                 out.write_str("bounded-quantity");
                 encode_quantity_unit(out, bounded.unit().clone());
@@ -1005,7 +985,6 @@ fn is_package_independent(value_type: &ValueType) -> bool {
             ValueType::Collection(collection) => current = collection.element(),
             ValueType::Map(map) => current = map.values(),
             ValueType::Quantity(_)
-            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Enum(_)

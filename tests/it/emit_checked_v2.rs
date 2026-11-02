@@ -440,6 +440,7 @@ fn encode(read: &CheckedPackageV2) -> Vec<u8> {
         CheckedPackageSidecarsRef {
             checked_term_data: None,
             temporal_bindings: None,
+            schedulability_claims: None,
             operation_effects: operation_effects.as_deref(),
         },
         read.capability_report(),

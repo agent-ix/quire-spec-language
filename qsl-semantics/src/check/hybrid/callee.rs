@@ -31,7 +31,6 @@ pub(super) fn kind_of(declared: &ValueType) -> Option<Kind> {
         | ValueType::Decimal(_)
         | ValueType::Float(_) => Some(Kind::Real),
         ValueType::Quantity(_)
-        | ValueType::CarriedQuantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)

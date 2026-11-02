@@ -495,7 +495,6 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Collection(_)
         | ValueType::Map(_)
         | ValueType::Float(_)
-        | ValueType::CarriedQuantity(_)
         | ValueType::Population(_)
         // The native scalar families (`quire.op.string.*`, `.uuid.*`,
         // `.timestamp.*`) are not claim families (`SCALAR_FAMILIES`): their

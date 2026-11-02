@@ -117,7 +117,6 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
-        | ValueType::CarriedQuantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
         | ValueType::Text(_)

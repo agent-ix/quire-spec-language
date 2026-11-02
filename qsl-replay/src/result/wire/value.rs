@@ -817,7 +817,6 @@ impl TypeLeafWire {
             },
             ValueType::Option(_)
             | ValueType::Collection(_)
-            | ValueType::CarriedQuantity(_)
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
             | ValueType::Map(_)

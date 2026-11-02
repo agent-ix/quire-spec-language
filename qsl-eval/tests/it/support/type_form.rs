@@ -123,12 +123,6 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
         ValueType::String | ValueType::Uuid | ValueType::Timestamp => panic!(
             "type_form: {value_type:?} has no QSL source type spelling in this profile"
         ),
-        ValueType::BoundedQuantity(_) | ValueType::Map(_) => {
-            panic!("type_form: {value_type:?} has no declared-type syntax in this profile")
-        }
-        ValueType::String | ValueType::Uuid | ValueType::Timestamp => {
-            panic!("type_form: {value_type:?} has no QSL source type spelling in this profile")
-        }
     }
 }
 

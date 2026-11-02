@@ -603,7 +603,6 @@ fn reachable_composites(
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Quantity(_)
-            | ValueType::CarriedQuantity(_)
             // A bounded quantity is a quantity leaf and names no composite.
             | ValueType::BoundedQuantity(_)
             | ValueType::CarriedQuantity(_)
