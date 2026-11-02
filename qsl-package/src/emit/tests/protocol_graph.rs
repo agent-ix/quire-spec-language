@@ -1037,7 +1037,8 @@ fn checked_protocols_with_budget(
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n{PROFILES}\
-         model M = \"acme/orders\";\n{protocols}"
+         model M = \"acme/orders\";\n\
+         function baseline using v(): Boolean pure {{ true }}\n{protocols}"
     );
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
@@ -1401,9 +1402,11 @@ fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
         "parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, b];",
     );
     let renamed = |name: &str| protocol.replace("Flow", name);
+    let empty_budget = minimum_protocol_work_budget("");
     let one_budget = minimum_protocol_work_budget(&protocol);
+    let protocol_work = one_budget - empty_budget;
     let three = format!("{}\n{}\n{}", protocol, renamed("Flaw"), renamed("Flew"));
-    let exact = checked_protocols_with_budget(&three, one_budget)
+    let exact = checked_protocols_with_budget(&three, empty_budget + protocol_work)
         .expect("the work limit is scoped to its protocols");
     let exact = emit_checked_with_protocol_results(&CheckedPackage::link(exact))
         .expect("the first protocol's nodes are retained");
@@ -1427,7 +1430,7 @@ fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
     ));
 
     let reversed = format!("{}\n{}\n{}", renamed("Flaw"), protocol, renamed("Flew"));
-    let reversed = checked_protocols_with_budget(&reversed, one_budget)
+    let reversed = checked_protocols_with_budget(&reversed, empty_budget + protocol_work)
         .expect("reordered protocol checks complete as individual results");
     let reversed = emit_checked_with_protocol_results(&CheckedPackage::link(reversed))
         .expect("the first protocol's nodes are retained");
@@ -1440,7 +1443,7 @@ fn protocol_results_mark_only_budget_exhaustion_incomplete_in_source_order() {
         ] if declaration == "Flaw" && second == "Flow" && third == "Flew"
     ));
 
-    let sufficient = checked_protocols_with_budget(&three, 3 * one_budget)
+    let sufficient = checked_protocols_with_budget(&three, empty_budget + 3 * protocol_work)
         .expect("three equal protocols fit three times the measured work");
     let sufficient = emit_checked_with_protocol_results(&CheckedPackage::link(sufficient))
         .expect("all protocol results are emitted");
