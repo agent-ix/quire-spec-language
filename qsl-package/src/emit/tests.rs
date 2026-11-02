@@ -1653,6 +1653,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::MissingDispatchIdentityContext { .. }) => {
                 panic!("every dispatched call retains its exact producer decision")
             }
+            Err(EmitRefusal::ForeignDimensionOperand { .. }) => {
+                panic!("the fixture set declares no cross-package dimension equivalence")
+            }
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
@@ -3997,4 +4000,42 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
     )
     .expect("the root links");
     assert!(unemitted.remembered_emission().is_some());
+}
+
+/// QSL-1448: a dimension equivalence operand from another package is not
+/// minted as a Local id (FR-322-AC-299); a same-package pair is.
+#[ix_trace_rs::trace("QSL-1448", "FR-322-AC-299")]
+#[test]
+fn dimension_equivalence_refuses_a_foreign_package_operand_and_keeps_local_ones() {
+    use qsl_semantics::value::nominal_payload::{DimensionEquivalencePayload, NominalPayload};
+    use quire_exact::{Integer, Rational};
+
+    let key = |package: &str, name: &str| {
+        NodeKey::new(package, vec![PathSegment::Text(name.to_owned())], 0)
+            .expect("a fixture dimension has a structural declaration key")
+    };
+    let scale = || Rational::from_integer(Integer::one());
+    let equivalence = key("pkg", "equivalence");
+    let ids = StructuralIds::default();
+
+    let foreign = NominalPayload::DimensionEquivalence(DimensionEquivalencePayload::new(
+        [key("pkg", "Time"), key("other", "Time")],
+        scale(),
+    ));
+    match nominal_term(&ids, &equivalence, &foreign) {
+        Err(EmitRefusal::ForeignDimensionOperand { node, operand }) => {
+            assert_eq!(node.package.as_ref(), "pkg");
+            assert_eq!(operand.package.as_ref(), "other");
+        }
+        other => panic!("a foreign dimension operand must refuse, got {other:?}"),
+    }
+
+    let local = NominalPayload::DimensionEquivalence(DimensionEquivalencePayload::new(
+        [key("pkg", "Length"), key("pkg", "Time")],
+        scale(),
+    ));
+    assert!(
+        nominal_term(&ids, &equivalence, &local).is_ok(),
+        "same-package operands stay Local"
+    );
 }

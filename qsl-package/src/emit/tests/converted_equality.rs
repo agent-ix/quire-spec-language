@@ -1574,3 +1574,32 @@ fn the_host_conversion_sources_lower_a_convert_and_read_back_verified() {
         );
     }
 }
+
+/// QSL-1448: equality fact rows are omitted only for a key of another
+/// package; a package-local key without an emitted node still refuses.
+#[ix_trace_rs::trace("QSL-1448", "IR-FR-353")]
+#[test]
+fn equality_fact_witness_rows_omit_only_foreign_package_keys() {
+    let graph = checked_graph(
+        "dimension Length; unit m : Length = rational(1, 1);\n\
+         function quantity using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
+    );
+    let emission = emit_checked(&CheckedPackage::link(checked_graph(
+        "dimension Length; unit m : Length = rational(1, 1);\n\
+         function quantity using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
+    )))
+    .expect("valid producer emits");
+    let rows = emission.equality_producer_identity_rows();
+    assert!(!rows.is_empty());
+    let emitted = emission.equality_fact_witness_rows().len();
+    assert!(emitted > 0, "the local producer yields fact rows");
+    // Every row key is package-local, so none may be silently omitted.
+    assert!(emission
+        .equality_fact_witness_rows()
+        .iter()
+        .all(|row| row.structural_key().package() == rows[0].application().package()));
+    assert!(matches!(
+        equality_fact_witness_rows(&graph, &HashMap::new(), &[], rows),
+        Err(EmitRefusal::MissingEqualityIdentityContext { .. })
+    ));
+}
