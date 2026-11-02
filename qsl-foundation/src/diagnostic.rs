@@ -703,7 +703,7 @@ pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -723,6 +723,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("ambiguous_dispatch", Category::Refusal),
     ("cardinality_out_of_bound", Category::Refusal),
     ("inexact_decimal", Category::Refusal),
+    ("inexact_conversion", Category::Refusal),
     ("decimal_out_of_domain", Category::Refusal),
     ("division_out_of_domain", Category::Refusal),
     ("modulo_out_of_domain", Category::Refusal),

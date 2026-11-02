@@ -4141,6 +4141,33 @@ mod locus_tests {
         ))
     }
 
+    /// A carried quantity is its own type: its tag differs from a bounded
+    /// quantity's, and the carrier is part of its identity (FR-497).
+    #[test]
+    fn a_carried_quantity_is_encoded_with_its_unit_and_carrier() {
+        let carried = |domain: quire_exact::IntegerInterval| {
+            ValueType::CarriedQuantity(std::sync::Arc::new(quire_exact::CarriedQuantityType::new(
+                metre(),
+                quire_exact::QuantityCarrier::Integer {
+                    domain,
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            )))
+        };
+        let interval = |low: i64, high: i64| {
+            quire_exact::IntegerInterval::spanning(
+                quire_exact::Integer::from(low),
+                quire_exact::Integer::from(high),
+            )
+        };
+        let small = measured(&carried(interval(-2, 2)));
+        let wide = measured(&carried(interval(-200, 2000)));
+        assert_ne!(small, measured(&bounded(None, None)));
+        assert_ne!(small, measured(&ValueType::Quantity(metre())));
+        assert_eq!(small, measured(&carried(interval(-2, 2))));
+        assert!(wide.1 > small.1, "a wider carrier writes more bytes");
+    }
+
     /// A bounded quantity is its own type, not a `Quantity` (quire-exact
     /// FR-387): its tag is longer, and each bound adds its presence tag and
     /// magnitude. No QSL criterion governs the declaration-size figure of

@@ -350,3 +350,40 @@ impl StateLayout {
         agreements
     }
 }
+
+#[cfg(test)]
+mod carried_quantity_tests {
+    use super::sort_of;
+    use ix_trace_rs::trace;
+
+    fn carried() -> quire_exact::ValueType {
+        let unit = quire_exact::UnitId::declared(
+            quire_exact::NodeKey::new(
+                "fixture",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                5,
+            )
+            .expect("a key"),
+        );
+        let domain = quire_exact::IntegerInterval::spanning(
+            quire_exact::Integer::from(-2_i64),
+            quire_exact::Integer::from(2_i64),
+        );
+        quire_exact::ValueType::CarriedQuantity(std::sync::Arc::new(
+            quire_exact::CarriedQuantityType::new(
+                unit,
+                quire_exact::QuantityCarrier::Integer {
+                    domain,
+                    rounding: quire_exact::RoundingMode::Exact,
+                },
+            ),
+        ))
+    }
+
+    /// FR-497: a carried quantity has no SMT sort; the layout names it.
+    #[trace("FR-497-AC-2")]
+    #[test]
+    fn a_carried_quantity_has_no_sort() {
+        assert_eq!(sort_of(&carried()).err(), Some("a CarriedQuantity"));
+    }
+}

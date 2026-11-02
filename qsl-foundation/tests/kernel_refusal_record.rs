@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::diagnostic::{kernel_refusal_record, Locus};
+use qsl_foundation::diagnostic::{catalog_category, category_of, kernel_refusal_record, Locus};
 use quire_exact::{
     DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval,
     Location, NodeKey, Origin, PathSegment, RationalDomain, Refusal, RoundingMode, TextProfile,
@@ -175,6 +175,18 @@ fn an_inexact_conversion_renders_its_carrier_type() {
         ),
         expected("Int[-2, 2]")
     );
+    // The code is in the catalog as a refusal, so it exits 20 like the other
+    // value refusals and the wire reader accepts its spelling.
+    let refusal = Refusal::InexactConversion {
+        target: InexactTarget::Integer(interval(-2, 2)),
+    };
+    let built = kernel_refusal_record(&refusal, Some(locus())).expect("a record");
+    assert_eq!(category_of(&built.code()), Some(Category::Refusal));
+    assert_eq!(
+        catalog_category("inexact_conversion"),
+        Some(Category::Refusal)
+    );
+    assert_eq!(Category::Refusal.exit_code(), 20);
 }
 
 /// FR-096-AC-8: the IEEE refusals render widths and the flag set in

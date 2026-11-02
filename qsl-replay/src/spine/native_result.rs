@@ -914,6 +914,7 @@ fn kernel_fields(code: &str) -> Option<&'static [&'static str]> {
         "cardinality_out_of_bound" => Some(&["collection", "bound", "count"]),
         "foreign_reference" => Some(&["required", "supplied"]),
         "inexact_decimal"
+        | "inexact_conversion"
         | "decimal_out_of_domain"
         | "division_out_of_domain"
         | "modulo_out_of_domain"
@@ -933,6 +934,7 @@ fn kernel_causes(code: &str) -> Option<&'static [&'static str]> {
         "cardinality_out_of_bound" => Some(&["above-maximum", "below-minimum"]),
         "foreign_reference" => Some(&["foreign-universe"]),
         "inexact_decimal" => Some(&["nonzero-discarded-digit"]),
+        "inexact_conversion" => Some(&["inexact-conversion"]),
         "division_out_of_domain" => Some(&["quotient-outside-domain", "remainder-outside-domain"]),
         "ieee_not_exact" => Some(&["rounding-required"]),
         "ieee_nan_payload_not_representable" => Some(&["payload-exceeds-target"]),

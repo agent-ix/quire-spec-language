@@ -3012,6 +3012,7 @@ impl<'a> Typer<'a> {
                 let unit_id = match value_type {
                     ValueType::Quantity(unit) => Some(unit.clone()),
                     ValueType::BoundedQuantity(quantity) => Some(quantity.unit().clone()),
+                    ValueType::CarriedQuantity(quantity) => Some(quantity.unit().clone()),
                     _ => None,
                 };
                 if let Some(unit_id) = unit_id {
