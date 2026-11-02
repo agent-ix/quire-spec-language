@@ -12,7 +12,10 @@ relationships:
 
 Verify that S6a refuses a slot that names no expression, a supply that is not
 exactly the slot's sources, and a value that does not fit its binder, each with
-one record and with nothing charged. Scope: FR-390-AC-3 to FR-390-AC-6.
+one record and with nothing charged. Scope: FR-390-AC-3 to FR-390-AC-6. Rows
+23–25 additionally exercise reference admission after emission and strict
+contract-reader read-back; they do not evaluate the original in-process
+`CheckedPackage`.
 
 Catches a crossed node or member that evaluates a neighbour, a missing source
 that evaluates as false or zero, a supplied value the expression does not read
@@ -52,6 +55,9 @@ counters are as they were before the call.
 | 20 | the slot `Refunds.captures[0]` with the observation marking `nodes` incomplete | `Incomplete`: `incomplete_population`/`incomplete-scope`, naming `nodes` |
 | 21 | the slot `Refunds.captures[0]` with an observation that is a snapshot of another model | FR-106's `invalid_model_binding`/`wrong-model-selection` |
 | 22 | the unchanged base call after rows 1 to 21 on the same meter | evaluates: true, and the meter holds only this call's charges |
+| 23 | Emit fixture E as checked-package-v2, strictly read it, admit its observation for selected model `M`, then evaluate `Refunds.captures[0]` from the reader's retained package/view with `view = n5`; the root reference path `[]` names `M::nodes` | `Evaluated` value 5. The call uses the reader-backed view and the same admitted observation; it does not fall back to fixture E's in-process `CheckedPackage`. |
+| 24 | From the same reader-backed setup, supply `view = ghost`, a reference in `M::Node`'s universe, with root path `[]` naming `M::nodes`; `nodes` is complete and does not contain `ghost` | `Refused`, `dangling_reference`/`absent-target-in-complete-population`, at binder `view`; the record identifies `ghost` and `M::nodes`; no `Evaluation` is returned and all meter counters stay unchanged. |
+| 25 | From the same reader-backed setup, supply `view` as a `Node` reference whose universe belongs to a separately admitted foreign model, with root path `[]` and the selected package's `M::nodes` declaration | `Refused`, `foreign_reference`/`foreign-universe`, at binder `view`; the record retains the existing FR-106/FR-390 refusal details; no `Evaluation` is returned and all meter counters stay unchanged. |
 
 ## Expected Results
 
@@ -61,4 +67,12 @@ duplicates, then keys the expression does not read (the forward binder at a
 retry, another template's binder), then missing sources, in that order and in
 ascending level. A value is checked against its binder's type, and a reference
 against the observation. No refusal charges the meter, so the call that follows
-evaluates with the full budget.
+evaluates with the full budget. For rows 23–25, emission and strict reading
+must succeed before the supplied-reference cases begin. The evaluated call
+uses the trusted reader's retained package/view, and the observation is FR-106
+admitted for that same selected model. Each root-reference occurrence carries
+its exact path `[]` and the `M::nodes` declaration; the foreign-universe row
+changes the supplied reference's universe, not the selected package or
+population attribution. The positive case proves a valid reader-backed
+reference still evaluates; the two negative cases assert the exact refusal
+catalog code, cause, binder locus and zero-charge boundary.
