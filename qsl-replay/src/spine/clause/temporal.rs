@@ -323,6 +323,7 @@ pub(super) fn run_temporal(
             &mut meter,
         ),
     };
+    let pending_activation = observed.pending_activation;
     let disposition = match (observed.stopped, observed.result) {
         // A condition's refusal is reported as FR-109 reports a state
         // clause's (`convert_outcome`); a failed call as `check_clause` does.
@@ -341,7 +342,9 @@ pub(super) fn run_temporal(
         },
         (None, Ok(outcome)) => {
             let verdict = match trace {
-                TraceInput::Timestamped(input) => finite_window_verdict(outcome, input, clause),
+                TraceInput::Timestamped(input) => {
+                    finite_window_verdict(outcome, input, clause, pending_activation)
+                }
                 TraceInput::Finite(_) | TraceInput::Lasso { .. } => verdict(outcome),
             };
             ClauseDisposition::Temporal(verdict)
@@ -356,6 +359,7 @@ fn finite_window_verdict(
     outcome: TemporalOutcome,
     input: &TimestampedTraceInput,
     clause: &qsl_semantics::check::CheckedTemporalClause,
+    pending_activation: Option<(qsl_eval::temporal::TemporalPosition, Rational)>,
 ) -> TemporalVerdict {
     let stamps = input
         .positions
@@ -367,15 +371,19 @@ fn finite_window_verdict(
     };
     let uncertainty = input.uncertainty.checked_mul(2).unwrap_or_default();
     let margin = Rational::from_integer(Integer::from(uncertainty));
-    let deadline = qsl_eval::temporal::finite_window_deadline(
-        clause,
-        &trace,
-        qsl_eval::temporal::TemporalPosition::new(0),
-        &margin,
-    )
-    .ok()
-    .and_then(|value| value.numerator().to_u64())
-    .unwrap_or(u64::MAX);
+    let (position, deadline) = pending_activation.unwrap_or_else(|| {
+        let deadline = qsl_eval::temporal::finite_window_deadline(
+            clause,
+            &trace,
+            qsl_eval::temporal::TemporalPosition::new(0),
+            &margin,
+        )
+        .ok()
+        .and_then(|value| value.numerator().to_u64())
+        .unwrap_or(u64::MAX);
+        (qsl_eval::temporal::TemporalPosition::new(0), deadline)
+    });
+    let position = position.index();
     match outcome {
         TemporalOutcome::Pending if input.watermark >= deadline => {
             if input
@@ -383,16 +391,22 @@ fn finite_window_verdict(
                 .is_none_or(|through| through < deadline)
             {
                 TemporalVerdict::Indeterminate {
-                    at: 0,
+                    at: position,
                     reason: TemporalIndeterminateReason::IncompleteInput,
                 }
             } else {
-                TemporalVerdict::PendingWindow { at: 0, deadline }
+                TemporalVerdict::PendingWindow {
+                    at: position,
+                    deadline,
+                }
             }
         }
-        TemporalOutcome::Pending => TemporalVerdict::PendingWindow { at: 0, deadline },
+        TemporalOutcome::Pending => TemporalVerdict::PendingWindow {
+            at: position,
+            deadline,
+        },
         TemporalOutcome::Undefined(undefined) => TemporalVerdict::Indeterminate {
-            at: 0,
+            at: position,
             reason: TemporalIndeterminateReason::MissingValuation {
                 position: undefined.at.index(),
                 atom: format!("holds-node@{}", undefined.at.index()),

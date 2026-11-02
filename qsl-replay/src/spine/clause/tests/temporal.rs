@@ -55,6 +55,8 @@ enum Unit {
     TimestampedLaterEventually,
     /// Timestamped finite-window `[2,3]` universal.
     TimestampedLaterAlways,
+    /// Timestamped finite-window `on each` property.
+    TimestampedEach,
 }
 
 impl Unit {
@@ -72,6 +74,9 @@ impl Unit {
             | Self::TimestampedTwo
             | Self::TimestampedLaterEventually
             | Self::TimestampedLaterAlways => {
+                "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
+            }
+            Self::TimestampedEach => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
         }
@@ -123,6 +128,10 @@ impl Unit {
             Self::TimestampedLaterAlways => {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { always[2,3] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedEach => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on each (q: Counters::Counter) { eventually[0,2] holds(c.value > 0) }\n"
             }
         }
     }
@@ -1296,6 +1305,33 @@ fn timestamped_windows_pending_and_decisive_witnesses() {
         }
     );
     assert_eq!(incomplete.category_label(), "indeterminate");
+
+    let on_each_false_then_pending = report(timestamped_with(
+        Unit::TimestampedEach,
+        &[0, 10],
+        &[0, 0],
+        10,
+        Some(10),
+    ));
+    assert_eq!(
+        outcome(&on_each_false_then_pending),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+
+    let on_each_pending = report(timestamped_with(
+        Unit::TimestampedEach,
+        &[0, 10],
+        &[1, 0],
+        10,
+        Some(10),
+    ));
+    assert_eq!(
+        outcome(&on_each_pending),
+        &TemporalVerdict::PendingWindow {
+            at: 1,
+            deadline: 12,
+        }
+    );
 }
 
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace
