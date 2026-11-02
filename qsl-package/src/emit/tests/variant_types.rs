@@ -448,16 +448,29 @@ fn model_enum_equality_emits_exact_member_identities() {
 
 /// FR-360-AC-8: a unit naming only a variant type with identifier cases emits
 /// its model enum; IR admits the carrier and the accessor reports the exact
-/// enum-member witness it still needs.
+/// enum-member witness it still needs. The selected document declares
+/// `Account`'s operations, so the checked package carries their
+/// `operation_effects` rows (QSpec FR-322-AC-303) and retains the document's
+/// complete declaration view: every variant type it declares is one
+/// model-owned node, not only the `Tier` the unit names.
 #[trace("FR-360-AC-8", "TC-1009")]
 #[test]
 fn an_identifier_cased_variant_type_emits_and_reports_enum_member_witness() {
     let emitted = emit_unit(TIER_UNIT);
+    let mut declared: Vec<&str> = node_where(&emitted.wire, "model", "variant_type")
+        .into_iter()
+        .map(|node| node["owner"]["node"].as_str().unwrap())
+        .collect();
+    declared.sort_unstable();
+    let expected: Vec<String> = ["Grade", "Level", "Odd", "Tier"]
+        .into_iter()
+        .map(fixture::id)
+        .collect();
     assert_eq!(
-        node_where(&emitted.wire, "model", "variant_type").len(),
-        1,
-        "Tier is the one variant type the unit names"
+        declared, expected,
+        "one variant_type node per variant type the document declares"
     );
+    assert!(emitted.wire["operation_effects"].is_array());
     assert_enum_equality_reader_outcomes(&emitted);
 }
 
