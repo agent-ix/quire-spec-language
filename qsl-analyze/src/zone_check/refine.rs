@@ -815,10 +815,10 @@ impl Product<'_, '_> {
     ) -> Result<Judgement<S>, Halt> {
         Ok(match verdict {
             StepVerdict::Passes { post, taken } => {
-                Judgement::Passes(self.intern(post, run)?, taken)
+                Judgement::Passes(self.intern(*post, run)?, *taken)
             }
             StepVerdict::Fails(failure) => {
-                Judgement::Fails(Box::new((failure, CounterexampleKind::Formula)))
+                Judgement::Fails(Box::new((*failure, CounterexampleKind::Formula)))
             }
             StepVerdict::Undefined(evaluation) => {
                 let qsl_replay::UndefinedLocus::Mapping(site) = &evaluation.site.locus else {
