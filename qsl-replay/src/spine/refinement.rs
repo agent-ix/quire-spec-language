@@ -341,6 +341,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::SumCase(_)
         | CheckCause::UnprovedDecrease { .. }
         | CheckCause::IeeeProfileNotAdmitted
+        | CheckCause::ReservedIntrinsicConflict(_)
         | CheckCause::UnrepresentableBound
         | CheckCause::DefinitionCycle { .. }
         | CheckCause::InvalidDispatchDeclaration(_)

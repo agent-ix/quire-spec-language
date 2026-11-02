@@ -3981,7 +3981,7 @@ impl<'a> Lowering<'a> {
                 let identity = format!("quire.op.ieee.{width}.sqrt");
                 (
                     Keyed::Application(
-                        Operator::Unary,
+                        Operator::Call,
                         Operation {
                             laws: vec![law],
                             mode: Some(OperationMode::Rounding(*rounding)),
@@ -4014,7 +4014,7 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::IeeeTotalOrder(_, left, right) => (
                 Keyed::Application(
-                    Operator::Binary,
+                    Operator::Call,
                     Operation {
                         laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
                         ..plain("quire.op.ieee.total_order")
@@ -4024,7 +4024,7 @@ impl<'a> Lowering<'a> {
             ),
             NodeKind::IeeeBitIdentical(left, right) => (
                 Keyed::Application(
-                    Operator::Binary,
+                    Operator::Call,
                     Operation {
                         laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
                         ..plain("quire.op.ieee.bit_identical")
@@ -4101,7 +4101,7 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::IeeeNumericEquality(left, right) => (
                 Keyed::Application(
-                    Operator::Binary,
+                    Operator::Call,
                     Operation {
                         laws: vec![self.law(LawRole::IeeeProfile, node.location())?],
                         ..plain("quire.op.ieee.numeric_equal")

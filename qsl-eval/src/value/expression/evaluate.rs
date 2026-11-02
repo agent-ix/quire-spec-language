@@ -1623,11 +1623,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Short(node) => {
-                let NodeKind::Connective(connective, _, right) = node.kind() else {
+                let NodeKind::Connective(connective, left_node, right) = node.kind() else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
                 let left = self.pop_boolean()?;
-                self.decide(node, left);
+                // A connective the checker synthesized (a float ordering's
+                // composition) sits at its operands' own location; only an
+                // authored one has a decision (FR-265).
+                if node.at(*left_node).location() != node.location() {
+                    self.decide(node, left);
+                }
                 let skipped = match connective {
                     Connective::And => (!left).then_some(false),
                     Connective::Or => left.then_some(true),

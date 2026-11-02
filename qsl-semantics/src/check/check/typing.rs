@@ -495,6 +495,14 @@ impl<'r> Callee<'r> {
         }
     }
 
+    /// The expected type of an IEEE intrinsic's next argument.
+    fn intrinsic_hint(&self, siblings: &[ValueType]) -> Option<Option<ValueType>> {
+        match self {
+            Self::Value(application) => application.intrinsic_hint(siblings),
+            Self::Union(_) => None,
+        }
+    }
+
     /// The node over its checked `arguments`.
     fn finish(
         self,
@@ -514,6 +522,11 @@ struct ApplicationFrame<'e, 'r> {
     application: Callee<'r>,
     arguments: Vec<ExprRef<'e>>,
     location: Location,
+    /// The source index of each argument in the order they are checked: an
+    /// IEEE intrinsic checks its contextual constants after the operands
+    /// that type them.
+    order: Vec<usize>,
+    /// Checked in `order`.
     typed: Vec<NodeId>,
     argument_types: Vec<ValueType>,
 }
@@ -1411,13 +1424,20 @@ impl<'a> Typer<'a> {
                         }
                         ResolvedTarget::Value(application) => Callee::Value(application),
                     };
+                    let arguments: Vec<_> = arguments.iter().map(|id| expression.at(*id)).collect();
+                    let count = arguments.len();
+                    let mut order: Vec<usize> = (0..count).collect();
+                    if application.intrinsic_hint(&[]).is_some() {
+                        order.sort_by_key(|index| contextual(arguments[*index]));
+                    }
                     return Self::application(
                         Box::new(ApplicationFrame {
                             application,
-                            arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
+                            arguments,
+                            order,
                             location,
-                            typed: Vec::with_capacity(arguments.len()),
-                            argument_types: Vec::with_capacity(arguments.len()),
+                            typed: Vec::with_capacity(count),
+                            argument_types: Vec::with_capacity(count),
                         }),
                         frames,
                     );
@@ -1974,10 +1994,19 @@ impl<'a> Typer<'a> {
         frame: Box<ApplicationFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
-        let index = frame.typed.len();
-        match frame.arguments.get(index).copied() {
-            Some(argument) => {
+        let position = frame.typed.len();
+        match frame.order.get(position).copied() {
+            Some(index) => {
+                let argument = frame.arguments[index];
                 let location = frame.location.child(index);
+                if let Some(hint) = frame.application.intrinsic_hint(&frame.argument_types) {
+                    frames.push(Frame::Application(frame));
+                    return Ok(Step::Descend(Goal::Infer(
+                        argument,
+                        hint.map(Cow::Owned),
+                        location,
+                    )));
+                }
                 let expected = frame.application.parameter(index);
                 frames.push(Frame::Application(frame));
                 match expected {
@@ -1993,10 +2022,19 @@ impl<'a> Typer<'a> {
                 let ApplicationFrame {
                     application,
                     location,
+                    order,
                     typed,
                     argument_types,
                     ..
                 } = *frame;
+                // Back to source order.
+                let mut by_source: Vec<_> = order
+                    .into_iter()
+                    .zip(typed.into_iter().zip(argument_types))
+                    .collect();
+                by_source.sort_by_key(|(index, _)| *index);
+                let (typed, argument_types): (Vec<_>, Vec<_>) =
+                    by_source.into_iter().map(|(_, pair)| pair).unzip();
                 application
                     .finish(typed, argument_types, &location)
                     .map(Step::Typed)

@@ -2141,6 +2141,8 @@ enum AliasStep<'e> {
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
         ExprNode::Integer(_)
+        | ExprNode::Float32(_)
+        | ExprNode::Float64(_)
         | ExprNode::Rational(..)
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,

@@ -10,7 +10,7 @@ use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
 use quire_eval::FamilyOutcome;
-use quire_exact::{IeeeFlag, IeeeFlags, Meter, Outcome, ScalarLimits, Value};
+use quire_exact::{IeeeFlag, IeeeFlags, IeeeValue, LimitKind, Meter, Outcome, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::loss::ValueLoss;
 
@@ -388,5 +388,110 @@ fn each_ordering_operand_is_evaluated_exactly_once() {
             );
             assert_eq!(flags(&losses), [IeeeFlag::Invalid], "{body}");
         }
+    }
+}
+
+/// Compiles `function f using v(p: Float64[nearest-even], q: ..): <result>
+/// pure { <body> }` and evaluates it at `p` and `q` under `limits`, returning
+/// the outcome and the work and value-occurrence units it spent.
+fn spend(result: &str, body: &str, p: u64, q: u64, limits: ScalarLimits) -> (Outcome<Value>, u64) {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         function f using v(p: Float64[nearest-even], q: Float64[nearest-even]): {result} pure {{ {body} }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler admits the floating type");
+    declarations.ieee_profile =
+        Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
+    );
+    let mut meter = Meter::new(limits);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("f").expect("f is an identifier"),
+            vec![
+                Value::Float(IeeeValue::binary64(p)),
+                Value::Float(IeeeValue::binary64(q)),
+            ],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the call runs");
+    let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+        panic!("a kernel outcome, not {:?}", evaluation.outcome);
+    };
+    let spent = meter.consumed(LimitKind::WorkUnits);
+    (outcome, spent)
+}
+
+/// Trace: FR-397-AC-26
+#[trace("TC-1091", "FR-397-AC-26")]
+#[test]
+fn an_ordering_spends_each_operand_once_and_stops_at_its_limit() {
+    const FOUR: u64 = 0x4010_0000_0000_0000;
+    const NINE: u64 = 0x4022_0000_0000_0000;
+    const QNAN: u64 = 0x7ff8_0000_0000_0000;
+    let root = |operand: &str| format!("{IEEE}sqrt({operand})");
+    let at = |result, body: &str, p, q| spend(result, body, p, q, UNLIMITED);
+    let float = "Float64[nearest-even]";
+    let (_, p_alone) = at(float, "p", FOUR, NINE);
+    let (_, q_alone) = at(float, "q", FOUR, NINE);
+    let (_, sqrt_p) = at(float, &root("p"), FOUR, NINE);
+    let (_, sqrt_q) = at(float, &root("q"), FOUR, NINE);
+    for (operator, expected) in [("<", true), ("<=", true), (">", false), (">=", false)] {
+        let parameters = format!("p {operator} q");
+        let roots = format!("{} {operator} {}", root("p"), root("q"));
+        let (plain, plain_spend) = at("Boolean", &parameters, FOUR, NINE);
+        let (sqrt, sqrt_spend) = at("Boolean", &roots, FOUR, NINE);
+        assert!(matches!(plain, Outcome::Completed(Value::Boolean(value)) if value == expected));
+        assert!(matches!(sqrt, Outcome::Completed(Value::Boolean(value)) if value == expected));
+        assert_eq!(
+            sqrt_spend,
+            plain_spend + (sqrt_p - p_alone) + (sqrt_q - q_alone),
+            "{roots}: each operand is evaluated once"
+        );
+        let limited = |units: u64| {
+            let mut limits = UNLIMITED;
+            limits.work_units = units;
+            spend("Boolean", &roots, FOUR, NINE, limits).0
+        };
+        assert!(
+            matches!(limited(sqrt_spend), Outcome::Completed(Value::Boolean(value)) if value == expected),
+            "{roots}: completes at its spend"
+        );
+        assert!(
+            matches!(limited(sqrt_spend - 1), Outcome::Incomplete(..)),
+            "{roots}: incomplete one unit below its spend"
+        );
+        // A NaN operand: false, each operand once, no more spend than the
+        // ordered operands.
+        let (nan, nan_spend) = at("Boolean", &roots, QNAN, NINE);
+        assert!(
+            matches!(nan, Outcome::Completed(Value::Boolean(false))),
+            "{roots}: {nan:?}"
+        );
+        assert!(
+            nan_spend <= sqrt_spend,
+            "{roots}: {nan_spend} > {sqrt_spend}"
+        );
     }
 }

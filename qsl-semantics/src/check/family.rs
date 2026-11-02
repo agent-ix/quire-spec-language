@@ -1055,17 +1055,36 @@ impl<'a> Application<'a> {
         location: &CheckLocation,
     ) -> Result<Self, CheckRefusal> {
         if let Some(intrinsic) = IeeeIntrinsic::named(name) {
-            if arity != intrinsic.arity() {
-                return Err(CheckRefusal::ill_typed(
-                    location,
-                    IllTypedCause::TypeMismatch,
-                ));
+            // A supplied library never replaces an intrinsic: one that
+            // exports a declaration under the intrinsic's qualified
+            // identity makes the call refuse.
+            if typer.scope().imported_packages().any(|import| {
+                import.view.exports().any(|(export, _)| {
+                    export == name
+                        || name
+                            .strip_suffix(export)
+                            .and_then(|head| head.strip_suffix("::"))
+                            .is_some_and(|head| head == import.identity.as_str())
+                })
+            }) {
+                return Err(CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::ReservedIntrinsicConflict(name.to_owned()),
+                });
             }
+            // FR-397-AC-25: a unit without a float form refuses the profile
+            // before it types or counts the call's arguments.
             if typer.scope().ieee_profile.is_none() {
                 return Err(CheckRefusal {
                     location: location.clone(),
                     cause: CheckCause::IeeeProfileNotAdmitted,
                 });
+            }
+            if arity != intrinsic.arity() {
+                return Err(CheckRefusal::ill_typed(
+                    location,
+                    IllTypedCause::TypeMismatch,
+                ));
             }
             return Ok(Self::Ieee {
                 intrinsic,
@@ -1201,6 +1220,26 @@ impl<'a> Application<'a> {
                 .filter(|value_type| matches!(value_type, ValueType::Float(_)))
                 .cloned(),
         }
+    }
+
+    /// For an IEEE intrinsic, the expected type of the next argument
+    /// (FR-397 "Float constants"): the type of its sibling when that is a
+    /// float, else the expected type of the whole call when that is a
+    /// float. `None` for every other application, whose arguments are
+    /// checked against [`Self::parameter`].
+    pub(crate) fn intrinsic_hint(&self, siblings: &[ValueType]) -> Option<Option<ValueType>> {
+        let Self::Ieee { expected, .. } = self else {
+            return None;
+        };
+        Some(
+            siblings
+                .iter()
+                .find(|each| matches!(each, ValueType::Float(_)))
+                .or(expected
+                    .as_ref()
+                    .filter(|each| matches!(each, ValueType::Float(_))))
+                .cloned(),
+        )
     }
 
     /// The application node over its checked `arguments`.

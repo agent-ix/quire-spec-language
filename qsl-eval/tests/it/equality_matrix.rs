@@ -2594,6 +2594,58 @@ fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     );
 }
 
+/// The connectives under `node`: whether each sits at its left operand's own
+/// location (one the checker synthesized) or not (one the source wrote).
+fn connective_sites(node: qsl_semantics::check::CheckedNode<'_>, found: &mut Vec<bool>) {
+    use quire_checked::node::NodeKind;
+    match node.kind() {
+        NodeKind::Connective(_, left, right) => {
+            found.push(node.at(*left).location() == node.location());
+            connective_sites(node.at(*left), found);
+            connective_sites(node.at(*right), found);
+        }
+        NodeKind::Not(operand) => connective_sites(node.at(*operand), found),
+        NodeKind::Let { value, body, .. } => {
+            connective_sites(node.at(*value), found);
+            connective_sites(node.at(*body), found);
+        }
+        _ => {}
+    }
+}
+
+/// FR-265 records a decision for each authored `and`, `or`, `implies` and
+/// `if`; the connectives a float ordering lowers to sit at its own location,
+/// which is how the evaluator tells them from authored ones.
+#[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
+#[trace("TC-1091", "FR-397-AC-12")]
+#[test]
+fn a_float_ordering_adds_no_connective_a_decision_could_attach_to() {
+    let package = expression_package(TypeEnvironment::default(), true);
+    let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
+    let parameters = [("f", double.clone()), ("g", double)];
+    let checked = |expression: &Expression| {
+        check_in(&package, &parameters, expression, None, CheckMode::Kernel)
+            .expect("the expression checks")
+    };
+    for operator in [
+        BinaryOperator::Less,
+        BinaryOperator::LessOrEqual,
+        BinaryOperator::Greater,
+        BinaryOperator::GreaterOrEqual,
+    ] {
+        let ordering = operation(operator, "f", "g");
+        let mut sites = Vec::new();
+        connective_sites(checked(&ordering).root(), &mut sites);
+        assert!(!sites.is_empty() && sites.iter().all(|synthetic| *synthetic));
+        // Written inside an `and`, only the written connective is one a
+        // decision attaches to.
+        let both = Expression::binary(BinaryOperator::And, ordering.clone(), ordering);
+        let mut sites = Vec::new();
+        connective_sites(checked(&both).root(), &mut sites);
+        assert_eq!(sites.iter().filter(|synthetic| !**synthetic).count(), 1);
+    }
+}
+
 fn record(name: &str, fields: Vec<(&str, Expression)>) -> Expression {
     Expression::record(
         name.to_owned(),

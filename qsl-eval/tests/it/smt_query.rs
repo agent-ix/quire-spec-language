@@ -1025,6 +1025,38 @@ fn a_nonlinear_atom_is_refused_with_its_locus() {
     }
 }
 
+/// The IEEE relations and the float orderings built from them are outside
+/// `QF_LIA`: the query refuses, naming the construct, and writes no script.
+#[trace("TC-900", "FR-397-AC-12")]
+#[test]
+fn ieee_relations_and_float_orderings_are_refused_as_out_of_fragment() {
+    let one = "float64(bits: 0x3ff0000000000000)";
+    let two = "float64(bits: 0x4000000000000000)";
+    for (formula, expected) in [
+        (
+            format!("always holds(quire::value::ieee::totalOrder({one}, {two}))"),
+            "IEEE total order and bit identity are not in the scalar SMT subset",
+        ),
+        (
+            format!("always holds(quire::value::ieee::bitIdentical({one}, {two}))"),
+            "IEEE total order and bit identity are not in the scalar SMT subset",
+        ),
+        (
+            format!("always holds({one} < {two})"),
+            "IEEE numeric equality is not in the scalar SMT subset",
+        ),
+    ] {
+        let world = counter(INFINITE, &[formula.as_str()]);
+        match world.query(0, SmtQueryKind::Unrolling { depth: 1 }) {
+            Err(SmtEncodingRefusal::Refused(Refusal::OutOfFragment { form, locus })) => {
+                assert_eq!(form, expected, "{formula}");
+                assert_eq!(locus.clause, "C0");
+            }
+            other => panic!("{formula}: expected a refusal, got {other:?}"),
+        }
+    }
+}
+
 /// Items and kinds the proof queries do not cover refuse without a script.
 #[trace("TC-900")]
 #[test]

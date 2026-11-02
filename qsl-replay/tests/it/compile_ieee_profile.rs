@@ -170,6 +170,7 @@ fn strict_ir_reader_admits_fma_relations_and_float_orderings() {
             format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::totalOrder(a, b) }}"),
             format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::bitIdentical(a, b) }}"),
             format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::numericEqual(a, b) }}"),
+            format!("{HEADER}function root using v(a: {ty}): {ty} pure {{ quire::value::ieee::sqrt(a) }}"),
             format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ a < b }}"),
             format!("{HEADER}function f using v(a: {ty}, b: {ty}): Boolean pure {{ a >= b }}"),
             format!("{HEADER}function f using v(a: {ty}, b: {ty}, c: {ty}): Boolean pure {{ quire::value::ieee::fma(a, b, c) > a }}"),
@@ -197,7 +198,10 @@ fn strict_ir_reader_admits_fma_relations_and_float_orderings() {
         }
         let wire = wire(&format!("{HEADER}function fused using v(a: {ty}, b: {ty}, c: {ty}): {ty} pure {{ quire::value::ieee::fma(a, b, c) }}"));
         let node = operation(&wire, &format!("quire.op.ieee.{width}.fma"));
-        assert_eq!(node["body"]["operation"]["identity"], format!("quire.op.ieee.{width}.fma"));
+        assert_eq!(
+            node["body"]["operation"]["identity"],
+            format!("quire.op.ieee.{width}.fma")
+        );
         assert_eq!(node["body"]["operator"], "call");
         assert_eq!(node["body"]["arguments"].as_array().unwrap().len(), 3);
     }
@@ -280,6 +284,10 @@ fn mixed_float_widths_and_exact_arithmetic_refuse_type_mismatch() {
     }
 }
 
+fn wire_of(text: &str) -> Value {
+    wire(text)
+}
+
 fn operations<'a>(wire: &'a Value, identity: &str) -> Vec<&'a Value> {
     wire["semantic_graph"]["nodes"]
         .as_array()
@@ -292,11 +300,7 @@ fn operations<'a>(wire: &'a Value, identity: &str) -> Vec<&'a Value> {
 #[trace("TC-1091", "FR-397-AC-7")]
 #[test]
 fn relation_intrinsics_lower_to_boolean_ieee_nodes_with_the_law_and_no_mode() {
-    for (width, ty) in [
-        ("float32", "Float32[nearest-even]"),
-        ("float64", "Float64[nearest-even]"),
-    ] {
-        let _ = width;
+    for ty in ["Float32[nearest-even]", "Float64[nearest-even]"] {
         for (intrinsic, identity) in [
             ("numericEqual", "quire.op.ieee.numeric_equal"),
             ("totalOrder", "quire.op.ieee.total_order"),
@@ -312,9 +316,15 @@ fn relation_intrinsics_lower_to_boolean_ieee_nodes_with_the_law_and_no_mode() {
                 "{identity}"
             );
             assert_eq!(nodes[0]["body"]["arguments"].as_array().unwrap().len(), 2);
-            let first = &nodes[0]["body"]["arguments"][0];
-            let second = &nodes[0]["body"]["arguments"][1];
-            assert_ne!(first, second, "{identity}: arguments are in call order");
+            // The arguments are the two parameters in call order: exchanging
+            // the call's operands exchanges the node's arguments.
+            let exchanged = wire_of(&format!("{HEADER}function call using v(a: {ty}, b: {ty}): Boolean pure {{ quire::value::ieee::{intrinsic}(b, a) }}"));
+            let swapped = operations(&exchanged, identity);
+            let arguments = nodes[0]["body"]["arguments"].as_array().unwrap();
+            let exchanged_arguments = swapped[0]["body"]["arguments"].as_array().unwrap();
+            assert_ne!(arguments[0], arguments[1], "{identity}");
+            assert_eq!(arguments[0], exchanged_arguments[1], "{identity}");
+            assert_eq!(arguments[1], exchanged_arguments[0], "{identity}");
         }
     }
 }
@@ -496,23 +506,154 @@ fn zero_argument_intrinsic_calls_are_refused_by_the_parser() {
     }
 }
 
+#[trace("TC-1091", "FR-397-AC-25")]
+#[test]
+fn profile_admission_precedes_intrinsic_arity_and_argument_typing() {
+    // No float form: the profile is not selected, so each call refuses
+    // `invalid_package`/`IeeeProfileNotAdmitted` before its count or its
+    // argument is typed.
+    for call in [
+        "quire::value::ieee::sqrt(i)",
+        "quire::value::ieee::sqrt(i, i)",
+        "quire::value::ieee::numericEqual(i)",
+    ] {
+        let source = format!(
+            "{HEADER}function call using v(i: Int[0, 10], a: Boolean): Boolean pure {{ {call} }}"
+        );
+        let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
+            panic!("expected a package refusal from {source}");
+        };
+        assert_eq!(refusal.code(), Code::InvalidPackage, "{call}: {refusal:?}");
+        let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+            panic!("{call}: the call refuses at checking");
+        };
+        assert!(
+            matches!(refusals[0].cause, CheckCause::IeeeProfileNotAdmitted),
+            "{call}: {:?}",
+            refusals[0].cause
+        );
+    }
+    // One float parameter selects the profile: the same calls are type
+    // mismatches.
+    for call in [
+        "quire::value::ieee::sqrt(i)",
+        "quire::value::ieee::sqrt(i, i)",
+    ] {
+        refusal(
+            &format!("{HEADER}function call using v(i: Int[0, 10], a: Boolean, f: Float64[nearest-even]): Boolean pure {{ {call} }}"),
+            Code::IllTyped,
+            "type-mismatch",
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-25")]
+#[test]
+fn zero_argument_sqrt_is_a_parse_refusal_with_and_without_a_float_form() {
+    for parameters in [
+        "i: Int[0, 10], a: Boolean",
+        "i: Int[0, 10], a: Boolean, f: Float64[nearest-even]",
+    ] {
+        let source = format!("{HEADER}function call using v({parameters}): Boolean pure {{ quire::value::ieee::sqrt() }}");
+        let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
+            panic!("expected a package refusal from {source}");
+        };
+        assert_eq!(refusal.code(), Code::InvalidSyntax, "{refusal:?}");
+        assert!(
+            format!("{refusal:?}").contains("UnexpectedToken"),
+            "{refusal:?}"
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-24", "FR-397-AC-7", "FR-397-AC-15")]
+#[test]
+fn bit_constructors_take_their_type_from_a_sibling_operand_in_every_intrinsic() {
+    for (width, ty) in [(32, "Float32[nearest-even]"), (64, "Float64[nearest-even]")] {
+        let zero = if width == 32 {
+            "float32(bits: 0x00000000)"
+        } else {
+            "float64(bits: 0x0000000000000000)"
+        };
+        let other = if width == 32 {
+            "float64(bits: 0x0000000000000000)"
+        } else {
+            "float32(bits: 0x00000000)"
+        };
+        let check = |result: &str, body: String| {
+            let source = format!("{HEADER}function f using v(a: {ty}): {result} pure {{ {body} }}");
+            wire(&source)
+        };
+        for intrinsic in ["numericEqual", "totalOrder", "bitIdentical"] {
+            check(
+                "Boolean",
+                format!("quire::value::ieee::{intrinsic}(a, {zero})"),
+            );
+            check(
+                "Boolean",
+                format!("quire::value::ieee::{intrinsic}({zero}, a)"),
+            );
+            refusal(
+                &format!("{HEADER}function f using v(a: {ty}): Boolean pure {{ quire::value::ieee::{intrinsic}(a, {other}) }}"),
+                Code::IllTyped,
+                "type-mismatch",
+            );
+        }
+        for body in [
+            format!("quire::value::ieee::fma(a, {zero}, {zero})"),
+            format!("quire::value::ieee::fma({zero}, a, {zero})"),
+            format!("quire::value::ieee::fma({zero}, {zero}, a)"),
+            format!("quire::value::ieee::sqrt({zero})"),
+        ] {
+            check(ty, body);
+        }
+        check("Boolean", format!("{zero} < a"));
+        check("Boolean", format!("a >= {zero}"));
+    }
+}
+
 #[trace("TC-1091", "FR-397-AC-16")]
 #[test]
-fn profile_admission_precedes_intrinsic_argument_typing() {
-    // No float is declared, so the IEEE profile is not selected and the
-    // call refuses before its argument is typed.
-    let source = format!("{HEADER}function call using v(i: Int[0, 10]): Boolean pure {{ quire::value::ieee::sqrt(i) }}");
-    let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
-        panic!("expected a package refusal from {source}");
-    };
-    assert_eq!(refusal.code(), Code::InvalidPackage, "{refusal:?}");
-    let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
-        panic!("the call refuses at checking");
-    };
-    assert!(matches!(
-        refusals[0].cause,
-        CheckCause::IeeeProfileNotAdmitted
-    ));
+fn a_supplied_library_never_replaces_an_ieee_intrinsic() {
+    let library_body = format!(
+        "{HEADER}function sqrt using v(a: Float64[nearest-even]): Float64[nearest-even] pure {{ a }}\n\
+         function fma using v(a: Float64[nearest-even]): Float64[nearest-even] pure {{ a }}\n"
+    );
+    let dependencies = DependencyInput::new(vec![qsl_replay::SuppliedLibrary {
+        identity: "quire::value::ieee".to_owned(),
+        source: SourceIdentity::new("a", "ieee-library", "git", "1"),
+        path: "ieee-library.native".to_owned(),
+        bytes: library_body.into_bytes(),
+    }])
+    .expect("an admissible dependency input");
+    for call in ["sqrt(a)", "fma(a, a, a)"] {
+        let unit = format!("{HEADER}import \"quire::value::ieee\" as q;\nfunction call using v(a: Float64[nearest-even]): Float64[nearest-even] pure {{ quire::value::ieee::{call} }}");
+        let Err(AdmittedRefusal::Package(refusal)) = compile_admitted(
+            qsl_replay::CompileUnit {
+                source: SourceIdentity::new("a", "ieee", "git", "1"),
+                package_name: "fixture".to_owned(),
+                path: "ieee.native",
+                bytes: unit.as_bytes(),
+            },
+            [],
+            &dependencies,
+            StageLimits::default(),
+            ReplayLimits::default(),
+        ) else {
+            panic!("{call}: the call must refuse");
+        };
+        assert_eq!(refusal.code(), Code::InvalidPackage, "{call}: {refusal:?}");
+        assert_eq!(
+            refusal.cause(),
+            Some("conflicting-definition"),
+            "{call}: {refusal:?}"
+        );
+        let identity = format!("quire::value::ieee::{}", call.split('(').next().unwrap());
+        assert!(
+            format!("{refusal:?}").contains(&identity),
+            "{call}: {refusal:?}"
+        );
+    }
 }
 
 #[trace("TC-1091", "FR-397-AC-24")]
@@ -724,4 +865,155 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
             );
         }
     }
+}
+
+/// The package of two functions-worth of parameters whose body applies `fma`
+/// at both widths and compares an integer, so a wire node of each operand
+/// type exists to be referenced.
+fn fma_base_wire() -> Value {
+    let ty = "Float64[nearest-even]";
+    let single = "Float32[nearest-even]";
+    wire(&format!("{HEADER}function f using v(a: {ty}, b: {ty}, c: {ty}, s: {single}, t: {single}, u: {single}, i: Int[0, 10]): Boolean pure {{ quire::value::ieee::fma(a, b, c) = quire::value::ieee::fma(a, b, c) and quire::value::ieee::fma(s, t, u) = quire::value::ieee::fma(s, t, u) and i = i }}"))
+}
+
+/// Read `wire` through the strict V2 reader: `Ok` when it is admitted, else
+/// the refusal's `(code, cause)` as the published tags.
+fn strict_read(wire: &Value) -> Result<(), (String, String)> {
+    let bytes = serde_json::to_vec(wire).unwrap();
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    match CheckedPackageV2::read(&bytes, CheckedPackageReadLimits::bounded(), &evidence) {
+        CheckedPackageV2ReadResult::Admitted(_) => Ok(()),
+        CheckedPackageV2ReadResult::Refused(refusal) => {
+            let tag = |value: Value| value.as_str().unwrap_or_default().to_owned();
+            Err((
+                tag(serde_json::to_value(refusal.code).unwrap()),
+                tag(serde_json::to_value(refusal.cause).unwrap()),
+            ))
+        }
+        other => panic!("unexpected read result {other:?}"),
+    }
+}
+
+/// The wire node applying `identity`, mutably.
+fn application_mut<'a>(wire: &'a mut Value, identity: &str) -> &'a mut Value {
+    wire["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["body"]["operation"]["identity"] == identity)
+        .unwrap_or_else(|| panic!("missing {identity}"))
+}
+
+fn set_arguments(node: &mut Value, arguments: Vec<Value>) {
+    let mut targets: Vec<Value> = Vec::new();
+    for argument in &arguments {
+        let target = argument["target"].clone();
+        if !targets.contains(&target) {
+            targets.push(target);
+        }
+    }
+    // The reader keeps a node's dependencies in key order.
+    targets.sort_by_key(|target| target["path"].to_string());
+    node["body"]["arguments"] = Value::Array(arguments);
+    node["dependencies"] = Value::Array(targets);
+}
+
+#[trace("TC-1091", "FR-397-AC-4", "FR-397-AC-15")]
+#[test]
+fn the_published_fma_vectors_get_their_published_decision_from_the_strict_reader() {
+    let Some(root) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&root)
+        .join("proposals/checked-package-v2/fma-application-vectors.json");
+    let vectors: Value =
+        serde_json::from_slice(&std::fs::read(path).expect("the FM vectors")).unwrap();
+    let base = fma_base_wire();
+    let nodes = base["semantic_graph"]["nodes"].as_array().unwrap();
+    let find = |identity: &str| {
+        nodes
+            .iter()
+            .find(|node| node["body"]["operation"]["identity"] == identity)
+            .unwrap_or_else(|| panic!("missing {identity}"))
+            .clone()
+    };
+    let (double, single, integer) = (
+        find("quire.op.ieee.float64.fma"),
+        find("quire.op.ieee.float32.fma"),
+        find("quire.op.integer.eq"),
+    );
+    let operand = |width: &str, position: usize| match width {
+        "float64" => double["body"]["arguments"][position % 3].clone(),
+        "float32" => single["body"]["arguments"][position % 3].clone(),
+        "integer" => integer["body"]["arguments"][0].clone(),
+        other => panic!("width {other}"),
+    };
+    let result_type = |width: &str| match width {
+        "float64" => double["body"]["result_type"].clone(),
+        "float32" => single["body"]["result_type"].clone(),
+        other => panic!("width {other}"),
+    };
+    let mut decided = 0;
+    for case in vectors["cases"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        let identity = case["identity"].as_str().unwrap();
+        let mut wire = base.clone();
+        let node = application_mut(&mut wire, "quire.op.ieee.float64.fma");
+        node["body"]["operation"]["identity"] = json!(identity);
+        if case["mode"].is_null() {
+            node["body"]["operation"]["mode"] = Value::Null;
+        }
+        if case["laws"].as_array().unwrap().is_empty() {
+            node["body"]["operation"]["laws"] = json!([]);
+        }
+        let arguments: Vec<Value> = case["argument_widths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(position, width)| operand(width.as_str().unwrap(), position))
+            .collect();
+        set_arguments(node, arguments);
+        let result = result_type(case["result_width"].as_str().unwrap());
+        node["semantic_type"] = result.clone();
+        node["body"]["result_type"] = result;
+        let read = strict_read(&wire);
+        match case["expected"].as_str().unwrap() {
+            "admitted" => assert_eq!(read, Ok(()), "{id}"),
+            "refused" => assert_eq!(
+                read,
+                Err((
+                    case["code"].as_str().unwrap().to_owned(),
+                    case["cause"].as_str().unwrap().to_owned()
+                )),
+                "{id}"
+            ),
+            other => panic!("{id}: {other}"),
+        }
+        decided += 1;
+    }
+    assert_eq!(decided, 12);
+}
+
+/// Not a published vector: an `fma` whose rounding mode differs from the one
+/// its operand and result types carry. The strict reader refuses it, so the
+/// mode-to-type agreement is the reader's check and not only the checker's.
+#[trace("TC-1091", "FR-397-AC-15")]
+#[test]
+fn an_fma_mode_differing_from_its_operand_types_is_refused_by_the_strict_reader() {
+    let mut wire = fma_base_wire();
+    assert_eq!(strict_read(&wire), Ok(()));
+    let node = application_mut(&mut wire, "quire.op.ieee.float64.fma");
+    node["body"]["operation"]["mode"] = json!({"kind": "rounding", "value": "toward-zero"});
+    assert_eq!(
+        strict_read(&wire),
+        Err((
+            "invalid_package".to_owned(),
+            "operation-mode-type-mismatch".to_owned()
+        ))
+    );
 }
