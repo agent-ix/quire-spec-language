@@ -822,6 +822,8 @@ value; check 6 does not apply to it.
 | FR-390-AC-56 | In fixture E-C the handle of `order >= 0` in `Tried`'s constraint reads the `Tried`-origin row (`term_ordinal` 1). | Test (TC-1070) |
 | FR-390-AC-57 | In fixture E-C with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Tried` row; the lone ordinal-zero row remains, so I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the `Tried` constraint's origin name, visit number 0, one visit, zero rows and the pointer `/checked_term_data/protocol_locations`. | Test (TC-1070) |
 | FR-390-AC-58 | In the package of AC-57 the `Picked` constraint's visit of `order >= 0` is not reported unpaired. | Test (TC-1070) |
+| FR-390-AC-59 | In fixture E-C, the handle of each `Local` read (`x`, `b`, `c`) and of each literal reads the `Location` of its own admitted node, equal to the checked package's `Location` of that term, and no `protocol_locations` row names it (FR-383 assumption A1). | Test (TC-1070) |
+| FR-390-AC-60 | In fixture E-C, the handle of each `let`, conditional and case node reads the `Location` of its own admitted node, equal to the checked package's `Location` of that term, and no `protocol_locations` row names it (FR-383 assumption A1). | Test (TC-1070) |
 ## Dependencies
 
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md): the `ProtocolClause` arm,

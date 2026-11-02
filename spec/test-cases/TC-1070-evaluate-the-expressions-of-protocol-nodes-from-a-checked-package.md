@@ -14,7 +14,7 @@ Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
 the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
-FR-390-AC-58. The E-P procedure below verifies FR-390-AC-23 without
+FR-390-AC-60. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -198,14 +198,14 @@ slot, and its binder `m` or `choice` is shared with no other slot.
 
 | Slot | Shape | Walk positions of interest |
 | --- | --- | --- |
-| `Composed.let` | `let c = m.count in c + c` | `m.count` once; the two `c` are `Local` leaves, not visits |
-| `Composed.if` | `if m.ready then m.count else m.count + 1` | `m.count` twice (then-branch, and inside `+` in the else-branch); the else-branch holds visits when `m.ready` is true |
-| `Composed.case` | `case choice of Left(x) => x; Right(b) => if b then 1 else 0` | both arms walked, in emitted arm order |
-| `Composed.deref` | `deref(view).total` | the dereference and the field read |
-| `Composed.arith` | `-(m.count) + (m.count / 2)`, range-coerced to `Int[0, 9]` where the checker coerces | negate, divide, add and coerce |
+| `Composed.let` | `let c = m.count in c + c >= 1` | `m.count` once; the `let` is not a term and the two `c` are `Local` leaves, not visits |
+| `Composed.if` | `if m.ready then m.count >= 1 else m.count + 1 >= 2` | `m.count` twice (the then-branch's `>=` and the else-branch's `+`); the conditional is not a term; the else-branch holds applications (`>=`, `+`, `m.count`) when `m.ready` is true |
+| `Composed.case` | `case choice of Left(x) => x >= 1; Right(b) => not b` | both arms walked, in emitted arm order; each arm is one application (`x >= 1`, `not b`) over a `Local`; the case is not a term |
+| `Composed.deref` | `deref(view).total >= 0` | the dereference, the field read and the comparison |
+| `Composed.arith` | `-(m.count) + (m.count / 2) <= 0`, range-coerced to `Int[0, 9]` where the checker coerces | negate, divide, add, coerce and the comparison |
 | `Composed.option` | `present(m.note) and value(m.note) >= 1` | `m.note` twice |
 | `Composed.coll` | `size(m.items) >= 1 and contains(m.items, m.count)` | `m.items` twice |
-| `Composed.record` | `Pair(m.count, m.ready).first` | constructor and field read |
+| `Composed.record` | `Pair(m.count, m.ready).first >= 0` | constructor, field read and comparison (whether the constructor is an application is an open question for the spec lane) |
 
 | # | Slot | Supply | Expected |
 | --- | --- | --- | --- |
@@ -226,8 +226,10 @@ slot, and its binder `m` or `choice` is shared with no other slot.
 | C10a | `Composed.deref`, `Composed.arith` (E-C) | `view = n5` and C10's `m` | as C10 (AC-43) |
 | C10b | `Composed.option`, `Composed.coll`, `Composed.record` (E-C) | C10's supplies | as C10 (AC-44) |
 | C11 | `Composed.let` | as C10 | `m.count` has one visit and one row; the two `c` reads are leaves (AC-45) |
-| C11a | `Composed.if`, `Composed.case` | `ready true`, `Left(3)` | the unselected else-branch and `Right` arm hold visits, rows and handles with the checked package's `Location` values (AC-46, AC-47) |
+| C11a | `Composed.if`, `Composed.case` | `ready true`, `Left(3)` | the unselected else-branch of `Composed.if` (`>=`, `+`, `m.count`) and the unselected `Right` arm of `Composed.case` (`not b`) hold visits, rows and handles with the checked package's `Location` values (AC-46, AC-47) |
 | C11b | `Composed.if` | as C10 | `m.count` has two visits, two rows and two handles with their own `Location` values (AC-48) |
+| C11d | `Composed.case` with `Left(3)`, then `Right(true)`; `Composed.let`; `Composed.if` | as C10 | the handles of the `Local` reads (`x`, `b`, `c`) and of the literals read the `Location` of their own admitted nodes, and no row of the package names them (AC-59) |
+| C11e | the same slots | as C10 | the handles of the `let`, the conditional and the case nodes read the `Location` of their own admitted nodes, and no row names those nodes (AC-60) |
 | C11c | each E-C slot on a package with the node ids relabelled (ascending `dependencies` and identities recomputed) so that a slot's ascending-id order differs from its walk order | as C10 | every handle's `Location` is unchanged (AC-49) |
 | C12 | Inspection of the reader's `read_node`, pairing and descriptor | n/a | root and origin come only from the descriptor; no `NodeRead` is built from a `CheckedBody` (AC-50) |
 | C13 | Inspection of the reader's `NodeKind` match | n/a | exhaustive, no wildcard arm (AC-51) |
