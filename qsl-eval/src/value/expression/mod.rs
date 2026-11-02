@@ -1010,7 +1010,7 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 /// `CheckedPackage` protocol-slot evaluator used for in-process calls.
 /// A qsl-eval consumer also cannot mint that package-owned handle:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// use qsl_package::{AdmittedEvaluationView, TermHandle};
 /// use quire_exact::NodeKey;
 /// fn direct(view: &AdmittedEvaluationView<'_>, node: NodeKey) {
@@ -1018,42 +1018,42 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 /// }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::check::{CheckedBody, CheckedNode};
 /// fn from_checked(node: &CheckedNode<'_>, term: &CheckedBody) {
-///     let _ = TermHandle::from(node);
-///     let _ = TermHandle::from(term);
+///     let _: TermHandle<'_, '_> = node.into();
+///     let _: TermHandle<'_, '_> = term.into();
 /// }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use quire_exact::NodeKey;
-/// fn from_node(node: NodeKey) { let _ = TermHandle::from(node); }
+/// fn from_node(node: NodeKey) { let _: TermHandle<'_, '_> = node.into(); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
-/// use quire_contract_model::CheckedPackageV2;
-/// fn from_graph(graph: &CheckedPackageV2) { let _ = TermHandle::from(graph); }
+/// use qsl_package::AdmittedPackageRead;
+/// fn from_read(read: &AdmittedPackageRead<'_>) { let _: TermHandle<'_, '_> = read.into(); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::library::ImportView;
-/// fn from_import(view: &ImportView) { let _ = TermHandle::from(view); }
+/// fn from_import(view: &ImportView) { let _: TermHandle<'_, '_> = view.into(); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
-/// fn from_bytes(bytes: &[u8]) { let _ = TermHandle::from(bytes); }
-/// fn from_integer(value: usize) { let _ = TermHandle::from(value); }
+/// fn from_bytes(bytes: &[u8]) { let _: TermHandle<'_, '_> = bytes.into(); }
+/// fn from_integer(value: usize) { let _: TermHandle<'_, '_> = value.into(); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::{AdmittedEvaluationView, TermHandle};
-/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _ = TermHandle::from(view); }
+/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _: TermHandle<'_, '_> = view.into(); }
 /// ```
 pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
     /// Evaluate one protocol slot selected through this exact admitted view.
@@ -1560,28 +1560,20 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             value,
                             self.graph().scope().types(),
                         );
-                        if occurrences.iter().any(|(_, reference)| {
+                        let offending = occurrences.iter().find(|(_, reference)| {
                             protocol_slot::foreign_to_observation(reference, observation)
                                 || !observation
                                     .environment()
                                     .has_population_universe(reference.universe())
-                        }) {
+                        });
+                        if let Some((_, reference)) = offending {
                             let required = match source.value_type() {
                                 quire_exact::ValueType::Reference(expected) => observation
                                     .environment()
                                     .population_universe_for_type(expected),
                                 _ => None,
                             };
-                            let supplied_universe = occurrences
-                                .iter()
-                                .find(|(_, reference)| {
-                                    protocol_slot::foreign_to_observation(reference, observation)
-                                        || !observation
-                                            .environment()
-                                            .has_population_universe(reference.universe())
-                                })
-                                .map(|(_, reference)| reference.universe())
-                                .expect("foreign occurrence was detected");
+                            let supplied_universe = reference.universe();
                             return Err(protocol_slot::resolve::foreign_reference_refused(
                                 required,
                                 supplied_universe,

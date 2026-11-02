@@ -2398,6 +2398,124 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     }
 }
 
+/// FR-390-AC-6: a foreign reference nested in a binder whose declared type is
+/// not itself a Reference has no single required universe, so the
+/// `foreign_reference` record carries `supplied` alone.
+#[test]
+#[trace("TC-1071", "FR-390-AC-6")]
+fn foreign_reference_in_a_non_reference_binder_omits_the_required_universe() {
+    let (package, view) = fixture_ep();
+    let peer = other_reference(&view, "ghost");
+    let nested = other_reference(&view, "nested-1");
+    let optional = other_reference(&view, "option-1");
+    let sequence = other_reference(&view, "sequence-1");
+    let foreign_document = serde_json::to_string(&document_ep())
+        .unwrap()
+        .replace("test/orders", "test/foreign");
+    let (_foreign_package, foreign_view) = fixture_from_document(
+        &SOURCE.replace("test/orders", "test/foreign"),
+        foreign_document.as_bytes(),
+    );
+    let foreign_key = quire_checked::key::DeclarationKey {
+        package: "test/foreign".to_owned(),
+        node: "ix://test/foreign/Node".to_owned(),
+    };
+    let foreign_universe = foreign_view
+        .object_universe_of(&foreign_key)
+        .unwrap()
+        .identity()
+        .unwrap();
+    assert_ne!(&foreign_universe, peer.universe());
+    let foreign_peer = ObjectReference::new(
+        foreign_universe.clone(),
+        peer.object_type().clone(),
+        ObjectId::new("ghost").unwrap(),
+    );
+    let receipt = ep_receipt(&package, [&foreign_peer, &nested, &optional, &sequence]);
+    let refs = vec![ProtocolReferenceOccurrence {
+        path: vec![PathStep::Field("peer".into())],
+        population: population_node("otherSpare"),
+    }];
+    let observation = ep_observation(
+        &package,
+        &view,
+        Some((true, &["ghost", "nested-1", "option-1", "sequence-1"])),
+        true,
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    let before = meter.clone();
+    let result = package.evaluate_protocol_slot(
+        &slot(
+            &package,
+            "Refunds",
+            "Refund",
+            "registration_captures",
+            Some(0),
+        ),
+        &ep_supply(&package, receipt, refs, Some(&observation)),
+        &mut meter,
+    );
+    assert_eq!(
+        meter, before,
+        "refusal leaves every meter counter unchanged"
+    );
+    let Err(CallFailure::Admission(failure)) = result else {
+        panic!("expected a foreign-reference refusal: {result:?}");
+    };
+    let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+        panic!("foreign reference is a typed refusal: {failure:?}");
+    };
+    assert_eq!(record.record.catalog.code(), "foreign_reference");
+    assert_eq!(record.record.catalog.cause(), "foreign-universe");
+    assert_eq!(
+        record.locus,
+        CallAdmissionLocus::Binder(binder(&package, "Refunds", "forward"))
+    );
+    assert!(
+        !record.record.fields.contains_key("required"),
+        "a non-Reference binder names no required universe: {:?}",
+        record.record.fields
+    );
+    let supplied = independent_universe_hex(&foreign_universe);
+    assert_eq!(
+        record.record.fields.get("supplied").map(String::as_str),
+        Some(supplied.as_str())
+    );
+}
+
+/// FR-390-AC-14: each selected source reports its binder's own first
+/// occurrence, not the selected expression's root location.
+#[test]
+#[trace("FR-390-AC-14")]
+fn protocol_source_location_is_the_binders_first_occurrence() {
+    let package = fixture();
+    let view = package.evaluation_view();
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let selected = view
+        .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            capture.node.clone(),
+            capture.member.clone(),
+            capture.index,
+        ))
+        .expect("the view selects the capture expression");
+    let root_location = selected.checked_body().root().location().clone();
+    assert!(!selected.sources().is_empty());
+    for source in selected.sources() {
+        let expected = package
+            .graph()
+            .occurrences()
+            .find(|(key, _, _)| key == source.binder())
+            .map(|(_, _, location)| location.clone())
+            .expect("every lowered binder has an occurrence");
+        assert_eq!(source.location(), &expected);
+        assert_ne!(
+            source.location(),
+            &root_location,
+            "the source location is not the expression root's"
+        );
+    }
+}
+
 /// FR-390-AC-14: a selected opaque term cannot be evaluated against a
 /// different checked-package receiver, even when the checked graph shapes
 /// are equivalent.
