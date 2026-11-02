@@ -26,8 +26,8 @@ Scope: FR-027-AC-2, FR-027-AC-3 and FR-027-AC-13.
    program source lacks `authority`.
 4. Compile a request whose program source file is missing, then one whose
    program source has malformed syntax.
-5. Compile a request whose sources exceed `dependent_bytes`; compile it
-   again with the limit raised to its size.
+5. Compile a request whose program source exceeds the fixed `dependent_bytes`
+   ceiling.
 6. Compile a request whose program source and models are under
    `dependent_bytes` and whose one `libraries` source takes the total one
    byte over it; compile it again with the limit raised to that total. Then
@@ -42,14 +42,15 @@ AC-2, steps 3 to 5 AC-3, step 6 AC-13.
 
 - Step 1: exit code 0; the outcome's package bytes are the
   `quire.checked-package/v2` bytes with no wrapper or newline.
-- Step 2: each refuses `invalid-request` at the request stage, exit code 20,
+- Step 2: the native-run/1 request refuses `unknown_wire`; each runtime-only
+  request member refuses `invalid-request` at the request stage, exit code 20,
   with no package bytes, and no model or runtime file is read.
 - Step 3: each refuses `invalid-request`, exit code 20, with no package
   bytes.
 - Step 4: each refuses with its original stage and code, exit code 20, with
   no package bytes.
-- Step 5: the first refuses naming `dependent_bytes` and its configured
-  value; the second compiles, exit code 0.
+- Step 5: the request refuses naming `dependent_bytes` and its fixed ceiling,
+  with no package bytes.
 - Step 6: the first refuses at intake naming `dependent_bytes` and its
   configured value, with no package bytes; the second returns FR-027-AC-10's
   package bytes, exit code 0; the 65-library request compiles, exit code 0.

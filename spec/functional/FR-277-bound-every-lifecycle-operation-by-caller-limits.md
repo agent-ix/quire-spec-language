@@ -185,10 +185,7 @@ NFR-009 governs checked-term evaluation under the caller's
 settings are FR-255's shared accounting table; FR-046/047/107/390 own their
 charge points. Snapshot/invocation document bytes, objects and values remain
 FR-106 admission limits, and model normalization remains FR-056's limits; these
-are not evaluation-meter charges. NFR-006 governs historical native artifact
-construction, validation request and reference evaluation through
-FR-018/007/008; its arena-node/child-edge, validation-visit and text rules
-remain unchanged. The retired `quire.state.evaluation-work/1` identity is not
+are not evaluation-meter charges. The retired `quire.state.evaluation-work/1` identity is not
 reinterpreted as `quire.value.accounting/v1` or as QSV membership.
 
 The present settlement governs supplied-value admission to the S6a Value
@@ -198,7 +195,7 @@ If an operation invokes one of those APIs, that API SHALL still perform
 its prescribed charges against its own caller-configured limits; those
 counters SHALL NOT be merged into S6a evaluation or conversion-node units.
 QSV's trusted admitted nested-value boundary governs membership only; it
-SHALL NOT suppress a node/entry inspection that NFR-009 or NFR-006 requires
+SHALL NOT suppress a node/entry inspection that NFR-009 requires
 at their own public boundaries.
 
 The supplied helper limits are execution-resource bounds (ADR-014 B-2)
@@ -406,9 +403,8 @@ implement a copied helper or silently change event units.
   classifies their limits type.
 - [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md):
   B-2 carrying-type classification of the supplied-value limits type.
-- [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md) and
-  [NFR-006](../non-functional/NFR-006-bound-native-runtime.md): their
-  separately scoped validation accounting remains binding.
+- [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md): its
+  separately scoped evaluation accounting remains binding.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md) and
   [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md):
   the carrier and context mapping the supplied-phase failure arm extends.

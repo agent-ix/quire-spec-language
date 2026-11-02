@@ -17,6 +17,12 @@ fn compile(directory: &Path) -> Output {
         .unwrap()
 }
 
+fn compile_in_process(
+    directory: &Path,
+) -> Result<Vec<u8>, Box<quire_spec_language::command::RunError>> {
+    quire_spec_language::command::compile(&directory.join("compile.json"))
+}
+
 /// The complete-V1 compile fixture (FR-027-AC-5).
 const SPINE_FIXTURE: &str = "tests/fixtures/spine-compile.native";
 
@@ -40,15 +46,21 @@ fn spine_request(directory: &Path, program: &[u8]) {
     .unwrap();
 }
 
-/// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the
+/// FR-027-AC-2 / AC-5 (TC-105 step 1, TC-435 step 2): a `1-draft` program compiles through the
 /// spine; stdout is exactly the bytes `qsl_replay::spine`'s operations emit, which
 /// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
 #[test]
-#[trace("TC-435", "FR-027-AC-5")]
+#[trace("TC-105", "FR-027-AC-2", "TC-435", "FR-027-AC-5")]
 fn a_complete_v1_program_compiles_through_the_spine() {
     let program = std::fs::read(SPINE_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
     spine_request(directory.path(), &program);
+    let mut selected_files = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    selected_files.sort();
+    assert_eq!(selected_files, ["compile.json", "program.native"]);
     let output = compile(directory.path());
     assert_eq!(
         output.status.code(),
@@ -68,6 +80,95 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(output.stdout, library.package().bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
+}
+
+/// FR-027-AC-2 (TC-105 step 2): compile rejects run-format requests and
+/// runtime-only members before trying to read their referenced files.
+#[test]
+#[trace("TC-105", "FR-027-AC-2")]
+fn compile_refuses_runtime_request_shapes_without_reading_runtime_files() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let path = directory.path().join("compile.json");
+    let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let base_request = request.clone();
+
+    request["format"] = json!("native-run/1");
+    request["request"]["program"]["source"]["file"] = json!("missing-program.native");
+    request["request"]["models"] = json!([{"format":"missing-model-format","source":{
+        "file":"missing-model.json"}}]);
+    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "unknown_wire", "{value}");
+    assert_eq!(value["stage"], "envelope", "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+
+    for member in ["snapshots", "invocations", "selection", "package"] {
+        let mut request = base_request.clone();
+        request["format"] = json!("native-compile/1");
+        request["request"]["program"]["source"]["file"] = json!("missing-program.native");
+        request["request"]
+            .as_object_mut()
+            .unwrap()
+            .insert(member.to_owned(), json!({"file":"missing-runtime.json"}));
+        std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let error = compile_in_process(directory.path()).unwrap_err();
+        let value = error.value().unwrap();
+        assert_eq!(value["code"], "invalid-request", "{member}: {value}");
+        assert_eq!(value["stage"], "request", "{member}: {value}");
+        assert!(value.get("artifact").is_none(), "{member}: {value}");
+    }
+}
+
+/// FR-027-AC-3 (TC-105 steps 3–5): source selection and dependent-byte
+/// refusals retain typed causes and produce no partial package.
+#[test]
+#[trace("TC-105", "FR-027-AC-3")]
+fn source_selection_and_dependent_byte_refusals_are_typed() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    for member in ["identity", "authority"] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), &program);
+        let path = directory.path().join("compile.json");
+        let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        request["request"]["program"]["source"]
+            .as_object_mut()
+            .unwrap()
+            .remove(member);
+        std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let error = compile_in_process(directory.path()).unwrap_err();
+        let value = error.value().unwrap();
+        assert_eq!(value["code"], "invalid-request", "{member}: {value}");
+        assert_eq!(value["stage"], "request", "{member}: {value}");
+        assert!(value.get("artifact").is_none(), "{member}: {value}");
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let path = directory.path().join("compile.json");
+    let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    request["request"]["program"]["source"]["file"] = json!("missing-program.native");
+    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "io-error", "{value}");
+    assert_eq!(value["stage"], "file", "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+
+    let directory = tempfile::tempdir().unwrap();
+    let oversized = format!(
+        "{SPINE_HEADER}function f using v(): Int[0, 9] pure {{ 7 }}\n//{}",
+        "x".repeat(8 * 1024 * 1024)
+    );
+    spine_request(directory.path(), oversized.as_bytes());
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["details"]["limit"], "dependent_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
 }
 
 /// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
@@ -153,7 +254,7 @@ fn retired_and_unknown_editions_refuse_before_emitting_package_bytes() {
 /// FR-027-AC-8 (TC-435 step 6): each spine stage's refusal reports that
 /// stage and its cause's code, exits on that code, and writes no bytes.
 #[test]
-#[trace("TC-435", "FR-027-AC-8")]
+#[trace("TC-105", "FR-027-AC-3", "TC-435", "FR-027-AC-8")]
 fn each_spine_stage_refusal_reports_its_stage_and_code() {
     for (body, stage, code, exit, located) in [
         (

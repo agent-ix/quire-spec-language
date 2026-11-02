@@ -5,11 +5,9 @@ type: US
 relationships:
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
-  - target: "ix://agent-ix/quire-spec-language/FR-007"
+  - target: "ix://agent-ix/quire-spec-language/FR-106"
     type: exercises
-  - target: "ix://agent-ix/quire-spec-language/FR-008"
-    type: exercises
-  - target: "ix://agent-ix/quire-spec-language/FR-018"
+  - target: "ix://agent-ix/quire-spec-language/FR-107"
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-043"
     type: exercises
@@ -52,8 +50,8 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 ## Traceability (Informative)
 
-- [FR-007](../functional/FR-007-validate-runtime-inputs.md)
-- [FR-008](../functional/FR-008-evaluate-state-reference.md)
-- [FR-018](../functional/FR-018-construct-native-runtime-inputs.md)
+- [FR-106](../functional/FR-106-admit-snapshots-and-invocations.md)
+- [FR-107](../functional/FR-107-evaluate-state-clauses-at-s6a.md)
+- [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md)
 - [FR-043](../functional/FR-043-evaluate-bounded-native-temporal.md)
 - [FR-044](../functional/FR-044-activate-temporal-obligations.md)

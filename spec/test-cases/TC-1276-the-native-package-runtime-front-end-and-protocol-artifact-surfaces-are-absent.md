@@ -10,10 +10,11 @@ relationships:
 
 ## Description
 
-Verify that after the retirement the root package offers no way to build, read,
-validate or run a native package or runtime-input artifact, no `0-draft` front
-end, and no compiled-protocol reader, while the spine paths that replace them
-keep their results. Scope: FR-493-AC-1 to FR-493-AC-5.
+Verify that after this slice the root package offers no way to build, read,
+validate or run a native package or runtime-input artifact, while the spine
+compile path keeps its result. Scope for this slice: FR-493-AC-1, FR-493-AC-2
+and FR-493-AC-5. Parser and protocol-reader absence checks belong to the later
+slices that delete those paths (FR-493-AC-3 and FR-493-AC-4).
 
 Catches a retired module kept behind a feature, a re-export or a test-only
 copy; a retired wire-format name that survives in an enum
@@ -23,17 +24,12 @@ without a test because its only test went with the retired path.
 
 ## Test Procedure
 
-1. Compile one downstream crate per item and confirm each import fails because
-   the item is absent: the root `package` and `runtime` modules,
-   `NativePackage` and `runtime::execute`; the `0-draft` parser entry points,
-   arena `syntax`, `linking::native`, native `checking`, `model_source` and
-   `located_json`; and, once the handoff writers are deleted (FR-493-AC-4), any
-   module that reads compiled-protocol v1, v2 or v3 bytes. Confirm the
-   `composed` modules, `formal_source` and `native_model` still import.
+1. Compile one downstream crate per package/runtime item and confirm each
+   import fails because the item is absent: the root `package` and `runtime`
+   modules, `NativePackage` and `runtime::execute`.
 2. Compile a downstream crate that matches exhaustively on `qsl-foundation`'s
    `WireFormat` and confirm it names no variant for `native-linked-package/1`
-   or `native-state-input/1`. Run every Makefile target, `xtask` lane and
-   example and confirm each builds and runs with the retired parser absent.
+   or `native-state-input/1`.
 3. Run the CLI `compile` on a source declaring `edition "0-draft"`, on one
    declaring `edition "7-draft"`, and on a `1-draft` source. Confirm the first
    two refuse `unknown_edition` at stage `profile` with exit code 20 and write
@@ -41,8 +37,8 @@ without a test because its only test went with the retired path.
 4. Read the checked package TC-1063 emits for fixture **W** through the I2
    reader and confirm it still returns the emitted protocol equal to the
    in-process checked clause.
-5. Run `quire matrix` over the repository. Confirm no criterion of a retained
-   requirement is reported without a tagged test because its test was deleted.
+5. Run `quire matrix` over the repository after the retained criteria and tests
+   for this slice have been reconciled.
 
 ## Expected Results
 
@@ -50,5 +46,5 @@ without a test because its only test went with the retired path.
   and runs.
 - Step 3 refuses the first two sources with the cause, stage and exit code
   given and compiles the third.
-- Step 4 reads the protocol unchanged.
-- Step 5 shows no uncovered retained criterion.
+- Step 4 belongs to the protocol-reader retirement slice.
+- Step 5 is the aggregate matrix check for the final slice head.

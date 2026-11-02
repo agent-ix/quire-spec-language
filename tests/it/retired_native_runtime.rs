@@ -21,26 +21,32 @@ fn assert_no_retired_names(path: &Path, names: &[String]) {
 }
 
 fn assert_import_is_absent(
-    dependencies: &Path,
-    library: &Path,
+    repo: &Path,
+    target: &Path,
     probe: &str,
     source_text: &str,
     temporary: &Path,
 ) {
-    let source = temporary.join(format!("{probe}.rs"));
-    std::fs::write(&source, source_text).unwrap();
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let output = std::process::Command::new(rustc)
-        .args(["--crate-name", probe, "--edition=2021", "--crate-type=lib"])
-        .arg("--extern")
-        .arg(format!("quire_spec_language={}", library.display()))
-        .arg("-L")
-        .arg(format!("dependency={}", dependencies.display()))
-        .arg(&source)
-        .arg("--out-dir")
-        .arg(temporary)
+    let project = temporary.join(probe);
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(
+        project.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"{probe}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[workspace]\n\n[dependencies]\nquire-spec-language = {{ path = \"{}\" }}\n",
+            repo.display()
+        ),
+    )
+    .unwrap();
+    std::fs::copy(repo.join("Cargo.lock"), project.join("Cargo.lock")).unwrap();
+    std::fs::write(project.join("src/lib.rs"), source_text).unwrap();
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = std::process::Command::new(cargo)
+        .args(["check", "--offline", "--manifest-path"])
+        .arg(project.join("Cargo.toml"))
+        .arg("--target-dir")
+        .arg(target)
         .output()
-        .expect("rustc runs for the downstream probe");
+        .expect("cargo runs for the downstream probe");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{probe} import compiled");
     assert!(
@@ -71,44 +77,10 @@ fn native_package_and_runtime_surfaces_are_absent() {
             && format.as_str() != ["native-state-", "input/1"].concat()
     }));
 
-    let metadata =
-        std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-            .current_dir(&repo)
-            .args([
-                "metadata",
-                "--format-version",
-                "1",
-                "--no-deps",
-                "--offline",
-            ])
-            .output()
-            .expect("cargo metadata runs");
-    assert!(
-        metadata.status.success(),
-        "cargo metadata failed: {}",
-        String::from_utf8_lossy(&metadata.stderr)
-    );
-    let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
-    let target = PathBuf::from(metadata["target_directory"].as_str().unwrap());
-    let dependencies = target.join("debug/deps");
-    let library = std::fs::read_dir(&dependencies)
-        .unwrap()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.starts_with("libquire_spec_language-") && name.ends_with(".rlib")
-                })
-        })
-        .max_by_key(|path| {
-            std::fs::metadata(path)
-                .and_then(|metadata| metadata.modified())
-                .unwrap_or(std::time::UNIX_EPOCH)
-        })
-        .expect("the root library is built as an rlib for this integration test");
     let temporary = tempfile::tempdir().unwrap();
+    // The integration test's Cargo process holds the workspace target lock.
+    // Build downstream probes in their own temporary target directory.
+    let target = temporary.path().join("target");
     for (probe, source) in [
         (
             "qsl_836_package_module_probe",
@@ -127,6 +99,6 @@ fn native_package_and_runtime_surfaces_are_absent() {
             concat!("use quire_spec_language::runtime::", "execute;\n"),
         ),
     ] {
-        assert_import_is_absent(&dependencies, &library, probe, source, temporary.path());
+        assert_import_is_absent(&repo, &target, probe, source, temporary.path());
     }
 }

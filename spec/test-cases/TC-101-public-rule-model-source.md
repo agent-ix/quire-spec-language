@@ -12,13 +12,13 @@ Preserve the existing qualified model semantics and original source occurrences.
 
 ## Test Procedure
 
-Read the actual rule-model fixture through the production frontend. Compare
-existing fixed artifact expectations and inspect declarations/roles at their
-original occurrences. Exercise supported type forms, Unicode/escapes and native
-state/operation execution. Keep fixture wrappers limited to setup and calls.
+Read the actual rule-model fixture through the retained production frontend.
+Inspect admitted declarations and roles at their original source occurrences.
+Exercise supported type forms and Unicode/escapes. Keep fixture wrappers
+limited to setup and calls. Native compilation and state/operation execution
+are retired with the native package/runtime path.
 
 ## Expected Results
 
-Model correspondence and actual outcomes agree with the existing qualified
-cases. Original source and declared metadata survive; no second lowering exists
-in test helpers.
+Model correspondence agrees with the retained cases. Original source and
+declared metadata survive; no second lowering exists in test helpers.

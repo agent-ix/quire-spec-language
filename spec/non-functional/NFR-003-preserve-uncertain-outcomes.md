@@ -8,9 +8,9 @@ relationships:
     type: constrains
   - target: "ix://agent-ix/quire-spec-language/FR-006"
     type: constrains
-  - target: "ix://agent-ix/quire-spec-language/FR-007"
+  - target: "ix://agent-ix/quire-spec-language/FR-106"
     type: constrains
-  - target: "ix://agent-ix/quire-spec-language/FR-008"
+  - target: "ix://agent-ix/quire-spec-language/FR-107"
     type: constrains
 ---
 # NFR-003: Preserve refusal and incompleteness through the pipeline
@@ -38,5 +38,6 @@ Exercise missing models, unsupported features, invalid populations and exhausted
 
 - [FR-005](../functional/FR-005-link-shared-model.md)
 - [FR-006](../functional/FR-006-check-defined-expressions.md)
-- [FR-007](../functional/FR-007-validate-runtime-inputs.md)
-- [FR-008](../functional/FR-008-evaluate-state-reference.md)
+- [FR-106](../functional/FR-106-admit-snapshots-and-invocations.md)
+- [FR-107](../functional/FR-107-evaluate-state-clauses-at-s6a.md)
+- [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md)

@@ -427,7 +427,7 @@ pub fn read_clause_run_request(
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
-        let mut intake = intake(
+        let mut intake = intake_with_bytes(
             directory,
             FileCounts {
                 // A library source is a program source a `1-draft` program
@@ -436,6 +436,7 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
                 models: request.models.len(),
                 observations: 0,
             },
+            TOTAL_BYTES,
         )?;
         // The edition is decided before any model is read: a `1-draft`
         // program takes domain packages only, and a request selecting a
