@@ -9,6 +9,9 @@
 //! checked package bounds, so building and writing it recurse once per
 //! declared nesting level and never per element.
 
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
 use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{
@@ -374,6 +377,67 @@ pub(crate) struct Typing<'t> {
     /// The presence-bit members of the `Option<Clock>` fields, which a
     /// record writes as the field's option shell.
     clock_bits: &'t [(DeclarationKey, StateField)],
+    /// The run's map-key names, when the caller keeps them.
+    names: Option<&'t KeyNames>,
+}
+
+/// The names a run's state keys write as map keys, each with the RFC 8785
+/// bytes its map sorts by: every object reference and population name, built
+/// once per run rather than once per key. A reference and a population name
+/// are functions of the run's model alone.
+#[derive(Default)]
+pub(crate) struct KeyNames {
+    references: Mutex<BTreeMap<(DeclarationKey, String), KeyName>>,
+    populations: Mutex<BTreeMap<DeclarationKey, KeyName>>,
+}
+
+/// A map key's RFC 8785 bytes and form.
+type KeyName = (Vec<u8>, Enc);
+
+/// A map key with the bytes [`map_enc`] orders it by.
+fn keyed_name(key: Enc) -> KeyName {
+    (
+        quire_canonical::to_vec(&key, Limits::new(u64::MAX)).unwrap_or_default(),
+        key,
+    )
+}
+
+impl KeyNames {
+    /// The reference of the object `key` of type `type_identity` as a map
+    /// key; `None` when the reference does not resolve.
+    fn reference(
+        &self,
+        model: &StateModel,
+        type_identity: &DeclarationKey,
+        key: &str,
+    ) -> Option<KeyName> {
+        let mut references = self
+            .references
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(found) = references.get(&(type_identity.clone(), key.to_owned())) {
+            return Some(found.clone());
+        }
+        let reference = model.object_reference(type_identity, key).ok()?;
+        let named = keyed_name(reference_enc(&reference));
+        references.insert((type_identity.clone(), key.to_owned()), named.clone());
+        Some(named)
+    }
+
+    /// The population `population`'s name as a map key.
+    fn population(&self, population: &DeclarationKey) -> KeyName {
+        self.populations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(population.clone())
+            .or_insert_with(|| keyed_name(population_name(population)))
+            .clone()
+    }
+}
+
+/// The map key a population's objects are written under.
+fn population_name(population: &DeclarationKey) -> Enc {
+    Enc::tagged("text", vec![("value", declaration_enc_text(population))])
 }
 
 impl<'t> Typing<'t> {
@@ -384,6 +448,7 @@ impl<'t> Typing<'t> {
             variants: &[],
             clock_counts: &[],
             clock_bits: &[],
+            names: None,
         }
     }
 
@@ -398,6 +463,7 @@ impl<'t> Typing<'t> {
             variants,
             clock_counts: &[],
             clock_bits: &[],
+            names: None,
         }
     }
 
@@ -411,6 +477,14 @@ impl<'t> Typing<'t> {
         Self {
             clock_counts,
             clock_bits,
+            ..self
+        }
+    }
+
+    /// These declarations, writing the map-key names `names` keeps.
+    pub(crate) fn with_names(self, names: &'t KeyNames) -> Self {
+        Self {
+            names: Some(names),
             ..self
         }
     }
@@ -789,6 +863,12 @@ pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
     )
 }
 
+/// A map entry with the bytes [`map_enc`] orders it by.
+fn keyed_entry(key: Enc, value: Enc) -> (Vec<u8>, Enc, Enc) {
+    let (bytes, key) = keyed_name(key);
+    (bytes, key, value)
+}
+
 /// [`map_enc`] of entries that carry their key's RFC 8785 bytes, so a caller
 /// that writes one key in many maps encodes it once.
 pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
@@ -816,28 +896,29 @@ pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
 /// its completeness and its instance pairs in ascending canonical order, so
 /// two states differing only in their extents have different keys.
 pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> Enc {
+    let fresh = KeyNames::default();
+    let names = typing.names.unwrap_or(&fresh);
     let mut populations = Vec::new();
     for (population, objects) in &state.populations {
         let mut entries = Vec::new();
         for (key, object) in objects {
-            let Ok(reference) = model.object_reference(&object.type_identity, key) else {
+            let Some((bytes, reference)) = names.reference(model, &object.type_identity, key)
+            else {
                 return Enc::Unencodable("an object whose reference does not resolve");
             };
             let record = object_enc(model, object, typing, &|_| None);
-            entries.push((reference_enc(&reference), record));
+            entries.push((bytes, reference, record));
         }
-        populations.push((
-            Enc::tagged("text", vec![("value", declaration_enc_text(population))]),
-            map_enc(entries),
-        ));
+        let (bytes, name) = names.population(population);
+        populations.push((bytes, name, sorted_map_enc(entries)));
     }
     if !state.extents.is_empty() {
-        populations.push((
+        populations.push(keyed_entry(
             Enc::tagged("text", vec![("value", Enc::text("relationships"))]),
             extents_enc(state),
         ));
     }
-    map_enc(populations)
+    sorted_map_enc(populations)
 }
 
 /// The listed relationship extents of `state`: relationship identity text to
