@@ -14,7 +14,7 @@ Verify that each QSpec scalar row named by FR-495 is reachable from QSL source
 with the two observations the requirement states: the check refusal under
 `CheckMode::Linked` and the kernel outcome under `CheckMode::Kernel`; and that a
 state-core declaration is refused as a declaration before any of its
-expressions is classified. Scope: FR-495-AC-1 to FR-495-AC-4 and, through QSpec TC-266, FR-495-AC-5.
+expressions is classified. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6 and, through QSpec TC-266, FR-495-AC-5.
 
 ## Test Procedure
 
@@ -33,10 +33,12 @@ expressions is classified. Scope: FR-495-AC-1 to FR-495-AC-4 and, through QSpec 
    functions and the `invariant`, `pre` and `post` clauses of FR-495-AC-4; then
    check the same function bodies under `quire.value.complete/v1` and evaluate
    them.
+   Also check `7 / 3 = rational(7, 3)` as a clause body under each profile, with and
+   without a rational type expected (FR-495-AC-6).
 5. Run QSpec TC-192 DIV-14 through the registered SMT backend, once with a cvc5
    provider in the lock and once without.
 
-Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5` and depends on the provider.
+Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "FR-495-AC-6", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5` and depends on the provider.
 Vectors are referenced by QSpec row ID, never copied.
 
 ## Expected Results
@@ -55,6 +57,8 @@ Vectors are referenced by QSpec row ID, never copied.
   `unsupported_construct`/`declaration-form` once and none of its operators is
   refused as an expression; each clause body refuses
   `unsupported_construct`/`expression-form` at its operator; under complete
-  value the function bodies check and evaluate.
+  value the function bodies check and evaluate. The `7 / 3` clause body
+  refuses `ill_typed`/`type-mismatch` at the `/` under state core; under complete
+  value it checks only with the rational type expected.
 - Step 5: with a provider, the holding obligation is `proved` and the violated one `refuted`
   with a replayable counterexample; without one the row is reported pending on the provider.
