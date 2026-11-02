@@ -203,7 +203,15 @@ writes the term's semantic location, the origin of the slot's site
 (`protocol_site`) and the child-index path the in-process checked term
 carries, with consecutive `term_ordinal` values from zero. An application the
 slot visits more than once has a row for each visit, so each visit has its own
-location. The rows carry the locations the checker assigned and are neither
+location. The emitter SHALL order those rows so that, among the rows of that
+application whose origin is the slot's site origin, ascending (occurrence,
+`term_ordinal`) order is the order of the visits in a left-to-right pre-order
+walk of the slot's expression tree from its root, the first row belonging to
+the first visit. In TC-1070 fixture E the retry relation of `Refund` visits the
+shared `earlier.tally` application twice, in `earlier.tally < 3` and in
+`earlier.tally + 1`, so it has two rows of the retry site's origin: the first
+carries the location of the term in `earlier.tally < 3` and the second that in
+`earlier.tally + 1`. The rows carry the locations the checker assigned and are neither
 derived from source regions, node order or operand position, nor defaulted. A
 unit with no protocol slot expression writes the array empty, and a package
 with no checked-term data keeps the sidecar absent as today.

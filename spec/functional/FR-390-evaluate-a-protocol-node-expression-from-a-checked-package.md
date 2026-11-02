@@ -542,9 +542,13 @@ location.
 
 The `Location` of a reader `NodeRead` is the semantic location of the visited
 term, read from the `protocol_locations` row FR-383 emits for it. Where one
-application is visited more than once in a slot, the rows SHALL distinguish the
-visits, and the view SHALL pair each visit with its own row. If the rows do not
-determine one location for a visit, view creation returns
+application is visited more than once in a slot, the view SHALL pair the k-th
+visit of that application, in a left-to-right pre-order walk of the slot's
+expression tree from its root (counting from zero), with the k-th row of that
+application whose origin is the slot's site origin, in ascending (occurrence,
+`term_ordinal`) order. If there is no such k-th row, or a row of the slot's
+origin is left unpaired, or the rows do not determine one location for a
+visit, view creation returns
 `ViewFailure::Unsupported` with `MissingOperationProjection` at that node's
 `Node` locus. A location SHALL NOT be taken from the source package, from a
 source region, or defaulted.
@@ -750,7 +754,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-26 | An alias to String, UUID, Timestamp, Quantity or Union resolves to the target's effective type and behavior without a runtime wrapper or alias-name identity. | Test |
 | FR-390-AC-27 | A Union reader projection preserves the exact declared union identity, active member identity and positional payload recursively. A case evaluates only the arm selected by exact member identity and binds that member's payload in order; spelling, ordinal and matching payload shape never select an arm. The emitted-and-admitted package yields the same value, outcome and ordered charge log as the source checked package. | Test |
 | FR-390-AC-28 | Over the emitted-and-admitted package of TC-1070 fixtures E and L, every composed-root slot evaluates through the reader view: the trigger guard (row 4, 5), the retry relation (rows 8 to 11, 15, 16), the recovery predicate (rows 12 to 14, 17 to 19), the `effect` constraint (row 20), the `finish` constraint (row 22), both `related` ends (rows 29, 30) and the case guard `no` (rows 32, 33). Each gives the value, the outcome category and the ordered charge log of the same call over the checked package, and the reader variant of `read_node` returns a `NodeRead` for every node of these roots, including the shared `earlier.tally` node that retry visits twice. A reader view whose source package has had its `CheckedBody` for the slot replaced by an unrelated body still evaluates the reader's own term. | Test (TC-1070, TC-1073) |
-| FR-390-AC-29 | For a composed root whose evaluation halts with a location (a read of an `Unavailable` binder inside a conjunction, and an out-of-domain narrowing), the reader result carries the `Location` of the visited term read from its `protocol_locations` row, equal to the in-process location, and for the twice-visited node of AC-28 each visit reports its own. Removing the row of one visit, or making two visits resolve to one row, yields `ViewFailure::Unsupported` / `MissingOperationProjection` at that node before any view or charge. An operation identity with no `NodeKind` mapping yields the same reason with its operation identity in the evidence; the `and`, `or`, `not`, `=`, `<`, `>=`, `+`, field and literal kinds of fixtures E and L never do. | Test (TC-1070, TC-1073) |
+| FR-390-AC-29 | For a composed root whose evaluation halts with a location (a read of an `Unavailable` binder inside a conjunction, and an out-of-domain narrowing), the reader result carries the `Location` of the visited term read from its `protocol_locations` row, equal to the in-process location, and for the twice-visited node of AC-28 each visit reports its own: in the retry relation of `Refund`, the first visit of `earlier.tally` (in `earlier.tally < 3`) takes the first row of that application in the retry site's origin and the second visit (in `earlier.tally + 1`) the second, and swapping the two rows swaps the reported locations. Removing the row of one visit, or making two visits resolve to one row, yields `ViewFailure::Unsupported` / `MissingOperationProjection` at that node before any view or charge. An operation identity with no `NodeKind` mapping yields the same reason with its operation identity in the evidence; the `and`, `or`, `not`, `=`, `<`, `>=`, `+`, field and literal kinds of fixtures E and L never do. | Test (TC-1070, TC-1073) |
 
 ## Dependencies
 
