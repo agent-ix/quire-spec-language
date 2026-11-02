@@ -28,9 +28,9 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
-    check, execute, failure_of, package, parse, refusal_or_fault, select, AdmittedModels,
-    CheckedUnit, EmittedUnit, ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest,
-    ParsedSource,
+    check, execute, failure_of, package, parse, refusal_or_fault, select,
+    temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit, ExecuteRequest,
+    FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -50,6 +50,42 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 
 fn identity() -> SourceIdentity {
     SourceIdentity::new("agent-ix", "test:lifecycle", "fixture", "fixture:1")
+}
+
+#[trace("FR-050-AC-6")]
+#[test]
+fn temporal_selection_partition_uses_the_exact_source_reference() {
+    use qsl_foundation::source::provenance::RawSourceRef;
+    use qsl_foundation::Span;
+    use qsl_package::{ClockConfiguration, TemporalClockSelection};
+
+    let root = RawSourceRef::new("test-authority", "root.native").expect("valid source");
+    let library = RawSourceRef::new("test-authority", "library.native").expect("valid source");
+    let selections = [
+        TemporalClockSelection {
+            source: root.clone(),
+            declaration_span: Span { start: 10, end: 20 },
+            clock: ClockConfiguration::EventPosition {
+                sequence_authority: "root-events".into(),
+            },
+        },
+        TemporalClockSelection {
+            source: library.clone(),
+            declaration_span: Span { start: 30, end: 40 },
+            clock: ClockConfiguration::EventPosition {
+                sequence_authority: "library-events".into(),
+            },
+        },
+    ];
+
+    assert_eq!(
+        temporal_selections_for_source(&selections, &root),
+        [selections[0].clone()]
+    );
+    assert_eq!(
+        temporal_selections_for_source(&selections, &library),
+        [selections[1].clone()]
+    );
 }
 
 fn request(bytes: &[u8]) -> ParseRequest<'_> {

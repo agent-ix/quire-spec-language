@@ -1623,6 +1623,10 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         RefinementIdentityEncoding,
         RefinementNotEmitted,
         UnlocatedRefinementDeclaration,
+        MissingTemporalClockSelection,
+        SurplusTemporalClockSelection,
+        DuplicateTemporalClockSelection,
+        TemporalClockProfileMismatch,
     }
     fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
         match result {
@@ -1640,6 +1644,18 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration
+            }
+            Err(EmitRefusal::MissingTemporalClockSelection { .. }) => {
+                Seen::MissingTemporalClockSelection
+            }
+            Err(EmitRefusal::SurplusTemporalClockSelection { .. }) => {
+                Seen::SurplusTemporalClockSelection
+            }
+            Err(EmitRefusal::DuplicateTemporalClockSelection { .. }) => {
+                Seen::DuplicateTemporalClockSelection
+            }
+            Err(EmitRefusal::TemporalClockProfileMismatch { .. }) => {
+                Seen::TemporalClockProfileMismatch
             }
             Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")

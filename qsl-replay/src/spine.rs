@@ -46,7 +46,8 @@ use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 pub use lifecycle::{
-    check, check_with_execution_points, package, parse, refusal_or_fault, select, AdmittedModels,
+    check, check_with_execution_points, check_with_temporal_selections_and_execution_points,
+    package, package_with_temporal_selections, parse, refusal_or_fault, select, AdmittedModels,
     CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedSource,
 };
 
