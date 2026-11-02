@@ -163,14 +163,14 @@ fn evaluate_refuses_expression_from_another_checked_graph() {
     let objects = ObjectEnvironment::default();
 
     let mut meter_a = Meter::new(UNLIMITED);
-    assert_eq!(
-        evaluated(
-            package_a
-                .evaluate(&expression_a, Vec::new(), &objects, &mut meter_a)
-                .expect("an expression evaluates through its own package")
-        ),
-        Outcome::Completed(Value::Integer(Integer::from(7_i64)))
-    );
+    let Outcome::Completed(Value::Integer(value)) = evaluated(
+        package_a
+            .evaluate(&expression_a, Vec::new(), &objects, &mut meter_a)
+            .expect("an expression evaluates through its own package"),
+    ) else {
+        panic!("an expression evaluates through its own package");
+    };
+    assert_eq!(value, Integer::from(7_i64));
 
     let mut meter = Meter::new(UNLIMITED);
     let meter_before = meter.clone();
@@ -188,14 +188,14 @@ fn evaluate_refuses_expression_from_another_checked_graph() {
     assert_eq!(meter, meter_before, "the refusal must not charge the meter");
 
     let mut meter_b = Meter::new(UNLIMITED);
-    assert_eq!(
-        evaluated(
-            package_b
-                .evaluate(&expression_b, Vec::new(), &objects, &mut meter_b)
-                .expect("package B's own expression evaluates")
-        ),
-        Outcome::Completed(Value::Integer(Integer::from(11_i64)))
-    );
+    let Outcome::Completed(Value::Integer(value)) = evaluated(
+        package_b
+            .evaluate(&expression_b, Vec::new(), &objects, &mut meter_b)
+            .expect("package B's own expression evaluates"),
+    ) else {
+        panic!("package B's own expression evaluates");
+    };
+    assert_eq!(value, Integer::from(11_i64));
 }
 
 /// ADR-013 T-1 (FR-087): the S4 link step, over an empty
