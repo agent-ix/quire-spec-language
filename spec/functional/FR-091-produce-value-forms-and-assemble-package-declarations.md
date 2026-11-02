@@ -321,7 +321,7 @@ The `Value` production maps each CST expression construct to one
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
-| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")`, `Timestamp(n)`, `Bytes("...")` and `JsonObject("...")` are such calls, and check resolves them ("Native scalar literals") |
+| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")`, `Timestamp(n)`, `Bytes("...")`, `JsonObject("...")` and `Text("...")` are such calls, and check resolves them ("Native scalar literals") |
 | record value `R { f: e, g: null }` | `Record`; a field whose whole value is `null` is `FieldInitializer::Null` |
 | `sequence[..]`, `set[..]`, `bag[..]`, `orderedSet[..]` | `Collection` with kind `Sequence`, `Set`, `Bag`, `OrderedSet` |
 | `map`, `collect` `(x in c: e)` | `Query` with `BinderQuery::Map` |
@@ -867,11 +867,13 @@ or refuse a literal that this rule admits.
 ### Native scalar literals
 
 The unit language writes a constant of each native value type `String`,
-`UUID`, `Timestamp`, `Bytes` and `JsonObject` with one literal form. The forms are the only way to
-write such a constant, and each has exactly one checked type. They add no
+`UUID`, `Timestamp`, `Bytes` and `JsonObject`, and of a `Text[..]` value type,
+with one literal form. The forms are the only way to
+write such a constant, and each has exactly one checked type (a `Text("...")`
+takes the `Text[..]` type of its position). They add no
 production, no token and no reserved word: the quoted text token is already
-read by the lexer, and `UUID("...")`, `Timestamp(n)`, `Bytes("...")` and
-`JsonObject("...")` are ordinary calls that the shared complete-V1 grammar
+read by the lexer, and `UUID("...")`, `Timestamp(n)`, `Bytes("...")`,
+`JsonObject("...")` and `Text("...")` are ordinary calls that the shared complete-V1 grammar
 already parses.
 
 | Literal | Syntax | Checked type | Value |
@@ -949,8 +951,9 @@ quantity literal over the unit `s` (`3 s`, `rational(3, 2) s`) is a Duration.
 (not a `String`-typed expression), decoded as the String literal is, and is
 the only way to write a `Text` value. Its checked type is the `Text[min, max;
 profile]` that the enclosing position expects, FR-056's "The explicit Text
-constructor": a function body's declared result type, or the type of the other
-operand of `=` or `!=`. A position that expects no `Text[..]` type (a `String`,
+constructor": the declared type of the position it fills (a function body's
+result, a parameter, a record field), or the type of the other operand of `=`
+or `!=`. A position that expects no `Text[..]` type (a `String`,
 `Integer`, `UUID` or other slot, a `String` peer, or no expectation, as in
 `Text("a") = Text("a")`) refuses `ill_typed`/`type-mismatch` at the call. Check
 computes the retained sequence under the profile and refuses a retained length
@@ -982,14 +985,14 @@ or two, refuses `ill_typed`/`type-mismatch` at the argument, or at the call
 when the argument count is not one, naming the expected argument form. The `UUID` and
 `Timestamp` type names are the predeclared type names above and are unaffected.
 
-The five literals have no operator of their own. They take part in `=` and
+The six literals have no operator of their own. They take part in `=` and
 `!=` under FR-056, and a `Bytes` literal in `length` and `concat`, as arguments, `let` bindings, record field values,
 conditional branches, collection elements and bodies, wherever a value of the
 literal's type is accepted. A literal at a slot of another type, including
 `"abc"` at a `Text[0, 8; nfc]` slot (write `Text("abc")`), `"00112233-4455-6677-8899-aabbccddeeff"`
 at a `UUID` slot, `"00ff"` at a `Bytes` slot and the integer `5` at a `Timestamp` slot, refuses
 `ill_typed`/`type-mismatch` at the literal as every typed mismatch does, with
-no coercion. FR-093 lowers the five literals.
+no coercion. FR-093 lowers the six literals.
 
 ### Decimal constructor
 

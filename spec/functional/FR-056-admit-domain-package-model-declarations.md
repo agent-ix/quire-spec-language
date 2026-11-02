@@ -383,9 +383,11 @@ A `Text` value is written in source only as `Text("...")` (FR-091, "Native
 scalar literals"); there is no implicit conversion from `String` to `Text`, and
 FR-056-AC-41 stands: a quoted literal never changes type to fit its slot. The
 constructor takes one quoted text literal and has the type `Text[min, max;
-profile]` that its position expects: the declared result type of the function
-whose body it is, or the type of the other operand of `=` or `!=`. It has no
-type of its own, so a position that expects no `Text[..]` refuses it.
+profile]` that its position expects: the declared type of the position it
+fills, namely the declared result type of the function whose body it is, a
+declared parameter or record field type, or the type of the other operand of
+`=` or `!=`. It has no type of its own, so a position with no declared
+`Text[..]` type refuses it.
 
 The value is the retained sequence of the argument under the slot's profile, as
 the Text paragraph above states it: the decoded scalar sequence itself under
@@ -398,7 +400,8 @@ two values. The domain is decided on the retained sequence and never repairs
 it: a retained length outside `[min, max]` (the scalar count, or the byte count
 under `binary-utf8`) refuses at check time with the typed cause
 `TextLiteralOutsideBounds`, code `ill_typed`/`type-mismatch`, naming the
-argument as written, the slot's bounds and profile and the retained length. A
+argument as written, the slot's bounds and profile, the retained length and the
+span of the call. A
 value that the kernel produces outside the domain stays `text_length_out_of_domain`
 (FR-100); the constructor's check-time refusal is the static case of the same
 domain.
