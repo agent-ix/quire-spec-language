@@ -30,7 +30,8 @@ use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
 pub use temporal::{
-    OverObject, TimestampedObservation, TimestampedOrderKey, TimestampedTraceInput, TraceInput,
+    CoverComparison, OverObject, TimestampedCover, TimestampedMissingValuation,
+    TimestampedObservation, TimestampedOrderKey, TimestampedTraceInput, TraceInput,
 };
 
 use super::call::{convert_call_failure, convert_outcome, select};
@@ -715,6 +716,8 @@ pub struct ClauseRunUsage {
     pub admission_consumed: qsl_semantics::model::observation::AdmissionUsage,
     /// How many charges the evaluation meter admitted in total.
     pub evaluation_admissions: u64,
+    /// `temporal.visit` charges made by finite-window temporal evaluation.
+    pub temporal_visits: u64,
     /// The evaluation meter's consumed total, one pair per `LimitKind::ALL`.
     pub evaluation_consumed: Vec<(quire_exact::LimitKind, u64)>,
 }
@@ -806,6 +809,7 @@ impl ClauseRunUsage {
         Self {
             admission_consumed,
             evaluation_admissions: meter.admission_count(),
+            temporal_visits: 0,
             evaluation_consumed: quire_exact::LimitKind::ALL
                 .iter()
                 .map(|kind| (*kind, meter.consumed(*kind)))

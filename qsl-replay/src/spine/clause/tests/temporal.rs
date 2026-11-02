@@ -193,7 +193,8 @@ fn timestamped_with(
                 watermark,
                 complete_through,
                 scope_closed: true,
-                uncertainty: 0,
+                cover: crate::spine::TimestampedCover::Exact,
+                missing_valuations: Vec::new(),
                 authoritative_origin: true,
             }),
             over: over("c1"),
@@ -1246,6 +1247,7 @@ fn timestamped_windows_use_ticks_and_close_without_false_extension() {
     let outside = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
     assert_eq!(outside.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(outcome(&outside), &TemporalVerdict::Holds);
+    assert_eq!(outside.usage.temporal_visits, 7);
 
     let boundary = report(timestamped(&[0, 5], &[0, 1], 5, Some(5)));
     assert_eq!(outcome(&boundary), &TemporalVerdict::Holds);
@@ -1423,7 +1425,8 @@ fn timestamped_profile_and_trace_shape_must_match() {
                 watermark: 0,
                 complete_through: Some(0),
                 scope_closed: true,
-                uncertainty: 0,
+                cover: crate::spine::TimestampedCover::Exact,
+                missing_valuations: Vec::new(),
                 authoritative_origin: true,
             }),
             over: over("c1"),
@@ -1478,6 +1481,225 @@ fn finite_window_report_preserves_pending_and_indeterminate_exit_classes() {
     assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 10);
     let outcomes = [TemporalVerdict::Pending, TemporalVerdict::Holds];
     assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 0);
+}
+
+/// FR-501-AC-9 (TC-1295): counter-tick cover comparisons preserve the
+/// half-open endpoints, and an eligible witness whose cover straddles the
+/// interval bound is indeterminate.
+#[trace("TC-1295", "FR-501-AC-9")]
+#[test]
+fn timestamped_counter_cover_uses_half_open_boundary_rules() {
+    use crate::spine::{CoverComparison, TimestampedCover};
+
+    let exact = TimestampedCover::Exact;
+    let counter0 = TimestampedCover::Counter { uncertainty: 0 };
+    let counter1 = TimestampedCover::Counter { uncertainty: 1 };
+    assert_eq!(exact.within_bound(0, 3000, 3000), CoverComparison::True);
+    assert_eq!(counter0.within_bound(0, 2998, 3000), CoverComparison::True);
+    assert_eq!(
+        counter0.within_bound(0, 3000, 3000),
+        CoverComparison::StraddlesBound
+    );
+    assert_eq!(counter0.within_bound(0, 3001, 3000), CoverComparison::False);
+    assert_eq!(counter1.within_bound(0, 2997, 3000), CoverComparison::True);
+    assert_eq!(
+        counter1.within_bound(0, 2998, 3000),
+        CoverComparison::StraddlesBound
+    );
+    assert_eq!(counter1.within_bound(0, 3003, 3000), CoverComparison::False);
+    assert!(counter0.definitely_before(5, 6));
+    assert!(!counter0.definitely_before(5, 5));
+    assert!(counter0.definitely_before(5, 7));
+    assert!(!counter1.definitely_before(5, 6));
+    assert_eq!(
+        counter0.within_bound(7, 7, 0),
+        CoverComparison::StraddlesBound
+    );
+    assert_eq!(counter0.within_bound(7, 7, 1), CoverComparison::True);
+    assert_eq!(counter0.within_bound(7, 7, -1), CoverComparison::False);
+
+    fn request(ack_tick: u64, cover: TimestampedCover) -> ClauseRunRequest {
+        let mut request = timestamped(&[0, ack_tick], &[1, 2], ack_tick.max(3_010), Some(3_010));
+        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let source = String::from_utf8(bytes.clone()).unwrap();
+        *bytes = source
+            .replace(
+                "eventually[0,5] holds(c.value > 0)",
+                "holds(c.value = 1) implies eventually[0,3000] holds(c.value = 2)",
+            )
+            .into_bytes();
+        let ClauseRunSelection::Temporal {
+            trace: TraceInput::Timestamped(trace),
+            ..
+        } = &mut request.selection
+        else {
+            unreachable!()
+        };
+        trace.cover = cover;
+        request
+    }
+
+    assert_eq!(
+        outcome(&report(request(2_998, counter0))),
+        &TemporalVerdict::Holds
+    );
+    assert_eq!(
+        outcome(&report(request(3_000, counter0))),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::StraddlesBound,
+        }
+    );
+    assert_eq!(
+        outcome(&report(request(3_001, counter0))),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    assert_eq!(
+        outcome(&report(request(3_000, exact))),
+        &TemporalVerdict::Holds
+    );
+    assert_eq!(
+        outcome(&report(request(2_997, counter1))),
+        &TemporalVerdict::Holds
+    );
+    assert_eq!(
+        outcome(&report(request(2_998, counter1))),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::StraddlesBound,
+        }
+    );
+    assert_eq!(
+        outcome(&report(request(3_003, counter1))),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+}
+
+/// FR-501-AC-4 (TC-1295): an unresolved atom reading is a possibility, a
+/// later witness can settle around it, and differing same-stamp readings are
+/// reported as conflicting valuation.
+#[trace("TC-1295", "FR-501-AC-4")]
+#[test]
+fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
+    fn missing(values: &[i64], watermark: u64) -> ClauseRunReport {
+        let mut request = timestamped(&[0, 2, 5], values, watermark, Some(5));
+        let ClauseRunSelection::Temporal {
+            trace: TraceInput::Timestamped(trace),
+            ..
+        } = &mut request.selection
+        else {
+            unreachable!()
+        };
+        trace
+            .missing_valuations
+            .push(crate::spine::TimestampedMissingValuation {
+                position: 1,
+                atom: 1,
+            });
+        report(request)
+    }
+
+    let missing_closed = missing(&[0, 2, 0], 5);
+    assert_eq!(
+        outcome(&missing_closed),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::MissingValuation {
+                position: 1,
+                atom: "holds-node@1".to_owned(),
+            },
+        }
+    );
+    assert_eq!(
+        outcome(&missing(&[0, 2, 0], 3)),
+        &TemporalVerdict::PendingWindow { at: 0, deadline: 5 }
+    );
+    assert_eq!(outcome(&missing(&[0, 2, 1], 5)), &TemporalVerdict::Holds);
+
+    let conflicting = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 0], 5, Some(5)));
+    assert_eq!(
+        outcome(&conflicting),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::ConflictingValuation {
+                position: 1,
+                atom: "holds-node@1".to_owned(),
+            },
+        }
+    );
+    let later_witness = report(timestamped(&[0, 2, 2, 5], &[0, 1, 0, 1], 5, Some(5)));
+    assert_eq!(outcome(&later_witness), &TemporalVerdict::Holds);
+}
+
+/// FR-501-AC-12 (TC-1295): a closed `[0,5]` existential on stamps 0,2,5
+/// charges one root visit, three atom reads and three scan positions.
+#[trace("TC-1295", "FR-501-AC-12")]
+#[test]
+fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
+    let full = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
+    assert_eq!(outcome(&full), &TemporalVerdict::Holds);
+    assert_eq!(full.usage.temporal_visits, 7);
+    let work = full
+        .usage
+        .evaluation_consumed
+        .iter()
+        .find(|(kind, _)| *kind == quire_exact::LimitKind::WorkUnits)
+        .map(|(_, consumed)| *consumed)
+        .unwrap();
+
+    let mut six = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
+    six.accounting.work_units = work - 1;
+    let six = report(six);
+    assert!(
+        matches!(
+            outcome(&six),
+            TemporalVerdict::Incomplete(incomplete)
+                if incomplete.charge_point == quire_exact::ChargePoint::TemporalVisit
+        ),
+        "{:?}",
+        six.disposition
+    );
+
+    let mut seven = timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5));
+    seven.accounting.work_units = work;
+    let seven = report(seven);
+    assert_eq!(outcome(&seven), &TemporalVerdict::Holds);
+    assert_eq!(seven.usage.temporal_visits, 7);
+
+    let full_siblings = report(timestamped_with(
+        Unit::TimestampedEach,
+        &[0, 10],
+        &[0, 0],
+        12,
+        Some(12),
+    ));
+    assert_eq!(
+        outcome(&full_siblings),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    let total_work = full_siblings
+        .usage
+        .evaluation_consumed
+        .iter()
+        .find(|(kind, _)| *kind == quire_exact::LimitKind::WorkUnits)
+        .map(|(_, consumed)| *consumed)
+        .unwrap();
+    let mut preserved_first = false;
+    for ceiling in 0..total_work {
+        let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], &[0, 0], 12, Some(12));
+        request.accounting.work_units = ceiling;
+        let partial = report(request);
+        if outcome(&partial) == &(TemporalVerdict::Violated { at: 0 })
+            && partial.usage.temporal_visits < full_siblings.usage.temporal_visits
+        {
+            preserved_first = true;
+            break;
+        }
+    }
+    assert!(
+        preserved_first,
+        "a settled first activation survives a later denied charge"
+    );
 }
 
 /// FR-501-AC-7/18 (TC-1295): order-sensitive operators require comparable
@@ -1586,6 +1808,31 @@ fn timestamped_past_windows_respect_history_cutoff() {
         &TemporalVerdict::Violated { at: 0 }
     );
     assert_eq!(outcome(&once(&[1, 0], false)), &TemporalVerdict::Holds);
+}
+
+/// FR-501-AC-10 (TC-1295): guarded finite-window activations run only where
+/// their guard is true, with the same first-false ordering as unguarded runs.
+#[trace("TC-1295", "FR-501-AC-10")]
+#[test]
+fn timestamped_guarded_on_each_activations_are_evaluated() {
+    fn guarded(values: &[i64]) -> ClauseRunReport {
+        let mut request = timestamped_with(Unit::TimestampedEach, &[0, 10], values, 12, Some(12));
+        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let source = String::from_utf8(bytes.clone()).unwrap();
+        *bytes = source
+            .replace(
+                "on each (q: Counters::Counter) { eventually[0,2] holds(c.value > 0) }",
+                "on each (q: Counters::Counter) when (q.value = 1) { eventually[0,2] holds(c.value > 1) }",
+            )
+            .into_bytes();
+        report(request)
+    }
+
+    assert_eq!(outcome(&guarded(&[0, 0])), &TemporalVerdict::Holds);
+    assert_eq!(
+        outcome(&guarded(&[1, 0])),
+        &TemporalVerdict::Violated { at: 0 }
+    );
 }
 
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace

@@ -67,6 +67,8 @@ pub struct FiniteWindowProgress {
     watermark: Rational,
     complete_through: Option<Rational>,
     uncertainty_margin: Rational,
+    /// Atom nodes whose observation valuation is absent.
+    missing_valuations: Vec<(u64, u64)>,
 }
 
 impl FiniteWindowProgress {
@@ -76,17 +78,24 @@ impl FiniteWindowProgress {
         watermark: Rational,
         complete_through: Option<Rational>,
         uncertainty_margin: Rational,
+        missing_valuations: Vec<(u64, u64)>,
     ) -> Self {
         Self {
             watermark,
             complete_through,
             uncertainty_margin,
+            missing_valuations,
         }
     }
 
     /// The margin added to a finite-window establishment deadline.
     pub fn uncertainty_margin(&self) -> &Rational {
         &self.uncertainty_margin
+    }
+
+    /// The absent atom valuations carried by this progress input.
+    pub fn missing_valuations(&self) -> &[(u64, u64)] {
+        &self.missing_valuations
     }
 }
 
@@ -278,7 +287,12 @@ struct Evaluator<'a> {
     /// progress and completeness. Unlike a timed prefix, it has no unknown
     /// continuation after the last represented position.
     closed_window: bool,
+    /// A finite-window activation needs only its root value at the anchor.
+    root_activation_only: bool,
+    /// Finite-window possibility evaluation keeps reading after an absent atom.
+    continue_after_undefined: bool,
     meter: &'a mut Meter,
+    visits: u64,
     /// The value of each formula node at each position, once computed.
     values: Vec<Vec<Tri>>,
 }
@@ -286,6 +300,7 @@ struct Evaluator<'a> {
 impl Evaluator<'_> {
     fn charge(&mut self) -> Result<(), Stop> {
         self.meter.charge(Charge::new(VISIT))?;
+        self.visits = self.visits.saturating_add(1);
         Ok(())
     }
 
@@ -331,7 +346,7 @@ impl Evaluator<'_> {
             if let Some(guard) = guard {
                 held = held.min(self.value(guard, j)?.flip(dual));
             }
-            if acc == Tri::True || held == Tri::False {
+            if !self.closed_window && (acc == Tri::True || held == Tri::False) {
                 return Ok(acc.flip(dual));
             }
         }
@@ -520,6 +535,7 @@ fn read_atoms<L: TemporalLetters>(
         .map(|(index, _)| index)
         .collect();
     let mut insufficient = None;
+    let mut first_undefined = None;
     for position in 0..represented {
         let at =
             TemporalPosition::new(u64::try_from(position).map_err(|_| broken("position-in-u64"))?);
@@ -538,13 +554,19 @@ fn read_atoms<L: TemporalLetters>(
                     Tri::Unknown
                 }
                 AtomReading::Undefined(cause) => {
-                    for &atom in &atoms {
-                        if let Some(values) = evaluator.values.get_mut(atom) {
-                            values.truncate(position);
-                            values.resize(evaluator.stamps.len(), Tri::Unknown);
+                    if !evaluator.continue_after_undefined {
+                        for &atom in &atoms {
+                            if let Some(values) = evaluator.values.get_mut(atom) {
+                                values.truncate(position);
+                                values.resize(evaluator.stamps.len(), Tri::Unknown);
+                            }
                         }
+                        return Ok((Some(UndefinedEvaluation { at, cause }), insufficient));
                     }
-                    return Ok((Some(UndefinedEvaluation { at, cause }), insufficient));
+                    if first_undefined.is_none() {
+                        first_undefined = Some(UndefinedEvaluation { at, cause });
+                    }
+                    Tri::Unknown
                 }
             };
             let slot = evaluator
@@ -566,7 +588,7 @@ fn read_atoms<L: TemporalLetters>(
             }
         }
     }
-    Ok((None, insufficient))
+    Ok((first_undefined, insufficient))
 }
 
 /// Evaluate `clause`'s formula at `position` of the timed `trace`, ignoring
@@ -626,7 +648,10 @@ pub fn evaluate_timed_at<L: TemporalLetters>(
             delay: &looping.delay,
         }),
         closed_window: false,
+        root_activation_only: false,
+        continue_after_undefined: false,
         meter,
+        visits: 0,
         values: vec![vec![Tri::Unknown; stamps.len()]; formula.nodes().len()],
     };
     match evaluate(
@@ -663,7 +688,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
     progress: &FiniteWindowProgress,
     letters: &mut L,
     meter: &mut Meter,
-) -> Result<TemporalOutcome, TemporalRefusal> {
+) -> Result<(TemporalOutcome, u64), TemporalRefusal> {
     if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
         return Err(TemporalRefusal::NotTimedProfile {
             profile: clause.profile(),
@@ -692,20 +717,26 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
         stamps: &trace.stamps,
         tail: None,
         closed_window,
+        root_activation_only: true,
+        continue_after_undefined: true,
         meter,
+        visits: 0,
         values: vec![vec![Tri::Unknown; trace.stamps.len()]; formula.nodes().len()],
     };
-    match evaluate(formula, &mut evaluator, letters, at, trace.stamps.len(), 0) {
-        Ok((value, undefined, insufficient)) => Ok(match (value, undefined, insufficient) {
+    let outcome = match evaluate(formula, &mut evaluator, letters, at, trace.stamps.len(), 0) {
+        Ok((value, undefined, insufficient)) => match (value, undefined, insufficient) {
+            (Tri::True, Some(_), _) => TemporalOutcome::Holds,
+            (Tri::False, Some(_), _) => TemporalOutcome::Violated { at: position },
             (_, Some(undefined), _) => TemporalOutcome::Undefined(undefined),
             (Tri::False, None, None) => TemporalOutcome::Violated { at: position },
             (_, None, Some(insufficient)) => TemporalOutcome::InsufficientData(insufficient),
             (Tri::True, None, None) => TemporalOutcome::Holds,
             (Tri::Unknown, None, None) => TemporalOutcome::Pending,
-        }),
-        Err(Stop::Incomplete(incomplete)) => Ok(TemporalOutcome::Incomplete(incomplete)),
-        Err(Stop::Refused(refusal)) => Err(refusal),
-    }
+        },
+        Err(Stop::Incomplete(incomplete)) => TemporalOutcome::Incomplete(incomplete),
+        Err(Stop::Refused(refusal)) => return Err(refusal),
+    };
+    Ok((outcome, evaluator.visits))
 }
 
 /// The finite-window establishment deadline for one activation.
@@ -815,11 +846,18 @@ fn evaluate<L: TemporalLetters>(
 > {
     let (undefined, insufficient) =
         read_atoms(formula, evaluator, letters, represented, loop_start)?;
+    let root = formula.root().index();
     for (index, node) in formula.nodes().iter().enumerate().rev() {
         if matches!(node, FormulaNode::Holds { .. }) {
             continue;
         }
-        for position in 0..evaluator.stamps.len() {
+        let positions: Box<dyn Iterator<Item = usize>> =
+            if evaluator.root_activation_only && index == root {
+                Box::new(std::iter::once(at))
+            } else {
+                Box::new(0..evaluator.stamps.len())
+            };
+        for position in positions {
             let value = evaluator.node(node, position)?;
             let slot = evaluator
                 .values
