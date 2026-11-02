@@ -1037,7 +1037,7 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     );
     let broken = good
         .replace("protocol Flow", "protocol Broken")
-        .replace("join all [a, b]", "join all [a, absent]");
+        .replace("join all [a, b]", "join all [a, ghost]");
     let unit = |protocols: &str| {
         format!(
             "language \"ix:native\" edition \"1-draft\";\n\
