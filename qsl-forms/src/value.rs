@@ -1725,6 +1725,11 @@ impl<'c> Mapping<'c> {
         operands.extend(nodes_of(items, Production::HyperExpression));
         match items.first() {
             Some(Item::Node(child)) => self.primary_node(task, child),
+            Some(Item::Token(token)) if token.spelling() == b"Text" => self.with_children(
+                Shape::Call(NameForm::new("Text", token.span())),
+                &task,
+                operands,
+            ),
             Some(Item::Token(token)) => match token.kind() {
                 TokenKind::Integer => {
                     let value = integer(&text(token, node)?, node)?;
