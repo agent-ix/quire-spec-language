@@ -97,6 +97,7 @@ fn call(
 /// meter too small to form it stops at the member walk, and one too small
 /// for the call stops at `function.call`.
 #[trace("TC-845", "FR-335-AC-5")]
+#[trace("QSpec-TC-246", "QSpec-FR-144-AC-12")]
 #[test]
 fn an_unbounded_set_of_any_size_evaluates_and_stops_only_on_the_meter() {
     let package = package();
