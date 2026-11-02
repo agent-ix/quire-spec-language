@@ -111,9 +111,7 @@ pub fn evaluate_observed_finite_window(
     environments: &[ObjectEnvironment],
     trace: &super::TimedTrace,
     over: &ObjectReference,
-    watermark: &quire_exact::Rational,
-    complete_through: Option<&quire_exact::Rational>,
-    uncertainty_margin: &quire_exact::Rational,
+    progress: &super::FiniteWindowProgress,
     meter: &mut Meter,
 ) -> ObservedRun {
     let shape = TemporalTrace::Finite {
@@ -156,9 +154,7 @@ pub fn evaluate_observed_finite_window(
             clause_body,
             trace,
             position,
-            watermark,
-            complete_through,
-            uncertainty_margin,
+            progress,
             &mut letters,
             meter,
         );
@@ -172,7 +168,7 @@ pub fn evaluate_observed_finite_window(
                         clause_body,
                         trace,
                         position,
-                        uncertainty_margin,
+                        progress.uncertainty_margin(),
                     )
                     .ok()
                     .map(|deadline| (position, deadline));

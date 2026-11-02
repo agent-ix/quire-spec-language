@@ -61,6 +61,35 @@ pub struct TimedTrace {
     looping: Option<TimedLoop>,
 }
 
+/// Progress premises for a timestamped finite-window assessment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FiniteWindowProgress {
+    watermark: Rational,
+    complete_through: Option<Rational>,
+    uncertainty_margin: Rational,
+}
+
+impl FiniteWindowProgress {
+    /// The inclusive watermark, optional inclusive completeness boundary and
+    /// counter-cover margin for one finite-window assessment.
+    pub fn new(
+        watermark: Rational,
+        complete_through: Option<Rational>,
+        uncertainty_margin: Rational,
+    ) -> Self {
+        Self {
+            watermark,
+            complete_through,
+            uncertainty_margin,
+        }
+    }
+
+    /// The margin added to a finite-window establishment deadline.
+    pub fn uncertainty_margin(&self) -> &Rational {
+        &self.uncertainty_margin
+    }
+}
+
 /// The loop of a timed lasso (ADR-026 CT-2): the position its end re-enters
 /// and its total delay.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -631,9 +660,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
     clause: &CheckedTemporalClause,
     trace: &TimedTrace,
     position: TemporalPosition,
-    watermark: &Rational,
-    complete_through: Option<&Rational>,
-    uncertainty_margin: &Rational,
+    progress: &FiniteWindowProgress,
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
@@ -653,9 +680,14 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
         .filter(|at| *at < trace.stamps.len())
         .ok_or(PositionRefusal::OutsideTrace { position })?;
     let horizon = finite_future_reach(formula)?;
-    let deadline = trace.stamps[at].add(&horizon).add(uncertainty_margin);
-    let closed_window =
-        watermark >= &deadline && complete_through.is_some_and(|through| through >= &deadline);
+    let deadline = trace.stamps[at]
+        .add(&horizon)
+        .add(&progress.uncertainty_margin);
+    let closed_window = progress.watermark >= deadline
+        && progress
+            .complete_through
+            .as_ref()
+            .is_some_and(|through| through >= &deadline);
     let mut evaluator = Evaluator {
         stamps: &trace.stamps,
         tail: None,

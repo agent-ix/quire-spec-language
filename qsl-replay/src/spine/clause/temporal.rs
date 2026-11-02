@@ -296,15 +296,18 @@ pub(super) fn run_temporal(
                     let complete_through = input
                         .complete_through
                         .map(|through| Rational::from_integer(Integer::from(through)));
+                    let progress = qsl_eval::temporal::FiniteWindowProgress::new(
+                        watermark,
+                        complete_through,
+                        margin,
+                    );
                     let observed = qsl_eval::temporal::evaluate_observed_finite_window(
                         run.package,
                         node,
                         &environments,
                         &timed_trace,
                         &reference,
-                        &watermark,
-                        complete_through.as_ref(),
-                        &margin,
+                        &progress,
                         &mut meter,
                     );
                     observed
