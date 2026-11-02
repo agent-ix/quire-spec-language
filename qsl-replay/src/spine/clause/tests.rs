@@ -3352,9 +3352,13 @@ mod extracted {
         let (unit, _packages) = unit_and_packages();
         let extracted = extracted();
         let body = extracted.map().body();
+        let expected_body = unit
+            .lines()
+            .map(|line| format!("  {line}\r\n"))
+            .collect::<String>();
         assert_eq!(
             body.text(),
-            unit.trim_end_matches('\n').replace('\n', "\r\n"),
+            expected_body.trim_end_matches("\r\n"),
             "the extracted body is the fenced unit"
         );
         assert_eq!(extracted.map().original().identity(), &original_identity());
