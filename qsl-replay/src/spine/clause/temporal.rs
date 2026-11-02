@@ -371,7 +371,9 @@ fn finite_window_verdict(
     };
     let uncertainty = input.uncertainty.checked_mul(2).unwrap_or_default();
     let margin = Rational::from_integer(Integer::from(uncertainty));
-    let (position, deadline) = pending_activation.unwrap_or_else(|| {
+    let (position, deadline) = if let Some((position, deadline)) = pending_activation {
+        (position, deadline.numerator().to_u64().unwrap_or(u64::MAX))
+    } else {
         let deadline = qsl_eval::temporal::finite_window_deadline(
             clause,
             &trace,
@@ -382,7 +384,7 @@ fn finite_window_verdict(
         .and_then(|value| value.numerator().to_u64())
         .unwrap_or(u64::MAX);
         (qsl_eval::temporal::TemporalPosition::new(0), deadline)
-    });
+    };
     let position = position.index();
     match outcome {
         TemporalOutcome::Pending if input.watermark >= deadline => {
