@@ -518,6 +518,48 @@ NOT stand in for reader-backed parity. Projection MAY traverse already
 admitted typed data, but SHALL NOT repeat admission or give a free-standing
 decoded term checked authority.
 
+### Composed roots from the reader
+
+A slot's root MAY be any admitted application of the wire (a connective,
+`not`, a comparison, integer arithmetic, a conditional, a `let`, a field read, a
+dereference or a case), not only a field, attribute or bare reference. The
+reader variant of `read_node` SHALL return the canonical FR-400 `NodeRead` for
+the selected root and for every node reachable from it through the admitted
+`dependencies`, each child position holding a handle of the same view and
+owning slot. The existing S6a `Machine` SHALL walk those handles; a root is
+never evaluated by a special case of the machine that is keyed on the root's
+kind, and the machine holds no second walker for the reader.
+
+A reader `NodeRead` SHALL be derived from the admitted wire alone: the node's
+operation identity, mode, laws, member and leaves (QSpec FR-322), its
+`equality_decisions` and `dispatch_tables` sidecar rows, its argument terms and
+its admitted result type. A reader view SHALL NOT consult the source
+package's `CheckedBody`, its node locations, its slot frame or its
+`reads_local` answers to build, order or complete a `NodeRead`. The source
+package MAY select the slot descriptor and name its binders, as the single
+selector does, but never supplies a node's operation, children, type or
+location.
+
+The `Location` of a reader `NodeRead` is the semantic location of the visited
+term, read from the `protocol_locations` row FR-383 emits for it. Where one
+application is visited more than once in a slot, the rows SHALL distinguish the
+visits, and the view SHALL pair each visit with its own row. If the rows do not
+determine one location for a visit, view creation returns
+`ViewFailure::Unsupported` with `MissingOperationProjection` at that node's
+`Node` locus. A location SHALL NOT be taken from the source package, from a
+source region, or defaulted.
+
+An operation identity with no mapping to a FR-400 `NodeKind` yields
+`ViewFailure::Unsupported` with `MissingOperationProjection` at that node's
+locus before a view or meter charge exists, carrying the package identity, the
+node key, the node location and the operation identity, so the refusal replays
+from the package bytes. It refuses no other slot of the package that the view
+could not otherwise be created for, and it does not make the kind outside the
+evaluator surface: a kind that QSL emits and TC-1070's fixtures E and L use
+(`and`, `or`, `not`, `=`, `<`, `>=`, integer `+`, a record field read, a
+literal and a bare reference) SHALL project, and an unsupported result for one
+of them is an unmet dependency under AC-11 and AC-15.
+
 ### Charge points and their order
 
 Within one call the evaluator charges, in this order: the nodes of the slot's
@@ -707,6 +749,8 @@ value; check 6 does not apply to it.
 | FR-390-AC-25 | A Quantity reader projection preserves its exact declared or compound `UnitId`; two declared units of one dimension remain distinct Quantity types, and only an explicit FR-142 conversion yields the selected target unit type. A dimension name or matching exponent vector alone never selects a unit identity, and a Dimension is not admitted as a standalone runtime value. | Test |
 | FR-390-AC-26 | An alias to String, UUID, Timestamp, Quantity or Union resolves to the target's effective type and behavior without a runtime wrapper or alias-name identity. | Test |
 | FR-390-AC-27 | A Union reader projection preserves the exact declared union identity, active member identity and positional payload recursively. A case evaluates only the arm selected by exact member identity and binds that member's payload in order; spelling, ordinal and matching payload shape never select an arm. The emitted-and-admitted package yields the same value, outcome and ordered charge log as the source checked package. | Test |
+| FR-390-AC-28 | Over the emitted-and-admitted package of TC-1070 fixtures E and L, every composed-root slot evaluates through the reader view: the trigger guard (row 4, 5), the retry relation (rows 8 to 11, 15, 16), the recovery predicate (rows 12 to 14, 17 to 19), the `effect` constraint (row 20), the `finish` constraint (row 22), both `related` ends (rows 29, 30) and the case guard `no` (rows 32, 33). Each gives the value, the outcome category and the ordered charge log of the same call over the checked package, and the reader variant of `read_node` returns a `NodeRead` for every node of these roots, including the shared `earlier.tally` node that retry visits twice. A reader view whose source package has had its `CheckedBody` for the slot replaced by an unrelated body still evaluates the reader's own term. | Test (TC-1070, TC-1073) |
+| FR-390-AC-29 | For a composed root whose evaluation halts with a location (a read of an `Unavailable` binder inside a conjunction, and an out-of-domain narrowing), the reader result carries the `Location` of the visited term read from its `protocol_locations` row, equal to the in-process location, and for the twice-visited node of AC-28 each visit reports its own. Removing the row of one visit, or making two visits resolve to one row, yields `ViewFailure::Unsupported` / `MissingOperationProjection` at that node before any view or charge. An operation identity with no `NodeKind` mapping yields the same reason with its operation identity in the evidence; the `and`, `or`, `not`, `=`, `<`, `>=`, `+`, field and literal kinds of fixtures E and L never do. | Test (TC-1070, TC-1073) |
 
 ## Dependencies
 

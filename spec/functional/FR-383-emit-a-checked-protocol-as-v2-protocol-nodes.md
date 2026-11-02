@@ -194,6 +194,20 @@ arguments. `P` is the protocol's qualified name.
 
 ## Behavior
 
+### Protocol term locations
+
+The emitter SHALL write, in the `checked_term_data.protocol_locations` array of
+QSpec FR-322, one row for every term of every protocol slot expression it
+emits that a reader can visit: for each (application node, occurrence) it
+writes the term's semantic location, the origin of the slot's site
+(`protocol_site`) and the child-index path the in-process checked term
+carries, with consecutive `term_ordinal` values from zero. An application the
+slot visits more than once has a row for each visit, so each visit has its own
+location. The rows carry the locations the checker assigned and are neither
+derived from source regions, node order or operand position, nor defaulted. A
+unit with no protocol slot expression writes the array empty, and a package
+with no checked-term data keeps the sidecar absent as today.
+
 ### Cyclic reference components
 
 A protocol node that
@@ -447,6 +461,7 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte, and removing **W** changes **X**'s refusal record in no field; an `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
 | FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
 | FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
+| FR-383-AC-32 | Reading **W**'s package and protocol L's (TC-1070 fixture L) through QSL's I2 reader returns a `protocol_locations` row for every term of every guard, constraint, condition, key, initializer and `until` expression the package holds, and each row's `Location` equals the `Location` of that term in the in-process checked clause, including the two visits of a shared application in one retry relation. A protocol with no slot expression writes the array empty, and a variant whose row is removed or duplicated is refused by the reader or by FR-390-AC-29. No row is derived from a source region or a node position. | Test (TC-1063) |
 
 ## Dependencies
 

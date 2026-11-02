@@ -13,8 +13,8 @@ relationships:
 Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
-the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3
-and FR-390-AC-23. The E-P procedure below verifies FR-390-AC-23 without
+the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23,
+FR-390-AC-28 and FR-390-AC-29. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from

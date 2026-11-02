@@ -15,7 +15,7 @@ with an S3 refusal emits no node of its own and no package for the unit while
 the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a

@@ -15,7 +15,7 @@ under the accounting counters, that a meter at exactly the measured usage
 completes and one below it stops with the counter named, that several calls on
 one meter accumulate exactly the sum of their charges, and that the same call
 over the package read back and over the checked package gives the same result
-and the same charges. Scope: FR-390-AC-9 to FR-390-AC-11.
+and the same charges. Scope: FR-390-AC-9 to FR-390-AC-11, FR-390-AC-28 and FR-390-AC-29.
 
 Catches a slot that costs nothing, a meter that resets between calls, a total
 that depends on call order, an exhausted call that returns part of a value, a
