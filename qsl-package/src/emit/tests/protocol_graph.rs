@@ -1065,7 +1065,13 @@ fn minimum_protocol_work_budget(protocols: &str) -> u64 {
 
 /// FR-383-AC-18, AC-28 and AC-29 (TC-1297): a refused protocol leaves
 /// independent protocol results readable and makes the aggregate inadmissible.
-#[trace("FR-383-AC-18", "FR-383-AC-28", "FR-383-AC-29", "TC-1297")]
+#[trace(
+    "FR-383-AC-18",
+    "FR-383-AC-28",
+    "FR-383-AC-29",
+    "FR-383-AC-31",
+    "TC-1297"
+)]
 #[test]
 fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     let good = parallel_flow(
@@ -1245,22 +1251,6 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     assert_eq!(first, "Flow");
     assert_eq!(refused, "Broken");
     assert_eq!(third, "ThirdGood");
-    if first_nodes != baseline {
-        for (index, (left, right)) in first_nodes.iter().zip(baseline).enumerate() {
-            if left != right {
-                let left_object = left.as_object().expect("node object");
-                let right_object = right.as_object().expect("node object");
-                let differing: Vec<_> = left_object
-                    .keys()
-                    .chain(right_object.keys())
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .filter(|key| left_object.get(*key) != right_object.get(*key))
-                    .collect();
-                eprintln!("structural Flow node {index} differs in {differing:?}");
-            }
-        }
-    }
     assert_eq!(
         first_nodes, baseline,
         "Flow differs from its standalone nodes"
