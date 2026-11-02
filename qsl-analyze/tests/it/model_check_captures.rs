@@ -52,8 +52,10 @@ fn run(world: &World, limits: ModelCheckLimits) -> Result<ModelCheckOutcome, Mod
         ModelSystem::new(world.subject(&["c"], UNLIMITED).simulation).expect("the subject admits");
     let node = &world.package.graph().temporal_clauses()[0];
     let letters = system.clause_letters(node).expect("the clause has letters");
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&world.package);
     check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &temporal_clock_selections,
             subject: world.subject(&["c"], UNLIMITED),
             item: ModelCheckItem::Clause {
                 clause: node.clause(),
@@ -265,6 +267,7 @@ fn a_capture_initializer_joins_the_activation_footprint() {
     let letters = system.clause_letters(node).expect("the clause has letters");
     let outcome = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: world.subject(&["c"], UNLIMITED),
             item: ModelCheckItem::Clause {
                 clause: node.clause(),
@@ -370,6 +373,7 @@ fn the_closure_checker_reads_the_captures_and_rejects_an_undefined_one() {
         let letters = system.clause_letters(node).expect("the clause has letters");
         check_closure(
             &CertificateRequest {
+                temporal_clock_selections: &[],
                 subject: world.subject(&["c"], UNLIMITED),
                 item: ModelCheckItem::Clause {
                     clause: node.clause(),

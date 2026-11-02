@@ -94,10 +94,7 @@ use qsl_foundation::Setting;
 use qsl_foundation::SourceIdentity;
 use qsl_foundation::SyntaxLimit;
 use qsl_package as pkg;
-use qsl_package::{
-    emit_checked_with_cancel, read_import_view, AdmittedPackages, Emission, Import,
-    ImportViewRefusal,
-};
+use qsl_package::{read_import_view, AdmittedPackages, Emission, Import, ImportViewRefusal};
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CorrespondenceConflict, KeyFault,
     PackageDeclarations,
@@ -583,11 +580,11 @@ pub fn check_with_execution_points(
     limits: SpineLimits,
     cancel: &Cancel,
 ) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
-    check_with_execution_points_and_refinement_internals(
+    check_with_temporal_selections_and_execution_points(
         parsed,
         package_name,
         execution_points,
-        None,
+        &[],
         models,
         dependencies,
         limits,
@@ -597,11 +594,72 @@ pub fn check_with_execution_points(
 
 /// S3 and S4 with both the accepted execution points and unchecked
 /// refinement-internal-list value carried to the unit owner (FR-147/FR-099).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "check inputs plus refinement internals"
+)]
 pub fn check_with_execution_points_and_refinement_internals(
     parsed: &ParsedSource,
     package_name: String,
     execution_points: &super::StateClauseExecutionPoints,
     refinement_internals: Option<serde_json::Value>,
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    check_with_context_and_temporal_selections(
+        parsed,
+        package_name,
+        execution_points,
+        refinement_internals,
+        &[],
+        models,
+        dependencies,
+        limits,
+        cancel,
+    )
+}
+
+/// S3 and S4 with explicit clock selections for configured temporal clauses.
+/// Selections are partitioned by exact source reference before package emission.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "check inputs plus explicit selections"
+)]
+pub fn check_with_temporal_selections_and_execution_points(
+    parsed: &ParsedSource,
+    package_name: String,
+    execution_points: &super::StateClauseExecutionPoints,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    models: &AdmittedModels,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    cancel: &Cancel,
+) -> Result<Staged<CheckedUnit>, FrontEndFailure> {
+    check_with_context_and_temporal_selections(
+        parsed,
+        package_name,
+        execution_points,
+        None,
+        temporal_selections,
+        models,
+        dependencies,
+        limits,
+        cancel,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "check inputs plus temporal selections and refinement internals"
+)]
+fn check_with_context_and_temporal_selections(
+    parsed: &ParsedSource,
+    package_name: String,
+    execution_points: &super::StateClauseExecutionPoints,
+    refinement_internals: Option<serde_json::Value>,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -627,6 +685,7 @@ pub fn check_with_execution_points_and_refinement_internals(
             packages: &models.packages,
             limits,
             cancel,
+            temporal_selections,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -675,9 +734,38 @@ pub fn package(
     limits: PackageLimits,
     cancel: &Cancel,
 ) -> Result<Staged<EmittedUnit>, FrontEndFailure> {
+    package_with_temporal_selections(checked, &[], limits, cancel)
+}
+
+/// E4 with the explicit clock configuration for each configured temporal
+/// declaration, keyed by its checked source and exact locus.
+pub fn package_with_temporal_selections(
+    checked: &CheckedUnit,
+    selections: &[qsl_package::TemporalClockSelection],
+    limits: PackageLimits,
+    cancel: &Cancel,
+) -> Result<Staged<EmittedUnit>, FrontEndFailure> {
     let PackageLimits {} = limits;
     stage(cancel, &|_| None, |work| {
-        let emission = charged(cancel, &mut work.e4, || emit_unit(&checked.package, cancel))?;
+        for selection in selections {
+            let source_is_compiled = selection.source == *checked.source.reference()
+                || checked
+                    .libraries
+                    .iter()
+                    .any(|source| selection.source == *source.reference());
+            if !source_is_compiled {
+                return Err(Box::new(CompileRefusal::Emit(
+                    qsl_package::EmitRefusal::SurplusTemporalClockSelection {
+                        source_ref: selection.source.clone(),
+                        span: selection.declaration_span,
+                    },
+                )));
+            }
+        }
+        let own = temporal_selections_for_source(selections, checked.source.reference());
+        let emission = charged(cancel, &mut work.e4, || {
+            emit_unit(&checked.package, &own, cancel)
+        })?;
         let sources = std::iter::once(&checked.source)
             .chain(&checked.libraries)
             .cloned()
@@ -828,16 +916,29 @@ fn parse_operation_clauses(
 /// never writes (ADR-011 §2.3).
 fn emit_unit(
     package: &pkg::CheckedPackage,
+    selections: &[qsl_package::TemporalClockSelection],
     cancel: &Cancel,
 ) -> Result<Emission, Box<CompileRefusal>> {
-    let emission = emit_checked_with_cancel(package, cancel)
-        .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+    let emission =
+        qsl_package::emit_checked_with_temporal_selections_and_cancel(package, selections, cancel)
+            .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
     if !emission.omitted().is_empty() {
         return Err(Box::new(CompileRefusal::Omitted(
             emission.omitted().to_vec(),
         )));
     }
     Ok(emission)
+}
+
+fn temporal_selections_for_source(
+    selections: &[qsl_package::TemporalClockSelection],
+    source: &RawSourceRef,
+) -> Vec<qsl_package::TemporalClockSelection> {
+    selections
+        .iter()
+        .filter(|selection| selection.source == *source)
+        .cloned()
+        .collect()
 }
 
 /// One unit through all four operations, over a handle nobody cancels: the
@@ -965,6 +1066,7 @@ struct Resolution<'a> {
     packages: &'a qsl_semantics::model::intake::PackageInput,
     limits: SpineLimits,
     cancel: &'a Cancel,
+    temporal_selections: &'a [qsl_package::TemporalClockSelection],
     /// The libraries whose compile is in progress, outermost first.
     active: Vec<LibraryName>,
     /// Each library whose compile completed. A library is compiled at most
@@ -1299,6 +1401,7 @@ impl<'a> Resolution<'a> {
                 }
                 continue;
             }
+            let source = frame.raw.clone();
             let package = self
                 .finish_unit(frame)
                 .map_err(|refusal| unwind(&libraries, refusal))?;
@@ -1306,8 +1409,11 @@ impl<'a> Resolution<'a> {
                 return Ok(package);
             }
             let cancel = self.cancel;
-            let emission = charged(cancel, &mut self.work.e4, || emit_unit(&package, cancel))
-                .map_err(|refusal| unwind(&libraries, refusal))?;
+            let selections = self.temporal_selections_for(&source);
+            let emission = charged(cancel, &mut self.work.e4, || {
+                emit_unit(&package, &selections, cancel)
+            })
+            .map_err(|refusal| unwind(&libraries, refusal))?;
             let Some(done) = libraries.pop() else {
                 return Ok(package);
             };
@@ -1350,6 +1456,13 @@ impl<'a> Resolution<'a> {
                 .insert(done.identity.clone(), Arc::clone(&library));
             current(&mut root, &mut libraries).push_import(done.identity, &library);
         }
+    }
+
+    fn temporal_selections_for(
+        &self,
+        source: &RawSourceRef,
+    ) -> Vec<qsl_package::TemporalClockSelection> {
+        temporal_selections_for_source(self.temporal_selections, source)
     }
 
     /// ADR-015 D-1's steps for one `import` of the unit `raw` names:

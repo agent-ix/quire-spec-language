@@ -295,6 +295,7 @@ impl World {
         let letters = Constant(holds);
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(&package, universes),
                 item: ModelCheckItem::Clause {
                     clause: &clause,
@@ -327,6 +328,7 @@ impl World {
         let run = check_state_graph(
             StateGraphRequest {
                 subject: self.subject(&package, universes),
+                temporal_clock_selections: Vec::new(),
                 items: vec![StateGraphItem::new(claim)],
                 reductions: Default::default(),
                 deadlock_freedom: false,
@@ -363,6 +365,7 @@ impl World {
         let letters = Constant(true);
         check_closure(
             &CertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(&package, universes),
                 item: ModelCheckItem::Clause {
                     clause: &clause,
@@ -706,6 +709,7 @@ impl World {
         let letters = system.clause_letters(node).expect("an unguarded clause");
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(&package, universes),
                 item: ModelCheckItem::Clause {
                     clause: node.clause(),
@@ -735,6 +739,7 @@ impl World {
         let letters = system.clause_letters(node).expect("a clause");
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(&package, universes),
                 item: ModelCheckItem::Clause {
                     clause: node.clause(),
@@ -1218,6 +1223,7 @@ fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
         check_model(
             ModelCheckRequest {
                 subject,
+                temporal_clock_selections: &[],
                 item: ModelCheckItem::Clause {
                     clause: node.clause(),
                     letters: &letters,
@@ -1376,6 +1382,7 @@ fn a_refused_holds_evaluation_is_a_refusal_of_the_atom_and_of_the_check() {
 
     let checked = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: world.subject(&package, bounded()),
             item: ModelCheckItem::Clause {
                 clause: node.clause(),

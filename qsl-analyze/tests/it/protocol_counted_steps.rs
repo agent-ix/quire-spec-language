@@ -25,11 +25,11 @@ use qsl_eval::temporal::{
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_protocol_closure, replay_protocol_trace, settle_protocol_check, CertificateLocus,
-    CertificateRejection, CertificateRule, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
-    ModelTraceSubject, ProductStateRef, ProofCertificate, ProtocolCertificateRequest,
-    ProtocolTraceSubject, ReplayLimits, ResultLabel, TemporalCertificateCheck,
-    TemporalCounterexample,
+    check_protocol_closure, replay_protocol_trace_with_temporal_selections, settle_protocol_check,
+    CertificateLocus, CertificateRejection, CertificateRule, ModelCheckItem, ModelCheckLimits,
+    ModelCheckOutcome, ModelTraceSubject, ProductStateRef, ProofCertificate,
+    ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ResultLabel,
+    TemporalCertificateCheck, TemporalCounterexample,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::observation::DocumentRef;
@@ -58,6 +58,7 @@ struct Case {
     documents: Documents,
     initial: Vec<DocumentRef>,
     checked: CheckedPackage,
+    temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
 }
 
 impl Case {
@@ -65,11 +66,13 @@ impl Case {
         let mut documents = Documents::new();
         let initial = vec![documents.start("s0", &[("c", 0)])];
         let checked = package(body);
+        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&checked);
         Self {
             body: body.to_owned(),
             documents,
             initial,
             checked,
+            temporal_clock_selections,
         }
     }
 
@@ -95,6 +98,7 @@ impl Case {
     ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(protocol),
                 item: ModelCheckItem::Clause {
                     clause: self.clause(),
@@ -125,7 +129,7 @@ impl Case {
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let replay = |payload: &TemporalCounterexample<ProtocolTransition>| {
             let subject = self.subject(protocol);
-            replay_protocol_trace(
+            replay_protocol_trace_with_temporal_selections(
                 request(&document(), self.documents.snapshots.iter(), &unit),
                 &ProtocolTraceSubject {
                     model: ModelTraceSubject {
@@ -146,6 +150,7 @@ impl Case {
                 },
                 &envelope_at(payload.clone(), clause_node.clone(), occurrence.clone()),
                 letters,
+                &self.temporal_clock_selections,
                 ReplayLimits::default(),
             )
         };
@@ -153,6 +158,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: self.subject(protocol),
                 item: ModelCheckItem::Clause {
                     clause: self.clause(),
@@ -490,8 +496,10 @@ fn a_model_subject_counts_every_step() {
     ] {
         let case = repaired_fill(formula);
         let letters = CellV(holds);
+        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&case.checked);
         let outcome = check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &temporal_clock_selections,
                 subject: model_subject(
                     &case.checked,
                     &case.documents,
@@ -676,6 +684,7 @@ fn closure_check(
     };
     check_protocol_closure(
         &ProtocolCertificateRequest {
+            temporal_clock_selections: &case.temporal_clock_selections,
             subject: case.subject("P"),
             item: ModelCheckItem::Clause {
                 clause: case.clause(),

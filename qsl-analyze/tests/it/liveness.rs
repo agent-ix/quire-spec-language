@@ -46,6 +46,7 @@ use crate::counter::{
 /// A Counter world with one declared clause.
 pub(crate) struct Fixture {
     pub(crate) package: CheckedPackage,
+    pub(crate) temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
     pub(crate) documents: Documents,
     pub(crate) initial: Vec<DocumentRef>,
@@ -64,11 +65,13 @@ pub(crate) fn fixture(
     starts: &[(&'static str, i64)],
 ) -> Fixture {
     let (package, clauses) = package_with_clauses(&document, body, &[("C", fairness, formula)]);
+    let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&package);
     let unit = unit_text(&(body.to_owned() + &clause_text("C", fairness, formula))).into_bytes();
     let mut documents = Documents::new(document);
     let initial = vec![documents.start("s0", starts)];
     Fixture {
         package,
+        temporal_clock_selections,
         clauses,
         documents,
         initial,
@@ -98,6 +101,7 @@ impl Fixture {
         let letters = self.letters(atom);
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &self.temporal_clock_selections,
                 subject: subject(
                     &self.package,
                     &self.documents,
@@ -137,6 +141,7 @@ impl Fixture {
         meter: ScalarLimits,
     ) -> CertificateRequest<'a> {
         CertificateRequest {
+            temporal_clock_selections: &self.temporal_clock_selections,
             subject: subject(
                 &self.package,
                 &self.documents,
@@ -796,6 +801,7 @@ fn the_model_only_pass_spends_the_budget_the_next_instance_gets() {
         limits.limits.max_states = budget;
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &fixture.temporal_clock_selections,
                 subject: subject(
                     &fixture.package,
                     &fixture.documents,

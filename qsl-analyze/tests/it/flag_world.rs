@@ -421,6 +421,7 @@ impl World {
         let letters = self.letters();
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.model_subject(),
                 item: ModelCheckItem::Clause {
                     clause: &self.clauses[0],

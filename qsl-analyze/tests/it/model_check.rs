@@ -92,6 +92,7 @@ fn run_in(
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: subject(
                 package,
                 &world.documents,
@@ -647,6 +648,7 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     candidate_subject.simulation.expansion.max_candidates = 1;
     let candidate_stop = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: candidate_subject,
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
@@ -666,6 +668,7 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     cancel.cancel(CancelCause::Requested);
     let cancelled = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: subject(
                 &world.package,
                 &world.documents,
@@ -750,6 +753,7 @@ fn raising_the_reached_bound_lets_the_run_continue() {
         candidate_subject.simulation.expansion.max_candidates = max_candidates;
         check_model(
             ModelCheckRequest {
+                temporal_clock_selections: &[],
                 subject: candidate_subject,
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
@@ -839,6 +843,7 @@ fn a_cancelled_handle_stops_a_tp1_clause_run_rather_than_refusing() {
     cancel.cancel(CancelCause::Requested);
     let outcome = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: subject(
                 &package,
                 &world.documents,
@@ -1000,6 +1005,7 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     no_universe.simulation.universes = Vec::new();
     let refusal = check_model(
         ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: no_universe,
             item: item(),
             max_depth: None,
@@ -1128,6 +1134,7 @@ fn run_with(
     check_model(
         ModelCheckRequest {
             subject,
+            temporal_clock_selections: &[],
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: ModelCheckLimits::default(),

@@ -54,6 +54,7 @@ impl Bounded {
     fn request(&self) -> CertificateRequest<'_> {
         let fixture = &self.fixture;
         CertificateRequest {
+            temporal_clock_selections: &fixture.temporal_clock_selections,
             subject: subject(
                 &fixture.package,
                 &fixture.documents,
@@ -82,6 +83,7 @@ impl Bounded {
             &fixture.package,
             &fixture.documents.packages,
             &fixture.clauses[0],
+            &fixture.temporal_clock_selections,
             &Cancel::new(),
         )
         .expect("the package declares the clause");

@@ -1039,7 +1039,21 @@ pub fn replay(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
 ) -> Result<ReplayResult, ReplayRefusal> {
-    replay_with_cancel(wire, replay_limits, &Cancel::new())
+    replay_with_temporal_selections(wire, &[], replay_limits)
+}
+
+/// [`replay`] with explicit clock configurations for checked temporal clauses.
+pub fn replay_with_temporal_selections(
+    wire: ReplayRequestWire,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    replay_limits: ReplayLimits,
+) -> Result<ReplayResult, ReplayRefusal> {
+    replay_with_cancel_and_temporal_selections(
+        wire,
+        temporal_selections,
+        replay_limits,
+        &Cancel::new(),
+    )
 }
 
 /// [`replay`] under the caller's original [`Cancel`] handle (ADR-029,
@@ -1062,6 +1076,17 @@ pub fn replay_with_cancel(
     replay_limits: ReplayLimits,
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
+    replay_with_cancel_and_temporal_selections(wire, &[], replay_limits, cancel)
+}
+
+/// [`replay_with_cancel`] with explicit clock configurations for checked
+/// temporal clauses.
+pub fn replay_with_cancel_and_temporal_selections(
+    wire: ReplayRequestWire,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     if matches!(request.source(), ReplaySource::ModelGraph(_)) {
         return Err(ReplayRefusal::WrongModelGraphEntry);
@@ -1078,7 +1103,7 @@ pub fn replay_with_cancel(
         request.accounting_limits(),
         replay_limits,
     )?;
-    let compiled = recompile(&request, &caller)?;
+    let compiled = recompile_with_temporal_selections(&request, &caller, temporal_selections)?;
     let package = compiled.checked.package();
     if let ReplaySource::ObservedTemporal(_) = request.source() {
         return replay_observed_temporal(request, compiled, caller, cancel);
@@ -1378,6 +1403,7 @@ impl Recompiled {
 /// the unit `unit` against `packages` and `dependencies`, under `limits`,
 /// over a handle nobody cancels. [`recompile`] and [`crate::compile_package`]
 /// both run it, so a compile and a replay's recompile refuse alike.
+#[cfg(test)]
 pub(crate) fn run_spine(
     unit: &SourceIdentity,
     package: &LibraryName,
@@ -1412,11 +1438,34 @@ pub(crate) struct SpineUnit<'a> {
 
 /// [`run_spine`] with accepted state-clause execution points
 /// (FR-104-AC-15), checked through `spine::check_with_execution_points`.
+#[cfg(test)]
 pub(crate) fn run_spine_with_execution_points(
     unit: SpineUnit<'_>,
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
+    limits: SpineLimits,
+) -> Result<Recompiled, ReplayRefusal> {
+    run_spine_with_temporal_selections_and_execution_points(
+        unit,
+        packages,
+        dependencies,
+        execution_points,
+        &[],
+        limits,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "spine inputs plus selected temporal clocks"
+)]
+pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
+    unit: SpineUnit<'_>,
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+    execution_points: &spine::StateClauseExecutionPoints,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     let SpineUnit {
@@ -1446,10 +1495,11 @@ pub(crate) fn run_spine_with_execution_points(
     let models = spine::select(&parsed, packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check_with_execution_points(
+    let checked = spine::check_with_temporal_selections_and_execution_points(
         &parsed,
         package.as_str().to_owned(),
         execution_points,
+        temporal_selections,
         &models,
         dependencies,
         limits,
@@ -1457,9 +1507,14 @@ pub(crate) fn run_spine_with_execution_points(
     )
     .map_err(refusal)?
     .into_value();
-    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
-        .map_err(refusal)?
-        .into_value();
+    let emitted = spine::package_with_temporal_selections(
+        &checked,
+        temporal_selections,
+        spine::PackageLimits::default(),
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
     Ok(Recompiled {
         checked,
         emitted,
@@ -1487,6 +1542,14 @@ pub(crate) fn spine_run_count() -> u64 {
 pub(crate) fn recompile(
     request: &ReplayRequest,
     limits: &CallerLimits,
+) -> Result<Recompiled, ReplayRefusal> {
+    recompile_with_temporal_selections(request, limits, &[])
+}
+
+pub(crate) fn recompile_with_temporal_selections(
+    request: &ReplayRequest,
+    limits: &CallerLimits,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
 ) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
@@ -1541,13 +1604,17 @@ pub(crate) fn recompile(
     // Rule 4: the recompile.
     let package_name =
         LibraryName::new(request.package_name()).map_err(ReplayRefusal::InvalidPackageName)?;
-    let compiled = run_spine(
-        &labels(source),
-        &package_name,
-        source.identity(),
-        bytes,
+    let compiled = run_spine_with_temporal_selections_and_execution_points(
+        SpineUnit {
+            identity: &labels(source),
+            package: &package_name,
+            path: source.identity(),
+            bytes,
+        },
         &packages,
         &dependencies,
+        &spine::StateClauseExecutionPoints::new(),
+        temporal_selections,
         limits.spine,
     )?;
     // Rule 6: every entry names a selection of the recompiled closure.

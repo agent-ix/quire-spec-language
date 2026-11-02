@@ -47,6 +47,7 @@ use crate::dense_route::{ids, registry};
 use crate::derived_request::{
     derived_subjects, items_of_kind, protocol_request, protocol_request_under, settled,
 };
+use crate::fill::tcb_01_event_position_selection;
 use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
 use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
 
@@ -703,6 +704,7 @@ fn the_race_freedom_item_over_a_model_subject_is_refused() {
     let subject = model_subject(&package, &documents, vec![start], &["c"], UNLIMITED);
     let refusal = qsl_analyze::model_check::check_model(
         qsl_analyze::model_check::ModelCheckRequest {
+            temporal_clock_selections: &[],
             subject: model_subject(&package, &documents, vec![second], &["c"], UNLIMITED),
             item: ModelCheckItem::RaceFreedom,
             max_depth: None,
@@ -752,6 +754,7 @@ fn a_closure_certificate_over_a_racy_edge_is_rejected_bad_state() {
     }
     let checked = check_protocol_closure(
         &ProtocolCertificateRequest {
+            temporal_clock_selections: &[],
             subject: relaxed.subject(&ra()),
             item: ModelCheckItem::RaceFreedom,
             max_store_buffer: None,
@@ -1521,7 +1524,10 @@ fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
 
     let node = protocol.node().expect("SB's clause has a node");
     let anchor = OccurrenceKey::declaration(node.clone());
-    let emission = qsl_package::emit_checked(case.checked()).expect("the package emits");
+    let package = case.checked();
+    let selections = tcb_01_event_position_selection(package);
+    let emission = qsl_package::emit_checked_with_temporal_selections(package, &selections)
+        .expect("the package emits with its selected TCB-01 clock");
     assert!(emission.source_map().regions(&anchor).is_some());
     for item in &written.items()[3..5] {
         assert_eq!(item.occurrence(), &anchor);
@@ -1779,6 +1785,7 @@ fn protocol_run<'c>(
     let race = matches!(item, ModelCheckItem::RaceFreedom);
     ProtocolItem {
         request: ProtocolCheckRequest {
+            temporal_clock_selections: case.temporal_clock_selections(),
             subject: case.subject(selection),
             item,
             max_depth: Some(1),
@@ -1789,6 +1796,7 @@ fn protocol_run<'c>(
             limits: ModelCheckLimits::default(),
         },
         certificate: ProtocolCertificateRequest {
+            temporal_clock_selections: case.temporal_clock_selections(),
             subject: case.subject(selection),
             item: certified,
             max_store_buffer: None,

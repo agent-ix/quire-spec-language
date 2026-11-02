@@ -1786,6 +1786,10 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(emission.package().name(), emitted_package["name"]);
+    assert_eq!(
+        emitted_package["temporal_bindings"], original["temporal_bindings"],
+        "rewriting timed model nodes preserves the admitted temporal selections"
+    );
     let (_, writer_outcome) = read_fixture_wire(TIMED_MODEL_NODES, &emitted_package);
     assert!(
         matches!(writer_outcome, Read::Verified { .. }),
@@ -2947,8 +2951,51 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
         })
         .expect("the all-families fixture holds a temporal clause");
     let mut package = base.clone();
+    let profile = package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]
+        ["definition"]["identity"]
+        .as_str()
+        .expect("the temporal clause names its profile")
+        .to_owned();
+    let unknown_profile = "quire.fixture.temporal-profile/v1";
     package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]
-        ["identity"] = json!("quire.fixture.temporal-profile/v1");
+        ["identity"] = json!(unknown_profile);
+    let original_node_id = package["semantic_graph"]["nodes"][clause]["node_id"].clone();
+    let node_id = &mut package["semantic_graph"]["nodes"][clause]["node_id"];
+    let identity_path = node_id["path"]
+        .as_array_mut()
+        .expect("temporal node identity");
+    let profile_segment = identity_path
+        .iter_mut()
+        .find(|segment| segment.as_str() == Some(&profile))
+        .expect("temporal node identity contains its profile");
+    *profile_segment = json!(unknown_profile);
+    let changed_node_id = node_id.clone();
+    let bindings_empty = {
+        let bindings = package["temporal_bindings"]
+            .as_array_mut()
+            .expect("the fixture carries temporal bindings");
+        assert_eq!(
+            bindings
+                .iter()
+                .filter(|binding| binding["declaration"] == original_node_id)
+                .count(),
+            1,
+            "the fixture has one clock binding for the temporal clause"
+        );
+        let binding = bindings
+            .iter_mut()
+            .find(|binding| binding["declaration"] == original_node_id)
+            .expect("the fixture binds this temporal clause");
+        binding["declaration"] = changed_node_id.clone();
+        bindings.retain(|binding| binding["declaration"] != changed_node_id);
+        bindings.is_empty()
+    };
+    if bindings_empty {
+        package
+            .as_object_mut()
+            .expect("checked package is an object")
+            .remove("temporal_bindings");
+    }
     let (_, outcome) = read_fixture_wire(ALL_FAMILIES, &package);
     let Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
         panic!("expected an unknown_profile refusal, got {outcome:?}");

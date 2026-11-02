@@ -117,6 +117,7 @@ impl Case {
     pub(crate) fn deadlock(&self, protocol: &str) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
@@ -175,6 +176,7 @@ impl Case {
             outcome,
             &ModelCheckLimits::default(),
             &ProtocolCertificateRequest {
+                temporal_clock_selections: &[],
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer: None,
@@ -1305,6 +1307,7 @@ fn a_protocol_model_check_is_deterministic() {
     );
     let refusal = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject: counted.subject("P"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
@@ -1738,6 +1741,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
     );
     let refusal = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject: case.subject("P"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
@@ -2039,6 +2043,7 @@ fn a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound() {
     );
     let refusal = check_protocol(
         ProtocolCheckRequest {
+            temporal_clock_selections: &[],
             subject: unbounded.subject("Fill"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
