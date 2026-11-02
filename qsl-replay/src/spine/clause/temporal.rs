@@ -24,8 +24,8 @@ use quire_semantic_value::catalog::CatalogCode;
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
     CompiledRun, ConsequentEventRefusal, ConsequentSourceEvents, RunRefusal,
-    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
-    TemporalWindowRefusal,
+    TemporalIndeterminateReason, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
 };
 use crate::proof_result::SettlementBasis;
 
