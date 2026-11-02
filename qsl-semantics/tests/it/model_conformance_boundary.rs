@@ -10,7 +10,7 @@ use qsl_semantics::check::{
     CheckCause, CheckRefusal, ModelConformanceFailure, PackageDeclarations, RefinementObligation,
 };
 use qsl_semantics::model::accounting::{
-    ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
+    ChargePoint, LimitKind, ModelNormalizationLimits, NormalizationIncomplete,
 };
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::normalize::ModelRefusalCause;
@@ -292,7 +292,7 @@ fn check(document: &[u8], body: &str) -> Result<(), Vec<(Code, Option<&'static s
     tuples(&run(document, body, None).outcome)
 }
 
-fn denial(refusals: &[CheckRefusal]) -> Incomplete {
+fn denial(refusals: &[CheckRefusal]) -> NormalizationNormalizationIncomplete {
     assert_eq!(
         refusals.len(),
         1,
@@ -324,7 +324,7 @@ fn assert_complete_at_total_and_exact_denial_one_less(
     );
     assert_eq!(
         denial(&refusals),
-        Incomplete {
+        NormalizationIncomplete {
             limit_kind: LimitKind::WorkUnits,
             limit: n + total - 1,
             consumed: n + total - 1,
@@ -1363,7 +1363,7 @@ fn c07_second_selection_denial_withholds_first_failures() {
     let incomplete = denial(&refused);
     assert_eq!(
         incomplete,
-        Incomplete {
+        NormalizationIncomplete {
             limit_kind: LimitKind::WorkUnits,
             limit: full.n + total - 1,
             consumed: full.n + total - 1,
