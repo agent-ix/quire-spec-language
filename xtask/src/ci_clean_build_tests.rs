@@ -119,7 +119,7 @@ impl Recipe {
                     "test:parent",
                     "fixture",
                     "fixture:1",
-                    "tests/fixtures/parent.native"
+                    "tests/fixtures/spine-compile.native"
                 ],
             ],
             "literal caller path and all three recipe argument lists are preserved"
@@ -203,7 +203,7 @@ fn assert_clean_build_recipe(caller_root: Option<&str>) {
     let expected = concat!(
         "cargo build --locked --workspace --no-default-features --target-dir \"${CI_CLEAN_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/clean}\"\n",
         "cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir \"${CI_CLEAN_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/clean}\"\n",
-        "cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native\n",
+        "cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/spine-compile.native\n",
     );
     assert_eq!(
         stdout, expected,

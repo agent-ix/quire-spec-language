@@ -604,7 +604,7 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
                     "test:parent",
                     "fixture",
                     "fixture:1",
-                    "tests/fixtures/parent.native"
+                    "tests/fixtures/spine-compile.native"
                 ],
                 &["run", "--package", "xtask", "--", "string-edge"],
                 &["run", "--package", "xtask", "--", "route-lint"],

@@ -113,6 +113,19 @@ fn cli_preserves_non_utf8_os_paths() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["operation"], "parse");
     assert_eq!(value["category"], "success");
+    // The CLI forwards the labels exactly: a limit refusal names them.
+    let refused = Command::new(executable)
+        .args(["parse", "agent-ix", "exact:é", "git", "revision:😀"])
+        .arg(&path)
+        .args(["--tokens", "0"])
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(22));
+    let refusal: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
+    assert_eq!(
+        refusal["diagnostics"][0]["locus"]["source"],
+        serde_json::json!({"authority": "agent-ix", "identity": "exact:é"})
+    );
     // FR-010-AC-6: the same bytes parsed in process carry the exact labels.
     let source = qsl_foundation::SourceIdentity::new("agent-ix", "exact:é", "git", "revision:😀");
     let parsed = qsl_replay::spine::parse(
@@ -345,6 +358,21 @@ fn parse_and_format_take_the_four_source_labels() {
     assert_eq!(parsed.status.code(), Some(0));
     let value: serde_json::Value = serde_json::from_slice(&parsed.stdout).unwrap();
     assert_eq!(value["category"], "success");
+    // A refusal names the source the CLI built from the four labels, so a CLI
+    // that dropped or swapped them fails here.
+    let limited = Command::new(executable)
+        .arg("parse")
+        .args(labels)
+        .arg(file)
+        .args(["--tokens", "0"])
+        .output()
+        .unwrap();
+    assert_eq!(limited.status.code(), Some(22));
+    let refusal: serde_json::Value = serde_json::from_slice(&limited.stderr).unwrap();
+    assert_eq!(
+        refusal["diagnostics"][0]["locus"]["source"],
+        serde_json::json!({"authority": "agent-ix", "identity": "specs/a.quire"})
+    );
     // The success document carries no source member; the `ParsedSource` the
     // same operation returns in process names authority and identity only.
     let source = qsl_foundation::SourceIdentity::new(labels[0], labels[1], labels[2], labels[3]);
@@ -422,4 +450,34 @@ fn parse_and_format_take_the_four_source_labels() {
         String::from_utf8_lossy(&formatted.stderr)
     );
     assert_eq!(format(&["extra"]).status.code(), Some(20));
+}
+
+/// FR-256-AC-5 (TC-750): `--work-units` is `s1.work_units`. On the same
+/// source, 16 (below the default 256) stops S1 with exit 22 naming the work
+/// limit and its configured value, and 24 and the default 256 admit it, so the
+/// value reaches the parser in both directions.
+#[trace("TC-750", "FR-256-AC-5")]
+#[test]
+fn work_units_option_lowers_and_raises_the_s1_work_ceiling() {
+    let run = |units: &str| {
+        Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .args(["parse", "agent-ix", "id", "git", "revision"])
+            .arg("tests/fixtures/spine-compile.native")
+            .args(["--work-units", units])
+            .output()
+            .unwrap()
+    };
+    let refused = run("16");
+    assert_eq!(refused.status.code(), Some(22));
+    let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
+    assert_eq!(value["diagnostics"][0]["code"], "stage_limit_exceeded");
+    assert_eq!(value["diagnostics"][0]["cause"], "work-budget-exceeded");
+    assert!(value["diagnostics"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("S1 work limit"));
+    for units in ["24", "256"] {
+        let admitted = run(units);
+        assert_eq!(admitted.status.code(), Some(0), "{units}");
+    }
 }
