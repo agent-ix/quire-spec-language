@@ -163,8 +163,9 @@ pub use exact_probabilistic::{
 };
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
-    replay_value_parity, replay_with_cancel, settle_verified_shadow, value_parity_obligation,
-    BoundEntries, DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
+    replay_value_parity, replay_with_cancel, replay_with_cancel_and_temporal_selections,
+    replay_with_temporal_selections, settle_verified_shadow, value_parity_obligation, BoundEntries,
+    DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
     IdentityEncodeError, LimitAboveReader, MalformedOperationReason, ParityArgument,
     ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityArgument,
     ValueParityPreimage, ValueParityReport, ValueParityResult,

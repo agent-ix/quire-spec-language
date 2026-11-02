@@ -13,7 +13,7 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use super::receiver_frames::{counter, fixture, snapshot, unit_and_packages};
 use super::*;
-use crate::execute::run_spine;
+use crate::execute::{run_spine_with_temporal_selections_and_execution_points, SpineUnit};
 use crate::proof_result::SettlementBasis;
 use crate::spine::{
     ClauseRunReport, OverObject, TemporalTraceRefusal, TemporalVerdict, TraceInput,
@@ -175,7 +175,55 @@ fn lasso(unit: Unit, name: &str, prefix: usize, values: &[i64]) -> ClauseRunRequ
 }
 
 fn report(request: ClauseRunRequest) -> ClauseRunReport {
-    run_clause(request).expect("a well-formed request always reports")
+    let temporal_selections = match &request.source {
+        ClauseRunSource::Program {
+            identity,
+            path,
+            bytes,
+        } => temporal_clock_selections(identity, path, bytes),
+        #[cfg(feature = "quire-extraction")]
+        ClauseRunSource::Extracted(extracted) => {
+            let body = extracted.map().body();
+            temporal_clock_selections(body.identity(), body.path(), body.text().as_bytes())
+        }
+    };
+    crate::spine::run_clause_with_temporal_selections(request, &temporal_selections)
+        .expect("a well-formed request always reports")
+}
+
+fn temporal_clock_selections(
+    identity: &qsl_foundation::SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+) -> Vec<qsl_package::TemporalClockSelection> {
+    use qsl_forms::DeclarationForm;
+    use qsl_package::{ClockConfiguration, TemporalClockSelection};
+
+    let parsed = qsl_cst::parse(identity.clone(), path, bytes, qsl_cst::Limits::default())
+        .expect("the test source parses");
+    let unit = qsl_forms::build_unit(&parsed).expect("the test source forms");
+    let profiles = &unit.selections().profiles;
+    unit.forms()
+        .iter()
+        .filter_map(|form| {
+            let DeclarationForm::Temporal(clause) = form.form() else {
+                return None;
+            };
+            let selected = profiles
+                .iter()
+                .find(|profile| profile.alias == clause.profile.alias)
+                .expect("the temporal profile is selected");
+            (selected.identity == "quire.temporal.event-position.false-extension/v1").then(|| {
+                TemporalClockSelection {
+                    source: parsed.source().reference().clone(),
+                    declaration_span: form.span(),
+                    clock: ClockConfiguration::EventPosition {
+                        sequence_authority: "counter-event-sequence".into(),
+                    },
+                }
+            })
+        })
+        .collect()
 }
 
 fn outcome(report: &ClauseRunReport) -> &TemporalVerdict {
@@ -189,6 +237,36 @@ fn exit_code(report: &ClauseRunReport) -> u8 {
     report.disposition.category().trace_exit_code()
 }
 
+struct ObservedReplayInput {
+    wire: ReplayRequestWire,
+    temporal_selections: Vec<qsl_package::TemporalClockSelection>,
+}
+
+impl std::ops::Deref for ObservedReplayInput {
+    type Target = ReplayRequestWire;
+
+    fn deref(&self) -> &Self::Target {
+        &self.wire
+    }
+}
+
+impl std::ops::DerefMut for ObservedReplayInput {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.wire
+    }
+}
+
+fn replay_observed(
+    input: ObservedReplayInput,
+    replay_limits: crate::ReplayLimits,
+) -> Result<crate::ReplayResult, crate::ReplayRefusal> {
+    let ObservedReplayInput {
+        wire,
+        temporal_selections,
+    } = input;
+    crate::replay_with_temporal_selections(wire, &temporal_selections, replay_limits)
+}
+
 #[trace("TC-841", "FR-331-AC-1")]
 #[test]
 fn replay_facade_replays_the_observed_temporal_lasso() {
@@ -200,7 +278,7 @@ fn replay_facade_replays_the_observed_temporal_lasso() {
         0,
         ObservedReplayExpectation::Formula,
     );
-    let reproduced = crate::replay(false_packet, crate::ReplayLimits::default())
+    let reproduced = replay_observed(false_packet, crate::ReplayLimits::default())
         .expect("the observed lasso is admissible");
     let crate::ReplayResult::ObservedTemporal(reproduced) = reproduced else {
         panic!("the replay returns its observed-temporal arm");
@@ -224,7 +302,7 @@ fn replay_facade_replays_the_observed_temporal_lasso() {
         0,
         ObservedReplayExpectation::Formula,
     );
-    let inconclusive = crate::replay(holding_packet, crate::ReplayLimits::default())
+    let inconclusive = replay_observed(holding_packet, crate::ReplayLimits::default())
         .expect("the observed lasso is admissible");
     let crate::ReplayResult::ObservedTemporal(inconclusive) = inconclusive else {
         panic!("the replay returns its observed-temporal arm");
@@ -248,7 +326,7 @@ fn observed_temporal_replay_checks_bounded_interval_and_position() {
         0,
         ObservedReplayExpectation::Formula,
     );
-    let replayed = crate::replay(reproduced, crate::ReplayLimits::default())
+    let replayed = replay_observed(reproduced, crate::ReplayLimits::default())
         .expect("the bounded counterexample is admissible");
     let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
         panic!("the replay returns its observed-temporal arm");
@@ -267,7 +345,7 @@ fn observed_temporal_replay_checks_bounded_interval_and_position() {
         1,
         ObservedReplayExpectation::Formula,
     );
-    let replayed = crate::replay(wrong_position, crate::ReplayLimits::default())
+    let replayed = replay_observed(wrong_position, crate::ReplayLimits::default())
         .expect("the bounded counterexample is admissible");
     let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
         panic!("the replay returns its observed-temporal arm");
@@ -290,7 +368,7 @@ fn observed_temporal_replay_checks_bounded_interval_and_position() {
         |payload| payload.interval = None,
     );
     assert!(matches!(
-        crate::replay(wrong_interval, crate::ReplayLimits::default()),
+        replay_observed(wrong_interval, crate::ReplayLimits::default()),
         Err(crate::ReplayRefusal::ObservedTemporalMismatch { member: "interval" })
     ));
 }
@@ -308,7 +386,7 @@ fn replay_facade_preserves_and_matches_an_observed_undefined_value() {
         2,
         ObservedReplayExpectation::Undefined(cause.clone()),
     );
-    let reproduced = crate::replay(packet, crate::ReplayLimits::default())
+    let reproduced = replay_observed(packet, crate::ReplayLimits::default())
         .expect("the undefined temporal packet is admissible");
     let crate::ReplayResult::ObservedTemporal(reproduced) = reproduced else {
         panic!("the replay returns its observed-temporal arm");
@@ -336,7 +414,7 @@ fn replay_facade_preserves_and_matches_an_observed_undefined_value() {
             quire_exact::Undefined::DivisionByZero,
         )),
     );
-    let inconclusive = crate::replay(packet, crate::ReplayLimits::default())
+    let inconclusive = replay_observed(packet, crate::ReplayLimits::default())
         .expect("the undefined temporal packet is admissible");
     let crate::ReplayResult::ObservedTemporal(inconclusive) = inconclusive else {
         panic!("the replay returns its observed-temporal arm");
@@ -368,7 +446,7 @@ fn an_observed_undefined_on_each_guard_settles_inconclusive() {
         0,
         ObservedReplayExpectation::Undefined(cause.clone()),
     );
-    let replayed = crate::replay(packet, crate::ReplayLimits::default())
+    let replayed = replay_observed(packet, crate::ReplayLimits::default())
         .expect("the observed guarded packet is admissible");
     let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
         panic!("the replay returns its observed-temporal arm");
@@ -407,7 +485,7 @@ fn observed_temporal_replay_retains_short_incomplete_and_mismatched_values() {
         };
         *cause = qsl_eval::temporal::UndefinedCause::Kernel(quire_exact::Undefined::NoneValue);
     });
-    let replayed = crate::replay(wrong_cause, crate::ReplayLimits::default())
+    let replayed = replay_observed(wrong_cause, crate::ReplayLimits::default())
         .expect("the mismatched undefined packet is admissible");
     let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
         panic!("the replay returns its observed-temporal arm");
@@ -454,7 +532,7 @@ fn observed_temporal_replay_retains_short_incomplete_and_mismatched_values() {
         2,
         ObservedReplayExpectation::UndefinedAtNode(cause.clone(), 0),
     );
-    let replayed = crate::replay(wrong_locus, crate::ReplayLimits::default())
+    let replayed = replay_observed(wrong_locus, crate::ReplayLimits::default())
         .expect("the mismatched-locus packet is admissible");
     let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
         panic!("the replay returns its observed-temporal arm");
@@ -474,7 +552,7 @@ fn observed_temporal_replay_retains_short_incomplete_and_mismatched_values() {
         ObservedReplayExpectation::Formula,
     );
     limited.accounting_limits.work_units = 0;
-    let replayed = crate::replay(limited, crate::ReplayLimits::default())
+    let replayed = replay_observed(limited, crate::ReplayLimits::default())
         .expect("the limited temporal packet is admissible");
     let crate::ReplayResult::ObservedTemporal(replayed) = replayed else {
         panic!("the replay returns its observed-temporal arm");
@@ -502,7 +580,7 @@ fn observed_temporal_replay_refuses_a_missing_fairness_premise() {
         0,
         ObservedReplayExpectation::Formula,
     );
-    let refusal = crate::replay(wire, crate::ReplayLimits::default())
+    let refusal = replay_observed(wire, crate::ReplayLimits::default())
         .expect_err("an observed trace has no enabledness for fairness");
     assert!(matches!(
         refusal,
@@ -536,7 +614,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     )
     .expect("the envelope admits either source arm");
     wrong_source.source = crate::ReplaySource::ObservedTemporal(Box::new(envelope));
-    let refusal = crate::replay(wrong_source, crate::ReplayLimits::default())
+    let refusal = replay_observed(wrong_source, crate::ReplayLimits::default())
         .expect_err("the observed temporal source must be a witness envelope");
     assert_eq!(refusal.pointer(), Some("/replay/source"));
     assert_eq!(refusal.code().as_str(), "invalid_runtime_input");
@@ -558,7 +636,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     };
     wrong_target.replay_target.occurrence_key = Some(envelope.occurrence_key().clone());
     wrong_target.replay_target.over = None;
-    let refusal = crate::replay(wrong_target, crate::ReplayLimits::default())
+    let refusal = replay_observed(wrong_target, crate::ReplayLimits::default())
         .expect_err("the observed temporal arm requires a state-clause target");
     assert_eq!(refusal.pointer(), Some("/replay/observed_counterexample"));
     assert_eq!(refusal.cause(), Some("unknown-member"));
@@ -573,7 +651,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
     );
     ordinary_state_clause.source = crate::ReplaySource::Input(Vec::new());
     assert!(matches!(
-        crate::replay(ordinary_state_clause, crate::ReplayLimits::default()),
+        replay_observed(ordinary_state_clause, crate::ReplayLimits::default()),
         Err(crate::ReplayRefusal::WrongReplayTarget { .. })
     ));
 
@@ -588,7 +666,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
         ),
         |packet| packet.trace_position = Some(Some(crate::TracePosition::new("1".to_owned()))),
     );
-    let refusal = crate::replay(mismatched_position, crate::ReplayLimits::default())
+    let refusal = replay_observed(mismatched_position, crate::ReplayLimits::default())
         .expect_err("the envelope and payload positions must agree");
     assert_eq!(
         refusal.pointer(),
@@ -608,7 +686,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
         ),
         |payload| payload.loop_start = Some(2),
     );
-    let refusal = crate::replay(empty_loop, crate::ReplayLimits::default())
+    let refusal = replay_observed(empty_loop, crate::ReplayLimits::default())
         .expect_err("an observed lasso cannot have an empty loop");
     assert_eq!(
         refusal.pointer(),
@@ -634,7 +712,7 @@ fn observed_temporal_source_and_target_refusals_precede_admission() {
             packet.trace_position = Some(Some(crate::TracePosition::new("7".to_owned())));
         },
     );
-    let refusal = crate::replay(out_of_range, crate::ReplayLimits::default())
+    let refusal = replay_observed(out_of_range, crate::ReplayLimits::default())
         .expect_err("the decoded position must lie in the observed trace");
     assert_eq!(
         refusal.pointer(),
@@ -651,7 +729,7 @@ fn observed_replay_request(
     loop_start: Option<u64>,
     position: u64,
     expectation: ObservedReplayExpectation,
-) -> ReplayRequestWire {
+) -> ObservedReplayInput {
     use crate::model_check::counterexample::ObservedTemporalStep;
     use crate::{
         ReplayOverBinding, ReplaySource, ReplayTarget, TracePosition, Witness, WitnessEnvelope,
@@ -667,16 +745,24 @@ fn observed_replay_request(
     let source_identity =
         qsl_foundation::SourceIdentity::new("agent-ix", "clause-run-fixture", "git", "1");
     let path = "counter-temporal.native";
-    let compiled = run_spine(
-        &source_identity,
-        &qsl_semantics::library::LibraryName::new("fixture").expect("a library name"),
-        path,
-        &source_bytes,
+    let temporal_selections = temporal_clock_selections(&source_identity, path, &source_bytes);
+    let package_name = qsl_semantics::library::LibraryName::new("fixture").expect("a library name");
+    let dependencies = crate::spine::DependencyInput::default();
+    let execution_points = crate::spine::StateClauseExecutionPoints::new();
+    let compiled = run_spine_with_temporal_selections_and_execution_points(
+        SpineUnit {
+            identity: &source_identity,
+            package: &package_name,
+            path,
+            bytes: &source_bytes,
+        },
         &packages,
-        &crate::spine::DependencyInput::default(),
+        &dependencies,
+        &execution_points,
+        &temporal_selections,
         crate::spine::SpineLimits::default(),
     )
-    .expect("the temporal fixture compiles");
+    .expect("the temporal fixture compiles with its explicit clock selection");
     let package = compiled.checked.package();
     let clause_node = package
         .graph()
@@ -770,13 +856,16 @@ fn observed_replay_request(
     let envelope = WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default())
         .expect("the typed temporal envelope reconstructs");
     wire.source = ReplaySource::ObservedTemporal(Box::new(envelope));
-    wire
+    ObservedReplayInput {
+        wire,
+        temporal_selections,
+    }
 }
 
 fn rewrite_observed_payload(
-    wire: ReplayRequestWire,
+    wire: ObservedReplayInput,
     rewrite: impl FnOnce(&mut crate::ObservedTemporalCounterexample),
-) -> ReplayRequestWire {
+) -> ObservedReplayInput {
     rewrite_observed_packet(wire, |packet| {
         rewrite(
             packet
@@ -788,9 +877,9 @@ fn rewrite_observed_payload(
 }
 
 fn rewrite_observed_packet(
-    mut wire: ReplayRequestWire,
+    mut wire: ObservedReplayInput,
     rewrite: impl FnOnce(&mut crate::WitnessPacket<crate::ObservedTemporalCounterexample>),
-) -> ReplayRequestWire {
+) -> ObservedReplayInput {
     let crate::ReplaySource::ObservedTemporal(envelope) = &wire.source else {
         unreachable!("the helper constructs an observed source");
     };
