@@ -516,14 +516,14 @@ fn admit(variant: &Variant, document: Value) -> Result<AdmittedObservations, Adm
 
 fn refusal(variant: &Variant, document: Value) -> AdmissionRecord {
     match admit(variant, document) {
-        Err(AdmissionFailure::Refused(record)) => record,
+        Err(AdmissionFailure::Refused(record)) => *record,
         other => panic!("a refusal, not {other:?}"),
     }
 }
 
 fn incomplete(variant: &Variant, document: Value) -> AdmissionRecord {
     match admit(variant, document) {
-        Err(AdmissionFailure::Incomplete(record)) => record,
+        Err(AdmissionFailure::Incomplete(record)) => *record,
         other => panic!("an incomplete outcome, not {other:?}"),
     }
 }
@@ -618,8 +618,8 @@ fn field<'r>(record: &'r AdmissionRecord, name: &str) -> Option<&'r str> {
 }
 
 fn assert_refusal(record: &AdmissionRecord, code: Code, cause: &str) {
-    assert_eq!(record.code, code, "{record:?}");
-    assert_eq!(record.cause, cause, "{record:?}");
+    assert_eq!(record.catalog.code(), code.as_str(), "{record:?}");
+    assert_eq!(record.catalog.cause(), cause, "{record:?}");
 }
 
 /// TC-1035 rows 1 and 2: B admits, and reordering the entries, the instances

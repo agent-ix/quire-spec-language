@@ -150,7 +150,7 @@ fn a_package_record_holds_its_clock_as_a_place_of_its_object() {
     let mut literals: Vec<String> = Vec::new();
     let mut pending = vec![graph.state_clause("Q").expect("Q").body()];
     while let Some(node) = pending.pop() {
-        if matches!(node.kind(), qsl_semantics::check::NodeKind::Literal(_)) {
+        if matches!(node.kind(), quire_checked::node::NodeKind::Literal(_)) {
             literals.push(crate::timed_model::shown(node));
         }
         pending.extend(node.children());
@@ -986,7 +986,7 @@ fn a_collection_write_records_the_provenance_of_each_occurrence() {
         let mut literals = Vec::new();
         let mut pending = vec![graph.state_clause("Q").expect("Q").body()];
         while let Some(node) = pending.pop() {
-            if matches!(node.kind(), qsl_semantics::check::NodeKind::Literal(_)) {
+            if matches!(node.kind(), quire_checked::node::NodeKind::Literal(_)) {
                 literals.push(crate::timed_model::shown(node));
             }
             pending.extend(node.children());

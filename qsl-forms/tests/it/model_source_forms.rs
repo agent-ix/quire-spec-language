@@ -4,7 +4,8 @@
 use ix_trace_rs::trace;
 use qsl_cst::{Limits, ParsedSource};
 use qsl_forms::{build_unit, DeclarationForm, ExprNode, FunctionDeclaration, TypeFormHead};
-use qsl_foundation::{absence::AbsenceMode, SourceIdentity, Span};
+use qsl_foundation::{SourceIdentity, Span};
+use quire_semantic_value::absence::AbsenceMode;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

@@ -879,7 +879,7 @@ fn a_selection_that_cannot_run_reports_its_stage_and_cause() {
         );
     };
     assert_eq!(
-        (record.code.as_str(), record.cause),
+        (record.catalog.code(), record.catalog.cause()),
         ("invalid_runtime_input", "invalid-value")
     );
 
@@ -889,7 +889,7 @@ fn a_selection_that_cannot_run_reports_its_stage_and_cause() {
         panic!("expected an admission refusal, got {:?}", ghost.disposition);
     };
     assert_eq!(
-        (record.code.as_str(), record.cause),
+        (record.catalog.code(), record.catalog.cause()),
         ("invalid_runtime_input", "wrong-role-mapping")
     );
 

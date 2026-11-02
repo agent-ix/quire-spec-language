@@ -1342,8 +1342,8 @@ mod tests {
         Accumulation, BinaryOperator, BinderQuery, DeclaredName, ExprNode, Expression,
         PopulationForm, TypeForm,
     };
-    use qsl_foundation::absence::AbsenceMode;
     use quire_exact::{CollectionKind, Integer, ValueType};
+    use quire_semantic_value::absence::AbsenceMode;
 
     /// A caller-configured `family_steps` ceiling small enough to build a
     /// chain one past it cheaply.

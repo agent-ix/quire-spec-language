@@ -17,11 +17,10 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind,
-};
+use qsl_semantics::check::{AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph};
 use qsl_semantics::family::ClaimExtent;
 use qsl_semantics::model::clause_observation::Observation;
+use quire_checked::node::NodeKind;
 use quire_exact::ValueType;
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;
@@ -1496,8 +1495,8 @@ fn assert_frame_refused(
 ) {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code.as_str(), expected_code);
-            assert_eq!(record.cause, expected_cause);
+            assert_eq!(record.catalog.code(), expected_code);
+            assert_eq!(record.catalog.cause(), expected_cause);
             if let Some(expected_object) = expected_object {
                 assert_eq!(
                     record.fields.get("object").map(String::as_str),
@@ -1601,8 +1600,8 @@ fn assert_wrong_invocation(
 ) {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code.as_str(), "wrong_snapshot");
-            assert_eq!(record.cause, "wrong-invocation");
+            assert_eq!(record.catalog.code(), "wrong_snapshot");
+            assert_eq!(record.catalog.cause(), "wrong-invocation");
             let field = |name: &str| record.fields.get(name).map(String::as_str);
             assert_eq!(field("document"), Some(snapshot));
             assert_eq!(field("field"), Some("invocation"));
@@ -3171,9 +3170,9 @@ fn assert_tc465_refused(
 ) -> qsl_semantics::model::observation::AdmissionRecord {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code.as_str(), expected_code);
-            assert_eq!(record.cause, expected_cause);
-            record
+            assert_eq!(record.catalog.code(), expected_code);
+            assert_eq!(record.catalog.cause(), expected_cause);
+            *record
         }
         other => panic!("expected Err(Refused({expected_code}/{expected_cause})), got {other:?}"),
     }
@@ -3189,9 +3188,9 @@ fn assert_tc465_incomplete(
 ) -> qsl_semantics::model::observation::AdmissionRecord {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Incomplete(record)) => {
-            assert_eq!(record.code.as_str(), expected_code);
-            assert_eq!(record.cause, expected_cause);
-            record
+            assert_eq!(record.catalog.code(), expected_code);
+            assert_eq!(record.catalog.cause(), expected_cause);
+            *record
         }
         other => {
             panic!("expected Err(Incomplete({expected_code}/{expected_cause})), got {other:?}")
@@ -4827,8 +4826,12 @@ fn run_precondition_with_member(
 fn assert_member_number_refused(member: &str, raw: &str, exact: &str, cause: &str, pointer: &str) {
     match run_precondition_with_member(member, raw) {
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code, Code::NoncanonicalWire, "{member}");
-            assert_eq!(record.cause, cause, "{member}");
+            assert_eq!(
+                record.catalog.code(),
+                Code::NoncanonicalWire.as_str(),
+                "{member}"
+            );
+            assert_eq!(record.catalog.cause(), cause, "{member}");
             assert_eq!(
                 record.fields.get("document_pointer").map(String::as_str),
                 Some(pointer),

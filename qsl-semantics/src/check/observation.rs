@@ -16,12 +16,13 @@
 //! `state-contract.md`: "The model/binding must supply any reference
 //! qualification before evaluation").
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
-use super::ir::{CheckedNode, NodeKind, Slot};
+use super::ir::{CheckedNode, Slot};
 use crate::model::clause_observation::Observation;
 use quire_semantic_value::location::Location;
 
@@ -224,7 +225,7 @@ impl<'n> Walk<'n> {
                 Exit::If
             }
             _ => {
-                let operands = node.kind().children();
+                let operands = super::ir::node_children(node.kind());
                 let count = operands.len();
                 children.extend(operands.into_iter().map(visit));
                 Exit::Collapse {

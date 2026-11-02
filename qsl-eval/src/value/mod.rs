@@ -12,20 +12,80 @@
 
 mod expression;
 
+mod checked_term_view_sealed {
+    pub trait Sealed {}
+
+    impl Sealed for qsl_package::AdmittedEvaluationView<'_> {}
+}
+
+/// A sealed layer-4 checked-term reader consumed by the S6a machine.
+///
+/// Only qsl-package's admitted evaluation view implements this interface;
+/// callers cannot add another source of checked terms.
+pub trait CheckedTermView: checked_term_view_sealed::Sealed {
+    /// Read one owner-bound term in the canonical `NodeRead` vocabulary.
+    fn read_node<'view>(
+        &'view self,
+        handle: &qsl_package::TermHandle<'view>,
+    ) -> Result<
+        quire_checked::node::NodeRead<'view, qsl_package::TermHandle<'view>>,
+        quire_semantic_value::catalog::InternalFault,
+    >;
+
+    /// Resolve a callable already preflighted from this view's selected
+    /// protocol expression.
+    fn callable_term<'view>(
+        &'view self,
+        function: usize,
+    ) -> Result<qsl_package::CallableTerm<'view>, quire_semantic_value::catalog::InternalFault>;
+}
+
+impl CheckedTermView for qsl_package::AdmittedEvaluationView<'_> {
+    fn read_node<'view>(
+        &'view self,
+        handle: &qsl_package::TermHandle<'view>,
+    ) -> Result<
+        quire_checked::node::NodeRead<'view, qsl_package::TermHandle<'view>>,
+        quire_semantic_value::catalog::InternalFault,
+    > {
+        qsl_package::AdmittedEvaluationView::read_node(self, handle)
+    }
+
+    fn callable_term<'view>(
+        &'view self,
+        function: usize,
+    ) -> Result<qsl_package::CallableTerm<'view>, quire_semantic_value::catalog::InternalFault>
+    {
+        qsl_package::AdmittedEvaluationView::callable_term(self, function).map_err(|failure| {
+            match failure {
+                qsl_package::ViewFailure::Fault(fault) => fault,
+                qsl_package::ViewFailure::Refused { .. }
+                | qsl_package::ViewFailure::Unsupported { .. } => {
+                    quire_semantic_value::catalog::InternalFault::new(
+                        "FR-390",
+                        "callable-was-preflighted-before-machine-entry",
+                    )
+                }
+            }
+        })
+    }
+}
+
 // `CheckedPackageEvaluation` is the trait that carries `call` and `evaluate`
 // over the foreign-to-`value` `CheckedPackage` typestate, since an inherent
 // impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::collection_write::{Provenance, WrittenCollection};
 pub use expression::{
+    CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry, ClauseSetEvaluation,
+    ClauseSetOutcome, FrameEvaluation, InvalidQualifiedName, InvocationBinding,
+    ObservationIdentity, PackageClosure, PackageTask, ProtocolReferenceOccurrence, ProtocolSlot,
+    ProtocolSlotEvaluation, ProtocolSuppliedValue, ProtocolSupply, QualifiedName, RuntimeValuePath,
+    Separation, SeparationStep, StopReport, SuppliedValue, ValueInvariantEvaluation,
+    ValueInvariantOutcome, ValueInvariantResult, ValuePathStep, ValuePathSubject, WitnessClaim,
     admit_arguments, evaluate_activation_guard, evaluate_activation_guard_at_absent_key,
     evaluate_capture, evaluate_closed, evaluate_history_update, evaluate_protocol_slot,
     evaluate_refinement_row, evaluate_reward, evaluate_state_predicate,
     evaluate_state_predicate_at_absent_key, evaluate_state_predicate_with,
     evaluate_terminal_predicate, input_refusal_code, refusal_record, supplied_stop_cause,
-    supplied_stop_code, CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry,
-    ClauseSetEvaluation, ClauseSetOutcome, FrameEvaluation, InvalidQualifiedName,
-    InvocationBinding, ObservationIdentity, PackageClosure, PackageTask, ProtocolSlot,
-    ProtocolSlotEvaluation, ProtocolSupply, QualifiedName, RuntimeValuePath, Separation,
-    SeparationStep, StopReport, SuppliedValue, ValueInvariantEvaluation, ValueInvariantOutcome,
-    ValueInvariantResult, ValuePathStep, ValuePathSubject, WitnessClaim,
+    supplied_stop_code,
 };

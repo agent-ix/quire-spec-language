@@ -8,11 +8,12 @@
 //! required. The quoted `String` literal needs no resolution and is typed in
 //! the typing loop.
 
+use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{Integer, Timestamp, Uuid, Value, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{mismatch, node, Typer};
-use crate::check::ir::{CheckedLiteral, Node, NodeKind};
+use crate::check::ir::Node;
 use crate::check::refusal::{CheckCause, CheckRefusal};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use qsl_forms::{ExprNode, ExprRef};

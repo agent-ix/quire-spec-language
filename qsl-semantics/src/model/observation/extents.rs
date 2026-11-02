@@ -9,6 +9,7 @@
 //! mapped to the admission catalog, and the bundle key of FR-364 "One bundle
 //! binds the manifest, the observation and the type environment".
 
+use super::{admission_record, AdmissionRecordExt};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::RawSourceRef;
 use quire_exact::{NodeKey, ObjectReference};
@@ -224,11 +225,11 @@ fn extent_refusal(
 ) -> AdmissionFailure {
     match refusal {
         ExtentRefusal::NotNavigationRelationship { relationship, .. } => refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-role-mapping")
+            admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
                 .with("relationship", relationship.node),
         ),
         ExtentRefusal::DuplicateExtent { relationship, .. } => refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "conflicting-identity")
+            admission_record(Code::InvalidRuntimeInput, "conflicting-identity")
                 .with("relationship", relationship.node),
         ),
         ExtentRefusal::EndTypeMismatch {
@@ -239,7 +240,7 @@ fn extent_refusal(
             declared_type,
             ..
         } => refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-value-kind")
+            admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                 .with("relationship", relationship.node)
                 .with("instance", instance_index.to_string())
                 .with("end", end_name(side))
@@ -251,7 +252,7 @@ fn extent_refusal(
             instance_index,
             ..
         } => refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "conflicting-identity")
+            admission_record(Code::InvalidRuntimeInput, "conflicting-identity")
                 .with("relationship", relationship.node)
                 .with("instance", instance_index.to_string()),
         ),
@@ -336,7 +337,7 @@ impl BundleRefusal {
     /// The admission record: `invalid_runtime_input`/`conflicting-identity`
     /// naming the part.
     pub fn record(&self) -> AdmissionRecord {
-        AdmissionRecord::new(Code::InvalidRuntimeInput, "conflicting-identity")
+        admission_record(Code::InvalidRuntimeInput, "conflicting-identity")
             .with("part", self.part.name())
     }
 }

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-485: in-process checked-closure acquisition and application through the replay facade.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use qsl_eval::value::PackageClosure;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedExpression, CheckedNode, NodeKind};
+use qsl_semantics::check::{CheckedExpression, CheckedNode};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{

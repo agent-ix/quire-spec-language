@@ -15,7 +15,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::accounting::{LimitKind as ModelLimitKind, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
@@ -38,6 +37,7 @@ use qsl_semantics::model::population::{
 };
 use quire_checked::key::DeclarationKey;
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
+use quire_semantic_value::absence::AbsenceMode;
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,

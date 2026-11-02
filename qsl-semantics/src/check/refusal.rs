@@ -8,6 +8,7 @@ use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::MemoryModelName;
 use qsl_foundation::Setting;
 use qsl_foundation::Span;
+use quire_checked::node::EndSide;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
 use quire_exact::{Integer, ValueType};
@@ -2467,7 +2468,7 @@ pub enum MemberCandidate {
         /// The relationship's declaration.
         relationship: quire_checked::key::DeclarationKey,
         /// The end whose role the name matched.
-        side: super::navigation::EndSide,
+        side: EndSide,
     },
 }
 

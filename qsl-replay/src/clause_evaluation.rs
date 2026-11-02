@@ -316,7 +316,8 @@ fn is_snapshot_format(format: &str) -> bool {
 /// the admission record carries.
 #[ix_trace_rs::string_edge]
 fn is_wrong_observation(record: &AdmissionRecord) -> bool {
-    record.code == Code::WrongSnapshot && record.cause == "wrong-observation"
+    record.catalog.code() == Code::WrongSnapshot.as_str()
+        && record.catalog.cause() == "wrong-observation"
 }
 
 /// A disposition a `Clause` selection over a program source never reaches.
@@ -359,13 +360,18 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
             if is_wrong_observation(&record) {
                 ClauseEvaluation::Refused(ClauseRefusal::WrongObservation)
             } else {
-                coded(stage, category, record.code.as_str(), record.cause)
+                coded(
+                    stage,
+                    category,
+                    record.catalog.code(),
+                    record.catalog.cause(),
+                )
             }
         }
         ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
             ClauseEvaluation::Incomplete(ClauseIncomplete::Observation {
-                code: record.code.as_str(),
-                cause: record.cause,
+                code: record.catalog.code(),
+                cause: record.catalog.cause(),
             })
         }
         ClauseDisposition::Admit(AdmissionFailure::Fault(fault))

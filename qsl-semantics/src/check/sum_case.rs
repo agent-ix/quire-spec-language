@@ -10,13 +10,14 @@
 //! heads, never an arm body, and runs QSpec FR-146's four obligations in
 //! FR-146's order.
 
+use quire_checked::node::{CaseArm, NodeKind};
 use std::collections::BTreeSet;
 
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment, UnionMemberDeclaration};
 use quire_semantic_value::location::Location;
 
-use super::ir::{CaseArm, NodeId, Slot};
+use super::ir::{NodeId, Slot};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 
 /// Which of QSpec FR-146's exhaustiveness obligations a `case` failed, in
@@ -212,7 +213,7 @@ impl<'a> UnionMember<'a> {
     /// The construction node over its checked payload `arguments`.
     pub(crate) fn finish(self, arguments: Vec<NodeId>, location: &Location) -> super::ir::Node {
         super::ir::Node {
-            kind: super::ir::NodeKind::UnionValue {
+            kind: NodeKind::UnionValue {
                 declaration: self.declaration.clone(),
                 member: self.position,
                 arguments,
@@ -253,7 +254,7 @@ pub(crate) struct CaseBuilder<'a> {
     names: Vec<String>,
     heads: Vec<ArmHead>,
     /// The checked arms, in source order.
-    arms: Vec<CaseArm>,
+    arms: Vec<CaseArm<NodeId>>,
 }
 
 impl<'a> CaseBuilder<'a> {
@@ -291,7 +292,7 @@ impl<'a> CaseBuilder<'a> {
 
     /// Record the checked arm of a resolved head.
     pub(crate) fn arm(&mut self, member: usize, binders: Vec<Slot>, body: NodeId) {
-        self.arms.push(CaseArm {
+        self.arms.push(CaseArm::<NodeId> {
             member,
             binders,
             body,
@@ -306,7 +307,7 @@ impl<'a> CaseBuilder<'a> {
     pub(crate) fn finish(
         self,
         case: &Location,
-    ) -> Result<(NodeId, NodeKey, Vec<CaseArm>), CheckRefusal> {
+    ) -> Result<(NodeId, NodeKey, Vec<CaseArm<NodeId>>), CheckRefusal> {
         let arm_at = |index: usize| case.child(1 + index);
         let mut failure = None;
         let mut seen = BTreeSet::new();

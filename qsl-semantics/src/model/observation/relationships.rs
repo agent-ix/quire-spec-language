@@ -8,10 +8,11 @@
 //! defect (checks 6.1 to 6.5) is reported before a later entry's, as FR-106's
 //! walk order says.
 
+use super::{admission_record, AdmissionRecordExt};
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{EffectiveId, ObjectReference};
+use quire_exact::{EffectiveId, ObjectReference, UniverseId};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::{
     EndSide, NavigationRelationship, PopulationEntry, PopulationEnumerator, RelationshipEnd,
@@ -141,7 +142,7 @@ impl EndMember {
 }
 
 fn defect(cause: &'static str, member: &'static str) -> AdmissionRecord {
-    AdmissionRecord::new(Code::InvalidRuntimeInput, cause).with("member", member)
+    admission_record(Code::InvalidRuntimeInput, cause).with("member", member)
 }
 
 /// Reads a snapshot's optional `relationships` member, charging one value per
@@ -159,7 +160,7 @@ pub(super) fn read_relationships(
     };
     let items = member.as_array().ok_or_else(|| {
         refuse(
-            AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-value-kind")
+            admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                 .with("field", "relationships"),
         )
     })?;
@@ -172,7 +173,7 @@ pub(super) fn read_relationships(
 
 fn read_entry(item: Json<'_>, meter: &mut ReadMeter) -> Result<RawEntry, AdmissionFailure> {
     let Some(entry) = item.as_object() else {
-        return Ok(RawEntry(Err(AdmissionRecord::new(
+        return Ok(RawEntry(Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )
@@ -185,7 +186,7 @@ fn read_entry(item: Json<'_>, meter: &mut ReadMeter) -> Result<RawEntry, Admissi
     }
     for (name, _) in entry.iter() {
         if EntryMember::read(name).is_none() {
-            return Ok(RawEntry(Err(AdmissionRecord::new(
+            return Ok(RawEntry(Err(admission_record(
                 Code::InvalidRuntimeInput,
                 "unknown-member",
             )
@@ -235,7 +236,7 @@ fn read_entry(item: Json<'_>, meter: &mut ReadMeter) -> Result<RawEntry, Admissi
 
 fn read_instance(value: Json<'_>) -> Result<RawInstance, AdmissionRecord> {
     let Some(instance) = value.as_object() else {
-        return Err(AdmissionRecord::new(
+        return Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         ));
@@ -248,8 +249,7 @@ fn read_instance(value: Json<'_>) -> Result<RawInstance, AdmissionRecord> {
     for (name, _) in instance.iter() {
         if InstanceMember::read(name).is_none() {
             return Err(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "unknown-member")
-                    .with("member", name),
+                admission_record(Code::InvalidRuntimeInput, "unknown-member").with("member", name),
             );
         }
     }
@@ -267,7 +267,7 @@ fn read_instance(value: Json<'_>) -> Result<RawInstance, AdmissionRecord> {
 
 fn read_end(value: Json<'_>) -> Result<RawEnd, AdmissionRecord> {
     let Some(end) = value.as_object() else {
-        return Err(AdmissionRecord::new(
+        return Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         ));
@@ -280,8 +280,7 @@ fn read_end(value: Json<'_>) -> Result<RawEnd, AdmissionRecord> {
     for (name, _) in end.iter() {
         if EndMember::read(name).is_none() {
             return Err(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "unknown-member")
-                    .with("member", name),
+                admission_record(Code::InvalidRuntimeInput, "unknown-member").with("member", name),
             );
         }
     }
@@ -306,6 +305,7 @@ fn read_end(value: Json<'_>) -> Result<RawEnd, AdmissionRecord> {
 pub(super) struct PopulationDeclaration {
     key: DeclarationKey,
     covered: Vec<EffectiveId>,
+    member_types: Vec<(EffectiveId, UniverseId)>,
 }
 
 /// What admission reads of the package declarations: the navigation
@@ -318,7 +318,10 @@ pub(super) struct ModelFacts {
 
 /// The navigation relationships (both ends object types of the model) and the
 /// population declarations of every admitted domain package.
-pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> ModelFacts {
+pub(super) fn model_facts(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+) -> Result<ModelFacts, AdmissionFailure> {
     let mut navigation = Vec::new();
     let mut populations = Vec::new();
     for view in views {
@@ -351,6 +354,20 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
                     });
                 }
                 DomainPackageRecord::Population(population) => {
+                    let mut member_types = Vec::new();
+                    for member in &population.member_types {
+                        let Some(effective) = identities.get(member) else {
+                            continue;
+                        };
+                        let Some(universe) = view.view.object_universe_of(member) else {
+                            continue;
+                        };
+                        let universe = universe
+                            .identity()
+                            .map_err(|_| fault("population-member-universe-identity"))?
+                            .clone();
+                        member_types.push((effective.clone(), universe));
+                    }
                     populations.push(PopulationDeclaration {
                         key: population.key.clone(),
                         covered: population
@@ -358,6 +375,7 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
                             .iter()
                             .filter_map(|member| identities.get(member).cloned())
                             .collect(),
+                        member_types,
                     });
                 }
                 _ => {}
@@ -365,18 +383,58 @@ pub(super) fn model_facts(views: &[ModelView], types: &TypeEnvironment) -> Model
         }
     }
     populations.sort_by(|left, right| left.key.cmp(&right.key));
-    ModelFacts {
+    Ok(ModelFacts {
         navigation,
         populations,
-    }
+    })
 }
 
 impl ModelFacts {
+    pub(super) fn population_identities(&self) -> impl Iterator<Item = &str> {
+        self.populations
+            .iter()
+            .map(|population| population.key.node.as_str())
+    }
+
+    pub(super) fn population_provenance(
+        &self,
+    ) -> Result<Vec<crate::model::object_environment::PopulationProvenance>, AdmissionFailure> {
+        self.populations
+            .iter()
+            .map(|population| {
+                let node = crate::model::key::population_node_key(&population.key)
+                    .map_err(|_| super::fault("population-declaration-node-key"))?;
+                Ok(crate::model::object_environment::PopulationProvenance::new(
+                    population.key.clone(),
+                    node,
+                    population.member_types.clone(),
+                ))
+            })
+            .collect()
+    }
+
     fn relationship(&self, node: &str) -> Option<&NavigationRelationship<DeclarationKey>> {
         self.navigation
             .iter()
             .find(|relationship| relationship.key.node == node)
     }
+}
+
+/// The declared endpoint populations connected to `population` by admitted
+/// relationship instances, in their original instance and end order.
+pub(super) fn related_population_ids(extents: &[CheckedExtent], population: &str) -> Vec<String> {
+    let mut related = Vec::new();
+    for extent in extents {
+        for instance in &extent.instances {
+            if instance.source.population == population {
+                related.push(instance.target.population.clone());
+            }
+            if instance.target.population == population {
+                related.push(instance.source.population.clone());
+            }
+        }
+    }
+    related
 }
 
 /// The traversal of the package's population declarations: one row per
@@ -440,7 +498,7 @@ pub(super) struct CheckedExtent {
 pub(super) type Listed = BTreeMap<String, BTreeMap<String, ObjectReference>>;
 
 fn record(cause: &'static str, relationship: &str, instance: usize) -> AdmissionRecord {
-    AdmissionRecord::new(Code::InvalidRuntimeInput, cause)
+    admission_record(Code::InvalidRuntimeInput, cause)
         .with("relationship", relationship)
         .with("instance", instance.to_string())
 }
@@ -469,7 +527,7 @@ pub(super) fn check_entries(
         // 6.7: a navigation relationship of the package, listed once.
         let Some(declared) = facts.relationship(&raw.relationship) else {
             return Err(refuse(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-role-mapping")
+                admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
                     .with("relationship", raw.relationship.clone()),
             ));
         };
@@ -478,7 +536,7 @@ pub(super) fn check_entries(
             .any(|held| held.relationship == declared.key)
         {
             return Err(refuse(
-                AdmissionRecord::new(Code::InvalidRuntimeInput, "conflicting-identity")
+                admission_record(Code::InvalidRuntimeInput, "conflicting-identity")
                     .with("relationship", raw.relationship.clone()),
             ));
         }
@@ -639,7 +697,7 @@ pub(super) fn check_unlisted_ends(
             for (side, end) in ends_of(instance) {
                 if end.reference.is_none() && completeness.get(&end.population) != Some(&true) {
                     return Err(incomplete(end_record(
-                        AdmissionRecord::new(Code::IncompletePopulation, "incomplete-scope"),
+                        admission_record(Code::IncompletePopulation, "incomplete-scope"),
                         extent,
                         index,
                         side,
@@ -665,7 +723,7 @@ pub(super) fn check_dangling_ends(extents: &[CheckedExtent]) -> Result<(), Admis
             for (side, end) in ends_of(instance) {
                 if end.reference.is_none() {
                     return Err(refuse(end_record(
-                        AdmissionRecord::new(
+                        admission_record(
                             Code::DanglingReference,
                             "absent-target-in-complete-population",
                         ),
@@ -849,7 +907,7 @@ pub(super) fn first_link_change(
     if pre.1.is_empty() && post.1.is_empty() {
         return Ok(None);
     }
-    let facts = model_facts(views, types);
+    let facts = model_facts(views, types)?;
     let pre = side_extents(views, &facts, pre.0, pre.1)?;
     let post = side_extents(views, &facts, post.0, post.1)?;
     let deleted: BTreeSet<(&str, &str)> = deleted

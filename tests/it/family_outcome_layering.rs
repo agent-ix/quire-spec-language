@@ -262,8 +262,9 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// repositories, so no workspace check reaches them; `qsl-foundation` may name `quire-exact`,
 /// `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
-/// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
-/// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4)
+/// `ix-trace-rs`, `qsl-cst`, `qsl-foundation`, `quire-exact`,
+/// `quire-semantic-value` and `quire-walk` in `[dependencies]` (ADR-011
+/// §6.1). `qsl-package` (layer 4)
 /// names exactly `qsl-foundation`, `qsl-semantics`, `quire-exact` and
 /// `quire-semantic-value` among the workspace crates in `[dependencies]`; its
 /// `[dev-dependencies]` may also name the lower layers `qsl-forms` and
@@ -322,6 +323,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-cst",
                 "qsl-foundation",
                 "quire-exact",
+                "quire-semantic-value",
                 "quire-walk",
             ][..],
             &[][..],

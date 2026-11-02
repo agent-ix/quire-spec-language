@@ -3,6 +3,7 @@
 //! (check 1), admitting its populations and objects (checks 5 to 8) and
 //! resolving `self`, `parameters` and `result` (checks 9 and 10).
 
+use super::{admission_record, AdmissionRecordExt};
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
@@ -11,7 +12,7 @@ use quire_exact::{
 
 use qsl_foundation::diagnostic::Code;
 
-use super::helpers::{admission_record, object_reference};
+use super::helpers::object_reference;
 use super::tree::{read_raw_value, Json, Object};
 use super::{
     check_document_valid, collection_tag, fault, incomplete, population_universe, refuse,
@@ -609,7 +610,7 @@ fn read_snapshot_body(
         Some("pre") => ObservationRole::Pre,
         Some("post") => ObservationRole::Post,
         _ => {
-            return Err(refuse(AdmissionRecord::new(
+            return Err(refuse(admission_record(
                 Code::WrongSnapshot,
                 "wrong-observation",
             )))
@@ -2294,6 +2295,49 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
     }
 }
 
+/// Compute the exact FR-106 check-7 closure rooted at every declared
+/// population. The wire reference's population label is retained at the
+/// occurrence that named it; equal object references do not merge labels.
+fn population_reference_closures(
+    snapshot: &SnapshotDocument,
+    facts: &super::relationships::ModelFacts,
+    extents: &[super::relationships::CheckedExtent],
+) -> BTreeMap<String, Vec<String>> {
+    let mut closures = BTreeMap::new();
+    for seed in facts.population_identities() {
+        let mut closure = vec![seed.to_owned()];
+        let mut next = 0;
+        while next < closure.len() {
+            let population = closure[next].clone();
+            if let Some(entry) = snapshot
+                .populations
+                .iter()
+                .find(|entry| entry.population == population)
+            {
+                for object in &entry.objects {
+                    for (_, raw) in &object.fields {
+                        let mut references = Vec::new();
+                        collect_references(raw, &mut references);
+                        for (target, _) in references {
+                            if !closure.contains(&target) {
+                                closure.push(target);
+                            }
+                        }
+                    }
+                }
+            }
+            for target in super::relationships::related_population_ids(extents, &population) {
+                if !closure.contains(&target) {
+                    closure.push(target);
+                }
+            }
+            next += 1;
+        }
+        closures.insert(seed.to_owned(), closure);
+    }
+    closures
+}
+
 /// Check 6's own admitted output, carried between checks 6, 7 and 8: an
 /// invocation's pre and post snapshots each get their own [`PopulationValues`]
 /// from [`admit_population_values`], so a caller can run check 6 on both,
@@ -2311,6 +2355,8 @@ pub(super) struct PopulationValues<'t> {
     pub(super) extents: Vec<super::relationships::CheckedExtent>,
     /// The package facts the extent store is built from.
     facts: super::relationships::ModelFacts,
+    /// The check-7 closure rooted at every declared population.
+    population_reference_closures: BTreeMap<String, Vec<String>>,
     /// Each reference that named no object of this snapshot, with the wire
     /// population it named ([`References`]).
     unresolved: Vec<(String, ObjectReference)>,
@@ -2676,7 +2722,7 @@ pub(super) fn admit_population_values<'t>(
     }
 
     // 6.6 to 6.9: the `relationships` entries, after the last object.
-    let facts = super::relationships::model_facts(views, types);
+    let facts = super::relationships::model_facts(views, types)?;
     let extents =
         super::relationships::check_entries(types, &facts, &snapshot.relationships, &listed)?;
 
@@ -2691,6 +2737,7 @@ pub(super) fn admit_population_values<'t>(
         &mut references,
     )?;
 
+    let population_reference_closures = population_reference_closures(snapshot, &facts, &extents);
     Ok(PopulationValues {
         objects,
         holders,
@@ -2698,6 +2745,7 @@ pub(super) fn admit_population_values<'t>(
         keys_by_population,
         extents,
         facts,
+        population_reference_closures,
         unresolved: references.unresolved,
         out_of_range,
         read_contexts,
@@ -3169,6 +3217,8 @@ pub(super) fn finish_populations(
         widened = widen_ranges(types)?;
         &widened
     };
+    let population_provenance = values.facts.population_provenance()?;
+    let population_reference_closures = values.population_reference_closures.clone();
     let extents = super::relationships::build_extents(
         types,
         values.facts,
@@ -3238,7 +3288,9 @@ pub(super) fn finish_populations(
     .with_extents(extents)
     .with_population_sizes(population_sizes)
     .with_population_members(members)
-    .with_population_completeness(values.completeness.clone());
+    .with_population_completeness(values.completeness.clone())
+    .with_population_provenance(population_provenance)
+    .with_population_reference_closures(population_reference_closures);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -3735,8 +3787,11 @@ mod tests {
         let record = references
             .check_closure(&SnapshotValue::present(reference("complete", "k")))
             .expect_err("a key absent from a complete population refuses");
-        assert_eq!(record.code, Code::DanglingReference);
-        assert_eq!(record.cause, "absent-target-in-complete-population");
+        assert_eq!(record.catalog.code(), Code::DanglingReference.as_str());
+        assert_eq!(
+            record.catalog.cause(),
+            "absent-target-in-complete-population"
+        );
         assert_eq!(
             record.fields.get("population").map(String::as_str),
             Some("complete")
@@ -3746,7 +3801,7 @@ mod tests {
         let record = references
             .check_closure(&reference("unlisted", "k"))
             .expect_err("a population the snapshot does not list refuses");
-        assert_eq!(record.code, Code::DanglingReference);
+        assert_eq!(record.catalog.code(), Code::DanglingReference.as_str());
 
         assert_eq!(
             references.check_closure(&SnapshotValue::sequence(vec![reference("partial", "k")])),
@@ -3787,8 +3842,8 @@ mod tests {
             None,
         )
         .expect_err("-1 is outside [0, 1000]");
-        assert_eq!(record.code, Code::InvalidRuntimeInput);
-        assert_eq!(record.cause, "invalid-value");
+        assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+        assert_eq!(record.catalog.cause(), "invalid-value");
         let admitted = admit_form(
             &mut references,
             snapshot(r#"{"integer":"1000"}"#).form(),
@@ -3863,7 +3918,7 @@ mod tests {
             None,
         )
         .expect_err("an unwitnessed sequence refuses");
-        assert_eq!(record.cause, "invalid-value");
+        assert_eq!(record.catalog.cause(), "invalid-value");
     }
 
     /// The raw value `text` spells, or `None` when it is not a value form.
@@ -4109,8 +4164,12 @@ mod tests {
             let Err(record) = admit_native(native, &title(), &TypeEnvironment::default()) else {
                 panic!("a refusal: {object}");
             };
-            assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
-            assert_eq!(record.cause, cause, "{object}");
+            assert_eq!(
+                record.catalog.code(),
+                Code::InvalidRuntimeInput.as_str(),
+                "{object}"
+            );
+            assert_eq!(record.catalog.cause(), cause, "{object}");
             assert_eq!(
                 record.fields.get("member").map(String::as_str),
                 member,
@@ -4132,8 +4191,8 @@ mod tests {
         };
         let refusal = admit_native(native, &title(), &TypeEnvironment::default())
             .expect_err("a String fits no Text slot");
-        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+        assert_eq!(refusal.catalog.cause(), "wrong-value-kind");
         assert!(!refusal.fields.contains_key("member"));
         for slot in [
             quire_exact::ValueType::String,
@@ -4143,7 +4202,11 @@ mod tests {
         ] {
             for text in ["Ready", "00112233-4455-6677-8899-aabbccddeeff", "aaaaaaaaa"] {
                 let refusal = admit_text_object(text, &slot).expect_err("a Text fits no such slot");
-                assert_eq!(refusal.cause, "wrong-value-kind", "{slot:?} {text}");
+                assert_eq!(
+                    refusal.catalog.cause(),
+                    "wrong-value-kind",
+                    "{slot:?} {text}"
+                );
                 assert!(!refusal.fields.contains_key("member"), "{slot:?} {text}");
             }
         }
@@ -4158,7 +4221,7 @@ mod tests {
             &TypeEnvironment::default(),
         )
         .expect_err("refused");
-        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert_eq!(refusal.catalog.cause(), "wrong-value-kind");
         assert_eq!(
             refusal.fields.get("member").map(String::as_str),
             Some("text")
@@ -4185,8 +4248,8 @@ mod tests {
             ("\u{1f600}\u{1f600}", code(), "Text[0, 4; binary-utf8]", 8),
         ] {
             let refusal = admit_text_object(text, &slot).expect_err("outside the bounds");
-            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "invalid-value");
+            assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+            assert_eq!(refusal.catalog.cause(), "invalid-value");
             let field = |name: &str| refusal.fields.get(name).map(String::as_str);
             assert_eq!(field("member"), Some("text"));
             assert_eq!(field("expected"), Some(expected));
@@ -4262,8 +4325,8 @@ mod tests {
         ] {
             let refusal = admit_object(&rational_object(numerator, denominator), &rational_slot())
                 .expect_err("outside the domain");
-            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "invalid-value");
+            assert_eq!(refusal.catalog.code(), Code::InvalidRuntimeInput.as_str());
+            assert_eq!(refusal.catalog.cause(), "invalid-value");
             let field = |name: &str| refusal.fields.get(name).map(String::as_str);
             assert_eq!(field("expected"), Some("Rational[-10, 10; 1, 12]"));
             assert_eq!(field("actual"), Some(actual), "{numerator}/{denominator}");
@@ -4327,8 +4390,12 @@ mod tests {
             ),
         ] {
             let refusal = admit_object(object, &rational_slot()).expect_err(object);
-            assert_eq!(refusal.code, Code::InvalidRuntimeInput, "{object}");
-            assert_eq!(refusal.cause, cause, "{object}");
+            assert_eq!(
+                refusal.catalog.code(),
+                Code::InvalidRuntimeInput.as_str(),
+                "{object}"
+            );
+            assert_eq!(refusal.catalog.cause(), cause, "{object}");
             assert_eq!(
                 refusal.fields.get("member").map(String::as_str),
                 Some(member),
@@ -4359,8 +4426,12 @@ mod tests {
             (rational.as_str(), quantity, "Rational in Quantity"),
         ] {
             let refusal = admit_object(object, &slot).expect_err(place);
-            assert_eq!(refusal.code, Code::InvalidRuntimeInput, "{place}");
-            assert_eq!(refusal.cause, "wrong-value-kind", "{place}");
+            assert_eq!(
+                refusal.catalog.code(),
+                Code::InvalidRuntimeInput.as_str(),
+                "{place}"
+            );
+            assert_eq!(refusal.catalog.cause(), "wrong-value-kind", "{place}");
         }
     }
 

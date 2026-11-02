@@ -1220,7 +1220,7 @@ fn a_model_operation_takes_and_returns_a_child_record() {
         ) else {
             panic!("a Money or a Fee at a TaxedMoney parameter refuses");
         };
-        assert_eq!(record.cause, "wrong-value-kind");
+        assert_eq!(record.catalog.cause(), "wrong-value-kind");
         assert_eq!(record.fields.get("field").map(String::as_str), Some("m"));
     }
 }
@@ -1235,7 +1235,7 @@ fn an_operation_record_defect_names_the_binding_and_the_nested_field() {
     let without_tax = record_json("TaxedMoney", &[("amount_minor", 1), ("currency", 978)]);
     let refusal = |result: Result<AdmittedObservations, AdmissionFailure>| match result {
         Err(AdmissionFailure::Refused(record)) => (
-            record.cause.to_owned(),
+            record.catalog.cause().to_owned(),
             record.fields.get("field").cloned().unwrap_or_default(),
             record.path,
         ),

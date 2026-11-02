@@ -9,6 +9,7 @@
 //! (`A`) declaring the operations under test and subtypes `Sub` (`B`), `C`
 //! and `D` each redefining `size`.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
@@ -26,7 +27,7 @@ use quire_semantic_value::object_closure::ObjectClosure;
 use ix_trace_rs::trace;
 use qsl_replay::spine::{self, CheckedUnit, CompileRefusal, ParseRequest, SpineLimits};
 use qsl_replay::{Code, DependencyInput, SourceIdentity};
-use qsl_semantics::check::{CheckCause, CheckedNode, NodeKind};
+use qsl_semantics::check::{CheckCause, CheckedNode};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::Cancel;

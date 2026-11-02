@@ -77,9 +77,9 @@ use crate::model::population::{
     all_instances, lookup, AllInstancesOutcome, LookupKey, LookupOutcome, PopulationBinding,
     ReferenceKey,
 };
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::catalog::InternalFault;
 
 use quire_exact::{
@@ -190,7 +190,7 @@ fn resolve_target(
 
 /// `allInstances<T>(p)` (FR-153). `collection_type` is this call's own
 /// checked `Set<Reference<T>>[0,N]` result type
-/// (`qsl_semantics::check::NodeKind::AllInstances`'s node's own
+/// (`quire_checked::node::NodeKind::AllInstances`'s node's own
 /// `value_type`); its element names `T`.
 pub fn evaluate_all_instances(
     binding: &PopulationBinding,

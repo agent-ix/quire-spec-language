@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-300/301: source-compiled model forms and enclosing-family outcomes.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -8,7 +9,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::diagnostic::category_of;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    checked_dispatch_operation, CheckCause, CheckedGraph, DispatchRoot, DispatchTable, NodeKind,
+    checked_dispatch_operation, CheckCause, CheckedGraph, DispatchRoot, DispatchTable,
     OperationClauses, PackageDeclarations,
 };
 use qsl_semantics::family::FamilyKind;
@@ -43,7 +44,7 @@ fn key(name: &str) -> DeclarationKey {
     DeclarationKey::fixture(name)
 }
 
-fn model_document() -> Vec<u8> {
+pub(crate) fn model_document() -> Vec<u8> {
     model_document_over(false)
 }
 

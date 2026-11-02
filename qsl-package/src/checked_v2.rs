@@ -11,10 +11,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use quire_contract_model::{
-    read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
+    CHECKED_PACKAGE_V2, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, read_checked_package,
 };
 
 use qsl_foundation::diagnostic::{
@@ -29,7 +29,7 @@ use qsl_semantics::library::{ImportView, LibraryName, LibraryPackage, LibraryRef
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
-use crate::emit::{emit_checked, Emission, EmitRefusal};
+use crate::emit::{Emission, EmitRefusal, emit_checked};
 use quire_exact::{Origin, Role};
 
 mod clause_root;
@@ -41,15 +41,15 @@ mod terminal;
 pub(crate) mod tests;
 mod timed_model;
 
-pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
-pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
-pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnresolved};
+pub use clause_root::{ClauseRoot, ClauseRootUnresolved, clause_roots, resolve_clause_root};
+pub use hybrid::{HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel, read_hybrids};
+pub use hyper_root::{HyperRoot, HyperRootUnresolved, hyper_roots, resolve_hyper_root};
 pub use state_graph_root::{
-    resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
+    StateGraphKind, StateGraphRoot, resolve_state_graph_root, state_graph_roots,
 };
 pub use terminal::{
-    read_terminal, read_terminals, resolve_terminals, PackageTerminal, PackageTerminalDeclaration,
-    ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
+    PackageTerminal, PackageTerminalDeclaration, ReadTerminal, ReadTerminalDeclaration,
+    TerminalResolveRefusal, read_terminal, read_terminals, resolve_terminals,
 };
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
@@ -556,7 +556,7 @@ impl Artifact {
 /// An I2 read that admitted canonical v2 bytes and matched the requested
 /// library name to the package's manifest name (FR-087-AC-1, AC-3).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct V2Read {
+pub struct V2Read {
     /// The admitted package's structural exports.
     pub(crate) package: ImportView,
     /// The package source map (ADR-013 O-12), read from the wire's
@@ -568,6 +568,8 @@ pub(crate) struct V2Read {
     /// IR's admitted package, supplied to a later read whose
     /// `dependency_selections` name it.
     pub(crate) admitted: Arc<CheckedPackageV2>,
+    /// Structural keys for the admitted reader's closed checked node IDs.
+    pub(crate) node_keys: BTreeMap<quire_contract_model::CheckedNodeId, quire_exact::NodeKey>,
     /// Typed timed-model projections reconstructed from the admitted graph.
     pub(crate) timed_models: Vec<CheckedTimedModel>,
 }
@@ -575,7 +577,7 @@ pub(crate) struct V2Read {
 /// I2's own outcome, ADR-013 T-4's stage result (FR-322-AC-9): a verified
 /// package, a refusal of the input, or a reached limit with no partial
 /// package.
-pub(crate) type V2ReadOutcome = Result<Staged<V2Read>, StageFailure<V2ReadRefusal>>;
+pub type V2ReadOutcome = Result<Staged<V2Read>, StageFailure<V2ReadRefusal>>;
 
 /// A refused read.
 fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
@@ -591,7 +593,7 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
 /// `evidence` supplies selected domain package documents, admitted
 /// dependency packages and supported features. The caller supplies the
 /// package's expected library name from its manifest or import declaration.
-pub(crate) fn read_checked_package_v2(
+pub fn read_checked_package_v2(
     bytes: &[u8],
     identity: LibraryName,
     limits: V2ReadLimits,
@@ -616,7 +618,7 @@ pub(crate) fn read_checked_package_v2(
             let timed_models = match CheckedTimedModel::from_admitted(&package) {
                 Ok(models) => models,
                 Err(invariant) => {
-                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
+                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)));
                 }
             };
             let graph = match wire_graph(&package) {
@@ -625,7 +627,7 @@ pub(crate) fn read_checked_package_v2(
                     return refused(V2ReadRefusal::Fault(InternalFault::new(
                         "I2",
                         "admitted-node-ids-rebuild-structural-keys",
-                    )))
+                    )));
                 }
             };
             let mut exports = Vec::new();
@@ -645,6 +647,13 @@ pub(crate) fn read_checked_package_v2(
                 Ok(source_map) => source_map,
                 Err(defect) => return refused(defect.into()),
             };
+            let node_keys = package
+                .graph()
+                .nodes
+                .iter()
+                .zip(graph.keys())
+                .map(|(node, key)| (node.node_id.clone(), key.clone()))
+                .collect();
             let candidate = LibraryPackage {
                 library: identity,
                 imports: Vec::new(),
@@ -656,6 +665,7 @@ pub(crate) fn read_checked_package_v2(
                     source_map,
                     effective_limits: limits,
                     admitted: Arc::from(package),
+                    node_keys,
                     timed_models,
                 })),
                 Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),

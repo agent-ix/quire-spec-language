@@ -15,7 +15,6 @@ default = ["std"]
 std = [
     "dep:quire-contract-model",
     "dep:quire-canonical",
-    "dep:quire-exact",
     "dep:serde_json",
     "dep:thiserror",
     "qsl-foundation/std",
@@ -43,7 +42,7 @@ qsl-foundation = { path = "../qsl-foundation", default-features = false }
 qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
 # (ADR-013 O-07).
-quire-exact = { workspace = true, optional = true }
+quire-exact = { workspace = true }
 # The v2 structural wire vocabulary and the I2 byte reader's IR model.
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main", optional = true }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation for

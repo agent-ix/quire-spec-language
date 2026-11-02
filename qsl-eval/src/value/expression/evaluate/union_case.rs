@@ -11,9 +11,8 @@
 use super::*;
 use ix_trace_rs::trace;
 use qsl_semantics::check::union_fixture as fixture;
-use qsl_semantics::check::{
-    scope_with, CaseArm, CheckedBody, PackageDeclarations, SCALAR_LIMITS_UNLIMITED,
-};
+use qsl_semantics::check::{scope_with, CheckedBody, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
+use quire_checked::node::CaseArm;
 use quire_exact::{CollectionType, ScalarLimits};
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -49,10 +48,14 @@ fn int(number: i64) -> Value {
 /// The nodes of a body being built, operands before the nodes naming them
 /// and the root last.
 #[derive(Default)]
-struct Nodes(Vec<(NodeKind, ValueType)>);
+struct Nodes(Vec<(NodeKind<qsl_semantics::check::NodeId>, ValueType)>);
 
 impl Nodes {
-    fn push(&mut self, kind: NodeKind, value_type: ValueType) -> NodeId {
+    fn push(
+        &mut self,
+        kind: NodeKind<qsl_semantics::check::NodeId>,
+        value_type: ValueType,
+    ) -> NodeId {
         self.0.push((kind, value_type));
         CheckedBody::id_at(self.0.len() - 1)
     }
@@ -110,7 +113,7 @@ impl Nodes {
         &mut self,
         union: &str,
         scrutinee: NodeId,
-        arms: Vec<CaseArm>,
+        arms: Vec<CaseArm<qsl_semantics::check::NodeId>>,
         result: ValueType,
     ) -> NodeId {
         self.push(
@@ -128,8 +131,8 @@ impl Nodes {
     }
 }
 
-fn arm(member: usize, binders: Vec<Slot>, body: NodeId) -> CaseArm {
-    CaseArm {
+fn arm(member: usize, binders: Vec<Slot>, body: NodeId) -> CaseArm<qsl_semantics::check::NodeId> {
+    CaseArm::<qsl_semantics::check::NodeId> {
         member,
         binders,
         body,
@@ -138,7 +141,7 @@ fn arm(member: usize, binders: Vec<Slot>, body: NodeId) -> CaseArm {
 
 /// `area`'s arms: `Empty` is 0, `Circle(r)` is `3 * (r * r)`, `Rect(w, h)`
 /// is `w * h`. The binders take slots 0, then 1 and 2.
-fn area_arms(nodes: &mut Nodes) -> Vec<CaseArm> {
+fn area_arms(nodes: &mut Nodes) -> Vec<CaseArm<qsl_semantics::check::NodeId>> {
     let empty = nodes.int(0);
     let three = nodes.int(3);
     let (r, r_again) = (nodes.integer_local(0), nodes.integer_local(0));

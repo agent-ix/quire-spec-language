@@ -2,16 +2,17 @@
 //! FR-300: static model-expression decisions under the enclosing S3 context.
 
 use qsl_forms::{ClauseKind, TypeForm};
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::{StageFailure, Staged};
+use quire_checked::node::NodeKind;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, IllTypedCause, Presence, ValueType,
 };
+use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::location::Location;
 
 use super::check::Scope;
-use super::ir::{Node, NodeId, NodeKind};
+use super::ir::{Node, NodeId};
 use super::navigation::Navigable;
 use super::refusal::{
     AmbiguousMember, CheckCause, CheckRefusal, KeyFault, MemberCandidate, NavigationBound,
@@ -124,7 +125,10 @@ pub(crate) fn fault(location: &Location) -> CheckRefusal {
 /// FR-363: the `Navigate` node `r.name` over `end` checks to, and its static
 /// type, which the destination end's multiplicity gives. The direction is
 /// decided before the multiplicity.
-fn navigation(end: &Navigable<'_>, reference: NodeId) -> Result<(NodeKind, ValueType), CheckCause> {
+fn navigation(
+    end: &Navigable<'_>,
+    reference: NodeId,
+) -> Result<(NodeKind<NodeId>, ValueType), CheckCause> {
     if !end.direction_admitted() {
         return Err(CheckCause::IllTyped(IllTypedCause::OperatorIneligible));
     }

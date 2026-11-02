@@ -198,10 +198,10 @@ pub fn encode_refinement_query(
         }
     };
 
-    let concrete_system =
-        ModelSystem::new(request.concrete.simulation.clone()).map_err(Refusal::SubjectAdmission)?;
+    let concrete_system = ModelSystem::new(request.concrete.simulation.clone())
+        .map_err(|failure| Refusal::SubjectAdmission(Box::new(failure)))?;
     let abstract_system = ModelSystem::new(request.abstract_.simulation.clone())
-        .map_err(Refusal::SubjectAdmission)?;
+        .map_err(|failure| Refusal::SubjectAdmission(Box::new(failure)))?;
     let concrete = concrete_system.symbolic()?;
     let abstract_ = abstract_system.symbolic()?;
     let concrete_layout = StateLayout::of(&concrete)?;

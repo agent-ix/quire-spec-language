@@ -581,20 +581,19 @@ fn admit_order_usage(
 /// The refusal of `result`: its cause and its object, field and nested-path
 /// components.
 fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
-    let Err(AdmissionFailure::Refused(AdmissionRecord {
-        code,
-        cause,
+    let Err(AdmissionFailure::Refused(record)) = result else {
+        panic!("a refusal, not {result:?}");
+    };
+    let AdmissionRecord {
+        catalog,
         fields,
         path,
         ..
-    })) = result
-    else {
-        panic!("a refusal, not {result:?}");
-    };
-    assert_eq!(code.as_str(), "invalid_runtime_input");
+    } = *record;
+    assert_eq!(catalog.code(), "invalid_runtime_input");
     let component = |name: &str| fields.get(name).cloned().unwrap_or_default();
     (
-        cause.to_owned(),
+        catalog.cause().to_owned(),
         component("object"),
         component("field"),
         path,
@@ -810,14 +809,14 @@ fn assert_values_limit(failure: AdmissionFailure, limit: u64) -> AdmissionRecord
     let AdmissionFailure::Refused(record) = failure else {
         panic!("a refusal, not {failure:?}");
     };
-    assert_eq!(record.code.as_str(), "stage_limit_exceeded");
-    assert_eq!(record.cause, "node-count-exceeded");
+    assert_eq!(record.catalog.code(), "stage_limit_exceeded");
+    assert_eq!(record.catalog.cause(), "node-count-exceeded");
     let field = |name: &str| record.fields.get(name).map(String::as_str);
     assert_eq!(field("setting"), Some("observation.values"));
     assert_eq!(field("kind"), Some("node-count-exceeded"));
     assert_eq!(field("bound"), Some(limit.to_string().as_str()));
     assert_eq!(field("actual"), Some((limit + 1).to_string().as_str()));
-    record
+    *record
 }
 
 /// FR-106-AC-16: at the exact values-per-document bound a document admits;

@@ -2,10 +2,11 @@
 //! FR-146 termination: recursive components of the reachable call graph and
 //! their lexicographic `decreases` obligations.
 
+use quire_checked::node::NodeKind;
 use std::collections::VecDeque;
 
 use super::facts::{ArgumentShape, CallSite, EdgeKind};
-use super::ir::{CheckedNode, NodeKind, Slot};
+use super::ir::{CheckedNode, Slot};
 use super::refusal::{CheckCause, CheckRefusal, MeasureObligation};
 use quire_exact::ValueType;
 use quire_semantic_value::location::Location;

@@ -5,9 +5,10 @@
 //! `CheckedGraph::check_clause_expression`, and a `decreases` measure.
 
 use ix_trace_rs::trace;
+use quire_checked::node::NodeKind;
 
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
-use qsl_semantics::check::{CheckCause, NodeKind, PackageDeclarations};
+use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 

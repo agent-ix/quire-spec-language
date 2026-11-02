@@ -10,11 +10,11 @@
 //! definedness condition of every atom it reads and of every guard a step
 //! reads.
 
-use qsl_semantics::check::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeKind,
-    OrderedKind,
-};
+use qsl_semantics::check::CheckedNode;
 use qsl_semantics::model::clause_observation::Observation;
+use quire_checked::node::{
+    Arithmetic, CheckedLiteral, Connective, IntegerDivisionOperator, NodeKind, OrderedKind,
+};
 use quire_exact::{Integer, OrderingOperator, Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::Location;
@@ -567,7 +567,7 @@ impl<'r, 'a> Reader<'r, 'a> {
 }
 
 /// The name a refusal gives the construct `kind`.
-fn form_name(kind: &NodeKind) -> &'static str {
+fn form_name(kind: &NodeKind<qsl_semantics::check::NodeId>) -> &'static str {
     match kind {
         NodeKind::IntegerDivision { .. } => "integer division",
         NodeKind::Divide { .. } => "division",

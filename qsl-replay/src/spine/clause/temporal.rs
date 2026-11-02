@@ -19,6 +19,7 @@ use qsl_semantics::model::observation::{
     AdmissionUsage, DocumentRef,
 };
 use quire_exact::{Meter, ValueType};
+use quire_semantic_value::catalog::CatalogCode;
 
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
@@ -81,13 +82,12 @@ pub struct OverObject {
 }
 
 fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> ClauseDisposition {
-    ClauseDisposition::Admit(AdmissionFailure::Refused(AdmissionRecord {
-        code: Code::InvalidRuntimeInput,
-        cause,
+    ClauseDisposition::Admit(AdmissionFailure::Refused(Box::new(AdmissionRecord {
+        catalog: CatalogCode::new(Code::InvalidRuntimeInput.as_str(), cause),
         fields,
         path: Vec::new(),
         kernel: None,
-    }))
+    })))
 }
 
 /// FR-330: run the temporal clause `name` over `trace`.

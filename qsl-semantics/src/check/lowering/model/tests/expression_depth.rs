@@ -6,7 +6,7 @@
 //! each checked on a 512 KiB thread nested 2 and 1,000 levels deep at the
 //! default limits: no limit names a depth.
 
-use qsl_foundation::absence::AbsenceMode;
+use quire_semantic_value::absence::AbsenceMode;
 
 use super::*;
 

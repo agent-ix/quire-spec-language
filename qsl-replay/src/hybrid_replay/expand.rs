@@ -9,11 +9,11 @@
 //! recursive function stays a call, which static replay evaluates over
 //! intervals and exact replay refuses as `NotExact`.
 
+use quire_checked::node::{Arithmetic, Connective, NodeKind};
 use std::collections::BTreeMap;
 
 use qsl_semantics::check::{
-    Arithmetic, ArithmeticOp, CheckedFunctionRef, CheckedGraph, CheckedNode, CompareOp, Connective,
-    HybridTerm, LogicOp, NodeKind,
+    ArithmeticOp, CheckedFunctionRef, CheckedGraph, CheckedNode, CompareOp, HybridTerm, LogicOp,
 };
 use quire_exact::{ArithmeticOperator, Integer, OrderingOperator, Rational, Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;

@@ -11,6 +11,7 @@
 //! declaration node `check` keys is one model correspondence entry, and
 //! `check` is the correspondence's only writer.
 
+use quire_checked::node::{AuthoredBound, EndSide};
 use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
@@ -18,7 +19,7 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 use super::{identifiers, refuse, require_admitted, type_declaration, Lowering, NodeContent};
 use crate::check::assemble::DimensionEquivalence;
 use crate::check::family::OccurrenceRole;
-use crate::check::navigation::EndSide;
+
 use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeRef, NodeTag,
     Owner,
@@ -306,19 +307,6 @@ pub(crate) enum QuantityKind {
     Dimension,
     /// A `unit` declaration.
     Unit,
-}
-
-/// An authored finite maximum of one domain-package population (FR-380):
-/// part of the population's meaning, never a resource limit (ADR-014 B-1).
-/// A population the unit does not bound has none.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct AuthoredBound {
-    /// The inclusive maximum object count `N`.
-    pub maximum: u64,
-    /// The `bound` declaration's label, which names its `[N]` occurrence.
-    pub label: String,
-    /// The bounded population's declaration key.
-    pub population: DeclarationKey,
 }
 
 /// One lineage's parent member, as the staged admission selects it.

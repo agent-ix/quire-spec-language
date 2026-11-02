@@ -17,6 +17,7 @@
 //! labels of a `hyper` clause belong to the temporal family, which no layer
 //! gates.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeSet;
 
 use qsl_forms::{
@@ -41,7 +42,7 @@ pub(super) fn typed_equalities(
     let selected = HeaderLayer::from_identity(&selection?.identity)?;
     let admitted = HeaderLayer::closure(&[selected]);
     for node in body.root().descendants() {
-        let super::ir::NodeKind::Equality(_, _, left, right) = node.kind() else {
+        let NodeKind::Equality(_, _, left, right) = node.kind() else {
             continue;
         };
         let mut reference = false;

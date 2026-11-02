@@ -27,6 +27,7 @@
 //! `AdmittedEnumDeclaration::admit` and `admit_member` (FR-091 "Enum declarations").
 //! A predicate is a function of kind `Predicate` and assembles as a function.
 
+use quire_checked::node::AuthoredBound;
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
@@ -50,7 +51,7 @@ use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
 use super::layer::LayerAdmission;
-use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel, AuthoredBound};
+use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{NodeKeyRefusal, NodeTag, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;

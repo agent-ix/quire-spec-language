@@ -11,6 +11,9 @@
 //! a limit and no chain of nested guards copies facts per level (ADR-030
 //! D-1).
 
+use quire_checked::node::{
+    Arithmetic, CheckedLiteral, Connective, NodeKind, OrderedKind, RecordField, Visit,
+};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::marker::PhantomData;
@@ -21,10 +24,7 @@ mod persistent;
 
 use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
-use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, OrderedKind,
-    RecordField, Slot, Visit,
-};
+use super::ir::{CheckedNode, DispatchTable, Slot};
 use super::observation::Observations;
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Obligation, ProvedInterval,

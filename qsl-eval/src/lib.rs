@@ -112,6 +112,63 @@
 //! }
 //! ```
 //!
+//! # Canonical checked-node descriptors (FR-400-AC-12)
+//!
+//! The canonical operation vocabulary and borrowed node descriptor are
+//! available from `quire-checked`:
+//!
+//! ```no_run
+//! use quire_checked::{NodeKind, NodeRead};
+//! use quire_exact::Value;
+//! use quire_semantic_value::location::{Location, Origin};
+//! use quire_exact::ValueType;
+//! fn canonical(value_type: &ValueType, location: &Location) {
+//!     let operation: NodeKind<usize, &Value> = NodeKind::Local(0);
+//!     let _descriptor = NodeRead {
+//!         operation,
+//!         value_type,
+//!         location,
+//!     };
+//! }
+//! let _ = canonical;
+//! let _ = (Location::root(Origin::Expression), ValueType::Boolean);
+//! ```
+//!
+//! A descriptor does not admit an expression to the public evaluator:
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::value::CheckedPackageEvaluation;
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_checked::{NodeKind, NodeRead};
+//! use quire_exact::{Meter, Value, ValueType};
+//! use quire_semantic_value::location::{Location, Origin};
+//! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let value_type = ValueType::Boolean;
+//!     let location = Location::root(Origin::Expression);
+//!     let descriptor = NodeRead {
+//!         operation: NodeKind::<usize, &Value>::Local(0),
+//!         value_type: &value_type,
+//!         location: &location,
+//!     };
+//!     let _ = package.evaluate(&descriptor, vec![], objects, meter);
+//! }
+//! ```
+//!
+//! The operation alone is rejected for the same reason:
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::value::CheckedPackageEvaluation;
+//! use qsl_package::CheckedPackage;
+//! use qsl_semantics::model::object_environment::ObjectEnvironment;
+//! use quire_checked::NodeKind;
+//! use quire_exact::{Meter, Value};
+//! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
+//!     let operation = NodeKind::<usize, &Value>::Local(0);
+//!     let _ = package.evaluate(&operation, vec![], objects, meter);
+//! }
+//! ```
+//!
 //! ```compile_fail,E0308
 //! use qsl_eval::value::CheckedPackageEvaluation;
 //! use qsl_package::CheckedPackage;

@@ -6,9 +6,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, EndSide, MemberCandidate, NodeKind,
-};
+use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedGraph, MemberCandidate};
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     OperationEffect, OperationMemberRecord, OperationParameterRecord, PopulationRecord,
@@ -16,6 +14,7 @@ use qsl_semantics::model::domain_package::{
     ScalarValueDomain, ValueTypeRef,
 };
 use quire_checked::key::DeclarationKey;
+use quire_checked::node::{EndSide, NodeKind};
 use quire_exact::{Presence, ValueType};
 use quire_semantic_value::declaration::FieldRef;
 

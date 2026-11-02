@@ -12,6 +12,7 @@
 //! typed over the operation's parameters and must be an integer or a
 //! quantity.
 
+use quire_checked::node::{CheckedLiteral, NodeKind};
 use std::collections::BTreeMap;
 
 use qsl_forms::{
@@ -26,7 +27,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::super::check::{bind_parameters, Scope, Signatures, Typer};
 use super::super::facts::Definedness;
-use super::super::ir::{CheckedBody, CheckedLiteral, CheckedNode, DispatchTable, NodeKind};
+use super::super::ir::{CheckedBody, CheckedNode, DispatchTable};
 use super::super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::super::state_clause::ClauseOperation;
 use super::super::temporal_clause::{ModelTimeSource, TimeSourceKind};

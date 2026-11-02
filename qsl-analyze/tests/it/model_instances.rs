@@ -652,8 +652,8 @@ fn an_empty_universe_key_is_refused_as_invalid_input_not_a_fault() {
     let bad = || universes(&[("P1", &["d", ""])]);
     let invalid = |failure: &AdmissionFailure| match failure {
         AdmissionFailure::Refused(record) => {
-            assert_eq!(record.code, Code::InvalidRuntimeInput);
-            assert_eq!(record.cause, "invalid-value");
+            assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+            assert_eq!(record.catalog.cause(), "invalid-value");
             assert_eq!(record.fields.get("key").map(String::as_str), Some(""));
         }
         other => panic!("expected Refused, got {other:?}"),

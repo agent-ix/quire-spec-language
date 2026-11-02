@@ -1021,7 +1021,7 @@ fn tc_740_a_satisfied_exists_or_negated_forall_derives_a_decisive_witness() {
         .graph()
         .state_clause("EqualsAll")
         .unwrap();
-    let qsl_semantics::check::NodeKind::Equality(_, _, left, _) = forall.body().kind() else {
+    let quire_checked::node::NodeKind::Equality(_, _, left, _) = forall.body().kind() else {
         panic!("EqualsAll's body is an equality");
     };
     assert!(

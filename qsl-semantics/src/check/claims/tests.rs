@@ -6,6 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
+use quire_checked::node::NodeKind;
 use quire_exact::{Integer, RationalDomain, Role};
 
 use super::*;
@@ -1068,19 +1069,19 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
     let field = body.push(node(
         NodeKind::Field {
             operand: record,
-            field: crate::check::ir::RecordField::new(fixture_key("nine"), "x"),
+            field: quire_checked::node::RecordField::new(fixture_key("nine"), "x"),
             optional: false,
         },
         ValueType::Integer,
     ));
     let one = body.push(node(
-        NodeKind::Literal(crate::check::ir::CheckedLiteral(
+        NodeKind::Literal(quire_checked::node::CheckedLiteral(
             quire_exact::Value::Integer(Integer::from(1_i64)),
         )),
         ValueType::Integer,
     ));
     let add = body.finish(node(
-        NodeKind::Arithmetic(crate::check::Arithmetic::Add, field, one),
+        NodeKind::Arithmetic(quire_checked::node::Arithmetic::Add, field, one),
         ValueType::Integer,
     ));
     let parameters = [("r".to_owned(), ValueType::Composite(fixture_key("nine")))];

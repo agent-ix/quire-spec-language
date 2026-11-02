@@ -11,11 +11,12 @@
 //! domains); [`CheckedGraph::item_elements`](super::CheckedGraph::item_elements)
 //! resolves them to declaration keys.
 
+use quire_checked::node::NodeKind;
 use std::collections::BTreeSet;
 
 use quire_exact::{EffectiveId, ValueType};
 
-use super::ir::{CheckedNode, NodeKind};
+use super::ir::CheckedNode;
 use super::state_clause::PopulationDomain;
 
 /// What one requirement record references (ADR-017 AR-4).

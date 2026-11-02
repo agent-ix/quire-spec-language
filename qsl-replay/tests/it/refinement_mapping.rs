@@ -178,8 +178,8 @@ fn a_system_over_an_unselected_model_is_refused() {
     else {
         panic!("the system is refused");
     };
-    assert_eq!(record.code, Code::InvalidRuntimeInput);
-    assert_eq!(record.cause, "wrong-role-mapping");
+    assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(record.catalog.cause(), "wrong-role-mapping");
     assert_eq!(record.fields["model"], "example/not-selected");
     assert_eq!(world.concrete_system(UNLIMITED).model(), Some(CAS));
     assert_eq!(world.abstract_system(UNLIMITED).model(), Some(SPEC));

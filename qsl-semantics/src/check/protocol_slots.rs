@@ -30,6 +30,7 @@
 //! exhaustive and exclusive over its visible entries, and every other
 //! Boolean subterm of a guard, as independent Booleans.
 
+use quire_checked::node::NodeKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use qsl_forms::{
@@ -42,7 +43,7 @@ use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::check::Scope;
-use super::ir::{CheckedBody, NodeKind};
+use super::ir::CheckedBody;
 use super::lowering::{protocol_location, ProtocolSite};
 use super::protocol_clause::{record_binder, written_owner, CheckedProtocol, ProtocolNodeId};
 use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};

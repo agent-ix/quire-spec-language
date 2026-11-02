@@ -20,7 +20,6 @@
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
-use qsl_foundation::absence::AbsenceMode;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations,
@@ -48,6 +47,7 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
+use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::catalog::UndefinedReason;

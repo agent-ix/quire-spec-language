@@ -499,11 +499,11 @@ impl ModelSystem<'_> {
             while let Some(digits) = vectors.next_digits() {
                 budget = budget.saturating_add(1);
                 if budget > self.limits.max_candidates {
-                    return Err(AdmissionFailure::Incomplete(super::record(
+                    return Err(AdmissionFailure::Incomplete(Box::new(super::record(
                         Code::ResourceExhausted,
                         "insufficient-next-charge",
                         &[("limit", "max_candidates".to_owned())],
-                    )));
+                    ))));
                 }
                 let arguments = domains
                     .iter()
@@ -517,11 +517,11 @@ impl ModelSystem<'_> {
                     self.reward_value(reward, arguments.clone())
                         .map_err(|stop| match stop.limit {
                             Some(ExpansionLimit::EvaluationMeter(_)) => {
-                                AdmissionFailure::Incomplete(super::record(
+                                AdmissionFailure::Incomplete(Box::new(super::record(
                                     Code::ResourceExhausted,
                                     "insufficient-next-charge",
                                     &[("limit", "evaluation_meter".to_owned())],
-                                ))
+                                )))
                             }
                             _ => super::fault("reward-evaluation"),
                         })?;

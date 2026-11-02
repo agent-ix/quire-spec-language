@@ -146,9 +146,9 @@ use crate::model::key::EffectiveId;
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
-use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::absence::AbsenceMode;
 
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,

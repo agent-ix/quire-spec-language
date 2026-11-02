@@ -7,69 +7,71 @@
 //! parameters, `let` names, field projections, `present`, `value` and `if`
 //! make no charge.
 
+use quire_checked::node::{
+    Arithmetic, AuthoredBound, Connective, EndSide, IntegerDivisionOperator, NodeKind, OrderedKind,
+    RecordSlot, Visit,
+};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
+use super::super::CheckedTermView;
 use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
     ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
 use super::s6a::separation::{
-    locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
-    SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
+    InvocationBinding, Provenance, RuntimeValuePath, Separation, SeparationStep, StopReport, Trail,
+    ValuePathStep, ValuePathSubject, WitnessClaim, locatable, occurrence_at,
 };
-use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
+use qsl_foundation::diagnostic::{Locus, RefusalRecord, kernel_refusal_record};
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_semantics::check::{
-    Arithmetic, AuthoredBound, CheckedGraph, CheckedLiteral, CheckedNode, Connective,
-    DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
-    RecordSlot, Scope, Slot, Visit,
-};
+use qsl_package::TermHandle;
+use qsl_semantics::check::{CheckedGraph, CheckedNode, DispatchTable, Operator, Scope, Slot};
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::divide as integer_divide;
-use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+use qsl_semantics::value::model_query::{ModelQueryHalt, evaluate_all_instances, evaluate_lookup};
 use quire_checked::key::DeclarationKey;
-use quire_eval::modulo as integer_modulo;
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_eval::FamilyResult;
+use quire_eval::modulo as integer_modulo;
 use quire_eval::{
     PreconditionFailure, ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
 use quire_exact::Rational;
 use quire_exact::{
-    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
-    CompositeValue, FieldValue, ObjectReference, OptionValue, UnionValue, Value, ValueType,
+    ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
+    RationalArithmetic, evaluate_boolean, evaluate_integer_arithmetic,
+    evaluate_rational_arithmetic, order_numbers, retain_boolean,
 };
-use quire_exact::{compare_text, ComparisonOperator};
-use quire_exact::{
-    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
-    OrderingOperator, RationalArithmetic,
-};
-use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
-use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
     BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, PopulationId,
 };
-use quire_exact::{DivisionMember, IntegerDomain};
-use quire_exact::{Outcome, Refusal, Undefined};
-use quire_semantic_value::catalog::{render_identity, InternalFault};
-use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
-    EqualityOperator, FieldRef, TypeEnvironment,
+use quire_exact::{
+    CollectionValue, CompositeValue, FieldValue, ObjectReference, OptionValue, UnionValue, Value,
+    ValueType, compare_keys, form, form_grouped, member_equal, retain_composite,
 };
-use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
+use quire_exact::{ComparisonOperator, compare_text};
+use quire_exact::{Decimal, DecimalOperation, DecimalType, evaluate_decimal};
+use quire_exact::{DivisionMember, IntegerDomain};
+use quire_exact::{IeeeFlags, IeeeOperation, evaluate_ieee, ieee_to_exact};
+use quire_exact::{Outcome, Refusal, Undefined};
+use quire_semantic_value::catalog::{InternalFault, render_identity};
+use quire_semantic_value::declaration::{
+    CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure, EqualityOperator,
+    FieldRef, TypeEnvironment, operand_value,
+};
+use quire_semantic_value::enumeration::{EnumMemberIndex, compare_enum};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
-    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
+    QuantityOperation, UnitScope, compare_quantity, evaluate_quantity_unit,
 };
 use quire_semantic_value::relationship_extent::Resolution;
-use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
+use quire_semantic_value::stop::{Stop, outcome_from_stop, outcome_into_stop};
 
 /// FR-096, ADR-013 O-17: `evaluation`'s refusal as an O-17 [`RefusalRecord`]:
 /// the family cause's code and catalog fields, and, as its locus, the
@@ -140,6 +142,12 @@ enum Halt {
     Family(FamilyResult),
     /// An S6a invariant break: never converted to an `Outcome`.
     Fault(InternalFault),
+}
+
+impl From<InternalFault> for Halt {
+    fn from(fault: InternalFault) -> Self {
+        Self::Fault(fault)
+    }
 }
 
 /// A [`Stop`] and the location it reports, boxed in [`Halt::Located`] to keep
@@ -364,7 +372,7 @@ fn charge_call(meter: &mut Meter) -> Result<(), Stop> {
 /// The declaration identity of the concrete population a refinement row's
 /// `only` ranges over, for the undefined cause's payload: the population
 /// under any `where` filter of `source`.
-fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
+fn population_of(source: MachineNode<'_>) -> Result<String, Halt> {
     let mut node = source;
     loop {
         match node.kind() {
@@ -373,7 +381,7 @@ fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
                 visit: Visit::Filter,
                 source,
                 ..
-            } => node = node.at(*source),
+            } => node = node.at(source)?,
             _ => return Err(invariant("only-source-is-a-population")),
         }
     }
@@ -385,7 +393,7 @@ fn charge_visit(meter: &mut Meter) -> Result<(), Stop> {
 }
 
 /// Whether `node` is a named population operand (FR-391).
-fn is_named(node: CheckedNode<'_>) -> bool {
+fn is_named(node: MachineNode<'_>) -> bool {
     matches!(node.kind(), NodeKind::NamedPopulation { .. })
 }
 
@@ -464,16 +472,16 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
 }
 
 enum Task<'a> {
-    Eval(CheckedNode<'a>),
-    Apply(CheckedNode<'a>),
-    Branch(CheckedNode<'a>),
-    Short(CheckedNode<'a>),
+    Eval(MachineNode<'a>),
+    Apply(MachineNode<'a>),
+    Branch(MachineNode<'a>),
+    Short(MachineNode<'a>),
     /// FR-322: the `case` at this node has evaluated its scrutinee; select
     /// the arm of its active member and evaluate only that arm's body.
-    Select(CheckedNode<'a>),
-    Retain(CheckedNode<'a>),
+    Select(MachineNode<'a>),
+    Retain(MachineNode<'a>),
     Bind(Slot),
-    ChargeElement(CheckedNode<'a>),
+    ChargeElement(MachineNode<'a>),
     Return,
     Iterate(Box<Iteration<'a>>),
     /// FR-139: a `seq(i in low .. high: e)` in progress.
@@ -488,6 +496,87 @@ enum Task<'a> {
     /// Restore the package an imported call switched from, once the
     /// imported function's body has returned (ADR-015 D-5).
     RestorePackage(Box<PackageContext<'a>>),
+}
+
+/// One evaluator node. Checked-package nodes retain their existing borrowed
+/// representation; protocol-slot nodes may instead be read through the
+/// owning S4 view. Both sources are projected into the same operation
+/// vocabulary consumed by the S6a machine.
+#[derive(Clone)]
+struct MachineNode<'a> {
+    operation: NodeKind<MachineChild<'a>, &'a Value>,
+    value_type: &'a ValueType,
+    location: &'a Location,
+}
+
+#[derive(Clone)]
+enum MachineChild<'a> {
+    Checked(CheckedNode<'a>),
+    Projected {
+        view: &'a dyn CheckedTermView,
+        handle: TermHandle<'a>,
+    },
+}
+
+impl<'a> MachineNode<'a> {
+    fn checked(node: CheckedNode<'a>) -> Self {
+        Self {
+            operation: node.kind().map_ref(
+                |id| MachineChild::Checked(node.at(*id)),
+                |literal| &literal.0,
+            ),
+            value_type: node.value_type(),
+            location: node.location(),
+        }
+    }
+
+    fn projected(
+        view: &'a dyn CheckedTermView,
+        handle: TermHandle<'a>,
+    ) -> Result<Self, InternalFault> {
+        let read = view.read_node(&handle)?;
+        Ok(Self {
+            operation: read.operation.map_ref(
+                |child| MachineChild::Projected {
+                    view,
+                    handle: child.clone(),
+                },
+                |literal| *literal,
+            ),
+            value_type: read.value_type,
+            location: read.location,
+        })
+    }
+
+    fn at(&self, child: &MachineChild<'a>) -> Result<Self, InternalFault> {
+        match child {
+            MachineChild::Checked(node) => Ok(Self::checked(*node)),
+            MachineChild::Projected { view, handle } => Self::projected(*view, handle.clone()),
+        }
+    }
+
+    fn kind(&self) -> &NodeKind<MachineChild<'a>, &'a Value> {
+        &self.operation
+    }
+
+    fn children(&self) -> Vec<MachineChild<'a>> {
+        let mut children = Vec::new();
+        let _ = self.operation.map_ref(
+            |child| {
+                children.push(child.clone());
+            },
+            |_| (),
+        );
+        children
+    }
+
+    fn value_type(&self) -> &'a ValueType {
+        self.value_type
+    }
+
+    fn location(&self) -> &'a Location {
+        self.location
+    }
 }
 
 /// The package whose declarations a body evaluates against: its scope,
@@ -513,7 +602,7 @@ struct DispatchGuard<'a> {
     /// if the guard fails. Without it, the location lookup falls back to
     /// the whole expression's root and `precondition-false`'s
     /// `UndefinedRecord` reports the wrong locus.
-    node: CheckedNode<'a>,
+    node: MachineNode<'a>,
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
@@ -533,7 +622,7 @@ enum Anchor {
 
 /// A one-binder query or fold in progress.
 struct Iteration<'a> {
-    node: CheckedNode<'a>,
+    node: MachineNode<'a>,
     source: Arc<CollectionValue>,
     next: usize,
     awaiting: bool,
@@ -547,7 +636,7 @@ struct Iteration<'a> {
 
 /// A `seq(i in low .. high: e)` in progress (FR-139).
 struct SeqIteration<'a> {
-    node: CheckedNode<'a>,
+    node: MachineNode<'a>,
     /// The integer the next element binds.
     next: Integer,
     /// The last integer.
@@ -650,7 +739,7 @@ pub(crate) struct Machine<'a, 'm> {
     /// first. A halt inside a library body is located at the outermost one,
     /// the call in the caller's own graph: the library's node locations
     /// name another package's source (ADR-015 D-5).
-    imported: Vec<CheckedNode<'a>>,
+    imported: Vec<MachineNode<'a>>,
     /// FR-265: what a state-clause evaluation records beside its outcome;
     /// `None` for every other evaluation.
     trail: Option<Trail>,
@@ -669,6 +758,9 @@ pub(crate) struct Machine<'a, 'm> {
     /// FR-487: the component environment each model read of a hyper atom's
     /// condition observes, when the machine runs one.
     components: Option<ComponentReads<'a>>,
+    /// The sealed reader used by an FR-390 evaluation to resolve callable
+    /// bodies from the same package view as its selected root.
+    term_view: Option<&'a dyn CheckedTermView>,
 }
 
 /// The component environments a hyper atom's condition reads (FR-487
@@ -788,6 +880,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             witnessed_reads: std::collections::BTreeSet::new(),
             absent_parameters: Vec::new(),
             components: None,
+            term_view: None,
         }
     }
 
@@ -894,7 +987,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         arguments: Vec<Value>,
     ) -> Result<Evaluation, InternalFault> {
         self.enter_frame(slots, arguments);
-        self.drive(root)
+        self.drive(MachineNode::checked(root))
     }
 
     /// [`Self::run`] over a frame given slot by slot: `frame[i]` is local
@@ -907,7 +1000,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     ) -> Result<Evaluation, InternalFault> {
         let provenance = vec![false; frame.len()];
         self.push_frame(frame, provenance);
-        self.drive(root)
+        self.drive(MachineNode::checked(root))
     }
 
     /// FR-390's protocol-slot frame with unavailable caller sources. An
@@ -938,6 +1031,45 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.unavailable_slots = unavailable;
         let provenance = vec![false; frame.len()];
         self.push_frame(frame, provenance);
+        match self.drive(MachineNode::checked(root)) {
+            Ok(evaluation) => Ok(Ok(evaluation)),
+            Err(fault) => match self.unavailable_read.take() {
+                Some(read) => Ok(Err(read)),
+                None => Err(fault),
+            },
+        }
+    }
+
+    /// FR-390's protocol frame over a selected S4 view handle. The handle is
+    /// read through `NodeRead` and enters this same task machine.
+    pub(crate) fn run_protocol_term(
+        mut self,
+        view: &'a dyn CheckedTermView,
+        root: TermHandle<'a>,
+        frame: Vec<Option<Value>>,
+        unavailable: std::collections::BTreeMap<
+            Slot,
+            (
+                quire_exact::NodeKey,
+                quire_semantic_value::catalog::CatalogCode,
+            ),
+        >,
+    ) -> Result<
+        Result<
+            Evaluation,
+            (
+                quire_exact::NodeKey,
+                quire_semantic_value::catalog::CatalogCode,
+                Location,
+            ),
+        >,
+        InternalFault,
+    > {
+        self.term_view = Some(view);
+        self.unavailable_slots = unavailable;
+        let provenance = vec![false; frame.len()];
+        self.push_frame(frame, provenance);
+        let root = MachineNode::projected(view, root)?;
         match self.drive(root) {
             Ok(evaluation) => Ok(Ok(evaluation)),
             Err(fault) => match self.unavailable_read.take() {
@@ -957,7 +1089,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         arguments: Vec<Value>,
     ) -> Result<(Evaluation, Trail), InternalFault> {
         self.enter_frame(slots, arguments);
-        let evaluation = self.drive(root)?;
+        let evaluation = self.drive(MachineNode::checked(root))?;
         let trail = self
             .trail
             .take()
@@ -987,29 +1119,29 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// Evaluate `root` on the current frame to its outcome: the task loop
     /// [`Self::run`] and FR-268's separation check share.
-    fn drive(&mut self, root: CheckedNode<'a>) -> Result<Evaluation, InternalFault> {
-        self.tasks.push(Task::Eval(root));
+    fn drive(&mut self, root: MachineNode<'a>) -> Result<Evaluation, InternalFault> {
+        self.tasks.push(Task::Eval(root.clone()));
         while let Some(task) = self.tasks.pop() {
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
             // one, never once per task.
-            let located: CheckedNode<'a> = match &task {
+            let located: MachineNode<'a> = match &task {
                 Task::Eval(node)
                 | Task::Apply(node)
                 | Task::Branch(node)
                 | Task::Short(node)
                 | Task::Select(node)
                 | Task::Retain(node)
-                | Task::ChargeElement(node) => *node,
-                Task::Iterate(iteration) => iteration.node,
-                Task::IterateSeq(iteration) => iteration.node,
-                Task::DispatchGuard(guard) => guard.node,
+                | Task::ChargeElement(node) => node.clone(),
+                Task::Iterate(iteration) => iteration.node.clone(),
+                Task::IterateSeq(iteration) => iteration.node.clone(),
+                Task::DispatchGuard(guard) => guard.node.clone(),
                 Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) | Task::RestorePackage(_) => {
-                    root
+                    root.clone()
                 }
             };
             if let Err(halt) = self.step(task) {
-                let located = self.imported.first().copied().unwrap_or(located);
+                let located = self.imported.first().cloned().unwrap_or(located);
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     Halt::Unavailable { binder, cause } => {
@@ -1086,6 +1218,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         quantifier: CheckedNode<'a>,
         claim: WitnessClaim<'_>,
     ) -> Result<Separation, InternalFault> {
+        let quantifier = MachineNode::checked(quantifier);
+        let lets = lets
+            .iter()
+            .copied()
+            .map(MachineNode::checked)
+            .collect::<Vec<_>>();
         let fault = || InternalFault::new("S6a", "separation-check-over-a-checked-claim");
         let NodeKind::Query {
             visit,
@@ -1096,18 +1234,18 @@ impl<'a, 'm> Machine<'a, 'm> {
         else {
             return Err(fault());
         };
-        let (source, body) = (quantifier.at(*source), quantifier.at(*body));
+        let (source, body) = (quantifier.at(source)?, quantifier.at(body)?);
         self.enter_frame(slots, arguments);
         for binding in lets {
             let NodeKind::Let { slot, value, .. } = binding.kind() else {
                 return Err(fault());
             };
-            match completed(self.drive(binding.at(*value))?) {
+            match completed(self.drive(binding.at(value)?)?) {
                 Ok(bound) => *self.slot(*slot).map_err(|_| fault())? = Some(bound),
                 Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Domain, stopped)),
             }
         }
-        let domain = match completed(self.drive(source)?) {
+        let domain = match completed(self.drive(source.clone())?) {
             Ok(Value::Collection(domain)) => domain,
             Ok(_) => return Err(fault()),
             Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Domain, stopped)),
@@ -1132,7 +1270,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Visit::Forall => !holds,
                 Visit::Exists => holds,
                 Visit::Map | Visit::Filter | Visit::Count | Visit::Sum | Visit::Only => {
-                    return Err(fault())
+                    return Err(fault());
                 }
             },
             Ok(_) => return Err(fault()),
@@ -1154,7 +1292,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn provenance_of(
         &self,
         collection: &Arc<CollectionValue>,
-        node: CheckedNode<'_>,
+        node: MachineNode<'_>,
     ) -> Option<Provenance> {
         let trail = self.trail.as_ref()?;
         if let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(collection))) {
@@ -1300,7 +1438,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn record(&mut self, node: CheckedNode<'_>, loss: ValueLoss) {
+    fn record(&mut self, node: MachineNode<'_>, loss: ValueLoss) {
         self.losses.push(LocatedLoss {
             location: node.location().clone(),
             loss,
@@ -1310,7 +1448,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Evaluate a decimal operation into `target`, recording its loss.
     fn decimal(
         &mut self,
-        node: CheckedNode<'_>,
+        node: MachineNode<'_>,
         operation: DecimalOperation<'_>,
         target: &DecimalType,
     ) -> Result<Value, Stop> {
@@ -1360,7 +1498,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// that arm's body. Selecting and binding charge nothing. A scrutinee that
     /// matches no arm broke an invariant admission (FR-321) and
     /// exhaustiveness (FR-318) establish.
-    fn select_arm(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn select_arm(&mut self, node: MachineNode<'a>) -> Result<(), Halt> {
         let NodeKind::Case {
             declaration, arms, ..
         } = node.kind()
@@ -1385,7 +1523,8 @@ impl<'a, 'm> Machine<'a, 'm> {
         for (slot, value) in arm.binders.iter().zip(scrutinee.payload()) {
             self.bind(*slot, value.clone())?;
         }
-        self.tasks.push(Task::Eval(node.at(arm.body)));
+        self.tasks
+            .push(Task::Eval(node.at(&arm.body).map_err(Halt::from)?));
         Ok(())
     }
 
@@ -1487,24 +1626,27 @@ impl<'a, 'm> Machine<'a, 'm> {
             Task::Eval(node) => self.eval(node),
             Task::Apply(node) => self.apply(node),
             Task::Branch(node) => {
+                let kind = node.kind().clone();
                 let NodeKind::If {
                     then, otherwise, ..
-                } = node.kind()
+                } = &kind
                 else {
                     return Err(invariant("evaluation-branch-node-expected"));
                 };
                 let condition = self.pop_boolean()?;
-                self.decide(node, condition);
+                self.decide(node.clone(), condition);
                 let taken = if condition { then } else { otherwise };
-                self.tasks.push(Task::Eval(node.at(*taken)));
+                self.tasks
+                    .push(Task::Eval(node.at(taken).map_err(Halt::from)?));
                 Ok(())
             }
             Task::Short(node) => {
-                let NodeKind::Connective(connective, _, right) = node.kind() else {
+                let kind = node.kind().clone();
+                let NodeKind::Connective(connective, _, right) = &kind else {
                     return Err(invariant("evaluation-connective-node-expected"));
                 };
                 let left = self.pop_boolean()?;
-                self.decide(node, left);
+                self.decide(node.clone(), left);
                 let skipped = match connective {
                     Connective::And => (!left).then_some(false),
                     Connective::Or => left.then_some(true),
@@ -1516,8 +1658,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                         self.push_value(Value::Boolean(result), false);
                     }
                     None => {
-                        self.tasks.push(Task::Retain(node));
-                        self.tasks.push(Task::Eval(node.at(*right)));
+                        self.tasks.push(Task::Retain(node.clone()));
+                        self.tasks
+                            .push(Task::Eval(node.at(right).map_err(Halt::from)?));
                     }
                 }
                 Ok(())
@@ -1573,7 +1716,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let provenance = vec![false; frame.len()];
                 self.push_frame(frame, provenance);
                 self.tasks.push(Task::Return);
-                self.tasks.push(Task::Eval(callable.body));
+                self.tasks
+                    .push(Task::Eval(MachineNode::checked(callable.body)));
                 Ok(())
             }
             Task::Iterate(iteration) => self.iterate(iteration),
@@ -1590,10 +1734,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn eval(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn eval(&mut self, node: MachineNode<'a>) -> Result<(), Halt> {
         match node.kind() {
-            NodeKind::Literal(CheckedLiteral(value)) => {
-                self.push_value(value.clone(), false);
+            NodeKind::Literal(value) => {
+                self.push_value((*value).clone(), false);
                 return Ok(());
             }
             NodeKind::Local(slot) => {
@@ -1612,72 +1756,86 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return Ok(());
             }
             NodeKind::Let { slot, value, body } => {
-                self.tasks.push(Task::Eval(node.at(*body)));
+                self.tasks
+                    .push(Task::Eval(node.at(body).map_err(Halt::from)?));
                 self.tasks.push(Task::Bind(*slot));
-                self.tasks.push(Task::Eval(node.at(*value)));
+                self.tasks
+                    .push(Task::Eval(node.at(value).map_err(Halt::from)?));
                 return Ok(());
             }
             NodeKind::If { condition, .. } => {
-                self.tasks.push(Task::Branch(node));
-                self.tasks.push(Task::Eval(node.at(*condition)));
+                self.tasks.push(Task::Branch(node.clone()));
+                self.tasks
+                    .push(Task::Eval(node.at(condition).map_err(Halt::from)?));
                 return Ok(());
             }
             NodeKind::Connective(_, left, _) => {
-                self.tasks.push(Task::Short(node));
-                self.tasks.push(Task::Eval(node.at(*left)));
+                self.tasks.push(Task::Short(node.clone()));
+                self.tasks
+                    .push(Task::Eval(node.at(left).map_err(Halt::from)?));
                 return Ok(());
             }
             NodeKind::Collection { elements, .. } => {
-                self.tasks.push(Task::Apply(node));
+                self.tasks.push(Task::Apply(node.clone()));
                 for element in elements.iter().rev() {
-                    self.tasks.push(Task::Eval(node.at(*element)));
-                    self.tasks.push(Task::ChargeElement(node));
+                    self.tasks
+                        .push(Task::Eval(node.at(element).map_err(Halt::from)?));
+                    self.tasks.push(Task::ChargeElement(node.clone()));
                 }
                 return Ok(());
             }
             NodeKind::Query { source, .. } => {
-                self.tasks.push(Task::Apply(node));
-                self.tasks.push(Task::Eval(node.at(*source)));
+                self.tasks.push(Task::Apply(node.clone()));
+                self.tasks
+                    .push(Task::Eval(node.at(source).map_err(Halt::from)?));
                 return Ok(());
             }
             // FR-139: only the bounds are children to evaluate now; the
             // body is reached once per integer through `Task::IterateSeq`.
             NodeKind::Seq { low, high, .. } => {
-                self.tasks.push(Task::Apply(node));
-                self.tasks.push(Task::Eval(node.at(*high)));
-                self.tasks.push(Task::Eval(node.at(*low)));
+                self.tasks.push(Task::Apply(node.clone()));
+                self.tasks
+                    .push(Task::Eval(node.at(high).map_err(Halt::from)?));
+                self.tasks
+                    .push(Task::Eval(node.at(low).map_err(Halt::from)?));
                 return Ok(());
             }
             // FR-322: only the scrutinee is a child to evaluate now; the arm
             // bodies are reached through `Task::Select`.
             NodeKind::Case { scrutinee, .. } => {
-                self.tasks.push(Task::Select(node));
-                self.tasks.push(Task::Eval(node.at(*scrutinee)));
+                self.tasks.push(Task::Select(node.clone()));
+                self.tasks
+                    .push(Task::Eval(node.at(scrutinee).map_err(Halt::from)?));
                 return Ok(());
             }
             NodeKind::Fold {
                 source, identity, ..
             } => {
-                self.tasks.push(Task::Apply(node));
+                self.tasks.push(Task::Apply(node.clone()));
                 if let Some(identity) = identity {
-                    self.tasks.push(Task::Eval(node.at(*identity)));
+                    self.tasks
+                        .push(Task::Eval(node.at(identity).map_err(Halt::from)?));
                 }
-                self.tasks.push(Task::Eval(node.at(*source)));
+                self.tasks
+                    .push(Task::Eval(node.at(source).map_err(Halt::from)?));
                 return Ok(());
             }
             // FR-391: a named population is read from the snapshot by its
             // parent, never evaluated as an operand.
-            NodeKind::AllInstances { population } if is_named(node.at(*population)) => {
-                self.tasks.push(Task::Apply(node));
+            NodeKind::AllInstances { population }
+                if is_named(node.at(population).map_err(Halt::from)?) =>
+            {
+                self.tasks.push(Task::Apply(node.clone()));
                 return Ok(());
             }
             NodeKind::Lookup {
                 population,
                 reference,
                 ..
-            } if is_named(node.at(*population)) => {
-                self.tasks.push(Task::Apply(node));
-                self.tasks.push(Task::Eval(node.at(*reference)));
+            } if is_named(node.at(population).map_err(Halt::from)?) => {
+                self.tasks.push(Task::Apply(node.clone()));
+                self.tasks
+                    .push(Task::Eval(node.at(reference).map_err(Halt::from)?));
                 return Ok(());
             }
             NodeKind::Pre(operand) => {
@@ -1687,14 +1845,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // own value is `pre(operand)`'s value.
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Pre;
-                self.tasks.push(Task::Eval(node.at(*operand)));
+                self.tasks
+                    .push(Task::Eval(node.at(operand).map_err(Halt::from)?));
                 return Ok(());
             }
             _ => {}
         }
-        self.tasks.push(Task::Apply(node));
+        self.tasks.push(Task::Apply(node.clone()));
         for child in node.children().into_iter().rev() {
-            self.tasks.push(Task::Eval(child));
+            self.tasks
+                .push(Task::Eval(node.at(&child).map_err(Halt::from)?));
         }
         Ok(())
     }
@@ -1708,8 +1868,9 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// (or expressed as a refutable `let ... else`, which this lint does not
     /// reach) rather than left to this `deny` -- see each site's own note.
     #[deny(clippy::wildcard_enum_match_arm)]
-    fn apply(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
-        let value = match node.kind() {
+    fn apply(&mut self, node: MachineNode<'a>) -> Result<(), Halt> {
+        let kind = node.kind().clone();
+        let value = match &kind {
             NodeKind::Literal(_)
             | NodeKind::Local(_)
             | NodeKind::Let { .. }
@@ -1797,7 +1958,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::ProtocolReference { .. } => {
                 return Err(Halt::Family(FamilyResult::Refused(Box::new(
                     ProtocolReferenceUnsupported,
-                ))))
+                ))));
             }
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists
@@ -1845,7 +2006,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                             IntegerDivisionOperator::Div => DivisionMember::Quotient,
                             IntegerDivisionOperator::Rem => DivisionMember::Remainder,
                             IntegerDivisionOperator::Mod => {
-                                return Err(invariant("integer-division-member-mismatch"))
+                                return Err(invariant("integer-division-member-mismatch"));
                             }
                         };
                         integer_divide(
@@ -2017,16 +2178,23 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // compare by value whatever their declared range, so such
                 // a pair compares directly. Only a witnessed value gets
                 // this: any other operand outside its type still faults.
-                let outside_declared_range = |id, value: &Value| {
-                    matches!(value, Value::Integer(_))
-                        && !node.at(id).value_type().admits(value)
-                        && self.reads_witnessed(node.at(id))
+                let outside_declared_range = |id: &MachineChild<'a>, value: &Value| {
+                    let operand = node.at(id).map_err(Halt::from)?;
+                    Ok::<_, Halt>(
+                        matches!(value, Value::Integer(_))
+                            && !operand.value_type().admits(value)
+                            && self.reads_witnessed(operand)?,
+                    )
+                };
+                let outside_declared_range = match (&left, &right) {
+                    (Value::Integer(_), Value::Integer(_)) => {
+                        outside_declared_range(left_node, &left)?
+                            || outside_declared_range(right_node, &right)?
+                    }
+                    _ => false,
                 };
                 match (&left, &right) {
-                    (Value::Integer(l), Value::Integer(r))
-                        if outside_declared_range(*left_node, &left)
-                            || outside_declared_range(*right_node, &right) =>
-                    {
+                    (Value::Integer(l), Value::Integer(r)) if outside_declared_range => {
                         Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
                     }
                     _ => Value::Boolean(outcome_into_stop(checked.evaluate(
@@ -2095,7 +2263,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     false,
                 )?;
                 self.note_field(&composite, index, &value);
-                self.note_read(node, *operand, ReadStep::Field(field.name()), None);
+                self.note_read(node, operand, ReadStep::Field(field.name()), None)?;
                 value
             }
             NodeKind::Attribute {
@@ -2139,7 +2307,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 } else {
                     reference
                 };
-                let objects = self.objects_for(node)?;
+                let objects = self.objects_for(node.clone())?;
                 // A replay's references are unresolved: there is no object to
                 // read, so the read completes no value.
                 if objects.references_are_unresolved() && !objects.objects().contains(&reference) {
@@ -2151,7 +2319,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
-                self.log_field_read(node, objects, &reference, field)?;
+                self.log_field_read(node.clone(), objects, &reference, field)?;
                 let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
@@ -2165,13 +2333,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                     node.value_type(),
                     witnessed,
                 )?;
-                self.note_member(node, &reference, &field.name, &value);
+                self.note_member(node.clone(), &reference, &field.name, &value);
                 self.note_read(
                     node,
-                    *operand,
+                    operand,
                     ReadStep::Attribute(&field.name),
                     Some(&read_reference),
-                );
+                )?;
                 value
             }
             NodeKind::History { field, .. } => {
@@ -2181,7 +2349,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // FR-138: a history field is the refinement's, kept beside
                 // the observation; `pre(..)` reads the pre-state's.
                 // A failed update leaves no value to read: undetermined.
-                self.objects_for(node)?
+                self.objects_for(node.clone())?
                     .history(&reference, field)
                     .cloned()
                     .ok_or_else(|| {
@@ -2203,7 +2371,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant("slot-presence-reference-expected"));
                 };
                 let bits = self
-                    .objects_for(node)?
+                    .objects_for(node.clone())?
                     .slot_presences(&reference, &field.name)
                     .ok_or_else(|| invariant("slot-presence-unrecorded"))?;
                 Value::Boolean(if *all {
@@ -2219,7 +2387,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant("place-presence-reference-expected"));
                 };
                 let present = self
-                    .objects_for(node)?
+                    .objects_for(node.clone())?
                     .place_presence(&reference, &field.name, case.as_deref())
                     .ok_or_else(|| invariant("place-presence-unrecorded"))?;
                 Value::Boolean(present)
@@ -2239,14 +2407,23 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let callable = self
-                    .graph
-                    .function_state(*function)
-                    .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                let (body, slots) = if let Some(view) = self.term_view {
+                    let callable = view.callable_term(*function)?;
+                    (
+                        MachineNode::projected(view, callable.body().clone())?,
+                        callable.slots(),
+                    )
+                } else {
+                    let callable = self
+                        .graph
+                        .function_state(*function)
+                        .ok_or_else(|| invariant("evaluation-callable-unresolved"))?;
+                    (MachineNode::checked(callable.body), callable.slots)
+                };
                 let (arguments, provenance) = self.pop_many_forwarded(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
-                frame.resize(callable.slots.max(frame.len()), None);
+                frame.resize(slots.max(frame.len()), None);
                 let mut frame_provenance = provenance;
                 frame_provenance.resize(frame.len(), false);
                 self.push_frame(frame, frame_provenance);
@@ -2260,7 +2437,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);
-                self.tasks.push(Task::Eval(callable.body));
+                self.tasks.push(Task::Eval(body));
                 return Ok(());
             }
             // ADR-015 D-5: the callee is a function of an imported library,
@@ -2298,7 +2475,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);
-                self.tasks.push(Task::Eval(callable.body));
+                self.tasks
+                    .push(Task::Eval(MachineNode::checked(callable.body)));
                 return Ok(());
             }
             NodeKind::Tuple {
@@ -2464,13 +2642,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 ..
             } => self.navigate(node, relationship, *near, *unique)?,
             NodeKind::NamedPopulation { .. } => {
-                return Err(invariant("named-population-is-read-by-its-parent"))
+                return Err(invariant("named-population-is-read-by-its-parent"));
             }
             NodeKind::AllInstances { population }
                 if let NodeKind::NamedPopulation {
                     population,
                     members,
-                } = node.at(*population).kind() =>
+                } = node.at(population).map_err(Halt::from)?.kind() =>
             {
                 self.named_all_instances(node, population, members)?
             }
@@ -2481,7 +2659,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             } if let NodeKind::NamedPopulation {
                 population,
                 members,
-            } = node.at(*population).kind() =>
+            } = node.at(population).map_err(Halt::from)?.kind() =>
             {
                 let (reference, _) = self.pop_forwarded()?;
                 self.named_lookup(node, population, members, *absence, reference)?
@@ -2495,7 +2673,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant("query-population-value-expected"));
                 };
-                let ValueType::Population(maximum) = node.at(*population).value_type() else {
+                let ValueType::Population(maximum) =
+                    node.at(population).map_err(Halt::from)?.value_type()
+                else {
                     return Err(invariant("query-population-type-expected"));
                 };
                 let ValueType::Collection(collection_type) = node.value_type() else {
@@ -2520,11 +2700,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant("query-population-value-expected"));
                 };
-                let ValueType::Population(maximum) = node.at(*population).value_type() else {
+                let ValueType::Population(maximum) =
+                    node.at(population).map_err(Halt::from)?.value_type()
+                else {
                     return Err(invariant("query-population-type-expected"));
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
-                let ValueType::Reference(static_key) = node.at(*reference).value_type() else {
+                let ValueType::Reference(static_key) =
+                    node.at(reference).map_err(Halt::from)?.value_type()
+                else {
                     return Err(invariant("lookup-reference-type-expected"));
                 };
                 // Not the FR-063 seam: both matches below are over
@@ -2619,7 +2803,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                             ),
                             node,
                         })));
-                        self.tasks.push(Task::Eval(callable.body));
+                        self.tasks
+                            .push(Task::Eval(MachineNode::checked(callable.body)));
                         return Ok(());
                     }
                     None => {
@@ -2634,7 +2819,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                         let provenance = vec![false; frame.len()];
                         self.push_frame(frame, provenance);
                         self.tasks.push(Task::Return);
-                        self.tasks.push(Task::Eval(callable.body));
+                        self.tasks
+                            .push(Task::Eval(MachineNode::checked(callable.body)));
                         return Ok(());
                     }
                 }
@@ -2660,7 +2846,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// arm exists so the case has a typed result, the same rationale
     /// `select_anchor` above already documents for the population-read
     /// case (SR-750 FND-013).
-    fn objects_for(&self, node: CheckedNode<'_>) -> Result<&'a ObjectEnvironment, Halt> {
+    fn objects_for(&self, node: MachineNode<'_>) -> Result<&'a ObjectEnvironment, Halt> {
         if let Some(components) = &self.components {
             if let Some(component) = components.reads.get(node.location()) {
                 return components
@@ -2692,7 +2878,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// when it keeps one, under the instant the attribute node observes.
     fn log_field_read(
         &self,
-        node: CheckedNode<'_>,
+        node: MachineNode<'_>,
         objects: &ObjectEnvironment,
         reference: &ObjectReference,
         field: &FieldRef,
@@ -2750,10 +2936,10 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// reads.
     fn population_objects(
         &mut self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         population: &DeclarationKey,
     ) -> Result<Value, Halt> {
-        let objects = self.objects_for(node)?;
+        let objects = self.objects_for(node.clone())?;
         let members = objects
             .population_members(&population.node)
             .ok_or_else(|| invariant("population-members-unobserved"))?;
@@ -2772,7 +2958,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// member type covers `T`.
     fn named_all_instances(
         &mut self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         population: &DeclarationKey,
         members: &[quire_exact::EffectiveId],
     ) -> Result<Value, Halt> {
@@ -2784,7 +2970,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         self.named_covers(members, target.clone())?;
         let types = self.scope.types();
-        let listed = self.named_members(node, population)?;
+        let listed = self.named_members(node.clone(), population)?;
         let mut selected = Vec::new();
         for reference in listed {
             charge_named(self.meter, ChargePoint::PopulationVisit)?;
@@ -2834,10 +3020,10 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// whichever path admitted it.
     fn named_members(
         &self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         population: &DeclarationKey,
     ) -> Result<&'a [ObjectReference], Halt> {
-        let objects = self.objects_for(node)?;
+        let objects = self.objects_for(node.clone())?;
         if !objects.population_complete(&population.node) {
             return Err(Halt::Family(FamilyResult::Refused(Box::new(
                 NamedPopulationIncomplete {
@@ -2855,13 +3041,13 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// and `lookup`'s conformance of the reference to `T`.
     fn named_lookup(
         &mut self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         population: &DeclarationKey,
         members: &[quire_exact::EffectiveId],
-        absence: qsl_foundation::absence::AbsenceMode,
+        absence: quire_semantic_value::absence::AbsenceMode,
         reference: Value,
     ) -> Result<Value, Halt> {
-        use qsl_foundation::absence::AbsenceMode;
+        use quire_semantic_value::absence::AbsenceMode;
         let Value::Reference(reference) = reference else {
             return Err(invariant("lookup-reference-value-expected"));
         };
@@ -2897,7 +3083,9 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
         self.meter
             .charge(Charge::new(ChargePoint::LookupKey).size(LimitKind::ValueOccurrences, 1))?;
-        let present = self.named_members(node, population)?.contains(&reference);
+        let present = self
+            .named_members(node.clone(), population)?
+            .contains(&reference);
         self.log_membership_of(population, Some(reference.clone()));
         let retain = |meter: &mut Meter, occurrences: u64| -> Result<(), Halt> {
             Ok(meter.charge(
@@ -2943,7 +3131,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     /// FR-139: start `seq(i in low .. high: e)` over its evaluated bounds.
-    fn start_seq(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn start_seq(&mut self, node: MachineNode<'a>) -> Result<(), Halt> {
         let (Value::Integer(high), Value::Integer(low)) = (self.pop()?, self.pop()?) else {
             return Err(invariant("seq-integer-bounds-expected"));
         };
@@ -2960,7 +3148,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// FR-139: bind the next integer and evaluate the element, charging one
     /// work unit per element; the sequence is empty when `high < low`.
     fn iterate_seq(&mut self, mut iteration: Box<SeqIteration<'a>>) -> Result<(), Halt> {
-        let node = iteration.node;
+        let node = iteration.node.clone();
         let NodeKind::Seq { slot, body, .. } = node.kind() else {
             return Err(invariant("seq-node-expected"));
         };
@@ -2983,7 +3171,8 @@ impl<'a, 'm> Machine<'a, 'm> {
         iteration.next = iteration.next.add(&Integer::one());
         iteration.awaiting = true;
         self.tasks.push(Task::IterateSeq(iteration));
-        self.tasks.push(Task::Eval(node.at(*body)));
+        self.tasks
+            .push(Task::Eval(node.at(body).map_err(Halt::from)?));
         Ok(())
     }
 
@@ -2998,7 +3187,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// determined value is bounded and retained.
     fn navigate(
         &mut self,
-        node: CheckedNode<'_>,
+        node: MachineNode<'_>,
         relationship: &DeclarationKey,
         near: EndSide,
         unique: bool,
@@ -3007,7 +3196,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             return Err(invariant("navigate-reference-value-expected"));
         };
         charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
-        let objects = self.objects_for(node)?;
+        let objects = self.objects_for(node.clone())?;
         let refuse =
             |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
         let Some(extents) = objects
@@ -3093,7 +3282,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `graph.result-retain`.
     fn evaluate_reaches(
         &mut self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         source: &ObjectReference,
         target: &ObjectReference,
         edge: &FieldRef,
@@ -3105,7 +3294,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         queue.push_back(source.clone());
         let mut found = false;
         'walk: while let Some(current) = queue.pop_front() {
-            for next in self.edge_targets(node, &current, edge)? {
+            for next in self.edge_targets(node.clone(), &current, edge)? {
                 charge_named(self.meter, ChargePoint::GraphEdge)?;
                 if next == *target {
                     found = true;
@@ -3133,14 +3322,14 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// charged last. No neighbour count is compared with a multiplicity.
     fn evaluate_reaches_end(
         &mut self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         source: &ObjectReference,
         target: &ObjectReference,
         relationship: &DeclarationKey,
         near: EndSide,
         population: Option<&AuthoredBound>,
     ) -> Result<bool, Halt> {
-        let objects = self.objects_for(node)?;
+        let objects = self.objects_for(node.clone())?;
         // FR-380: a population with an authored bound holds at most that
         // many objects; more refuses `cardinality_out_of_bound` before any
         // charge, and is no resource outcome (ADR-014 B-1).
@@ -3224,7 +3413,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// is a valid zero-target read or a broken invariant.
     fn edge_targets(
         &self,
-        node: CheckedNode<'a>,
+        node: MachineNode<'a>,
         current: &ObjectReference,
         edge: &FieldRef,
     ) -> Result<Vec<ObjectReference>, Halt> {
@@ -3239,7 +3428,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             .ok_or_else(|| invariant("edge-attribute-unresolved"))?;
         let field = attribute.field();
         let slot = self
-            .objects_for(node)?
+            .objects_for(node.clone())?
             .objects()
             .attribute(self.scope.types(), current, edge)
             .ok_or_else(|| invariant("edge-slot-unresolved"))?;
@@ -3319,11 +3508,11 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Whether `operand` reads a slot FR-106 check 6.5 witnessed out of
     /// range: an `Attribute` node whose latest read was witnessed, seen
     /// through `value(..)`.
-    fn reads_witnessed(&self, operand: CheckedNode<'_>) -> bool {
+    fn reads_witnessed(&self, operand: MachineNode<'_>) -> Result<bool, Halt> {
         match operand.kind() {
-            NodeKind::Attribute { .. } => self.witnessed_reads.contains(operand.location()),
-            NodeKind::Value(inner) => self.reads_witnessed(operand.at(*inner)),
-            _ => false,
+            NodeKind::Attribute { .. } => Ok(self.witnessed_reads.contains(operand.location())),
+            NodeKind::Value(inner) => self.reads_witnessed(operand.at(inner)?),
+            _ => Ok(false),
         }
     }
 
@@ -3379,7 +3568,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         outcome_into_stop(order_numbers(operator, operands, self.meter)).map_err(Into::into)
     }
 
-    fn start_iteration(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+    fn start_iteration(&mut self, node: MachineNode<'a>) -> Result<(), Halt> {
         self.iterations = self.iterations.saturating_add(1);
         let (identity, reduce) = match node.kind() {
             NodeKind::Fold { identity, .. } => (
@@ -3407,7 +3596,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.iterations = self.iterations.saturating_sub(1);
                 return Err(Halt::Family(FamilyResult::Undefined(Box::new(
                     StateModelUndefined::OnlyNotOne {
-                        population: population_of(node.at(*operand))?,
+                        population: population_of(node.at(operand).map_err(Halt::from)?)?,
                         found,
                     },
                 ))));
@@ -3438,7 +3627,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn iterate(&mut self, mut iteration: Box<Iteration<'a>>) -> Result<(), Halt> {
-        let node = iteration.node;
+        let node = iteration.node.clone();
         if iteration.awaiting {
             iteration.awaiting = false;
             let result = self.pop()?;
@@ -3475,7 +3664,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                                     if domain.is_some_and(|domain| !domain.contains(&summand)) {
                                         return Err(Halt::Located(Box::new(LocatedStop {
                                             stop: Stop::Undefined(Undefined::SumOutOfDomain),
-                                            location: node.at(*body).location().clone(),
+                                            location: node
+                                                .at(body)
+                                                .map_err(Halt::from)?
+                                                .location()
+                                                .clone(),
                                         })));
                                     }
                                     summand
@@ -3493,7 +3686,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                                         })) => {
                                             return Err(
                                                 Stop::Undefined(Undefined::SumOutOfDomain).into()
-                                            )
+                                            );
                                         }
                                         other => other?,
                                     }
@@ -3543,7 +3736,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         if !matches!(
             node.kind(),
             NodeKind::Query { visit: Visit::Only, source, .. }
-                if matches!(node.at(*source).kind(), NodeKind::Query { visit: Visit::Filter, .. })
+                if matches!(node.at(source).map_err(Halt::from)?.kind(), NodeKind::Query { visit: Visit::Filter, .. })
         ) {
             charge_visit(self.meter)?;
         }
@@ -3553,7 +3746,12 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Query {
                 slot, body, source, ..
             } => {
-                self.note_element(node.at(*source), &iteration.source, *slot, position);
+                self.note_element(
+                    node.at(source).map_err(Halt::from)?,
+                    &iteration.source,
+                    *slot,
+                    position,
+                )?;
                 *self.slot(*slot)? = Some(element);
                 body
             }
@@ -3579,13 +3777,14 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         iteration.awaiting = true;
         self.tasks.push(Task::Iterate(iteration));
-        self.tasks.push(Task::Eval(node.at(*body)));
+        self.tasks
+            .push(Task::Eval(node.at(body).map_err(Halt::from)?));
         Ok(())
     }
 
     /// FR-265: record `value` as the decision of the `and`, `or`,
     /// `implies` or `if` at `node`, on the claim's own level.
-    fn decide(&mut self, node: CheckedNode<'_>, value: bool) {
+    fn decide(&mut self, node: MachineNode<'_>, value: bool) {
         if self.on_claim_level() {
             if let Some(trail) = self.trail.as_mut() {
                 trail.decide(node.location(), value);
@@ -3595,7 +3794,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     /// FR-265: a collection literal at `node` on the claim's own level is
     /// built inside the claim (QSpec FR-207-AC-9).
-    fn note_built(&mut self, node: CheckedNode<'_>, value: &Value) {
+    fn note_built(&mut self, node: MachineNode<'_>, value: &Value) {
         if !matches!(value, Value::Collection(_)) {
             return;
         }
@@ -3618,7 +3817,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// the read observes.
     fn note_member(
         &mut self,
-        node: CheckedNode<'_>,
+        node: MachineNode<'_>,
         object: &ObjectReference,
         member: &str,
         value: &Value,
@@ -3659,18 +3858,21 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// read. `reference` is the object an attribute selection read from.
     fn note_read(
         &mut self,
-        node: CheckedNode<'_>,
-        operand: NodeId,
+        node: MachineNode<'_>,
+        operand: &MachineChild<'_>,
         step: ReadStep<'_>,
         reference: Option<&ObjectReference>,
-    ) {
+    ) -> Result<(), Halt> {
         if self.trail.is_none() {
-            return;
+            return Ok(());
         }
-        let path = self.read_path(node, operand, step, reference);
+        let path = self
+            .read_path(node.clone(), operand, step, reference)
+            .map_err(Halt::from)?;
         if let Some(trail) = self.trail.as_mut() {
             trail.read(node.location(), path);
         }
+        Ok(())
     }
 
     /// The runtime value path (QSpec FR-207) of the selection at `node`: its
@@ -3679,26 +3881,35 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// frame.
     fn read_path(
         &self,
-        node: CheckedNode<'_>,
-        operand: NodeId,
+        node: MachineNode<'_>,
+        operand: &MachineChild<'_>,
         step: ReadStep<'_>,
         reference: Option<&ObjectReference>,
-    ) -> Option<RuntimeValuePath> {
-        let trail = self.trail.as_ref()?;
+    ) -> Result<Option<RuntimeValuePath>, InternalFault> {
+        let Some(trail) = self.trail.as_ref() else {
+            return Ok(None);
+        };
         if self.frames.len() != 1 || !self.imported.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let operand = node.at(operand);
-        let mut path = if matches!(step, ReadStep::Attribute(_)) && Self::navigated(operand) {
+        let operand = node.at(operand)?;
+        let navigated = matches!(step, ReadStep::Attribute(_)) && Self::navigated(operand.clone())?;
+        let mut path = if navigated {
             // FR-107 "Read paths": a selection on a navigation's result is
             // located at the referenced object's declared identity.
+            let Some(reference) = reference else {
+                return Ok(None);
+            };
             RuntimeValuePath {
                 observation: trail.observation.clone(),
-                subject: ValuePathSubject::Object(reference?.clone()),
+                subject: ValuePathSubject::Object(reference.clone()),
                 steps: Vec::new(),
             }
         } else {
-            self.located(operand)?
+            let Some(path) = self.located(operand.clone())? else {
+                return Ok(None);
+            };
+            path
         };
         let under_pre = self.reads.is_some_and(|reads| {
             reads.get(node.location())
@@ -3726,30 +3937,32 @@ impl<'a, 'm> Machine<'a, 'm> {
                         && matches!(&path.subject, ValuePathSubject::Object(object)
                             if Some(object) == reference);
                     if !declared {
-                        path.steps
-                            .push(ValuePathStep::Reference(reference?.clone()));
+                        let Some(reference) = reference else {
+                            return Ok(None);
+                        };
+                        path.steps.push(ValuePathStep::Reference(reference.clone()));
                     }
                     path.steps.push(ValuePathStep::Member(name.to_owned()));
                 }
             }
         }
-        Some(path)
+        Ok(Some(path))
     }
 
     /// Whether `node` is a relationship navigation, possibly under `value`,
     /// `pre` or a coercion.
-    fn navigated(node: CheckedNode<'_>) -> bool {
+    fn navigated(node: MachineNode<'_>) -> Result<bool, InternalFault> {
         match node.kind() {
-            NodeKind::Navigate { .. } => true,
+            NodeKind::Navigate { .. } => Ok(true),
             NodeKind::Value(operand) | NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
-                Self::navigated(node.at(*operand))
+                Self::navigated(node.at(operand)?)
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
     /// Whether `node` is a field or member selection.
-    fn selected(node: CheckedNode<'_>) -> bool {
+    fn selected(node: MachineNode<'_>) -> bool {
         matches!(
             node.kind(),
             NodeKind::Attribute { .. } | NodeKind::Field { .. }
@@ -3759,29 +3972,33 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// The path of the value `node` evaluated to, when it has one: a clause
     /// binding, a quantifier element, a selection or the payload of an
     /// optional value read from one.
-    fn located(&self, node: CheckedNode<'_>) -> Option<RuntimeValuePath> {
-        let trail = self.trail.as_ref()?;
+    fn located(&self, node: MachineNode<'_>) -> Result<Option<RuntimeValuePath>, InternalFault> {
+        let Some(trail) = self.trail.as_ref() else {
+            return Ok(None);
+        };
         match node.kind() {
-            NodeKind::Local(slot) => trail.element_paths.get(slot).cloned().or_else(|| {
+            NodeKind::Local(slot) => Ok(trail.element_paths.get(slot).cloned().or_else(|| {
                 let subject = trail.bindings.get(*slot)?.clone()?;
                 Some(RuntimeValuePath {
                     observation: trail.observation.clone(),
                     subject,
                     steps: Vec::new(),
                 })
-            }),
+            })),
             NodeKind::Attribute { .. } | NodeKind::Field { .. } => {
-                trail.selection_path(node.location()).cloned()
+                Ok(trail.selection_path(node.location()).cloned())
             }
             NodeKind::Value(operand) => {
-                let mut path = self.located(node.at(*operand))?;
+                let Some(mut path) = self.located(node.at(operand)?)? else {
+                    return Ok(None);
+                };
                 path.steps.push(ValuePathStep::OptionValue);
-                Some(path)
+                Ok(Some(path))
             }
             NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
-                self.located(node.at(*operand))
+                self.located(node.at(operand)?)
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 
@@ -3789,18 +4006,18 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `domain`, bound to `slot`, is located where FR-265 locates it.
     fn note_element(
         &mut self,
-        source: CheckedNode<'_>,
+        source: MachineNode<'_>,
         domain: &Arc<CollectionValue>,
         slot: Slot,
         position: usize,
-    ) {
+    ) -> Result<(), Halt> {
         if self.trail.is_none() || self.frames.len() != 1 || !self.imported.is_empty() {
-            return;
+            return Ok(());
         }
         let Some(trail) = self.trail.as_ref() else {
-            return;
+            return Ok(());
         };
-        let path = if Self::navigated(source) {
+        let path = if Self::navigated(source.clone())? {
             // An element of a navigation's result is located at its own
             // declared identity.
             match domain.elements().get(position) {
@@ -3811,7 +4028,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }),
                 _ => None,
             }
-        } else if Self::selected(source)
+        } else if Self::selected(source.clone())
             && trail
                 .provenance(&Value::Collection(Arc::clone(domain)))
                 .is_none()
@@ -3832,6 +4049,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             }
         }
+        Ok(())
     }
 
     /// FR-265: field `index` of a record with a stored location is stored
@@ -3930,7 +4148,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn note_computed(
         &mut self,
         source_value: &Arc<CollectionValue>,
-        source: CheckedNode<'_>,
+        source: MachineNode<'_>,
         sources: &[usize],
         results: &[Value],
         value: &Value,
@@ -3979,7 +4197,10 @@ impl<'a, 'm> Machine<'a, 'm> {
         )
         .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "quantifier-has-an-occurrence")))?;
         let provenance = self
-            .provenance_of(&iteration.source, iteration.node.at(*source))
+            .provenance_of(
+                &iteration.source,
+                iteration.node.at(source).map_err(Halt::from)?,
+            )
             .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "domain-has-an-occurrence")))?;
         let index = provenance
             .position(position)
@@ -3998,7 +4219,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn finish(&mut self, iteration: Iteration<'a>) -> Result<(), Halt> {
         self.iterations = self.iterations.saturating_sub(1);
-        let node = iteration.node;
+        let node = iteration.node.clone();
         let value = match node.kind() {
             NodeKind::Query { visit, source, .. } => match visit {
                 Visit::Map | Visit::Filter => {
@@ -4016,7 +4237,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     if let Some((sources, results)) = produced {
                         self.note_computed(
                             &iteration.source,
-                            node.at(*source),
+                            node.at(source).map_err(Halt::from)?,
                             &sources,
                             &results,
                             &value,
@@ -4148,10 +4369,10 @@ mod tests {
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
         PopulationRecord,
     };
-    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+    use qsl_semantics::model::normalize::{NormalizeOutcome, normalize};
     use qsl_semantics::model::population::{
-        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
-        PopulationDocument, PopulationMember,
+        AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits, PopulationDocument,
+        PopulationMember, admit_binding,
     };
     use quire_checked::key::DeclarationKey;
     use quire_semantic_value::catalog::Category;
@@ -4373,8 +4594,8 @@ mod tests {
     /// package and `F`'s checked identity, so a test can call
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`] directly -- the S6a
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
-    pub(super) fn population_function_package(
-    ) -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
+    pub(super) fn population_function_package()
+    -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
         let domain_package = domain_package("bundle.qsl174-ac10-seam");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
@@ -4577,7 +4798,7 @@ mod tests {
     #[trace("TC-467")]
     #[test]
     fn lookup_under_a_protocol_clause_refuses_unsupported_construct() {
-        use qsl_foundation::absence::AbsenceMode;
+        use quire_semantic_value::absence::AbsenceMode;
 
         let (package, _identity) = population_function_package();
         let graph = package.graph();
@@ -5029,23 +5250,27 @@ mod tests {
         assert!(
             Machine::project(&TypeEnvironment::default(), &outside, true, &optional, true).is_ok()
         );
-        assert!(Machine::project(
-            &TypeEnvironment::default(),
-            &outside,
-            true,
-            &optional,
-            false
-        )
-        .is_err());
+        assert!(
+            Machine::project(
+                &TypeEnvironment::default(),
+                &outside,
+                true,
+                &optional,
+                false
+            )
+            .is_err()
+        );
         let wrong_kind = FieldValue::Present(Value::Boolean(true));
-        assert!(Machine::project(
-            &TypeEnvironment::default(),
-            &wrong_kind,
-            true,
-            &optional,
-            false
-        )
-        .is_err());
+        assert!(
+            Machine::project(
+                &TypeEnvironment::default(),
+                &wrong_kind,
+                true,
+                &optional,
+                false
+            )
+            .is_err()
+        );
     }
     /// FR-106 check 6.5: an equality compares an out-of-type integer by
     /// value only when the operand reads a witnessed slot. Two integers

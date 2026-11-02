@@ -24,33 +24,43 @@ mod checked;
 mod checked_v2;
 #[cfg(feature = "std")]
 mod emit;
+pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
 mod protocol_activation;
+mod protocol_slot_select;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, occurrence_role, read_hybrids, read_import_view, read_terminal,
-    read_terminals, resolve_clause_root, resolve_hyper_root, resolve_state_graph_root,
-    resolve_terminals, state_graph_roots, supply_closure, AdmittedPackages, CheckedClockConstraint,
-    CheckedClockGuard, CheckedClockPlace, CheckedClockReset, CheckedConstraintTarget,
-    CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant, CheckedTimeSource,
-    CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot, ClauseRootUnresolved,
-    ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
-    ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration, ReadHybridClaim,
-    ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect,
-    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
-    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    AdmittedPackages, CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace,
+    CheckedClockReset, CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget,
+    CheckedTimeInvariant, CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel,
+    CheckedUrgency, ClauseRoot, ClauseRootUnresolved, ClockComparison, ClockPathStep, HybridRead,
+    HybridReadError, HyperRoot, HyperRootUnresolved, ImportViewRefusal, PackageTerminal,
+    PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
+    ReadTerminalDeclaration, ResolvedClockPathStep, SourceMapDefect, StateGraphKind,
+    StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire,
+    V2Read, V2ReadLimits, V2ReadOutcome, V2ReadRefusal, clause_roots, hyper_roots, occurrence_role,
+    read_checked_package_v2, read_hybrids, read_import_view, read_terminal, read_terminals,
+    resolve_clause_root, resolve_hyper_root, resolve_state_graph_root, resolve_terminals,
+    state_graph_roots, supply_closure,
 };
 #[cfg(feature = "std")]
 pub use emit::{
-    checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package, emit_timed_models,
-    Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault,
+    Emission, EmitRefusal, OmissionCause, OmittedNode, TimedOrderFault, checked_occurrence,
+    emit_checked, emit_checked_with_cancel, emit_package, emit_timed_models,
 };
-pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+#[cfg(feature = "std")]
+pub use evaluation_view::SelectedIdentityEvidence;
+pub use evaluation_view::{
+    AdmittedEvaluationView, AdmittedProtocolObservation, CallableTerm, ProtocolSlotDescriptor,
+    ProtocolSource, SelectedProtocolTerm, TermHandle,
+};
+pub use export::{BoundItem, ExportRefusal, UnboundElement, export_bindings};
+pub use protocol_slot_select::{ViewFailure, ViewLocus};
 
 // The FR-105-AC-6 fault-injection seam. Public only under
 // `test-support` (see `emit.rs`'s doc comments and this crate's
@@ -59,9 +69,9 @@ pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 #[cfg(all(feature = "std", feature = "test-support"))]
 pub use emit::{checked_node_id_of, emit_checked_with_fault};
 
-// ADR-011 §4 I2: `read_checked_package_v2` and its staged outcome remain
-// crate-local. The public `read_import_view` returns a structural import
-// view after Contract IR admits the package bytes.
+// ADR-011 §4 I2: the public `read_checked_package_v2` returns the admitted
+// reader carrier, while its fields remain private. `read_import_view` returns
+// a structural import view after Contract IR admits the package bytes.
 
 /// NFR-015-AC-5, TC-1111: with `std` disabled, the exports of the `quire.checked-package/v2`
 /// wire do not resolve. One case per export.

@@ -10,7 +10,7 @@ use crate::spine::{
     ConsequentState,
 };
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_semantics::check::{Connective, NodeKind};
+use quire_checked::node::{Connective, NodeKind};
 
 const NO_CYCLE_BODY: &str = "not reaches(self, self, next)";
 

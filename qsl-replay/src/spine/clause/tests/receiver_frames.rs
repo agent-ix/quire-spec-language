@@ -265,10 +265,10 @@ fn the_frame_run_and_the_clause_admission_apply_the_receiver_scope() {
         );
     };
     assert_eq!(
-        record.code,
-        qsl_foundation::diagnostic::Code::FrameViolation
+        record.catalog.code(),
+        qsl_foundation::diagnostic::Code::FrameViolation.as_str()
     );
-    assert_eq!(record.cause, "unauthorized-change");
+    assert_eq!(record.catalog.cause(), "unauthorized-change");
 
     // Only the receiver scope separates these: the receiver's own `value`
     // changes, and `c2`'s does not.

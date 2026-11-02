@@ -985,7 +985,10 @@ fn an_exhausted_budget_is_undetermined_or_stops_the_run() {
 
 fn refusal_of(failure: Option<AdmissionFailure>) -> (Code, &'static str) {
     match failure {
-        Some(AdmissionFailure::Refused(record)) => (record.code, record.cause),
+        Some(AdmissionFailure::Refused(record)) => (
+            Code::from_code(record.catalog.code()).expect("known admission catalog code"),
+            record.catalog.cause(),
+        ),
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
@@ -1132,8 +1135,8 @@ fn a_universe_population_the_snapshot_omits_is_incomplete() {
         panic!("expected Incomplete, got {failure:?}")
     };
     assert_eq!(
-        (record.code, record.cause),
-        (Code::IncompletePopulation, "incomplete-scope")
+        (record.catalog.code(), record.catalog.cause()),
+        (Code::IncompletePopulation.as_str(), "incomplete-scope")
     );
 }
 

@@ -598,13 +598,13 @@ fn population_reference_and_model_rows_lower_to_their_operations() {
             "f2",
             &parameters,
             named("M::Order"),
-            lookup(qsl_foundation::absence::AbsenceMode::Undefined),
+            lookup(quire_semantic_value::absence::AbsenceMode::Undefined),
         ),
         function(
             "f3",
             &parameters,
             builtin(BuiltinType::Boolean),
-            Expression::present(lookup(qsl_foundation::absence::AbsenceMode::Empty)),
+            Expression::present(lookup(quire_semantic_value::absence::AbsenceMode::Empty)),
         ),
         function(
             "f4",

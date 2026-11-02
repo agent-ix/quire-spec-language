@@ -16,7 +16,6 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::CheckedLiteral;
 use qsl_semantics::check::{
     Bound, BoundedMeasure, CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, Confidence,
     Event, PackageDeclarations, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
@@ -24,6 +23,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
+use quire_checked::node::CheckedLiteral;
 use quire_exact::{Integer, IntegerInterval, Rational, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};

@@ -1,17 +1,57 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-390 selection of one S3 checked expression from an S4 protocol node.
+//! Layer-4 selection of an admitted S3 checked expression for FR-390.
 
-use qsl_package::CheckedPackage;
+use crate::CheckedPackage;
+use alloc::borrow::ToOwned;
+use alloc::vec;
+use alloc::vec::Vec;
+use alloc::string::String;
 use qsl_semantics::check::{
     BindingValue, BodyTerm, CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime,
     CheckedOrdering, CheckedProtocol, CheckedRetry, CheckedSlots, GroupMember, LeafTerm,
     MemberTerm, ProtocolNodeId, TupleMember,
 };
-use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallAdmissionRecord, CallFailure};
 use quire_exact::{NodeKey, ValueType};
-use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::InternalFault;
 
-use super::ProtocolSlot;
+use crate::ProtocolSlotDescriptor;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// The source locus of a typed slot-selection refusal.
+pub enum ViewLocus {
+    /// The selected protocol node.
+    Node(NodeKey),
+    /// The exact member and optional list position.
+    Member {
+        /// The exact protocol member key.
+        name: String,
+        /// The selected position when the member is indexed.
+        index: Option<usize>,
+    },
+}
+
+#[derive(Clone, Debug)]
+/// A protocol-slot selection refusal or an invariant fault.
+pub enum ViewFailure {
+    /// The descriptor does not identify an admitted protocol slot.
+    Refused {
+        /// Catalog code for the refusal.
+        code: &'static str,
+        /// Catalog cause for the refusal.
+        cause: &'static str,
+        /// The rejected descriptor's locus.
+        locus: ViewLocus,
+    },
+    /// The admitted reader term has no faithful QSL operation projection.
+    Unsupported {
+        /// The checked node whose term could not be projected.
+        node: NodeKey,
+        /// Stable projection limitation code.
+        cause: &'static str,
+    },
+    /// The admitted package violated an internal invariant.
+    Fault(InternalFault),
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct FrameSlot {
@@ -36,79 +76,27 @@ enum Node<'a> {
     Run(ProtocolNodeId),
 }
 
-fn admission(code: &'static str, cause: &'static str, locus: CallAdmissionLocus) -> CallFailure {
-    CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
-        CallAdmissionRecord {
-            code: CatalogCode::new(code, cause),
-            locus,
-        },
-    )))
+fn admission(code: &'static str, cause: &'static str, locus: ViewLocus) -> ViewFailure {
+    ViewFailure::Refused { code, cause, locus }
 }
 
-pub(crate) fn refused(
-    code: &'static str,
-    cause: &'static str,
-    locus: CallAdmissionLocus,
-) -> CallFailure {
-    admission(code, cause, locus)
+fn missing_node(key: NodeKey) -> ViewFailure {
+    admission("missing_declaration", "missing-name", ViewLocus::Node(key))
 }
 
-pub(crate) fn shape_matches(
-    value_type: &ValueType,
-    value: &quire_exact::Value,
-    types: &quire_semantic_value::declaration::TypeEnvironment,
-) -> bool {
-    use quire_exact::{Value, ValueType};
-    if let (ValueType::Composite(expected), Value::Composite(actual)) = (value_type, value) {
-        return types.composite_conforms(actual.declaration().clone(), expected.clone());
-    }
-    matches!(
-        (value_type, value),
-        (ValueType::Boolean, Value::Boolean(_))
-            | (ValueType::Integer | ValueType::Int(_), Value::Integer(_))
-            | (ValueType::Rational(_), Value::Rational(_))
-            | (ValueType::Decimal(_), Value::Decimal(_))
-            | (ValueType::Float(_), Value::Float(_))
-            | (
-                ValueType::Quantity(_) | ValueType::BoundedQuantity(_),
-                Value::Quantity(_)
-            )
-            | (ValueType::Text(_), Value::Text(_))
-            | (ValueType::String, Value::String(_))
-            | (ValueType::Uuid, Value::Uuid(_))
-            | (ValueType::Timestamp, Value::Timestamp(_))
-            | (ValueType::Enum(_), Value::Enum(_))
-            | (ValueType::Option(_), Value::Option(_))
-            | (
-                ValueType::Composite(_),
-                Value::Composite(_) | Value::Union(_)
-            )
-            | (ValueType::Collection(_), Value::Collection(_))
-            | (ValueType::Reference(_), Value::Reference(_))
-    )
-}
-
-fn missing_node(key: NodeKey) -> CallFailure {
-    admission(
-        "missing_declaration",
-        "missing-name",
-        CallAdmissionLocus::Node(key),
-    )
-}
-
-fn malformed_node(key: NodeKey) -> CallFailure {
+fn malformed_node(key: NodeKey) -> ViewFailure {
     admission(
         "invalid_model_binding",
         "malformed-declaration",
-        CallAdmissionLocus::Node(key),
+        ViewLocus::Node(key),
     )
 }
 
-fn missing_member(member: &str, index: Option<usize>) -> CallFailure {
+fn missing_member(member: &str, index: Option<usize>) -> ViewFailure {
     admission(
         "missing_declaration",
         "missing-name",
-        CallAdmissionLocus::Member {
+        ViewLocus::Member {
             name: member.to_owned(),
             index,
         },
@@ -120,7 +108,7 @@ fn identify<'a>(
     key: NodeKey,
     member: &str,
     index: Option<usize>,
-) -> Result<(&'a CheckedProtocol, Node<'a>), CallFailure> {
+) -> Result<(&'a CheckedProtocol, Node<'a>), ViewFailure> {
     let graph = package.graph();
     let Some(wire) = graph.semantic_graph().node(key.clone()) else {
         return Err(missing_node(key));
@@ -427,8 +415,8 @@ fn run_body<'a>(
 #[ix_trace_rs::string_edge]
 pub(crate) fn select<'a>(
     package: &'a CheckedPackage,
-    slot: &ProtocolSlot,
-) -> Result<Selected<'a>, CallFailure> {
+    slot: &ProtocolSlotDescriptor,
+) -> Result<Selected<'a>, ViewFailure> {
     let (protocol, node) = identify(package, slot.node.clone(), &slot.member, slot.index)?;
     let absent = || missing_member(&slot.member, slot.index);
     let indexed = match node {
@@ -768,7 +756,7 @@ pub(crate) fn select<'a>(
                     .find(|keyed| keyed.node == binder.node)
                     .map(|keyed| keyed.level)
                     .ok_or_else(|| {
-                        CallFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
+                        ViewFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                             "FR-390",
                             "checked-protocol-source-has-a-canonical-binder-level",
                         ))

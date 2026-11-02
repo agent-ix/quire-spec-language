@@ -116,7 +116,7 @@ pub enum Refusal {
     },
     /// `subject-admission`: FR-120's admission of the subject refused.
     #[error("the subject does not admit: {0}")]
-    SubjectAdmission(AdmissionFailure),
+    SubjectAdmission(Box<AdmissionFailure>),
     /// `no-initial-state`: the subject has no initial state.
     #[error("the subject has no initial state")]
     NoInitialState,

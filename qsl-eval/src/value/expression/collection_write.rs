@@ -10,9 +10,8 @@
 //! Which occurrence each slot of the result is, the caller decides by value
 //! (see [`WrittenCollection::Computed`]).
 
-use qsl_semantics::check::{
-    CheckedGraph, CheckedNode, ClockId, Connective, NodeKind, Visit, Written,
-};
+use qsl_semantics::check::{CheckedGraph, CheckedNode, ClockId, Written};
+use quire_checked::node::{Connective, NodeKind, Visit};
 use quire_eval::FamilyOutcome;
 use quire_exact::{Outcome, Rational, Value};
 use quire_semantic_value::catalog::InternalFault;

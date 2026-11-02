@@ -169,7 +169,9 @@ fn disposition_code(disposition: &ClauseDisposition) -> Option<Code> {
     match disposition {
         ClauseDisposition::Compile(refusal) => Some(refusal.code()),
         ClauseDisposition::Admit(AdmissionFailure::Refused(record))
-        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => Some(record.code),
+        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
+            Code::from_code(record.catalog.code())
+        }
         other => panic!("no catalog code expected for {other:?}"),
     }
 }
@@ -182,7 +184,9 @@ fn maybe_disposition_code(disposition: &ClauseDisposition) -> Option<Code> {
     match disposition {
         ClauseDisposition::Compile(refusal) => Some(refusal.code()),
         ClauseDisposition::Admit(AdmissionFailure::Refused(record))
-        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => Some(record.code),
+        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
+            Code::from_code(record.catalog.code())
+        }
         _ => None,
     }
 }
