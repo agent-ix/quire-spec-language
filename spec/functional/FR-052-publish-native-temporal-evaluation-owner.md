@@ -46,7 +46,9 @@ to a correction relation actually carried by that route.
 
 These obligations specify behavior on checked-package protocol evaluation
 (FR-390) and its Layer-4 activation mapping (FR-449). They do not require a
-separate native-temporal request/result document or prescribe a new public API.
+separate native-temporal request/result document. The typed request and result
+that carry them for quire-protocol are FR-516's; they are Rust values with no
+document, schema or content digest.
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
 behaviors.

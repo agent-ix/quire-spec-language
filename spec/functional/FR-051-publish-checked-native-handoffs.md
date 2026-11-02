@@ -19,6 +19,8 @@ relationships:
 
 **RETIRED (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** This description specified that when a consumer requested an immutable native definition handoff, the compiler derived either `quire.checked-predicate/v1` or `quire.checked-temporal-subject/v1` from the exact admitted `quire.compiled-protocol/2` package and returned canonical bounded bytes plus a constructor-private validated view. That surface is deleted for the same reason as FR-051-AC-1 (see Acceptance Criteria): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. This description is retired, not amended, since there is no successor module for it to describe.
 
+**Consumer successor (FR-515).** The claim above that nothing outside the deleted modules called them is wrong for quire-protocol (QSL-1501). FR-515 specifies the checked-package views that succeed them; the modules stay until FR-515-AC-1 to AC-9 are green (FR-521 row 1).
+
 **Live: the production dependency graph (FR-051-AC-6).** QSL's resolved dependency graph is cycle-free: no dependency of QSL depends back on QSL. `arch-lint direction` (FR-059, FB-05/FB-11) checks this across the four repositories when given their checkouts.
 
 ## Contract set and public API (RETIRED M-6d)

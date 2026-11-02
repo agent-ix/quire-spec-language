@@ -786,6 +786,20 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-514
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-515
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-516
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-517
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-518
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-519
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-520
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-521
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1339,6 +1353,13 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-512](functional/FR-512-keep-operation-names-parameters-and-frame-entries-unique-at-intake.md) | FR |
 | [FR-513](functional/FR-513-name-the-successor-or-keep-of-each-retained-criterion-that-rides-a-retired-path.md) | FR |
 | [FR-514](functional/FR-514-specify-the-spine-type-report-the-inventory-on-exhaustion-and-the-multi-unit-cycle-refusals.md) | FR |
+| [FR-515](functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md) | FR |
+| [FR-516](functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md) | FR |
+| [FR-517](functional/FR-517-write-a-checked-package-handoff-directory-from-source-in-process.md) | FR |
+| [FR-518](functional/FR-518-write-the-adverse-mutation-corpus-from-checked-packages-and-name-the-destination-of-every-legacy-case.md) | FR |
+| [FR-519](functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md) | FR |
+| [FR-520](functional/FR-520-evaluate-state-and-compensation-expressions-through-the-checked-package-evaluation-entry-points.md) | FR |
+| [FR-521](functional/FR-521-gate-the-deletions-behind-quire-protocol-on-the-checked-package-and-name-each-behavior-it-relies-on.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |

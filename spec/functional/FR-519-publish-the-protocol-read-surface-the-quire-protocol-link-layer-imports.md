@@ -1,0 +1,129 @@
+---
+id: FR-519
+title: "Publish the protocol read surface the quire-protocol link layer imports"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-004
+    type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-383
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-384
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-449
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-218
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-509
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-511
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-515
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-499
+    type: references
+---
+# FR-519: Publish the protocol read surface the quire-protocol link layer imports
+
+## Description
+
+quire-protocol's link layer (`src/link/mod.rs`, owner chunk C-12) builds a finite
+linked protocol from QSL's typed `wire::Package`: `Handle`, `Locus`, `EdgeKind`,
+`CausalEdge`, `Declaration`, `Body`, `ControlOperation`, `Binder`, `BindingKind`
+and others (about 66 references). Its own rule is "an owner publishes it, import
+it; do not mirror it": QSL derived and compared the causal edge set, resolved
+references and checked joins, and the link layer refused only what QSL did not.
+`wire::Package` has no checked-package equivalent (QSL-1501 symbol map, row B):
+the checked package holds protocol nodes (FR-383) and carries **no** causal edge
+(FR-383-AC-16); the relation is derived from the nodes by QSpec FR-464's rules,
+and today that derivation exists only in QSL's emit tests
+(`qsl-package/src/emit/tests/protocol_graph.rs`).
+
+This requirement divides the work. **QSL provides** the derivation as a
+production function and a record-to-node map, so the link layer imports the owner's
+derivation. **quire-protocol owns** a typed read view over `CheckedPackageV2` for
+the link layer; QSL owns none of that code, and the requirement on it is the
+cross-repository ticket QSL-1549, stated below for the record.
+
+## Semantic authority and boundary
+
+QSpec FR-464 owns the causal relation and the node bodies; FR-383 states what QSL
+emits; Contract IR owns the reader (`quire_contract_model::read_checked_package`,
+which quire-protocol calls itself: QSL does not wrap it, fork it or add IR code).
+QSL's functions here take `&CheckedPackageV2`.
+
+## Inputs
+
+A `&CheckedPackageV2` and the `CheckedNodeId` of a `protocol`/`protocol_clause`
+node.
+
+## Outputs
+
+In `qsl_package::protocol_view` (std only):
+
+```rust
+pub fn causal_relation(package: &CheckedPackageV2, protocol: &CheckedNodeId)
+    -> Result<CausalRelation, ViewRefusal>;
+pub fn protocol_view<'p>(package: &'p CheckedPackageV2, protocol: &CheckedNodeId)
+    -> Result<ProtocolView<'p>, ViewRefusal>;
+```
+
+`CausalRelation` is the strictly ascending, duplicate-free sequence of `{ from:
+Port, to: Port, kind: EdgeKind }` where `Port` and `EdgeKind` are the port and
+edge-kind vocabulary of FR-218's compiled edge relation. `ProtocolView` borrows
+the package and lists, as node ids in the order the nodes carry them: the clause,
+its roles, channels, queues, controls in layout order, compensations,
+`requirements` (temporal clauses), `terminal` and `scheduling` when present, and
+the FR-449 activation rows (`protocol_activation_relation`).
+
+## Behavior
+
+### The record-to-node map
+
+| `wire` record used by quire-protocol | Successor | Disposition |
+| --- | --- | --- |
+| `Package` | `CheckedPackageV2` | Successor; the typed link view over it is quire-protocol's |
+| `Handle` (index into a table) | `CheckedNodeId` | Successor |
+| `Declaration`, `Body::Protocol { .. }` | the `protocol_clause`, `role`, `channel`, `queue`, `obligation`, `control` and `compensation` nodes and their arguments (FR-383-AC-1 to AC-8), with the declaration's identity triple | Successor |
+| `ControlOperation`, `TemporalOperation`, `ValueOperation` | the `quire.op.protocol.control`, `quire.op.temporal.*` and FR-093 value operation identities of the applications | Successor |
+| `Binder` (and its level) | the binder node and level of FR-383-AC-10 | Successor |
+| `Locus` | the package source-map entry of the node | Successor |
+| `Type`, `Value`, `Number` | `semantic_type` nodes, literal and reference terms; numbers in the FR-322 encoding (the FR-038 codec is not used by the checked package, FR-511-AC-3) | Successor |
+| `Delivery` | the channel node's delivery text and, for a declared interval, FR-509's members | Successor |
+| `EdgeKind`, `CausalEdge` | `CausalRelation` above | Successor (this requirement) |
+| `ActivationMapping` | the FR-449 activation rows | Successor |
+| `TemporalBinding`, `ClockConfiguration` | the Contract IR types of the same names | Successor |
+| `Model` | the `model` node and the clause's `owner_model` (FR-383-AC-26) | Successor |
+| `Dependency` | the lock `dependency_selections` | Successor |
+| `ArtifactRef`, `ArtifactKind`, `Revision`, `Language`, `Definition` | `CheckedSourceRef`, `CheckedArtifactRef` and `CheckedSelection` (`{ authority, identity }` only) | The `digest`, `revision` and kind fields end with QSL-1270; the `Definition` table ends because definitions are lock selections |
+| `BindingKind::Population` | the population declaration node of the model (FR-106, FR-513-AC-14) | Successor |
+| `BindingKind::Clock` | the `temporal_bindings` row | Successor |
+| `BindingKind::Window` | none: a window is an evaluation input (FR-049-AC-5, FR-516), not a package member | Keep the `wire.rs` spelling until QSL-1506 (FR-513's row) |
+| `ExportRef` | none: exports are the domain package document's declarations, selected by node id | Ended; no consumer use after QSL-1549 |
+
+### Required of quire-protocol (not QSL code; ticket QSL-1549)
+
+1. Read the handoff with `read_checked_package`, evidence assembled from the
+   handoff's files, then `Selection::check` (FR-517); no second reader.
+2. A typed link view over `CheckedPackageV2` nodes that replaces `wire::Package`
+   in `src/link/mod.rs`, importing `causal_relation` and `protocol_view` and
+   mirroring neither.
+3. Its own refusals stay its own: zero-progress iteration, duplicate role
+   authorities, conflicting channel premises, and the others its module
+   documentation lists as "this module refuses, because A does not".
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-519-AC-1 | For **R**'s protocol, `causal_relation` returns the (source port, target port) pairs of the checked clause's compiled edge relation, back edges of every `repeat` included, strictly ascending and duplicate-free, and the relation derived from the in-process package equals the one derived from the package read back. | Test (TC-1314) |
+| FR-519-AC-2 | The function FR-383-AC-16's test calls is `qsl_package::protocol_view::causal_relation`; `git grep` finds no second derivation of the relation in `qsl-*/src` or `src`. | Inspection (TC-1314) |
+| FR-519-AC-3 | `protocol_view` of **R**'s protocol lists the clause, each role, channel, queue, control (layout order), the `Full` and `Partial` compensations, the required temporal clause and the activation rows, each equal to the node set the in-process checked clause rebuilds (FR-383-AC-19). | Test (TC-1314) |
+| FR-519-AC-4 | A node id that is absent, or that names a non-protocol node, refuses `UnknownProtocol`; a `protocol_reference` carrier refuses `NotAProtocolClause`; neither returns a partial view or relation. | Test (TC-1314) |
+| FR-519-AC-5 | Every row of the record-to-node map marked Successor resolves on **R**: a test finds the node, argument or lock member it names; every row marked Ended or Keep is listed with its reason and no code path of QSL refers to an ended record after QSL-838. | Test (TC-1314) |
+| FR-519-AC-6 | QSL's resolved dependency graph holds no dependency on quire-protocol (`arch-lint direction`, FR-059), and no function of `protocol_view` or `checked_views` reads checked-package bytes (the reader is IR's). | Test (TC-1314) |
+| FR-519-AC-7 | The cross-repository ticket QSL-1549 exists in the QSL V1 Architecture Spine project, blocks QSL-1501, is blocked by the QSL tickets of this batch, and its description lists the three obligations above. | Inspection (TC-1314) |
+
+## Dependencies
+
+- **Upstream:** FR-383, FR-384, FR-218, FR-449, FR-509, FR-511, FR-515, QSL-1270.
+- **Downstream:** quire-protocol `src/link/mod.rs` (QSL-1549).
