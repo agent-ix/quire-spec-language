@@ -1263,10 +1263,17 @@ fn the_observed_source_reads_numbers_and_faults_on_anything_else() {
     );
 
     // A call that fails: the object is absent from that position's
-    // environment. The run stops and the failure is kept.
+    // environment. The run stops and the failure is kept. The value
+    // expression is checked against `gap`'s own graph: one checked against
+    // `observed` is foreign to `gap` and refuses at the evaluation boundary
+    // (FR-049-AC-1) before any position is read.
     let mut gap = Observed::new(&[2, 1]);
     gap.environments[1] = ObjectEnvironment::default();
-    let mut source = gap.source(numbers);
+    let gap_integer = gap.check(&x(), None);
+    let mut source = gap.source(ObservedWindowExpressions {
+        value: Some(&gap_integer),
+        ..ObservedWindowExpressions::default()
+    });
     assert!(source.stopped().is_none());
     assert_eq!(
         source.value(at(0), &mut meter),

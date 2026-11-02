@@ -185,8 +185,11 @@ fn construction_fault(site: ConstructionSite, refusal: &ConstructionRefusal) -> 
 
 /// A quantity whose `UnitId` neither the package's unit table nor this
 /// evaluation's formed units resolve. Checking resolves every quantity type
-/// and admission matches every argument's unit id to its parameter's, so this
-/// is an S6a invariant break, never caller input (FR-090-AC-3).
+/// and admission matches every argument's unit id to its parameter's, so the
+/// checked-expression route no longer reaches this S6a invariant break
+/// (foreign expressions are refused, #2098). A caller-supplied object
+/// environment or closure typed under a different unit still can, and is open
+/// under QSL-1470 (FR-090-AC-15).
 fn unresolved_unit() -> Halt {
     Halt::Fault(InternalFault::new(
         "S6a",
