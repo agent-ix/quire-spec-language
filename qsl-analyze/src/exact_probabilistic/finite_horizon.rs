@@ -423,6 +423,16 @@ fn action_equal(left: &ProductAction, right: &ProductAction) -> bool {
         | (ProductAction::EnterIdleDelay, ProductAction::EnterIdleDelay)
         | (ProductAction::IdleDelay, ProductAction::IdleDelay)
         | (ProductAction::IdleObserve, ProductAction::IdleObserve) => true,
+        (
+            ProductAction::WorkloadResolve {
+                identity: left,
+                delay: left_delay,
+            },
+            ProductAction::WorkloadResolve {
+                identity: right,
+                delay: right_delay,
+            },
+        ) => left == right && left_delay == right_delay,
         _ => false,
     }
 }

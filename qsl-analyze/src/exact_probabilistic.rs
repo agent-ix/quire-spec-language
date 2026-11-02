@@ -341,6 +341,16 @@ pub enum ProductAction {
     /// The idle tail's clock-valued observation, which advances no clock
     /// (FR-196 `IdleObserve`).
     IdleObserve,
+    /// Under a workload, the scheduler's choice to let the workload resolve
+    /// the identity after `delay` more digital units, for a delay no
+    /// distribution gives (ADR-028 TA-1, RU-6). `identity` names the choice's
+    /// first enabled identity; each edge's `action` names the identity taken.
+    WorkloadResolve {
+        /// The first identity the workload may resolve to.
+        identity: ScheduledIdentity,
+        /// The digital units of delay before the resolution.
+        delay: u64,
+    },
 }
 
 /// One product edge, with its exact probability.
@@ -567,14 +577,6 @@ pub enum ProductRefusal {
     /// (ADR-026 SD-4, ADR-028 TA-1a).
     #[error("not stochastic at a digital timed state")]
     NotStochastic {
-        /// The product key of the state.
-        state: Box<ProbKey>,
-    },
-    /// A digital timed state where identities with a given delay and identities
-    /// with a free delay race together (ADR-026 SD-3 leaves the joint
-    /// resolution to the spec lane).
-    #[error("given and free delays race together at a digital timed state")]
-    MixedDelays {
         /// The product key of the state.
         state: Box<ProbKey>,
     },

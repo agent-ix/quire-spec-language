@@ -25,8 +25,7 @@ pub fn settle_product_refusal(
         | ProductRefusal::StrictClockConstraint { .. }
         | ProductRefusal::DelayDistribution { .. }
         | ProductRefusal::ZeroDelayCycle { .. }
-        | ProductRefusal::NotStochastic { .. }
-        | ProductRefusal::MixedDelays { .. }) => return Err(request),
+        | ProductRefusal::NotStochastic { .. }) => return Err(request),
         ProductRefusal::NotSimulated(
             refusal @ (NotSimulated::Extent(_)
             | NotSimulated::GeneratorMismatch { .. }

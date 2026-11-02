@@ -114,6 +114,20 @@ pub(super) fn build<'s, 'a>(
     builder.run()
 }
 
+/// The scheduler's choice to let the workload resolve the identity after
+/// `delay` units (ADR-028 TA-1): one function, so the spec's ruling on the
+/// action's shape is a one-place change.
+fn resolve_choice(
+    representative: Option<&ScheduledIdentity>,
+    taken: &Enabled,
+    delay: u64,
+) -> ProductAction {
+    ProductAction::WorkloadResolve {
+        identity: representative.unwrap_or(&taken.identity).clone(),
+        delay,
+    }
+}
+
 fn fault(invariant: &'static str) -> ProductRefusal {
     ProductRefusal::Internal(InternalFault::new("exact-probabilistic-digital", invariant))
 }
@@ -1424,13 +1438,7 @@ impl<'c> Builder<'_, '_, 'c> {
             .map_err(|_| fault("delay-count"))?;
         let free = windows.iter().any(|window| window.given.is_none());
         let given = windows.iter().any(|window| window.given.is_some());
-        if free && given {
-            return Err(ProductRefusal::MixedDelays {
-                state: Box::new(self.nodes[at].key.clone()),
-            }
-            .into());
-        }
-        if free {
+        if free && !given {
             return self.free_moves(at, state, local, workload);
         }
         // Every racing identity has a given delay: draw each, conditioned on
@@ -1462,7 +1470,7 @@ impl<'c> Builder<'_, '_, 'c> {
                 .collect::<Step<Vec<_>>>()?;
             racers.push((window, conditioned));
         }
-        if racers.is_empty() {
+        if racers.is_empty() && !free {
             let mut planned = Vec::new();
             self.running_delays(at, state, local, &mut planned)?;
             if planned.is_empty() {
@@ -1477,8 +1485,11 @@ impl<'c> Builder<'_, '_, 'c> {
             return Ok(planned);
         }
         let mut outcomes: Vec<(u64, Vec<usize>, Rational)> = Vec::new();
+        if racers.is_empty() {
+            outcomes.push((u64::MAX, Vec::new(), one()));
+        }
         let mut draw = vec![0_usize; racers.len()];
-        loop {
+        while !racers.is_empty() {
             let mut probability = one();
             let mut least = u64::MAX;
             for (index, (_, support)) in racers.iter().enumerate() {
@@ -1510,33 +1521,100 @@ impl<'c> Builder<'_, '_, 'c> {
                 break;
             }
         }
-        let representative = racers
-            .first()
+        let representative = windows
+            .iter()
+            .find(|window| window.given.is_some())
+            .map(|window| window.identity.clone());
+        let ids: Vec<ScheduledIdentity> = racers
+            .iter()
             .map(|(window, _)| window.identity.clone())
-            .ok_or_else(|| fault("a-race-has-a-racer"))?;
+            .collect();
         let mut planned: Vec<Planned> = Vec::new();
-        for (delay, tied, probability) in outcomes {
-            let index = usize::try_from(delay).map_err(|_| fault("delay-count"))?;
-            let start = trajectory
-                .states
-                .get(index.min(trajectory.states.len() - 1))
-                .ok_or_else(|| fault("race-delay-is-reachable"))?
-                .clone();
-            let identities: Vec<ScheduledIdentity> = tied
-                .iter()
-                .map(|racer| racers[*racer].0.identity.clone())
-                .collect();
-            for (order, ordered) in self.orderings(workload, &identities)? {
-                self.chain_edges(
+        if !free {
+            let representative = representative.ok_or_else(|| fault("a-race-has-a-racer"))?;
+            for (delay, tied, probability) in &outcomes {
+                let identities: Vec<ScheduledIdentity> =
+                    tied.iter().map(|racer| ids[*racer].clone()).collect();
+                self.race_edges(
                     at,
-                    &start,
-                    &ordered,
-                    (probability.mul(&order), delay == 0, &representative),
+                    workload,
+                    &trajectory,
+                    (*delay, identities, probability.clone()),
+                    &representative,
                     &mut planned,
                 )?;
             }
+            return Ok(planned);
+        }
+        // Given and free delays race together: the scheduler picks a free
+        // identity and its delay; the least delay wins (ADR-026 SD-3).
+        for window in windows.iter().filter(|window| window.given.is_none()) {
+            for &delay in &window.delays {
+                let first = planned.len();
+                for (least, tied, probability) in &outcomes {
+                    let mut identities: Vec<ScheduledIdentity> =
+                        tied.iter().map(|racer| ids[*racer].clone()).collect();
+                    let winning = if delay < *least {
+                        identities = vec![window.identity.clone()];
+                        delay
+                    } else if delay == *least {
+                        identities.push(window.identity.clone());
+                        delay
+                    } else {
+                        *least
+                    };
+                    self.race_edges(
+                        at,
+                        workload,
+                        &trajectory,
+                        (winning, identities, probability.clone()),
+                        &window.identity,
+                        &mut planned,
+                    )?;
+                }
+                for edge in &mut planned[first..] {
+                    edge.choice = ProductAction::WorkloadResolve {
+                        identity: window.identity.clone(),
+                        delay,
+                    };
+                }
+            }
+        }
+        self.decisions = true;
+        if planned.is_empty() {
+            self.time_locked.push(at);
         }
         Ok(planned)
+    }
+
+    /// The edges of one race outcome: `(delay, tied identities, probability)`.
+    fn race_edges(
+        &mut self,
+        at: usize,
+        workload: &Workload,
+        trajectory: &Trajectory,
+        outcome: (u64, Vec<ScheduledIdentity>, Rational),
+        representative: &ScheduledIdentity,
+        planned: &mut Vec<Planned>,
+    ) -> Step<()> {
+        let (delay, identities, probability) = outcome;
+        let index = usize::try_from(delay).map_err(|_| fault("delay-count"))?;
+        let last = trajectory.states.len().saturating_sub(1);
+        let start = trajectory
+            .states
+            .get(index.min(last))
+            .ok_or_else(|| fault("race-delay-is-reachable"))?
+            .clone();
+        for (order, ordered) in self.orderings(workload, &identities)? {
+            self.chain_edges(
+                at,
+                &start,
+                &ordered,
+                (probability.mul(&order), delay == 0, representative),
+                planned,
+            )?;
+        }
+        Ok(())
     }
 
     /// Every ordering of the tied identities with its probability: drawing
@@ -1734,10 +1812,8 @@ impl<'c> Builder<'_, '_, 'c> {
                 .ok_or_else(|| fault("workload-share"))?;
             let first = planned.len();
             self.identity_edges(at, state, action, share, &mut planned)?;
-            if let Some(representative) = &representative {
-                for edge in &mut planned[first..] {
-                    edge.choice = ProductAction::Identity(representative.clone());
-                }
+            for edge in &mut planned[first..] {
+                edge.choice = resolve_choice(representative.as_ref(), action, 0);
             }
         }
         if planned.is_empty() {

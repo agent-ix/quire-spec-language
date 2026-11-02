@@ -58,6 +58,7 @@ fn built(world: &World, claim: &str) -> ProbProduct {
 /// FR-254-AC-3 (TC-709): an exact request for the strict-guard timed RPC is
 /// refused by the exact timed-profile route rather than admitted as untimed.
 #[trace("TC-709", "FR-254-AC-3")]
+#[trace("TC-639", "FR-204-AC-2")]
 #[test]
 fn exact_request_over_strict_guard_timed_rpc_is_refused() {
     let document =
@@ -99,11 +100,10 @@ fn exact_request_over_strict_guard_timed_rpc_is_refused() {
         &Cancel::new(),
     )
     .expect_err("EN-5 refuses a strict-guard timed exact request");
+    // FR-204-AC-2: the strict guard `x > 3 ms` has no digital reading.
     assert!(matches!(
         refusal,
-        ProductRefusal::Translation(
-            qsl_eval::automaton::AutomatonError::ProfileNotTranslated { .. }
-        )
+        ProductRefusal::StrictClockConstraint { .. }
     ));
 }
 
