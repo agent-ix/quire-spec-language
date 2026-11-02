@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Debug helpers for structural node identities.
+//! A debug-only table of structural node identities, written once each.
 //!
-//! A [`NodeKey`] nests the identities of its operands, so its debug output
-//! includes the complete subtree. [`NodeTable`] remains available to callers
-//! that explicitly want to intern nodes for a compact diagnostic. The
-//! [`NodeKeyDebug`], [`NodeMap`] and [`NodeList`] wrappers preserve complete
-//! keys in ordinary `Debug` output and do not use ambient state.
+//! A [`NodeKey`] nests the identities of its operands, so its own `Display`
+//! writes a whole subtree. A collection keyed by node identities, formatted
+//! key by key, therefore writes every shared subtree once per key that
+//! contains it, which is quadratic in package depth. [`NodeTable`] writes
+//! each distinct node once, naming its own text segments and referring to
+//! each nested node by a table position ([`NodeRef`]); a collection's entries
+//! then print only a [`NodeRef`]. The output is complete (no depth or size
+//! cap) and linear in the number of distinct nodes and their direct segments.
+//!
+//! A type that holds a [`NodeKey`] writes it through [`NodeKeyDebug`]. The
+//! outermost value to format opens one table with [`scoped`] and every key
+//! written under it, whatever type holds it, joins that table, so a node
+//! shared by many collections of one package is written once for the whole
+//! package. Without `std` there is no scope and a key is written in full.
 
 use alloc::collections::BTreeMap;
 use alloc::{string::String, vec::Vec};
@@ -14,9 +23,52 @@ use core::hash::{Hash, Hasher};
 
 use quire_exact::{NodeKey, PathSegment};
 
-/// Format `value` through the compatibility scope wrapper. It deliberately
-/// carries no hidden per-thread context; keys remain complete in every build.
+#[cfg(all(feature = "std", not(kani)))]
+std::thread_local! {
+    /// The table the value being formatted on this thread writes its keys
+    /// into, while a [`scoped`] call is open.
+    static ACTIVE: core::cell::RefCell<Option<NodeTable>> = const {
+        core::cell::RefCell::new(None)
+    };
+}
+
+/// Format `value` with one [`NodeTable`] for every [`NodeKeyDebug`] under it.
+/// With `std`, the outermost call writes `WithNodes { value: .., nodes: {..} }`;
+/// a call made while another is open writes only `value`, into the open table.
+/// Without `std`, or under `cfg(kani)`, formats `value` directly; its keys are
+/// written in full. The table is Debug-only output, and Kani 0.68.0 cannot
+/// compile a reachable destructor-bearing thread-local (it reaches the
+/// `catch_unwind` intrinsic, model-checking/kani#4813, fixed on main by #4819
+/// but unreleased), so the verification build takes the no-table path.
 pub fn scoped(f: &mut fmt::Formatter<'_>, value: &dyn fmt::Debug) -> fmt::Result {
+    #[cfg(all(feature = "std", not(kani)))]
+    {
+        if ACTIVE.with(|active| active.borrow().is_some()) {
+            return value.fmt(f);
+        }
+        struct Close;
+        impl Drop for Close {
+            fn drop(&mut self) {
+                ACTIVE.with(|active| *active.borrow_mut() = None);
+            }
+        }
+        struct Active;
+        impl fmt::Debug for Active {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                ACTIVE.with(|active| match active.borrow().as_ref() {
+                    Some(table) => table.nodes().fmt(f),
+                    None => Ok(()),
+                })
+            }
+        }
+        ACTIVE.with(|active| *active.borrow_mut() = Some(NodeTable::new()));
+        let _close = Close;
+        f.debug_struct("WithNodes")
+            .field("value", value)
+            .field("nodes", &Active)
+            .finish()
+    }
+    #[cfg(any(not(feature = "std"), kani))]
     value.fmt(f)
 }
 
@@ -31,25 +83,35 @@ impl fmt::Debug for NodeKeyDebugScoped<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.1 {
             Some(table) => table.borrow_mut().intern(self.0).fmt(f),
-            None => self.0.fmt(f),
+            None => NodeKeyDebug(self.0).fmt(f),
         }
     }
 }
 
 /// The contents of an explicitly supplied local node table.
+#[cfg(feature = "std")]
 pub(super) struct NodeTableContents<'a>(pub &'a core::cell::RefCell<NodeTable>);
 
+#[cfg(feature = "std")]
 impl fmt::Debug for NodeTableContents<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.borrow().nodes().fmt(f)
     }
 }
 
-/// A [`NodeKey`] written in full through its ordinary `Debug` representation.
+/// A [`NodeKey`] written as its position in the table of the open
+/// [`scoped`] call, or in full when none is open.
 pub struct NodeKeyDebug<'a>(pub &'a NodeKey);
 
 impl fmt::Debug for NodeKeyDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(all(feature = "std", not(kani)))]
+        {
+            let at = ACTIVE.with(|active| active.borrow_mut().as_mut().map(|t| t.intern(self.0)));
+            if let Some(at) = at {
+                return at.fmt(f);
+            }
+        }
         self.0.fmt(f)
     }
 }
@@ -248,32 +310,17 @@ mod tests {
         }
     }
 
-    /// The scope wrapper preserves complete identities and has no ambient
-    /// state, regardless of the crate's feature set.
+    /// With `std` and outside `cfg(kani)`, the outermost `scoped` call writes
+    /// one table and each key as its position in it; the `cfg(kani)` and
+    /// no-`std` path (keys in full) is the only thing the gate changes.
+    #[cfg(all(feature = "std", not(kani)))]
     #[test]
-    fn scoped_preserves_complete_keys_without_ambient_state() {
+    fn scoped_writes_one_table_and_keys_by_position_outside_kani() {
         let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
         let text = alloc::format!("{:?}", Keys(key.clone(), key));
-        assert_eq!(text, "(NodeKey(pkg:[\"k\",]:1), NodeKey(pkg:[\"k\",]:1))");
-    }
-
-    /// An explicitly shared local table interns repeated keys without a
-    /// process- or thread-wide registry.
-    #[test]
-    fn explicit_table_shares_repeated_keys() {
-        let key = NodeKey::new("pkg", vec![PathSegment::Text("k".into())], 1).unwrap();
-        let table = core::cell::RefCell::new(NodeTable::new());
-        let text = alloc::format!(
-            "{:?}",
-            (
-                NodeKeyDebugScoped(&key, Some(&table)),
-                NodeKeyDebugScoped(&key, Some(&table))
-            )
-        );
-        assert_eq!(text, "(#0, #0)");
         assert_eq!(
-            alloc::format!("{:?}", NodeTableContents(&table)),
-            "{#0: pkg:[\"k\",]:1}"
+            text,
+            "WithNodes { value: (#0, #0), nodes: {#0: pkg:[\"k\",]:1} }"
         );
     }
 }
