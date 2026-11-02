@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14 and FR-251-AC-15.
 
 ## Test Procedure
 
@@ -27,6 +27,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 7. On the 16-bit target of FR-251-AC-3, feed the readings `65530` then `4` and `65530` then `65500`, recording each entry call; then admit a watermark at history boundary tick 3001 and a bare counter poll for AC-1's claim.
 8. On the 16-bit target of FR-251-AC-3, keep one instance open across a fault and one decided before it, and start one after it; feed the first reading, then `65530`, `65500`, `65510`, recording each entry call and its inputs.
 9. Build the AC-1 plan with a per-step budget too small for one `on_event`; present a `req` event and then an admitted watermark and read the monitor state after each, then raise the budget (or build another monitor with a sufficient budget from the same plan) and re-present the same event and the same watermark, counting executions of the transition body.
+10. Build the AC-1 plan with an activation capacity of 2; start three `req` instances before any `ack`; present watermarks and then the `ack`s; read the root outcomes and the per-instance reports.
+11. On the 16-bit target of FR-251-AC-3, fill the window of `once[0 ms, 10 ms] holds(p)`, cause a fault, evaluate before and after the window refills, and poll the counter between readings.
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -41,3 +43,5 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 7: delta 10 passed and unwrapped time advances by 10; the second pair calls `on_gap` with 65506 and not `on_event` (the open instance fails `ReadingGapExceeded`, Step 8); the watermark settles the deadline false; the poll calls no entry.
 - Step 8: the first reading passes delta 0; the fault calls `on_gap` with 65506 and not `on_event`; only the open instance fails with `ReadingGapExceeded` and is dropped; the decided and later instances are unaffected; `65510` passes delta 10.
 - Step 9: the first presentation returns `StepResourceStop` (a typed incomplete outcome, no verdict, no refusal), the state is byte-for-byte unchanged and the event is unconsumed (likewise the watermark); the re-presented input runs the body once and gives the outcome an unstopped step gives; the monitor accepts the next input.
+- Step 10: the third live instance settles `Incomplete(LimitReached)` with value 2, none dropped silently; the root gives one folded outcome per activation, pending until resolved; each `eventually` instance is reported once on settlement and each pending one at every watermark.
+- Step 11: buffers empty and the marker at the faulting reading's unwrapped tick; `indeterminate` until the window refills, then decided; the poll leaves the baseline unchanged.
