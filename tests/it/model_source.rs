@@ -37,14 +37,17 @@ fn source(text: &str, revision: &str) -> FormalSource {
 #[test]
 #[trace("TC-101", "FR-025-AC-1")]
 fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
-    let text = native_rule_model::fixture();
+    let text = include_str!("../fixtures/native-package/model-source.json");
     let source = source(text, "1");
     let draft = read(source.clone(), FORMAT, ModelSourceLimits::default()).unwrap();
     assert_eq!(draft.declared_license, "AGPL-3.0-only");
     assert_eq!(draft.source_limits, ModelSourceLimits::default());
     assert_eq!(draft.source.source().text(), text);
     let model = draft.admit(ModelLimits::default()).unwrap();
-    assert!(!model.artifact_bytes().is_empty());
+    assert_eq!(
+        model.artifact_bytes(),
+        crate::support::historical_model_artifact()
+    );
     assert_eq!(model.source().source().text(), source.source().text());
 }
 

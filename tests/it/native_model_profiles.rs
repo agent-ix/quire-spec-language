@@ -117,7 +117,7 @@ fn assert_occurrence(source: &FormalSource, span: &ir::SourceSpan, original: &st
 #[test]
 #[trace("TC-120", "TC-131", "FR-041-AC-1", "FR-041-AC-6", "FR-047-AC-8")]
 fn explicit_profiles_preserve_the_frozen_historical_artifact() {
-    let text = crate::support::native_rule_model::fixture();
+    let text = include_str!("../fixtures/native-package/model-source.json");
     let old = read(source(text), FORMAT, ModelSourceLimits::default()).unwrap();
     assert_eq!(old.profile(), NativeModelProfile::V1);
     let direct = NativeModel::new(
@@ -128,6 +128,10 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
     )
     .unwrap();
     let v1 = old.admit(ModelLimits::default()).unwrap();
+    assert_eq!(
+        v1.artifact_bytes(),
+        crate::support::historical_model_artifact()
+    );
     assert_eq!(direct.artifact_bytes(), v1.artifact_bytes());
     let selected = read(source(text), FORMAT_V2, ModelSourceLimits::default()).unwrap();
     assert_eq!(selected.profile(), NativeModelProfile::V2);
@@ -272,7 +276,7 @@ fn historical_entrypoints_refuse_rational_declarations_and_roles() {
         Code::UnsupportedConstruct,
         "unmapped rational declarations cannot enter /1 either"
     );
-    let legacy = crate::support::native_rule_model::fixture();
+    let legacy = include_str!("../fixtures/native-package/model-source.json");
     let mut input = read(source(legacy), FORMAT, ModelSourceLimits::default()).unwrap();
     input.roles.scalars[0].kind = ScalarKind::Rational {
         unit: Unit::Dimensionless,
@@ -713,7 +717,7 @@ fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
 #[test]
 #[trace("TC-120", "TC-131", "FR-041-AC-5", "FR-047-AC-8")]
 fn historical_linking_refuses_only_selected_v2_artifacts() {
-    let legacy = crate::support::native_rule_model::fixture();
+    let legacy = include_str!("../fixtures/native-package/model-source.json");
     let v1 = read(source(legacy), FORMAT, ModelSourceLimits::default())
         .unwrap()
         .admit(ModelLimits::default())

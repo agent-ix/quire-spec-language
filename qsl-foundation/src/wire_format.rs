@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-024–027: one catalog for native source, input, package and command formats.
+//! FR-027: one catalog for native source, input, package and command formats.
 
 use serde::{Serialize, Serializer};
 
