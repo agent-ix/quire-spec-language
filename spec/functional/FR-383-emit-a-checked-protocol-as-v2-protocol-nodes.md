@@ -512,7 +512,7 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-32 | For every protocol slot of **W** and of protocol L (TC-1070 fixture L), the number of `protocol_locations` rows of that slot's origin for an application equals the number of that application's visits in the slot walk. | Test (TC-1063) |
 | FR-383-AC-33 | No `protocol_locations` row of a slot's origin names an application that slot's walk does not visit. | Test (TC-1063) |
 | FR-383-AC-34 | In fixture E, the retry relation of `Refund` has one `earlier.tally` application node with exactly two retry-origin rows, and the retry relation of `Partial` has one `partialEarlier.tally` node with exactly two of its own. | Test (TC-1063) |
-| FR-383-AC-35 | Each row, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the in-process checked clause. | Test (TC-1063) |
+| FR-383-AC-35 | Each row, read back through QSL's I2 reader, has a `Location` equal to the `Location` of the term at the position it numbers in the checked clause held in memory. | Test (TC-1063) |
 | FR-383-AC-36 | The two retry-origin `earlier.tally` rows carry different `Location` values, the first that of the term in `earlier.tally < 3` and the second that in `earlier.tally + 1`. | Test (TC-1063) |
 | FR-383-AC-37 | A unit with no protocol slot expression writes `protocol_locations` as an empty array. | Test (TC-1063) |
 | FR-383-AC-38 | A package with no checked-term data keeps `checked_term_data` absent. | Test (TC-1063) |
