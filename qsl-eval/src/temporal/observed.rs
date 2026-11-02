@@ -133,15 +133,46 @@ pub fn evaluate_observed_finite_window(
             (0..environments.len()).collect()
         }
         qsl_semantics::check::Activation::Each { guarded: true } => {
-            return ObservedRun {
-                result: Err(TemporalRefusal::Fault(InternalFault::new(
-                    "temporal.finite-window",
-                    "guarded-activation-not-evaluated",
-                ))),
-                stopped: None,
-                undefined: None,
-                pending_activation: None,
-            };
+            let mut active = Vec::new();
+            for index in 0..environments.len() {
+                match letters.activation(TemporalPosition::new(index as u64), meter) {
+                    Ok(AtomReading::True) => active.push(index),
+                    Ok(AtomReading::False | AtomReading::Undefined(_)) => {}
+                    Err(LetterStop::Incomplete(incomplete)) => {
+                        return ObservedRun {
+                            result: Ok(TemporalOutcome::Incomplete(incomplete)),
+                            stopped: letters.stopped,
+                            undefined: letters.undefined,
+                            pending_activation: None,
+                        };
+                    }
+                    Err(LetterStop::WindowLimit(limit)) => {
+                        return ObservedRun {
+                            result: Ok(TemporalOutcome::WindowLimitReached(limit)),
+                            stopped: letters.stopped,
+                            undefined: letters.undefined,
+                            pending_activation: None,
+                        };
+                    }
+                    Err(LetterStop::Window(refusal)) => {
+                        return ObservedRun {
+                            result: Err(TemporalRefusal::Window(refusal)),
+                            stopped: letters.stopped,
+                            undefined: letters.undefined,
+                            pending_activation: None,
+                        };
+                    }
+                    Err(LetterStop::Fault(fault)) => {
+                        return ObservedRun {
+                            result: Err(TemporalRefusal::Fault(fault)),
+                            stopped: letters.stopped,
+                            undefined: letters.undefined,
+                            pending_activation: None,
+                        };
+                    }
+                }
+            }
+            active
         }
     };
     let mut first_violation = None;

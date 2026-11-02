@@ -13,6 +13,7 @@ use qsl_eval::temporal::{
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
+use qsl_semantics::check::{BinaryTemporal, FormulaNode, UnaryTemporal};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     admit_trace_snapshot, population_universe_for, AdmissionFailure, AdmissionRecord,
@@ -93,9 +94,11 @@ impl TraceInput {
         match self {
             Self::Finite(positions) => Box::new(positions.iter()),
             Self::Lasso { prefix, repeat } => Box::new(prefix.iter().chain(repeat)),
-            Self::Timestamped(trace) => {
-                Box::new(trace.positions.iter().map(|position| &position.document))
-            }
+            Self::Timestamped(trace) => Box::new(
+                ordered_timestamped_positions(trace)
+                    .into_iter()
+                    .map(|position| &position.document),
+            ),
         }
     }
 
@@ -114,6 +117,67 @@ impl TraceInput {
             }),
         }
     }
+}
+
+fn ordered_timestamped_positions(input: &TimestampedTraceInput) -> Vec<&TimestampedObservation> {
+    let mut positions: Vec<_> = input.positions.iter().collect();
+    positions.sort_by(|left, right| {
+        left.stamp
+            .cmp(&right.stamp)
+            .then_with(|| match (&left.order, &right.order) {
+                (Some(left), Some(right)) if left.authority == right.authority => {
+                    left.key.cmp(&right.key)
+                }
+                _ => std::cmp::Ordering::Equal,
+            })
+    });
+    positions
+}
+
+fn same_stamp_order_refusal(
+    input: &TimestampedTraceInput,
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+) -> Option<u64> {
+    let order_sensitive = clause.formula().nodes().iter().any(|node| {
+        matches!(
+            node,
+            FormulaNode::Binary {
+                operator: BinaryTemporal::Until
+                    | BinaryTemporal::Release
+                    | BinaryTemporal::Since
+                    | BinaryTemporal::Triggered,
+                ..
+            }
+        )
+    });
+    if !order_sensitive {
+        return None;
+    }
+    let mut start = 0;
+    while start < input.positions.len() {
+        let stamp = input.positions[start].stamp;
+        let mut end = start + 1;
+        while end < input.positions.len() && input.positions[end].stamp == stamp {
+            end += 1;
+        }
+        if end - start > 1 {
+            let Some(first_order) = input.positions[start].order.as_ref() else {
+                return Some(u64::try_from(end - 1).unwrap_or(u64::MAX));
+            };
+            let authority = first_order.authority.as_str();
+            let mut keys = std::collections::BTreeSet::new();
+            for position in &input.positions[start..end] {
+                let Some(order) = position.order.as_ref() else {
+                    return Some(u64::try_from(end - 1).unwrap_or(u64::MAX));
+                };
+                if order.authority != authority || !keys.insert(order.key) {
+                    return Some(u64::try_from(end - 1).unwrap_or(u64::MAX));
+                }
+            }
+        }
+        start = end;
+    }
+    None
 }
 
 /// FR-330 Inputs: the `{population, key}` object the clause's `over`
@@ -279,11 +343,19 @@ pub(super) fn run_temporal(
         ));
     };
 
+    if let TraceInput::Timestamped(input) = trace {
+        if let Some(position) = same_stamp_order_refusal(input, clause) {
+            return late(ClauseDisposition::TemporalRefusal(
+                TemporalTraceRefusal::SameStampOrderUnavailable { position },
+            ));
+        }
+    }
+
     let mut meter = Meter::new(run.accounting);
     let observed = match trace {
         TraceInput::Timestamped(input) => {
-            let stamps = input
-                .positions
+            let ordered_positions = ordered_timestamped_positions(input);
+            let stamps = ordered_positions
                 .iter()
                 .map(|position| Rational::from_integer(Integer::from(position.stamp)))
                 .collect();
@@ -363,8 +435,8 @@ fn finite_window_verdict(
     clause: &qsl_semantics::check::CheckedTemporalClause,
     pending_activation: Option<(qsl_eval::temporal::TemporalPosition, Rational)>,
 ) -> TemporalVerdict {
-    let stamps = input
-        .positions
+    let ordered_positions = ordered_timestamped_positions(input);
+    let stamps = ordered_positions
         .iter()
         .map(|position| Rational::from_integer(Integer::from(position.stamp)))
         .collect();
@@ -388,7 +460,7 @@ fn finite_window_verdict(
         (qsl_eval::temporal::TemporalPosition::new(0), deadline)
     };
     let position = position.index();
-    match outcome {
+    let verdict = match outcome {
         TemporalOutcome::Pending if input.watermark >= deadline => {
             if input
                 .complete_through
@@ -417,7 +489,34 @@ fn finite_window_verdict(
             },
         },
         other => verdict(other),
+    };
+    if !input.authoritative_origin
+        && input.positions[0].stamp > 0
+        && has_past_operator(clause)
+        && matches!(verdict, TemporalVerdict::Violated { .. })
+    {
+        TemporalVerdict::Indeterminate {
+            at: position,
+            reason: TemporalIndeterminateReason::MissingHistory,
+        }
+    } else {
+        verdict
     }
+}
+
+fn has_past_operator(clause: &qsl_semantics::check::CheckedTemporalClause) -> bool {
+    clause.formula().nodes().iter().any(|node| {
+        matches!(
+            node,
+            FormulaNode::Unary {
+                operator: UnaryTemporal::Once | UnaryTemporal::Historically,
+                ..
+            } | FormulaNode::Binary {
+                operator: BinaryTemporal::Since | BinaryTemporal::Triggered,
+                ..
+            }
+        )
+    })
 }
 
 /// The spine's own form of the evaluator's outcome (FR-100-AC-8).

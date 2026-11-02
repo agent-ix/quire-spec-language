@@ -372,6 +372,36 @@ impl ClauseDisposition {
             _ => self.category().as_str(),
         }
     }
+
+    /// FR-285's exit code, preserving finite-window temporal outcomes that
+    /// the shared category enum cannot distinguish.
+    pub fn exit_code(&self) -> u8 {
+        if let Self::Temporal(outcome) = self {
+            outcome.exit_code()
+        } else {
+            self.category().trace_exit_code()
+        }
+    }
+}
+
+/// The FR-285 severity order for a finite-window clause batch. The QSL
+/// run_clause entry currently returns one report; callers aggregating its
+/// temporal items can use this same order without collapsing `indeterminate`
+/// into the shared catalog's `inconclusive` category.
+pub fn temporal_batch_exit_code<'a>(outcomes: impl IntoIterator<Item = &'a TemporalVerdict>) -> u8 {
+    outcomes
+        .into_iter()
+        .map(TemporalVerdict::exit_code)
+        .max_by_key(|code| match code {
+            30 => 6,
+            20 => 5,
+            21 => 4,
+            22 => 3,
+            10 => 2,
+            11 => 1,
+            _ => 0,
+        })
+        .unwrap_or(0)
 }
 
 /// The settlement of a temporal clause on one trace (FR-327 "Outputs"), as
@@ -470,6 +500,18 @@ impl TemporalVerdict {
             Self::Incomplete(_) | Self::WindowLimitReached { .. } => "incomplete",
         }
     }
+
+    /// FR-285's process exit for a temporal verdict, including the
+    /// finite-window `indeterminate` category absent from the shared catalog.
+    pub const fn exit_code(&self) -> u8 {
+        match self {
+            Self::Holds | Self::Pending | Self::PendingWindow { .. } => 0,
+            Self::Violated { .. } | Self::Undefined { .. } => 10,
+            Self::Indeterminate { .. } => 11,
+            Self::MissingFairnessPremise { .. } => 21,
+            Self::Incomplete(_) | Self::WindowLimitReached { .. } => 22,
+        }
+    }
 }
 
 /// Why closed finite-window evidence cannot determine a Boolean result.
@@ -542,6 +584,13 @@ pub enum TemporalTraceRefusal {
     /// A lasso with an empty loop (FR-329 "Lasso shape").
     #[error("a lasso holds at least one loop position")]
     EmptyLoop,
+    /// Two equal-stamp positions used by an order-sensitive operator lack
+    /// comparable keys from one authority.
+    #[error("timestamped position {position} has no comparable same-stamp order key")]
+    SameStampOrderUnavailable {
+        /// Later admitted position where ordering became ambiguous.
+        position: u64,
+    },
     /// A lasso's prefix and loop together exceed `u64` positions.
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
@@ -583,6 +632,7 @@ impl TemporalTraceRefusal {
         match self {
             Self::EmptyTrace
             | Self::EmptyLoop
+            | Self::SameStampOrderUnavailable { .. }
             | Self::TraceTooLong
             | Self::TupleArity { .. }
             | Self::Position(_)
