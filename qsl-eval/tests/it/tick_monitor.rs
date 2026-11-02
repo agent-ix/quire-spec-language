@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    definitely_before, within_bound, TickBound, TickMonitorReference, TickMonitorSpec,
-    TickOutcome, TickStep,
+    definitely_before, within_bound, TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome,
+    TickStep,
 };
 use qsl_semantics::check::{CheckedInterval, FormulaNode};
 use quire_exact::{Integer, Rational};
@@ -112,9 +112,7 @@ fn deadline_outcome(uncertainty: Rational, ack_tick: u64, watermark: Option<u64>
         .step(&reading(ack_tick, &[(req, false), (ack, true)]))
         .unwrap();
     if let Some(boundary) = watermark {
-        monitor
-            .step(&TickStep::Watermark { boundary })
-            .unwrap();
+        monitor.step(&TickStep::Watermark { boundary }).unwrap();
     }
     let eventually = plan
         .fixture
@@ -166,9 +164,14 @@ fn watermark_settles_the_open_deadline_and_a_poll_does_not() {
         .step(&reading(0, &[(req, true), (ack, false)]))
         .unwrap();
     assert_eq!(monitor.outcome(node, 0), Some(TickOutcome::Pending));
-    assert!(monitor.step(&TickStep::Poll { reading: 5000 }).unwrap().is_empty());
+    assert!(monitor
+        .step(&TickStep::Poll { reading: 5000 })
+        .unwrap()
+        .is_empty());
     assert_eq!(monitor.outcome(node, 0), Some(TickOutcome::Pending));
-    let settled = monitor.step(&TickStep::Watermark { boundary: 3001 }).unwrap();
+    let settled = monitor
+        .step(&TickStep::Watermark { boundary: 3001 })
+        .unwrap();
     assert!(settled
         .iter()
         .any(|result| result.subformula == node && result.outcome == TickOutcome::False));
@@ -222,7 +225,9 @@ fn counter_wraps_and_a_gap_fails_the_open_instance() {
         .unwrap()
         .node
         .index();
-    let results = monitor.step(&reading(65500, &[(req, false), (ack, false)])).unwrap();
+    let results = monitor
+        .step(&reading(65500, &[(req, false), (ack, false)]))
+        .unwrap();
     assert!(results.iter().any(|result| result.subformula == node
         && result.outcome
             == TickOutcome::Failed {
@@ -245,8 +250,7 @@ fn counter_wraps_and_a_gap_fails_the_open_instance() {
 fn tick_cover_vectors_decide_by_the_endpoint_rule() {
     let path = std::path::Path::new(&std::env::var("QSPEC_DIR").expect("QSPEC_DIR"))
         .join("proposals/checked-package-v2/tick-cover-vectors.json");
-    let vectors: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let vectors: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     for case in vectors["cases"].as_array().unwrap() {
         let u = ratio(case["uncertainty"].as_i64().unwrap(), 1);
         match case["kind"].as_str().unwrap() {

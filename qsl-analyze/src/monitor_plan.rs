@@ -10,8 +10,8 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     plan_obligations, AtomId, ClockBindingKey, MonitorAtom, MonitorPlanRefusal, MonitorProgram,
-    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan, TimingObligation,
-    TimingObligationSettings,
+    MonitorSubject, MonitorTarget, PlanId, SubformulaId, TickInterval, TimedMonitorPlan,
+    TimingObligation, TimingObligationSettings,
 };
 use qsl_semantics::check::{CheckedInterval, CheckedTemporalClause, FormulaNode};
 use qsl_semantics::library::LibraryName;

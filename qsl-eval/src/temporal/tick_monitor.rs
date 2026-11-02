@@ -416,9 +416,10 @@ impl<'f> TickMonitorReference<'f> {
     }
 
     fn closed(&self, node: usize, tick: i128) -> bool {
-        self.spec.bounds.get(&node).is_some_and(|bound| {
-            q(self.horizon()).sub(&q(tick)).sub(&self.width) >= bound.upper
-        })
+        self.spec
+            .bounds
+            .get(&node)
+            .is_some_and(|bound| q(self.horizon()).sub(&q(tick)).sub(&self.width) >= bound.upper)
     }
 
     fn member_val(member: Member) -> Val {
@@ -453,13 +454,7 @@ impl<'f> TickMonitorReference<'f> {
     }
 
     /// Evaluate the temporal `node` at `position` over `cells`, ascending.
-    fn temporal(
-        &self,
-        node: usize,
-        position: usize,
-        cells: &[Cell],
-        memo: &mut Memo,
-    ) -> Val {
+    fn temporal(&self, node: usize, position: usize, cells: &[Cell], memo: &mut Memo) -> Val {
         let Some((op, left, right, _)) = operator(&self.spec.formula.nodes()[node]) else {
             return Val::UNKNOWN;
         };
@@ -478,12 +473,7 @@ impl<'f> TickMonitorReference<'f> {
                 let mut prefix = Val::TRUE;
                 for cell in cells.iter().filter(|cell| cell.first >= position) {
                     let same = cell.first == position && cell.last == position;
-                    let member = self.member(
-                        node,
-                        cell.t_first - tick,
-                        cell.t_last - tick,
-                        same,
-                    );
+                    let member = self.member(node, cell.t_first - tick, cell.t_last - tick, same);
                     let contribution = Self::member_val(member)
                         .and(psi(self, cell, memo))
                         .and(prefix);
@@ -491,26 +481,19 @@ impl<'f> TickMonitorReference<'f> {
                     prefix = prefix.and(phi(self, cell, memo));
                 }
                 if !self.closed(node, tick) {
-                    acc = acc.or(
-                        Val {
-                            open: BOTH,
-                            closed: ONLY_F,
-                            lost: None,
-                        }
-                        .and(prefix),
-                    );
+                    acc = acc.or(Val {
+                        open: BOTH,
+                        closed: ONLY_F,
+                        lost: None,
+                    }
+                    .and(prefix));
                 }
             }
             Dir::Past => {
                 let mut suffix = Val::TRUE;
                 for cell in cells.iter().rev().filter(|cell| cell.last <= position) {
                     let same = cell.first == position && cell.last == position;
-                    let member = self.member(
-                        node,
-                        tick - cell.t_last,
-                        tick - cell.t_first,
-                        same,
-                    );
+                    let member = self.member(node, tick - cell.t_last, tick - cell.t_first, same);
                     let contribution = Self::member_val(member)
                         .and(psi(self, cell, memo))
                         .and(suffix);
@@ -596,9 +579,7 @@ impl<'f> TickMonitorReference<'f> {
     ) -> Result<Vec<TickResult>, TickStepError> {
         let delta = match self.baseline {
             None => 0,
-            Some(base) => {
-                (i128::from(reading) - i128::from(base)).rem_euclid(self.modulus())
-            }
+            Some(base) => (i128::from(reading) - i128::from(base)).rem_euclid(self.modulus()),
         };
         if delta > i128::from(self.spec.max_reading_gap) {
             self.baseline = Some(reading);
@@ -636,11 +617,9 @@ impl<'f> TickMonitorReference<'f> {
     fn add_event(&mut self, node: usize, position: usize) {
         let tick = self.events[position].tick;
         let future = self.is_future(node);
-        let capacity = self
-            .spec
-            .capacities
-            .get(&node)
-            .map_or(usize::MAX, |value| usize::try_from(*value).unwrap_or(usize::MAX));
+        let capacity = self.spec.capacities.get(&node).map_or(usize::MAX, |value| {
+            usize::try_from(*value).unwrap_or(usize::MAX)
+        });
         let cell = Cell {
             first: position,
             last: position,
@@ -692,9 +671,7 @@ impl<'f> TickMonitorReference<'f> {
             };
             let width = self.width.clone();
             if let Some(buffer) = self.buffers.get_mut(&node) {
-                buffer.retain(|cell| {
-                    q(horizon).sub(&q(cell.t_last)).sub(&width) < bound.upper
-                });
+                buffer.retain(|cell| q(horizon).sub(&q(cell.t_last)).sub(&width) < bound.upper);
             }
         }
     }

@@ -277,8 +277,8 @@ pub use model_check::subject_identity::SubjectIdentity;
 pub use monitor_plan::{
     canonical_rational, plan_obligations, ActivationToken, AtomId, ClockBindingKey, FormulaToken,
     MonitorAtom, MonitorPlanRefusal, MonitorProgram, MonitorSubject, MonitorTarget, PlanId,
-    PlanRootPremises, PremiseDefect, SubformulaId, PLAN_ROOT_BINDINGS, TickInterval, TimedMonitorPlan,
-    TimingObligation, TimingObligationSettings,
+    PlanRootPremises, PremiseDefect, SubformulaId, TickInterval, TimedMonitorPlan,
+    TimingObligation, TimingObligationSettings, PLAN_ROOT_BINDINGS,
 };
 
 // FR-492: the refinement simulation query, its request and kind, as

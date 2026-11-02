@@ -244,12 +244,30 @@ fn each_premise_alone_changes_the_complete_plan_identity() {
     let base = premise_plan(formula, &base_target());
     assert_eq!(base.id(), premise_plan(formula, &base_target()).id());
     let changed: Vec<MonitorTarget> = vec![
-        MonitorTarget { counter: "counter2".to_owned(), ..base_target() },
-        MonitorTarget { width_bits: 24, ..base_target() },
-        MonitorTarget { uncertainty: ratio(1, 2), ..base_target() },
-        MonitorTarget { max_event_rate: Some(ratio(1, 10)), ..base_target() },
-        MonitorTarget { max_reading_gap: 101, ..base_target() },
-        MonitorTarget { max_event_rate: Some(ratio(3, 1)), ..base_target() },
+        MonitorTarget {
+            counter: "counter2".to_owned(),
+            ..base_target()
+        },
+        MonitorTarget {
+            width_bits: 24,
+            ..base_target()
+        },
+        MonitorTarget {
+            uncertainty: ratio(1, 2),
+            ..base_target()
+        },
+        MonitorTarget {
+            max_event_rate: Some(ratio(1, 10)),
+            ..base_target()
+        },
+        MonitorTarget {
+            max_reading_gap: 101,
+            ..base_target()
+        },
+        MonitorTarget {
+            max_event_rate: Some(ratio(3, 1)),
+            ..base_target()
+        },
     ];
     for target in changed {
         assert_ne!(base.id(), premise_plan(formula, &target).id(), "{target:?}");
@@ -271,19 +289,67 @@ fn each_premise_alone_changes_the_complete_plan_identity() {
 #[trace("TC-978", "FR-487-AC-4")]
 #[test]
 fn producer_premises_meet_the_plan_root_reader_ranges() {
-    let premises = premise_plan("once[0 ms, 10 ms] holds(c.versionNumber = 2)", &base_target())
-        .root_premises();
+    let premises = premise_plan(
+        "once[0 ms, 10 ms] holds(c.versionNumber = 2)",
+        &base_target(),
+    )
+    .root_premises();
     assert_eq!(premises.validate(), Ok(()));
-    assert_eq!(qsl_replay::canonical_rational(&premises.max_event_rate), "2");
+    assert_eq!(
+        qsl_replay::canonical_rational(&premises.max_event_rate),
+        "2"
+    );
     assert_eq!(qsl_replay::canonical_rational(&ratio(1, 10)), "1/10");
     for (edit, defect) in [
-        (qsl_replay::PlanRootPremises { counter_width_bits: 0, ..premises.clone() }, qsl_replay::PremiseDefect::CounterWidth),
-        (qsl_replay::PlanRootPremises { counter_width_bits: 65, ..premises.clone() }, qsl_replay::PremiseDefect::CounterWidth),
-        (qsl_replay::PlanRootPremises { max_reading_gap: 1 << 20, ..premises.clone() }, qsl_replay::PremiseDefect::MaxReadingGap),
-        (qsl_replay::PlanRootPremises { max_event_rate: ratio(0, 1), ..premises.clone() }, qsl_replay::PremiseDefect::MaxEventRate),
-        (qsl_replay::PlanRootPremises { max_event_rate: ratio(-1, 2), ..premises.clone() }, qsl_replay::PremiseDefect::MaxEventRate),
-        (qsl_replay::PlanRootPremises { counter: String::new(), ..premises.clone() }, qsl_replay::PremiseDefect::Counter),
-        (qsl_replay::PlanRootPremises { uncertainty: ratio(-1, 2), ..premises.clone() }, qsl_replay::PremiseDefect::Uncertainty),
+        (
+            qsl_replay::PlanRootPremises {
+                counter_width_bits: 0,
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::CounterWidth,
+        ),
+        (
+            qsl_replay::PlanRootPremises {
+                counter_width_bits: 65,
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::CounterWidth,
+        ),
+        (
+            qsl_replay::PlanRootPremises {
+                max_reading_gap: 1 << 20,
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::MaxReadingGap,
+        ),
+        (
+            qsl_replay::PlanRootPremises {
+                max_event_rate: ratio(0, 1),
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::MaxEventRate,
+        ),
+        (
+            qsl_replay::PlanRootPremises {
+                max_event_rate: ratio(-1, 2),
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::MaxEventRate,
+        ),
+        (
+            qsl_replay::PlanRootPremises {
+                counter: String::new(),
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::Counter,
+        ),
+        (
+            qsl_replay::PlanRootPremises {
+                uncertainty: ratio(-1, 2),
+                ..premises.clone()
+            },
+            qsl_replay::PremiseDefect::Uncertainty,
+        ),
     ] {
         assert_eq!(edit.validate(), Err(defect));
     }
@@ -330,7 +396,10 @@ fn admission_refuses_a_plan_with_one_component_replaced() {
             Err(PlanAdmissionRefusal::NotDerivedFromSelection)
         );
     }
-    let other_target = MonitorTarget { max_reading_gap: 7, ..base_target() };
+    let other_target = MonitorTarget {
+        max_reading_gap: 7,
+        ..base_target()
+    };
     let other = premise_plan(formula, &other_target);
     assert_ne!(other.id(), plan.id());
     assert!(admit(&package, library(), clause, &other_target, &other).is_ok());
