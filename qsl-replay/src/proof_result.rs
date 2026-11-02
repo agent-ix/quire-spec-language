@@ -2246,21 +2246,14 @@ mod tests {
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
-        // Keep this sample map complete against the live FR-331 schema. A
-        // newly admitted wire value must get a representative value and an
-        // expected O-16 category here before this test can pass.
-        let qspec_dir = std::env::var_os("QSPEC_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../quire-specification")
-            });
-        let schema_path = qspec_dir.join("proposals/backend-provider-v1/schema.json");
-        let schema: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&schema_path)
-                .unwrap_or_else(|error| panic!("read FR-331 schema at {schema_path:?}: {error}")),
-        )
-        .unwrap_or_else(|error| panic!("parse FR-331 schema at {schema_path:?}: {error}"));
+        // This ResultValue definition is copied verbatim from QSpec main
+        // f685ac354's FR-331 schema. A newly admitted wire value must update
+        // this fixture and get a representative value and expected O-16
+        // category here before this test can pass.
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/fr331-result-value.schema.json"
+        ))
+        .expect("parse checked-in FR-331 ResultValue schema fixture");
         let schema_values: BTreeSet<&str> = schema["$defs"]["ResultValue"]["enum"]
             .as_array()
             .expect("FR-331 ResultValue is an enum")
