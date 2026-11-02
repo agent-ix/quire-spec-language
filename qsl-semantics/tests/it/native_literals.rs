@@ -408,6 +408,14 @@ fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
             quire_exact::TextProfile::BinaryUtf8,
             2,
         ),
+        (
+            "Text[1, 8; nfc]",
+            "",
+            1,
+            8,
+            quire_exact::TextProfile::Nfc,
+            0,
+        ),
     ] {
         let refusal = refused(&format!(
             "function f using v(): {result} pure {{ Text(\"{literal}\") }}"
@@ -425,6 +433,10 @@ fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
             }
         );
         assert!(refusal.location.path().is_empty());
+        assert!(matches!(
+            refusal.location.origin,
+            Origin::Body { ref function, .. } if function == "f"
+        ));
     }
 }
 
@@ -438,6 +450,7 @@ fn text_literals_require_a_text_position_and_one_quoted_argument() {
         ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0]),
         ("x: String", "Boolean", "x = Text(\"a\")", vec![1]),
         ("x: String", "Text[0, 8; nfc]", "Text(x)", vec![0]),
+        ("", "Text[0, 8; nfc]", "Text(5)", vec![0]),
         ("", "Text[0, 8; nfc]", "Text()", vec![]),
         ("", "Text[0, 8; nfc]", "Text(\"a\", \"b\")", vec![]),
     ] {
@@ -446,6 +459,10 @@ fn text_literals_require_a_text_position_and_one_quoted_argument() {
         ));
         assert_eq!(refusal.cause, mismatch(), "{body}");
         assert_eq!(refusal.location.path(), path, "{body}");
+        assert!(matches!(
+            refusal.location.origin,
+            Origin::Body { ref function, .. } if function == "f"
+        ));
     }
 }
 
