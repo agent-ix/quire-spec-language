@@ -152,7 +152,7 @@ productions! {
     UrgentDeclaration,
     #[doc = "`taskset <identifier> { <task>* }`: a task set for one preemptive uniprocessor (QSpec FR-419)."]
     TasksetDeclaration,
-    #[doc = "`task <identifier> (periodic | sporadic) <signed-quantity> deadline <signed-quantity> wcet <signed-quantity> [priority <uint>] [jitter <signed-quantity>] [blocking <signed-quantity>] (lo [wcet_hi <signed-quantity>] | hi wcet_hi <signed-quantity>) ;`: one task of a task set."]
+    #[doc = "`task <identifier> (periodic | sporadic) <signed-quantity> deadline <signed-quantity> [bcet <signed-quantity>] wcet <signed-quantity> [priority <uint>] [jitter <signed-quantity>] [blocking <signed-quantity>] (lo [wcet_hi <signed-quantity>] | hi wcet_hi <signed-quantity>) ;`: one task of a task set."]
     Task,
     #[doc = "`[-] <quantity-literal>`: a time value a task states, whose sign S3 checks."]
     SignedQuantity,
