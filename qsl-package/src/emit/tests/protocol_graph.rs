@@ -1223,10 +1223,10 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     else {
         panic!("ThirdGood emits alone: {:?}", standalone_third.results());
     };
-    let with_two_good = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+    let three_results = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
         "{good}\n{broken}\n{third_good}"
     ))))
-    .expect("good protocols remain emit-able around a refused protocol");
+    .expect("the result API retains good protocols on both sides of a refusal");
     let [ProtocolEmissionResult::Emitted {
         declaration: first,
         nodes: first_nodes,
@@ -1238,21 +1238,37 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         declaration: third,
         nodes: third_nodes,
         clause_key: third_key,
-    }] = with_two_good.results()
+    }] = three_results.results()
     else {
-        panic!(
-            "expected [Emitted, Refused, Emitted]: {:?}",
-            with_two_good.results()
-        );
+        panic!("unexpected result order: {:?}", three_results.results());
     };
     assert_eq!(first, "Flow");
     assert_eq!(refused, "Broken");
     assert_eq!(third, "ThirdGood");
-    assert_eq!(first_nodes, baseline, "Flow remains byte-for-byte stable");
+    if first_nodes != baseline {
+        for (index, (left, right)) in first_nodes.iter().zip(baseline).enumerate() {
+            if left != right {
+                let left_object = left.as_object().expect("node object");
+                let right_object = right.as_object().expect("node object");
+                let differing: Vec<_> = left_object
+                    .keys()
+                    .chain(right_object.keys())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .filter(|key| left_object.get(*key) != right_object.get(*key))
+                    .collect();
+                eprintln!("structural Flow node {index} differs in {differing:?}");
+            }
+        }
+    }
+    assert_eq!(
+        first_nodes, baseline,
+        "Flow differs from its standalone nodes"
+    );
     assert_eq!(first_key, baseline_clause_key);
     assert_eq!(
         third_nodes, third_baseline,
-        "ThirdGood remains byte-for-byte stable"
+        "ThirdGood differs from standalone nodes"
     );
     assert_eq!(third_key, third_clause_key);
 
@@ -1287,6 +1303,24 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         ),
         "removing Flow does not change Broken's refusal reason"
     );
+    let padded_without_flow = format!("{}\n{broken}", " ".repeat(good.len()));
+    let padded_without_flow =
+        emit_checked_with_protocol_results(&CheckedPackage::link(check(&padded_without_flow)))
+            .expect("Broken refuses without Flow");
+    let ProtocolEmissionResult::Refused {
+        refusal: padded_refusal,
+        ..
+    } = &padded_without_flow.results()[0]
+    else {
+        panic!(
+            "Broken remains refused without Flow: {:?}",
+            padded_without_flow.results()
+        );
+    };
+    assert_eq!(
+        padded_refusal, refusal,
+        "removing Flow while preserving X's source region changes no refusal field"
+    );
 
     let no_owner = flow_over("Boolean", "on origin", "role Buyer on M::Order;");
     let no_owner_pair = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
@@ -1314,6 +1348,57 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         refusal.cause,
         qsl_semantics::check::CheckCause::ProtocolReference(ref cause)
             if cause.construct() == Some(ProtocolConstruct::NoOwnerModel)
+    ));
+
+    let dependent = good
+        .replace("protocol Flow", "protocol Dependent")
+        .replace("join all [a, b]", "join predicate(Broken) [a, b]");
+    let dependent_results = emit_checked_with_protocol_results(&CheckedPackage::link(check(
+        &format!("{good}\n{broken}\n{dependent}"),
+    )))
+    .expect("a refused predicate dependency retains the independent results");
+    assert_eq!(dependent_results.diagnostics().count(), 2);
+    assert!(matches!(
+        dependent_results.results(),
+        [
+            ProtocolEmissionResult::Emitted {
+                declaration: first,
+                nodes: first_nodes,
+                ..
+            },
+            ProtocolEmissionResult::Refused {
+                declaration: refused,
+                refusal: primary,
+            },
+            ProtocolEmissionResult::Refused {
+                declaration: dependent_name,
+                refusal: dependent_refusal,
+            }
+        ] if first == "Flow"
+            && refused == "Broken"
+            && dependent_name == "Dependent"
+            && first_nodes == baseline
+            && matches!(
+                &dependent_results.aggregate(),
+                ProtocolEmissionAggregate::Refused { primary: aggregate_primary }
+                    if aggregate_primary == primary
+            )
+            && matches!(
+                &dependent_refusal.cause,
+                qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+                    if matches!(
+                        cause.as_ref(),
+                        qsl_semantics::check::ProtocolAnchorCause::RefusedDependency {
+                            function,
+                            refused_dependency,
+                            consequence: true,
+                            ..
+                        } if function == "Broken"
+                            && refused_dependency.declaration == "Broken"
+                            && refused_dependency.code == qsl_foundation::diagnostic::Code::MissingDeclaration
+                            && refused_dependency.cause == "missing-name"
+                    )
+            )
     ));
 }
 

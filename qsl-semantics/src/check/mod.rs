@@ -459,9 +459,9 @@ pub use refusal::{
     IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
     ProtocolAnchorCause, ProtocolCheckRefusal, ProtocolConstruct, ProtocolReferenceCause,
-    ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration, SlotKind, StageLimitCause,
-    StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause, TimeUnitCause, TimedConstruct,
-    TimedOmission, UnwrittenTimedMember,
+    ProvedInterval, QualifiedCandidate, RefusedProtocolDependency, RelatedEnd, ShadowedDeclaration,
+    SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause,
+    TimeUnitCause, TimedConstruct, TimedOmission, UnwrittenTimedMember,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -3568,6 +3568,47 @@ impl PackageDeclarations {
                         .flat_map(|result| result.refusals.iter().cloned()),
                 );
                 return Err(with_deferred(cancelled, &deferred));
+            }
+        }
+        // A predicate join naming a protocol that was refused above is a
+        // consequence of that refusal, not an ill-typed join target. Keep
+        // both the missing-name reference locus and the target's original
+        // typed refusal pair in the structured cause.
+        let refused_protocol_causes: BTreeMap<String, _> = protocol_check_refusals
+            .iter()
+            .filter_map(|result| {
+                let refusal = result.refusals.first()?;
+                Some((
+                    result.declaration.clone(),
+                    (refusal.cause.code(), refusal.cause.cause()?),
+                ))
+            })
+            .collect();
+        for result in &mut protocol_check_refusals {
+            for refusal in &mut result.refusals {
+                let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+                    continue;
+                };
+                let ProtocolAnchorCause::JoinFunctionKind { function, span, .. } = cause.as_ref()
+                else {
+                    continue;
+                };
+                let Some((code, dependency_cause)) =
+                    refused_protocol_causes.get(function.as_str()).copied()
+                else {
+                    continue;
+                };
+                refusal.cause =
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::RefusedDependency {
+                        function: function.clone(),
+                        refused_dependency: Box::new(RefusedProtocolDependency {
+                            declaration: function.clone(),
+                            code,
+                            cause: dependency_cause,
+                        }),
+                        consequence: true,
+                        span: *span,
+                    }));
             }
         }
         let original_protocol_index = |checked_index: usize| {

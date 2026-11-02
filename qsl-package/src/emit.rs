@@ -434,13 +434,16 @@ pub struct Emission {
 /// A protocol's result from checked-package emission (FR-383).
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProtocolEmissionResult {
-    /// The declaration emitted its checked clause and all owned nodes.
+    /// The declaration emitted its checked clause and owned nodes. The node
+    /// records retain structural operand ids, so a sibling protocol cannot
+    /// change their bytes by shifting package-level index segments.
     Emitted {
         /// The authored protocol declaration name.
         declaration: String,
         /// The structural identity of the emitted clause.
         clause_key: NodeKey,
-        /// The protocol-owned wire nodes in canonical package order.
+        /// The protocol-owned semantic nodes in canonical package order,
+        /// with structural operand ids and no package-level index segments.
         nodes: Vec<serde_json::Value>,
     },
     /// The declaration was refused during checking. Independent results are
@@ -3537,7 +3540,7 @@ pub fn emit_checked_with_protocol_results(
         Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
         Err(refusal) => return Err(refusal),
     };
-    let wire_nodes = emission
+    let structural_nodes = emission
         .as_ref()
         .map(|emission| {
             serde_json::from_slice::<serde_json::Value>(emission.package().bytes())
@@ -3548,9 +3551,19 @@ pub fn emit_checked_with_protocol_results(
                         .cloned()
                         .ok_or_else(|| encoding("emitted semantic graph has no nodes array"))
                 })
+                .and_then(|nodes| {
+                    serde_json::from_value::<Vec<CheckedSemanticNodeV2>>(serde_json::Value::Array(
+                        nodes,
+                    ))
+                    .map_err(encoding)
+                })
         })
         .transpose()?;
     let ids = StructuralIds::default();
+    let mut structural_nodes = structural_nodes;
+    if let Some(nodes) = structural_nodes.as_mut() {
+        read_index_segments(&ids, nodes, &mut Vec::new())?;
+    }
     let mut results = Vec::with_capacity(graph.protocol_order().len());
     let mut first_refusal = None;
     let mut first_incomplete = None;
@@ -3589,13 +3602,7 @@ pub fn emit_checked_with_protocol_results(
             .clause
             .clone()
             .ok_or(EmitRefusal::ProtocolResultInvariant)?;
-        let mut owned_ids = std::collections::HashSet::new();
-        let mut insert_key = |key: &NodeKey| -> Result<(), EmitRefusal> {
-            let id = serde_json::to_value(node_id(&ids, key)).map_err(encoding)?;
-            owned_ids.insert(serde_json::to_string(&id).map_err(encoding)?);
-            Ok(())
-        };
-        insert_key(&clause_key)?;
+        let mut owned_ids = Vec::new();
         for key in keys
             .nodes
             .values()
@@ -3604,27 +3611,27 @@ pub fn emit_checked_with_protocol_results(
             .chain(keys.compensations.iter())
             .chain(keys.terminal.iter())
         {
-            insert_key(key)?;
+            owned_ids.push(node_id(&ids, key));
         }
-        for binder in &keys.binders {
-            insert_key(&binder.node)?;
-        }
-        for expression in &keys.expressions {
-            for binder in &expression.binders {
-                insert_key(&binder.node)?;
+        owned_ids.push(node_id(&ids, &clause_key));
+        let nodes = if let Some(structural_nodes) = structural_nodes.as_ref() {
+            let nodes: Vec<serde_json::Value> = structural_nodes
+                .iter()
+                .filter(|node| owned_ids.contains(&node.node_id))
+                .map(serde_json::to_value)
+                .collect::<Result<_, _>>()
+                .map_err(encoding)?;
+            if !nodes.iter().any(|node| {
+                node.get("semantic_form")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("protocol_clause")
+            }) {
+                return Err(EmitRefusal::ProtocolResultInvariant);
             }
-        }
-        let nodes = wire_nodes
-            .as_ref()
-            .into_iter()
-            .flatten()
-            .filter(|node| {
-                node.get("node_id")
-                    .and_then(|id| serde_json::to_string(id).ok())
-                    .is_some_and(|id| owned_ids.contains(&id))
-            })
-            .cloned()
-            .collect();
+            nodes
+        } else {
+            return Err(EmitRefusal::ProtocolResultInvariant);
+        };
         results.push(ProtocolEmissionResult::Emitted {
             declaration: declaration.clone(),
             clause_key,
