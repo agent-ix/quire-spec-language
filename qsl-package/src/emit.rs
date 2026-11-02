@@ -102,6 +102,10 @@ pub enum EmitRefusal {
         /// The encoder's message.
         reason: String,
     },
+    /// The checker's retained protocol results and emitted node identities
+    /// do not agree.
+    #[error("the checked graph's per-protocol result mapping is incomplete")]
+    ProtocolResultInvariant,
     /// A protocol reference is bound to a key that is not the key of a node
     /// the emitter writes (FR-218 stale target): a reference binds a key,
     /// never a name, and a name is never looked up again.
@@ -422,6 +426,65 @@ pub struct Emission {
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
+}
+
+/// A protocol's result from checked-package emission (FR-383).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProtocolEmissionResult {
+    /// The declaration emitted its checked clause and all owned nodes.
+    Emitted {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The structural identity of the emitted clause.
+        clause_key: NodeKey,
+        /// The protocol-owned wire nodes in canonical package order.
+        nodes: Vec<serde_json::Value>,
+    },
+    /// The declaration was refused during checking. Independent results are
+    /// retained alongside this refusal.
+    Refused {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The first typed refusal attributed to this declaration.
+        refusal: qsl_semantics::check::CheckRefusal,
+    },
+}
+
+/// The unit-level result of emitting independent protocol results.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProtocolEmissionAggregate {
+    /// Every protocol declaration emitted successfully.
+    Emitted,
+    /// At least one protocol was refused; no package is admitted.
+    Refused {
+        /// The first refused protocol's primary record.
+        primary: qsl_semantics::check::CheckRefusal,
+    },
+}
+
+/// Per-protocol results and the aggregate emission decision.
+#[derive(Clone)]
+pub struct ProtocolEmission {
+    results: Vec<ProtocolEmissionResult>,
+    aggregate: ProtocolEmissionAggregate,
+    emission: Option<Emission>,
+}
+
+impl ProtocolEmission {
+    /// Protocol results in source declaration order.
+    pub fn results(&self) -> &[ProtocolEmissionResult] {
+        &self.results
+    }
+
+    /// The aggregate admission result.
+    pub fn aggregate(&self) -> &ProtocolEmissionAggregate {
+        &self.aggregate
+    }
+
+    /// The package, present only when every protocol result is emitted.
+    pub fn emission(&self) -> Option<&Emission> {
+        self.emission.as_ref()
+    }
 }
 
 /// Debug writes the source map's node keys into the enclosing table, so a
@@ -3423,6 +3486,115 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
         return Ok(emission.clone());
     }
     emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// Emit checked protocols independently and retain each protocol's result
+/// when another protocol was refused by S3 (FR-383 AC-18, AC-28, AC-29).
+/// The returned aggregate carries a package only when every protocol emits.
+pub fn emit_checked_with_protocol_results(
+    package: &CheckedPackage,
+) -> Result<ProtocolEmission, EmitRefusal> {
+    let graph = package.graph();
+    let emission = match emit_checked(package) {
+        Ok(emission) => Some(emission),
+        Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
+        Err(refusal) => return Err(refusal),
+    };
+    let wire_nodes = emission
+        .as_ref()
+        .map(|emission| {
+            serde_json::from_slice::<serde_json::Value>(emission.package().bytes())
+                .map_err(encoding)
+                .and_then(|wire| {
+                    wire.pointer("/semantic_graph/nodes")
+                        .and_then(serde_json::Value::as_array)
+                        .cloned()
+                        .ok_or_else(|| encoding("emitted semantic graph has no nodes array"))
+                })
+        })
+        .transpose()?;
+    let ids = StructuralIds::default();
+    let mut results = Vec::with_capacity(graph.protocol_order().len());
+    let mut first_refusal = None;
+    for declaration in graph.protocol_order() {
+        if let Some(refused) = graph
+            .protocol_refusals()
+            .iter()
+            .find(|refused| refused.declaration == *declaration)
+        {
+            let refusal = refused
+                .refusals
+                .first()
+                .cloned()
+                .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+            first_refusal.get_or_insert_with(|| refusal.clone());
+            results.push(ProtocolEmissionResult::Refused {
+                declaration: declaration.clone(),
+                refusal,
+            });
+            continue;
+        }
+        let keys = graph
+            .protocol_node_keys(declaration)
+            .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+        let clause_key = keys
+            .clause
+            .clone()
+            .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+        let mut owned_ids = std::collections::HashSet::new();
+        let mut insert_key = |key: &NodeKey| {
+            owned_ids.insert(node_id(&ids, key));
+        };
+        insert_key(&clause_key);
+        for key in keys
+            .nodes
+            .values()
+            .chain(keys.channels.values())
+            .chain(keys.roles.values())
+            .chain(keys.compensations.iter())
+            .chain(keys.terminal.iter())
+        {
+            insert_key(key);
+        }
+        for binder in &keys.binders {
+            insert_key(&binder.node);
+        }
+        for expression in &keys.expressions {
+            for binder in &expression.binders {
+                insert_key(&binder.node);
+            }
+        }
+        let nodes = wire_nodes
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .filter(|node| {
+                node.get("node_id")
+                    .and_then(|id| serde_json::from_value::<CheckedNodeId>(id.clone()).ok())
+                    .is_some_and(|id| owned_ids.contains(&id))
+            })
+            .cloned()
+            .collect();
+        results.push(ProtocolEmissionResult::Emitted {
+            declaration: declaration.clone(),
+            clause_key,
+            nodes,
+        });
+    }
+    let aggregate = if let Some(primary) = first_refusal {
+        ProtocolEmissionAggregate::Refused { primary }
+    } else {
+        ProtocolEmissionAggregate::Emitted
+    };
+    let emission = match aggregate {
+        ProtocolEmissionAggregate::Emitted => emission,
+        ProtocolEmissionAggregate::Refused { .. } => None,
+    };
+    Ok(ProtocolEmission {
+        results,
+        aggregate,
+        emission,
+    })
 }
 
 /// Emit a checked package with explicit clock configurations for every

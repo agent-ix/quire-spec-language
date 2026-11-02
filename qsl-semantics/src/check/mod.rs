@@ -773,6 +773,9 @@ pub struct CheckedGraph {
     abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-383: the unit's protocol names in authored declaration order,
+    /// including declarations that have a scoped refusal.
+    protocol_order: Vec<String>,
     /// FR-383: protocol declarations refused by their own checks while
     /// independent declarations continued through checking.
     protocol_refusals: Vec<ProtocolCheckRefusal>,
@@ -906,6 +909,7 @@ impl DebugWith for CheckedGraph {
             model_names,
             abstraction,
             protocols,
+            protocol_order,
             protocol_refusals,
             protocol_classes,
             protocol_node_keys,
@@ -990,6 +994,7 @@ impl DebugWith for CheckedGraph {
             .field("model_names", &model_names)
             .field("abstraction", &Maybe(abstraction, table))
             .field("protocols", &Seq(protocols, table))
+            .field("protocol_order", protocol_order)
             .field("protocol_refusals", protocol_refusals)
             .field(
                 "protocol_classes",
@@ -6426,6 +6431,11 @@ impl PackageDeclarations {
             model_names,
             protocol_classes,
             protocols: checked_protocols,
+            protocol_order: self
+                .protocols
+                .iter()
+                .map(|protocol| protocol.name.name.clone())
+                .collect(),
             protocol_refusals: protocol_check_refusals,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
@@ -7539,6 +7549,11 @@ impl CheckedGraph {
     /// FR-383: typed refusals attributed to individual protocol declarations.
     pub fn protocol_refusals(&self) -> &[ProtocolCheckRefusal] {
         &self.protocol_refusals
+    }
+
+    /// FR-383: protocol names in declaration order, including refused ones.
+    pub fn protocol_order(&self) -> &[String] {
+        &self.protocol_order
     }
 
     /// FR-390's keyed protocol member identities, read by the selected
