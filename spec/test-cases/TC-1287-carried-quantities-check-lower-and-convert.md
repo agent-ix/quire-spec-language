@@ -18,10 +18,12 @@ FR-497-AC-7.
 
 ## Test Procedure
 
-1. Check and lower the type forms of QSpec `CQ-W01` to `CQ-W04` and the
-   ineligible carriers and operand uses of `CQ-W05` to `CQ-W08`, `CQ-W13` and
-   `CQ-W14`, by reference, and compare the nodes with the vectors.
-2. Lower the conversions of `CQ-W09` to `CQ-W12` and `CQ-W15` and compare the
+1. Check and lower the type forms of QSpec `CQ-W01` to `CQ-W04` by reference and
+   compare the nodes with the vectors; check the ineligible carriers and
+   carried-operand uses of FR-497-AC-2 from source, with `CQ-W13` as the
+   dimension refusal. `CQ-W05` to `CQ-W08`, `CQ-W11`, `CQ-W12` and `CQ-W14`
+   are strict-reader wire cases (IR leg) and out of scope here.
+2. Lower the conversions of `CQ-W09`, `CQ-W10` and `CQ-W15` and compare the
    `result_type` node and `mode`.
 3. Evaluate the rows `CQ-E01` to `CQ-E20` under `CheckMode::Kernel` with the
    operands, work limits and `ScalarLimitsV1` tuples each states, and compare

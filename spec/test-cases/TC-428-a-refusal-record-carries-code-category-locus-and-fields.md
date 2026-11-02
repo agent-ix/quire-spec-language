@@ -25,7 +25,7 @@ Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15.
 2. Build a record from an `Evaluation` whose `location` is `None`.
 3. For each `CatalogCoded` cause in FR-096's key table (every row but the
    kernel `Refusal` rows, which step 4 covers), read `catalog_fields()`.
-4. For each of the twelve kernel causes in FR-096's key table, build a
+4. For each of the thirteen kernel causes in FR-096's key table, build a
    record from an `Evaluation` whose outcome is that kernel `Refused`, and
    read the cause's `Refusal::code()` and `Refusal::cause()`. Use the targets
    FR-096-AC-8 names: `Int[-5, 9]`, `Decimal[-100, 100; 0, 2]`,
