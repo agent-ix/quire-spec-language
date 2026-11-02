@@ -351,7 +351,7 @@ to `x`'s node.
 | `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity`, `reference`, `string`, `uuid` or `timestamp`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple, union or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `string`, `uuid` and `timestamp`: no law, no mode, no member and no leaves; for `structural`: leaves `operand:0`, the compared type's text-leaf list | `[ref(l), ref(r)]` |
 | `Coerce(e, interval)` (an integer admitted into an `Int[..]` that does not contain its type) | `convert` | `quire.op.numeric.narrow` | member `type_argument{declaration: T(Int[interval])}` | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand type is an exact numeric type other than the target | `convert` | `quire.op.numeric.convert` | member `type_argument` of the target type node | `[ref(e)]` |
-| `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` (Quantity conversion) | `[ref(e)]` |
+| `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` for a `Quantity<u>` target, and the carried node's `rounding` for a `Quantity<u, C>` target (FR-497) | `[ref(e)]` |
 | `ConvertText(target, e)` (`convert<T>(e)` whose operand has a `Text[..]` or `String` type, QSpec FR-478) | `convert` | `quire.op.text.to_<k>` for a `Text[..]` operand, `quire.op.string.to_<k>` for a `String` operand, where `<k>` is `integer` (`Integer`, `Int[..]`), `decimal` (`Decimal`, `Decimal[..]`), `rational` (`Rational`, `Rational[..]`), `float32`, `float64` or `quantity` (`Quantity<u>`) for the target | law `text_profile` for a `Text[..]` operand, then law `ieee_profile` for a `float32` or `float64` target; mode `rounding` = the target's mode for a decimal or IEEE target (`exact` when the target omits it) and `exact` for a quantity target, no mode for an integer or rational target; member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertDecimal(e, target)` (`convert<T>(e)` to a decimal) | `convert` | `quire.op.numeric.convert` when exact, `quire.op.numeric.convert_rounding` when FR-149 classifies it as scale reduction | member `type_argument` of `target`'s node; for `convert_rounding`, mode `rounding` = `target`'s mode | `[ref(e)]` |
 | `IeeeToRational(e, domain)` | `convert` | `quire.op.ieee.to_rational` | law `ieee_profile`; member `type_argument` of `domain`'s node | `[ref(e)]` |
@@ -404,7 +404,7 @@ rational magnitude and no numeric domain, so the rounding mode it fixes is
 `exact`. FR-322 takes a `rounding` mode from the types
 (`type_pinned_modes` lists `quantity`), and QSpec FR-142 converts a quantity
 into an exact target with no loss. `quire.op.quantity.convert` therefore
-carries mode `rounding` = `exact`.
+carries mode `rounding` = `exact` for a `Quantity<u>` target. A `Quantity<u, C>` target is the carried quantity of FR-497, whose conversion carries the carrier's rounding.
 
 **Text to number.** `check` SHALL build a `convert<T>(e)` whose `e` has a
 `Text[..]` or `String` type as a `ConvertText(T, e)` node of type `T` when `T`
