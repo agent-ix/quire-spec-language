@@ -2,7 +2,9 @@
 //! FR-383-AC-24/25: cyclic protocol references use the checked graph's
 //! recursion-group encoding and read back through I2.
 
+use super::admission_corpus::config_version_unit;
 use super::*;
+use qsl_semantics::check::{CheckCause, CheckingLimitKind};
 
 const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 
@@ -232,6 +234,65 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
     );
 }
 
+#[trace("FR-383-AC-24")]
+#[test]
+fn an_attempt_bearing_protocol_in_a_predicate_cycle_is_grouped_and_reads_back() {
+    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+    let packages = qsl_semantics::model::intake::package_input([document])
+        .expect("the ConfigVersion model admits");
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile p = \"{PROTOCOL_PROFILE}\";\n\
+         model Config = \"example/config-version\";\n\
+         function refers(left: Boolean, right: Boolean): Boolean pure {{ protocol Flow }}\n\
+         protocol Flow using v over (input: Config::ConfigVersion) on origin {{\n\
+           role R on Config::ConfigVersion;\n\
+           run sequence Main {{\n\
+             attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [] \
+               as (tried: Boolean) {{ true }};\n\
+             parallel Fork {{\n\
+               branch west sequence West {{ }}\n\
+               branch east sequence East {{ }}\n\
+             }} join predicate(refers) [west, east];\n\
+           }}\n\
+           finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    );
+    let (graph, model_digest) = {
+        let graph = assemble_with_models(text.as_bytes(), &packages)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("unit checks: {refusals:?}"));
+        (graph, package_identity(document))
+    };
+    let cycle_nodes: Vec<_> = graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.recursion().is_some())
+        .collect();
+    assert!(cycle_nodes
+        .iter()
+        .any(|node| node.semantic_form() == "protocol_clause"));
+    assert!(cycle_nodes
+        .iter()
+        .any(|node| node.semantic_form() == "protocol_reference"));
+
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("package emits");
+    assert_eq!(emission.omitted, []);
+    let mut evidence = read_evidence(&emission);
+    evidence
+        .insert_domain_package_document(model_digest.as_str(), document)
+        .expect("model evidence admitted");
+    let read = read_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::default(),
+        &evidence,
+    );
+    assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
+}
+
 fn mixed_cycle_text(checks: usize, protocol_first: bool) -> String {
     let fixture = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
     let fixture = fixture.replace(
@@ -364,8 +425,28 @@ fn mixed_protocol_cycle_work_is_linear_and_uses_the_exact_budget() {
     let text = mixed_cycle_text(calls, false);
     let exact = measured[1];
     let limits = CheckingLimits::default();
-    assert!(check_result(&text, limits.with_work_budget(0)).is_err());
-    assert!(check_result(&text, limits.with_work_budget(exact - 1)).is_err());
+    for (bound, label) in [(0, "zero units"), (exact - 1, "one unit short")] {
+        let refusals = check_result(&text, limits.with_work_budget(bound))
+            .expect_err("the insufficient S3 work budget refuses");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one typed S3 work refusal for {label}: {refusals:?}");
+        };
+        assert_eq!(
+            refusal.cause.code(),
+            qsl_foundation::Code::StageLimitExceeded,
+            "{label} uses the typed stage-limit cause"
+        );
+        let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+            panic!("a typed resource-exhaustion cause for {label}: {refusal:?}");
+        };
+        assert_eq!(limit.kind, CheckingLimitKind::WorkBudget, "{label}");
+        assert_eq!(
+            limit.kind.setting(),
+            qsl_foundation::Setting::S3WorkUnits,
+            "{label} names the S3 work-unit setting"
+        );
+        assert_eq!(limit.limit, bound, "{label}");
+    }
     assert!(check_result(&text, limits.with_work_budget(exact)).is_ok());
 }
 

@@ -618,14 +618,16 @@ impl Lowering<'_> {
         let Some(owner) = owner else {
             return Err(fault(&location, KeyFault::UncheckedProtocolFact));
         };
-        if protocol.has_attempt() {
-            self.set_protocol_key(index, ProtocolKey::AfterClauses);
-            return Ok(Vec::new());
-        }
         let placeholder = match self.protocol_keys.get(index) {
             Some(ProtocolKey::Keyed(NodeRef::Pending(handle))) if cyclic => Some(*handle),
             _ => None,
         };
+        if protocol.has_attempt() {
+            if placeholder.is_none() {
+                self.set_protocol_key(index, ProtocolKey::AfterClauses);
+            }
+            return Ok(Vec::new());
+        }
         let Some(requirements) = self.required_temporal_keys(protocol, &location)? else {
             self.set_protocol_key(index, ProtocolKey::Unkeyed);
             return Ok(Vec::new());
@@ -686,10 +688,18 @@ impl Lowering<'_> {
                 compensations.get(index).cloned().unwrap_or_default();
         }
         for (index, protocol) in protocols.iter().enumerate() {
+            if !protocol.has_attempt() {
+                continue;
+            }
+            let placeholder = match self.protocol_keys.get(index) {
+                Some(ProtocolKey::Keyed(NodeRef::Pending(handle))) => Some(*handle),
+                _ => None,
+            };
             if !matches!(
                 self.protocol_keys.get(index),
                 Some(ProtocolKey::AfterClauses)
-            ) {
+            ) && placeholder.is_none()
+            {
                 continue;
             }
             let location = protocol.location();
@@ -714,7 +724,11 @@ impl Lowering<'_> {
                 },
                 &location,
             )?;
-            self.protocol_keys[index] = ProtocolKey::Keyed(key);
+            if let Some(placeholder) = placeholder {
+                self.placeholders.insert(placeholder, Some(key));
+            } else {
+                self.protocol_keys[index] = ProtocolKey::Keyed(key);
+            }
         }
         Ok(())
     }
