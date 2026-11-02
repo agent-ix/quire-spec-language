@@ -14,7 +14,7 @@ Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
 the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
-FR-390-AC-56. The E-P procedure below verifies FR-390-AC-23 without
+FR-390-AC-58. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -193,8 +193,8 @@ expressible in QSL's surface syntax is a check for the code lane. The
 constraints of `Tried` and `Picked` both read the one protocol-level capture
 `order`, so the application `order >= 0` is a single graph node held by two
 slots of two origins (`protocol Composed run Main Picked body` and `protocol Composed run Main Tried body`) (the checker builds equal applications over one binder as
-one node). Each table slot is the only slot of its attempt, so its origin is its
-own and its binder `m` or `choice` is shared with no other slot.
+one node). Each table slot has its own site name and shares no application with another
+slot, and its binder `m` or `choice` is shared with no other slot.
 
 | Slot | Shape | Walk positions of interest |
 | --- | --- | --- |
@@ -231,11 +231,13 @@ own and its binder `m` or `choice` is shared with no other slot.
 | C11c | each E-C slot on a package with the node ids relabelled (ascending `dependencies` and identities recomputed) so that a slot's ascending-id order differs from its walk order | as C10 | every handle's `Location` is unchanged (AC-49) |
 | C12 | Inspection of the reader's `read_node`, pairing and descriptor | n/a | root and origin come only from the descriptor; no `NodeRead` is built from a `CheckedBody` (AC-50) |
 | C13 | Inspection of the reader's `NodeKind` match | n/a | exhaustive, no wildcard arm (AC-51) |
-| C14 | `Refund.retry.relation` and `Refund.trigger.guard` (E), handles of `target >= 0` | row 8's and row 4's supplies | the retry handle reads the retry-origin row (`term_ordinal` 0), the trigger-guard handle the trigger-guard row (`term_ordinal` 1), each equal to the in-process `Location` of its term (AC-52) |
-| C14a | C14 on the package with those two rows' `Location` values swapped | as C14 | each handle reads the other's location (AC-53) |
-| C14b | `Picked` and `Tried` constraints (E-C), handles of `order >= 0` | `order = 5` | the `Picked` handle reads the `Picked`-origin row (`term_ordinal` 0), the `Tried` handle the `Tried`-origin row (`term_ordinal` 1) (AC-54) |
-| C14c | E-C package with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Tried` row) | any | `MissingLocationProjection` at the `Node` locus of `order >= 0`, `Tried` constraint's origin name, visit number 0, one visit, zero rows, pointer `/checked_term_data/protocol_locations` (AC-55) |
-| C14d | the package of C14c | any | the `Picked` constraint's visit is paired and not reported unpaired (AC-56) |
+| C14 | `Refund.retry.relation` (E), handle of `target >= 0` | row 8's supply | the handle reads the retry-origin row (`term_ordinal` 0), whose `Location` equals the in-process `Location` of that term (AC-52) |
+| C14a | `Refund.trigger.guard` (E), handle of `target >= 0` | row 4's supply | the handle reads the trigger-guard-origin row (`term_ordinal` 1), whose `Location` equals the in-process `Location` of that term (AC-53) |
+| C14b | C14 and C14a on the package with those two rows' `Location` values swapped | as C14, C14a | each handle reads the other's location (AC-54) |
+| C14c | `Picked` constraint (E-C), handle of `order >= 0` | `order = 5` | the handle reads the `Picked`-origin row (`term_ordinal` 0) (AC-55) |
+| C14d | `Tried` constraint (E-C), handle of `order >= 0` | `order = 5` | the handle reads the `Tried`-origin row (`term_ordinal` 1) (AC-56) |
+| C14e | E-C package with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Tried` row) | any | `MissingLocationProjection` at the `Node` locus of `order >= 0`, `Tried` constraint's origin name, visit number 0, one visit, zero rows, pointer `/checked_term_data/protocol_locations` (AC-57) |
+| C14f | the package of C14e | any | the `Picked` constraint's visit is paired and not reported unpaired (AC-58) |
 
 ## Fixture E-P: reference-population provenance extension
 

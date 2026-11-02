@@ -569,7 +569,7 @@ origin name is the slot's, taken in ascending (occurrence ordinal,
 `term_ordinal`) order and counting only rows of that origin (FR-383 defines the
 occurrence ordinal and that `term_ordinal` runs across origins). The `Location`
 of a literal or `Local` read is the one its own admitted node carries (FR-383
-assumption A1, which cites QSpec FR-322-AC-310 to AC-312). A location SHALL NOT
+assumption A1). A location SHALL NOT
 be taken from the source package, from a source region, or defaulted.
 
 View creation SHALL pair every slot of every protocol node of the package, and
@@ -814,11 +814,13 @@ value; check 6 does not apply to it.
 | FR-390-AC-49 | Relabelling the node ids of fixture E-C's package (row keys, identities and ascending `dependencies` recomputed) so that the ascending-id order of a slot's reachable nodes differs from their walk order changes no handle's `Location`. | Test (TC-1070) |
 | FR-390-AC-50 | Inspection finds that the reader variant of `read_node` and the pairing take the slot root and origin only from the slot descriptor, and build no `NodeRead` from a `CheckedBody`. | Inspection |
 | FR-390-AC-51 | Inspection finds the reader's `NodeKind` match exhaustive with no wildcard arm. | Inspection |
-| FR-390-AC-52 | In fixture E the handle of `target >= 0` in `Refund`'s retry relation reads the retry-origin row (`term_ordinal` 0) and the handle in `Refund`'s trigger guard reads the trigger-guard-origin row (`term_ordinal` 1), each equal to the checked package's `Location` of its term. | Test (TC-1070) |
-| FR-390-AC-53 | In the package of AC-52 with the `Location` values of those two rows swapped (I2 admits it), the two handles read each other's locations. | Test (TC-1070) |
-| FR-390-AC-54 | In fixture E-C the handle of `order >= 0` in `Picked`'s constraint reads the `Picked`-origin row (`term_ordinal` 0) and that in `Tried`'s constraint the `Tried`-origin row (`term_ordinal` 1). | Test (TC-1070) |
-| FR-390-AC-55 | In fixture E-C with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Tried` row; the lone ordinal-zero row remains, so I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the `Tried` constraint's origin name, visit number 0, one visit, zero rows and the pointer `/checked_term_data/protocol_locations`. | Test (TC-1070) |
-| FR-390-AC-56 | In the package of AC-55 the `Picked` constraint's visit of `order >= 0` is not reported unpaired. | Test (TC-1070) |
+| FR-390-AC-52 | In fixture E the handle of `target >= 0` in `Refund`'s retry relation reads the retry-origin row (`term_ordinal` 0), whose `Location` equals the checked package's `Location` of that term. | Test (TC-1070) |
+| FR-390-AC-53 | In fixture E the handle of `target >= 0` in `Refund`'s trigger guard reads the trigger-guard-origin row (`term_ordinal` 1), whose `Location` equals the checked package's `Location` of that term. | Test (TC-1070) |
+| FR-390-AC-54 | In the package of AC-52 with the `Location` values of those two rows swapped (I2 admits it), the two handles read each other's locations. | Test (TC-1070) |
+| FR-390-AC-55 | In fixture E-C the handle of `order >= 0` in `Picked`'s constraint reads the `Picked`-origin row (`term_ordinal` 0). | Test (TC-1070) |
+| FR-390-AC-56 | In fixture E-C the handle of `order >= 0` in `Tried`'s constraint reads the `Tried`-origin row (`term_ordinal` 1). | Test (TC-1070) |
+| FR-390-AC-57 | In fixture E-C with the highest-`term_ordinal` row of the `order >= 0` group removed (the `Tried` row; the lone ordinal-zero row remains, so I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the `Tried` constraint's origin name, visit number 0, one visit, zero rows and the pointer `/checked_term_data/protocol_locations`. | Test (TC-1070) |
+| FR-390-AC-58 | In the package of AC-57 the `Picked` constraint's visit of `order >= 0` is not reported unpaired. | Test (TC-1070) |
 ## Dependencies
 
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md): the `ProtocolClause` arm,

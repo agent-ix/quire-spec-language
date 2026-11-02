@@ -15,7 +15,7 @@ with an S3 refusal emits no node of its own and no package for the unit while
 the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-55.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-56.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a
@@ -89,11 +89,12 @@ traced only once that file exists.
 | L8 | fixture E's package | the `earlier.tally` rows share one occurrence key with `term_ordinal` 0 and 1 (AC-48) |
 | L8a | fixture E emitted | `target >= 0` is one node held by `Refund`'s retry relation and trigger guard (AC-49) |
 | L8b | fixture E emitted | its group holds one retry-origin row and one trigger-guard-origin row (AC-50) |
-| L8c | fixture E emitted | the retry-origin row has `term_ordinal` 0, the trigger-guard row 1, each with the location of the term in its own slot (AC-51) |
-| L8d | fixture E-C emitted | `order >= 0` is one node held by the constraints of `Tried` and `Picked` (AC-52) |
-| L8e | fixture E-C emitted | its group holds one row of `protocol Composed run Main Picked body` and one of `protocol Composed run Main Tried body` (AC-53) |
-| L8f | fixture E-C emitted | the `Picked` row has `term_ordinal` 0 and the `Tried` row 1, no restart (AC-54) |
-| L9 | **W**, fixtures E, L and E-C emitted | for every application and slot, the (occurrence ordinal, `term_ordinal`) pairs along the slot walk's visits strictly increase (AC-55) |
+| L8c | fixture E emitted | the retry-origin row has `term_ordinal` 0 and the trigger-guard row 1 (AC-51) |
+| L8d | fixture E emitted | each of the two rows carries the location of the term in its own slot (AC-52) |
+| L8e | fixture E-C emitted | `order >= 0` is one node held by the constraints of `Tried` and `Picked` (AC-53) |
+| L8f | fixture E-C emitted | its group holds one row of `protocol Composed run Main Picked body` and one of `protocol Composed run Main Tried body` (AC-54) |
+| L8g | fixture E-C emitted | the `Picked` row has `term_ordinal` 0 and the `Tried` row 1 (AC-55) |
+| L9 | **W**, fixtures E, L and E-C emitted | for every application and slot, the (occurrence ordinal, `term_ordinal`) pairs along the slot walk's visits strictly increase (AC-56) |
 
 ### Limits and nesting
 
