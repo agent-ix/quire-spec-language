@@ -832,9 +832,7 @@ mod tests {
     /// FR-087-AC-8 and AC-10 (TC-247 steps 1-3, 6 and 7; step 4 by field
     /// name only): the two `EmittedPackage`s are at the two named paths
     /// with no field name in common; no root-crate file imports a
-    /// canonical and a lane-private namesake together; and
-    /// `src/package/features.rs` and `src/package/view.rs` still import
-    /// `crate::checking::CheckedPackage`.
+    /// canonical and a lane-private namesake together.
     #[trace("TC-247", "FR-087-AC-8", "FR-087-AC-10")]
     #[test]
     fn tc_247_namesakes_stay_distinct_and_never_share_a_scope() {
@@ -881,14 +879,6 @@ mod tests {
                 !same_file_lane_import,
                 "{} imports a canonical and a lane-private namesake",
                 item.file
-            );
-        }
-        for file in ["src/package/features.rs", "src/package/view.rs"] {
-            assert!(
-                root_uses().any(|item| item.file == file
-                    && item.names.contains("checking")
-                    && item.names.contains("CheckedPackage")),
-                "{file} no longer imports crate::checking::CheckedPackage"
             );
         }
     }

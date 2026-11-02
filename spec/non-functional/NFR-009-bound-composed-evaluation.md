@@ -85,4 +85,4 @@ exhaustion returns the same value with a fresh meter and unchanged inputs.
 - [FR-049](../functional/FR-049-admit-composed-evaluation-inputs.md) owns the typed input and report boundary.
 - [FR-046](../functional/FR-046-execute-predicates-and-ordered-queries.md) owns predicate/query operator order.
 - [FR-047](../functional/FR-047-evaluate-finite-object-reference-graphs.md) owns graph identity, Boolean meaning and its shared-meter charge points.
-- [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md) owns the single public setting table and the ten accounting settings. FR-056/FR-106 own pre-evaluation intake limits; NFR-006 remains the historical native runtime accounting contract. Their identities and counters are not reused or silently reinterpreted.
+- [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md) owns the single public setting table and the ten accounting settings. FR-056/FR-106 own pre-evaluation intake limits. Their identities and counters are not reused or silently reinterpreted.

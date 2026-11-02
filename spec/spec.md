@@ -92,10 +92,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-006
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-007
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-008
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-010
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-001
@@ -131,14 +127,6 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-016
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-017
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-018
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/NFR-006
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-006
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-024
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-025
     type: contains
@@ -924,8 +912,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR |
 | [FR-005](functional/FR-005-link-shared-model.md) | FR |
 | [FR-006](functional/FR-006-check-defined-expressions.md) | FR |
-| [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR |
-| [FR-008](functional/FR-008-evaluate-state-reference.md) | FR |
 | [FR-010](functional/FR-010-report-native-outcomes.md) | FR |
 | [US-001](usecase/US-001-author-native-source.md) | US |
 | [US-002](usecase/US-002-link-exact-models.md) | US |
@@ -966,10 +952,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-015](functional/FR-015-project-native-model-semantics.md) | FR |
 | [FR-016](functional/FR-016-check-native-clauses.md) | FR |
 | [FR-017](functional/FR-017-separate-qualification-stages.md) | FR |
-| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR |
-| [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR |
-| [IT-006](integration/IT-006-native-reference-workflow.md) | IT |
-| [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR |
 | [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR |
 | [FR-027](functional/FR-027-export-compiled-native-package.md) | FR |

@@ -7,7 +7,6 @@ use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::Diagnostic;
-use quire_contract_model as ir;
 use serde_json::Value;
 
 /// Immutable JSON produced from the typed native result schema.
@@ -29,14 +28,6 @@ impl std::fmt::Display for NativeResult {
     }
 }
 
-fn source(value: &FormalSource) -> types::Source<'_> {
-    types::Source {
-        identity: value.source().identity(),
-        path: value.source().path(),
-        formal: value.identity(),
-    }
-}
-
 fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
     types::Diagnostic {
         phase: value.phase.as_str(),
@@ -49,19 +40,6 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         identity: value
             .identity_cause()
             .and_then(SourceReadCause::identity_fields),
-    }
-}
-
-/// A native diagnostic retained by a higher-layer wrapper (`LinkingError`,
-/// `CheckingError`), carrying its own structured upstream refusal separate
-/// from the shared [`Diagnostic`] shape (ADR-011 §6.1).
-fn diagnostic_with_upstream<'a>(
-    value: &'a Diagnostic,
-    upstream: Option<&'a ir::Diagnostic>,
-) -> types::Diagnostic<'a> {
-    types::Diagnostic {
-        upstream,
-        ..diagnostic(value)
     }
 }
 
@@ -94,10 +72,18 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                     maximum: *maximum,
                     option: "--request-bytes",
                 },
+                LimitKind::FixedRequestBytes { maximum } => types::Details::FixedBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
+                },
                 LimitKind::DependentBytes { maximum } => types::Details::ConfiguredBytes {
                     limit: kind.as_str(),
                     maximum: *maximum,
                     option: "--dependent-bytes",
+                },
+                LimitKind::FixedDependentBytes { maximum } => types::Details::FixedBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
                 },
                 LimitKind::ObservationDocumentBytes { maximum } => {
                     types::Details::ConfiguredBytes {
@@ -127,36 +113,9 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Native(error.phase),
             types::Details::Native(diagnostic(error)),
         ),
-        RunCause::Linking(error) => (
-            types::Stage::Native(error.diagnostic.phase),
-            types::Details::Native(diagnostic_with_upstream(
-                &error.diagnostic,
-                error.upstream.as_deref(),
-            )),
-        ),
-        RunCause::Checking(error) => (
-            types::Stage::Native(error.diagnostic.phase),
-            types::Details::Native(diagnostic_with_upstream(
-                &error.diagnostic,
-                error.upstream.as_deref(),
-            )),
-        ),
-        RunCause::Model(error) => (
-            types::Stage::Model,
-            types::Details::Model {
-                source: source(error.source()),
-            },
-        ),
-        RunCause::Package(error) => (
-            types::Stage::Package,
-            types::Details::Package {
-                stage: error.stage.to_string(),
-            },
-        ),
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
-        | RunCause::CompleteRunSelection(_)
-        | RunCause::MissingClauses => (types::Stage::Request, types::Details::None),
+        | RunCause::CompleteRunSelection(_) => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
             types::Details::Spine {

@@ -15,8 +15,6 @@ pub(super) enum Stage {
     Envelope,
     Intake,
     Native(qsl_foundation::Phase),
-    Model,
-    Package,
     /// The spine stage that refused a `1-draft` program.
     Spine(qsl_replay::spine::SpineStage),
     /// The stage a `1-draft` spine `run` refused at: the wrapped compile
@@ -33,20 +31,10 @@ impl Serialize for Stage {
             Self::Envelope => "envelope",
             Self::Intake => "intake",
             Self::Native(phase) => phase.as_str(),
-            Self::Model => "model",
-            Self::Package => "package",
             Self::Spine(stage) => stage.as_str(),
             Self::SpineRun(stage) => stage,
         })
     }
-}
-
-#[derive(Serialize)]
-pub(super) struct Source<'a> {
-    #[serde(flatten)]
-    pub identity: &'a SourceIdentity,
-    pub path: &'a str,
-    pub formal: &'a ir::SourceIdentity,
 }
 
 #[derive(Serialize)]
@@ -84,6 +72,10 @@ pub(super) enum Details<'a> {
         maximum: usize,
         option: &'static str,
     },
+    FixedBytes {
+        limit: &'static str,
+        maximum: usize,
+    },
     FileCount {
         limit: &'static str,
         category: &'static str,
@@ -93,12 +85,6 @@ pub(super) enum Details<'a> {
     },
     Identifier(&'a ir::Diagnostic),
     Native(Diagnostic<'a>),
-    Model {
-        source: Source<'a>,
-    },
-    Package {
-        stage: String,
-    },
     Spine {
         source: &'a SourceIdentity,
         path: &'a str,

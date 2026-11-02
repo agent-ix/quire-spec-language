@@ -39,9 +39,6 @@ disposition. These are compiler controls, not temporal-engine qualification.
    inspectable without presenting its body as checked or executable. Neither
    that refusal nor an `unsupported` settlement rewrites source/profile
    selection.
-5. Run historical package reading/rebinding controls unchanged. Attempt to submit
-   a partial composed report through the historical reader/runner after replacing
-   only its profile label.
 
 ## Expected Results
 
@@ -51,5 +48,4 @@ Both requested pairs remain visible at their request indices, and the required
 declaration, `operation-contract` is admitted and `finite-replay` is an
 inapplicable capability naming the state family (FR-057-AC-11); the declaration
 body is still admitted. Each kind applies to exactly the family FR-057's
-applicability table gives it. The historical runner refuses incompatible
-composed input; its accepted fixture bytes and identities remain unchanged.
+applicability table gives it.

@@ -23,30 +23,17 @@ const HEALTHY: &[Row] = &[ROOT, CHILD];
 #[derive(Clone, Copy)]
 pub(crate) struct Clause {
     pub name: &'static str,
-    pub id: &'static str,
-    pub expression: &'static str,
 }
 
 const PARENT: Clause = Clause {
     name: "ParentOrder",
-    id: "parent_order",
-    expression:
-        "present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber",
 };
-const NO_CYCLE: Clause = Clause {
-    name: "NoCycle",
-    id: "no_cycle",
-    expression: "not reaches(self, self, parent)",
-};
+const NO_CYCLE: Clause = Clause { name: "NoCycle" };
 const SAME_IDENTITY: Clause = Clause {
     name: "SameIdentity",
-    id: "same_identity",
-    expression: "self = other",
 };
 const UNCHANGED: Clause = Clause {
     name: "VersionUnchanged",
-    id: "version_unchanged",
-    expression: "self.versionNumber = pre(self.versionNumber)",
 };
 
 #[derive(Clone, Copy)]

@@ -7,9 +7,9 @@ relationships:
     type: verifies
   - target: "ix://agent-ix/quire-spec-language/FR-006"
     type: verifies
-  - target: "ix://agent-ix/quire-spec-language/FR-007"
+  - target: "ix://agent-ix/quire-spec-language/FR-106"
     type: verifies
-  - target: "ix://agent-ix/quire-spec-language/FR-008"
+  - target: "ix://agent-ix/quire-spec-language/FR-107"
     type: verifies
 ---
 # IT-002: Run the supported native state workflow
@@ -60,5 +60,6 @@ Priority: High. Automation: real command/file/API execution. Status: draft integ
 
 - [FR-005](../functional/FR-005-link-shared-model.md)
 - [FR-006](../functional/FR-006-check-defined-expressions.md)
-- [FR-007](../functional/FR-007-validate-runtime-inputs.md)
-- [FR-008](../functional/FR-008-evaluate-state-reference.md)
+- [FR-106](../functional/FR-106-admit-snapshots-and-invocations.md)
+- [FR-107](../functional/FR-107-evaluate-state-clauses-at-s6a.md)
+- [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md)

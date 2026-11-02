@@ -33,10 +33,6 @@ formats! {
     RuleModel => "native-rule-model/1",
     /// Rule-model authoring profile with exact IR rational scalar roles.
     RuleModelV2 => "native-rule-model/2",
-    /// Selected snapshot or invocation artifact.
-    RuntimeInput => "native-state-input/1",
-    /// Linked native package artifact.
-    LinkedPackage => "native-linked-package/1",
     /// FR-100: the spine `run` outcome document for a `1-draft` program's
     /// named function call.
     SpineRunResult => "spine-run-result/1",

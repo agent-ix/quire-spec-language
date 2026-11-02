@@ -7,8 +7,8 @@
 /// `example/config-version`'s Semantic IR 2.0.0 domain package (FR-103-AC-1
 /// declarations: `ConfigVersion` with `versionNumber: Int[0, 1000]` and
 /// optional `parent`, population `config_history`, operation `attemptUpdate`
-/// with frame `modifies [versionNumber]`). AGPL-3.0-only, like `model.json`
-/// and the generated unit below: one example, one licence (its own
+/// with frame `modifies [versionNumber]`). AGPL-3.0-only, like the generated
+/// unit below: one example, one licence (its own
 /// `model.semantic-ir.json.license` sidecar carries the SPDX header, since
 /// the Semantic IR 2.0.0 schema (`agent-ix-semantic-ir`) forbids an extra
 /// top-level member such as `license` -- confirmed against the pinned

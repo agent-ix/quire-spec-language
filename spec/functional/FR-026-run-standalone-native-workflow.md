@@ -19,8 +19,10 @@ relationships:
 ## Description
 
 When a caller hands QSL's library operation `command` (FR-287) a native-run/1
-request file or a native-compile/1 request file, `command` shall read the
-request and each file it selects under this requirement's bounded intake.
+request file, `command` shall read the request and each file it selects under
+this requirement's caller-configured bounded intake. `command` reads a
+native-compile/1 request under FR-027's fixed default ceilings, without a
+caller-configurable override.
 
 `command` routes the program by the edition its header declares, with
 FR-027's edition reader. Only a `1-draft` program reaches a runner or a
@@ -37,8 +39,9 @@ each request's members, outcome and exit statuses. The driver owns the
 request-file operand, the option spelling that sets each limit, usage and
 arity errors, and writing to the process streams (FR-287).
 
-The intake limits are the two byte limits `request_bytes` and
-`dependent_bytes` (Behavior). No intake limit counts files.
+For a run request, the caller-configured byte limits are `request_bytes` and
+`dependent_bytes` (Behavior). Both run and compile also apply the shared
+64-selected-file ceiling; compile intake is further specified by FR-027.
 
 ## Inputs
 
@@ -76,16 +79,16 @@ The command shall decode the envelope and select its format before request field
 The command shall admit, at decode, the members FR-100 and FR-027 define for a
 `1-draft` program.
 The command shall reject unknown/duplicate fields and positional record arrays.
-The command shall open each file once and cap reads before parsing.
-The command shall read the request under the caller's `request_bytes` limit
+For a run request, the command shall open each file once and cap reads before
+parsing. It shall read the request under the caller's `request_bytes` limit
 (default 1 MiB) and the dependent files it names under the caller's
 `dependent_bytes` limit on their total size (default 8 MiB). The caller sets
 both in the limits it gives `command`; neither has a ceiling. A refusal at
 either names its setting (`request_bytes` or `dependent_bytes`) and its
 configured value.
-The command shall count every dependent file toward `dependent_bytes` by its
+The run command shall count every dependent file toward `dependent_bytes` by its
 size, whatever its role (model, each program unit, library, snapshot, invocation or
-package), and shall apply no limit on the number of files.
+package), independently of the shared selected-file count ceiling.
 The command shall begin each invocation with fresh budgets.
 
 ## Acceptance Criteria

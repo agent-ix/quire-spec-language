@@ -333,10 +333,8 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
 /// and builds the selection over them, so this reruns it (rewriting the same
 /// deterministic bytes, AC-4) rather than duplicating its per-input-kind
 /// match in a second, read-only copy.
-// This module is compiled twice via `#[path]` (the `config_version_fixtures`
-// example binary and `tests/it`'s `config_version_spine`); only the latter
-// calls `request` (the example binary only ever writes files, never runs a
-// clause over them), so the example target sees it as dead code.
+// This module is included by `tests/it`'s `config_version_spine` support
+// module, which calls `request` over the written documents.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
     let unit = std::fs::read(directory.join("spine-unit.native"))?;

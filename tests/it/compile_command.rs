@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-027: actual CLI artifact bytes, verified consumer intake and stage failures.
-
-use crate::support::standalone_setup as fixtures;
-use fixtures::runtime;
+//! FR-027: CLI compilation of `1-draft` sources through the spine.
 
 use ix_trace_rs::trace;
-use quire_spec_language::package::{NativePackage, PackageReadLimits, PackageSupport};
 use serde_json::{json, Value};
 use std::{
     path::Path,
@@ -21,271 +17,18 @@ fn compile(directory: &Path) -> Output {
         .unwrap()
 }
 
-/// FR-027-AC-6 (TC-435 step 3): these programs declare `edition "0-draft"`,
-/// so they compile through native compile, byte for byte.
-#[test]
-#[trace("TC-105", "FR-027-AC-1", "FR-027-AC-2", "TC-435", "FR-027-AC-6")]
-fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
-    for (case, expression, kind) in [
-        (
-            fixtures::Case::Aggregate(2),
-            "true implies forall(item in self.items: item < self.n)",
-            quire_spec_language::syntax::ClauseKind::Invariant,
-        ),
-        (
-            fixtures::Case::Operation {
-                violate_frame: false,
-            },
-            "pre(self.n) = 1 and self.n = 2 and result",
-            quire_spec_language::syntax::ClauseKind::Postcondition,
-        ),
-    ] {
-        let generated = tempfile::tempdir().unwrap();
-        let (_, package_bytes) = fixtures::write(generated.path(), case).unwrap();
-        let request_bytes = std::fs::read(generated.path().join("compile.json")).unwrap();
-        let job: Value = serde_json::from_slice(&request_bytes).unwrap();
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::write(directory.path().join("compile.json"), request_bytes).unwrap();
-        let selected_sources = job["request"]["models"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|model| model["source"]["file"].as_str().unwrap())
-            .chain(std::iter::once(
-                job["request"]["program"]["source"]["file"]
-                    .as_str()
-                    .unwrap(),
-            ))
-            .collect::<std::collections::BTreeSet<_>>();
-        for name in &selected_sources {
-            std::fs::copy(generated.path().join(name), directory.path().join(name)).unwrap();
-        }
-        assert_eq!(
-            std::fs::read_dir(directory.path()).unwrap().count(),
-            selected_sources.len() + 1
-        );
-        let output = compile(directory.path());
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(output.stderr.is_empty());
-        assert_eq!(output.stdout, package_bytes);
-        assert!(!output.stdout.ends_with(b"\n"));
-        let models = [runtime::native_rule_model::parts().model()];
-        let checked = runtime::checked_kind(&models, expression, kind);
-        let read = NativePackage::read_verified(
-            &output.stdout,
-            checked.bindings().clone(),
-            &models,
-            &PackageSupport::default(),
-            PackageReadLimits::default(),
-        )
-        .unwrap();
-        assert_eq!(read.bytes(), output.stdout);
-        assert_eq!(read.checked().clauses().len(), 2);
-    }
-}
-
-#[test]
-#[trace("TC-105", "FR-027-AC-2", "FR-027-AC-3")]
-fn incompatible_request_and_static_failures_emit_no_package_bytes() {
-    enum Change {
-        Format,
-        Runtime,
-        Syntax,
-    }
-    for change in [Change::Format, Change::Runtime, Change::Syntax] {
-        let directory = tempfile::tempdir().unwrap();
-        fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
-        let original = std::fs::read(directory.path().join("compile.json")).unwrap();
-        let mut changed: Value = serde_json::from_slice(&original).unwrap();
-        let (expected, code) = match change {
-            Change::Format => {
-                changed["format"] = json!("native-run/1");
-                (20, "unknown_wire")
-            }
-            Change::Runtime => {
-                changed["request"]["snapshots"] = json!([]);
-                (20, "invalid-request")
-            }
-            Change::Syntax => {
-                let broken = b"language ?";
-                std::fs::write(directory.path().join("program.native"), broken).unwrap();
-                (20, "invalid_syntax")
-            }
-        };
-        std::fs::write(
-            directory.path().join("compile.json"),
-            serde_json::to_vec(&changed).unwrap(),
-        )
-        .unwrap();
-        let output = compile(directory.path());
-        assert_eq!(output.status.code(), Some(expected));
-        assert!(output.stdout.is_empty());
-        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(failure["code"], code, "{failure}");
-    }
-}
-
-#[test]
-#[trace("TC-105", "FR-027-AC-3")]
-fn compile_arity_is_checked_before_opening_any_request() {
-    for arguments in [vec!["compile"], vec!["compile", "missing.json", "extra"]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .args(arguments)
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(20));
-        assert!(output.stdout.is_empty());
-        assert_eq!(
-            std::str::from_utf8(&output.stderr).unwrap(),
-            "usage: quire-spec compile <request-file>\n"
-        );
-    }
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-#[trace("TC-105", "FR-027-AC-3")]
-fn failed_artifact_output_is_a_tool_failure_exit() {
-    let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
-    let full = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/full")
-        .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("compile")
-        .arg(directory.path().join("compile.json"))
-        .stdout(std::process::Stdio::from(full))
+fn compile_with_args(directory: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args(args)
+        .current_dir(directory)
         .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(30));
-    assert!(std::str::from_utf8(&output.stderr)
         .unwrap()
-        .starts_with("output failed:"));
 }
 
-#[test]
-#[trace("TC-105", "FR-027-AC-3", "TC-104", "FR-026-AC-4")]
-fn file_count_refusals_name_the_exhausted_group_before_file_io() {
-    for (field, remaining) in [("models", 63), ("snapshots", 62), ("invocations", 60)] {
-        let directory = tempfile::tempdir().unwrap();
-        let (mut job, _) = fixtures::write(
-            directory.path(),
-            fixtures::Case::Operation {
-                violate_frame: false,
-            },
-        )
-        .unwrap();
-        let item = job["request"][field][0].clone();
-        job["request"][field] = json!(vec![item; 64]);
-        job["request"]["program"]["source"]["file"] = json!("missing.native");
-        std::fs::write(
-            directory.path().join("request.json"),
-            serde_json::to_vec(&job).unwrap(),
-        )
-        .unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .arg("run")
-            .arg(directory.path().join("request.json"))
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(22), "{field}");
-        assert!(output.stdout.is_empty());
-        let value: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(value["code"], "resource_exhausted");
-        assert_eq!(
-            value["details"],
-            json!({"limit":"selected files", "category":field,
-            "requested":64, "remaining":remaining, "maximum":64})
-        );
-    }
-}
-
-#[test]
-#[trace("TC-105", "FR-027-AC-1", "FR-027-AC-2")]
-fn shared_format_catalog_preserves_existing_wire_spellings() {
-    use qsl_foundation::wire_format::WireFormat;
-    let names: Vec<_> = WireFormat::ALL
-        .iter()
-        .map(|format| serde_json::to_value(format).unwrap())
-        .collect();
-    assert_eq!(
-        names,
-        vec![
-            json!("native-run/1"),
-            json!("native-compile/1"),
-            json!("native-run-result/2"),
-            json!("native-rule-model/1"),
-            json!("native-rule-model/2"),
-            json!("native-state-input/1"),
-            json!("native-linked-package/1"),
-            json!("spine-run-result/1")
-        ]
-    );
-    assert_eq!(
-        quire_spec_language::model_source::FORMAT,
-        WireFormat::RuleModel.as_str()
-    );
-}
-
-/// TC-430 steps 3-4 (FR-027-AC-4): a compile request's program source
-/// carries the four labels into the package `source`, which validates
-/// against the native-linked-package/1 schema; a request without
-/// `revision_namespace` refuses with `invalid-request`.
-#[test]
-#[trace("TC-430", "FR-027-AC-4")]
-fn compiled_packages_name_the_four_source_labels() {
-    let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
-    let path = directory.path().join("compile.json");
-    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    let source = &mut job["request"]["program"]["source"];
-    source["authority"] = json!("agent-ix");
-    source["identity"] = json!("p");
-    source["revision_namespace"] = json!("git");
-    source["revision"] = json!("1");
-    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let output = compile(directory.path());
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let package: Value = serde_json::from_slice(&output.stdout).unwrap();
-    for (label, value) in [
-        ("authority", "agent-ix"),
-        ("identity", "p"),
-        ("revision_namespace", "git"),
-        ("revision", "1"),
-    ] {
-        assert_eq!(package["source"][label], value, "{label}");
-    }
-    let schema: Value = serde_json::from_str(include_str!(
-        "../../schemas/native-linked-package-1.schema.json"
-    ))
-    .unwrap();
-    let schema = jsonschema::JSONSchema::options()
-        .with_draft(jsonschema::Draft::Draft202012)
-        .compile(&schema)
-        .unwrap();
-    assert!(schema.is_valid(&package));
-
-    job["request"]["program"]["source"]
-        .as_object_mut()
-        .unwrap()
-        .remove("revision_namespace");
-    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let output = compile(directory.path());
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let value: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(value["code"], "invalid-request");
+fn compile_in_process(
+    directory: &Path,
+) -> Result<Vec<u8>, Box<quire_spec_language::command::RunError>> {
+    quire_spec_language::command::compile(&directory.join("compile.json"))
 }
 
 /// The complete-V1 compile fixture (FR-027-AC-5).
@@ -297,7 +40,7 @@ const SPINE_HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n";
 
 /// Write `program` as `program.native` under `directory` with a
-/// native-compile/1 request selecting it, no models and no clause bindings.
+/// native-compile/1 request selecting it, with no model imports.
 fn spine_request(directory: &Path, program: &[u8]) {
     std::fs::write(directory.join("program.native"), program).unwrap();
     let request = json!({"format":"native-compile/1","request":{"models":[],"program":{
@@ -311,15 +54,21 @@ fn spine_request(directory: &Path, program: &[u8]) {
     .unwrap();
 }
 
-/// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the
+/// FR-027-AC-2 / AC-5 (TC-105 step 1, TC-435 step 2): a `1-draft` program compiles through the
 /// spine; stdout is exactly the bytes `qsl_replay::spine`'s operations emit, which
 /// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
 #[test]
-#[trace("TC-435", "FR-027-AC-5")]
+#[trace("TC-105", "FR-027-AC-2", "TC-435", "FR-027-AC-5")]
 fn a_complete_v1_program_compiles_through_the_spine() {
     let program = std::fs::read(SPINE_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
     spine_request(directory.path(), &program);
+    let mut selected_files = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    selected_files.sort();
+    assert_eq!(selected_files, ["compile.json", "program.native"]);
     let output = compile(directory.path());
     assert_eq!(
         output.status.code(),
@@ -339,6 +88,155 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(output.stdout, library.package().bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
+}
+
+/// FR-027-AC-2 (TC-105 step 2): compile rejects run-format requests and
+/// runtime-only members before trying to read their referenced files.
+#[test]
+#[trace("TC-105", "FR-027-AC-2")]
+fn compile_refuses_runtime_request_shapes_without_reading_runtime_files() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let path = directory.path().join("compile.json");
+    let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let base_request = request.clone();
+
+    request["format"] = json!("native-run/1");
+    request["request"]["program"]["source"]["file"] = json!("missing-program.native");
+    request["request"]["models"] = json!([{"format":"missing-model-format","source":{
+        "file":"missing-model.json"}}]);
+    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "unknown_wire", "{value}");
+    assert_eq!(value["stage"], "envelope", "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+
+    for member in ["snapshots", "invocations", "selection", "package"] {
+        let mut request = base_request.clone();
+        request["format"] = json!("native-compile/1");
+        request["request"]["program"]["source"]["file"] = json!("missing-program.native");
+        request["request"]
+            .as_object_mut()
+            .unwrap()
+            .insert(member.to_owned(), json!({"file":"missing-runtime.json"}));
+        std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let error = compile_in_process(directory.path()).unwrap_err();
+        let value = error.value().unwrap();
+        assert_eq!(value["code"], "invalid-request", "{member}: {value}");
+        assert_eq!(value["stage"], "request", "{member}: {value}");
+        assert!(value.get("artifact").is_none(), "{member}: {value}");
+    }
+}
+
+/// FR-027-AC-3 (TC-105 steps 3–5): source selection and dependent-byte
+/// refusals retain typed causes and produce no partial package.
+#[test]
+#[trace("TC-105", "FR-027-AC-3")]
+fn source_selection_and_dependent_byte_refusals_are_typed() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    for member in ["identity", "authority"] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), &program);
+        let path = directory.path().join("compile.json");
+        let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        request["request"]["program"]["source"]
+            .as_object_mut()
+            .unwrap()
+            .remove(member);
+        std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let error = compile_in_process(directory.path()).unwrap_err();
+        let value = error.value().unwrap();
+        assert_eq!(value["code"], "invalid-request", "{member}: {value}");
+        assert_eq!(value["stage"], "request", "{member}: {value}");
+        assert!(value.get("artifact").is_none(), "{member}: {value}");
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let path = directory.path().join("compile.json");
+    let mut request = std::fs::read(&path).unwrap();
+    request.resize(1_048_577, b' ');
+    std::fs::write(&path, request).unwrap();
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["details"]["limit"], "request_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 1_048_576, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let path = directory.path().join("compile.json");
+    let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    request["request"]["program"]["source"]["file"] = json!("missing-program.native");
+    std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "io-error", "{value}");
+    assert_eq!(value["stage"], "file", "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+
+    let directory = tempfile::tempdir().unwrap();
+    let oversized = format!(
+        "{SPINE_HEADER}function f using v(): Int[0, 9] pure {{ 7 }}\n//{}",
+        "x".repeat(8 * 1024 * 1024)
+    );
+    spine_request(directory.path(), oversized.as_bytes());
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["details"]["limit"], "dependent_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
+}
+
+/// FR-287-AC-4 (TC-1262 step 2): the compile CLI enforces fixed request and
+/// dependent-byte ceilings and rejects run-only limit options.
+#[test]
+#[trace("TC-1262", "FR-287-AC-4", "FR-287-AC-5")]
+fn compile_cli_uses_fixed_byte_ceilings_and_rejects_limit_options() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+
+    let request_directory = tempfile::tempdir().unwrap();
+    spine_request(request_directory.path(), &program);
+    let request_path = request_directory.path().join("compile.json");
+    let mut request = std::fs::read(&request_path).unwrap();
+    request.resize(1_048_577, b' ');
+    std::fs::write(&request_path, request).unwrap();
+    let output = compile(request_directory.path());
+    assert_eq!(output.status.code(), Some(22));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["details"]["limit"], "request_bytes", "{failure}");
+    assert_eq!(failure["details"]["maximum"], 1_048_576, "{failure}");
+    assert!(failure["details"].get("option").is_none(), "{failure}");
+
+    let dependent_directory = tempfile::tempdir().unwrap();
+    let oversized = format!(
+        "{SPINE_HEADER}function f using v(): Int[0, 9] pure {{ 7 }}\n//{}",
+        "x".repeat(8 * 1024 * 1024)
+    );
+    spine_request(dependent_directory.path(), oversized.as_bytes());
+    let output = compile(dependent_directory.path());
+    assert_eq!(output.status.code(), Some(22));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["details"]["limit"], "dependent_bytes", "{failure}");
+    assert_eq!(failure["details"]["maximum"], 8_388_608, "{failure}");
+    assert!(failure["details"].get("option").is_none(), "{failure}");
+
+    let no_files = tempfile::tempdir().unwrap();
+    let output = compile_with_args(
+        no_files.path(),
+        &["compile", "missing.json", "--dependent-bytes", "10000000"],
+    );
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: quire-spec"));
 }
 
 /// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
@@ -395,109 +293,36 @@ fn formal_labels_are_validated_but_not_recorded_by_a_spine_compile() {
     assert_eq!(failure["stage"], "request", "{failure}");
 }
 
-/// FR-027-AC-7 (TC-435 step 4): an edition neither compiler reads refuses
-/// with `unknown_edition` at its literal, naming the file and the edition.
+/// FR-493-AC-2 / FR-027-AC-7 (TC-1276, TC-435): the CLI refuses both
+/// the retired `0-draft` edition and an unrecognized edition at S1.
 #[test]
-#[trace("TC-435", "FR-027-AC-7")]
-fn an_edition_neither_compiler_reads_refuses() {
-    let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
-    let path = directory.path().join("program.native");
-    let program = std::fs::read_to_string(&path).unwrap().replacen(
-        "edition \"0-draft\"",
-        "edition \"7-draft\"",
-        1,
-    );
-    assert!(program.contains("\"7-draft\""));
-    std::fs::write(&path, &program).unwrap();
-    let output = compile(directory.path());
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(failure["code"], "unknown_edition", "{failure}");
-    assert_eq!(failure["stage"], "profile", "{failure}");
-    let message = failure["message"].as_str().unwrap();
-    assert!(message.contains("program.native"), "{message}");
-    assert!(message.contains("7-draft"), "{message}");
-    let literal = program.find("\"7-draft\"").unwrap();
-    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
-    assert_eq!(
-        failure["details"]["span"]["end"]["byte"],
-        literal + "\"7-draft\"".len()
-    );
-}
-
-/// FR-027-AC-7 (TC-435 step 5): a `1-draft` program compiles alone; a
-/// request that selects models or clause bindings for it refuses, whatever
-/// state the model files are in.
-#[test]
-#[trace("TC-435", "FR-027-AC-7")]
-fn a_complete_v1_request_selecting_native_inputs_refuses() {
-    let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
-    let program = std::fs::read(SPINE_FIXTURE).unwrap();
-    std::fs::write(directory.path().join("program.native"), &program).unwrap();
-    let request = directory.path().join("compile.json");
-    let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
-    assert!(!job["request"]["models"].as_array().unwrap().is_empty());
-    // Malformed model files: the edition is decided before any model is
-    // read, so the refusal names the selection, not the files.
-    for model in job["request"]["models"].as_array().unwrap() {
-        let file = model["source"]["file"].as_str().unwrap();
-        std::fs::write(directory.path().join(file), b"not a model {").unwrap();
-    }
-    assert!(!job["request"]["program"]["clauses"]
-        .as_array()
-        .unwrap()
-        .is_empty());
-    for (strip, selected) in [
-        (None, "native rule-model sources"),
-        (Some("models"), "clause bindings"),
-    ] {
-        if let Some(field) = strip {
-            job["request"][field] = json!([]);
-        }
-        std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
+#[trace("TC-1276", "FR-493-AC-2", "TC-435", "FR-027-AC-7")]
+fn retired_and_unknown_editions_refuse_before_emitting_package_bytes() {
+    for edition in ["0-draft", "7-draft"] {
+        let program = SPINE_HEADER.replacen("1-draft", edition, 1)
+            + "function f using v(): Int[0, 9] pure { 7 }\n";
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), program.as_bytes());
         let output = compile(directory.path());
-        assert_eq!(output.status.code(), Some(20), "{selected}");
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.status.code(), Some(20), "{edition}");
+        assert!(output.stdout.is_empty(), "{edition}");
         let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(failure["code"], "invalid-request", "{failure}");
-        assert_eq!(failure["stage"], "request", "{failure}");
-        assert!(
-            failure["message"].as_str().unwrap().ends_with(selected),
-            "{failure}"
+        assert_eq!(failure["code"], "unknown_edition", "{failure}");
+        assert_eq!(failure["stage"], "profile", "{failure}");
+        assert!(failure["message"].as_str().unwrap().contains(edition));
+        let literal = program.find(&format!("\"{edition}\"")).unwrap();
+        assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
+        assert_eq!(
+            failure["details"]["span"]["end"]["byte"],
+            literal + edition.len() + 2
         );
     }
-    // FND-002/FND-017 (FR-027-AC-7): any `clauses` key at all -- including
-    // an empty array -- refuses a `1-draft` program; only its outright
-    // absence admits one.
-    job["request"]["program"]["clauses"] = json!([]);
-    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
-    let output = compile(directory.path());
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(failure["code"], "invalid-request", "{failure}");
-
-    job["request"]["program"]
-        .as_object_mut()
-        .unwrap()
-        .remove("clauses");
-    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
-    let output = compile(directory.path());
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 /// FR-027-AC-8 (TC-435 step 6): each spine stage's refusal reports that
 /// stage and its cause's code, exits on that code, and writes no bytes.
 #[test]
-#[trace("TC-435", "FR-027-AC-8")]
+#[trace("TC-105", "FR-027-AC-3", "TC-435", "FR-027-AC-8")]
 fn each_spine_stage_refusal_reports_its_stage_and_code() {
     for (body, stage, code, exit, located) in [
         (
@@ -559,41 +384,6 @@ fn each_spine_stage_refusal_reports_its_stage_and_code() {
             None if stage == "emit" => assert!(span.is_null(), "{failure}"),
             None => assert!(span.is_object(), "{failure}"),
         }
-    }
-}
-
-/// FR-027-AC-5 (TC-435 step 7): a source that does not open with an
-/// `ix:native` header declares no edition and goes to native compile, whose
-/// parser reports its header.
-#[test]
-#[trace("TC-435", "FR-027-AC-5")]
-fn a_source_without_an_ix_native_header_goes_to_native() {
-    for (program, code) in [
-        (
-            "function f using v(): Int[0, 9] pure { 7 }\n".to_owned(),
-            "invalid_syntax",
-        ),
-        (
-            SPINE_HEADER.replacen("ix:native", "ix:other", 1)
-                + "function f using v(): Int[0, 9] pure { 7 }\n",
-            "unknown_language",
-        ),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        spine_request(directory.path(), program.as_bytes());
-        let output = compile(directory.path());
-        assert_eq!(output.status.code(), Some(20), "{program}");
-        assert!(output.stdout.is_empty());
-        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(failure["code"], code, "{failure}");
-        // The native parser's diagnostic carries its phase; no spine
-        // refusal does.
-        assert!(failure["details"]["phase"].is_string(), "{failure}");
-        assert!(
-            !["source", "forms", "assembly", "check", "emit"]
-                .contains(&failure["stage"].as_str().unwrap()),
-            "{failure}"
-        );
     }
 }
 
@@ -838,8 +628,7 @@ fn refinement_internal_list_defects_keep_their_input_owner() {
 }
 
 /// FR-027-AC-10 (TC-446 step 7): a library with an empty identity or a
-/// `version` member, and any library beside a `0-draft` program, refuse
-/// `invalid-request` with nothing written.
+/// `version` member refuses `invalid-request` with nothing written.
 #[test]
 #[trace("TC-446", "FR-027-AC-10")]
 fn malformed_libraries_refuse_as_invalid_request() {
@@ -860,18 +649,6 @@ fn malformed_libraries_refuse_as_invalid_request() {
     job["request"]["libraries"][0]["version"] = json!("1");
     std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(versioned.path());
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(failure["code"], "invalid-request", "{failure}");
-    let generated = tempfile::tempdir().unwrap();
-    fixtures::write(generated.path(), fixtures::Case::Aggregate(2)).unwrap();
-    let path = generated.path().join("compile.json");
-    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    job["request"]["libraries"] = json!([{"identity":"test/geometry","source":
-        job["request"]["program"]["source"].clone()}]);
-    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let output = compile(generated.path());
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
@@ -968,7 +745,7 @@ fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
 /// FR-027-AC-10: library sources count toward the request's `programs`
 /// file limit (QSL-265), so 64 libraries beside the program refuse.
 #[test]
-#[trace("TC-446", "FR-027-AC-10")]
+#[trace("TC-105", "FR-027-AC-13", "TC-446", "FR-027-AC-10")]
 fn sixty_four_libraries_exceed_the_file_limit() {
     let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
     let directory = tempfile::tempdir().unwrap();
@@ -986,4 +763,33 @@ fn sixty_four_libraries_exceed_the_file_limit() {
     assert_eq!(failure["details"]["limit"], "selected files", "{failure}");
     assert_eq!(failure["details"]["category"], "programs", "{failure}");
     assert_eq!(failure["details"]["requested"], 65, "{failure}");
+}
+
+/// FR-027-AC-13 (TC-105 step 6): a supplied library source is charged to the
+/// compile request's fixed dependent-byte ceiling, with no limit override.
+#[test]
+#[trace("TC-105", "FR-027-AC-13")]
+fn a_library_source_over_the_fixed_dependent_byte_ceiling_is_refused() {
+    let program = format!(
+        "{SPINE_HEADER}import \"test/geometry\" as g;\n\
+         function u using v(x: Int[0, 9]): Boolean pure {{ g::f(x) }}\n"
+    )
+    .into_bytes();
+    let base_library = format!("{SPINE_HEADER}{GEOMETRY}");
+    let directory = tempfile::tempdir().unwrap();
+    let base = spine_library_request(directory.path(), base_library.as_bytes(), "test/geometry");
+    assert_eq!(base, program);
+
+    let library_size = 8_388_609 - program.len() - base_library.len();
+    let padded_library = format!("{base_library}//{}", "x".repeat(library_size - 2));
+    std::fs::write(directory.path().join("geometry.native"), padded_library).unwrap();
+
+    let error = compile_in_process(directory.path()).unwrap_err();
+    let value = error.value().unwrap();
+    assert_eq!(value["code"], "resource_exhausted", "{value}");
+    assert_eq!(value["stage"], "intake", "{value}");
+    assert_eq!(value["details"]["limit"], "dependent_bytes", "{value}");
+    assert_eq!(value["details"]["maximum"], 8_388_608, "{value}");
+    assert!(value["details"].get("option").is_none(), "{value}");
+    assert!(value.get("artifact").is_none(), "{value}");
 }

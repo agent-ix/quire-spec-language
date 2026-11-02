@@ -15,9 +15,9 @@ relationships:
     type: satisfied_by
   - target: "ix://agent-ix/quire-spec-language/FR-006"
     type: satisfied_by
-  - target: "ix://agent-ix/quire-spec-language/FR-007"
+  - target: "ix://agent-ix/quire-spec-language/FR-106"
     type: satisfied_by
-  - target: "ix://agent-ix/quire-spec-language/FR-008"
+  - target: "ix://agent-ix/quire-spec-language/FR-107"
     type: satisfied_by
   - target: "ix://agent-ix/quire-spec-language/FR-010"
     type: satisfied_by

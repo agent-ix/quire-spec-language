@@ -114,7 +114,7 @@ and contains no healthy/violating assessment of an unsupplied population.
 - [FR-006](FR-006-check-defined-expressions.md) owns the five existing static-judgment criteria.
 - [FR-015](FR-015-project-native-model-semantics.md) supplies native model roles.
 - [FR-014](FR-014-bind-native-formal-source.md) maps proof loci to exact source.
-- [FR-007](FR-007-validate-runtime-inputs.md) is the later input-validation obligation, not a prerequisite implementation for static proofs conditional on valid input.
+- [FR-106](FR-106-admit-snapshots-and-invocations.md) owns spine snapshot and invocation admission, separately from static proofs conditional on valid input.
 - [NFR-005](../non-functional/NFR-005-rust-verification-paths.md) requires Rust verification paths.
 - [IT-005](../integration/IT-005-qualify-native-model-consumption.md) supplies real, separately qualified rule-model inputs.
 

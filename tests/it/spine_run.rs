@@ -474,38 +474,6 @@ fn tc_450_step_4_no_call_refuses_alone() {
     );
 }
 
-/// FR-100-AC-3 (TC-450 step 5): a `0-draft` standalone request carrying
-/// `call` or `libraries` refuses `invalid-request` at stage `request`, exit
-/// 20, empty stdout.
-#[test]
-#[trace("TC-450", "FR-100-AC-3")]
-fn tc_450_step_5_zero_draft_carrying_call_or_libraries_refuses() {
-    use crate::support::standalone_setup as fixtures;
-    for mutate in [
-        (|job: &mut Value| {
-            job["request"]["call"] = json!({"function": "f", "arguments": []});
-        }) as fn(&mut Value),
-        (|job: &mut Value| {
-            job["request"]["libraries"] = json!([{"identity":"x","source":{
-                "file":"lib.native","authority":"agent-ix","identity":"x","revision_namespace":"fixture",
-                "revision":"fixture:1","document":"L","formal_revision":1}}]);
-        }) as fn(&mut Value),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
-        let path = directory.path().join("request.json");
-        let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        mutate(&mut job);
-        std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-        let output = run(directory.path());
-        assert_eq!(output.status.code(), Some(20));
-        assert!(output.stdout.is_empty());
-        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(failure["code"], "invalid-request", "{failure}");
-        assert_eq!(failure["stage"], "request", "{failure}");
-    }
-}
-
 /// FR-100-AC-4 (TC-451 step 1): `lt` binds `b` before `a` by declared name;
 /// `flag`/`id` complete their declared kind.
 #[test]
@@ -839,24 +807,6 @@ fn tc_451_step_4_malformed_argument_value_refuses() {
         assert_eq!(failure["code"], "invalid-request", "{value}: {failure}");
         assert_eq!(failure["stage"], "request", "{value}: {failure}");
     }
-}
-
-/// The atomic /2 transition refuses a retired native `run` request with a
-/// closed command-error envelope and no successful /1 result.
-#[test]
-#[trace("TC-742", "FR-267-AC-3")]
-fn native_zero_draft_run_is_retired_with_two_envelope() {
-    use crate::support::standalone_setup as fixtures;
-    let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
-    let output = run(directory.path());
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let document: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(document["format"], "native-run-result/2");
-    assert_eq!(document["stage"], "request");
-    assert_eq!(document["code"], "invalid-request");
-    assert_eq!(document["basis"], "unavailable");
 }
 
 /// FR-100-AC-3 (TC-450 step 6): a `1-draft` request whose `libraries`
