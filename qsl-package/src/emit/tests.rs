@@ -68,6 +68,7 @@ mod reachability;
 mod receiver_frames;
 mod refinement_adverse;
 mod refinement_rows;
+mod schedulability_claims;
 mod selected_model_rows;
 mod source_map_debug;
 mod state_graph_claim;
@@ -322,6 +323,122 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
                 row.application().clone(),
                 row.location().clone(),
             )
+        })
+        .collect::<Vec<_>>();
+    let fact_rows = emission
+        .equality_fact_witness_rows()
+        .iter()
+        .map(|row| quire_contract_model::SelectedEqualityFactRow {
+            application: row.application().clone(),
+            checked_application: row.checked_application().clone(),
+            occurrence: row.occurrence().clone(),
+            source_map_entry: row.source_map_entry().clone(),
+            structural_key: row.structural_key().clone(),
+            structural_node: row.structural_node().clone(),
+            owner: row.owner().cloned(),
+            value_type: row.value_type().cloned(),
+            fact: match row.fact() {
+                EqualityFactWitness::OperandType { position, role } => {
+                    quire_contract_model::EqualityFactWitness::OperandType {
+                        position: *position,
+                        role: ir_operand_role(*role),
+                    }
+                }
+                EqualityFactWitness::Unit {
+                    unit_id,
+                    quantity_type,
+                    operand_position,
+                    role,
+                } => quire_contract_model::EqualityFactWitness::Unit {
+                    unit_id: unit_id.clone(),
+                    quantity_type: quantity_type.clone(),
+                    operand_position: *operand_position,
+                    role: ir_unit_role(*role),
+                },
+                EqualityFactWitness::DimensionDeclaration {
+                    unit_id,
+                    operand_position,
+                    role,
+                    ordinal,
+                } => quire_contract_model::EqualityFactWitness::DimensionDeclaration {
+                    unit_id: unit_id.clone(),
+                    operand_position: *operand_position,
+                    role: match role {
+                        qsl_semantics::check::EqualityDimensionRole::UnitDimension => {
+                            quire_contract_model::EqualityDimensionRole::UnitDimension
+                        }
+                        qsl_semantics::check::EqualityDimensionRole::ConversionDimension => {
+                            quire_contract_model::EqualityDimensionRole::ConversionDimension
+                        }
+                        qsl_semantics::check::EqualityDimensionRole::CompoundBase => {
+                            quire_contract_model::EqualityDimensionRole::CompoundBase
+                        }
+                        qsl_semantics::check::EqualityDimensionRole::BaseDimension => {
+                            quire_contract_model::EqualityDimensionRole::BaseDimension
+                        }
+                    },
+                    ordinal: *ordinal,
+                },
+                EqualityFactWitness::DimensionTerm {
+                    unit_id,
+                    operand_position,
+                    ordinal,
+                    base,
+                    base_node,
+                    exponent,
+                } => quire_contract_model::EqualityFactWitness::DimensionTerm {
+                    unit_id: unit_id.clone(),
+                    operand_position: *operand_position,
+                    ordinal: *ordinal,
+                    base: base.clone(),
+                    base_node: base_node.clone(),
+                    exponent: exponent.clone(),
+                },
+                EqualityFactWitness::ConversionEdge {
+                    unit_id,
+                    operand_position,
+                    ordinal,
+                    target,
+                    target_node,
+                    scale,
+                    offset,
+                } => quire_contract_model::EqualityFactWitness::ConversionEdge {
+                    unit_id: unit_id.clone(),
+                    operand_position: *operand_position,
+                    ordinal: *ordinal,
+                    target: target.clone(),
+                    target_node: target_node.clone(),
+                    scale: scale.clone(),
+                    offset: offset.clone(),
+                },
+                EqualityFactWitness::TextPlanType { position, role } => {
+                    quire_contract_model::EqualityFactWitness::TextPlanType {
+                        position: *position,
+                        role: ir_operand_role(*role),
+                    }
+                }
+                EqualityFactWitness::EnumMember {
+                    source_declaration,
+                    source_declaration_node,
+                    declaration,
+                    declaration_node,
+                    member,
+                    member_node,
+                    case,
+                    ordinal,
+                    ordered,
+                } => quire_contract_model::EqualityFactWitness::EnumMember {
+                    source_declaration: source_declaration.clone(),
+                    source_declaration_node: source_declaration_node.clone(),
+                    declaration: declaration.clone(),
+                    declaration_node: declaration_node.clone(),
+                    member: member.clone(),
+                    member_node: member_node.clone(),
+                    case: case.clone(),
+                    ordinal: *ordinal,
+                    ordered: *ordered,
+                },
+            },
         })
         .collect::<Vec<_>>();
     assert_eq!(selected_rows.len(), decisions.len());
@@ -653,6 +770,24 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
     }
 }
 
+fn ir_operand_role(role: EqualityOperandTypeRole) -> quire_contract_model::EqualityOperandTypeRole {
+    match role {
+        EqualityOperandTypeRole::Source => quire_contract_model::EqualityOperandTypeRole::Source,
+        EqualityOperandTypeRole::ConversionTarget => {
+            quire_contract_model::EqualityOperandTypeRole::ConversionTarget
+        }
+    }
+}
+
+fn ir_unit_role(role: EqualityUnitRole) -> quire_contract_model::EqualityUnitRole {
+    match role {
+        EqualityUnitRole::Source => quire_contract_model::EqualityUnitRole::Source,
+        EqualityUnitRole::ConversionTarget => {
+            quire_contract_model::EqualityUnitRole::ConversionTarget
+        }
+    }
+}
+
 /// The verified package's exports: declared name to structural node identity.
 fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     match read_back(emission) {
@@ -892,7 +1027,7 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
         .into_iter()
         .map(|candidate| candidate.wire_node(&StructuralIds::default()).unwrap())
         .collect();
-    write_index_segments(&mut nodes, &mut [], &mut []).expect("every operand is written");
+    write_index_segments(&mut nodes, &mut [], &mut [], &mut []).expect("every operand is written");
     nodes
         .iter()
         .map(|node| {

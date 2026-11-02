@@ -1491,6 +1491,7 @@ fn temporal(g: &mut Grammar) {
             r(P::SignedQuantity),
             literal("deadline"),
             r(P::SignedQuantity),
+            opt(s(vec![literal("bcet"), r(P::SignedQuantity)])),
             literal("wcet"),
             r(P::SignedQuantity),
             opt(s(vec![literal("priority"), uint()])),

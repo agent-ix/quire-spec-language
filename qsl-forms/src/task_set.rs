@@ -88,6 +88,7 @@ fn task_form(cst: &LosslessCst, node: &CstNode) -> Result<TaskForm, FormsRefusal
     let mut member: &[u8] = b"interval";
     let mut interval = None;
     let mut deadline = None;
+    let mut bcet = None;
     let mut wcet = None;
     let mut jitter = None;
     let mut blocking = None;
@@ -102,6 +103,7 @@ fn task_form(cst: &LosslessCst, node: &CstNode) -> Result<TaskForm, FormsRefusal
                 }
                 match token.spelling() {
                     b"deadline" => member = b"deadline",
+                    b"bcet" => member = b"bcet",
                     b"wcet" => member = b"wcet",
                     b"priority" => member = b"priority",
                     b"jitter" => member = b"jitter",
@@ -123,6 +125,7 @@ fn task_form(cst: &LosslessCst, node: &CstNode) -> Result<TaskForm, FormsRefusal
                 let slot = match member {
                     b"interval" => &mut interval,
                     b"deadline" => &mut deadline,
+                    b"bcet" => &mut bcet,
                     b"wcet" => &mut wcet,
                     b"jitter" => &mut jitter,
                     b"blocking" => &mut blocking,
@@ -144,6 +147,7 @@ fn task_form(cst: &LosslessCst, node: &CstNode) -> Result<TaskForm, FormsRefusal
         arrival,
         interval,
         deadline,
+        bcet,
         wcet,
         priority,
         jitter,
