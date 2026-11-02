@@ -2398,6 +2398,35 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
     }
 }
 
+/// FR-093-AC-50, TC-1052: an explicit Text literal retains the value selected
+/// by its expected type and the checked-package v2 reader admits the emitted
+/// literal with that Text bounds type.
+#[trace("FR-093-AC-50", "TC-1052")]
+#[test]
+fn explicit_text_literal_emits_and_reads_back_as_a_typed_text_value() {
+    let (_, package) = package_from_text(
+        "function retained using v(): Text[1, 1; nfc] pure { Text(\"e\\u0301\") }",
+    );
+    let emission = emit_checked(&package).expect("the package emits");
+    let wire = wire(&emission);
+    let literal = nodes(&wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "value"
+                && node["semantic_form"] == "literal"
+                && node["body"]["value_kind"] == "text"
+        })
+        .expect("the explicit constructor emits a Text literal node");
+    assert_eq!(literal["body"]["value"], "é");
+    let type_id = literal["body"]["type"].clone();
+    assert!(nodes(&wire).iter().any(|node| {
+        node["node_id"] == type_id
+            && node["node_tag"] == "bounded_domain"
+            && node["semantic_form"] == "text_bounds"
+    }));
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+}
+
 /// `tests/fixtures/spine-compile.native` through S1, S2, the assembler,
 /// check and link, as spine `compile` runs it.
 fn spine_compile_package() -> CheckedPackage {
