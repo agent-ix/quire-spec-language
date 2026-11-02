@@ -937,6 +937,81 @@ impl AdmittedPackageRead<'_> {
     pub(crate) fn has_node(&self, node: &NodeKey) -> bool {
         self.reader_nodes.contains(node)
     }
+
+    /// Resolve a reader-retained expression reference to its supplied frame
+    /// slot. This is a plain-data projection of the admitted graph; it does
+    /// not construct a checked term or consult the source package body.
+    pub(crate) fn protocol_reference_slot(
+        &self,
+        node: &NodeKey,
+        binders: &[Option<NodeKey>],
+        projected_field: &str,
+    ) -> Result<Option<(usize, String)>, InternalFault> {
+        let graph = wire_graph(&self.read.admitted).map_err(|_| {
+            InternalFault::new("FR-390", "reader-protocol-graph-has-structural-keys")
+        })?;
+        let Some(selected) = self.read.admitted.graph().nodes.iter().find(|candidate| {
+            graph
+                .key(&candidate.node_id)
+                .is_ok_and(|candidate_key| candidate_key == *node)
+        }) else {
+            return Err(InternalFault::new(
+                "FR-390",
+                "reader-selected-protocol-node-is-retained",
+            ));
+        };
+        let quire_contract_model::CheckedTerm::Application {
+            operation,
+            arguments,
+            ..
+        } = &selected.body
+        else {
+            return Ok(None);
+        };
+        if operation.identity() != Some("quire.op.record.project") {
+            return Ok(None);
+        }
+        let Some((_, field)) = operation
+            .projection_field()
+            .map_err(|_| InternalFault::new("FR-390", "reader-projection-field-is-admitted"))?
+        else {
+            return Ok(None);
+        };
+        if field != projected_field {
+            return Ok(None);
+        }
+        let mut pending = arguments
+            .iter()
+            .flat_map(quire_contract_model::CheckedTerm::reference_targets)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut visited = BTreeSet::new();
+        while let Some(target) = pending.pop() {
+            let key = graph.key(&target).map_err(|_| {
+                InternalFault::new("FR-390", "reader-protocol-reference-has-structural-key")
+            })?;
+            if let Some(index) = binders
+                .iter()
+                .position(|binder| binder.as_ref() == Some(&key))
+            {
+                return Ok(Some((index, field.to_owned())));
+            }
+            if !visited.insert(target.clone()) {
+                continue;
+            }
+            if let Some(operand) = self
+                .read
+                .admitted
+                .graph()
+                .nodes
+                .iter()
+                .find(|candidate| candidate.node_id == target)
+            {
+                pending.extend(operand.body.reference_targets().into_iter().cloned());
+            }
+        }
+        Ok(None)
+    }
 }
 
 fn reader_node_keys(package: &CheckedPackageV2) -> Result<BTreeSet<NodeKey>, WireIdError> {

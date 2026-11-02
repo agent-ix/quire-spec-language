@@ -1833,7 +1833,44 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .and_then(|admission| admission.authority().ok())
             .map(|observation| observation.environment())
             .unwrap_or(&empty);
-        frame.resize(selected.checked_body().frame_slots(frame.len()), None);
+        let body = selected.checked_body();
+        frame.resize(body.frame_slots(frame.len()), None);
+        let reader_root = if view.is_reader_backed() {
+            let Some(projection) = selected.reader_projection() else {
+                return Err(CallFailure::Fault(InternalFault::new(
+                    "FR-390",
+                    "reader-protocol-root-has-supported-plain-data-projection",
+                )));
+            };
+            let root = body.root();
+            let quire_checked::node::NodeKind::Attribute {
+                field,
+                optional,
+                derefed,
+                ..
+            } = root.kind()
+            else {
+                return Err(CallFailure::Fault(InternalFault::new(
+                    "FR-390",
+                    "reader-protocol-root-has-supported-plain-data-projection",
+                )));
+            };
+            Some(quire_checked::NodeRead {
+                operation: quire_checked::NodeKind::Attribute {
+                    reference: projection.slot(),
+                    field: quire_semantic_value::declaration::FieldRef::new(
+                        field.owner.clone(),
+                        projection.field(),
+                    ),
+                    optional: *optional,
+                    derefed: *derefed,
+                },
+                value_type: root.value_type(),
+                location: root.location(),
+            })
+        } else {
+            None
+        };
         let result = Machine::with_pre(
             self.graph().scope(),
             self.graph(),
@@ -1843,7 +1880,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             meter,
             self.graph().dispatch_tables(),
         )
-        .run_protocol_frame(selected.checked_body().root(), frame, unavailable)
+        .run_protocol_frame(body.root(), reader_root, frame, unavailable)
         .map_err(CallFailure::Fault)?;
         match result {
             Ok(evaluation) => Ok(ProtocolSlotEvaluation::Evaluated(evaluation)),

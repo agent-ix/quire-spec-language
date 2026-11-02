@@ -467,6 +467,7 @@ fn retain_accumulator(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
 
 enum Task<'a> {
     Eval(CheckedNode<'a>),
+    ReaderRead(Box<quire_checked::NodeRead<'a, usize>>),
     Apply(CheckedNode<'a>),
     Branch(CheckedNode<'a>),
     Short(CheckedNode<'a>),
@@ -958,6 +959,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     pub(crate) fn run_protocol_frame(
         mut self,
         root: CheckedNode<'a>,
+        reader_root: Option<quire_checked::NodeRead<'a, usize>>,
         frame: Vec<Option<Value>>,
         unavailable: std::collections::BTreeMap<
             Slot,
@@ -980,7 +982,11 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.unavailable_slots = unavailable;
         let provenance = vec![false; frame.len()];
         self.push_frame(frame, provenance);
-        match self.drive(root) {
+        let driven = match reader_root {
+            Some(read) => self.drive_reader_root(root, read),
+            None => self.drive(root),
+        };
+        match driven {
             Ok(evaluation) => Ok(Ok(evaluation)),
             Err(fault) => match self.unavailable_read.take() {
                 Some(read) => Ok(Err(read)),
@@ -1030,7 +1036,23 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Evaluate `root` on the current frame to its outcome: the task loop
     /// [`Self::run`] and FR-268's separation check share.
     fn drive(&mut self, root: CheckedNode<'a>) -> Result<Evaluation, InternalFault> {
-        self.tasks.push(Task::Eval(root));
+        self.drive_from(root, Task::Eval(root))
+    }
+
+    fn drive_reader_root(
+        &mut self,
+        root: CheckedNode<'a>,
+        read: quire_checked::NodeRead<'a, usize>,
+    ) -> Result<Evaluation, InternalFault> {
+        self.drive_from(root, Task::ReaderRead(Box::new(read)))
+    }
+
+    fn drive_from(
+        &mut self,
+        root: CheckedNode<'a>,
+        initial: Task<'a>,
+    ) -> Result<Evaluation, InternalFault> {
+        self.tasks.push(initial);
         while let Some(task) = self.tasks.pop() {
             // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
@@ -1047,9 +1069,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Task::Iterate(iteration) => iteration.node,
                 Task::IterateSeq(iteration) => iteration.node,
                 Task::DispatchGuard(guard) => guard.node,
-                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) | Task::RestorePackage(_) => {
-                    root
-                }
+                Task::ReaderRead(_)
+                | Task::Bind(_)
+                | Task::Return
+                | Task::RestoreAnchor(_)
+                | Task::RestorePackage(_) => root,
             };
             let applied = matches!(
                 &task,
@@ -1568,6 +1592,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn step(&mut self, task: Task<'a>) -> Result<(), Halt> {
         match task {
             Task::Eval(node) => self.eval(node),
+            Task::ReaderRead(read) => self.eval_reader_read(*read),
             Task::Apply(node) => self.apply(node),
             Task::Branch(node) => {
                 let NodeKind::If {
@@ -1684,27 +1709,66 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
+    fn eval_reader_read(&mut self, read: quire_checked::NodeRead<'a, usize>) -> Result<(), Halt> {
+        match read.operation {
+            NodeKind::Local(slot) => self.eval_local(slot),
+            NodeKind::Attribute {
+                reference,
+                field,
+                optional,
+                derefed,
+            } => {
+                self.eval_local(reference)?;
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("reader-attribute-reference-is-a-reference"));
+                };
+                if derefed {
+                    charge_model_read(self.meter, ChargePoint::ModelDeref)?;
+                }
+                charge_model_read(self.meter, ChargePoint::ModelNavigate)?;
+                let objects = self.objects;
+                let slot = objects
+                    .objects()
+                    .attribute(self.scope.types(), &reference, &field)
+                    .ok_or_else(|| invariant("reader-attribute-slot-is-admitted"))?;
+                let witnessed = objects.is_witnessed(self.scope.types(), &reference, &field);
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    optional,
+                    read.value_type,
+                    witnessed,
+                )?;
+                self.push_value(value, false);
+                Ok(())
+            }
+            _ => Err(invariant("reader-protocol-root-read-is-supported-local")),
+        }
+    }
+
+    fn eval_local(&mut self, slot: Slot) -> Result<(), Halt> {
+        if let Some((binder, cause)) = self.unavailable_slots.get(&slot) {
+            return Err(Halt::Unavailable {
+                binder: binder.clone(),
+                cause: *cause,
+            });
+        }
+        let value = self
+            .slot(slot)?
+            .clone()
+            .ok_or_else(|| invariant("evaluation-local-value-unbound"))?;
+        let provenance = self.slot_has_guard_provenance(slot)?;
+        self.push_value(value, provenance);
+        Ok(())
+    }
+
     fn eval(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
         match node.kind() {
             NodeKind::Literal(CheckedLiteral(value)) => {
                 self.push_value(value.clone(), false);
                 return Ok(());
             }
-            NodeKind::Local(slot) => {
-                if let Some((binder, cause)) = self.unavailable_slots.get(slot) {
-                    return Err(Halt::Unavailable {
-                        binder: binder.clone(),
-                        cause: *cause,
-                    });
-                }
-                let value = self
-                    .slot(*slot)?
-                    .clone()
-                    .ok_or_else(|| invariant("evaluation-local-value-unbound"))?;
-                let provenance = self.slot_has_guard_provenance(*slot)?;
-                self.push_value(value, provenance);
-                return Ok(());
-            }
+            NodeKind::Local(slot) => return self.eval_local(*slot),
             NodeKind::Let { slot, value, body } => {
                 self.tasks.push(Task::Eval(node.at(*body)));
                 self.tasks.push(Task::Bind(*slot));

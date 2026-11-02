@@ -137,6 +137,33 @@ impl<'package> AdmittedEvaluationView<'package> {
         if !present {
             return Err(SlotSelectionFailure::MissingNode(root_node));
         }
+        #[cfg(feature = "std")]
+        let reader_projection = if let Some(reader) = self.reader {
+            let quire_checked::node::NodeKind::Attribute { field, .. } = body.root().kind() else {
+                return Err(SlotSelectionFailure::Fault(InternalFault::new(
+                    "FR-390",
+                    "reader-protocol-root-has-supported-plain-data-projection",
+                )));
+            };
+            let binders = frame
+                .iter()
+                .map(|source| source.node.clone())
+                .collect::<Vec<_>>();
+            Some(
+                reader
+                    .protocol_reference_slot(&root_node, &binders, &field.name)
+                    .map_err(SlotSelectionFailure::Fault)?
+                    .map(|(slot, field)| ReaderProtocolProjection { slot, field })
+                    .ok_or_else(|| {
+                        SlotSelectionFailure::Fault(InternalFault::new(
+                            "FR-390",
+                            "reader-protocol-root-has-supported-plain-data-projection",
+                        ))
+                    })?,
+            )
+        } else {
+            None
+        };
         let root = TermHandle {
             view: self,
             node: root_node,
@@ -170,6 +197,8 @@ impl<'package> AdmittedEvaluationView<'package> {
             root,
             sources,
             frame_len,
+            #[cfg(feature = "std")]
+            reader_projection,
         })
     }
 
@@ -317,6 +346,8 @@ pub struct SelectedProtocolTerm<'view, 'package> {
     root: TermHandle<'view, 'package>,
     sources: Vec<ProtocolSource>,
     frame_len: usize,
+    #[cfg(feature = "std")]
+    reader_projection: Option<ReaderProtocolProjection>,
 }
 
 impl SelectedProtocolTerm<'_, '_> {
@@ -335,6 +366,31 @@ impl SelectedProtocolTerm<'_, '_> {
     /// The checked frame length, including unread local slots.
     pub fn frame_len(&self) -> usize {
         self.frame_len
+    }
+    /// Plain data projected from the retained reader graph for this slot.
+    #[cfg(feature = "std")]
+    pub fn reader_projection(&self) -> Option<&ReaderProtocolProjection> {
+        self.reader_projection.as_ref()
+    }
+}
+
+/// A protocol slot's reader-derived field and supplied local slot.
+#[cfg(feature = "std")]
+pub struct ReaderProtocolProjection {
+    slot: usize,
+    field: String,
+}
+
+#[cfg(feature = "std")]
+impl ReaderProtocolProjection {
+    /// The selected expression's field name admitted by the reader.
+    pub fn field(&self) -> &str {
+        &self.field
+    }
+
+    /// The selected expression's supplied frame slot admitted by the reader.
+    pub fn slot(&self) -> usize {
+        self.slot
     }
 }
 

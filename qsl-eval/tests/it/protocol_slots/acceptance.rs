@@ -2342,15 +2342,38 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
             record.locus,
             CallAdmissionLocus::Binder(binder(&package, "Refunds", "view"))
         );
-        if expected_code == "foreign_reference" {
+        if expected_code == "dangling_reference" {
+            assert_eq!(
+                record.record.fields.get("object").map(String::as_str),
+                Some("ghost")
+            );
+            assert_eq!(
+                record.record.fields.get("population").map(String::as_str),
+                Some(model::id("nodes").as_str())
+            );
+        } else {
             let required = independent_universe_hex(reference.universe());
             let supplied = independent_universe_hex(value.universe());
             assert_eq!(
-                record.record.fields.get("required").map(String::as_str),
+                Some(
+                    record
+                        .record
+                        .fields
+                        .get("required")
+                        .expect("foreign-universe refusal includes required identity")
+                        .as_str()
+                ),
                 Some(required.as_str())
             );
             assert_eq!(
-                record.record.fields.get("supplied").map(String::as_str),
+                Some(
+                    record
+                        .record
+                        .fields
+                        .get("supplied")
+                        .expect("foreign-universe refusal includes supplied identity")
+                        .as_str()
+                ),
                 Some(supplied.as_str())
             );
         }
