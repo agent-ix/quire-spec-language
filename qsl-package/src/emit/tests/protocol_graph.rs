@@ -1092,8 +1092,14 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     };
     let standalone = CheckedPackage::link(check(&good));
     let standalone = emit_checked_with_protocol_results(&standalone).expect("Flow emits");
+    assert!(
+        standalone.emission().is_some(),
+        "Flow alone emits a package"
+    );
     let ProtocolEmissionResult::Emitted {
-        nodes: baseline, ..
+        clause_key: baseline_clause_key,
+        nodes: baseline,
+        ..
     } = standalone.results().first().expect("one protocol result")
     else {
         panic!("Flow emits independently: {:?}", standalone.results());
@@ -1109,10 +1115,9 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     assert_eq!(combined_graph.protocol_refusals()[0].declaration, "Broken");
     let combined = emit_checked_with_protocol_results(&CheckedPackage::link(combined_graph))
         .expect("the good protocol's nodes can still be emitted");
-    assert!(matches!(
-        combined.aggregate(),
-        ProtocolEmissionAggregate::Refused { .. }
-    ));
+    let ProtocolEmissionAggregate::Refused { primary } = combined.aggregate() else {
+        panic!("a refused protocol makes the aggregate refused")
+    };
     assert!(
         combined.emission().is_none(),
         "a refused aggregate has no package"
@@ -1133,6 +1138,10 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         emitted_good, baseline,
         "Flow's nodes are byte-for-byte stable"
     );
+    let ProtocolEmissionResult::Emitted { clause_key, .. } = &combined.results()[0] else {
+        unreachable!("the preceding assertion checked Flow's result")
+    };
+    assert_eq!(clause_key, baseline_clause_key);
     let ProtocolEmissionResult::Refused {
         declaration,
         refusal,
@@ -1141,6 +1150,10 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Broken's result is refused: {:?}", combined.results());
     };
     assert_eq!(declaration, "Broken");
+    assert_eq!(
+        primary, refusal,
+        "Broken is the aggregate's primary refusal"
+    );
     assert!(matches!(
         &refusal.cause,
         qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
@@ -1167,25 +1180,28 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     else {
         panic!("Broken remains refused: {:?}", reversed.results());
     };
-    assert!(matches!(
-        (&reversed_refusal.cause, &refusal.cause),
-        (
-            qsl_semantics::check::CheckCause::ProtocolAnchor(reversed),
-            qsl_semantics::check::CheckCause::ProtocolAnchor(original)
-        ) if matches!(
-            (reversed.as_ref(), original.as_ref()),
+    assert!(
+        matches!(
+            (&reversed_refusal.cause, &refusal.cause),
             (
-                qsl_semantics::check::ProtocolAnchorCause::Missing {
-                    segment: reversed_segment,
-                    ..
-                },
-                qsl_semantics::check::ProtocolAnchorCause::Missing {
-                    segment: original_segment,
-                    ..
-                }
-            ) if reversed_segment == original_segment && reversed_segment == "ghost"
-        )
-    ), "the refusal reason is independent of declaration order");
+                qsl_semantics::check::CheckCause::ProtocolAnchor(reversed),
+                qsl_semantics::check::CheckCause::ProtocolAnchor(original)
+            ) if matches!(
+                (reversed.as_ref(), original.as_ref()),
+                (
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: reversed_segment,
+                        ..
+                    },
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: original_segment,
+                        ..
+                    }
+                ) if reversed_segment == original_segment && reversed_segment == "ghost"
+            )
+        ),
+        "the refusal reason is independent of declaration order"
+    );
     let ProtocolEmissionResult::Emitted {
         nodes: reversed_good,
         ..
@@ -1194,6 +1210,37 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         panic!("Flow remains emitted: {:?}", reversed.results());
     };
     assert_eq!(reversed_good, baseline, "Flow remains byte-for-byte stable");
+
+    let third_good = good.replace("protocol Flow", "protocol ThirdGood");
+    let standalone_third =
+        emit_checked_with_protocol_results(&CheckedPackage::link(check(&third_good)))
+            .expect("ThirdGood emits alone");
+    let ProtocolEmissionResult::Emitted {
+        clause_key: third_clause_key,
+        nodes: third_baseline,
+        ..
+    } = &standalone_third.results()[0]
+    else {
+        panic!("ThirdGood emits alone: {:?}", standalone_third.results());
+    };
+    let with_two_good = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
+        "{good}\n{broken}\n{third_good}"
+    ))))
+    .expect("good protocols remain emit-able around a refused protocol");
+    assert!(matches!(
+        with_two_good.results(),
+        [
+            ProtocolEmissionResult::Emitted { declaration: first, nodes: first_nodes, clause_key: first_key },
+            ProtocolEmissionResult::Refused { declaration: refused, .. },
+            ProtocolEmissionResult::Emitted { declaration: third, nodes: third_nodes, clause_key: third_key }
+        ] if first == "Flow"
+            && refused == "Broken"
+            && third == "ThirdGood"
+            && first_nodes == baseline
+            && third_nodes == third_baseline
+            && first_key == baseline_clause_key
+            && third_key == third_clause_key
+    ));
 
     let only_broken = emit_checked_with_protocol_results(&CheckedPackage::link(check(&broken)))
         .expect("a refused protocol result is available without Flow");
@@ -1204,25 +1251,28 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     else {
         panic!("Broken remains refused alone: {:?}", only_broken.results());
     };
-    assert!(matches!(
-        (&standalone_refusal.cause, &refusal.cause),
-        (
-            qsl_semantics::check::CheckCause::ProtocolAnchor(standalone),
-            qsl_semantics::check::CheckCause::ProtocolAnchor(combined)
-        ) if matches!(
-            (standalone.as_ref(), combined.as_ref()),
+    assert!(
+        matches!(
+            (&standalone_refusal.cause, &refusal.cause),
             (
-                qsl_semantics::check::ProtocolAnchorCause::Missing {
-                    segment: standalone_segment,
-                    ..
-                },
-                qsl_semantics::check::ProtocolAnchorCause::Missing {
-                    segment: combined_segment,
-                    ..
-                }
-            ) if standalone_segment == combined_segment && standalone_segment == "ghost"
-        )
-    ), "removing Flow does not change Broken's refusal reason");
+                qsl_semantics::check::CheckCause::ProtocolAnchor(standalone),
+                qsl_semantics::check::CheckCause::ProtocolAnchor(combined)
+            ) if matches!(
+                (standalone.as_ref(), combined.as_ref()),
+                (
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: standalone_segment,
+                        ..
+                    },
+                    qsl_semantics::check::ProtocolAnchorCause::Missing {
+                        segment: combined_segment,
+                        ..
+                    }
+                ) if standalone_segment == combined_segment && standalone_segment == "ghost"
+            )
+        ),
+        "removing Flow does not change Broken's refusal reason"
+    );
 
     let no_owner = flow_over("Boolean", "on origin", "role Buyer on M::Order;");
     let no_owner_pair = emit_checked_with_protocol_results(&CheckedPackage::link(check(&format!(
