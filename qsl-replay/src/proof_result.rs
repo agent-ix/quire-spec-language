@@ -2246,14 +2246,27 @@ mod tests {
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
-        // This ResultValue definition is copied verbatim from QSpec main
-        // f685ac354's FR-331 schema. A newly admitted wire value must update
-        // this fixture and get a representative value and expected O-16
-        // category here before this test can pass.
-        let schema: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/fr331-result-value.schema.json"
-        ))
-        .expect("parse checked-in FR-331 ResultValue schema fixture");
+        // Keep this sample map complete against the live FR-331 schema. A
+        // newly admitted wire value must get a representative value and an
+        // expected O-16 category here before this test can pass.
+        let qspec_dir = std::env::var_os("QSPEC_DIR")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                let sibling = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../quire-specification");
+                sibling.is_dir().then_some(sibling)
+            })
+            .unwrap_or_else(|| {
+                panic!("FR-331 schema unavailable; set QSPEC_DIR to a quire-specification checkout")
+            });
+        let schema_path = qspec_dir.join("proposals/backend-provider-v1/schema.json");
+        let schema_source = std::fs::read_to_string(&schema_path).unwrap_or_else(|error| {
+            panic!(
+                "read FR-331 schema at {schema_path:?} (set QSPEC_DIR to a quire-specification checkout): {error}"
+            )
+        });
+        let schema: serde_json::Value = serde_json::from_str(&schema_source)
+            .unwrap_or_else(|error| panic!("parse FR-331 schema at {schema_path:?}: {error}"));
         let schema_values: BTreeSet<&str> = schema["$defs"]["ResultValue"]["enum"]
             .as_array()
             .expect("FR-331 ResultValue is an enum")

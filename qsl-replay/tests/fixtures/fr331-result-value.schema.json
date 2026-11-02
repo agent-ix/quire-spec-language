@@ -1,1 +1,0 @@
-{"$defs":{"ResultValue":{"description":"FR-331: the closed result vocabulary.","enum":["proved","refuted","tested","measured","inconclusive","unsupported","declined","incomplete","failed"]}}}
