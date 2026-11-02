@@ -65,6 +65,9 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-018 | fixed | round 3: FR-383-AC-44: ... every slot's per-application row count equals its visits in the slot walk ... FR-383-AC-45: For fixture E-C, each row's `Location` equals the checked clause's ... FR-383-AC-46: ... t |
 | FND-019 | accepted-no-change | round 3: FR-390 now states no test vector exercises MissingOperationProjection because no package can reach it (the identity-to-NodeKind map is required to be total) and AC-41 is its only check. |
 | FND-020 | fixed | round 3: FR-383-AC-43: Duplicating a retry-origin `earlier.tally` row is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the dupli |
+| FND-021 | fixed | round 4: FR-383 orders rows across origins by ascending origin string, and FR-390-AC-53 and C14a remove the highest-term_ordinal row (the lone remaining row is ordinal zero, so I2 admits it). Residual: FND-024. |
+| FND-022 | fixed | round 4: the merge-gate sentences are gone from FR-383 A1 and FR-390. Residual: FND-026 (the cited QSpec ids are not yet on QSpec main). |
+| FND-023 | fixed | round 4: FR-383-AC-48 is split into AC-49, 50, 51 and FR-390-AC-53 into AC-53 and AC-54. Residual: FND-027. |
 
 ## New findings (disposition pass 2)
 
@@ -79,6 +82,20 @@ Ticket: QSL-852; PR 2141 at 121bf7be. Reviewed the diff only: FR-390 'Composed r
 | FND-022 | low | other: A process gate and a 'not yet merged' status sit in normative spec text, in FR-383 and again in FR-390 | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 | FND-023 | low | compound: AC-48 joins the shared-node premise, the cross-origin ordinal rule and the one-row-per-origin count; FR-390-AC-53 joins the shareB refusal and the not | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
 
-## Verdict (disposition pass 3)
+## Verdict (disposition pass 3, superseded by pass 4)
 
 Round 1 and round 2 left FND-001 to FND-016 fixed. Round 3: FND-017, FND-018 and FND-020 fixed, FND-019 accepted-no-change. FND-021 (medium) is open, FND-022 and FND-023 (low) are open. Head 91175115c on main c18814e85; quire validate on the changed spec files has no errors; no id collisions. Not mergeable until FND-021 is fixed, and not before QSpec PR 603 (open at review time). Left open by design for the code lane: shared-application hash-consing in the emitter and E-C surface-syntax expressibility.
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-024 | medium | ambiguous: "origin string in UTF-8 byte order" has no definition; FR-322's closed origin is structured, and AC-51, AC-53 and C14a assert shareB sorts after shareA without a stated string | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-025 | medium | untestable-ac: FR-390-AC-38 adds a row "at ordinal zero after any rows of its group", which is incoherent and which I2 refuses as a duplicate key | spec/functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md |
+| FND-026 | low | other: A1 and FR-390 cite QSpec FR-322-AC-310 to AC-312, absent from QSpec main (PR 603 open); the gate was removed and PR 2141's body does not name the merge order | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-027 | low | compound: FR-383-AC-51 joins ordinal values and byte order | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md |
+| FND-028 | low | ambiguous: "Composed's run Main" and the attempts Tried and Picked of E-C are not declared; Tried is fixture E's attempt | spec/test-cases/TC-1070-evaluate-the-expressions-of-protocol-nodes-from-a-checked-package.md |
+
+## Verdict (disposition pass 4)
+
+FND-021, FND-022 and FND-023 are fixed. Head 8de494964 on main c18814e85 (unchanged): quire validate has no errors; no id collisions with main or open PRs; every AC has a TC row and the scope lines match. No high finding. FND-024 and FND-025 are medium vector or term defects, so the PR is not mergeable yet. QSpec PR 603 is still open and FR-322-AC-310 to 312 are not on QSpec main, so the PR must also wait for it (FND-026).

@@ -548,42 +548,46 @@ selector does, but never supplies a node's operation, children, type or
 location.
 
 The slot descriptor the selector returns SHALL carry the slot's root node key
-and the slot's origin (the `protocol_site` origin of QSpec FR-322), and the
-reader SHALL take both from it. Every slot has an origin no other slot of the
-package shares (FR-383), so an application shared by two slots is separated
-by origin.
+and the slot's closed origin (QSpec FR-322's type declaration or protocol
+attempt), and the reader SHALL take both from it. Slots of one attempt share an
+origin, and the reader SHALL take the order of the slots of an origin, and so
+the origin walk, from the admitted protocol nodes by FR-383's slot order, never
+from the source package.
 
-The reader SHALL walk each slot as FR-383's *slot walk* defines it, computed
-from the admitted wire alone: positions in the operand order of each node's
-`NodeKind` (never the order of the `dependencies` array), a node reached
-through two parents walked once per parent, every branch and arm walked whether
-or not an input evaluates it, and a `Local` or literal a leaf. A handle SHALL
-identify a position of that walk within a view and slot, not only a node, so two
-handles of one shared node may read two different `Location` values.
+The reader SHALL walk each slot as FR-383's *slot walk* defines it, and each
+origin as FR-383's *origin walk*, computed from the admitted wire alone:
+positions in the operand order of each node's `NodeKind` (never the order of the
+`dependencies` array), a node reached through two parents walked once per
+parent, every branch and arm walked whether or not an input evaluates it, and a
+`Local` or literal a leaf. A handle SHALL identify a position of that walk
+within a view and slot, not only a node, so two handles of one shared node may
+read two different `Location` values.
 
 The `Location` of a reader `NodeRead` for an application is the semantic
 location of the visited term, read from the `protocol_locations` row FR-383
 emits for it. The reader SHALL pair the visit numbered `k` of an application in
-the slot walk with the row at index `k` of the rows of that application whose
-origin is the slot's origin, taken in ascending (occurrence ordinal,
-`term_ordinal`) order, counting only rows of that origin (FR-383 defines the
-occurrence ordinal and that `term_ordinal` runs across origins). The `Location` of a literal or `Local` read is the one
-its own admitted node carries (FR-383 assumption A1, which cites QSpec FR-322-AC-310 to AC-312). A location SHALL NOT be taken from the source
-package, from a source region, or defaulted.
+its origin's walk with the row at index `k` of the rows of that application
+whose origin is that origin, taken in ascending (occurrence ordinal,
+`term_ordinal`) order and counting only rows of that origin (FR-383 defines the
+occurrence ordinal, the origin walk, and that `term_ordinal` runs across
+origins). The `Location` of a literal or `Local` read is the one its own
+admitted node carries (FR-383 assumption A1, which cites QSpec FR-322-AC-310 to
+AC-312). A location SHALL NOT be taken from the source package, from a source
+region, or defaulted.
 
-View creation SHALL pair every slot of every protocol node of the package. If a
-visit has no row at its index, or a row of a slot's origin names an application
-the slot walk does not visit or an index beyond the application's visits,
-view creation SHALL return `ViewFailure::Unsupported` with
+View creation SHALL pair every origin of every protocol node of the package. If
+a visit has no row at its index, or a row of an origin names an application the
+origin walk does not visit or an index beyond the application's visits, view
+creation SHALL return `ViewFailure::Unsupported` with
 `MissingLocationProjection` and no view. The locus is `Node` with the key of
 that application and its own admitted node location; the evidence is the
-package identity, the slot's origin, the application's node key, the visit
-number or row index and the count of rows and of visits. Because view creation
-is package-wide, this refusal leaves no view of the package, as every other
-unsupported projection does. A row set the QSpec FR-322 reader itself refuses
-(a missing predecessor ordinal, a duplicate key, a foreign or non-application
-node) is refused at I2 admission under FR-322-AC-291, before view creation is
-attempted.
+package identity, the origin's fields, the application's node key, the visit
+number or row index and the count of rows and of visits in that origin. Because
+view creation is package-wide, this refusal leaves no view of the package, as
+every other unsupported projection does. A row set the QSpec FR-322 reader
+itself refuses (a missing predecessor ordinal, a duplicate key, a foreign or
+non-application node) is refused at I2 admission under FR-322-AC-291, before
+view creation is attempted.
 
 The identity-to-`NodeKind` map SHALL be total over the operation identities
 FR-322 admits for expression nodes. An identity FR-322 admits with no FR-400
@@ -789,28 +793,29 @@ value; check 6 does not apply to it.
 | FR-390-AC-30 | A reader view whose source package holds, for a slot, the real `CheckedBody` of a different slot of the same package (taken through the checked package's existing API, with no new `construct` caller) returns for that slot the same `NodeRead` values, value and charge log as the unaltered view. | Test (TC-1070) |
 | FR-390-AC-31 | The `Location` of each of the two `earlier.tally` handles of the retry relation of `Refund` equals the `Location` of the term at that position in the in-process checked clause (the first, in `earlier.tally < 3`; the second, in `earlier.tally + 1`), and the two differ. | Test (TC-1070) |
 | FR-390-AC-32 | Evaluating the retry relation of `Refund` with `earlier` unavailable halts at the first `earlier.tally` visit, and the reader result carries the `Location` of the term in `earlier.tally < 3`, equal to the in-process result. | Test (TC-1070) |
-| FR-390-AC-33 | With the `Location` values of the two retry-origin `earlier.tally` rows swapped (ordinals and keys unchanged, so I2 admits the package), the two handles of the retry relation read the swapped locations. | Test (TC-1070) |
+| FR-390-AC-33 | With the `Location` values of the two `Refund`-origin `earlier.tally` rows swapped (ordinals and keys unchanged, so I2 admits the package), the two handles of the retry relation read the swapped locations. | Test (TC-1070) |
 | FR-390-AC-34 | In the package of AC-33, the halt of AC-32 reports the location of the term in `earlier.tally + 1`. | Test (TC-1070) |
-| FR-390-AC-35 | With the highest-index retry-origin `earlier.tally` row removed (I2 admits it), view creation returns `ViewFailure::Unsupported` with `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, carrying the retry origin, visit number 1, two visits and one row. | Test (TC-1070) |
+| FR-390-AC-35 | With the highest-`term_ordinal` `Refund`-origin `earlier.tally` row removed (a lone ordinal-zero row remains, so I2 admits it), view creation returns `ViewFailure::Unsupported` with `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, carrying the `Refund` origin (protocol and attempt positions), visit number 1, two visits and one row. | Test (TC-1070) |
 | FR-390-AC-36 | In the package of AC-35 no slot of the package has a view, and no meter was charged. | Test (TC-1070) |
-| FR-390-AC-37 | With one retry-origin row appended for `earlier.tally` after its group's last row, with the next consecutive `term_ordinal` (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, before any view or meter charge. | Test (TC-1070) |
-| FR-390-AC-38 | With a retry-origin row added, at ordinal zero after any rows of its group, for an application the retry relation does not hold (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, before any view or meter charge. | Test (TC-1070) |
-| FR-390-AC-39 | With the ordinal-zero retry-origin `earlier.tally` row removed, the QSpec FR-322 reader refuses at I2 admission with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (FR-322-AC-291), and no view creation is attempted. | Test (TC-1070) |
-| FR-390-AC-40 | With a retry-origin `earlier.tally` row duplicated, the QSpec FR-322 reader refuses at I2 admission with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, FR-322-AC-291), and no view creation is attempted. | Test (TC-1070) |
-| FR-390-AC-41 | Inspection finds the identity-to-`NodeKind` map total over the operation identities FR-322 admits for expression nodes, so `MissingOperationProjection` is reachable only through a skew between FR-322 and FR-400. | Inspection |
+| FR-390-AC-37 | With one `Refund`-origin row appended for `earlier.tally` at `term_ordinal` 2, the next consecutive ordinal of its group (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, carrying row index 2 and two visits, before any view or meter charge. | Test (TC-1070) |
+| FR-390-AC-38 | With one `Refund`-origin row added for the application `order >= 0` of fixture E's `Applied` constraint, at `term_ordinal` 1, the next consecutive ordinal after that group's one ordinal-zero row (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the `Refund` origin, row index 0 and zero visits, before any view or meter charge. | Test (TC-1070) |
+| FR-390-AC-39 | With the ordinal-zero `Refund`-origin `earlier.tally` row removed, the QSpec FR-322 reader refuses at I2 admission with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (FR-322-AC-291), and no view creation is attempted. | Test (TC-1070) |
+| FR-390-AC-40 | With a `Refund`-origin `earlier.tally` row duplicated (same key, next to the original), the QSpec FR-322 reader refuses at I2 admission with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, FR-322-AC-291), and no view creation is attempted. | Test (TC-1070) |
+| FR-390-AC-41 | Inspection finds the identity-to-`NodeKind` map total over the operation identities FR-322 admits for expression nodes, so `MissingOperationProjection` is reachable only through a skew between FR-322 and FR-400; no package can be built that reaches it, so no vector exists. | Inspection |
 | FR-390-AC-42 | Over fixture E-C of TC-1070, slots rooted at a `let`, a conditional and a case evaluate through the reader view to the value and ordered charge log of the checked package, and each position's `Location` equals that of the checked package's term. | Test (TC-1070) |
 | FR-390-AC-43 | Over fixture E-C, slots rooted at a dereference and at integer arithmetic (add, negate, divide and range coercion) evaluate to the value and ordered charge log of the checked package, with equal `Location` values. | Test (TC-1070) |
 | FR-390-AC-44 | Over fixture E-C, slots rooted at a presence test with its value read, a collection size and containment test, and a record or tuple constructor with a field read evaluate to the value and ordered charge log of the checked package, with equal `Location` values. | Test (TC-1070) |
 | FR-390-AC-45 | In `Composed.let` a `let` binder reference is not a visit of the bound application: `m.count` has one visit and one row. | Test (TC-1070) |
 | FR-390-AC-46 | In `Composed.if` the arm the input does not select still holds its visits and rows, and its handles read the checked package's `Location` values. | Test (TC-1070) |
 | FR-390-AC-47 | In `Composed.case` the arms the input does not select still hold their visits and rows, and their handles read the checked package's `Location` values. | Test (TC-1070) |
-| FR-390-AC-48 | In `Composed.if`, `m.count` under two parents has two visits, two rows of that slot's origin and two handles with their own `Location` values. | Test (TC-1070) |
-| FR-390-AC-49 | Relabelling the node ids of fixture E-C's package (identities and ascending `dependencies` recomputed) so that the ascending-id order of a slot's reachable nodes differs from their walk order changes no handle's `Location`. | Test (TC-1070) |
-| FR-390-AC-50 | Inspection finds that the reader variant of `read_node` and the pairing take the slot root and origin only from the slot descriptor and build no `NodeRead` from a `CheckedBody`. | Inspection |
+| FR-390-AC-48 | In `Composed.if`, `m.count` under two parents has two visits, two rows of its origin and two handles with their own `Location` values. | Test (TC-1070) |
+| FR-390-AC-49 | Relabelling the node ids of fixture E-C's package (row keys, identities and ascending `dependencies` recomputed) so that the ascending-id order of a slot's reachable nodes differs from their walk order changes no handle's `Location`. | Test (TC-1070) |
+| FR-390-AC-50 | Inspection finds that the reader variant of `read_node` and the pairing take the slot root and origin only from the slot descriptor, take slot order only from the admitted protocol nodes, and build no `NodeRead` from a `CheckedBody`. | Inspection |
 | FR-390-AC-51 | Inspection finds the reader's `NodeKind` match exhaustive with no wildcard arm. | Inspection |
-| FR-390-AC-52 | In fixture E-C, the application `m.count >= 1` held by `Composed.shareA` and `Composed.shareB` pairs each slot's visit with the row of that slot's own origin, so each slot's handle reads its own `Location`. | Test (TC-1070) |
-| FR-390-AC-53 | In fixture E-C with the highest-`term_ordinal` row of the `m.count >= 1` group removed (the lone remaining row is ordinal zero, so I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the origin that owned the removed row (the later origin in UTF-8 byte order, `Composed.shareB`). | Test (TC-1070) |
-| FR-390-AC-54 | In the package of AC-53 the other origin's slot (`Composed.shareA`) is not reported unpaired. | Test (TC-1070) |
+| FR-390-AC-52 | In fixture E-C, the handle of `order >= 0` in `Picked.constraints[0]` reads the `Location` of the `Picked`-origin row (`term_ordinal` 2), not of a `Tried`-origin row. | Test (TC-1070) |
+| FR-390-AC-53 | In fixture E-C, the handles of `order >= 0` in `Tried.constraints[0]` and `Tried.constraints[1]` read the rows of `term_ordinal` 0 and 1, and swapping those two rows' `Location` values swaps the two handles' locations. | Test (TC-1070) |
+| FR-390-AC-54 | In fixture E-C with the highest-`term_ordinal` row of the `order >= 0` group removed (the row of `Picked`; ordinals 0 and 1 remain, so I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the `Picked` origin (protocol 0, attempt 1), visit number 0, one visit and zero rows. | Test (TC-1070) |
+| FR-390-AC-55 | In the package of AC-54 the `Tried` origin's two visits of `order >= 0` are not reported unpaired. | Test (TC-1070) |
 ## Dependencies
 
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md): the `ProtocolClause` arm,
