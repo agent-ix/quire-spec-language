@@ -226,6 +226,51 @@ The compiler SHALL NOT interpret clock progress, settle temporal truth, map a TL
 formula, create observation records or emit a protocol result through this
 extension.
 
+### Checked-package clock bindings
+
+On the checked-package route the same selection is carried by QSpec FR-322's
+top-level `temporal_bindings` member ("Temporal clock bindings",
+FR-322-AC-294). A **selected temporal declaration** is each `temporal` clause
+and each protocol `compensate` template whose body names a clock and a `within`
+window: a compensation's own timed clause
+(`compensate N for E as (forward: T) by R on M::X::op using A clock "c" { within [a, b] }`,
+FR-381) is a selected temporal declaration like a `temporal` clause, not a part
+of its protocol's declaration. It carries its own clock name, so binding only
+the package's `lock.profile_selections` `temporal_profile` row is not enough.
+
+- The emitter SHALL write exactly one `temporal_bindings` row
+  `{declaration, clock, clock_name}` for each selected temporal declaration,
+  including each compensation window, and none for any other node. A package
+  with no selected temporal declaration omits the member; absence never supplies
+  a default clock.
+- `declaration` is the structural `NodeRef` of the declaring node: the
+  `temporal`/`temporal_clause` node for a clause, and the
+  `protocol`/`compensation` template node for a compensation window. Its
+  producer-side identity is the pair (source authority and identity, declaration
+  byte span) that this requirement already keys `native::TemporalSelection` by,
+  resolved to the node's `NodeRef` by the emitter. Two compensations of one
+  protocol, or a clause and a compensation, that agree in model, profile and
+  clock name are two declarations with two rows.
+- `clock_name` is the exact non-empty clock text of the declaration (the clause
+  body's `clock` argument, or the template's `clock`), not derived from the
+  profile identity and not defaulted. `clock` is the one typed
+  `ClockConfiguration` that the caller explicitly selected for that declaration,
+  of the kind the package's `temporal_profile` row determines
+  (`event_position`, `fixed_sample` or `timestamped_event`); none is obtained
+  from source text, a trace, a watermark or an installed default.
+- Uniqueness: the supplied selection table has exactly one configuration per
+  selected temporal declaration. A declaration with none refuses
+  `missing_declaration`/`missing-selection` at the declaration and the timed
+  family is not emitted; a second configuration for one declaration, a
+  configuration for a node that is no selected temporal declaration, a
+  `clock_name` that differs from the declaration's clock text and a
+  configuration kind that is inconsistent with the selected profile each refuse
+  `invalid_package`/`timed-node-reference` at the offending selection, as QSpec
+  FR-322 refuses the same rows at the reader. No clock, parameter or profile is
+  substituted and no partial package is produced.
+- Rows are in ascending structural `NodeRef` order. QSL emission does not claim
+  reader admission; QSpec FR-322 and the IR strict reader decide it.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -242,6 +287,8 @@ extension.
 | FR-050-AC-10 | Withdrawn: a file-name scan for checksum manifests caught no functional failure; the rule is stated in the Description. | Withdrawn |
 | FR-050-AC-11 | Withdrawn: a layout check of the manifest directory caught no failure the writers' own source reads do not. | Withdrawn |
 | FR-050-AC-12 | Withdrawn: the constants are deleted; an export-scan test caught no functional failure. | Withdrawn |
+| FR-050-AC-13 | A timed choreography with one `temporal` clause and one `compensate ... using A clock "c" { within [1, 5] }` template, both under the `event-position` profile and each with its own selected configuration, emits two `temporal_bindings` rows: one keyed by the clause node's `NodeRef` and one by the `protocol`/`compensation` node's `NodeRef`, each with its own `clock_name` and typed `clock`, in ascending `NodeRef` order. A second compensation with the same model, profile and clock name emits a third row with a distinct `declaration`. A package whose only timed construct is the compensation window still emits its row, and a package with none omits the member. | Test (TC-134) |
+| FR-050-AC-14 | For that package, omitting the compensation's configuration refuses `missing_declaration`/`missing-selection` at the compensation; supplying two for it, supplying one for a node that is no selected temporal declaration, a `clock_name` other than `"c"`, and a `fixed_sample` configuration under the `event-position` profile each refuse `invalid_package`/`timed-node-reference` at the offending selection. Each refusal produces no package and substitutes no clock. | Test (TC-134) |
 
 ## Dependencies
 
