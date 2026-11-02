@@ -57,6 +57,10 @@ enum Unit {
     TimestampedLaterAlways,
     /// Timestamped finite-window `on each` property.
     TimestampedEach,
+    /// Timestamped finite-window `[0,5]` universal.
+    TimestampedAlwaysFive,
+    /// Timestamped finite-window past operator.
+    TimestampedOnce,
 }
 
 impl Unit {
@@ -77,6 +81,9 @@ impl Unit {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
             Self::TimestampedEach => {
+                "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
+            }
+            Self::TimestampedAlwaysFive | Self::TimestampedOnce => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
         }
@@ -132,6 +139,14 @@ impl Unit {
             Self::TimestampedEach => {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on each (q: Counters::Counter) { eventually[0,2] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedAlwaysFive => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { always[0,5] holds(c.value > 0) }\n"
+            }
+            Self::TimestampedOnce => {
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on each (q: Counters::Counter) { once[0,4] holds(c.value > 0) }\n"
             }
         }
     }
@@ -341,7 +356,7 @@ fn outcome(report: &ClauseRunReport) -> &TemporalVerdict {
 }
 
 fn exit_code(report: &ClauseRunReport) -> u8 {
-    report.disposition.category().trace_exit_code()
+    report.disposition.exit_code()
 }
 
 struct ObservedReplayInput {
@@ -1306,6 +1321,36 @@ fn timestamped_windows_pending_and_decisive_witnesses() {
     );
     assert_eq!(incomplete.category_label(), "indeterminate");
 
+    let incomplete_universal = report(timestamped_with(
+        Unit::TimestampedAlwaysFive,
+        &[0],
+        &[1],
+        5,
+        None,
+    ));
+    assert_eq!(
+        outcome(&incomplete_universal),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+
+    let short_completeness = report(timestamped_with(
+        Unit::TimestampedLaterEventually,
+        &[0],
+        &[1],
+        3,
+        Some(2),
+    ));
+    assert_eq!(
+        outcome(&short_completeness),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+
     let on_each_false_then_pending = report(timestamped_with(
         Unit::TimestampedEach,
         &[0, 10],
@@ -1398,6 +1443,149 @@ fn timestamped_profile_and_trace_shape_must_match() {
         (record.catalog.code(), record.catalog.cause()),
         ("invalid_runtime_input", "invalid-value")
     );
+}
+
+/// FR-501-AC-11/FR-285 (TC-1295): temporal-only result classes retain their
+/// category and exit semantics through the QSL-local spine report.
+#[trace("TC-1295", "FR-501-AC-11")]
+#[test]
+fn finite_window_report_preserves_pending_and_indeterminate_exit_classes() {
+    let true_report = report(timestamped(&[0, 5], &[0, 1], 5, Some(5)));
+    assert_eq!(true_report.category_label(), "success");
+    assert_eq!(exit_code(&true_report), 0);
+
+    let false_report = report(timestamped(&[0], &[0], 5, Some(5)));
+    assert_eq!(false_report.category_label(), "violation");
+    assert_eq!(exit_code(&false_report), 10);
+
+    let pending = report(timestamped(&[0], &[0], 1, Some(1)));
+    assert_eq!(pending.category_label(), "pending");
+    assert_eq!(exit_code(&pending), 0);
+
+    let indeterminate = report(timestamped(&[0], &[0], 5, None));
+    assert_eq!(indeterminate.category_label(), "indeterminate");
+    assert_eq!(exit_code(&indeterminate), 11);
+
+    let outcomes = [
+        TemporalVerdict::Pending,
+        TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        },
+    ];
+    assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 11);
+    let outcomes = [TemporalVerdict::Holds, TemporalVerdict::Violated { at: 0 }];
+    assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 10);
+    let outcomes = [TemporalVerdict::Pending, TemporalVerdict::Holds];
+    assert_eq!(crate::spine::temporal_batch_exit_code(&outcomes), 0);
+}
+
+/// FR-501-AC-7/18 (TC-1295): order-sensitive operators require comparable
+/// authority-scoped keys for equal stamps; insertion order does not decide
+/// an ordered reading.
+#[trace("TC-1295", "FR-501-AC-7")]
+#[test]
+fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
+    fn until_request(values: &[i64]) -> ClauseRunRequest {
+        let mut request = timestamped(&[0, 1, 1], values, 1, Some(1));
+        let ClauseRunSource::Program { bytes, .. } = &mut request.source;
+        let source = String::from_utf8(bytes.clone()).unwrap();
+        *bytes = source
+            .replace(
+                "eventually[0,5] holds(c.value > 0)",
+                "holds(c.value > 0) until[0,1] holds(c.value = 2)",
+            )
+            .into_bytes();
+        request
+    }
+    fn set_keys(request: &mut ClauseRunRequest, keys: &[(&str, i64)]) {
+        let ClauseRunSelection::Temporal {
+            trace: TraceInput::Timestamped(trace),
+            ..
+        } = &mut request.selection
+        else {
+            unreachable!()
+        };
+        for (position, (authority, key)) in trace.positions.iter_mut().zip(keys) {
+            position.order = Some(crate::spine::TimestampedOrderKey {
+                authority: (*authority).to_owned(),
+                key: *key,
+            });
+        }
+    }
+
+    let refused = report(until_request(&[1, 0, 2]));
+    assert!(matches!(
+        refused.disposition,
+        ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::SameStampOrderUnavailable {
+            position: 2,
+        })
+    ));
+
+    let mut ordered = until_request(&[1, 0, 2]);
+    set_keys(&mut ordered, &[("ledger", 0), ("ledger", 1), ("ledger", 2)]);
+    let ordered = report(ordered);
+
+    let mut reversed = until_request(&[1, 0, 2]);
+    set_keys(
+        &mut reversed,
+        &[("ledger", 0), ("ledger", 1), ("ledger", 2)],
+    );
+    let ClauseRunSelection::Temporal {
+        trace: TraceInput::Timestamped(trace),
+        ..
+    } = &mut reversed.selection
+    else {
+        unreachable!()
+    };
+    trace.positions.swap(1, 2);
+    let reversed = report(reversed);
+    assert_eq!(outcome(&ordered), outcome(&reversed));
+
+    let mut incomparable = until_request(&[1, 0, 2]);
+    set_keys(
+        &mut incomparable,
+        &[("ledger-a", 0), ("ledger-a", 1), ("ledger-b", 2)],
+    );
+    assert!(matches!(
+        report(incomparable).disposition,
+        ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::SameStampOrderUnavailable {
+            position: 2,
+        })
+    ));
+}
+
+/// FR-501-AC-8 (TC-1295): a past window before a history cutoff is
+/// indeterminate only when the represented history does not decide it.
+#[trace("TC-1295", "FR-501-AC-8")]
+#[test]
+fn timestamped_past_windows_respect_history_cutoff() {
+    fn once(values: &[i64], authoritative_origin: bool) -> ClauseRunReport {
+        let mut request = timestamped_with(Unit::TimestampedOnce, &[3, 4], values, 4, Some(4));
+        let ClauseRunSelection::Temporal {
+            trace: TraceInput::Timestamped(trace),
+            ..
+        } = &mut request.selection
+        else {
+            unreachable!()
+        };
+        trace.authoritative_origin = authoritative_origin;
+        report(request)
+    }
+
+    let cutoff = once(&[0, 0], false);
+    assert_eq!(
+        outcome(&cutoff),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::MissingHistory,
+        }
+    );
+    assert_eq!(
+        outcome(&once(&[0, 0], true)),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    assert_eq!(outcome(&once(&[1, 0], false)), &TemporalVerdict::Holds);
 }
 
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace
