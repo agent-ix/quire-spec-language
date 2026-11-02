@@ -14,6 +14,7 @@ use qsl_forms::{
 };
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::wire_id::WireGraph;
+use qsl_semantics::check::CheckRefusal;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::value::{always_roles, native_diagnostics_catalog, DefinitionRole};
@@ -27,6 +28,7 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use serde_json::{json, Value};
+use unicode_normalization::UnicodeNormalization;
 
 use super::*;
 
@@ -2425,6 +2427,187 @@ fn explicit_text_literal_emits_and_reads_back_as_a_typed_text_value() {
             && node["semantic_form"] == "text_bounds"
     }));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
+}
+
+/// The QSpec checked-package v2 Text-literal vectors (FR-322-AC-304,
+/// TX-01..TX-14), read from the specification checkout.
+fn text_literal_vectors() -> Value {
+    let root = std::env::var_os("QSPEC_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../quire-specification")
+        });
+    let path = root.join("proposals/checked-package-v2/text-literal-vectors.json");
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|error| panic!("QSPEC_DIR vectors {}: {error}", path.display()));
+    serde_json::from_slice(&bytes).expect("the vectors are JSON")
+}
+
+/// `Text[min, max; profile]` for one vector type.
+fn vector_text_type(spec: &Value) -> String {
+    format!(
+        "Text[{}, {}; {}]",
+        spec["min"],
+        spec["max"],
+        spec["text_profile"].as_str().unwrap()
+    )
+}
+
+/// `value` as a source string body: every non-ASCII scalar as `\uXXXX`.
+fn source_escaped(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii() {
+                c.to_string()
+            } else {
+                format!("\\u{:04x}", u32::from(c))
+            }
+        })
+        .collect()
+}
+
+/// The source of a function returning `literal` at `text_type`.
+fn text_function(text_type: &str, literal: &str) -> String {
+    format!(
+        "function f using v(): {text_type} pure {{ Text(\"{}\") }}",
+        source_escaped(literal)
+    )
+}
+
+/// The checked package for `declarations`, or the checker's refusals.
+fn try_package_from_text(declarations: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         {declarations}"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .map(CheckedPackage::link)
+}
+
+/// FR-056-AC-51/52, FR-093-AC-50, QSpec FR-322-AC-304 (TX-01..TX-14): every
+/// vector's value, written as a source `Text(...)` literal, is normalized
+/// under the vector's profile at the checker, refused with
+/// `TextLiteralOutsideBounds` when its retained length leaves the bounds, and
+/// otherwise emits and reads back Verified with the retained sequence.
+#[trace("FR-056-AC-51", "FR-056-AC-52", "FR-093-AC-50", "TC-1052")]
+#[test]
+fn every_text_literal_vector_emits_normalized_or_is_refused_at_the_call() {
+    let vectors = text_literal_vectors();
+    for case in vectors["cases"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        let spec = &vectors["types"][case["type"].as_str().unwrap()];
+        let text_type = vector_text_type(spec);
+        let value = case["value"].as_str().unwrap();
+        let profile = spec["text_profile"].as_str().unwrap();
+        let retained: String = match profile {
+            "nfc" => value.nfc().collect(),
+            "nfd" => value.nfd().collect(),
+            _ => value.to_owned(),
+        };
+        let length = if profile == "binary-utf8" {
+            retained.len()
+        } else {
+            retained.chars().count()
+        } as u64;
+        let in_bounds =
+            (spec["min"].as_u64().unwrap()..=spec["max"].as_u64().unwrap()).contains(&length);
+        match try_package_from_text(&text_function(&text_type, value)) {
+            Err(refusals) => {
+                assert!(!in_bounds, "{id}: in-bounds retained value was refused");
+                assert_eq!(refusals.len(), 1, "{id}: {refusals:?}");
+                assert!(
+                    matches!(
+                        refusals[0].cause,
+                        qsl_semantics::check::CheckCause::TextLiteralOutsideBounds { .. }
+                    ),
+                    "{id}: {:?}",
+                    refusals[0].cause
+                );
+            }
+            Ok(package) => {
+                assert!(in_bounds, "{id}: out-of-bounds value was admitted");
+                let emission = emit_checked(&package).expect("the package emits");
+                let wire = wire(&emission);
+                let literal = nodes(&wire)
+                    .iter()
+                    .find(|node| {
+                        node["semantic_form"] == "literal" && node["body"]["value_kind"] == "text"
+                    })
+                    .unwrap_or_else(|| panic!("{id}: no text literal node"));
+                assert_eq!(literal["body"]["value"], retained.as_str(), "{id}");
+                assert!(
+                    matches!(read_back(&emission), Read::Verified { .. }),
+                    "{id}: the strict reader did not verify"
+                );
+            }
+        }
+    }
+}
+
+/// QSpec FR-322-AC-304: the strict reader's verdict on each vector's literal
+/// value placed in an emitted `Text[min, max; profile]` literal node, which
+/// never normalizes it.
+#[trace("FR-093-AC-50", "TC-1052")]
+#[test]
+fn the_strict_reader_decides_every_text_literal_vector_as_specified() {
+    let vectors = text_literal_vectors();
+    for case in vectors["cases"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        let spec = &vectors["types"][case["type"].as_str().unwrap()];
+        let (_, package) = package_from_text(&text_function(&vector_text_type(spec), "ab"));
+        let emission = emit_checked(&package).expect("the package emits");
+        let mut tampered = wire(&emission);
+        let nodes = tampered["semantic_graph"]["nodes"].as_array_mut().unwrap();
+        let (index, node) = nodes
+            .iter_mut()
+            .enumerate()
+            .find(|(_, node)| {
+                node["semantic_form"] == "literal" && node["body"]["value_kind"] == "text"
+            })
+            .unwrap_or_else(|| panic!("{id}: no text literal node"));
+        node["body"]["value"] = case["value"].clone();
+        let outcome = read_v2(
+            &jcs(&tampered),
+            library(),
+            V2ReadLimits::default(),
+            &read_evidence(&emission),
+        );
+        match case["expected"].as_str().unwrap() {
+            "admitted" => assert!(
+                matches!(outcome, Read::Verified { .. }),
+                "{id}: expected Verified, got {outcome:?}"
+            ),
+            _ => match outcome {
+                Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+                    assert_eq!(
+                        refusal.code,
+                        quire_contract_model::CheckedPackageRefusalCode::IllTyped,
+                        "{id}"
+                    );
+                    let pointer = case["pointer"]
+                        .as_str()
+                        .unwrap()
+                        .replace("{n}", &index.to_string());
+                    let path = refusal.loci[0].path.as_ref().map(ToString::to_string);
+                    assert_eq!(path.as_deref(), Some(pointer.as_str()), "{id}");
+                }
+                other => panic!("{id}: expected an ill_typed refusal, got {other:?}"),
+            },
+        }
+    }
 }
 
 /// `tests/fixtures/spine-compile.native` through S1, S2, the assembler,
