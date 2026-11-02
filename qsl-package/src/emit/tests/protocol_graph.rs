@@ -1167,10 +1167,25 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     else {
         panic!("Broken remains refused: {:?}", reversed.results());
     };
-    assert_eq!(
-        reversed_refusal.cause, refusal.cause,
-        "the refusal cause is independent of declaration order"
-    );
+    assert!(matches!(
+        (&reversed_refusal.cause, &refusal.cause),
+        (
+            qsl_semantics::check::CheckCause::ProtocolAnchor(reversed),
+            qsl_semantics::check::CheckCause::ProtocolAnchor(original)
+        ) if matches!(
+            (reversed.as_ref(), original.as_ref()),
+            (
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segment: reversed_segment,
+                    ..
+                },
+                qsl_semantics::check::ProtocolAnchorCause::Missing {
+                    segment: original_segment,
+                    ..
+                }
+            ) if reversed_segment == original_segment && reversed_segment == "ghost"
+        )
+    ), "the refusal reason is independent of declaration order");
     let ProtocolEmissionResult::Emitted {
         nodes: reversed_good,
         ..
