@@ -22,12 +22,23 @@ that evaluates as false or zero, a supplied value the expression does not read
 that is ignored, another template's binder read through a shared name, and a
 wrong, out-of-domain, foreign or dangling value that evaluates.
 
-Fixture **E** and the observation of TC-1070. The base call is TC-1070 row 8:
-the slot `Refund.retry.relation` with the supply `earlier = Attempt(tally 0)`,
-`later = Attempt(tally 1)`, `target = 5`, `activated = false`. Every row below
-changes the base call as it states, asserts the one refusal's code, cause and
-locus, that the evaluator returned no `Evaluation`, and that the meter's
-counters are as they were before the call.
+For in-process rows 1–21, use fixture **E** and the observation of TC-1070. The
+base call for selection and supply rows 1–16 is TC-1070 row 8: slot
+`Refund.retry.relation` with `earlier = Attempt(tally 0)`,
+`later = Attempt(tally 1)`, `target = 5`, `activated = false`. Each refusal row
+changes that call as stated and asserts the refusal's code, cause and locus,
+that the evaluator returned no `Evaluation`, and that every meter counter is
+unchanged. Rows 17–21 instead exercise `Refunds.captures[0]` with the stated
+reference value and observation. Row 22 reruns the unchanged retry base call
+after the refusal cases to prove the same meter remains usable.
+
+Reader-backed rows 23–25 are independent end-to-end calls. Emit fixture E as
+checked-package-v2, strictly admit the emitted package through the contract
+reader, and admit the observation for its selected model `M`. For each row,
+select `Refunds.captures[0]` from the reader's retained package/view and supply
+`view` with the row's reference value and exact root occurrence metadata
+`path = []`, `population = M::nodes`. The rows assert the result or refusal
+against the reader-backed call, not against the original in-process package.
 
 ## Test Procedure
 
@@ -57,7 +68,7 @@ counters are as they were before the call.
 | 22 | the unchanged base call after rows 1 to 21 on the same meter | evaluates: true, and the meter holds only this call's charges |
 | 23 | Emit fixture E as checked-package-v2, strictly read it, admit its observation for selected model `M`, then evaluate `Refunds.captures[0]` from the reader's retained package/view with `view = n5`; the root reference path `[]` names `M::nodes` | `Evaluated` value 5. The call uses the reader-backed view and the same admitted observation; it does not fall back to fixture E's in-process `CheckedPackage`. |
 | 24 | From the same reader-backed setup, supply `view = ghost`, a reference in `M::Node`'s universe, with root path `[]` naming `M::nodes`; `nodes` is complete and does not contain `ghost` | `Refused`, `dangling_reference`/`absent-target-in-complete-population`, at binder `view`; the record identifies `ghost` and `M::nodes`; no `Evaluation` is returned and all meter counters stay unchanged. |
-| 25 | From the same reader-backed setup, supply `view` as a `Node` reference whose universe belongs to a separately admitted foreign model, with root path `[]` and the selected package's `M::nodes` declaration | `Refused`, `foreign_reference`/`foreign-universe`, at binder `view`; the record retains the existing FR-106/FR-390 refusal details; no `Evaluation` is returned and all meter counters stay unchanged. |
+| 25 | From the same reader-backed setup, supply `view` as a `Node` reference whose universe belongs to a separately admitted foreign model | `Refused`, `foreign_reference`/`foreign-universe`, at binder `view`; the record fields are exactly `required = lowercase-hex(M::Node universe identity)` and `supplied = lowercase-hex(the supplied foreign Node universe identity)`, preserving the cause's actual required/supplied values in that order (FR-390 check 5; FR-100-AC-16); no `Evaluation` is returned and all meter counters stay unchanged. |
 
 ## Expected Results
 
@@ -67,12 +78,14 @@ duplicates, then keys the expression does not read (the forward binder at a
 retry, another template's binder), then missing sources, in that order and in
 ascending level. A value is checked against its binder's type, and a reference
 against the observation. No refusal charges the meter, so the call that follows
-evaluates with the full budget. For rows 23–25, emission and strict reading
+evaluates with the full budget. In rows 23–25, emission and strict reading
 must succeed before the supplied-reference cases begin. The evaluated call
 uses the trusted reader's retained package/view, and the observation is FR-106
 admitted for that same selected model. Each root-reference occurrence carries
-its exact path `[]` and the `M::nodes` declaration; the foreign-universe row
-changes the supplied reference's universe, not the selected package or
-population attribution. The positive case proves a valid reader-backed
-reference still evaluates; the two negative cases assert the exact refusal
-catalog code, cause, binder locus and zero-charge boundary.
+its exact path `[]` and the `M::nodes` declaration; the foreign-universe case
+changes only the supplied reference's universe. Its refusal preserves the
+required and supplied universe identities, represented as lowercase
+hexadecimal strings, in the correspondingly named record fields (FR-100-AC-16;
+FR-106's admitted record is retained by FR-390). The positive case proves a
+valid reader-backed reference still evaluates; the two negative cases assert
+the exact refusal catalog code, cause, binder locus and zero-charge boundary.
