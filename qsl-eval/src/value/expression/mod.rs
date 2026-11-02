@@ -1022,38 +1022,38 @@ impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::check::{CheckedBody, CheckedNode};
 /// fn from_checked(node: &CheckedNode<'_>, term: &CheckedBody) {
-///     let _ = TermHandle::from(node);
-///     let _ = TermHandle::from(term);
+///     let _: TermHandle<'_, '_> = node.into();
+///     let _: TermHandle<'_, '_> = term.into();
 /// }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use quire_exact::NodeKey;
-/// fn from_node(node: NodeKey) { let _ = TermHandle::from(node); }
+/// fn from_node(node: NodeKey) { let _: TermHandle<'_, '_> = node.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_package::AdmittedPackageRead;
-/// fn from_read(read: &AdmittedPackageRead<'_>) { let _ = TermHandle::from(read); }
+/// fn from_read(read: &AdmittedPackageRead<'_>) { let _: TermHandle<'_, '_> = read.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::library::ImportView;
-/// fn from_import(view: &ImportView) { let _ = TermHandle::from(view); }
+/// fn from_import(view: &ImportView) { let _: TermHandle<'_, '_> = view.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
-/// fn from_bytes(bytes: &[u8]) { let _ = TermHandle::from(bytes); }
-/// fn from_integer(value: usize) { let _ = TermHandle::from(value); }
+/// fn from_bytes(bytes: &[u8]) { let _: TermHandle<'_, '_> = bytes.into(); }
+/// fn from_integer(value: usize) { let _: TermHandle<'_, '_> = value.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::{AdmittedEvaluationView, TermHandle};
-/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _ = TermHandle::from(view); }
+/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _: TermHandle<'_, '_> = view.into(); }
 /// ```
 pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
     /// Evaluate one protocol slot selected through this exact admitted view.

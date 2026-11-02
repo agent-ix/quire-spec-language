@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The in-process S4 evaluation view and the FR-106 authority it admits.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -163,6 +163,16 @@ impl<'package> AdmittedEvaluationView<'package> {
             body,
         };
         let frame_len = frame.len();
+        let wanted: BTreeSet<&NodeKey> =
+            frame.iter().filter_map(|slot| slot.node.as_ref()).collect();
+        let mut first_occurrence = BTreeMap::new();
+        for (key, _, location) in self.package.graph().occurrences() {
+            if let Some(wanted_key) = wanted.get(&key) {
+                first_occurrence
+                    .entry((*wanted_key).clone())
+                    .or_insert(location);
+            }
+        }
         let mut sources = frame
             .into_iter()
             .enumerate()
@@ -174,12 +184,9 @@ impl<'package> AdmittedEvaluationView<'package> {
                         "selected-protocol-source-has-a-keyed-binder",
                     ))
                 })?;
-                let location = self
-                    .package
-                    .graph()
-                    .occurrences()
-                    .find(|(key, _, _)| *key == binder)
-                    .map(|(_, _, location)| location.clone())
+                let location = first_occurrence
+                    .get(&binder)
+                    .map(|location| (*location).clone())
                     .ok_or_else(|| {
                         SlotSelectionFailure::Fault(InternalFault::new(
                             "FR-390",
@@ -244,40 +251,40 @@ impl<'package> AdmittedEvaluationView<'package> {
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::check::CheckedNode;
-/// fn from_checked(node: &CheckedNode<'_>) { let _ = TermHandle::from(node); }
+/// fn from_checked(node: &CheckedNode<'_>) { let _: TermHandle<'_, '_> = node.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::check::CheckedBody;
-/// fn from_term(body: &CheckedBody) { let _ = TermHandle::from(body); }
+/// fn from_term(body: &CheckedBody) { let _: TermHandle<'_, '_> = body.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use quire_contract_model::CheckedPackageV2;
-/// fn from_graph(graph: &CheckedPackageV2) { let _ = TermHandle::from(graph); }
+/// fn from_graph(graph: &CheckedPackageV2) { let _: TermHandle<'_, '_> = graph.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::library::ImportView;
-/// fn from_import(view: &ImportView) { let _ = TermHandle::from(view); }
+/// fn from_import(view: &ImportView) { let _: TermHandle<'_, '_> = view.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
-/// fn from_bytes(bytes: &[u8]) { let _ = TermHandle::from(bytes); }
+/// fn from_bytes(bytes: &[u8]) { let _: TermHandle<'_, '_> = bytes.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
-/// fn from_integer(value: usize) { let _ = TermHandle::from(value); }
+/// fn from_integer(value: usize) { let _: TermHandle<'_, '_> = value.into(); }
 /// ```
 ///
 /// ```compile_fail,E0277
 /// use qsl_package::{AdmittedEvaluationView, TermHandle};
-/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _ = TermHandle::from(view); }
+/// fn from_view(view: &AdmittedEvaluationView<'_>) { let _: TermHandle<'_, '_> = view.into(); }
 /// ```
 #[derive(Clone)]
 pub struct TermHandle<'view, 'package> {
@@ -450,7 +457,7 @@ pub enum ViewFailure {
 ///
 /// Its environment is read-only through the public accessors:
 ///
-/// ```compile_fail,E0277
+/// ```compile_fail,E0596
 /// # use qsl_package::AdmittedProtocolObservation;
 /// fn mutate(authority: &AdmittedProtocolObservation<'_>) {
 ///     authority.environment().set_place_presence(Default::default());

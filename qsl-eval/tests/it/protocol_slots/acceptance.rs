@@ -2398,9 +2398,9 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     }
 }
 
-/// TC-1071 row 25: a foreign reference nested in a binder whose declared type
-/// is not itself a Reference has no single required universe, so the record
-/// carries `supplied` alone.
+/// FR-390-AC-6: a foreign reference nested in a binder whose declared type is
+/// not itself a Reference has no single required universe, so the
+/// `foreign_reference` record carries `supplied` alone.
 #[test]
 #[trace("TC-1071", "FR-390-AC-6")]
 fn foreign_reference_in_a_non_reference_binder_omits_the_required_universe() {
@@ -2481,6 +2481,39 @@ fn foreign_reference_in_a_non_reference_binder_omits_the_required_universe() {
         record.record.fields.get("supplied").map(String::as_str),
         Some(supplied.as_str())
     );
+}
+
+/// FR-390-AC-14: each selected source reports its binder's own first
+/// occurrence, not the selected expression's root location.
+#[test]
+#[trace("FR-390-AC-14")]
+fn protocol_source_location_is_the_binders_first_occurrence() {
+    let package = fixture();
+    let view = package.evaluation_view();
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let selected = view
+        .select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
+            capture.node.clone(),
+            capture.member.clone(),
+            capture.index,
+        ))
+        .expect("the view selects the capture expression");
+    let root_location = selected.checked_body().root().location().clone();
+    assert!(!selected.sources().is_empty());
+    for source in selected.sources() {
+        let expected = package
+            .graph()
+            .occurrences()
+            .find(|(key, _, _)| key == source.binder())
+            .map(|(_, _, location)| location.clone())
+            .expect("every lowered binder has an occurrence");
+        assert_eq!(source.location(), &expected);
+        assert_ne!(
+            source.location(),
+            &root_location,
+            "the source location is not the expression root's"
+        );
+    }
 }
 
 /// FR-390-AC-14: a selected opaque term cannot be evaluated against a
