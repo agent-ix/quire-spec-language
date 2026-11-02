@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-11.
+Scope: FR-251-AC-4 to FR-251-AC-12.
 
 ## Test Procedure
 
@@ -27,6 +27,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 7. On the 16-bit target of FR-251-AC-3, feed the readings `65530` then `4` and `65530` then `65500`, recording each entry call; then admit a watermark at history boundary tick 3001 and a bare counter poll for AC-1's claim.
 8. On the 16-bit target of FR-251-AC-3, keep one instance open across a fault and one decided before it, and start one after it; feed the first reading, then `65530`, `65500`, `65510`, recording each entry call and its inputs.
 
+9. Build the AC-1 plan with a per-step budget too small for one `on_event`; present a `req` event and read the monitor state, then raise the budget (or build another monitor with a sufficient budget from the same plan) and re-present the same event, counting executions of the transition body.
+
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
 ## Expected Results
@@ -36,6 +38,7 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 3: the second monitor has no obligation from the first monitor's `req`. Both rebind attempts fail and neither monitor's state changes. Each result retains its subject, target premises and obligation origin.
 - Step 4: the per-obligation outcomes are identical. The progress assertion settles the deadline per QSpec FR-094/FR-160; the poll adds no event and settles no deadline.
 - Step 5: `Unsupported` and no monitor; a build failure and no monitor; the event is rejected and state is unchanged; `Failed` with no verdict, and the later input is refused. No step returns `false` as a property result.
-- Step 6: wired function entries (`on_gap` pending) with the stated signatures and no statement form; each body change gives a different plan identity; the initial state is the `init` result and the origin is the unwrapped tick of the activating event.
+- Step 6: function entries `init`, `on_event`, `on_watermark` and `on_gap` with the stated signatures and no statement form; each body change gives a different plan identity; the initial state is the `init` result and the origin is the unwrapped tick of the activating event.
 - Step 7: delta 10 passed and unwrapped time advances by 10; the second pair calls `on_gap` with 65506 and not `on_event` (the open instance fails `ReadingGapExceeded`, Step 8); the watermark settles the deadline false; the poll calls no entry.
 - Step 8: the first reading passes delta 0; the fault calls `on_gap` with 65506 and not `on_event`; only the open instance fails with `ReadingGapExceeded` and is dropped; the decided and later instances are unaffected; `65510` passes delta 10.
+- Step 9: the first presentation returns `StepResourceStop` (a typed incomplete outcome, no verdict, no refusal), the state is byte-for-byte unchanged and the event is unconsumed; the re-presented event runs the body once and gives the outcome an unstopped step gives; the monitor accepts the next input.

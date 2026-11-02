@@ -94,17 +94,17 @@ dependency; intervals and buffer capacities alone are not an executable plan.
 | Entry bindings | Each entry's parameters are its input slots and `State`, and its result is the next `State` and `Results`. An event's inputs are the **gap-checked tick delta** that RT supplies (below), the clause's admitted snapshot/invocation values and the binding identity; a watermark's inputs are the **unwrapped history-boundary tick** (a non-negative integer in the plan's tick unit, covering every tick up to and including the boundary, QSpec FR-487 and FR-094) and the admitted scope identities of QSpec FR-094/FR-160, which RT supplies. Neither entry receives a raw, possibly wrapping counter reading. An ordinary clock poll is not a watermark and creates no event position. |
 
 **Plan root.** The plan crosses E5 as one **plan-root node** of the
-checked-package v2 wire: a `temporal`/`monitor_plan` node with fifteen ordered
+checked-package v2 wire: a `temporal`/`monitor_plan` node with sixteen ordered
 bindings (QSpec FR-487, FR-322-AC-308): `clause` (the clause the program
 monitors, whose `temporal_bindings` row is the plan's clock binding), `state`,
-`inputs`, `scope`, `results`, the entries `init`, `on_event` and
-`on_watermark`, `counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
+`inputs`, `scope`, `results`, the entries `init`, `on_event`, `on_watermark` and
+`on_gap`, `counter_width_bits`, `max_reading_gap`, `max_event_rate` (a
 rational, events per tick), `buffers` (capacity per buffered subformula),
 `counter` (the counter's name), `tick_unit` (a `Time` unit node whose scale is
 the tick scale) and `uncertainty` (a rational at least 0, in ticks). Each
 premise, including the uncertainty, counter, tick unit, gap, rate and
 capacities, is part of the root's key (QSpec FR-487-AC-6), so changing one
-gives a different plan. The fourth entry `on_gap` is a sixteenth binding that is pending QSpec FR-487's change. The tick intervals of the logical fields above are
+gives a different plan. The tick intervals of the logical fields above are
 not bindings: each is derived from the clause's interval bounds and the unit
 scales (QSpec FR-487). Every entry, atom body and type the root needs is a
 dependency of the root, so its content key (QSpec FR-322) selects the
@@ -179,7 +179,10 @@ results, not truth values or observed property violations.
 After build, RT SHALL validate event/progress inputs against the plan's entry
 bindings before applying the transition. Invalid inputs SHALL cause no state
 change or verdict. Valid inputs SHALL execute the supplied transition body
-once, preserving its typed result. Event-rate overflow and counter gaps
+once, preserving its typed result, unless RT's typed `StepResourceStop` stops
+the step: a stopped step is not an execution of the body, leaves the state
+unchanged and the input unconsumed and re-presentable, and is a typed incomplete
+outcome, neither a refusal nor a verdict. Event-rate overflow and counter gaps
 retain the `Incomplete` and `Failed` settlements below. An executor invariant
 failure SHALL be `Failed`, never `false`, pending or a successful verdict;
 after such a failure the monitor SHALL accept no further input. RT owns
@@ -231,7 +234,8 @@ may repair such a disagreement by inventing another evaluation rule.
   instances from `State`; decided instances and results already emitted, and
   instances not yet started, are unaffected. Otherwise RT passes the
   gap-checked delta to `on_event`; the entry adds it to the unwrapped time it
-  keeps in `State` and never sees a raw wrapping reading.
+  keeps in `State` and never sees a raw wrapping reading. The gap path and its
+  wire form are QSpec FR-487 "Counter-gap path" and FR-487-AC-7.
 - **Declarative semantics.** The meaning of every operator is the declarative
   one of QSpec FR-091 and FR-092 (timestamped rule) over the widened tick
   intervals of QSpec FR-160, and is normative; no separate update algorithm
@@ -262,9 +266,10 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-6 | Build two monitors from the same plan; a request observed only by the first does not activate an obligation in the second. Attempts to rebind either live monitor to another program/target fail without changing either state. Each emitted result retains its selected subject, target premises and obligation origin. | Test (TC-1081) |
 | FR-251-AC-7 | Executing the plan's transition entries and the QSL reference evaluator on the same admitted inputs gives identical per-obligation outcomes for AC-1 through AC-3, a clause with reversed implication operands, an activation guard that is false, and open versus closed interval endpoints. A progress assertion past a deadline settles according to QSpec FR-094/FR-160; polling the counter without that assertion adds no event and settles no deadline. | Test (TC-1081) |
 | FR-251-AC-8 | An unsupported predicate/instruction yields `Unsupported` and no monitor; failed state allocation yields build failure and no monitor; an event missing a required admitted value is rejected without state change; an executor invariant failure yields `Failed` with no verdict and prevents further input. None of these controls returns `false` as a property result. | Test (TC-1081) |
-| FR-251-AC-9 | The admitted plan of AC-1 crosses E5 as one `temporal`/`monitor_plan` plan-root node (QSpec FR-487, FR-322-AC-308) whose dependencies include the wired entries `init`, `on_event` and `on_watermark` (`on_gap` pending) as `function` nodes with the signatures of the Transitions row, and the `State` type; no entry uses a statement, loop or assignment form. Changing any one entry body changes the plan-root's content key and so the plan identity. The `init` result is every slot's initial value, and an obligation's origin in `State` is the unwrapped tick of its activating event. | Test (TC-1081) |
+| FR-251-AC-9 | The admitted plan of AC-1 crosses E5 as one `temporal`/`monitor_plan` plan-root node (QSpec FR-487, FR-322-AC-308) whose dependencies include the entries `init`, `on_event`, `on_watermark` and `on_gap` (member 15 of QSpec FR-487; FR-487-AC-7) as `function` nodes with the signatures of the Transitions row, and the `State` type; no entry uses a statement, loop or assignment form. Changing any one entry body changes the plan-root's content key and so the plan identity. The `init` result is every slot's initial value, and an obligation's origin in `State` is the unwrapped tick of its activating event. | Test (TC-1081) |
 | FR-251-AC-10 | The entries never receive a raw counter reading. On the 16-bit target of AC-3, RT supplies `on_event` the delta 10 for readings `65530` then `4` and the entry's unwrapped time advances by 10; for `65530` then `65500` RT calls `on_gap` with the gap 65506 (not `on_event`) and the faulting reading `65500` becomes the new baseline (AC-11). `on_watermark` receives the unwrapped history-boundary tick and the admitted scope identities; a watermark with history boundary tick 3001, the first tick at which a later `ack` would decide false, settles AC-1's `req` obligation (`ack` never seen) false, and a mere counter poll adds no event and calls no entry. | Test (TC-1081) |
-| FR-251-AC-11 | On the 16-bit target of AC-3 with `max_reading_gap` 100, the first admitted reading passes `on_event` the delta 0 and leaves the unwrapped time at `init`'s value. With one obligation instance still open across the fault, one decided before it and one started after it: readings `65530`, `65500` make RT call `on_gap` with 65506; the open instance yields `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and is dropped from `State`, the decided instance's result and the later instance are unaffected, no verdict is emitted for the dropped instance, and a following reading `65510` is differenced from `65500` (delta 10) and passed to `on_event`. The `on_gap` binding on the wire is pending QSpec FR-487's change. | Test (TC-1081) |
+| FR-251-AC-11 | On the 16-bit target of AC-3 with `max_reading_gap` 100, the first admitted reading passes `on_event` the delta 0 and leaves the unwrapped time at `init`'s value. With one obligation instance still open across the fault, one decided before it and one started after it: readings `65530`, `65500` make RT call `on_gap` with 65506; the open instance yields `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}` and is dropped from `State`, the decided instance's result and the later instance are unaffected, no verdict is emitted for the dropped instance, and a following reading `65510` is differenced from `65500` (delta 10) and passed to `on_event`. The `on_gap` entry is member 15 of QSpec FR-487's root (FR-487-AC-7); its returned state has `now` advanced by `gap`. | Test (TC-1081) |
+| FR-251-AC-12 | An `on_event` step stopped by RT's typed `StepResourceStop` (the per-step budget supplied at build is exhausted) leaves the monitor `State` unchanged and the event unconsumed; the stop is a typed incomplete outcome, not a refusal, not a verdict, not `Incomplete(LimitReached)` and not `Failed`, and the monitor accepts the next input. Re-presenting the same event under a sufficient budget executes the transition body exactly once and gives the outcome the unstopped step would have given; "Valid inputs execute the transition body once" applies to steps that are not resource-stopped. | Test (TC-1081) |
 
 ## Dependencies
 
@@ -276,7 +281,7 @@ may repair such a disagreement by inventing another evaluation rule.
 ## References
 
 - The monitor contract handed to the runtime repository: ADR-026 OV-13.
-- QSpec half (Linear STD-647, merged): the plan-root node, its fifteen bindings and entry signatures, QSpec FR-487 (FR-487-AC-6 for plan identity) with TC-978 and FR-322-AC-308; the half-open tick cover, QSpec FR-160-AC-6 and FR-160-AC-7.
+- QSpec half (Linear STD-647, merged): the plan-root node, its sixteen bindings (`on_gap` is member 15, FR-487-AC-7) and entry signatures, QSpec FR-487 (FR-487-AC-6 for plan identity) with TC-978 and FR-322-AC-308; the half-open tick cover, QSpec FR-160-AC-6 and FR-160-AC-7.
 - Linear QSL-685 fixes this executable handoff for RT's IR-519. The plan
   producer (QSL-587), executable lowering/generation and RT implementation
   remain downstream work; these criteria specify their acceptance and do
