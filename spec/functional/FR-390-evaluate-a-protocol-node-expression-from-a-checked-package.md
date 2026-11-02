@@ -568,7 +568,7 @@ the slot walk with the row at index `k` of the rows of that application whose
 origin is the slot's origin, taken in ascending (occurrence ordinal,
 `term_ordinal`) order, counting only rows of that origin (FR-383 defines the
 occurrence ordinal and that `term_ordinal` runs across origins). The `Location` of a literal or `Local` read is the one
-its own admitted node carries (FR-383 assumption A1, which cites QSpec FR-322-AC-310 to AC-312 of QSpec PR #603; this text SHALL NOT merge before that PR). A location SHALL NOT be taken from the source
+its own admitted node carries (FR-383 assumption A1, which cites QSpec FR-322-AC-310 to AC-312). A location SHALL NOT be taken from the source
 package, from a source region, or defaulted.
 
 View creation SHALL pair every slot of every protocol node of the package. If a
@@ -793,8 +793,8 @@ value; check 6 does not apply to it.
 | FR-390-AC-34 | In the package of AC-33, the halt of AC-32 reports the location of the term in `earlier.tally + 1`. | Test (TC-1070) |
 | FR-390-AC-35 | With the highest-index retry-origin `earlier.tally` row removed (I2 admits it), view creation returns `ViewFailure::Unsupported` with `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, carrying the retry origin, visit number 1, two visits and one row. | Test (TC-1070) |
 | FR-390-AC-36 | In the package of AC-35 no slot of the package has a view, and no meter was charged. | Test (TC-1070) |
-| FR-390-AC-37 | With one retry-origin row appended for `earlier.tally` after its last row (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, before any view or meter charge. | Test (TC-1070) |
-| FR-390-AC-38 | With a retry-origin row added for an application the retry relation does not hold (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, before any view or meter charge. | Test (TC-1070) |
+| FR-390-AC-37 | With one retry-origin row appended for `earlier.tally` after its group's last row, with the next consecutive `term_ordinal` (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of the `earlier.tally` application, before any view or meter charge. | Test (TC-1070) |
+| FR-390-AC-38 | With a retry-origin row added, at ordinal zero after any rows of its group, for an application the retry relation does not hold (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, before any view or meter charge. | Test (TC-1070) |
 | FR-390-AC-39 | With the ordinal-zero retry-origin `earlier.tally` row removed, the QSpec FR-322 reader refuses at I2 admission with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (FR-322-AC-291), and no view creation is attempted. | Test (TC-1070) |
 | FR-390-AC-40 | With a retry-origin `earlier.tally` row duplicated, the QSpec FR-322 reader refuses at I2 admission with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, FR-322-AC-291), and no view creation is attempted. | Test (TC-1070) |
 | FR-390-AC-41 | Inspection finds the identity-to-`NodeKind` map total over the operation identities FR-322 admits for expression nodes, so `MissingOperationProjection` is reachable only through a skew between FR-322 and FR-400. | Inspection |
@@ -804,12 +804,13 @@ value; check 6 does not apply to it.
 | FR-390-AC-45 | In `Composed.let` a `let` binder reference is not a visit of the bound application: `m.count` has one visit and one row. | Test (TC-1070) |
 | FR-390-AC-46 | In `Composed.if` the arm the input does not select still holds its visits and rows, and its handles read the checked package's `Location` values. | Test (TC-1070) |
 | FR-390-AC-47 | In `Composed.case` the arms the input does not select still hold their visits and rows, and their handles read the checked package's `Location` values. | Test (TC-1070) |
-| FR-390-AC-48 | In `Composed.if`, `m.count` under two parents has two visits, two rows and two handles with their own `Location` values. | Test (TC-1070) |
+| FR-390-AC-48 | In `Composed.if`, `m.count` under two parents has two visits, two rows of that slot's origin and two handles with their own `Location` values. | Test (TC-1070) |
 | FR-390-AC-49 | Relabelling the node ids of fixture E-C's package (identities and ascending `dependencies` recomputed) so that the ascending-id order of a slot's reachable nodes differs from their walk order changes no handle's `Location`. | Test (TC-1070) |
 | FR-390-AC-50 | Inspection finds that the reader variant of `read_node` and the pairing take the slot root and origin only from the slot descriptor and build no `NodeRead` from a `CheckedBody`. | Inspection |
 | FR-390-AC-51 | Inspection finds the reader's `NodeKind` match exhaustive with no wildcard arm. | Inspection |
 | FR-390-AC-52 | In fixture E-C, the application `m.count >= 1` held by `Composed.shareA` and `Composed.shareB` pairs each slot's visit with the row of that slot's own origin, so each slot's handle reads its own `Location`. | Test (TC-1070) |
-| FR-390-AC-53 | In fixture E-C with the `Composed.shareB` row of `m.count >= 1` removed (I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the `Composed.shareB` origin, and the `Composed.shareA` row is not reported unpaired. | Test (TC-1070) |
+| FR-390-AC-53 | In fixture E-C with the highest-`term_ordinal` row of the `m.count >= 1` group removed (the lone remaining row is ordinal zero, so I2 admits it), view creation returns `MissingLocationProjection` at the `Node` locus of that application, carrying the origin that owned the removed row (the later origin in UTF-8 byte order, `Composed.shareB`). | Test (TC-1070) |
+| FR-390-AC-54 | In the package of AC-53 the other origin's slot (`Composed.shareA`) is not reported unpaired. | Test (TC-1070) |
 ## Dependencies
 
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md): the `ProtocolClause` arm,

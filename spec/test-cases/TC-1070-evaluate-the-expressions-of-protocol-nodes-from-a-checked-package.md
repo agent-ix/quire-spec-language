@@ -14,7 +14,7 @@ Verify that S6a evaluates each expression slot of a protocol node of a checked
 package over the sources the caller supplies, that a capture slot returns a
 frozen value which later slots read only when the caller supplies it, and that
 the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3, FR-390-AC-23 and FR-390-AC-28 to
-FR-390-AC-53. The E-P procedure below verifies FR-390-AC-23 without
+FR-390-AC-54. The E-P procedure below verifies FR-390-AC-23 without
 changing fixture E or rows 1 to 33.
 
 Catches a retry relation or recovery predicate that recomputes a capture from
@@ -177,7 +177,7 @@ Boolean, count: Int[0, 9], note: Option<Int[0, 9]>, items: Sequence<Int[0,
 9]>[0, 3]}` and the union `Choice` with the members `Left(Int[0, 9])` and
 `Right(Boolean)`, and the protocol `Composed` over `view: M::Node` whose slots
 have the checked-term shapes below. Shapes are written in checked-term form,
-not QSL surface syntax, and `m` is a `Mix` binder.
+not QSL surface syntax, `m` is the binder `(m: M::Mix)` of the attempt `Tried` in `Composed`'s run `Main`, and `choice` is the binder `(choice: M::Choice)` of the attempt `Picked` of the same run.
 
 | Slot | Shape | Walk positions of interest |
 | --- | --- | --- |
@@ -188,7 +188,7 @@ not QSL surface syntax, and `m` is a `Mix` binder.
 | `Composed.arith` | `-(m.count) + (m.count / 2)`, range-coerced to `Int[0, 9]` where the checker coerces | negate, divide, add and coerce |
 | `Composed.option` | `present(m.note) and value(m.note) >= 1` | `m.note` twice |
 | `Composed.coll` | `size(m.items) >= 1 and contains(m.items, m.count)` | `m.items` twice |
-| `Composed.shareA`, `Composed.shareB` | `m.count >= 1 and m.ready` and `m.count >= 1`, both over the one attempt binder `m` of the attempt `Tried` | the application `m.count >= 1` is one graph node held by both slots, with one row of each slot's origin |
+| `Composed.shareA`, `Composed.shareB` | `m.count >= 1 and m.ready` and `m.count >= 1`, both over the binder `m` of the attempt `Tried` | the application `m.count >= 1` is one graph node held by both slots, with one row of each slot's origin, ordinals 0 and 1 in UTF-8 byte order of the origin strings |
 | `Composed.record` | `Pair(m.count, m.ready).first` | constructor and field read |
 
 | # | Slot | Supply | Expected |
@@ -216,7 +216,8 @@ not QSL surface syntax, and `m` is a `Mix` binder.
 | C12 | Inspection of the reader's `read_node`, pairing and descriptor | n/a | root and origin come only from the descriptor; no `NodeRead` is built from a `CheckedBody` (AC-50) |
 | C13 | Inspection of the reader's `NodeKind` match | n/a | exhaustive, no wildcard arm (AC-51) |
 | C14 | `Composed.shareA` and `Composed.shareB` (E-C) | as C10 | each slot's handle for `m.count >= 1` reads the `Location` of its own origin's row (AC-52) |
-| C14a | E-C package with the `Composed.shareB` row of `m.count >= 1` removed | any | `MissingLocationProjection` at the `Node` locus of that application, `Composed.shareB` origin; `Composed.shareA`'s row is not reported unpaired (AC-53) |
+| C14a | E-C package with the highest-`term_ordinal` row of the `m.count >= 1` group removed | any | `MissingLocationProjection` at the `Node` locus of that application, carrying the origin of the removed row, the later origin in UTF-8 byte order (`Composed.shareB`) (AC-53) |
+| C14b | the package of C14a | any | `Composed.shareA`'s row is paired and is not reported unpaired (AC-54) |
 
 ## Fixture E-P: reference-population provenance extension
 

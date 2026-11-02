@@ -229,7 +229,9 @@ QSpec FR-322 that the checker associated with the term, and its *occurrence
 ordinal* is the third component of that key. The group of FR-322-AC-291 is the
 rows of one application and one occurrence, and its `term_ordinal` values run
 consecutively from zero across every origin the group holds; they do not
-restart for each origin. The emitter SHALL order the rows of one application
+restart for each origin. Within a group the emitter SHALL write the rows of the
+origins in ascending order of the origin string in UTF-8 byte order, and within
+one origin in visit order. The emitter SHALL order the rows of one application
 and one slot origin so that their ascending (occurrence ordinal,
 `term_ordinal`) order is the order of that application's visits in the slot
 walk: the row at index `k` of that order, counting only the rows of that origin,
@@ -254,13 +256,12 @@ single source occurrence, so both rows share its key, with `term_ordinal` 0 and
 
 Assumption A1 (leaf locations, one place): a literal or `Local` leaf is not an
 application, has no row, and takes its location from its own admitted node.
-QSpec FR-322-AC-310 (QSpec PR #603, not yet merged) states this rule:
-`protocol_locations` holds application rows only, and a non-application leaf
-takes its location from its own admitted node, never from a row. FR-322-AC-311
-refuses a row that names a leaf with `invalid_package`/`invalid-value` at the
-row's application member, and FR-322-AC-312 completes the set. Every clause of
-this and the reader's text that depends on A1 refers to it. The QSL PR that
-carries this text SHALL NOT merge before QSpec PR #603.
+QSpec FR-322-AC-310 states this rule: `protocol_locations` holds application
+rows only, and a non-application leaf takes its location from its own admitted
+node, never from a row. FR-322-AC-311 refuses a row that names a leaf with
+`invalid_package`/`invalid-value` at the row's application member, and
+FR-322-AC-312 completes the set. Every clause of this and the reader's text that
+depends on A1 refers to it.
 
 ### Cyclic reference components
 
@@ -525,13 +526,16 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-39 | No two protocol slots of **W**, of fixture E, of fixture E-C or of protocol L carry the same origin, including the two retry relations and the trigger guard and recovery predicate of one compensation. | Test (TC-1063) |
 | FR-383-AC-40 | Inspection finds no emitter path that computes a `protocol_locations` row's location from a source region, a node order or an operand position, or fills one by default. | Inspection |
 | FR-383-AC-41 | Removing the highest-index retry-origin `earlier.tally` row from fixture E's emitted package leaves a package QSL's I2 reader admits. | Test (TC-1063) |
-| FR-383-AC-42 | Removing the ordinal-zero retry-origin `earlier.tally` row (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`, and so is a group holding ordinals 0 and 2 only. | Test (TC-1063) |
-| FR-383-AC-43 | Duplicating a retry-origin `earlier.tally` row is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
-| FR-383-AC-44 | For fixture E-C (TC-1070), every slot's per-application row count equals its visits in the slot walk, including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
-| FR-383-AC-45 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
-| FR-383-AC-46 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
-| FR-383-AC-47 | In fixture E the two `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
-| FR-383-AC-48 | In fixture E-C the application `m.count >= 1` is one graph node held by the two slots `Composed.shareA` and `Composed.shareB`; its group holds rows of both slots' origins with `term_ordinal` values consecutive from zero across both, and each origin holds one row of it. | Test (TC-1063) |
+| FR-383-AC-42 | Removing the ordinal-zero retry-origin `earlier.tally` row (leaving a lone ordinal-one row) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-43 | Changing the second retry-origin `earlier.tally` row's `term_ordinal` from 1 to 2 (ordinals 0 and 2) is refused by QSL's I2 reader with `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations`. | Test (TC-1063) |
+| FR-383-AC-44 | Duplicating a retry-origin `earlier.tally` row is refused by QSL's I2 reader with `invalid_package`/`conflicting-definition` at `/checked_term_data/protocol_locations/<index of the duplicate>` (QSpec vector PL-R1-duplicate-term, locus `/checked_term_data/protocol_locations/1` for a duplicate at index 1; FR-322-AC-291). | Test (TC-1063) |
+| FR-383-AC-45 | For fixture E-C (TC-1070), every slot's row count for an application, among the rows of that slot's origin, equals its visits in the slot walk, including `m.count` twice in `Composed.if`, `m.note` twice in `Composed.option`, `m.items` twice in `Composed.coll` and once in `Composed.let`. | Test (TC-1063) |
+| FR-383-AC-46 | For fixture E-C, each row's `Location` equals the checked clause's `Location` of the term at the position it numbers. | Test (TC-1063) |
+| FR-383-AC-47 | For fixture E-C, the arms of `Composed.if` and `Composed.case` that the input never selects have their rows, with the checked clause's `Location` values. | Test (TC-1063) |
+| FR-383-AC-48 | In fixture E the two `earlier.tally` rows share one occurrence key and have `term_ordinal` 0 and 1. | Test (TC-1063) |
+| FR-383-AC-49 | In fixture E-C the application `m.count >= 1` is one graph node that the slots `Composed.shareA` and `Composed.shareB` both hold. | Test (TC-1063) |
+| FR-383-AC-50 | In fixture E-C the group of `m.count >= 1` holds exactly one row of the `Composed.shareA` origin and one of the `Composed.shareB` origin. | Test (TC-1063) |
+| FR-383-AC-51 | In fixture E-C the group of `m.count >= 1` has `term_ordinal` values 0 and 1, consecutive across both origins, with the rows in ascending UTF-8 byte order of origin string. | Test (TC-1063) |
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.
