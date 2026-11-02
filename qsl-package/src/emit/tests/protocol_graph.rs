@@ -1081,6 +1081,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         combined.emission().is_none(),
         "a refused aggregate has no package"
     );
+    assert_eq!(combined.exit_code(), 20);
+    assert_eq!(combined.diagnostics().count(), 1);
     assert_eq!(combined.results().len(), 2);
     let ProtocolEmissionResult::Emitted {
         declaration,
@@ -1165,6 +1167,8 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         no_owner_pair.aggregate(),
         ProtocolEmissionAggregate::Refused { .. }
     ));
+    assert_eq!(no_owner_pair.exit_code(), 21);
+    assert_eq!(no_owner_pair.diagnostics().count(), 1);
     let ProtocolEmissionResult::Emitted { nodes, .. } = &no_owner_pair.results()[0] else {
         panic!(
             "Flow remains emitted beside NoOwner: {:?}",

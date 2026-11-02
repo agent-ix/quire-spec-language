@@ -28,6 +28,7 @@ use quire_contract_model::{
 use serde::Deserialize;
 
 use ix_trace_rs::string_edge;
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, With};
 use qsl_foundation::source::provenance::{
     OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
@@ -484,6 +485,26 @@ impl ProtocolEmission {
     /// The package, present only when every protocol result is emitted.
     pub fn emission(&self) -> Option<&Emission> {
         self.emission.as_ref()
+    }
+
+    /// One primary diagnostic for each refused protocol, in declaration
+    /// order (FR-383 diagnostics rule).
+    pub fn diagnostics(&self) -> impl Iterator<Item = &qsl_semantics::check::CheckRefusal> + '_ {
+        self.results.iter().filter_map(|result| match result {
+            ProtocolEmissionResult::Emitted { .. } => None,
+            ProtocolEmissionResult::Refused { refusal, .. } => Some(refusal),
+        })
+    }
+
+    /// The unit exit code under FR-285's multi-item severity ordering.
+    pub fn exit_code(&self) -> u8 {
+        Category::most_severe(self.results.iter().map(|result| match result {
+            ProtocolEmissionResult::Emitted { .. } => Category::Success.exit_code(),
+            ProtocolEmissionResult::Refused { refusal, .. } => {
+                refusal.cause.code().category().exit_code()
+            }
+        }))
+        .unwrap_or_else(|| Category::Success.exit_code())
     }
 }
 
