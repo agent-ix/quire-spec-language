@@ -315,12 +315,16 @@ fn execution_points(path: &Path) -> Result<StateClauseExecutionPoints, Error> {
 #[derive(Debug)]
 pub(crate) struct Compiled {
     /// The unit's source bytes.
+    #[cfg(feature = "checked-handoff")]
     pub(crate) source: Vec<u8>,
     /// The domain package documents, in request order.
+    #[cfg(feature = "checked-handoff")]
     pub(crate) models: Vec<Vec<u8>>,
     /// The supplied libraries with the bytes they were compiled from.
+    #[cfg(feature = "checked-handoff")]
     pub(crate) libraries: Vec<SuppliedLibrary>,
     /// The checked unit the package was emitted from.
+    #[cfg(feature = "checked-handoff")]
     pub(crate) checked: CheckedUnit,
     /// The emitted package and the evidence its reader needs.
     pub(crate) emitted: EmittedUnit,
@@ -407,9 +411,13 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     .map_err(refusal)?
     .into_value();
     Ok(Compiled {
+        #[cfg(feature = "checked-handoff")]
         source,
+        #[cfg(feature = "checked-handoff")]
         models,
+        #[cfg(feature = "checked-handoff")]
         libraries,
+        #[cfg(feature = "checked-handoff")]
         checked,
         emitted,
     })
