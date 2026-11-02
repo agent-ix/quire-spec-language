@@ -61,6 +61,12 @@ enum ProtocolSystemKind<'a> {
     Ra(ProtocolSystem<'a, Ra>),
 }
 
+/// A bounded expansion of a protocol candidate with its terminal class.
+type ExpandedAndClassified = (
+    Expansion<ProtocolTransition, ProtocolCandidate, ModelFinding>,
+    qsl_eval::simulation::model::TerminalClass,
+);
+
 impl<'a> AbstractProtocolSystem<'a> {
     /// Open the selected protocol system using the model and bindings already
     /// admitted for the refinement's abstract subject.
@@ -251,13 +257,7 @@ impl<'a> AbstractProtocolSystem<'a> {
     pub fn successors_and_terminal(
         &self,
         state: &ProtocolCandidate,
-    ) -> Result<
-        Option<(
-            Expansion<ProtocolTransition, ProtocolCandidate, ModelFinding>,
-            qsl_eval::simulation::model::TerminalClass,
-        )>,
-        ExpansionStop,
-    > {
+    ) -> Result<Option<ExpandedAndClassified>, ExpansionStop> {
         match (&self.inner, state) {
             (ProtocolSystemKind::Sc(system), ProtocolCandidate::Sc(state)) => system
                 .successors_and_terminal(state)

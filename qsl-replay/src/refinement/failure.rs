@@ -369,13 +369,13 @@ pub enum StepVerdict {
     /// trace so the product can build a paired relation witness.
     ProtocolContractUndetermined {
         /// The candidate whose successor contract could not be evaluated.
-        candidate: ProtocolCandidate,
+        candidate: Box<ProtocolCandidate>,
         /// The operation transition whose checked contract was undetermined.
         transition: ModelTransition,
         /// The exact checked contract clause that was undefined.
         clause: String,
         /// The candidate-specific path from the product's protocol candidate.
-        trace: ProtocolTrace,
+        trace: Box<ProtocolTrace>,
     },
     /// A run budget stopped the check: the evaluation meter, the candidate
     /// bound, or a result domain too large to order. It is no fault of QSL

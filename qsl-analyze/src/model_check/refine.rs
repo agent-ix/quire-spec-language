@@ -96,6 +96,14 @@ pub struct AbstractProtocolBinding {
 /// values' key and its candidates' sorted state keys.
 type ProductKey = (Vec<u8>, Vec<u8>, Vec<Vec<u8>>);
 
+/// The protocol operation whose checked contract could not be evaluated,
+/// and the contract clause that was undefined.
+#[derive(Clone, Copy)]
+struct UndeterminedContract<'a> {
+    transition: &'a ModelTransition,
+    clause: &'a str,
+}
+
 /// One product state: the concrete state, the position `check_step` gave it,
 /// the step that first reached it (`None` for an initial state) and its
 /// breadth-first depth.
@@ -694,8 +702,10 @@ impl Run<'_, '_> {
                         node_index,
                         candidate,
                         protocol,
-                        &transition,
-                        &clause,
+                        UndeterminedContract {
+                            transition: &transition,
+                            clause: &clause,
+                        },
                         None,
                         None,
                     )? {
@@ -906,8 +916,10 @@ impl Run<'_, '_> {
                     node.product,
                     &node.candidate,
                     protocol,
-                    &transition,
-                    &clause,
+                    UndeterminedContract {
+                        transition: &transition,
+                        clause: &clause,
+                    },
                     None,
                     None,
                 )? {
@@ -1499,11 +1511,11 @@ impl Run<'_, '_> {
         product: usize,
         candidate: &qsl_replay::ProtocolCandidate,
         protocol: &AbstractProtocolSystem<'_>,
-        transition: &ModelTransition,
-        clause: &str,
+        contract: UndeterminedContract<'_>,
         trace: Option<&qsl_replay::ProtocolTrace>,
         concrete_edge: Option<(Option<&ModelTransition>, Vec<u8>)>,
     ) -> Result<Option<qsl_replay::ProtocolAssumptionWitness>, End> {
+        let UndeterminedContract { transition, clause } = contract;
         let sources = protocol
             .assumption_fairness()
             .map_err(|_| fault("the-admitted-protocol-fairness-set-builds"))?;
@@ -2053,8 +2065,10 @@ impl Run<'_, '_> {
                         at,
                         candidate,
                         protocol,
-                        protocol_transition,
-                        clause,
+                        UndeterminedContract {
+                            transition: protocol_transition,
+                            clause,
+                        },
                         Some(trace),
                         Some((transition.as_ref(), key.clone())),
                     )? {

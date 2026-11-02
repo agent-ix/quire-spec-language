@@ -277,7 +277,8 @@ fn a_refinement_over_a_protocol_checks_with_its_internal_list() {
     assert_eq!(
         refinement.abstract_side(),
         &AbstractSide::Protocol {
-            clause: "Twice".to_owned()
+            clause: "Twice".to_owned(),
+            dependency: None,
         }
     );
     assert_eq!(refinement.abstract_model(), "Spec");

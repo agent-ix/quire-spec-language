@@ -228,7 +228,6 @@ pub(crate) struct CellDocuments {
     pub(crate) packages: qsl_semantics::model::intake::PackageInput,
     pub(crate) snapshots: qsl_semantics::model::observation::DocumentProvision,
     pub(crate) initial: DocumentRef,
-    pub(crate) keys: Vec<String>,
 }
 
 impl CellDocuments {
@@ -251,7 +250,6 @@ impl CellDocuments {
             packages: package_input([cell_document().as_slice()]).expect("cell package input"),
             snapshots: BTreeMap::from([(initial.clone(), bytes)]),
             initial,
-            keys: vec!["c".to_owned()],
         }
     }
 }
@@ -325,14 +323,6 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
 /// so each protocol clause the package writes has its node.
 pub(crate) fn protocol_profiled_package(body: &str) -> CheckedPackage {
     package_with(PROTOCOL_PROFILE, body)
-}
-
-/// The protocol-profiled package with checked abstract refinement internals.
-pub(crate) fn protocol_profiled_package_with_internals(
-    body: &str,
-    internals: serde_json::Value,
-) -> CheckedPackage {
-    package_with_internals(PROTOCOL_PROFILE, body, Some(internals))
 }
 
 /// Build a protocol-profiled package from the litmus package plus additional
@@ -496,11 +486,6 @@ impl Documents {
     /// [`Self::new`] with the cells `cells` (`x`, `y`, `z` in `id` order 0, 1, 2).
     pub(crate) fn with_cells(cells: &[&'static str]) -> Self {
         Self::build(cells, false, true)
-    }
-
-    /// [`Self::with_cells`] without the `Core` object.
-    pub(crate) fn cells_without_core(cells: &[&'static str]) -> Self {
-        Self::build(cells, false, false)
     }
 
     /// [`Self::new`] with the `Spare` object `z`, which no operation touches,
