@@ -1608,8 +1608,13 @@ impl MemoryModel for Ra {
     type Component = RaComponent;
 
     /// The component's typed canonical form, written straight to bytes.
-    fn key_bytes(&self, component: &RaComponent, limits: Limits) -> Result<Vec<u8>, Error> {
-        Canonicalizer::default().to_vec(&component.enc(), limits)
+    fn key_bytes(
+        &self,
+        component: &RaComponent,
+        canonical: &Canonicalizer,
+        limits: Limits,
+    ) -> Option<Vec<u8>> {
+        canonical.written(&component.enc(), limits)
     }
 
     fn models(&self) -> &'static [MemoryModelName] {

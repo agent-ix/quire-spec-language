@@ -573,8 +573,13 @@ impl MemoryModel for Tso {
     type Component = TsoComponent;
 
     /// The component's typed canonical form, written straight to bytes.
-    fn key_bytes(&self, component: &TsoComponent, limits: Limits) -> Result<Vec<u8>, Error> {
-        Canonicalizer::default().to_vec(&component.enc(), limits)
+    fn key_bytes(
+        &self,
+        component: &TsoComponent,
+        canonical: &Canonicalizer,
+        limits: Limits,
+    ) -> Option<Vec<u8>> {
+        canonical.written(&component.enc(), limits)
     }
 
     fn models(&self) -> &'static [MemoryModelName] {

@@ -507,7 +507,9 @@ fn mp(
 /// FR-101: the state key the engine writes is the RFC 8785 encoding of the
 /// state's key envelope, byte for byte, at every state LT-12 reaches under
 /// `ra` and `tso`, whose keys name messages, views, store buffers and the
-/// SC event graph.
+/// SC event graph, and under `sc`, whose memory member its own encoding
+/// writes.
+#[trace("TC-453", "FR-101-AC-2")]
 #[test]
 fn the_written_state_key_is_the_encoded_key_envelope() {
     fn written_is_encoded<M>(system: &ProtocolSystem<'_, M>)
@@ -525,6 +527,7 @@ fn the_written_state_key_is_the_encoded_key_envelope() {
         }
     }
     let case = case_of(&lt12());
+    written_is_encoded(&case.system(&[], Sc).expect("builds"));
     written_is_encoded(
         &case
             .system(

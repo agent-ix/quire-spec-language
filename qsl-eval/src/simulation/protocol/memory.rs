@@ -18,7 +18,7 @@ use super::identity::ThreadPath;
 use super::ra::CarriedView;
 use super::race::{AccessRecord, DataRace};
 use crate::simulation::footprint::{Footprint, Location};
-use crate::simulation::model::encode::Enc;
+use crate::simulation::model::encode::{Canonicalizer, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
 /// The step of a thread a memory model's gate is read for (SE-1 e).
@@ -247,14 +247,20 @@ pub trait MemoryModel {
     /// (a) The memory state, a member of the state key.
     type Component: Clone + Eq + std::fmt::Debug + Encode;
 
-    /// The RFC 8785 bytes of `component` as the state key's `memory` member:
-    /// the bytes its [`Encode`] implementation gives under `limits`.
+    /// The RFC 8785 bytes of `component` as the state key's `memory` member,
+    /// written through the system's canonical writer: the bytes its
+    /// [`Encode`] implementation gives under `limits`.
     ///
-    /// # Errors
-    ///
-    /// The refusal of `quire_canonical::to_vec(component, limits)`.
-    fn key_bytes(&self, component: &Self::Component, limits: Limits) -> Result<Vec<u8>, Error> {
-        quire_canonical::to_vec(component, limits)
+    /// `None` when `component` has no encoding or exceeds `limits`; the
+    /// state key's own encoding then decides the refusal. Only this crate
+    /// can name [`Canonicalizer`], so only its memory models override this.
+    fn key_bytes(
+        &self,
+        component: &Self::Component,
+        _canonical: &Canonicalizer,
+        limits: Limits,
+    ) -> Option<Vec<u8>> {
+        quire_canonical::to_vec(component, limits).ok()
     }
 
     /// The resolved models (FR-219) this memory model implements: a
