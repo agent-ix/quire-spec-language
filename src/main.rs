@@ -4,11 +4,10 @@ mod cli;
 
 use cli::{Command, SyntaxCommand};
 use qsl_cst::format::format;
-use qsl_cst::CompleteDiagnostic;
+use qsl_cst::{CompleteDiagnostic, Limits};
 use qsl_foundation::source::{render_offered, IdentityCauseFields, SourceReadCause};
-use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
+use qsl_foundation::{Code, LocatedSpan, Phase, SourceIdentity};
 use quire_semantic_value::catalog::Category;
-use quire_spec_language::{parse, Limits};
 use serde_json::json;
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -69,19 +68,6 @@ impl Refusal<'_> {
         // FR-285: the code's category decides the exit code.
         (self.code.category().exit_code(), output)
     }
-}
-
-fn diagnostic(value: &Diagnostic) -> (u8, String) {
-    Refusal {
-        code: value.code,
-        phase: value.phase,
-        source: &value.source,
-        path: &value.path,
-        span: Some(value.span),
-        identity_cause: value.identity_cause(),
-        message: &value.message,
-    }
-    .render()
 }
 
 /// A complete-V1 diagnostic, its region rendered over the file's `bytes`
@@ -166,14 +152,34 @@ fn syntax(
         SyntaxCommand::Parse => {
             let limits = parse_limits;
             let bytes = read_bounded(path, limits.source_bytes)?;
-            let unit = parse(source_identity, display_path.as_ref(), &bytes, limits)
-                .map_err(|error| diagnostic(&error))?;
-            // FR-010: the source is reported as its `RawSourceRef`.
-            Ok(
-                json!({"status":"parsed", "source": unit.source().reference(),
-                "path":display_path, "imports":unit.imports().len(), "clauses":unit.clauses().len() })
-                .to_string(),
-            )
+            // FR-002: `parse` is the `parse` lifecycle operation (S1 then S2)
+            // under the caller's `qsl_cst::Limits`; its outcome serializes
+            // through `OutcomeDocument::from_parse` and FR-285 maps the
+            // outcome's category to the exit code.
+            let result = qsl_replay::spine::parse(
+                &qsl_replay::spine::ParseRequest {
+                    source: &source_identity,
+                    path: display_path.as_ref(),
+                    bytes: &bytes,
+                },
+                limits,
+                &quire_exact::Cancel::new(),
+            );
+            let document = qsl_replay::OutcomeDocument::from_parse(&result);
+            let text = document
+                .to_bytes()
+                .ok()
+                .and_then(|encoded| String::from_utf8(encoded).ok())
+                .ok_or_else(|| {
+                    (
+                        Category::InternalFailure.exit_code(),
+                        "output failed: the outcome document could not be encoded".to_owned(),
+                    )
+                })?;
+            match document.category() {
+                Category::Success => Ok(text),
+                category => Err((category.exit_code(), text)),
+            }
         }
     }
 }
@@ -221,10 +227,10 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
 }
 
 fn main() -> ExitCode {
-    // The longest form is `parse` with five operands and three limit options
-    // (twelve including the command); retain one extra to reject excess
+    // The longest form is `parse` with five operands and four limit options
+    // (fourteen including the command); retain one extra to reject excess
     // arguments without collecting an unbounded process argument list.
-    let arguments: Vec<_> = std::env::args_os().skip(1).take(13).collect();
+    let arguments: Vec<_> = std::env::args_os().skip(1).take(15).collect();
     let outcome = Command::try_from(arguments.as_slice())
         .map_err(|error| (Category::Refusal.exit_code(), error.to_string()))
         .and_then(execute);

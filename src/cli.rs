@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-010/026: the binary's bounded positional command grammar.
 
+use qsl_cst::Limits;
 use qsl_foundation::SourceIdentity;
 use quire_spec_language::command::RunLimits;
-use quire_spec_language::Limits;
 use std::ffi::OsString;
 use std::path::Path;
 
@@ -33,7 +33,7 @@ pub(super) enum Command<'a> {
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UsageError<'a> {
-    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] (limits for parse only) | quire-spec <run|compile> <request-file>")]
+    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] [--work-units <n>] (limits for parse only) | quire-spec <run|compile> <request-file>")]
     MissingCommand,
     #[error("{operand} must be UTF-8")]
     NonUtf8 { operand: &'static str },
@@ -62,7 +62,7 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                 let arity = || UsageError::Arity {
                     command,
                     operands: if command == "parse" {
-                        "<source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>]"
+                        "<source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] [--work-units <n>]"
                     } else {
                         "<source-authority> <source-id> <revision-namespace> <revision> <file>"
                     },
@@ -155,7 +155,7 @@ fn run_limit_options(options: &[OsString]) -> Option<Result<RunLimits, UsageErro
     Some(Ok(limits))
 }
 
-/// `--source-bytes`, `--tokens` and `--nodes`, each followed by its count;
+/// `--source-bytes`, `--tokens`, `--nodes` and `--work-units` (FR-255's `s1.*` ceilings), each followed by its count;
 /// an option left out keeps its default. `None` is a malformed option list.
 #[ix_trace_rs::string_edge]
 fn limit_options(options: &[OsString]) -> Option<Result<Limits, UsageError<'_>>> {
@@ -169,6 +169,7 @@ fn limit_options(options: &[OsString]) -> Option<Result<Limits, UsageError<'_>>>
             "--source-bytes" => &mut limits.source_bytes,
             "--tokens" => &mut limits.tokens,
             "--nodes" => &mut limits.nodes,
+            "--work-units" => &mut limits.work_units,
             _ => return None,
         };
         match value.to_str().and_then(|text| text.parse().ok()) {
