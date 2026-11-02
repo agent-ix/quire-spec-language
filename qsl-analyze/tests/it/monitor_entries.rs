@@ -307,7 +307,7 @@ pub(crate) fn run_entries_with(
         function code using v(o: Outcome): Integer pure { case o { Outcome::Failed(f): 6; Outcome::False: 2; Outcome::Incomplete(l): if l.limit = \"activation\" then 7 else 5; Outcome::Indeterminate: 4; Outcome::Pending: 3; Outcome::True: 1; } }\n\
         function dump using v(s: State): Sequence<Integer> pure { map(x in s.buffer_0: 1000000000000 + x.tFirst * 10000 + x.tLast * 10 + (if x.lost then 1 else 0)) }\n\
         function encode using v(rs: Results): Sequence<Integer> pure { map(r in rs: (r.instance.origin_tick * 1000 + r.instance.subformula) * 8 + code(r.outcome)) }\n";
-    let package = package_of(&format!("{}\n{helpers}\n{body}", render(&spec)));
+    let package = package_of(&format!("{}\n{helpers}\n{body}", render(spec)));
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
         .call(
