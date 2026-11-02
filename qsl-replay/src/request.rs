@@ -16,7 +16,7 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceRefWire,
+    DeclaredDomain, DefinitionSourceRef, ObligationIdentity, ProfileSelection, SourceRefWire,
 };
 use crate::object_environment::ObjectEnvironmentRef;
 use crate::target::{
@@ -191,7 +191,7 @@ impl ByteProvision {
     /// Look up an entry by the source it is provided for. The only public
     /// accessor this type has; there is no path- or location-typed
     /// alternative.
-    pub fn get(&self, source: &RawSourceRef) -> Option<&[u8]> {
+    pub fn get(&self, source: &DefinitionSourceRef) -> Option<&[u8]> {
         self.bytes
             .get(&(source.authority().to_owned(), source.identity().to_owned()))
             .map(Vec::as_slice)
@@ -227,7 +227,7 @@ impl ByteProvision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyEntry {
     identity: LibraryName,
-    sources: Vec<RawSourceRef>,
+    sources: Vec<DefinitionSourceRef>,
 }
 
 impl DependencyEntry {
@@ -236,7 +236,7 @@ impl DependencyEntry {
         &self.identity
     }
     /// The dependency's own lock `sources`.
-    pub fn sources(&self) -> &[RawSourceRef] {
+    pub fn sources(&self) -> &[DefinitionSourceRef] {
         &self.sources
     }
 }
@@ -256,7 +256,7 @@ pub struct DependencyEntryWire {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
     package_name: String,
-    sources: Vec<RawSourceRef>,
+    sources: Vec<DefinitionSourceRef>,
     dependencies: Vec<DependencyEntry>,
     replay_target: Option<ReplayTarget>,
     over: Option<ReplayOverBinding>,
@@ -279,7 +279,7 @@ impl ReplayRequest {
         &self.package_name
     }
     /// The package's declared source references.
-    pub fn sources(&self) -> &[RawSourceRef] {
+    pub fn sources(&self) -> &[DefinitionSourceRef] {
         &self.sources
     }
     /// The package reference's `dependencies`, in request order (QSpec
@@ -659,7 +659,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
         + wire
             .sources
             .iter()
-            .map(RawSourceRef::wire_len)
+            .map(DefinitionSourceRef::wire_len)
             .sum::<usize>()
         + wire
             .dependencies
@@ -669,7 +669,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
                     + entry
                         .sources
                         .iter()
-                        .map(RawSourceRef::wire_len)
+                        .map(DefinitionSourceRef::wire_len)
                         .sum::<usize>()
             })
             .sum::<usize>()
@@ -768,7 +768,7 @@ impl ReplayRequest {
         let sources = wire
             .sources
             .into_iter()
-            .map(RawSourceRef::from_wire)
+            .map(DefinitionSourceRef::from_wire)
             .collect::<Vec<_>>();
 
         let dependencies = wire
@@ -781,7 +781,7 @@ impl ReplayRequest {
                 let sources = entry
                     .sources
                     .into_iter()
-                    .map(RawSourceRef::from_wire)
+                    .map(DefinitionSourceRef::from_wire)
                     .collect::<Vec<_>>();
                 Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources })
             })
@@ -851,13 +851,21 @@ impl ReplayRequest {
         ReplayRequestWire {
             package_name: self.package_name.clone(),
             profile_selections: self.profile_selections.clone(),
-            sources: self.sources.iter().map(RawSourceRef::to_wire).collect(),
+            sources: self
+                .sources
+                .iter()
+                .map(DefinitionSourceRef::to_wire)
+                .collect(),
             dependencies: self
                 .dependencies
                 .iter()
                 .map(|entry| DependencyEntryWire {
                     identity: entry.identity.as_str().to_owned(),
-                    sources: entry.sources.iter().map(RawSourceRef::to_wire).collect(),
+                    sources: entry
+                        .sources
+                        .iter()
+                        .map(DefinitionSourceRef::to_wire)
+                        .collect(),
                 })
                 .collect(),
             replay_target,

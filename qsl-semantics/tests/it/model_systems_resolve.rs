@@ -11,7 +11,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::accounting::{
-    ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
+    ChargePoint, LimitKind, Meter, ModelNormalizationLimits, NormalizationIncomplete,
 };
 use qsl_semantics::model::admitted::AdmittedPackage;
 use qsl_semantics::model::domain_package::{
@@ -459,7 +459,7 @@ fn a_denied_systems_resolve_charge_is_incomplete() {
     let (result, _) = resolve(&world, &aliases, Kind::Part, "M::sys_pump", limits);
     assert_eq!(
         result,
-        Err(ResolveFailure::Incomplete(Incomplete {
+        Err(ResolveFailure::Incomplete(NormalizationIncomplete {
             limit_kind: LimitKind::WorkUnits,
             limit: 0,
             consumed: 0,

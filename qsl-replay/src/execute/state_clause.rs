@@ -29,7 +29,7 @@ use super::{
     ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
-use crate::identity::RawSourceRef;
+use crate::identity::DefinitionSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, SeparationReason,
@@ -85,7 +85,7 @@ pub enum ClauseIdentityMismatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateClauseReplayResult {
     result: ReplayResult,
-    source: RawSourceRef,
+    source: DefinitionSourceRef,
     package_name: LibraryName,
     clause: crate::identity::QualifiedName,
     clause_node: NodeKey,
@@ -101,7 +101,7 @@ impl StateClauseReplayResult {
         &self.result
     }
     /// The recompiled source unit's caller-named reference.
-    pub fn source(&self) -> &RawSourceRef {
+    pub fn source(&self) -> &DefinitionSourceRef {
         &self.source
     }
     /// The recompiled package's name.

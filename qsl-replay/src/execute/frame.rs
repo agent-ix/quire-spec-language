@@ -24,7 +24,7 @@ use super::{
     MalformedOperationReason, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
-use crate::identity::RawSourceRef;
+use crate::identity::DefinitionSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
@@ -101,7 +101,7 @@ pub enum FrameIdentityMismatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameReplayResult {
     result: ReplayResult,
-    source: RawSourceRef,
+    source: DefinitionSourceRef,
     package_name: LibraryName,
     operation: FrameOperation,
     anchor: NodeKey,
@@ -120,7 +120,7 @@ impl FrameReplayResult {
         &self.result
     }
     /// The recompiled source unit's caller-named reference.
-    pub fn source(&self) -> &RawSourceRef {
+    pub fn source(&self) -> &DefinitionSourceRef {
         &self.source
     }
     /// The recompiled package's name.

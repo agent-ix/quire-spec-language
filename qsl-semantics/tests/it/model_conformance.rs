@@ -284,7 +284,7 @@ fn operation_axes_charge_the_selected_type_facts_and_complete_effect_comparisons
 #[trace("FR-082-AC-3", "QSpec-TC-196")]
 #[test]
 fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record() {
-    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind};
+    use qsl_semantics::model::accounting::{ChargePoint, LimitKind, NormalizationIncomplete};
 
     for branching in [false, true] {
         let mut records = vec![
@@ -331,7 +331,7 @@ fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record(
             } else {
                 assert_eq!(
                     normalized,
-                    NormalizeOutcome::Incomplete(Incomplete {
+                    NormalizeOutcome::Incomplete(NormalizationIncomplete {
                         limit_kind: LimitKind::AncestorSteps,
                         limit,
                         consumed: limit,
@@ -359,7 +359,7 @@ fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record(
             } else {
                 assert_eq!(
                     result,
-                    ConformanceCheckOutcome::Incomplete(Incomplete {
+                    ConformanceCheckOutcome::Incomplete(NormalizationIncomplete {
                         limit_kind: LimitKind::AncestorSteps,
                         limit,
                         consumed: limit,
@@ -380,7 +380,7 @@ fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record(
 #[trace("FR-082-AC-3", "QSpec-TC-196")]
 #[test]
 fn an_unavailable_owning_axis_wins_before_an_unavailable_ancestor_edge() {
-    use qsl_semantics::model::accounting::{ChargePoint, Incomplete, LimitKind};
+    use qsl_semantics::model::accounting::{ChargePoint, LimitKind, NormalizationIncomplete};
     let package = DomainPackage::new(
         DomainPackageRef::fixture("test/ancestor-precedence"),
         vec![
@@ -411,7 +411,7 @@ fn an_unavailable_owning_axis_wins_before_an_unavailable_ancestor_edge() {
             &mut meter,
         );
         let expected = if work_units == 0 {
-            Incomplete {
+            NormalizationIncomplete {
                 limit_kind: LimitKind::WorkUnits,
                 limit: 0,
                 consumed: 0,
@@ -419,7 +419,7 @@ fn an_unavailable_owning_axis_wins_before_an_unavailable_ancestor_edge() {
                 charge_point: ChargePoint::ConformanceAxis,
             }
         } else {
-            Incomplete {
+            NormalizationIncomplete {
                 limit_kind: LimitKind::AncestorSteps,
                 limit: 0,
                 consumed: 0,
@@ -1713,7 +1713,7 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
         ConformanceCheckOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                qsl_semantics::model::accounting::Incomplete {
+                qsl_semantics::model::accounting::NormalizationIncomplete {
                     limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
                     limit: BOUND,
                     consumed: BOUND,
@@ -1748,7 +1748,7 @@ fn c08_a_zero_ancestor_steps_limit_denies_the_first_followed_edge() {
     };
     assert_eq!(
         incomplete,
-        qsl_semantics::model::accounting::Incomplete {
+        qsl_semantics::model::accounting::NormalizationIncomplete {
             limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
             limit: 0,
             consumed: 0,
@@ -1844,7 +1844,7 @@ fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
             );
             assert_eq!(
                 incomplete,
-                qsl_semantics::model::accounting::Incomplete {
+                qsl_semantics::model::accounting::NormalizationIncomplete {
                     limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
                     limit: BOUND,
                     consumed: BOUND,

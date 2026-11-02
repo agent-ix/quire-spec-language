@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
 use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeError};
-use crate::identity::{DeclaredDomain, QualifiedName, RawSourceRef};
+use crate::identity::{DeclaredDomain, DefinitionSourceRef, QualifiedName};
 use crate::limits::CallerLimits;
 use crate::outcome::OutcomeDiagnostic;
 use crate::request::{DependencyEntryWire, ReplayRequestWire, StateEnvironment};
@@ -49,7 +49,7 @@ struct FunctionDeclaration {
 #[derive(Clone, Debug)]
 struct DependencySelection {
     identity: String,
-    source: Option<RawSourceRef>,
+    source: Option<DefinitionSourceRef>,
 }
 
 /// The package-wide members of a plugin counterexample's replay request
@@ -59,7 +59,7 @@ struct DependencySelection {
 #[derive(Clone, Debug)]
 pub struct PluginReplayContext {
     package_name: String,
-    source: RawSourceRef,
+    source: DefinitionSourceRef,
     dependencies: Vec<DependencySelection>,
     functions: BTreeMap<NodeKey, FunctionDeclaration>,
     /// Every requirement record of the package, with the function whose
@@ -73,9 +73,9 @@ pub struct PluginReplayContext {
 }
 
 /// The reference a replay request names `source` by: its four FR-001 labels.
-fn source_reference(source: &Source) -> RawSourceRef {
+fn source_reference(source: &Source) -> DefinitionSourceRef {
     let identity = source.identity();
-    RawSourceRef::new(
+    DefinitionSourceRef::new(
         identity.label(SourceLabel::Authority).to_owned(),
         identity.label(SourceLabel::Identity).to_owned(),
         identity.label(SourceLabel::RevisionNamespace).to_owned(),

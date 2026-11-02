@@ -29,7 +29,9 @@ use super::{
     FrameChange, FrameVerdict, FrameWitness, LinkDifference, ModelView, SelectedObject,
     SnapshotValue, INSUFFICIENT_NEXT_CHARGE,
 };
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
+use crate::model::accounting::{
+    Charge, ChargePoint, Meter, ModelNormalizationLimits, NormalizationIncomplete,
+};
 use crate::model::domain_package::OperationEffect;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
@@ -252,7 +254,7 @@ enum FrameStop<'a> {
     /// [`decide_frame`]'s first finding.
     Decision(Box<Decision<'a>>),
     /// A `frame.write` or `frame.redefines-link` charge the meter denied.
-    Denied(Incomplete),
+    Denied(NormalizationIncomplete),
     /// Step 5's first changed relationship instance.
     Link(Box<LinkFinding>),
 }
@@ -677,7 +679,7 @@ pub(super) fn verdict(
 
 /// `incomplete` as the admission record of the caller-budget refusal
 /// [`enforce`] raises for it.
-fn budget_record(incomplete: &Incomplete) -> AdmissionRecord {
+fn budget_record(incomplete: &NormalizationIncomplete) -> AdmissionRecord {
     caller_budget_record(&incomplete.denial(), INSUFFICIENT_NEXT_CHARGE)
 }
 

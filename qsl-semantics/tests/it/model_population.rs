@@ -3683,7 +3683,7 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
         Err(NormalizeOutcome::Incomplete(incomplete)) => {
             assert_eq!(
                 incomplete,
-                qsl_semantics::model::accounting::Incomplete {
+                qsl_semantics::model::accounting::NormalizationIncomplete {
                     limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
                     limit: 5,
                     consumed: 5,

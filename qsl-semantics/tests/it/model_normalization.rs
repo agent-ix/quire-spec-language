@@ -5,7 +5,7 @@
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{
-    ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
+    ChargePoint, LimitKind, ModelNormalizationLimits, NormalizationIncomplete,
 };
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
@@ -1934,7 +1934,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 1,
                     consumed: 1,
@@ -3609,7 +3609,7 @@ fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 39,
                     consumed: 39,
@@ -3713,7 +3713,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::DerivationFacts,
                     limit: 17,
                     consumed: 17,
@@ -3734,7 +3734,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 40,
                     consumed: 40,
@@ -3754,7 +3754,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 24,
                     consumed: 24,
@@ -3778,7 +3778,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 44,
                     consumed: 41,
@@ -3866,7 +3866,7 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 30,
                     consumed: 30,
@@ -3906,7 +3906,7 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
-                Incomplete {
+                NormalizationIncomplete {
                     limit_kind: LimitKind::WorkUnits,
                     limit: 51,
                     consumed: 48,
@@ -4289,7 +4289,7 @@ fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_fact
     limits.work_units = 33;
     assert_eq!(
         normalize(&domain_package, limits),
-        NormalizeOutcome::Incomplete(Incomplete {
+        NormalizeOutcome::Incomplete(NormalizationIncomplete {
             limit_kind: LimitKind::WorkUnits,
             limit: 33,
             consumed: 32,

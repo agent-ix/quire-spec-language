@@ -908,7 +908,7 @@ fn a_cancelled_argument_refusal_is_refused_at_admit() {
 #[trace("TC-861", "FR-341-AC-4")]
 #[test]
 fn a_model_budget_denial_at_s3_is_incomplete_naming_the_limit() {
-    let incomplete = qsl_semantics::model::accounting::Incomplete {
+    let incomplete = qsl_semantics::model::accounting::NormalizationIncomplete {
         limit_kind: qsl_semantics::model::accounting::LimitKind::WorkUnits,
         limit: 7,
         consumed: 7,
