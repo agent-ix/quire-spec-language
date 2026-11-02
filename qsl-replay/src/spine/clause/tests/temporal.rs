@@ -1348,12 +1348,13 @@ fn timestamped_profile_and_trace_shape_must_match() {
         },
         &[1],
     );
-    let report = report(timestamped_clause_on_positions);
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
-    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
+    let first_report = report(timestamped_clause_on_positions);
+    assert_eq!(first_report.disposition.stage(), ClauseRunStage::Admit);
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &first_report.disposition
+    else {
         panic!(
             "expected an admission refusal, got {:?}",
-            report.disposition
+            first_report.disposition
         );
     };
     assert_eq!(
@@ -1384,12 +1385,13 @@ fn timestamped_profile_and_trace_shape_must_match() {
         },
         &[1],
     );
-    let report = report(position_clause_on_timestamps);
-    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
-    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &report.disposition else {
+    let second_report = report(position_clause_on_timestamps);
+    assert_eq!(second_report.disposition.stage(), ClauseRunStage::Admit);
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &second_report.disposition
+    else {
         panic!(
             "expected an admission refusal, got {:?}",
-            report.disposition
+            second_report.disposition
         );
     };
     assert_eq!(
