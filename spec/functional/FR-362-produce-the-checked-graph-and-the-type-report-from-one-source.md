@@ -44,11 +44,14 @@ comparing copied source references.
    source-map contract follows QSpec FR-322.
 3. **One producer, one `CheckedUnit`.** The producer is the spine front end
    (parse, build, assemble, check over one `Source`) extended by the type
-   phase. It takes the source, the selected formal identity and the stage limits, and returns the checked unit or
+   phase. It takes the source and the stage limits, and returns the checked unit or
    the typed refusal of the first stage that refused. Exactly one public
-   `CheckedUnit` type exists: the spine's, which carries the graph's
-   requirement records, the type report, the formal identity and the source's
-   one `RawSourceRef`. The type report covers one unit by construction. The type the
+   `CheckedUnit` type exists: the spine's, which carries the checked package
+   (the graph and its requirement records), the type report
+   ([FR-512](FR-512-specify-the-spine-type-report-the-inventory-on-exhaustion-and-the-multi-unit-cycle-refusals.md)
+   states what it holds) and the source's one `RawSourceRef`. The selected
+   formal identity is not a producer input or a `CheckedUnit` member: the
+   inventory takes it as its own parameter (FR-512). The type report covers one unit by construction. The type the
    source inventory used to define is deleted, and `qsl_inventory` lives in
    `qsl_replay` and reads `spine::CheckedUnit`.
 4. **One source reference.** `CheckedUnit` carries the single `RawSourceRef`
@@ -101,9 +104,12 @@ comparing copied source references.
    requirements and pending obligations is built from the checked unit and
    from nothing else. A unit that the S3 type phase refuses is an error outcome
    of `check` and yields no partial inventory rows. This is a different case
-   from the exhaustion stops: when the type phase stops on `TypeWorkExhausted`
-   or `TypeAdmissionUnfinished`, the inventory stays `Incomplete`, retains the
-   partial rows and carries the typed cause (IR FR-052-AC-10). The inventory's
+   from the exhaustion stops: when a stage stops on a limit (a
+   `StageFailure::Limit`, which the IR names `TypeWorkExhausted`), the
+   inventory stays `Incomplete`, retains the partial rows and carries the typed
+   cause (IR FR-052-AC-10); FR-512 states the rows and the cause. The spine has
+   no unfinished-admission stop, so the IR's `TypeAdmissionUnfinished` is never
+   produced. The inventory's
    identity binds the checked unit's whole source reference; its
    authored-document key semantics follow QSpec FR-202. The encoding of a row's
    identity belongs to the FR that owns the inventory rows.
@@ -125,7 +131,7 @@ comparing copied source references.
 | FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report fields. | Inspection |
 | FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection |
 | FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause over model operations whose body checks yields both a graph and a type report, the graph holding the clause's `claim`/`step_relation` node (FR-180). A unit that holds a `hyper` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `hyper` clause yields both. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test |
-| FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test |
+| FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose check stops on a stage limit yields an `Incomplete` inventory that retains the partial rows and carries the typed cause, as FR-512-AC-3 states. | Test |
 
 ## Dependencies
 

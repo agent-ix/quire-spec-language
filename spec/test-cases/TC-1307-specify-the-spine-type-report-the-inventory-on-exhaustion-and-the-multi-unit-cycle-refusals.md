@@ -1,0 +1,39 @@
+---
+id: TC-1307
+title: "Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-512
+    type: verifies
+---
+# TC-1307: Specify the spine type report, the inventory on exhaustion and the multi-unit cycle refusals
+
+## Description
+
+Verify the type report, the inventory outcomes and the cross-unit cycle
+refusals of FR-512. Scope: FR-512-AC-1 to FR-512-AC-5 (AC-6 is by inspection).
+
+## Test Procedure
+
+Fixture `T0`: a unit with `function f using v(x: Int[0, 9]): Int[0, 9] pure {
+x }`, a state `post` clause on an object operation, and a protocol with one
+`check` and one `requirement`.
+
+| Row | Input | Expected |
+| --- | --- | --- |
+| 1 | `T0`, defaults | `type_report()` lists declarations in ascending `NodeRef` order with value types, one `RequirementRecord` per requirement, one `PendingObligation` per claim and per protocol requirement obligation, each `Pending` with its claim form's kind; no source reference field |
+| 2 | FR-480-AC-2's units `A` and `B` | two `CheckedUnit`s, each report listing its own declarations only |
+| 3 | `T0`, `s3.work_units` one below measured need | `check` is the limit outcome; inventory `Incomplete`, one requirement row per requirement form, no obligation row, cause (S3, work budget, `s3.work_units`) |
+| 4 | `T0`, `s1.nodes` below the node count | `Incomplete`, zero rows, cause (S1, node count, `s1.nodes`) |
+| 5 | `T0` with an ill-typed body | an error, no rows |
+| 6 | `T0`, sufficient limits | `Complete` |
+| 7 | `T0` with formal identities `F1`, `F2`; `Incomplete` and `Complete` outcomes with `F1` | two identities; one identity |
+| 8 | FR-480-AC-6 documents, list `[1, 2]`; list `[2, 1]` | `invalid_package`/`invalid-value` at `z` in document 1; `invalid_package`/`definition-cycle` at `u_self` in document 2, edge `u_self` to `u_self` |
+| 9 | document 1 `unit z : T = z2 * rational(2, 1); unit z2 : T = z * rational(2, 1);`, document 2 `dimension L;` | `invalid_package`/`definition-cycle`, both edges, naming document 1 |
+| 10 | the QSpec TC-187 dimension-cycle vector split across documents 1 and 2 (vector referenced by case ID, not copied) | `invalid_package`/`definition-cycle`, naming the first document in list order |
+
+Tag the test `#[trace("FR-512-AC-1", "FR-512-AC-2", "FR-512-AC-3", "FR-512-AC-4", "FR-512-AC-5", "TC-1307")]`.
+
+## Expected Results
+
+Each row's Expected column.
