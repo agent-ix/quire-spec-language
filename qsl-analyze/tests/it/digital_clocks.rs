@@ -229,3 +229,57 @@ fn free_delays_under_a_workload_are_decided_by_minimum_and_maximum() {
         ratio(9999, 10000)
     );
 }
+
+/// FR-243-AC-2 (TC-698): over a timed subject, a probabilistic claim that
+/// names `exact` evidence routes to EN-5 (the digital-clock route) and one that
+/// names `statistical` evidence to EN-4; neither is marked a timed item, which
+/// would restrict it to EN-6. The route is a function of the capability kind
+/// and the evidence kind alone.
+#[trace("TC-698", "FR-243-AC-2")]
+#[test]
+fn exact_timed_claims_route_to_en5_and_statistical_ones_to_en4() {
+    use qsl_foundation::source::provenance::OccurrenceKey;
+    use qsl_route::request::{items_with_evidence, EvidenceSelection};
+    use qsl_semantics::check::{RequirementMap, RequirementRecord};
+    use quire_exact::{Origin, Role};
+
+    let world = retx(
+        GUARD,
+        true,
+        "workload One on M { weight Call::send = 1; }\n",
+        &format!(
+            "{}probabilistic Sampled using ev on M over (c: M::Call) under One on origin \
+             with alpha 0.1, beta 0.1, indifference 0.005 \
+             {{ probability >= 0.99 [ eventually[0 ms, 4 ms] holds(c.late) ] }}\n",
+            deadline_claim("Deadline", "under every scheduler", ">= 0.99", "eventually")
+        ),
+    );
+    let claims = world.package.graph().probabilistic_model();
+    let node = |fill: u8| crate::fixture_ids::node_key([fill]);
+    let record = |name: &str, fill: u8| {
+        let claim = claims.claim(name).expect("the claim checks");
+        RequirementRecord::model_claim(claim.requirements(node(fill)), node(99))
+    };
+    let exact = record("Deadline", 1);
+    let sampled = record("Sampled", 2);
+    assert!(!exact.requirements().timed() && !sampled.requirements().timed());
+    let records: RequirementMap = [
+        (
+            OccurrenceKey::new(node(1), Origin::new(Role::new("claim"), 0)),
+            exact,
+        ),
+        (
+            OccurrenceKey::new(node(2), Origin::new(Role::new("claim"), 0)),
+            sampled,
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let registry = crate::probabilistic_request_items::registry();
+    let items = items_with_evidence(&records, &registry, None, EvidenceSelection::Record);
+    let routed: Vec<_> = items
+        .iter()
+        .map(crate::probabilistic_request_items::candidate_ids)
+        .collect();
+    assert_eq!(routed, [vec!["en-5".to_owned()], vec!["en-4".to_owned()]]);
+}

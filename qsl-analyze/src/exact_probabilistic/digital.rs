@@ -1406,12 +1406,7 @@ impl<'c> Builder<'_, '_, 'c> {
                         window.delays.insert(delay);
                     }
                     None => {
-                        let given = self.given(&action.identity.operation).map(|values| {
-                            values
-                                .into_iter()
-                                .map(|(delay, weight)| (delay, weight))
-                                .collect::<Vec<_>>()
-                        });
+                        let given = self.given(&action.identity.operation);
                         let given = match given {
                             Some(values) => Some(
                                 values
