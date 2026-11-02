@@ -1400,9 +1400,15 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
         .replace("protocol Flow", "protocol Dependent")
         .replace("join all [a, b]", "join predicate(Broken) [a, b]");
     let dependent_source = format!("{good}\n{broken}\n{dependent}");
-    let dependent_reference_start = dependent_source
-        .find("predicate(Broken)")
-        .expect("dependent predicate reference")
+    let check_prefix = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+         model M = \"acme/orders\";\n"
+    );
+    let dependent_reference_start = check_prefix.len()
+        + dependent_source
+            .find("predicate(Broken)")
+            .expect("dependent predicate reference")
         + "predicate(".len();
     let dependent_results =
         emit_checked_with_protocol_results(&CheckedPackage::link(check(&dependent_source)))
@@ -1457,8 +1463,7 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
                 && dependent_refusal.cause.code() == qsl_foundation::diagnostic::Code::MissingDeclaration
                 && dependent_refusal.cause.cause() == Some("missing-name")
         ),
-        "dependent result and expected span {dependent_reference_start}: {:?}",
-        dependent_results.results()
+        "the dependent refusal locus is the predicate's Broken reference"
     );
 }
 
