@@ -1733,6 +1733,28 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn eval_reader_read(&mut self, read: quire_checked::NodeRead<'a, usize>) -> Result<(), Halt> {
         match read.operation {
             NodeKind::Local(slot) => self.eval_local(slot),
+            NodeKind::Field {
+                operand,
+                field,
+                optional,
+            } => {
+                self.eval_local(operand)?;
+                let Value::Composite(composite) = self.pop()? else {
+                    return Err(invariant("reader-field-composite-value-expected"));
+                };
+                let index = self
+                    .scope
+                    .record_slot(composite.declaration().clone(), &field)
+                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
+                let slot = composite
+                    .slots()
+                    .get(index)
+                    .ok_or_else(|| invariant("reader-field-slot-is-admitted"))?;
+                let value =
+                    Self::project(self.scope.types(), slot, optional, read.value_type, false)?;
+                self.push_value(value, false);
+                Ok(())
+            }
             NodeKind::Attribute {
                 reference,
                 field,

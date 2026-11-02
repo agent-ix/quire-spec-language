@@ -143,17 +143,9 @@ impl<'package> AdmittedEvaluationView<'package> {
                 .iter()
                 .map(|source| source.node.clone())
                 .collect::<Vec<_>>();
-            Some(
-                reader
-                    .protocol_reference_slot(&root_node, &binders)
-                    .map_err(SlotSelectionFailure::Fault)?
-                    .ok_or_else(|| {
-                        SlotSelectionFailure::Fault(InternalFault::new(
-                            "FR-390",
-                            "reader-protocol-root-has-supported-plain-data-projection",
-                        ))
-                    })?,
-            )
+            reader
+                .protocol_reference_slot(&root_node, &binders)
+                .map_err(SlotSelectionFailure::Fault)?
         } else {
             None
         };
@@ -390,24 +382,40 @@ impl SelectedProtocolTerm<'_, '_> {
 #[cfg(feature = "std")]
 pub struct ReaderProtocolProjection {
     pub(crate) slot: usize,
-    pub(crate) field: String,
-    pub(crate) owner: quire_exact::EffectiveId,
+    pub(crate) field: ReaderProtocolField,
     pub(crate) optional: bool,
     pub(crate) derefed: bool,
     pub(crate) value_type: quire_exact::ValueType,
     pub(crate) location: quire_semantic_value::location::Location,
 }
 
+/// The admitted field projection selected by a reader-backed protocol slot.
+#[cfg(feature = "std")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReaderProtocolField {
+    /// A direct selected reference to one of the supplied frame slots.
+    Local,
+    /// A field on an admitted model object, with its exact effective owner.
+    Attribute {
+        /// The selected model object's effective identity.
+        owner: quire_exact::EffectiveId,
+        /// The field name admitted from the checked operation member.
+        name: String,
+    },
+    /// A field on an admitted record value, with its exact selected declaration.
+    RecordField {
+        /// The record declaration identity joined from the selected identity row.
+        declaration: quire_exact::NodeKey,
+        /// The field name admitted from the checked operation member.
+        name: String,
+    },
+}
+
 #[cfg(feature = "std")]
 impl ReaderProtocolProjection {
-    /// The selected expression's field name admitted by the reader.
-    pub fn field(&self) -> &str {
+    /// The field operation admitted by the reader.
+    pub fn field(&self) -> &ReaderProtocolField {
         &self.field
-    }
-
-    /// The declaring object identity admitted by the reader.
-    pub fn owner(&self) -> quire_exact::EffectiveId {
-        self.owner.clone()
     }
 
     /// Whether the admitted field member type is optional.

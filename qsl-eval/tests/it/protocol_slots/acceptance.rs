@@ -2398,6 +2398,187 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
     }
 }
 
+/// TC-142: the checked protocol package and its strict I2 read-back evaluate
+/// compensation slots with the same results and ordered charge log.
+#[test]
+#[trace("TC-142", "TC-1073", "FR-049-AC-9", "FR-390-AC-11", "FR-390-AC-15")]
+fn compensation_slots_preserve_results_and_charge_logs_after_strict_read_back() {
+    let (package, _) = fixture_with_view();
+    let model_bytes = serde_json::to_vec(&document()).unwrap();
+    let domain_packages =
+        qsl_semantics::model::intake::package_input([model_bytes.as_slice()]).unwrap();
+    let read = qsl_package::read_evaluation_package(
+        &package,
+        qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
+        &domain_packages,
+        qsl_package::V2ReadLimits::default(),
+    )
+    .expect("strict I2 admission accepts the emitted TC-1070 package");
+    let reader_view = read
+        .evaluation_view()
+        .expect("the successful read retains its evaluator view");
+    assert!(reader_view.is_reader_backed());
+
+    let calls = [
+        (
+            "registration capture",
+            slot(
+                &package,
+                "Refunds",
+                "Refund",
+                "registration_captures",
+                Some(0),
+            ),
+            supply(
+                &package,
+                "Refunds",
+                vec![("forward", receipt(&package, 5))],
+                None,
+            ),
+            int(5),
+        ),
+        (
+            "activation capture",
+            slot(
+                &package,
+                "Refunds",
+                "Refund",
+                "activation_captures",
+                Some(0),
+            ),
+            supply(
+                &package,
+                "Refunds",
+                vec![("trigger", flag(&package, true))],
+                None,
+            ),
+            Value::Boolean(true),
+        ),
+        (
+            "trigger guard",
+            slot(&package, "Refunds", "Refund", "trigger.guard", None),
+            supply(
+                &package,
+                "Refunds",
+                vec![("trigger", flag(&package, false)), ("target", int(5))],
+                None,
+            ),
+            Value::Boolean(true),
+        ),
+        (
+            "retry relation",
+            slot(&package, "Refunds", "Refund", "retry.relation", None),
+            retry_supply(&package, 0),
+            Value::Boolean(true),
+        ),
+        (
+            "recovery predicate",
+            slot(&package, "Refunds", "Refund", "recovery.predicate", None),
+            supply(
+                &package,
+                "Refunds",
+                vec![
+                    ("recovered", receipt(&package, 5)),
+                    ("target", int(5)),
+                    ("activated", Value::Boolean(false)),
+                ],
+                None,
+            ),
+            Value::Boolean(true),
+        ),
+    ];
+
+    let mut checked_meter = Meter::new(UNLIMITED);
+    let mut reader_meter = Meter::new(UNLIMITED);
+    for (name, selected, values, expected) in &calls {
+        let checked_result = package
+            .evaluate_protocol_slot(selected, values, &mut checked_meter)
+            .expect("the checked package evaluates the selected slot");
+        let reader_result = reader_view
+            .evaluate_protocol_slot(selected, values, &mut reader_meter)
+            .unwrap_or_else(|failure| {
+                panic!("the strict-reader view evaluates {name}: {failure:?}")
+            });
+
+        let (
+            ProtocolSlotEvaluation::Evaluated(checked_evaluation),
+            ProtocolSlotEvaluation::Evaluated(reader_evaluation),
+        ) = (checked_result, reader_result)
+        else {
+            panic!("{name} did not return an evaluated result");
+        };
+        let (
+            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(checked_value)),
+            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(reader_value)),
+        ) = (&checked_evaluation.outcome, &reader_evaluation.outcome)
+        else {
+            panic!("{name} did not complete on both views");
+        };
+        assert_value_eq!(checked_value, *expected, "checked {name}");
+        assert_value_eq!(reader_value, *expected, "reader {name}");
+        assert_eq!(
+            checked_evaluation.location, reader_evaluation.location,
+            "{name} evaluation locations"
+        );
+        assert_eq!(
+            checked_evaluation.losses, reader_evaluation.losses,
+            "{name} evaluation losses"
+        );
+        assert_eq!(
+            checked_meter.admitted_charges(),
+            reader_meter.admitted_charges(),
+            "after {name}, both meters have the same cumulative ordered charge log"
+        );
+        for counter in LimitKind::ALL {
+            assert_eq!(
+                checked_meter.consumed(counter),
+                reader_meter.consumed(counter),
+                "{name} preserves {counter:?} usage"
+            );
+        }
+    }
+
+    let retry = slot(&package, "Refunds", "Refund", "retry.relation", None);
+    let mut missing = retry_supply(&package, 0);
+    let target = binder(&package, "Refunds", "target");
+    missing.binders.retain(|(key, _)| *key != target);
+    let checked_before = checked_meter.clone();
+    let reader_before = reader_meter.clone();
+    let checked_refusal = package.evaluate_protocol_slot(&retry, &missing, &mut checked_meter);
+    let reader_refusal = reader_view.evaluate_protocol_slot(&retry, &missing, &mut reader_meter);
+    assert_eq!(
+        checked_meter, checked_before,
+        "checked refusal is uncharged"
+    );
+    assert_eq!(reader_meter, reader_before, "reader refusal is uncharged");
+
+    let (Err(CallFailure::Admission(checked_failure)), Err(CallFailure::Admission(reader_failure))) =
+        (checked_refusal, reader_refusal)
+    else {
+        panic!("the missing retry binder refuses on both views");
+    };
+    let (
+        CallAdmissionFailure::Refused(checked_record),
+        CallAdmissionFailure::Refused(reader_record),
+    ) = (checked_failure.as_ref(), reader_failure.as_ref())
+    else {
+        panic!("the missing retry binder has a typed refusal on both views");
+    };
+    assert_eq!(
+        checked_failure.as_ref(),
+        reader_failure.as_ref(),
+        "the complete stable refusal payload matches"
+    );
+    assert_eq!(checked_record.record.catalog, reader_record.record.catalog);
+    assert_eq!(checked_record.record.path, reader_record.record.path);
+    assert_eq!(checked_record.locus, reader_record.locus);
+    assert_eq!(
+        checked_record.locus,
+        CallAdmissionLocus::Binder(target),
+        "both refusals identify the missing binder"
+    );
+}
+
 /// FR-390-AC-6: a foreign reference nested in a binder whose declared type is
 /// not itself a Reference has no single required universe, so the
 /// `foreign_reference` record carries `supplied` alone.
