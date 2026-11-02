@@ -854,7 +854,14 @@ fn public_accounting_clamps_limits_and_refuses_overflow_atomically() {
                 records: usize::MAX,
                 depth: usize::MAX,
             };
-            assert_eq!(maximum.bounded(), TypeLimits::default());
+            // Only `expressions` may be raised (to one million); every other
+            // field keeps its published default as its hard ceiling
+            // (`composed::work::Limits` docs; FR-040-AC-9).
+            let ceiling = TypeLimits {
+                expressions: 1_000_000,
+                ..TypeLimits::default()
+            };
+            assert_eq!(maximum.bounded(), ceiling);
             assert_eq!(
                 TypeLimits::default(),
                 TypeLimits {
@@ -885,7 +892,7 @@ fn public_accounting_clamps_limits_and_refuses_overflow_atomically() {
                 Dimension::Records,
             ] {
                 let mut work = Work::new(maximum);
-                assert_eq!(work.limits(), TypeLimits::default());
+                assert_eq!(work.limits(), ceiling);
                 work.charge(dimension, 1, site).unwrap();
                 let previous = work.usage();
                 let failure = work.charge(dimension, usize::MAX, site).unwrap_err();
