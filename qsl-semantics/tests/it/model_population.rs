@@ -900,7 +900,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
 /// `UnknownClosure` — red as expected, reverted.
 #[trace("TC-226", "FR-084-AC-1")]
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-14")]
 fn l02_unknown_closure_is_incomplete_not_refused() {
     let open_extent = fixture_f1_with_extent(Extent::Open);
     let open_view = view_of(&open_extent);

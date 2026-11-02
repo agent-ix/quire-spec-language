@@ -495,7 +495,7 @@ fn grouping_and_associativity_come_from_the_cst() {
     }
 }
 
-#[trace("FR-091-AC-39", "TC-394")]
+#[trace("FR-091-AC-39", "TC-394", "QSpec-TC-192", "QSpec-FR-147-AC-11")]
 #[test]
 fn integer_operator_forms_retain_operand_spans_in_dead_branches() {
     for (source, operator) in [

@@ -409,7 +409,7 @@ fn check_against_enumeration(fixture: &Fixture) {
     }
 }
 
-#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195", "QSpec-FR-150-AC-12")]
 #[test]
 fn links_expand_to_independent_enumeration() {
     check_against_enumeration(&four_type_chain());
@@ -536,7 +536,7 @@ fn refusal_cause(entries: &[ViewEntry]) -> ModelRefusalCause {
 
 /// TC-1022 step 5 and TC-195 N10: every mutation of a link is refused by the
 /// strict reader.
-#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195")]
+#[trace("TC-1022", "FR-081-AC-9", "QSpec-TC-195", "QSpec-FR-150-AC-12")]
 #[test]
 fn the_strict_reader_refuses_every_mis_wired_link() {
     let view = diamond().view();
@@ -635,7 +635,7 @@ fn n10_unsorted_derivation_is_refused() {
     ));
 }
 
-#[trace("TC-1023", "FR-081-AC-10")]
+#[trace("TC-1023", "FR-081-AC-10", "QSpec-FR-150-AC-13")]
 #[test]
 fn identity_uses_owner_and_original_while_facts_retain_ancestry() {
     let baseline_fixture = five_type_chain_with_phase_four_facts();
@@ -725,4 +725,52 @@ fn identity_uses_owner_and_original_while_facts_retain_ancestry() {
     );
     assert_ne!(baseline.declarations(), phase_four_view.declarations());
     assert_unique_effective_ids(&phase_four_view);
+}
+
+/// FR-150-AC-13: changing one phase-4 fact changes the facts of the
+/// declaration that holds it and of no other declaration, and the changed
+/// view keeps no two distinct effective declarations on one identity.
+#[trace("TC-1023", "QSpec-TC-195", "QSpec-FR-150-AC-13")]
+#[test]
+fn one_changed_phase_four_fact_changes_only_the_declaration_that_holds_it() {
+    let baseline_fixture = five_type_chain_with_phase_four_facts();
+    let baseline = baseline_fixture.view();
+    let mut changed_fixture = baseline_fixture;
+    changed_fixture
+        .fields
+        .iter_mut()
+        .find(|field| field.name == "T1/s")
+        .expect("T1/s is present")
+        .subsets = vec!["T0/f"];
+    let changed = changed_fixture.view();
+    assert_unique_effective_ids(&changed);
+    assert_eq!(baseline.declarations().len(), changed.declarations().len());
+    let differing: Vec<&ViewEntry> = changed
+        .declarations()
+        .iter()
+        .filter(|entry| {
+            baseline
+                .declarations()
+                .iter()
+                .find(|before| before.effective_id == entry.effective_id)
+                != Some(*entry)
+        })
+        .collect();
+    assert!(!differing.is_empty(), "the changed fact changes its holder");
+    // Every declaration that differs holds the changed phase-4 fact: the
+    // member `T1/s` itself and its inherited copies, never a type, never
+    // another member.
+    for entry in &differing {
+        assert_eq!(
+            entry.preimage.original,
+            key("T1/s"),
+            "only a holder of the changed fact differs"
+        );
+    }
+    assert!(
+        differing
+            .iter()
+            .any(|entry| entry.effective_id == member_entry(&changed, "T1", "T1/s").effective_id),
+        "the declaring member itself differs"
+    );
 }
