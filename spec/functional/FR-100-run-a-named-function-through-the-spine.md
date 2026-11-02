@@ -632,6 +632,9 @@ AC-14–19 TC-792; AC-20 TC-444. These associations do not replace executable tr
   own admission, the shared Population carrier and StateModel attribution.
   [I05](ix://agent-ix/quire-specification/interface_005) owns the paired
   native-runtime interface contract.
+- [FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md):
+  evaluates each operand of an IEEE ordering composition once and states its
+  `compare_ieee` charge ("Evaluate once"); the outcome mapping here is unchanged.
 - [FR-026](FR-026-run-standalone-native-workflow.md): native-run/1, its
   intake limits and its command-error envelope.
 - [FR-027](FR-027-export-compiled-native-package.md): checked-package/v2
