@@ -12,20 +12,39 @@ use qsl_semantics::model::observation::{
     admit_current_snapshot, AdmissionFailure, AdmissionUsage, DocumentRef, Observation,
     ObservationLimits,
 };
+use quire_exact::NodeKey;
 use quire_semantic_value::admission::{AdmissionRecord, ObservationAdmission};
 use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::CheckedPackage;
+
+#[cfg(feature = "std")]
+use crate::checked_v2::AdmittedPackageRead;
 
 /// An S4 view tied to one successfully linked in-process package.
 #[derive(Clone, Copy)]
 pub struct AdmittedEvaluationView<'package> {
     package: &'package CheckedPackage,
+    #[cfg(feature = "std")]
+    reader: Option<&'package AdmittedPackageRead<'package>>,
 }
 
 impl<'package> AdmittedEvaluationView<'package> {
     pub(crate) fn in_process(package: &'package CheckedPackage) -> Self {
-        Self { package }
+        Self {
+            package,
+            #[cfg(feature = "std")]
+            reader: None,
+        }
+    }
+
+    #[cfg(feature = "std")]
+    pub(crate) fn reader(read: &'package AdmittedPackageRead<'package>) -> Self {
+        Self {
+            package: read.source_package(),
+            reader: Some(read),
+        }
     }
 
     /// Admit one current snapshot for a model selected by this package.
@@ -77,6 +96,69 @@ impl<'package> AdmittedEvaluationView<'package> {
             Err(AdmissionFailure::Fault(fault)) => ObservationAdmission::Fault(fault),
         }
     }
+
+    /// Resolve a checked node through this exact admitted view.
+    ///
+    /// A reader-backed view only returns handles for nodes present in its
+    /// retained I2 graph and in the source package that emitted those bytes.
+    /// The handle borrows this view, so it cannot be detached from its
+    /// admission context.
+    pub fn term_handle(&self, node: NodeKey) -> Option<TermHandle<'_, 'package>> {
+        let present = {
+            #[cfg(feature = "std")]
+            if let Some(reader) = self.reader {
+                reader.has_node(&node)
+            } else {
+                self.package
+                    .graph()
+                    .semantic_graph()
+                    .node(node.clone())
+                    .is_some()
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                self.package
+                    .graph()
+                    .semantic_graph()
+                    .node(node.clone())
+                    .is_some()
+            }
+        };
+        present.then_some(TermHandle { view: self, node })
+    }
+
+    /// Whether this view came from successful I2 admission of emitted bytes.
+    #[cfg(feature = "std")]
+    pub fn is_reader_backed(&self) -> bool {
+        self.reader.is_some()
+    }
+}
+
+/// An opaque checked-node selection tied to one [`AdmittedEvaluationView`].
+#[derive(Clone)]
+pub struct TermHandle<'view, 'package> {
+    view: &'view AdmittedEvaluationView<'package>,
+    node: NodeKey,
+}
+
+impl TermHandle<'_, '_> {
+    /// The already-checked source package whose expression is selected by
+    /// this view. Construction of the handle remains private to the view.
+    pub fn package(&self) -> &CheckedPackage {
+        self.view.package
+    }
+
+    /// The structural identity selected through the view.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
+    }
+}
+
+/// Why an admitted package could not expose its evaluation view.
+#[derive(Debug)]
+pub enum ViewFailure {
+    /// An emitted source node was absent from the admitted I2 graph.
+    ReaderSourceMismatch(InternalFault),
 }
 
 /// The successful, immutable current-snapshot authority for protocol slots.

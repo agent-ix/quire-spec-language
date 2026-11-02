@@ -977,6 +977,20 @@ fn observation_with_objects<'a>(
     ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>,
     ObjectReference,
 ) {
+    let evaluation_view = package.evaluation_view();
+    observation_through_view(package, &evaluation_view, view, keys, complete)
+}
+
+fn observation_through_view<'a>(
+    package: &'a CheckedPackage,
+    evaluation_view: &qsl_package::AdmittedEvaluationView<'a>,
+    view: &qsl_semantics::model::normalize::EffectiveView,
+    keys: &[&str],
+    complete: bool,
+) -> (
+    ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>>,
+    ObjectReference,
+) {
     let key = quire_checked::key::DeclarationKey {
         package: model::PACKAGE.to_owned(),
         node: model::id("Node"),
@@ -1020,7 +1034,7 @@ fn observation_with_objects<'a>(
     let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
         .into_iter()
         .collect();
-    let admission = package.evaluation_view().admit_protocol_observation(
+    let admission = evaluation_view.admit_protocol_observation(
         &package.graph().model_selections()[0],
         &packages,
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
@@ -2186,6 +2200,127 @@ fn reference_admission_refusals_leave_the_shared_meter_available() {
         meter, fresh,
         "only the final valid recovery call charges the shared meter"
     );
+}
+
+/// TC-1071 rows 23–25: the retained strict-reader view admits and evaluates
+/// the same checked protocol term, while foreign and dangling references
+/// refuse before changing any meter counter.
+#[test]
+#[trace("TC-1071", "FR-390-AC-6", "FR-390-AC-14", "FR-390-AC-15")]
+fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence() {
+    let (package, model_view) = fixture_with_view();
+    let domain_bytes = serde_json::to_vec(&document()).unwrap();
+    let domain_packages =
+        qsl_semantics::model::intake::package_input([domain_bytes.as_slice()]).unwrap();
+    let read = qsl_package::read_evaluation_package(
+        &package,
+        qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
+        &domain_packages,
+        qsl_package::V2ReadLimits::default(),
+    )
+    .expect("strict contract-reader admission succeeds for checked fixture E");
+    let reader_view = read
+        .evaluation_view()
+        .expect("the admitted graph is bound to its emitting checked package");
+    assert!(reader_view.is_reader_backed());
+    let (observation, reference) =
+        observation_through_view(&package, &reader_view, &model_view, &["n5"], true);
+    let capture = slot(&package, "Refunds", "Refunds", "captures", Some(0));
+    let mut meter = Meter::new(UNLIMITED);
+
+    assert_value_eq!(
+        completed(
+            reader_view
+                .evaluate_protocol_slot(
+                    &capture,
+                    &supply(
+                        &package,
+                        "Refunds",
+                        vec![("view", Value::Reference(reference.clone()))],
+                        Some(&observation),
+                    ),
+                    &mut meter,
+                )
+                .expect("the reader-retained view evaluates the selected protocol slot")
+        ),
+        int(5)
+    );
+
+    let ghost = ObjectReference::new(
+        reference.universe().clone(),
+        reference.object_type().clone(),
+        ObjectId::new("ghost").unwrap(),
+    );
+    let foreign_document = serde_json::to_string(&document())
+        .unwrap()
+        .replace("test/orders", "test/foreign");
+    let (_foreign_package, foreign_model_view) = fixture_from_document(
+        &SOURCE.replace("test/orders", "test/foreign"),
+        foreign_document.as_bytes(),
+    );
+    let foreign_key = quire_checked::key::DeclarationKey {
+        package: "test/foreign".to_owned(),
+        node: "ix://test/foreign/Node".to_owned(),
+    };
+    let foreign = ObjectReference::new(
+        foreign_model_view
+            .object_universe_of(&foreign_key)
+            .unwrap()
+            .identity()
+            .unwrap(),
+        foreign_model_view.type_identities()[&foreign_key].clone(),
+        ObjectId::new("n5").unwrap(),
+    );
+    assert_ne!(foreign.universe(), reference.universe());
+
+    for (value, expected_code, expected_cause) in [
+        (
+            ghost,
+            "dangling_reference",
+            "absent-target-in-complete-population",
+        ),
+        (foreign, "foreign_reference", "foreign-universe"),
+    ] {
+        let before = meter.clone();
+        let result = reader_view.evaluate_protocol_slot(
+            &capture,
+            &supply(
+                &package,
+                "Refunds",
+                vec![("view", Value::Reference(value.clone()))],
+                Some(&observation),
+            ),
+            &mut meter,
+        );
+        assert_eq!(
+            meter, before,
+            "refusal leaves every meter counter unchanged"
+        );
+        let Err(CallFailure::Admission(failure)) = result else {
+            panic!("expected reader-backed reference refusal: {result:?}");
+        };
+        let CallAdmissionFailure::Refused(record) = failure.as_ref() else {
+            panic!("reference refusal is a typed refusal: {failure:?}");
+        };
+        assert_eq!(record.record.catalog.code(), expected_code);
+        assert_eq!(record.record.catalog.cause(), expected_cause);
+        assert_eq!(
+            record.locus,
+            CallAdmissionLocus::Binder(binder(&package, "Refunds", "view"))
+        );
+        if expected_code == "foreign_reference" {
+            let required = reference.universe().root_type().to_string();
+            let supplied = value.universe().root_type().to_string();
+            assert_eq!(
+                record.record.fields.get("required").map(String::as_str),
+                Some(required.as_str())
+            );
+            assert_eq!(
+                record.record.fields.get("supplied").map(String::as_str),
+                Some(supplied.as_str())
+            );
+        }
+    }
 }
 
 /// TC-1071 row 20: an incomplete sole population is named before checking the

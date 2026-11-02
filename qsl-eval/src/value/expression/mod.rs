@@ -989,6 +989,44 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     ) -> Result<Option<collection_write::WrittenCollection>, CallFailure>;
 }
 
+mod admitted_view_sealed {
+    pub trait Sealed {}
+}
+
+impl admitted_view_sealed::Sealed for qsl_package::AdmittedEvaluationView<'_> {}
+
+/// Protocol-slot evaluation through an admitted package view.
+///
+/// The view resolves a borrowed term handle before delegating to the same
+/// `CheckedPackage` protocol-slot evaluator used for in-process calls.
+pub trait AdmittedEvaluationViewEvaluation: admitted_view_sealed::Sealed {
+    /// Evaluate one protocol slot selected through this exact admitted view.
+    fn evaluate_protocol_slot(
+        &self,
+        slot: &ProtocolSlot,
+        supply: &ProtocolSupply<'_>,
+        meter: &mut Meter,
+    ) -> Result<ProtocolSlotEvaluation, CallFailure>;
+}
+
+impl AdmittedEvaluationViewEvaluation for qsl_package::AdmittedEvaluationView<'_> {
+    fn evaluate_protocol_slot(
+        &self,
+        slot: &ProtocolSlot,
+        supply: &ProtocolSupply<'_>,
+        meter: &mut Meter,
+    ) -> Result<ProtocolSlotEvaluation, CallFailure> {
+        let Some(handle) = self.term_handle(slot.node.clone()) else {
+            return Err(protocol_slot::resolve::refused(
+                "missing_declaration",
+                "missing-name",
+                CallAdmissionLocus::Node(slot.node.clone()),
+            ));
+        };
+        handle.package().evaluate_protocol_slot(slot, supply, meter)
+    }
+}
+
 /// What evaluating one state clause over its admitted observations reads
 /// (FR-107): the resolved declaration, the clause's own and pre object
 /// environments, the `self`/`result`/parameter bindings in slot order, and
@@ -1430,18 +1468,35 @@ impl CheckedPackageEvaluation for CheckedPackage {
                         observation,
                     )) = supply.observation
                     {
-                        if protocol_slot::reference_occurrences(value, self.graph().scope().types())
-                            .iter()
-                            .any(|(_, reference)| {
-                                protocol_slot::foreign_to_observation(reference, observation)
-                                    || !observation
-                                        .environment()
-                                        .has_population_universe(reference.universe())
-                            })
-                        {
-                            return Err(protocol_slot::resolve::refused(
-                                "foreign_reference",
-                                "foreign-universe",
+                        let occurrences = protocol_slot::reference_occurrences(
+                            value,
+                            self.graph().scope().types(),
+                        );
+                        if occurrences.iter().any(|(_, reference)| {
+                            protocol_slot::foreign_to_observation(reference, observation)
+                                || !observation
+                                    .environment()
+                                    .has_population_universe(reference.universe())
+                        }) {
+                            let required = match &source.value_type {
+                                quire_exact::ValueType::Reference(expected) => observation
+                                    .environment()
+                                    .population_universe_for_type(expected),
+                                _ => None,
+                            };
+                            let supplied_universe = occurrences
+                                .iter()
+                                .find(|(_, reference)| {
+                                    protocol_slot::foreign_to_observation(reference, observation)
+                                        || !observation
+                                            .environment()
+                                            .has_population_universe(reference.universe())
+                                })
+                                .map(|(_, reference)| reference.universe())
+                                .expect("foreign occurrence was detected");
+                            return Err(protocol_slot::resolve::foreign_reference_refused(
+                                required,
+                                supplied_universe,
                                 CallAdmissionLocus::Binder(key.clone()),
                             ));
                         }
@@ -1641,9 +1696,15 @@ impl CheckedPackageEvaluation for CheckedPackage {
                                     .environment()
                                     .has_population_universe(reference.universe())
                             {
-                                return Err(protocol_slot::resolve::refused(
-                                    "foreign_reference",
-                                    "foreign-universe",
+                                let required = match &source.value_type {
+                                    quire_exact::ValueType::Reference(expected) => observation
+                                        .environment()
+                                        .population_universe_for_type(expected),
+                                    _ => None,
+                                };
+                                return Err(protocol_slot::resolve::foreign_reference_refused(
+                                    required,
+                                    reference.universe(),
                                     CallAdmissionLocus::Binder(key),
                                 ));
                             }

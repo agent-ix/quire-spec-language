@@ -59,6 +59,29 @@ pub(crate) fn refused(
     admission(code, cause, locus)
 }
 
+pub(crate) fn foreign_reference_refused(
+    required: Option<&quire_exact::UniverseId>,
+    supplied: &quire_exact::UniverseId,
+    locus: CallAdmissionLocus,
+) -> CallFailure {
+    let mut fields = std::collections::BTreeMap::new();
+    if let Some(required) = required {
+        fields.insert("required", required.root_type().to_string());
+    }
+    fields.insert("supplied", supplied.root_type().to_string());
+    CallFailure::Admission(Box::new(CallAdmissionFailure::Refused(
+        CallAdmissionRecord {
+            record: AdmissionRecord {
+                catalog: CatalogCode::new("foreign_reference", "foreign-universe"),
+                fields,
+                path: Vec::new(),
+                kernel: None,
+            },
+            locus,
+        },
+    )))
+}
+
 pub(crate) fn shape_matches(
     value_type: &ValueType,
     value: &quire_exact::Value,
