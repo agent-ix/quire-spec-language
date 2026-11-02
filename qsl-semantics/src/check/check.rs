@@ -2144,6 +2144,7 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::Rational(..)
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
+        ExprNode::Call { name, .. } if !name.is_qualified() && name.name == "Text" => true,
         ExprNode::Negate(operand) => matches!(expression.at(*operand).node(), ExprNode::Integer(_)),
         ExprNode::Binary {
             operator: BinaryOperator::Divide,

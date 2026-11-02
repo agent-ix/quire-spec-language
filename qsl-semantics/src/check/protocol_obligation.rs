@@ -1270,6 +1270,7 @@ pub(super) fn wraps(cause: &CheckCause) -> bool {
             | CheckCause::UnanchoredResult { .. }
             | CheckCause::IntegerOutsideI128(_)
             | CheckCause::MalformedUuidLiteral { .. }
+            | CheckCause::TextLiteralOutsideBounds { .. }
             | CheckCause::UnsupportedNavigation(_)
             | CheckCause::ProfileProhibitedOperator(_)
     )

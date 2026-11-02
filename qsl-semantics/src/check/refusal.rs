@@ -11,7 +11,7 @@ use qsl_foundation::Span;
 use quire_checked::node::EndSide;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
-use quire_exact::{Integer, ValueType};
+use quire_exact::{Integer, TextProfile, ValueType};
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
@@ -2671,6 +2671,20 @@ pub enum CheckCause {
         /// The argument text as written (decoded).
         argument: String,
     },
+    /// `ill_typed` / `type-mismatch` (FR-056): the retained text literal is
+    /// outside the expected `Text` domain, at the constructor call.
+    TextLiteralOutsideBounds {
+        /// The argument text as written (decoded).
+        argument: String,
+        /// Inclusive minimum profile length.
+        min: u64,
+        /// Inclusive maximum profile length.
+        max: u64,
+        /// The profile that determines normalization and length.
+        profile: TextProfile,
+        /// The retained sequence's length under `profile`.
+        retained_length: u64,
+    },
     /// `ill_typed` / `identity-observing-form` (FR-150): a form that
     /// observes the identity of a `symmetric` population's objects, at the
     /// form's node. Boxed like the other payload-bearing causes.
@@ -3181,7 +3195,8 @@ impl CheckCause {
             | Self::IdentityObservingForm(_)
             | Self::NonBooleanRoot
             | Self::IntegerOutsideI128(_)
-            | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
+            | Self::MalformedUuidLiteral { .. }
+            | Self::TextLiteralOutsideBounds { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_)
             | Self::MissingQualifiedName(_)
@@ -3255,9 +3270,9 @@ impl CheckCause {
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
             Self::IdentityObservingForm(_) => Some("identity-observing-form"),
-            Self::IntegerOutsideI128(_) | Self::MalformedUuidLiteral { .. } => {
-                Some("type-mismatch")
-            }
+            Self::IntegerOutsideI128(_)
+            | Self::MalformedUuidLiteral { .. }
+            | Self::TextLiteralOutsideBounds { .. } => Some("type-mismatch"),
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_)
             | Self::MissingQualifiedName(_)

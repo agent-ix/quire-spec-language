@@ -59,6 +59,7 @@ fn literal_of(node: &SemanticNode) -> Option<(&'static str, String)> {
     };
     match value {
         LiteralValue::String(text) => Some(("string", text.clone())),
+        LiteralValue::Text(text) => Some(("text", text.clone())),
         LiteralValue::Uuid(uuid) => Some(("uuid", uuid.to_string())),
         LiteralValue::Timestamp(stamp) => Some(("timestamp", stamp.to_string())),
         _ => None,
@@ -348,6 +349,103 @@ fn a_literal_never_adapts_to_a_slot_of_another_type() {
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
             "{body}"
         );
+    }
+}
+
+/// QSL-1461, FR-056-AC-51 / FR-093-AC-50, TC-1052 steps 7–9: `Text("...")`
+/// takes the `Text[..]` type from its position, retains the selected profile's
+/// normalization, and can take that type from a typed equality peer.
+#[trace("FR-056-AC-51", "FR-093-AC-50", "TC-1052")]
+#[test]
+fn text_literals_take_their_type_from_context_and_retain_under_its_profile() {
+    let graph = check(
+        "function a1 using v(): Text[0, 8; nfc] pure { Text(\"\\u00e9\") }\n\
+         function a2 using v(): Text[0, 8; nfc] pure { Text(\"e\\u0301\") }\n\
+         function a3 using v(): Text[0, 8; unicode-scalars] pure { Text(\"e\\u0301\") }\n\
+         function eq using v(x: Text[0, 8; nfc]): Boolean pure { x = Text(\"e\\u0301\") }",
+    )
+    .expect("the explicit Text constructors have their positional types");
+    let all = nodes(&graph);
+    let mut values: Vec<String> = literals(&all, "text")
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect();
+    values.sort();
+    assert_eq!(values, ["e\u{301}", "\u{e9}"]);
+    for (node, _) in literals(&all, "text") {
+        assert_eq!(node.node_tag(), NodeTag::Value);
+        assert_eq!(node.semantic_form(), "literal");
+    }
+}
+
+/// QSL-1461, FR-056-AC-52 / TC-1052: the retained sequence determines the
+/// Text bound refusal and its typed cause carries the declared profile data.
+#[trace("FR-056-AC-52", "TC-1052")]
+#[test]
+fn a_text_literal_outside_its_retained_bounds_refuses_at_the_call() {
+    for (result, literal, min, max, profile, retained_length) in [
+        (
+            "Text[0, 2; nfc]",
+            "abc",
+            0,
+            2,
+            quire_exact::TextProfile::Nfc,
+            3,
+        ),
+        (
+            "Text[2, 2; nfc]",
+            "e\\u0301",
+            2,
+            2,
+            quire_exact::TextProfile::Nfc,
+            1,
+        ),
+        (
+            "Text[0, 1; binary-utf8]",
+            "\\u00e9",
+            0,
+            1,
+            quire_exact::TextProfile::BinaryUtf8,
+            2,
+        ),
+    ] {
+        let refusal = refused(&format!(
+            "function f using v(): {result} pure {{ Text(\"{literal}\") }}"
+        ));
+        assert_eq!(
+            refusal.cause,
+            CheckCause::TextLiteralOutsideBounds {
+                argument: literal
+                    .replace("\\u0301", "\u{301}")
+                    .replace("\\u00e9", "\u{e9}"),
+                min,
+                max,
+                profile,
+                retained_length,
+            }
+        );
+        assert_eq!(refusal.location.path(), [0]);
+    }
+}
+
+/// QSL-1461, FR-056-AC-52: a `Text` constructor has no standalone type and
+/// does not convert arbitrary expressions or fit a non-Text peer.
+#[trace("FR-056-AC-52", "TC-1052")]
+#[test]
+fn text_literals_require_a_text_position_and_one_quoted_argument() {
+    for (parameters, result, body, path) in [
+        ("", "String", "Text(\"a\")", vec![0]),
+        ("", "Boolean", "Text(\"a\") = Text(\"a\")", vec![0, 0]),
+        ("x: String", "Boolean", "x = Text(\"a\")", vec![0, 1]),
+        ("x: String", "Text[0, 8; nfc]", "Text(x)", vec![0]),
+        ("", "Text[0, 8; nfc]", "Text()", vec![]),
+        ("", "Text[0, 8; nfc]", "Text(\"a\", \"b\")", vec![]),
+    ] {
+        let refusal = refused(&format!(
+            "function f using v({parameters}): {result} pure {{ {body} }}"
+        ));
+        assert_eq!(refusal.cause, mismatch(), "{body}");
+        assert_eq!(refusal.location.path(), path, "{body}");
     }
 }
 

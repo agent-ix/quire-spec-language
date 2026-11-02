@@ -25,6 +25,8 @@ pub(super) enum NativeConstructor {
     Uuid,
     /// `Timestamp(n)`.
     Timestamp,
+    /// `Text("...")`.
+    Text,
 }
 
 impl NativeConstructor {
@@ -34,6 +36,7 @@ impl NativeConstructor {
         match name {
             "UUID" => Some(Self::Uuid),
             "Timestamp" => Some(Self::Timestamp),
+            "Text" => Some(Self::Text),
             _ => None,
         }
     }
@@ -48,6 +51,7 @@ impl Typer<'_> {
         name: &str,
         call: ExprRef<'_>,
         arguments: &[qsl_forms::ExprId],
+        hint: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         self.single_candidate(name, location)?;
@@ -101,6 +105,37 @@ impl Typer<'_> {
                 Ok(node(
                     NodeKind::Literal(CheckedLiteral(Value::Timestamp(timestamp))),
                     ValueType::Timestamp,
+                    location,
+                ))
+            }
+            NativeConstructor::Text => {
+                let Some(ValueType::Text(text_type)) = hint else {
+                    return Err(mismatch(location));
+                };
+                let ExprNode::String(text) = argument.node() else {
+                    return Err(mismatch(&argument_location));
+                };
+                let profile = text_type.profile();
+                let retained = profile
+                    .normalization()
+                    .map_or_else(|| text.clone(), |form| form.apply(text).collect());
+                let retained_length = profile.length(&retained);
+                if !(text_type.min()..=text_type.max()).contains(&retained_length) {
+                    return Err(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::TextLiteralOutsideBounds {
+                            argument: text.clone(),
+                            min: text_type.min(),
+                            max: text_type.max(),
+                            profile,
+                            retained_length,
+                        },
+                    });
+                }
+                let text_type = *text_type;
+                Ok(node(
+                    NodeKind::Literal(CheckedLiteral(Value::Text(retained))),
+                    ValueType::Text(text_type),
                     location,
                 ))
             }
