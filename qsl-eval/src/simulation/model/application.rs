@@ -771,3 +771,136 @@ impl<'a> ModelSystem<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::borrow::Cow;
+    use std::collections::BTreeSet;
+
+    use ix_trace_rs::trace;
+    use quire_semantic_value::model_transition::ModelTransition;
+    use serde_json::json;
+
+    use super::super::walk::{rows_of, Budget};
+    use super::{Applications, OperationRef};
+    use crate::simulation::expansion::ExpansionLimit;
+    use crate::simulation::sampled::world::{initial, Model, Operation, World};
+
+    /// One cell `c` whose `v: Int[0, 3]` is 0, and `set(n: Int[0, 3])`,
+    /// whose postcondition `Put` makes `v` the argument.
+    fn cells() -> Model {
+        const PACKAGE: &str = "test/cells";
+        let val = format!("ix://{PACKAGE}/Val");
+        Model {
+            package: PACKAGE,
+            object: "Cell",
+            population: "cells",
+            key: "c",
+            integers: vec![("Val", 0, 3)],
+            fields: vec![("v", val.clone())],
+            operations: vec![Operation {
+                name: "set",
+                parameters: vec![("n", val)],
+                modifies: vec!["v"],
+            }],
+            body: "post Put using v on M::Cell::set { self.v = n }\n".to_owned(),
+            initial: json!({"v": {"integer": "0"}}),
+        }
+    }
+
+    /// The applications' transitions, arguments and post-states, and their
+    /// findings.
+    fn view(applications: &Applications) -> (Vec<String>, String) {
+        let successors = applications
+            .successors
+            .iter()
+            .map(|applied| {
+                format!(
+                    "{:?} {:?} {:?}",
+                    applied.transition, applied.arguments, applied.state
+                )
+            })
+            .collect();
+        (successors, format!("{:?}", applications.findings))
+    }
+
+    /// FR-120's candidate budget: an attempt that checks only some argument
+    /// vectors of a state whose every application the run remembers
+    /// restricts the remembered application, and charges what applying only
+    /// those vectors afresh charges. It completes under exactly that many
+    /// candidates, with the fresh application's successors and findings, and
+    /// stops naming `MaxCandidates` under one fewer.
+    #[trace("TC-472", "FR-120-AC-21")]
+    #[test]
+    fn a_restricted_remembered_application_charges_what_a_fresh_one_does() {
+        let world = World::new(&cells());
+        let system = world.system();
+        let state = initial(&system);
+        let [row] = <[_; 1]>::try_from(rows_of(&system, &state.state).expect("rows"))
+            .unwrap_or_else(|_| panic!("one cell"));
+        let operation = OperationRef {
+            declaring: row.type_id(),
+            name: "set",
+            receiver: row.type_id(),
+        };
+        let select = |_| true;
+
+        let mut every = Budget::new(u64::MAX);
+        let all = system
+            .apply_operation_matching(&state, &operation, &select, None, &mut every)
+            .expect("applies");
+        let transitions: Vec<ModelTransition> = all
+            .successors
+            .iter()
+            .map(|applied| applied.transition.clone())
+            .collect();
+        assert_eq!(transitions.len(), 4, "one successor per argument");
+        let selected: BTreeSet<ModelTransition> = transitions[1..3].iter().cloned().collect();
+
+        let mut alone = Budget::new(u64::MAX);
+        let fresh = system
+            .apply_operation_matching(&state, &operation, &select, Some(&selected), &mut alone)
+            .expect("applies");
+        let charge = alone.used();
+        assert!(charge < every.used(), "the unselected vectors charge");
+
+        let observed = system.observed(Cow::Borrowed(&state));
+        system
+            .apply_attempt(
+                "a",
+                &observed,
+                &operation,
+                &select,
+                None,
+                &mut Budget::new(u64::MAX),
+            )
+            .expect("applies");
+
+        let mut exact = Budget::new(charge);
+        let restricted = system
+            .apply_attempt(
+                "a",
+                &observed,
+                &operation,
+                &select,
+                Some(&selected),
+                &mut exact,
+            )
+            .expect("the selected vectors' charge fits");
+        assert_eq!(exact.used(), charge);
+        assert_eq!(view(&restricted), view(&fresh));
+
+        let stopped = system.apply_attempt(
+            "a",
+            &observed,
+            &operation,
+            &select,
+            Some(&selected),
+            &mut Budget::new(charge - 1),
+        );
+        assert_eq!(
+            stopped.err().map(|stop| stop.limit),
+            Some(Some(ExpansionLimit::MaxCandidates))
+        );
+    }
+}
