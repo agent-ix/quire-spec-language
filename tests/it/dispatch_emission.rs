@@ -4,12 +4,14 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{self, DependencyInput, PackageLimits, ParseRequest, SpineLimits};
-use quire_contract_model::{
-    CheckedOccurrence, CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2,
-    CheckedPackageV2ReadResult,
+use qsl_replay::spine::{
+    self, CheckedUnit, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
 };
-use quire_exact::Cancel;
+use quire_contract_model::{
+    CheckedEffectiveId, CheckedOccurrence, CheckedPackageEvidence, CheckedPackageReadLimits,
+    CheckedPackageV2, CheckedPackageV2ReadResult,
+};
+use quire_exact::{Cancel, EffectiveId, NodeKey};
 use serde_json::{json, Value};
 
 const PACKAGE: &str = "example/config-version";
@@ -84,7 +86,23 @@ fn model() -> Vec<u8> {
     serde_json::to_vec(&envelope).expect("model JSON")
 }
 
-fn emit(declarations: &str) -> Vec<u8> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CapturedCandidate {
+    selection_key: EffectiveId,
+    operation_body: NodeKey,
+    effective_precondition: Option<NodeKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CapturedDecision {
+    application: NodeKey,
+    declaring: NodeKey,
+    operation: String,
+    context: NodeKey,
+    candidates: Vec<CapturedCandidate>,
+}
+
+fn compile(declarations: &str) -> CheckedUnit {
     let document = model();
     let packages =
         qsl_semantics::model::intake::package_input([document.as_slice()]).expect("model intake");
@@ -114,7 +132,7 @@ fn emit(declarations: &str) -> Vec<u8> {
         .map_err(failure)
         .expect("model selected")
         .into_value();
-    let checked = spine::check(
+    spine::check(
         &parsed,
         PACKAGE.to_owned(),
         &models,
@@ -124,14 +142,141 @@ fn emit(declarations: &str) -> Vec<u8> {
     )
     .map_err(failure)
     .expect("source checks")
-    .into_value();
-    spine::package(&checked, PackageLimits::default(), &cancel)
+    .into_value()
+}
+
+fn capture_dispatch_decisions(checked: &CheckedUnit) -> Vec<CapturedDecision> {
+    let graph = checked.package().graph();
+    graph
+        .dispatch_producer_decisions()
+        .iter()
+        .map(|((application, _), decision)| CapturedDecision {
+            application: application.clone(),
+            declaring: decision.declaring_node.clone(),
+            operation: decision.operation.selected_operation.clone(),
+            context: decision.context_node.clone(),
+            candidates: decision
+                .table
+                .entries()
+                .iter()
+                .map(|(selection_key, candidate)| CapturedCandidate {
+                    selection_key: selection_key.clone(),
+                    operation_body: graph
+                        .function_identity_at(candidate.body)
+                        .expect("linked candidate body has a checked function identity"),
+                    effective_precondition: candidate.precondition.map(|index| {
+                        graph
+                            .function_identity_at(index)
+                            .expect("effective precondition has a checked function identity")
+                    }),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn emit_checked(checked: &CheckedUnit) -> Vec<u8> {
+    let failure = |failure| spine::refusal_or_fault(failure).expect("no internal package fault");
+    spine::package(checked, PackageLimits::default(), &Cancel::new())
         .map_err(failure)
         .expect("package emits")
         .into_value()
         .package()
         .bytes()
         .to_vec()
+}
+
+fn emit_with_capture(declarations: &str) -> (Vec<u8>, Vec<CapturedDecision>) {
+    let checked = compile(declarations);
+    let captured = capture_dispatch_decisions(&checked);
+    (emit_checked(&checked), captured)
+}
+
+fn checked_effective_id(identity: &EffectiveId) -> CheckedEffectiveId {
+    let mut current = None;
+    for original in identity.owner_chain() {
+        current = Some(CheckedEffectiveId {
+            owner_effective_type: current.map(Box::new),
+            original: quire_contract_model::CheckedOriginalDeclarationId {
+                package: original.package().into(),
+                node: original.node().into(),
+            },
+        });
+    }
+    current.expect("effective declaration identity has an original declaration")
+}
+
+fn assert_captured_decisions(
+    bytes: &[u8],
+    package: &CheckedPackageV2,
+    captured: &[CapturedDecision],
+) {
+    let wire: Value = serde_json::from_slice(bytes).unwrap();
+    let wire_graph = qsl_semantics::check::wire_id::WireGraph::of_package_bytes(bytes)
+        .expect("wire graph resolves structural identities");
+    let rows = wire["checked_term_data"]["dispatch_tables"]
+        .as_array()
+        .expect("dispatch carrier");
+    assert_eq!(rows.len(), captured.len());
+    for decision in captured {
+        let application = wire_graph
+            .wire_id(&decision.application)
+            .expect("captured application is emitted");
+        let row = rows
+            .iter()
+            .find(|row| row["application"] == serde_json::to_value(&application).unwrap())
+            .expect("row uses captured application identity");
+        let occurrence: CheckedOccurrence =
+            serde_json::from_value(row["occurrence"].clone()).unwrap();
+        assert!(
+            package.source_map().iter().any(|entry| {
+                entry.node_id == application
+                    && entry.role == occurrence.role
+                    && entry.ordinal == occurrence.ordinal
+            }),
+            "row application and occurrence pair with the source map"
+        );
+        let view = package
+            .dispatch_candidates(&application, &occurrence, 100)
+            .expect("typed reader returns exact producer row");
+        assert_eq!(view.table.application, application);
+        assert_eq!(
+            view.table.operation.declaring,
+            wire_graph
+                .wire_id(&decision.declaring)
+                .expect("declaring node is emitted")
+        );
+        assert_eq!(view.table.operation.operation.as_ref(), decision.operation);
+        assert_eq!(
+            view.table.context,
+            wire_graph
+                .wire_id(&decision.context)
+                .expect("receiver context is emitted")
+        );
+        assert_eq!(view.candidates().len(), decision.candidates.len());
+        for (candidate, expected) in view.candidates().iter().zip(&decision.candidates) {
+            assert_eq!(
+                candidate.selection_key,
+                checked_effective_id(&expected.selection_key)
+            );
+            assert_eq!(
+                candidate.operation_body,
+                wire_graph
+                    .wire_id(&expected.operation_body)
+                    .expect("linked operation body identity is emitted")
+            );
+            assert_eq!(
+                candidate.effective_precondition,
+                expected
+                    .effective_precondition
+                    .as_ref()
+                    .map(|key| wire_graph
+                        .wire_id(key)
+                        .expect("precondition identity is emitted"))
+            );
+            assert_eq!(candidate.selected_operation, view.table.operation);
+        }
+    }
 }
 
 fn evidence(wire: &Value) -> CheckedPackageEvidence {
@@ -164,13 +309,14 @@ fn admitted(bytes: &[u8]) -> CheckedPackageV2 {
 #[trace("TC-1282", "FR-494-AC-1", "FR-494-AC-3", "FR-494-AC-4")]
 #[test]
 fn producer_dispatch_table_reads_with_ordered_candidate_witnesses() {
-    let bytes = emit(
+    let (bytes, captured) = emit_with_capture(
         "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
          body sizeB using v on Config::Sub::size() { 2 }\n\
          body sizeC using v on Config::Leaf::size() { 3 }\n\
          pre rootCall using v on Config::ConfigVersion::probe { self.size() > 0 }\n",
     );
     let package = admitted(&bytes);
+    assert_captured_decisions(&bytes, &package, &captured);
     let wire: Value = serde_json::from_slice(&bytes).unwrap();
     let rows = wire["checked_term_data"]["dispatch_tables"]
         .as_array()
@@ -271,39 +417,56 @@ fn producer_dispatch_table_reads_with_ordered_candidate_witnesses() {
     };
     assert_eq!(package.graph(), without_carrier.graph());
 
-    // QSL copies a checked effective-precondition function identity into the
-    // carrier. The frozen IR-1214 draft currently refuses this existing
-    // `pure_function` form, so this producer assertion does not claim reader
-    // admission for the precondition-bearing variant.
-    let with_precondition = emit(
+    let (with_precondition, precondition_decisions) = emit_with_capture(
         "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
          body sizeB using v on Config::Sub::size() { 2 }\n\
          body sizeC using v on Config::Leaf::size() { 3 }\n\
          pre inherited using v on Config::ConfigVersion::size { true }\n\
          pre rootCall using v on Config::ConfigVersion::probe { self.size() > 0 }\n",
     );
-    let pre_wire: Value = serde_json::from_slice(&with_precondition).unwrap();
-    let precondition = &pre_wire["checked_term_data"]["dispatch_tables"][0]["candidates"][0]
-        ["effective_precondition"];
-    assert!(!precondition.is_null());
-    assert!(pre_wire["semantic_graph"]["nodes"]
-        .as_array()
-        .unwrap()
+    let precondition_package = admitted(&with_precondition);
+    assert_captured_decisions(
+        &with_precondition,
+        &precondition_package,
+        &precondition_decisions,
+    );
+    assert!(precondition_decisions
         .iter()
-        .any(|node| { node["node_tag"] == "function" && node["node_id"] == *precondition }));
+        .flat_map(|decision| &decision.candidates)
+        .any(|candidate| candidate.effective_precondition.is_some()));
+    let pre_wire: Value = serde_json::from_slice(&with_precondition).unwrap();
+    let pre_row = &pre_wire["checked_term_data"]["dispatch_tables"][0];
+    let pre_application: quire_contract_model::CheckedNodeId =
+        serde_json::from_value(pre_row["application"].clone()).unwrap();
+    let pre_occurrence: CheckedOccurrence =
+        serde_json::from_value(pre_row["occurrence"].clone()).unwrap();
+    let pre_view = precondition_package
+        .dispatch_candidates(&pre_application, &pre_occurrence, 100)
+        .expect("typed precondition-bearing dispatch row is admitted");
+    assert_eq!(
+        pre_view.candidates().len(),
+        precondition_decisions[0].candidates.len()
+    );
+    assert!(pre_view
+        .candidates()
+        .iter()
+        .zip(&precondition_decisions[0].candidates)
+        .any(|(candidate, expected)| {
+            candidate.effective_precondition.is_some() && expected.effective_precondition.is_some()
+        }));
 }
 
 #[trace("TC-1283", "FR-494-AC-2", "FR-494-AC-4")]
 #[test]
 fn dispatch_candidate_witness_substitution_refuses_at_candidate_locus() {
-    let bytes = emit(
-        "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+    let declarations = "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
          body otherSize using v on Config::Other::size() { 9 }\n\
          pre rootCall using v on Config::ConfigVersion::probe { self.size() > 0 }\n\
-         pre otherCall using v on Config::Other::probe { self.size() > 0 }\n",
-    );
+         pre otherCall using v on Config::Other::probe { self.size() > 0 }\n";
+    let (bytes, captured) = emit_with_capture(declarations);
     let package = admitted(&bytes);
-    let mut wire: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_captured_decisions(&bytes, &package, &captured);
+    let wire: Value = serde_json::from_slice(&bytes).unwrap();
     let original_rows = wire["checked_term_data"]["dispatch_tables"]
         .as_array()
         .unwrap();
@@ -330,6 +493,52 @@ fn dispatch_candidate_witness_substitution_refuses_at_candidate_locus() {
             .iter()
             .all(|candidate| candidate.selected_operation == view.table.operation));
     }
+
+    let permuted_declarations =
+        "pre otherCall using v on Config::Other::probe { self.size() > 0 }\n\
+         body otherSize using v on Config::Other::size() { 9 }\n\
+         pre rootCall using v on Config::ConfigVersion::probe { self.size() > 0 }\n\
+         body sizeA using v on Config::ConfigVersion::size() { 1 }\n";
+    let (permuted_bytes, permuted_capture) = emit_with_capture(permuted_declarations);
+    let permuted_package = admitted(&permuted_bytes);
+    assert_captured_decisions(&permuted_bytes, &permuted_package, &permuted_capture);
+    assert_eq!(
+        captured, permuted_capture,
+        "checked producer identities are stable"
+    );
+    let original_graph = qsl_semantics::check::wire_id::WireGraph::of_package_bytes(&bytes)
+        .expect("original wire graph");
+    let permuted_graph =
+        qsl_semantics::check::wire_id::WireGraph::of_package_bytes(&permuted_bytes)
+            .expect("permuted wire graph");
+    let original_rows = serde_json::from_slice::<Value>(&bytes).unwrap()["checked_term_data"]
+        ["dispatch_tables"]
+        .clone();
+    let permuted_rows = serde_json::from_slice::<Value>(&permuted_bytes).unwrap()
+        ["checked_term_data"]["dispatch_tables"]
+        .clone();
+    assert_eq!(
+        original_graph.structural_value(&original_rows).unwrap(),
+        permuted_graph.structural_value(&permuted_rows).unwrap(),
+        "canonical row order and all checked identities survive declaration permutation"
+    );
+    let mut row_keys: Vec<_> = serde_json::from_value::<Vec<Value>>(original_rows.clone())
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let id: quire_contract_model::CheckedNodeId =
+                serde_json::from_value(row["application"].clone()).unwrap();
+            original_graph.key(&id).unwrap()
+        })
+        .collect();
+    let canonical_keys = row_keys.clone();
+    row_keys.sort();
+    assert_eq!(
+        row_keys, canonical_keys,
+        "rows use canonical application order"
+    );
+
+    let mut wire: Value = serde_json::from_slice(&bytes).unwrap();
     let rows = wire["checked_term_data"]["dispatch_tables"]
         .as_array_mut()
         .unwrap();
