@@ -4184,9 +4184,9 @@ impl<'a> Lowering<'a> {
             // FR-139, FR-138: a population-valued form and a history read
             // live in a refinement row, which S4 does not emit yet
             // (FR-310's node): no FR-093 row lowers either. A quantifier
-            // over a clock collection's slots has no checked form until
-            // STD-554, so S3 keeps `forall(e in r.q: present(e))` out of
-            // every lowered clause body.
+            // over a clock collection's slots has no producer form yet, so
+            // S3 keeps `forall(e in r.q: present(e))` out of every lowered
+            // clause body.
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
             | NodeKind::SlotPresence { .. }

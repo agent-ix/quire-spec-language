@@ -19,6 +19,7 @@ use std::rc::Rc;
 use qsl_forms::{
     BinaryOperator, BinderQuery, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans,
 };
+use qsl_foundation::Span;
 
 use super::reading::free_occurrences;
 use super::{
@@ -39,7 +40,7 @@ struct Quantifier<'f> {
     path: Vec<String>,
     shape: CollectionShape,
     body: ExprId,
-    /// The quantifier's span.
+    /// The quantifier's span, used to locate the selected data predicate.
     span: qsl_foundation::Span,
 }
 
@@ -193,12 +194,19 @@ pub(super) fn read(
             ),
             Expression::integer(count),
         );
-        let spans = ExpressionSpans::at_point(&expression, span.start)
+        let body_span = located.span(quantifier.body);
+        let generated_span = Span {
+            start: span.start.min(body_span.start),
+            end: body_span.start,
+        };
+        let spans = expression_spans_at(&expression, generated_span)
             .map_err(|_| timed(located.outside(id)))?;
-        Ok(DataLiteral::Formed(Rc::new(ExpressionForm {
-            expression,
-            spans,
-        })))
+        let form = ExpressionForm { expression, spans };
+        if operator == BinaryOperator::Equal && count == 0 {
+            Ok(DataLiteral::EmptyCollection(form))
+        } else {
+            Ok(DataLiteral::Formed(Rc::new(form)))
+        }
     };
     // `size(self.f) = s` conjoined with `pick(j)` of each slot below `s`.
     let each =
@@ -236,6 +244,66 @@ pub(super) fn read(
         BinderQuery::Forall => (each(&positive, budget)?, some(&negative, budget)?),
         _ => (some(&positive, budget)?, each(&negative, budget)?),
     }))
+}
+
+/// The generated cardinality expression belongs to the written quantifier.
+/// Divide that source range among its nodes so each expression occurrence
+/// produced by typing the synthetic size read has a non-empty provenance
+/// region.
+fn expression_spans_at(
+    expression: &Expression,
+    span: Span,
+) -> Result<ExpressionSpans, qsl_forms::SpanRefusal> {
+    let mut spans = ExpressionSpans::new(span)?;
+    let root_span = spans.root();
+    let root = expression.root_id();
+    let mut order = Vec::with_capacity(expression.len());
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        let node = expression
+            .get(id)
+            .ok_or(qsl_forms::SpanRefusal::UnknownParent(root_span))?;
+        order.push(id);
+        pending.extend(node.node().children());
+    }
+    let mut node_counts = vec![0_usize; expression.len()];
+    for id in order.into_iter().rev() {
+        let node = expression
+            .get(id)
+            .ok_or(qsl_forms::SpanRefusal::UnknownParent(root_span))?;
+        let count = node
+            .node()
+            .children()
+            .into_iter()
+            .try_fold(1_usize, |count, child| {
+                count.checked_add(node_counts[child.index()])
+            });
+        node_counts[id.index()] = count.ok_or(qsl_forms::SpanRefusal::UnknownParent(root_span))?;
+    }
+    let needed = node_counts[root.index()];
+    if span.end.saturating_sub(span.start) < needed {
+        return Err(qsl_forms::SpanRefusal::Reversed(span));
+    }
+    let mut pending = vec![(root, spans.root(), span)];
+    while let Some((id, parent, region)) = pending.pop() {
+        let node = expression
+            .get(id)
+            .ok_or(qsl_forms::SpanRefusal::UnknownParent(parent))?;
+        let mut start = region.start;
+        let mut children = Vec::new();
+        for child in node.node().children() {
+            let width = node_counts[child.index()];
+            let end = start
+                .checked_add(width)
+                .ok_or(qsl_forms::SpanRefusal::Reversed(region))?;
+            let child_region = Span { start, end };
+            let child_parent = spans.push_child(parent, child_region)?;
+            children.push((child, child_parent, child_region));
+            start = end;
+        }
+        pending.extend(children.into_iter().rev());
+    }
+    Ok(spans)
 }
 
 /// The disjunctive forms, read positively and negated, of the quantifier
@@ -310,6 +378,7 @@ fn slot(
                 clock,
                 via: Vec::new(),
                 slots: vec![binding.slot],
+                binding: Some(binding.clone()),
                 op,
                 bound: bound.clone(),
                 span,
@@ -407,8 +476,8 @@ fn renamed(
         .expression
         .graft(id, &grafts)
         .ok_or_else(|| located.outside(id))?;
-    let spans = ExpressionSpans::at_point(&expression, located.span(id).start)
-        .map_err(|_| located.outside(id))?;
+    let spans =
+        expression_spans_at(&expression, located.span(id)).map_err(|_| located.outside(id))?;
     Ok(ExpressionForm { expression, spans })
 }
 
@@ -544,20 +613,4 @@ pub(super) fn reset(
             condition: predicate,
         }),
     }))
-}
-
-/// The span of the first quantifier over a clock collection in `located`,
-/// in node order: a guard reading one has no `clock_guard` binder form
-/// until STD-554 (QSpec FR-322-AC-263).
-pub(super) fn first(
-    located: &Located<'_>,
-    clocks: &Clocks<'_>,
-    context: &EffectiveId,
-) -> Option<qsl_foundation::Span> {
-    located
-        .form
-        .expression
-        .iter()
-        .find_map(|node| quantifier(located, node.id(), clocks, context))
-        .map(|quantifier| quantifier.span)
 }

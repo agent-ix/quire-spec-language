@@ -3896,7 +3896,7 @@ fn write_clauses(
             }
             parts.push(CheckedGuardPart {
                 predicate: node_id(ids, &part.predicate),
-                binders: Vec::new(),
+                binders: part.binders.iter().map(|key| node_id(ids, key)).collect(),
                 constraints,
             });
         }

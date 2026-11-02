@@ -483,9 +483,8 @@ impl CheckedBody {
     }
 
     /// Whether a node of the body reads the presences of a clock
-    /// collection's elements (`forall(e in r.q: present(e))`), whose
-    /// quantifier over the collection's slots has no checked form until
-    /// STD-554.
+    /// collection's elements (`forall(e in r.q: present(e))`), which the
+    /// current timed-clause producer does not write.
     pub(crate) fn reads_slot_presence(&self) -> bool {
         self.nodes
             .iter()

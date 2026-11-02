@@ -32,8 +32,8 @@ use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::ClauseOperation;
 use crate::check::timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockId, ConstraintNodes,
-    ConstraintTargetNodes, GuardNodes, InvariantNodes, PartNodes, ResetNodes, ResetTargetNodes,
-    StateAlternative, TimedClauseNodes, TimedModel,
+    ConstraintTargetNodes, ElementBinding, GuardNodes, InvariantNodes, PartNodes, ResetNodes,
+    ResetTargetNodes, StateAlternative, TimedClauseNodes, TimedModel,
 };
 use crate::value::member::Member;
 
@@ -110,6 +110,24 @@ impl Lowering<'_> {
                     Some(predicate) => predicate,
                     None => self.timed_true(location)?,
                 };
+                let slot_binders = if part.binders().is_empty() {
+                    Vec::new()
+                } else {
+                    let integer = self.type_node(&ValueType::Integer, location)?;
+                    part.binders()
+                        .iter()
+                        .enumerate()
+                        .map(|(level, binding)| {
+                            let parameter =
+                                self.parameter(binding.name(), level, integer.clone(), location)?;
+                            Ok((binding.clone(), parameter))
+                        })
+                        .collect::<Result<Vec<_>, CheckRefusal>>()?
+                };
+                let binders = slot_binders
+                    .iter()
+                    .map(|(_, parameter)| parameter.clone())
+                    .collect();
                 let constraints = part
                     .clocks()
                     .iter()
@@ -119,11 +137,13 @@ impl Lowering<'_> {
                             context.clone(),
                             guard.operation(),
                             location,
+                            &slot_binders,
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 parts.push(PartNodes {
                     predicate,
+                    binders,
                     constraints,
                 });
             }
@@ -156,8 +176,15 @@ impl Lowering<'_> {
                             };
                             let mut constraints = left.constraints.clone();
                             constraints.extend(right.constraints.iter().cloned());
+                            let mut binders = left.binders.clone();
+                            for binder in &right.binders {
+                                if !binders.contains(binder) {
+                                    binders.push(binder.clone());
+                                }
+                            }
                             let part = PartNodes {
                                 predicate,
+                                binders,
                                 constraints,
                             };
                             if !product.contains(&part) {
@@ -246,7 +273,9 @@ impl Lowering<'_> {
             let bounds = invariant
                 .bounds()
                 .iter()
-                .map(|bound| self.place_constraint(bound, invariant.context(), input.declaration))
+                .map(|bound| {
+                    self.place_constraint(bound, invariant.context(), input.declaration, &[])
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             invariants.push(InvariantNodes {
                 predicate,
@@ -284,6 +313,7 @@ impl Lowering<'_> {
         context: EffectiveId,
         operation: &ClauseOperation,
         location: &Location,
+        slot_binders: &[(ElementBinding, NodeKey)],
     ) -> Result<ConstraintNodes, CheckRefusal> {
         match constraint.parameter() {
             Some(position) => Ok(ConstraintNodes {
@@ -295,7 +325,7 @@ impl Lowering<'_> {
                 bound: constraint.bound().clone(),
                 span: constraint.span(),
             }),
-            None => self.place_constraint(constraint, context, location),
+            None => self.place_constraint(constraint, context, location, slot_binders),
         }
     }
 
@@ -306,12 +336,28 @@ impl Lowering<'_> {
         constraint: &ClockConstraint,
         context: EffectiveId,
         location: &Location,
+        slot_binders: &[(ElementBinding, NodeKey)],
     ) -> Result<ConstraintNodes, CheckRefusal> {
+        let slots = if let Some(binding) = constraint.binding() {
+            constraint
+                .slots()
+                .iter()
+                .map(|_| {
+                    slot_binders
+                        .iter()
+                        .find(|(held, _)| held == binding)
+                        .map(|(_, key)| key.clone())
+                        .ok_or_else(|| super::fault(location, KeyFault::UnkeyableRequirements))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
         Ok(ConstraintNodes {
             target: ConstraintTargetNodes::Place {
                 clock: constraint.clock(),
                 owner: self.timed_owner(context, constraint.via(), location)?,
-                slots: Vec::new(),
+                slots,
             },
             comparison: constraint.op(),
             bound: constraint.bound().clone(),

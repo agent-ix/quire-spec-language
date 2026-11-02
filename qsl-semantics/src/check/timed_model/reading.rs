@@ -1097,6 +1097,7 @@ impl<'e, 'f, 'c> Expansion<'e, 'f, 'c> {
             DataLiteral::Formed(form) | DataLiteral::Element(form, ..) => {
                 Ok(form.expression.clone())
             }
+            DataLiteral::EmptyCollection(form) => Ok(form.expression.clone()),
             DataLiteral::Family(_) | DataLiteral::Presence(_) => Err(CheckCause::TimedNotChecked {
                 construct: crate::check::refusal::TimedConstruct::Clock,
                 span: self.located.span(self.located.root()),
@@ -1396,6 +1397,7 @@ pub(super) fn constraints(places: Places, op: ClockOp, bound: &Rational, span: S
         clock: place.clock,
         via: place.via.clone(),
         slots: Vec::new(),
+        binding: None,
         op,
         bound: bound.clone(),
         span,
