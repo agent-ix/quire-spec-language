@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify QSpec FR-149's expected-type rule in a guard, an invariant and a function body, and the forms it does not coerce; and that infix decimal arithmetic takes its type from its operands (QSpec FR-140).
+Verify QSpec FR-149's expected-type rule in a guard, an invariant and a function body, and the forms it does not coerce; and that the decimal literal expressions of QSpec TC-185 D25 type as FR-104-AC-16 states; and that infix decimal arithmetic takes its type from its operands (QSpec FR-140).
 
 Scope: FR-104-AC-12, FR-104-AC-13, FR-104-AC-16.
 

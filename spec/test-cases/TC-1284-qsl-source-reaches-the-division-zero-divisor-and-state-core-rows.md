@@ -36,7 +36,7 @@ expressions is classified. Scope: FR-495-AC-1 to FR-495-AC-4 and, through QSpec 
 5. Run QSpec TC-192 DIV-14 through the registered SMT backend, once with a cvc5
    provider in the lock and once without.
 
-Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "TC-1284")]`.
+Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5` and depends on the provider.
 Vectors are referenced by QSpec row ID, never copied.
 
 ## Expected Results
