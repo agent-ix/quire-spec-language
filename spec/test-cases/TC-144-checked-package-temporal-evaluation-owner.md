@@ -9,7 +9,7 @@ relationships:
 
 ## Description
 
-Verify FR-052-AC-9 to FR-052-AC-14 on the Layer-4 checked-package route:
+Verify FR-052-AC-9 to FR-052-AC-14 (FR-052-AC-12 through row 9's guard) on the Layer-4 checked-package route:
 `qsl_replay::spine::run_clause` (FR-330) over a package compiled through S1 to
 S4, with protocol obligations reached through the FR-449 activation map and
 FR-390's slot evaluation. The test is a behavior test over that route and does
@@ -37,14 +37,22 @@ positions 0, 1, 2 (stamps 0, 2, 5 for `Window`; `W` 5; `Complete {through 5}`).
 | # | Input | Expected |
 | --- | --- | --- |
 | 1 | `Reach` over trace **A** | `Completed(true)`; the leaf `holds(level = 2)` at position 0 is false, so the result differs from the leaf valuation (FR-052-AC-9) |
-| 2 | `Reach` over **A** with the request's result fields (truth, settlement, support) set to `Completed(false)` / other values wherever the request type has such fields; also supplied through every serialized request form the route decodes | the result equals row 1's; a request that carries those fields is refused at decode with `invalid_runtime_input`/`invalid-value` naming the field, or the type has no such field (inspect and record which) |
-| 3 | `Due` activation from the checked package | the same truth as row 1 for the activated clause; the result retains the clause identity, profile and clock binding, activation state, anchor and progress as separate fields (FR-052-AC-10) |
-| 4 | remove, one run each: the activation record; a capture value; the valuation of `level` at position 1; the clock binding name; the completeness assertion (set `Incomplete`); the watermark; the scope closure (set `Open`) | each run returns a typed non-truth outcome (`Pending`, `Indeterminate`, `Incomplete`, or a refusal with its record), never `Completed`, and the other facts of the result stay present and unchanged; none reads as false, closed or complete |
-| 5 | an unsupported input: a `Lasso` for `Reach`; a `Finite` trace for `Window`; an inconsistent input: a stamp decreasing along the order for `Window` | `invalid_runtime_input`/`invalid-value` at stage `admit` each; no partial truth |
-| 6 | two obligations `Reach` (settled over **A**) and `Reach2` (same clause over a trace with a work budget of zero) in one request | `Reach` `Completed(true)` unchanged; `Reach2` `Incomplete` at `temporal.visit`; no `Reach2` truth |
+| 2 | `Reach` over **A**, the request serialized with the extra members `truth`, `settlement` and `support` set to values that contradict row 1 | refused at decode, stage `admit`, `invalid_runtime_input`/`invalid-value` naming the first extra member; no outcome. The unmodified request gives row 1's result |
+| 3 | `Due` activation of `Reach` from the checked package over **A** | the same truth as row 1; the report holds clause identity, profile, activation state, anchor and progress as separate fields |
+| 4a | `Window` over **A**, stamps 0, 2, 5, `level` 0, 1, 2, `W` 5, `Complete {through 5}`, scope `Closed` | `Completed(true)`, basis `closed-scope`, support {(position 2, level)} |
+| 4b | 4a with the valuation of `level` removed at position 1 (stamp 2) | `Completed(true)` unchanged (the missing fact is outside the support); the report lists the missing valuation in its premises |
+| 4c | 4a with the valuation of `level` removed at position 2 (stamp 5) | `Indeterminate {MissingValuation, position 2, level}`, no truth |
+| 4d | trace **B**: `level` 0, 1, 0 at stamps 0, 2, 5, `W` 5, `Complete {through 5}`; then the same with `Incomplete` | `Completed(false)`; then `Indeterminate {IncompleteInput}` |
+| 4e | trace **B** with `W` 3, `Complete {through 3}` | `Pending {deadline 5}` |
+| 4f | 4a with scope `Open` | `Completed(true)`, basis `decisive-witness` (a verdict, not a non-truth outcome) |
+| 4g | the `Due` activation with its activation record removed from the package map; then with a capture value removed | `missing_declaration`/`missing-name` at stage `select`; then an incomplete activation naming the capture, with no temporal position evaluated |
+| 4h | `Reach` supplied a `Timestamped` trace; `Window` supplied a `Finite` trace | each refused at stage `admit`, `invalid_runtime_input`/`invalid-value` |
+| 5 | a `Lasso` trace for `Reach`; a `Timestamped` trace whose stamps are 0, 5, 2 for `Window` | `invalid_runtime_input`/`invalid-value` at stage `admit` each; no partial truth |
+| 6 | `Reach` (settled over **A**) and `Reach2` (same clause, work budget zero) in one request | `Reach` `Completed(true)` unchanged; `Reach2` `Incomplete` at `temporal.visit`; no `Reach2` truth |
 | 7 | `Window` over **A** | `Completed(true)` (the position stamped 5 is eligible for `[0,5]` and `level = 2` there); the profile is not refused (FR-052-AC-14) |
-| 8 | progress ledger for the binding: W 100 then W 60; `Complete {through 100}` then `Complete {through 60}`; a foreign clock then a foreign package under the same request | the contradictions refuse as FR-502-AC-1 and AC-2; the foreign progress settles nothing (FR-052-AC-13) |
-| 9 | correction relation: if the route's request type carries a predecessor reference, supply the exact direct predecessor with a changed input, then a self predecessor, a non-direct predecessor, a predecessor of another obligation and a predecessor with a mismatched result identity | the first admits and the predecessor's bytes stay unchanged; each of the other four refuses with its typed record. If the request type carries no predecessor reference, the step records `not applicable: no correction relation on the route` and inspects that a supplied predecessor field is refused at decode (FR-052-AC-12) |
+| 8 | progress ledger for the `Window` binding: W 100 then W 60; `Complete {through 100}` then `Complete {through 60}`; the same progress under a foreign package, then a foreign clause | the contradictions refuse as FR-502-AC-1 and AC-2; the foreign progress settles nothing (FR-052-AC-13) |
+| 9 | a request carrying a `predecessor` member naming a prior result, then a `supersedes` member | each refused at decode, stage `admit`, `invalid_runtime_input`/`invalid-value` naming the member: the spine route carries no correction relation, so FR-052-AC-12 binds only when a requirement adds one and this row is its guard |
+
 
 ## Expected Results
 

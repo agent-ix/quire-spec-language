@@ -10,14 +10,13 @@ relationships:
 
 ## Description
 
-Verify FR-502-AC-1 to AC-6 and FR-052-AC-13: the spine ledger refuses a
+Verify FR-502-AC-1 to AC-7 and FR-052-AC-13: the spine ledger refuses a
 contradicting progress assertion, keeps the retained progress and earlier
 results unchanged, and keeps foreign bindings apart.
 
 Catches a ledger that rolls back to a lower watermark, absorbs a lagging
 completeness revision, lets a completion close a scope, settles an obligation
-from another binding's progress, or advances an event-position clock during
-silence.
+from another binding's progress.
 
 ## Test Procedure
 
@@ -34,9 +33,10 @@ and the earlier result bytes.
 | 5 | retain scope `Closed`; assert `Open` | refused `Closure` |
 | 6 | scope `Closed` with `Inc`; scope `Open` with C(100) | completeness stays `Inc`; scope stays `Open` |
 | 7 | assert W 100 under a second package, a second clause, a second clock name, a second profile, each alone | B's `Pending` stays `Pending`, B's entry unchanged, four new entries |
-| 8 | event-position clause: accept W 100 | `Pending` stays `Pending`; the same W settles fixed-sample and finite-window clauses; W 60 after W 100 refused on all three |
-| 9 | W 100 then W 60 with no ledger | both evaluated from their own traces; with a ledger the second is refused |
+| 8 | a `ledger` with a `Finite`, `Lasso` and `Model` trace; with an event-position clause; with a fixed-sample clause | each refused at stage `admit`, `invalid_runtime_input`/`invalid-value`; ledger unchanged; the finite-window request with `Timestamped` accepted |
+| 9 | W 100 then W 60 with no ledger | both evaluated from their own traces; with a ledger the second is refused; the returned ledger passed to the next request gives the outcomes of the same sequence replayed from the same initial ledger |
 | 10 | row 1 through `run_clause` with the ledger | stage `evaluate`, category `refusal`, same record |
+| 11 | retain C(100) over positions 0 to 3; add a position stamped 80 not among them; then one stamped 120 | refused `Completeness`; accepted; the returned ledger lists the covered positions |
 
 ## Expected Results
 

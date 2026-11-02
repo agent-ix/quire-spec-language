@@ -62,7 +62,9 @@ FR-109's `ClauseRunRequest`, with the selection
 ## Outputs
 
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
-the usage. Its `category` adds `inconclusive` (a pending result)
+the usage; for a `Timestamped` trace it also returns the updated `ledger`
+(FR-502) and FR-501's result report (basis, decision support, premises and
+result identity). Its `category` adds `inconclusive` (a pending result)
 and `unsupported` (a missing fairness premise). Its `disposition` for a
 `violation` (`Completed(false)` or an `Undefined` that is a violation)
 carries the failing `TemporalPosition` and the refutation's

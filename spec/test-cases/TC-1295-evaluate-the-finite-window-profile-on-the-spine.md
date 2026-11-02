@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-501-AC-1 to AC-12 and FR-330-AC-9 (the finite-window part): the
+Verify FR-501-AC-1 to AC-17 and FR-330-AC-9 (the finite-window part): the
 spine evaluator returns a definite verdict on a closed complete window, pending
 or indeterminate only for a genuinely unresolved obligation, and never refuses
 the profile.
@@ -53,14 +53,19 @@ stated, and `p`, `q` are `holds` atoms of the fixture.
 | 16 | `eventually[0,3] holds(p)` | stamp 0; p F; W 3; C(3); no later event | `Completed(false)` |
 | 17 | `holds(p) until[0,1] holds(q)` and `release`, `since`, `triggered` forms | stamps 0,1,1; no order keys | `invalid_runtime_input`/`invalid-value` at position 2; `eventually[0,1] holds(p)` evaluates |
 | 18 | row 17 `until` | order keys, one authority; then two authorities; then trace reversed in insertion order, keys unchanged | evaluates; refuses; same result as the first |
-| 19 | `once[0,4] holds(p)` `on each`, activation at position 1 | stamps 3,4; p F,F; W 4; C(4) | `HistoryCutoff`: `Indeterminate {MissingHistory}`; `AuthoritativeOrigin`: `Completed(false)`; p T at 3: `Completed(true)` for both |
+| 19 | `once[0,4] holds(p)` `on each`, activation at position 1 (future reach 0, established at W 4) | stamps 3,4; p F,F; W 4; C(4) | `HistoryCutoff`: `Indeterminate {MissingHistory}`; `AuthoritativeOrigin`: `Completed(false)`; p T at 3: `Completed(true)` for both |
 | 20 | `holds(req) implies eventually[0,3000] holds(ack)`, cover `Counter{u=0}` | req at 0; ack at 2998, 3000, 3001; W, C beyond 3001 | `Completed(true)`; `Indeterminate {StraddlesBound}`; `Completed(false)`; with `Exact` cover true, true, false |
 | 21 | same, `Counter{u=1}` and the same-tick pair | per QSpec `tick-cover-vectors.json` `TCV-01` to `TCV-15` | the file's verdict for each vector |
 | 22 | `eventually[0,2] holds(p)` `on each` | stamps 0,10; p F,F; W 10; C(10); then p T at 0 | `Completed(false)` at 0; then `Pending {where 1, deadline 12}` |
 | 23 | row 3's first clause, meter 6 then 7 | stamps 0,2,5; p F,T,F | `Incomplete` at `temporal.visit`; the verdict with 7 charges |
 | 24 | `run_clause` over rows 1, 3 first case, 6, 8 | as rows | `violation`/exit 10 pos 0; `success`/0; `inconclusive`/0; `undefined`/10 cause `MissingValuation`; no `unsupported_profile` |
 | 25 | the row 1 clause over `TraceInput::Finite`, and an event-position clause over `Timestamped` | none | stage `admit`, `invalid_runtime_input`/`invalid-value` each |
-| 26 | rows 1 to 22 run twice | same inputs | equal outcomes |
+| 26 | rows 1 to 22 run twice | same inputs | equal outcomes and one result identity |
+| 27 | row 20's clause, cover `Counter{u=1}`; then `Exact` | req at 0; no ack; W 3001, C(3002); W 3002, C(3002); then Exact W 3000, C(3000) | `Pending {deadline 3002}`; `Completed(false)`; `Completed(false)` |
+| 28 | `always[0,5] holds(p)`, scope `Closed` then `Open`; `eventually[0,5] holds(p)` | stamps 0,2,5; p T,F,T; W 5; C(5); and p F,F,T | basis `closed-scope` / `decisive-counterexample`, verdict false both, support {(1,p)}; second clause basis `closed-scope`, true, support {(2,p)}; `Pending` basis `unsettled`; `Indeterminate` basis `unavailable` |
+| 29 | row 28 with scope, surrounding execution, completeness and a work stop varied one at a time | as row 28 | only the named field (and the basis for scope, the verdict class for completeness as rows 12 and 13 state) changes; a work stop reports assessment `Failed` |
+| 30 | row 1's request varied one input at a time: unit, cover, one stamp, one valuation, one order key, W, through, lower-boundary kind, a meter ceiling | each alone | a distinct result identity each time; the original identity is unchanged |
+| 31 | `eventually[0,5] holds(p)`; then the same clause with an empty trace; then stamps 0,5,2 | stamps 0,2,5; p F,F,F; W 5, C(9); W 3, C(9) | `Completed(false)`; `Pending {deadline 5}`; stage `admit` `invalid_runtime_input`/`invalid-value` for the empty trace and for 0,5,2 |
 
 ## Expected Results
 

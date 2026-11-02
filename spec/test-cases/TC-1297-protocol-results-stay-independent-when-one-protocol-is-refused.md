@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-383-AC-18, AC-28 and AC-29: each protocol of a unit has its own
+Verify FR-383-AC-18, AC-28, AC-29, AC-30 and AC-31: each protocol of a unit has its own
 result, one protocol's S3 refusal gives the unit a `Refused` aggregate with no
 package, and the other protocols' results are retained byte for byte. This
 keeps FR-042-AC-8's independent per-protocol results on the spine.
@@ -36,10 +36,13 @@ Compile through S1 to S4 and assert fields, never message text.
 | 4 | row 2's diagnostics and exit | exactly one record (**X**'s); exit 20 (FR-285-AC-2 over {0, 20}), never 0 |
 | 5 | **W**, **X**, **Z** | results [Emitted, Refused, Emitted]; both good protocols' nodes equal their standalone emissions |
 | 6 | **X** alone | the same refusal record as row 2 in every field |
-| 7 | **W**, **X**, **Y** | **Y** `Refused` `missing_declaration`/`missing-name` at the reference to **X**, naming **X**; **W** unchanged; aggregate `Refused` |
+| 7 | **W**, **X**, **Y** | **Y** `Refused` `missing_declaration`/`missing-name` at the reference to **X**, with `refused_dependency` naming **X** and `consequence` true; **W** unchanged; aggregate `Refused` with **X**'s code, cause and locus as the primary |
 | 8 | **W** and a protocol over `Boolean` (`NoOwnerModel`) | results [Emitted, Refused `unsupported_construct`/`not-yet-implemented`]; aggregate `Refused`; **W** bytes equal row 1's |
-| 9 | **W**, **Z** under an `s3.work_units` budget that stops **Z** | results [Emitted, `Incomplete` naming `s3.work_units`]; aggregate `Incomplete`; exit 22 |
-| 10 | row 2 with **X** removed, then with **W** removed | **W**'s result changes in no byte; **X**'s refusal record changes in no field |
+| 9 | **W**, **Z**, **V** (renamed copies, equal measured work `n`) with an `s3.work_units` budget of exactly `n` | results [Emitted, `Incomplete` naming `s3.work_units`, `Incomplete` naming `s3.work_units`]; aggregate `Incomplete`; exit 22 |
+| 10 | row 9 in the source order **Z**, **W**, **V**; then row 9 with a budget of `3n` in both orders | the first: **Z** `Emitted`, **W** and **V** `Incomplete`; the second: three `Emitted` in either order |
+| 11 | row 2 with **X** removed, then with **W** removed | **W**'s result changes in no byte; **X**'s refusal record changes in no field |
+| 12 | **X** with a syntax error confined to its declaration; **X** with an S2 refusal; **X** with an S4 `NoOwnerModel` refusal; each beside **W** | **X** `Refused` with that stage's code and cause; **W** equal to row 1's |
+| 13 | a syntax error in the unit header | `Refused` unit, no `ProtocolResult` |
 
 ## Expected Results
 
@@ -48,5 +51,6 @@ Compile through S1 to S4 and assert fields, never message text.
 - The aggregate is `Refused` or `Incomplete` whenever any protocol is, carries
   no package, and never exits 0.
 - Diagnostics hold one record per refused protocol in declaration order.
-- Test code carries the tags FR-383-AC-18, FR-383-AC-28, FR-383-AC-29 and
-  TC-1297.
+- Rows 9 and 10 are the only rows whose results depend on declaration order,
+  and only through the budget.
+- Test code carries the tags FR-383-AC-18, FR-383-AC-28 to AC-31 and TC-1297.

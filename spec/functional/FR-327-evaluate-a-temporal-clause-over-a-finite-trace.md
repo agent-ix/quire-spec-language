@@ -86,6 +86,10 @@ with an incomplete result, never a guess, when the work budget runs out.
 
 A clause under `quire.temporal.timestamped-event.finite-window/v1` reads stamped
 positions and is evaluated by FR-501, not by the false-extension rules below.
+Its outcomes add `Pending { where, deadline }` and `Indeterminate { where,
+reason }` to this section's outcomes; `Pending` maps to O-16 inconclusive and
+`Indeterminate` to the O-16 category `undefined` with its reason as the cause,
+and neither is a truth value.
 
 - A `holds` atom SHALL evaluate through the one clause evaluator (FR-107)
   over the observation at its position.

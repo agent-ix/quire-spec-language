@@ -41,14 +41,20 @@ progress and leaves every earlier result as it was.
 - An optional `ProgressLedger` in FR-330's `Temporal` selection.
 - A **binding**: the checked package identity, the checked clause identity, the
   clock binding name and the selected profile identity.
-- A progress assertion in a `TimestampedTrace` (FR-501) or a trace of another
-  profile: a watermark `W`, a completeness assertion and a closure of the
-  decision scope.
+- A progress assertion in a `TraceInput::Timestamped` trace (FR-330, FR-501): a
+  watermark `W`, a completeness assertion, the decision-scope closure and the
+  surrounding-execution closure. The `Timestamped` trace is the only spine trace
+  shape that carries progress; the `Finite`, `Lasso` and `Model` traces carry no
+  watermark and their closure is the trace itself (FR-327, FR-328, FR-329).
 
 ## Outputs
 
-On acceptance: the outcome of FR-327/FR-501 and an updated ledger entry for the
-binding. On contradiction: `invalid_runtime_input`/`invalid-value` carrying a
+On acceptance: the outcome of FR-501 and the updated ledger, which FR-330's
+`ClauseRunReport` returns. Each entry retains the watermark, the completeness
+assertion, the scope closure and the surrounding-execution closure, and the
+**covered position set**: the identities of the positions each retained
+completeness assertion covered, so that "a position the retained assertion did
+not cover" is decidable. On contradiction: `invalid_runtime_input`/`invalid-value` carrying a
 `contradicted_dimension` (`Watermark`, `Completeness` or `Closure`), the
 binding's clock name, the retained value and the asserted value; no outcome,
 no truth value, and the ledger unchanged.
@@ -77,11 +83,22 @@ no truth value, and the ledger unchanged.
   result.
 - When the inputs of a result reported before the contradiction are evaluated
   again, the evaluator SHALL reproduce that result byte for byte.
-- Under the event-position profile the watermark is a retained premise and does
-  not advance the clock (FR-501 applies to fixed-sample and timestamped-event
-  only), but regression and conflict are refused as above.
+- When a request supplies a `ledger` with a `Finite`, `Lasso` or `Model` trace,
+  or with a clause under a profile other than the finite-window profile, the
+  evaluator SHALL refuse it at stage `admit`, `invalid_runtime_input`/
+  `invalid-value`, because those traces carry no progress assertion. FR-043's
+  fixed-sample watermark settlement and event-position watermark premise
+  (FR-043-AC-11) have no spine carrier; they stay with FR-043 as a GAP row of
+  FR-499 until a requirement defines a progress carrier for those traces.
 - When a call supplies no ledger, the evaluator SHALL stand on the trace's own
   assertions and detect no contradiction across calls.
+
+- The evaluator SHALL derive the covered position set from the position
+  identities of the trace in each accepted request, and the ledger returned for
+  a request SHALL equal the ledger a later request carries.
+- Running the same sequence of requests from the same initial ledger SHALL give
+  the same sequence of outcomes and the same final ledger; running one request
+  twice from different ledgers MAY give different outcomes.
 
 ## Dependencies
 
@@ -100,5 +117,6 @@ no truth value, and the ledger unchanged.
 | FR-502-AC-2 | After `Complete { through: 100 }` is retained under B, `Complete { through: 60 }`, `Incomplete`, and an admitted position stamped 80 that the retained assertion did not cover are each refused with `contradicted_dimension` `Completeness` and leave the ledger unchanged; `Complete { through: 100 }` and `Complete { through: 140 }` are accepted. | Test (TC-1296) |
 | FR-502-AC-3 | After scope `Closed` is retained under B, an assertion `Open` is refused with `contradicted_dimension` `Closure`; asserting `Closed` with completeness `Incomplete` leaves completeness `Incomplete`, and asserting `Complete { through: 100 }` with scope `Open` leaves the scope `Open`. | Test (TC-1296) |
 | FR-502-AC-4 | A progress assertion under another package identity, another clause, another clock binding name or another profile identity, each varied alone from B, settles nothing for B (B's `Pending` outcome stays `Pending` and its entry is unchanged) and appears as its own ledger entry. | Test (TC-1296) |
-| FR-502-AC-5 | Under the fixed-sample, timestamped-event and event-position profiles alike, a watermark regression is refused; the event-position binding's accepted watermark leaves its `Pending` obligation `Pending` (the clock does not advance during silence) while the same watermark settles the fixed-sample and finite-window obligations. | Test (TC-1296) |
-| FR-502-AC-6 | Evaluation with no ledger accepts a `W` 100 call followed by a `W` 60 call and reports each from its own trace; evaluation with a ledger refuses the second. | Test (TC-1296) |
+| FR-502-AC-5 | A request that supplies a `ledger` with a `Finite`, `Lasso` or `Model` trace, or with an event-position or fixed-sample clause, is refused at stage `admit`, `invalid_runtime_input`/`invalid-value`, and the ledger is unchanged; the same finite-window request with a `Timestamped` trace is accepted. | Test (TC-1296) |
+| FR-502-AC-6 | Evaluation with no ledger accepts a `W` 100 call followed by a `W` 60 call and reports each from its own trace; evaluation with a ledger refuses the second. The report of an accepted request returns the updated ledger, and passing it to the next request gives the same outcome as one request sequence replayed from the same initial ledger. | Test (TC-1296) |
+| FR-502-AC-7 | After a request retaining `Complete { through: 100 }` over positions 0 to 3, a later request whose trace adds a position stamped 80 that was not among positions 0 to 3 is refused `Completeness`, and one adding a position stamped 120 is accepted; the returned ledger lists positions 0 to 3 (and the new one) as covered. | Test (TC-1296) |
