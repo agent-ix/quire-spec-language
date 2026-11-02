@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-45, FR-093-AC-46.
+Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46.
 
 ## Test Procedure
 
@@ -56,10 +56,7 @@ form and read `units`; repeat with source-owner identity `w` and the same requir
    FR-091-AC-44's. Check and lower each of its bodies `p1` to `p6`, pass each
    checked package to IR's v2 reader, and evaluate each lowered body with the
    operand values AC-36 lists. Check each of FR-093-AC-37's bodies `z1` to
-   `z10` in the same units. Declare FR-093-AC-45's temperature units, check
-   and lower its bodies `n1` to `n6`, pass each package to IR's v2 reader and
-   evaluate each lowered body with the operand values AC-45 lists, then check
-   `n7`.
+   `z10` in the same units. Quantity negation (formerly FR-093-AC-45's `n1` to `n7`) is TC-1285's.
 10. Assemble FR-091-AC-50's unit, then `unit u : Time2 = rational(1, 1);` beside it, then a second `dimension Time;`.
 11. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base dimension `Time` and a root unit, assemble each unit of FR-091-AC-60: the admitted equivalences, each refusal, the speeds with and without the length and time equivalences, the two phase-order units, and the equivalences in each source order within a phase; then each unit of FR-091-AC-63: the unit of another dimension, the swapped units, the affine unit, the zero and negative numbers, the speeds with ratios 1 and 2, the base cycle with and without a consistent closing ratio, and the ratio written through a larger unit.
 12. Read the structural keys and normalized equivalence bodies of FR-091-AC-68's Q11, Q12 and Q13 sources: `dimension Length ~ Distance by 1 km = 1 dist;`, `dimension Distance ~ Length by 1 dist = 1 km;` and `by 1 dist = 1000 m`, `Speed` beside `dimension Length ~ Distance by 1 km = 1 dist;`, and the three package pairs `R::Time ~ F::Time by 1 R::s = 1000 F::ms`, `R::Time ~ G::Time by 1 R::s = 1000 G::ms` and `F::Time ~ G::Time by 1 F::s = 1000 G::ms` under owner (`agent-ix`, `example`) over QSpec's three package `Time` dimension sources; read `nominal_spans`, then repeat with a changed source-owner unit label and fixed `package_name`.
@@ -113,12 +110,7 @@ Tag the tests with the AC ids they back and `TC-483`.
   AC-36 states; IR's v2 reader admits each package; the evaluations return the
   verdicts AC-36 lists. `z1`, `z2` and `z3` each refuse
   `undefined_expression`/`unproved-nonzero` at the first division, `z4` at the
-  literal, `z5` to `z10` at the first division; none emits a node. `n1` to
-  `n6` check and lower as AC-45 states (`n1` and `n2` to the same nodes, `n3`
-  and `n4` to a `quire.op.quantity.div` over the negate node of the `3 ms`
-  literal, `n5` to two nested negate nodes), IR's v2 reader admits each
-  package, and the evaluations return the verdicts AC-45 lists; `n7` refuses
-  `ill_typed`/`operator-ineligible` at the negation and emits no node.
+  literal, `z5` to `z10` at the first division; none emits a node.
 - Step 10: the first unit assembles with no error and keeps `R::Time` and `R::s` as written; `Time2` refuses with an unresolved-name error naming `Time2`; the second `dimension Time;` refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named (FR-091-AC-50).
 - Step 11: each admitted equivalence assembles; each refusal is the one error FR-091-AC-60 and AC-63 name, at the equivalence form, with the retained nodes, units, offsets or numbers they list; the phase-order units report the equivalence first for `L ~ L` and the row 1 defect first for `Dur ~ L2`; the speeds are admitted with ratio 1 and refused with ratio 2; the base cycle is admitted with the consistent closing ratio and refused `conflicting-definition` at the third form otherwise; the decisions are the same in every source order within a phase.
 - Step 12: each equivalence key has the required package and QSpec FR-322 derived path `["scalar_type", "dimension_equivalence", first id, second id]`; equivalent ratio spellings and a source-owner unit-label change preserve it. The former Q12 and Q13 sources normalize to `root_scale` `1000/1` and `1/200` for the first ordered node; adding an equivalence leaves the `Length`, `Distance` and `Speed` declaration keys and `Speed`'s terms unchanged. Each package pair holds its two dimension node ids in ascending order with normalized scales `1/1` (rpc/flow), `1000/1` (rpc/clock) and `1000/1` (flow/clock) for the first, and each equivalence has a span under its key.
