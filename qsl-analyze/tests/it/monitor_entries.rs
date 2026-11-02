@@ -31,6 +31,7 @@ pub(crate) fn deadline_spec() -> EntrySpec {
         max_reading_gap: 100,
         activation_capacity: 4,
         root: None,
+        tick_unit: None,
     }
 }
 
@@ -538,4 +539,111 @@ fn a_zero_activation_capacity_never_starts_the_root() {
     for shape in ROOT_SHAPES {
         differential(shape, target.clone(), 10);
     }
+}
+
+#[test]
+fn dump_entries_wire() {
+    let package = package_of(&render(&deadline_spec()));
+    let emission = qsl_package::emit_checked(&package).expect("emits");
+    std::fs::write("/tmp/q1463-wire.json", emission.package().bytes()).unwrap();
+}
+
+/// The plan-root wire (QSpec FR-487, FR-322-AC-308/309): the generated
+/// entries become declaration-less function nodes and one
+/// `temporal`/`monitor_plan` node names them with the plan's premises.
+#[test]
+fn the_plan_root_is_written_with_seventeen_bindings() {
+    use qsl_package::{emit_checked, emit_monitor_plan_over, MonitorPlanWire};
+    let formula = ROOT_SHAPES[0];
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let plan = premise_plan(formula, &target);
+    let spec = spec_from_plan(&plan).unwrap();
+    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &render(&spec), true);
+    let emission = emit_checked(&package).expect("the unit emits");
+    let name = qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap();
+    let domain = crate::units::Domain::config_version();
+    let mut evidence = emission.evidence().clone();
+    evidence
+        .insert_domain_package_document(domain.package, domain.document.clone())
+        .unwrap();
+    let premises = plan.root_premises();
+    let buffers: Vec<(usize, u64)> = plan
+        .buffers()
+        .iter()
+        .map(|(id, c)| (id.index(), *c))
+        .collect();
+    let wire = MonitorPlanWire {
+        formula: plan.program().formula(),
+        counter: &premises.counter,
+        counter_width_bits: premises.counter_width_bits,
+        max_reading_gap: premises.max_reading_gap,
+        max_event_rate: &premises.max_event_rate,
+        uncertainty: &premises.uncertainty,
+        buffers: &buffers,
+        tick_unit: plan.binding().unit(),
+        activation_capacity: premises.activation_capacity,
+        state: "State",
+        inputs: "Inputs",
+        scope: "Scope",
+        result: "Result",
+        entries: [
+            qsl_analyze::monitor_entries::names::INIT,
+            qsl_analyze::monitor_entries::names::ON_EVENT,
+            qsl_analyze::monitor_entries::names::ON_WATERMARK,
+            qsl_analyze::monitor_entries::names::ON_GAP,
+        ],
+        renamed_records: &["Instance", "Activation", "LimitReached"],
+        renames: &qsl_analyze::monitor_entries::WIRE_FIELD_NAMES,
+    };
+    let rooted = emit_monitor_plan_over(&emission, name, &evidence, &wire)
+        .unwrap_or_else(|refusal| panic!("{refusal:?}"));
+    let json: serde_json::Value = serde_json::from_slice(rooted.package().bytes()).unwrap();
+    let nodes = json["semantic_graph"]["nodes"].as_array().unwrap();
+    let roots: Vec<&serde_json::Value> = nodes
+        .iter()
+        .filter(|n| n["node_tag"] == "temporal" && n["semantic_form"] == "monitor_plan")
+        .collect();
+    assert_eq!(roots.len(), 1);
+    let members = roots[0]["body"]["members"].as_array().unwrap();
+    let names: Vec<&str> = members
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, qsl_replay::PLAN_ROOT_BINDINGS.to_vec());
+    // The entries are declaration-less function nodes.
+    for name in ["init", "on_event", "on_watermark", "on_gap"] {
+        let member = members.iter().find(|m| m["name"] == name).unwrap();
+        let target = &member["value"]["target"];
+        let entry = nodes.iter().find(|n| &n["node_id"] == target).unwrap();
+        assert_eq!(entry["node_tag"], "function");
+        assert!(entry.get("declaration").is_none() && entry.get("owner").is_none());
+    }
+    // FR-487 field spellings.
+    let record = |name: &str| {
+        nodes
+            .iter()
+            .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
+            .unwrap()
+    };
+    let fields = |name: &str| -> Vec<String> {
+        record(name)["body"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(fields("Instance"), ["subject", "subformula", "origin"]);
+    assert_eq!(fields("Activation"), ["subformula", "origin", "status"]);
+    assert_eq!(fields("LimitReached"), ["limit", "value", "setting"]);
+    assert_eq!(
+        fields("State"),
+        [
+            "now",
+            "history_start",
+            "buffer_0",
+            "activations",
+            "event_position"
+        ]
+    );
 }

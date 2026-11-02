@@ -162,6 +162,9 @@ pub struct EntrySpec {
     pub activation_capacity: u64,
     /// The unbounded root, when the clause has one.
     pub root: Option<RootSpec>,
+    /// The declared tick unit, which the generated unit mentions so the
+    /// graph holds its node (the plan root's `tick_unit` binding).
+    pub tick_unit: Option<String>,
 }
 
 /// Why the entries cannot be generated for a clause.
@@ -359,6 +362,7 @@ pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal
         max_reading_gap: plan.max_reading_gap(),
         activation_capacity: plan.activation_capacity(),
         root,
+        tick_unit: Some(plan.binding().unit().to_owned()),
     })
 }
 
@@ -969,6 +973,9 @@ pub fn render(spec: &EntrySpec) -> String {
             cap = cap,
             gapmax = spec.max_reading_gap,
         );
+    }
+    if let Some(unit) = &spec.tick_unit {
+        let _ = writeln!(w, "record TickUnit {{ elapsed: Quantity<{unit}>; }}");
     }
     let zero_inputs = format!(
         "{} {{ {} }}",

@@ -24,6 +24,21 @@ pub(crate) fn ratio(numerator: i64, denominator: i64) -> Rational {
 }
 
 pub(crate) fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
+    checked_clause_with(formula, "")
+}
+
+/// [`checked_clause`] with `extra` declarations appended to the unit.
+pub(crate) fn checked_clause_with(formula: &str, extra: &str) -> (CheckedPackage, usize) {
+    checked_clause_in(formula, extra, false)
+}
+
+/// [`checked_clause_with`], the model's time source declared in the unit
+/// (`time M dense unit ms`) when `real_time`, so the package emits.
+pub(crate) fn checked_clause_in(
+    formula: &str,
+    extra: &str,
+    real_time: bool,
+) -> (CheckedPackage, usize) {
     let domain = Domain::config_version();
     let packages =
         qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
@@ -32,10 +47,15 @@ pub(crate) fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.timed/v1\";\n\
+         {complete}\
          model M = \"{}\";\n\
          {TIME_UNITS}\
-         temporal C using t over (c: M::ConfigVersion) clock \"model-time\" on origin {{ {formula} }}\n",
+         {time_decl}\
+         temporal C using t over (c: M::ConfigVersion) clock \"model-time\" on origin {{ {formula} }}\n\
+         {extra}\n",
         domain.package,
+        complete = if real_time { "profile tc = \"quire.temporal.complete/v1\";\n" } else { "" },
+        time_decl = if real_time { "time M dense unit ms;\n" } else { "" },
     );
     let parsed = qsl_cst::parse(
         source.clone(),
@@ -64,19 +84,21 @@ pub(crate) fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
         Vec::new(),
     )
     .expect("S3 assembly");
-    declarations.time_sources.push(ModelTimeSource {
-        model: "M".to_owned(),
-        span: Span { start: 0, end: 1 },
-        model_node: crate::fixture_ids::node_key([0]),
-        tick_operation_key: None,
-        tick_operation_span: None,
-        tick_operation_anchor: None,
-        source: TimeSourceKind::Dense,
-        unit: "ms".to_owned(),
-        unit_node: crate::fixture_ids::node_key([0]),
-        time_dimension: crate::fixture_ids::node_key([0]),
-        nominal_nodes: Vec::new(),
-    });
+    if !real_time {
+        declarations.time_sources.push(ModelTimeSource {
+            model: "M".to_owned(),
+            span: Span { start: 0, end: 1 },
+            model_node: crate::fixture_ids::node_key([0]),
+            tick_operation_key: None,
+            tick_operation_span: None,
+            tick_operation_anchor: None,
+            source: TimeSourceKind::Dense,
+            unit: "ms".to_owned(),
+            unit_node: crate::fixture_ids::node_key([0]),
+            time_dimension: crate::fixture_ids::node_key([0]),
+            nominal_nodes: Vec::new(),
+        });
+    }
     let graph = declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("S3: {refusals:?}"));
