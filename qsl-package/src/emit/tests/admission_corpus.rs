@@ -112,11 +112,14 @@ enum Fixture {
     /// TC-1202: [`SCHEDULABILITY_UNIT`], a task set with a schedulability and a
     /// response claim.
     Schedulability,
+    /// TC-1288: two `under every scheduler` probabilistic claims over the
+    /// ConfigVersion domain package.
+    ProbabilisticClaim,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 30] = [
+    const ALL: [Self; 31] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -147,6 +150,7 @@ impl Fixture {
         Self::Hybrid,
         Self::StepRelation,
         Self::Schedulability,
+        Self::ProbabilisticClaim,
     ];
 }
 
@@ -211,6 +215,14 @@ const STATE_GRAPH_CLAIMS: &str = "model Config = \"example/config-version\";\n\
      unique path InOneWay using v over (c: Config::ConfigVersion) \
      from (c.versionNumber = 0) to (c.versionNumber = 2);\n\
      possible Anything using v { true }\n";
+
+/// FR-498: two probabilistic claims `under every scheduler`, which name no
+/// workload, appended to the ConfigVersion unit with the `ev` profile.
+const PROBABILISTIC_CLAIMS: &str = "probabilistic Early using ev on Config \
+     over (c: Config::ConfigVersion) under every scheduler on origin \
+     { probability >= 0.5 [ holds(true) ] }\n\
+     probabilistic Late using ev on Config over (c: Config::ConfigVersion) \
+     under every scheduler on origin { probability >= 0.9 [ holds(true) ] }\n";
 
 /// A model `terminal when` declaration over the ConfigVersion domain
 /// package, emitting the `temporal`/`terminal` family.
@@ -428,6 +440,16 @@ impl Fixture {
             }
             Self::Hybrid => text(HYBRID_UNIT),
             Self::Schedulability => text(SCHEDULABILITY_UNIT),
+            Self::ProbabilisticClaim => {
+                let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+                let unit = config_version_unit::unit_text().replace(
+                    "profile v = \"quire.model.complete/v1\";\n",
+                    "profile v = \"quire.model.complete/v1\";\n\
+                     profile ev = \"quire.temporal.event-position.false-extension/v1\";\n",
+                );
+                let unit = format!("{unit}{PROBABILISTIC_CLAIMS}");
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
             Self::StepRelation => Emitted::placed_owned(
                 CheckedPackage::link(super::step_relation::checked_graph()),
                 vec![super::step_relation::document().to_vec()],
@@ -706,6 +728,10 @@ fn rows() -> Vec<Row> {
         row(K::Claim(ClaimForm::StateGraph), F::StateGraphClaim),
         row(K::Claim(ClaimForm::StepRelation), F::StepRelation),
         row(K::Claim(ClaimForm::Schedulability), F::Schedulability),
+        row(
+            K::Claim(ClaimForm::ProbabilisticClaim),
+            F::ProbabilisticClaim,
+        ),
         row(K::Temporal(TemporalForm::Terminal), F::Terminal),
         row(K::Hybrid(HybridForm::Model), F::Hybrid),
         row(K::Hybrid(HybridForm::Mode), F::Hybrid),
@@ -760,10 +786,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),
         (K::Claim(ClaimForm::SynthesisRequest), NO_TAG),
-        (
-            K::Claim(ClaimForm::ProbabilisticClaim),
-            "lowering builds no probabilistic claim node yet",
-        ),
         (
             K::ScalarType(ScalarTypeForm::CarriedQuantity),
             "lowering builds no carried-quantity scalar type node yet",

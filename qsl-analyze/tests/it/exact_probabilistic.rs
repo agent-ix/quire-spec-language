@@ -2639,3 +2639,97 @@ fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
     assert!(plain.states.iter().any(|key| key.model == resolved.model));
     assert_eq!(step.target, *resolved);
 }
+
+/// A timed world with the exact-only claims `bodies` (name, event text),
+/// each under the `Even` workload.
+fn timed_claims_world(claims: &[(&str, &str)]) -> World {
+    let mut body = format!(
+        "{}\
+         pre Waiting using v on M::Call::send {{ self.phase = 0 }}\n\
+         post Sent using v on M::Call::send {{ self.phase = 1 }}\n\
+         delay M::Call::send ~ discrete {{ 1 ms: 1 }};\n\
+         workload Even on M {{ weight Call::send = 1; }}\n",
+        crate::timed_world::DENSE,
+    );
+    for (name, event) in claims {
+        body.push_str(&format!(
+            "probabilistic {name} using ev on M over (c: M::Call) under Even on origin\n\
+             {{ {event} }}\n"
+        ));
+    }
+    crate::timed_world::world(
+        &crate::timed_world::document(&["x"], &[("send", &["phase"])]),
+        "profile ev = \"quire.temporal.timed/v1\";\n",
+        &body,
+    )
+}
+
+/// FR-498-AC-3 (TC-1288 step 3; QSpec FR-421-AC-7): an elapsed-time claim
+/// the exact plan does not admit settles `TimedFormShape` carrying the
+/// selected claim's `{declaration, occurrence}` and the member path of the
+/// unsupported form; two claims keep their own identities.
+#[trace("FR-498-AC-3", "TC-1288", "FR-204-AC-4", "TC-639")]
+#[test]
+fn timed_form_shape_names_the_selected_claim_and_member() {
+    let world = timed_claims_world(&[
+        (
+            "First",
+            "quantile 0.5 of (elapsed from holds(c.phase = 0) until holds(c.phase = 1) \
+             within 3 ms) <= 0 ms",
+        ),
+        (
+            "Second",
+            "quantile 0.5 of (elapsed from holds(c.phase = 0) until holds(c.phase = 1) \
+             within 3 ms) <= 1 ms",
+        ),
+    ]);
+    let loci = ["First", "Second"].map(|name| {
+        let claim = world
+            .package
+            .graph()
+            .probabilistic_model()
+            .claim(name)
+            .expect("the claim checks");
+        let ProductRefusal::TimedFormShape { locus } = refused(&world, name) else {
+            panic!("{name}: expected the timed form shape refusal");
+        };
+        assert_eq!(locus.claim(), claim.identity());
+        assert!(
+            locus.claim().is_some(),
+            "{name}: a lowered claim has an identity"
+        );
+        assert_eq!(locus.member(), ["measure", "elapsed"]);
+        locus
+    });
+    assert_ne!(loci[0].claim(), loci[1].claim());
+}
+
+/// FR-498-AC-3 (TC-1288 step 3; QSpec FR-421-AC-7): a punctual interval in
+/// a form the automaton does not read settles `PunctualInterval` carrying
+/// the selected claim's identity and the member path of the interval
+/// operator.
+#[trace("FR-498-AC-3", "TC-1288")]
+#[test]
+fn punctual_interval_names_the_selected_claim_and_operator() {
+    let world = timed_claims_world(&[(
+        "Punctual",
+        "probability <= 0.5 [ eventually always[1 ms, 1 ms] holds(c.phase = 1) ]",
+    )]);
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("Punctual")
+        .expect("the claim checks");
+    let ProductRefusal::PunctualInterval { locus } = refused(&world, "Punctual") else {
+        panic!("expected the punctual interval refusal");
+    };
+    assert_eq!(locus.claim(), claim.identity());
+    assert!(locus.claim().is_some());
+    assert_eq!(locus.member()[..2], ["event", "formula"]);
+    assert!(
+        locus.member()[2].starts_with("node "),
+        "{:?}",
+        locus.member()
+    );
+}

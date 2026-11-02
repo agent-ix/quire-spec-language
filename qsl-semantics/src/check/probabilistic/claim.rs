@@ -380,9 +380,52 @@ pub struct CheckedProbabilisticClaim {
     pub normal_form: ClaimNormalForm,
     /// The declaration's source order, as [`Reward`](super::Reward)'s.
     pub(super) declared: usize,
+    /// The producer's checked-package identity (FR-498), set once the claim's
+    /// node is lowered; `None` for a claim checked without emission.
+    pub(super) identity: Option<ClaimIdentity>,
+}
+
+/// A probabilistic claim's checked-package identity (FR-498): the structural
+/// key of its `claim`/`probabilistic_claim` declaration node and the ordinal
+/// of the `claim` occurrence its `probabilistic_claims` row names. It is
+/// never derived from the claim's name, span, normal form or declaration
+/// order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimIdentity {
+    node: NodeKey,
+    occurrence: u64,
+}
+
+impl ClaimIdentity {
+    /// The identity of the declaration `node` at `occurrence`.
+    pub fn new(node: NodeKey, occurrence: u64) -> Self {
+        Self { node, occurrence }
+    }
+
+    /// The declaration node's structural key.
+    pub fn node(&self) -> &NodeKey {
+        &self.node
+    }
+
+    /// The ordinal of the declared `claim` occurrence.
+    pub fn occurrence(&self) -> u64 {
+        self.occurrence
+    }
 }
 
 impl CheckedProbabilisticClaim {
+    /// The claim's checked-package identity (FR-498), `None` when the claim
+    /// was checked without emission: no identity is synthesized from its
+    /// name or span.
+    pub fn identity(&self) -> Option<&ClaimIdentity> {
+        self.identity.as_ref()
+    }
+
+    /// The declaration's index among the unit's probabilistic declarations.
+    pub(crate) fn declared(&self) -> usize {
+        self.declared
+    }
+
     /// Whether only exact evidence decides the claim (ADR-028 XF-7): an
     /// unbounded reachability or expected-reward form, a claim `under every
     /// scheduler`, or a claim that states no confidence parameters
@@ -729,6 +772,7 @@ impl Pass<'_, '_> {
             over,
             normal_form,
             declared: index,
+            identity: None,
         })
     }
 

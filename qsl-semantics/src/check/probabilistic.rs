@@ -35,10 +35,13 @@ mod model;
 
 pub use claim::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedTemporalFormula,
-    ClaimNormalForm, Confidence, Event, FractionMeasure, ModelSubjectRef, OverBinding, ProbForm,
-    ProbScheduler, ReachTarget,
+    ClaimIdentity, ClaimNormalForm, Confidence, Event, FractionMeasure, ModelSubjectRef,
+    OverBinding, ProbForm, ProbScheduler, ReachTarget,
 };
-pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput, Unresolved};
+pub(crate) use model::{
+    check, claim_location, claim_site, precondition_reads, site_spans, ProbabilisticInput,
+    Unresolved,
+};
 pub use model::{
     CheckedProbabilisticModel, Delay, DelayDistribution, PreconditionSite, ProbabilisticFeature,
     ProbabilisticOperation, RandomParameter, Reward, SupportValue, Workload,

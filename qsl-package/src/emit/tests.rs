@@ -1672,6 +1672,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::MissingDispatchIdentityContext { .. }) => {
                 panic!("every dispatched call retains its exact producer decision")
             }
+            Err(EmitRefusal::MissingProbabilisticClaimNode { .. }) => {
+                panic!("every probabilistic claim retains its declaration node")
+            }
             Err(EmitRefusal::ForeignDimensionOperand { .. }) => {
                 panic!("the fixture set declares no cross-package dimension equivalence")
             }

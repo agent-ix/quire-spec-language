@@ -4332,6 +4332,13 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-498: a probabilistic claim's declaration node is located at its
+        // declared name.
+        for (index, declaration) in unit.probabilistic.iter().enumerate() {
+            if let super::ProbabilisticDeclaration::Claim(form) = declaration {
+                declared_type_spans.insert(super::probabilistic::claim_site(index), form.name.span);
+            }
+        }
         // FR-185: each random parameter's support values and each reward's
         // expression are located at their own sites.
         declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));

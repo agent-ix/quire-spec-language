@@ -150,11 +150,11 @@ mod time_units;
 mod timed_model;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
-    CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Delay, DelayDistribution,
-    DelayFault, Event, FractionMeasure, ModelSubjectRef, OverBinding, PreconditionSite, ProbForm,
-    ProbScheduler, ProbabilisticCause, ProbabilisticDeclaration, ProbabilisticFeature,
-    ProbabilisticOperation, RandomParameter, ReachTarget, Reward, SupportValue, WeightOwner,
-    Workload,
+    CheckedTemporalFormula, ClaimIdentity, ClaimNormalForm, Confidence, ConfidenceFault, Delay,
+    DelayDistribution, DelayFault, Event, FractionMeasure, ModelSubjectRef, OverBinding,
+    PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause, ProbabilisticDeclaration,
+    ProbabilisticFeature, ProbabilisticOperation, RandomParameter, ReachTarget, Reward,
+    SupportValue, WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -3897,7 +3897,7 @@ impl PackageDeclarations {
             &mut nodes_used,
         );
         refusals.extend(checked_probabilistic.refusals);
-        let probabilistic_model = checked_probabilistic.model;
+        let mut probabilistic_model = checked_probabilistic.model;
         // QSL FR-249: the `release` declarations, resolved against the task
         // sets and the operations of the admitted models.
         if task_sets_admitted {
@@ -5181,6 +5181,14 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-498: each checked probabilistic claim's declaration node.
+        let mut lowered_probabilistic = Vec::new();
+        for claim in probabilistic_model.claims() {
+            match lowering.probabilistic_claim(&lowering::ProbabilisticClaimInput { claim }) {
+                Ok(key) => lowered_probabilistic.push((claim.declared(), key)),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         // FR-447, QSpec FR-481: each checked hybrid model, then each claim
         // over one, after every function their terms may call.
         let mut lowered_hybrids = Vec::with_capacity(checked_hybrid_models.len());
@@ -5808,6 +5816,25 @@ impl PackageDeclarations {
                 checked.assembled_at(OccurrenceKey::new(claims::wire(lowered.key.clone()), claim)),
             );
         }
+        // FR-498: each probabilistic claim's identity is its node and the
+        // first `claim` occurrence the node holds, the occurrence its
+        // `probabilistic_claims` row names; claims asserting the same thing
+        // share one node and so one identity.
+        let mut claim_identities = Vec::with_capacity(lowered_probabilistic.len());
+        for (declared, key) in &lowered_probabilistic {
+            let location = probabilistic::claim_location(*declared);
+            let unkeyable = || {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            };
+            let origin = occurrences
+                .first_origin(key, family::OccurrenceRole::Claim, |_| true)
+                .ok_or_else(unkeyable)?;
+            claim_identities.push((*declared, ClaimIdentity::new(key.clone(), origin.ordinal())));
+        }
+        probabilistic_model.set_claim_identities(claim_identities);
         let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal
             .into_iter()

@@ -258,6 +258,14 @@ pub enum EmitRefusal {
         /// The exact checked application key retained by QSL lowering.
         application: NodeKey,
     },
+    /// A checked probabilistic claim has no identity, or its declaration node
+    /// is not in the emitted graph (FR-498), so no
+    /// `checked_term_data.probabilistic_claims` row can name it.
+    #[error("probabilistic claim {claim:?} has no emitted declaration node")]
+    MissingProbabilisticClaimNode {
+        /// The claim's name.
+        claim: String,
+    },
 }
 
 /// One explicit clock configuration selected for an exact checked temporal
@@ -311,7 +319,8 @@ impl EmitRefusal {
             | Self::OperandNotInGraph { .. }
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
             Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
-            Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::MissingDispatchIdentityContext { .. }
+            | Self::MissingProbabilisticClaimNode { .. } => Code::RuntimeInvariant,
         }
     }
 
@@ -344,7 +353,8 @@ impl EmitRefusal {
             | Self::DuplicateTemporalClockSelection { .. }
             | Self::TemporalClockProfileMismatch { .. } => None,
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
-            Self::MissingDispatchIdentityContext { .. } => None,
+            Self::MissingDispatchIdentityContext { .. }
+            | Self::MissingProbabilisticClaimNode { .. } => None,
         }
     }
 }
@@ -2880,10 +2890,47 @@ fn checked_term_data(
     )?
     .unwrap_or_default();
     term_data.dispatch_tables = checked_dispatch_tables(graph, emitted_node_ids, source_map)?;
+    term_data.probabilistic_claims = checked_probabilistic_claims(graph, emitted_node_ids)?;
     Ok((!term_data.equality_decisions.is_empty()
         || !term_data.protocol_locations.is_empty()
-        || !term_data.dispatch_tables.is_empty())
+        || !term_data.dispatch_tables.is_empty()
+        || !term_data.probabilistic_claims.is_empty())
     .then_some(term_data))
+}
+
+/// FR-498: one `probabilistic_claims` row per emitted probabilistic claim
+/// declaration node, naming the producer's own declaration and `claim`
+/// occurrence (QSpec FR-322-AC-297). Claims that assert the same thing share
+/// a declaration node and so one row. The rows repeat no claim body and are
+/// in ascending structural `NodeRef` order, then occurrence order.
+fn checked_probabilistic_claims(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<quire_contract_model::CheckedProbabilisticClaim>, EmitRefusal> {
+    let mut rows = BTreeMap::new();
+    for claim in graph.probabilistic_model().claims() {
+        let missing = || EmitRefusal::MissingProbabilisticClaimNode {
+            claim: claim.name.clone(),
+        };
+        let identity = claim.identity().ok_or_else(missing)?;
+        let declaration = emitted_node_ids
+            .get(identity.node())
+            .cloned()
+            .ok_or_else(missing)?;
+        rows.insert(declaration, identity.occurrence());
+    }
+    Ok(rows
+        .into_iter()
+        .map(
+            |(declaration, ordinal)| quire_contract_model::CheckedProbabilisticClaim {
+                declaration,
+                occurrence: CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Claim,
+                    ordinal,
+                },
+            },
+        )
+        .collect())
 }
 
 fn equality_enum_members(

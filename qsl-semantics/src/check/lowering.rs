@@ -79,6 +79,7 @@ mod abstraction;
 mod hybrid;
 mod hyper;
 mod model;
+mod probabilistic;
 mod protocol;
 mod refinement_rows;
 mod state;
@@ -105,6 +106,7 @@ pub use model::{
     SelectedOperationMember,
 };
 pub(crate) use model::{model_node_content, population_node_content};
+pub(crate) use probabilistic::ProbabilisticClaimInput;
 pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, protocol_site, AttemptNodes,
     CompensationNodes, ProtocolInput, ProtocolSite,

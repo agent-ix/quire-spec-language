@@ -60,7 +60,7 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::Span;
 pub use qsl_replay::ExactProbLimits;
 use qsl_replay::ModelCheckLimit;
-use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
+use qsl_semantics::check::{CheckedProbabilisticClaim, ClaimIdentity, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Rational, Value};
 use quire_semantic_value::catalog::InternalFault;
@@ -468,6 +468,54 @@ pub enum ProductStop {
     Cancelled(CancelCause),
 }
 
+/// The locus of an FR-203/FR-204/FR-235 unsupported cause (QSpec FR-421,
+/// FR-498): the claim's checked-package `{declaration, occurrence}` and the
+/// member path of the unsupported form or interval operator within that
+/// declaration's body. A claim checked without emission has no identity and
+/// keeps the span locus of FR-186, with no package locus built from the span.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimLocus {
+    claim: Option<ClaimIdentity>,
+    member: Vec<String>,
+    span: Span,
+}
+
+impl ClaimLocus {
+    /// The locus of `member` of the claim whose identity is `identity`, with
+    /// the claim's `span` as the span locus. Without an identity the member
+    /// path is dropped, since it has no declaration to be a member of.
+    pub fn new(identity: Option<&ClaimIdentity>, member: Vec<String>, span: Span) -> Self {
+        match identity {
+            Some(identity) => Self {
+                claim: Some(identity.clone()),
+                member,
+                span,
+            },
+            None => Self {
+                claim: None,
+                member: Vec::new(),
+                span,
+            },
+        }
+    }
+
+    /// The claim's declaration node and occurrence, when it has an identity.
+    pub fn claim(&self) -> Option<&ClaimIdentity> {
+        self.claim.as_ref()
+    }
+
+    /// The member path within the claim's declaration; empty without an
+    /// identity.
+    pub fn member(&self) -> &[String] {
+        &self.member
+    }
+
+    /// The source span (FR-186).
+    pub fn span(&self) -> Span {
+        self.span
+    }
+}
+
 /// Why a build produced no product and no refutation.
 #[derive(Debug, thiserror::Error)]
 pub enum ProductRefusal {
@@ -494,10 +542,16 @@ pub enum ProductRefusal {
     #[error("the event has no monitor: {0}")]
     Translation(AutomatonError),
     /// FR-204 does not admit this timed probabilistic form shape.
-    #[error("unsupported timed probabilistic form at {span:?}")]
+    #[error("unsupported timed probabilistic form at {locus:?}")]
     TimedFormShape {
-        /// The source span of the unsupported form.
-        span: Span,
+        /// Where the unsupported form is (FR-498).
+        locus: ClaimLocus,
+    },
+    /// FR-235 does not admit this punctual interval in this form.
+    #[error("unsupported punctual interval at {locus:?}")]
+    PunctualInterval {
+        /// Where the interval operator is (FR-498).
+        locus: ClaimLocus,
     },
     /// A budget or a cancellation ended the build.
     #[error("the build stopped: {0:?}")]
