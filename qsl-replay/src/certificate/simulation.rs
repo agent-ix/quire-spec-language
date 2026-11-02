@@ -633,7 +633,7 @@ impl Run<'_, '_> {
             }
             self.known[at].get_or_insert(Known {
                 state: state.clone(),
-                position: post,
+                position: *post,
             });
         }
         Ok(())
@@ -734,9 +734,9 @@ impl Run<'_, '_> {
             };
             let (post, taken) = match verdict {
                 StepVerdict::Passes { post, taken } => (post, taken),
-                StepVerdict::Fails(failure) => return Err(failed(FailedStep::Fails(failure))),
+                StepVerdict::Fails(failure) => return Err(failed(FailedStep::Fails(*failure))),
                 StepVerdict::Undefined(evaluation) => {
-                    return Err(failed(FailedStep::Undefined(Box::new(evaluation))))
+                    return Err(failed(FailedStep::Undefined(evaluation)))
                 }
                 StepVerdict::Undetermined(undetermined) => {
                     if let Some(counter) = Self::meter_counter(&undetermined) {
@@ -764,12 +764,12 @@ impl Run<'_, '_> {
             let Some((post_at, entry)) = slot else {
                 return Err(differs());
             };
-            if edge.taken != taken || !self.matches(entry, &post)? {
+            if edge.taken != *taken || !self.matches(entry, &post)? {
                 return Err(differs());
             }
             self.known[post_at].get_or_insert(Known {
                 state: state.clone(),
-                position: post,
+                position: *post,
             });
         }
         Ok(())

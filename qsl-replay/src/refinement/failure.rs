@@ -353,15 +353,15 @@ pub enum StepVerdict {
     /// The initial state or step is an abstract one.
     Passes {
         /// The position after it.
-        post: crate::refinement::RefinementPosition,
+        post: Box<crate::refinement::RefinementPosition>,
         /// Which abstract steps it took.
-        taken: Taken,
+        taken: Box<Taken>,
     },
     /// The refinement does not hold at it.
-    Fails(RefinementFailure),
+    Fails(Box<RefinementFailure>),
     /// A mapping row or step-row argument evaluated undefined: the
     /// refinement is refuted here (ADR-020 RE-5).
-    Undefined(UndefinedEvaluation),
+    Undefined(Box<UndefinedEvaluation>),
     /// The check could not decide.
     Undetermined(Undetermined),
     /// A protocol transition's checked contract was undetermined while

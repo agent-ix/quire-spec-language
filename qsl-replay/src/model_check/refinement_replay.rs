@@ -869,11 +869,11 @@ fn settle_positions(
         match verdict {
             StepVerdict::Passes { post, taken } => {
                 mapped.extend(post.abstract_states.first().cloned());
-                trail.push(post.clone());
+                trail.push(post.as_ref().clone());
                 if index > 0 {
-                    taken_by.push(taken);
+                    taken_by.push(*taken);
                 }
-                previous = Some(post.clone());
+                previous = Some(post.as_ref().clone());
                 if let Some(protocol) = systems.abstract_protocol.as_ref() {
                     let state_edges = match protocol_relation_edges(
                         refinement,
@@ -924,7 +924,7 @@ fn settle_positions(
                 }
             }
             StepVerdict::Fails(failure) => {
-                found = Found::Failed(failure);
+                found = Found::Failed(*failure);
                 // The failing position's history is the one its step gives.
                 let history = match (&previous, payload.prefix.get(index.saturating_sub(1))) {
                     (Some(pre), Some(taken)) if index > 0 => step_history(
@@ -956,7 +956,7 @@ fn settle_positions(
                 break;
             }
             StepVerdict::Undefined(evaluation) => {
-                found = Found::Undefined(Box::new(evaluation));
+                found = Found::Undefined(evaluation);
                 break;
             }
             StepVerdict::Undetermined(_) | StepVerdict::ProtocolContractUndetermined { .. } => {
@@ -1067,11 +1067,11 @@ fn protocol_relation_edges(
             StepVerdict::Passes { taken, .. } => edges.push(CertifiedEdge {
                 transition: Some(transition),
                 post: 0,
-                taken,
+                taken: *taken,
             }),
-            StepVerdict::Fails(failure) => return Ok(Err(Found::Failed(failure))),
+            StepVerdict::Fails(failure) => return Ok(Err(Found::Failed(*failure))),
             StepVerdict::Undefined(evaluation) => {
-                return Ok(Err(Found::Undefined(Box::new(evaluation))));
+                return Ok(Err(Found::Undefined(evaluation)));
             }
             StepVerdict::Undetermined(_) | StepVerdict::ProtocolContractUndetermined { .. } => {
                 return Ok(Err(Found::Undetermined))
@@ -1151,8 +1151,8 @@ fn replay_lasso(
         .verdict;
         match verdict {
             StepVerdict::Passes { post, taken } => {
-                walk.trail.push(post);
-                walk.taken_by.push(taken);
+                walk.trail.push(*post);
+                walk.taken_by.push(*taken);
             }
             StepVerdict::Stopped(reached) => {
                 return Ok(RefinementTraceSettlement::Stopped(reached))
@@ -1334,10 +1334,10 @@ fn replay_protocol_divergence(
         };
         match checked.verdict {
             StepVerdict::Passes { post, taken } => {
-                previous = Some(post.clone());
-                trail.push(post);
+                previous = Some(post.as_ref().clone());
+                trail.push(*post);
                 if index > 0 {
-                    taken_by.push(taken);
+                    taken_by.push(*taken);
                 }
             }
             StepVerdict::Stopped(reached) => {
@@ -1372,8 +1372,8 @@ fn replay_protocol_divergence(
         );
         match checked.verdict {
             StepVerdict::Passes { post, taken } => {
-                trail.push(post);
-                taken_by.push(taken);
+                trail.push(*post);
+                taken_by.push(*taken);
             }
             StepVerdict::Stopped(reached) => {
                 return Ok(RefinementTraceSettlement::Stopped(reached))
@@ -1397,7 +1397,7 @@ fn replay_protocol_divergence(
         .ok_or_else(|| fault("a-protocol-divergence-loop-is-in-the-trail"))?;
     if taken_by
         .get(start..)
-        .is_none_or(|steps| steps.iter().any(|taken| *taken != Taken::Stutter))
+        .is_none_or(|steps| steps.iter().any(|taken| taken != &Taken::Stutter))
     {
         return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
             Category::Violation,

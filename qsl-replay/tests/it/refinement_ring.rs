@@ -287,7 +287,7 @@ fn a_take_that_returns_the_first_item_passes_as_a_dequeue() {
         panic!("the take passes");
     };
     assert_eq!(
-        taken,
+        *taken,
         Taken::Abstract(vec![abstract_transition(&abstracted, &[1, 0], "deq", &[0])])
     );
 }
@@ -313,7 +313,7 @@ fn a_take_that_returns_the_second_item_fails_the_dequeue_postcondition() {
         panic!("the take fails");
     };
     assert_eq!(
-        failure,
+        *failure,
         RefinementFailure::AbstractStepRejected {
             position: 1,
             transition: abstract_transition(&abstracted, &[1, 0], "deq", &[0]),
@@ -344,7 +344,7 @@ fn an_any_argument_ranges_over_its_domain_and_only_the_value_put_passes() {
         panic!("the put passes");
     };
     assert_eq!(
-        taken,
+        *taken,
         Taken::Abstract(vec![abstract_transition(&abstracted, &[], "enq", &[1])])
     );
 }
@@ -400,13 +400,16 @@ fn a_defined_step_row_argument_is_judged_against_the_post_state() {
     );
     let world = RingWorld::with(Variant::default(), &refinement);
     let concrete = world.concrete_system(UNLIMITED);
-    let StepVerdict::Fails(RefinementFailure::AbstractStepRejected { cause, .. }) = verdict(
+    let StepVerdict::Fails(failure) = verdict(
         &world,
         &ring_state(&concrete, 1, 0, [0, 0]),
         "put",
         &ring_state(&concrete, 1, 1, [0, 1]),
     ) else {
         panic!("the step fails the abstract postcondition");
+    };
+    let RefinementFailure::AbstractStepRejected { cause, .. } = *failure else {
+        panic!("the failure is an abstract step rejection");
     };
     assert_eq!(cause, StepRejection::Postcondition);
 }
