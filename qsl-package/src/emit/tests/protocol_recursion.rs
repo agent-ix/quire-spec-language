@@ -224,8 +224,10 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
     assert!(idle["recursion_group"].is_null());
     assert!(idle["recursion_group"].is_null());
     assert_eq!(
-        idle["node_id"]["digest"],
-        idle_acyclic.to_string(),
+        wire_graph
+            .key_of_value(&idle["node_id"])
+            .expect("acyclic protocol has a structural identity"),
+        idle_acyclic,
         "the acyclic protocol key inputs and identity are unchanged"
     );
 }
