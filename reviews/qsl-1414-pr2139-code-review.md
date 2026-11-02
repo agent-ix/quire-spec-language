@@ -20,3 +20,10 @@ IR-1262 pin test `tc134_strict_reader_refuses_compensation_rows_until_ir_1262` i
 |----|----------|---------|------|
 | FND-001 | low | The "template has no written node" skip and the "no temporal profile" skip are untested; a surplus selection naming such a template is the only protection and is never exercised | qsl-package/src/emit.rs:5604-5612 |
 | FND-002 | low | Compensation node lookup scans every node per template and rebuilds the qualified-name path already built at emit.rs:4646 | qsl-package/src/emit.rs:5618-5634 |
+
+## Dispositions
+
+| FND | outcome | reason |
+|-----|---------|--------|
+| FND-001 | fixed | Round 1, head a9f4db7dc: tc134_template_without_a_clock_profile_writes_no_row and tc134_template_without_a_written_node_writes_no_row exercise both skips and the surplus refusal for each. |
+| FND-002 | fixed | Round 1, head a9f4db7dc: compensation nodes are indexed once into a HashMap keyed by qualified name; per-template lookup is a map get. |
