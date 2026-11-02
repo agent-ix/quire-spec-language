@@ -10,6 +10,7 @@
 //! `CheckedUnit` and so no rows (FR-362-AC-8), so the traversal of a checked
 //! unit always reaches its end.
 
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::wire_id::structural_id;
 use quire_contract_model::source_obligation::{
     SourceInventoryEnumerator, SourceInventoryIdentity, SourceInventoryIncompleteReason,
@@ -17,7 +18,6 @@ use quire_contract_model::source_obligation::{
     SourceInventoryScope, SourceRequirementOccurrenceId,
 };
 use quire_contract_model::SourceIdentity;
-use qsl_foundation::source::provenance::OccurrenceKey;
 
 use crate::spine::CheckedUnit;
 
@@ -172,7 +172,10 @@ mod tests {
             SourceInventoryScope::QslCheckedRequirementsAndPendingObligations
         );
         assert_eq!(outcome.source(), &formal());
-        assert_eq!(outcome.completeness(), &SourceInventoryCompleteness::Complete);
+        assert_eq!(
+            outcome.completeness(),
+            &SourceInventoryCompleteness::Complete
+        );
         assert_eq!(outcome.observed_count(), outcome.items().len());
         let expected: Vec<_> = unit
             .package()
@@ -202,12 +205,20 @@ mod tests {
     #[trace("FR-362-AC-4", "TC-1027")]
     #[test]
     fn a_unit_with_no_requirement_records_is_complete_with_no_rows() {
-        let unit = checked(&format!("{HEADER}function g using v(): Integer pure {{ 1 }}\n"))
-            .expect("the fixture checks")
-            .with_formal_identity(formal());
+        let unit = checked(&format!(
+            "{HEADER}function g using v(): Integer pure {{ 1 }}\n"
+        ))
+        .expect("the fixture checks")
+        .with_formal_identity(formal());
         let outcome = qsl_inventory(&unit).expect("a consistent enumeration");
-        assert_eq!(outcome.items().len(), unit.package().graph().requirements().len());
-        assert_eq!(outcome.completeness(), &SourceInventoryCompleteness::Complete);
+        assert_eq!(
+            outcome.items().len(),
+            unit.package().graph().requirements().len()
+        );
+        assert_eq!(
+            outcome.completeness(),
+            &SourceInventoryCompleteness::Complete
+        );
     }
 
     /// FR-362 item 3: the inventory is issued under the formal identity the
@@ -240,8 +251,10 @@ mod tests {
     #[test]
     fn a_unit_whose_type_phase_reaches_a_limit_yields_no_checked_unit() {
         let cancel = Cancel::new();
-        let mut limits = SpineLimits::default();
-        limits.checking = quire_semantic_value::checking::CheckingLimits::new(1);
+        let limits = SpineLimits {
+            checking: quire_semantic_value::checking::CheckingLimits::new(1),
+            ..SpineLimits::default()
+        };
         let identity = NativeIdentity::new("test", "unit:main", "test", "authored");
         let text = format!("{HEADER}{GUARDED}\n");
         let parsed = parse(
