@@ -174,13 +174,25 @@ impl<'package> AdmittedEvaluationView<'package> {
                         "selected-protocol-source-has-a-keyed-binder",
                     ))
                 })?;
+                let location = self
+                    .package
+                    .graph()
+                    .occurrences()
+                    .find(|(key, _, _)| *key == binder)
+                    .map(|(_, _, location)| location.clone())
+                    .ok_or_else(|| {
+                        SlotSelectionFailure::Fault(InternalFault::new(
+                            "FR-390",
+                            "selected-protocol-source-has-an-occurrence",
+                        ))
+                    })?;
                 Ok(ProtocolSource {
                     index,
                     name: source.name,
                     level: source.level,
                     value_type: source.value_type,
                     binder,
-                    location: body.root().location().clone(),
+                    location,
                 })
             })
             .collect::<Result<Vec<_>, SlotSelectionFailure>>()?;
@@ -215,7 +227,7 @@ impl<'package> AdmittedEvaluationView<'package> {
 /// An opaque checked-node selection tied to one [`AdmittedEvaluationView`].
 /// Its only constructor is the view's validated protocol-slot selector.
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// use qsl_package::{AdmittedEvaluationView, TermHandle};
 /// use quire_exact::NodeKey;
 /// fn forge<'a>(view: &'a AdmittedEvaluationView<'a>, node: NodeKey) -> TermHandle<'a, 'a> {
@@ -223,47 +235,47 @@ impl<'package> AdmittedEvaluationView<'package> {
 /// }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use quire_exact::NodeKey;
 /// fn from_node(node: NodeKey) { let _: TermHandle<'_, '_> = node.into(); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::check::CheckedNode;
 /// fn from_checked(node: &CheckedNode<'_>) { let _ = TermHandle::from(node); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::check::CheckedBody;
 /// fn from_term(body: &CheckedBody) { let _ = TermHandle::from(body); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use quire_contract_model::CheckedPackageV2;
 /// fn from_graph(graph: &CheckedPackageV2) { let _ = TermHandle::from(graph); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// use qsl_semantics::library::ImportView;
 /// fn from_import(view: &ImportView) { let _ = TermHandle::from(view); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// fn from_bytes(bytes: &[u8]) { let _ = TermHandle::from(bytes); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::TermHandle;
 /// fn from_integer(value: usize) { let _ = TermHandle::from(value); }
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::{AdmittedEvaluationView, TermHandle};
 /// fn from_view(view: &AdmittedEvaluationView<'_>) { let _ = TermHandle::from(view); }
 /// ```
@@ -328,7 +340,7 @@ impl ProtocolSource {
     pub fn binder(&self) -> &NodeKey {
         &self.binder
     }
-    /// The checked expression's read location.
+    /// The location of the binder's own first occurrence.
     pub fn location(&self) -> &quire_semantic_value::location::Location {
         &self.location
     }
@@ -428,7 +440,7 @@ pub enum ViewFailure {
 /// Only [`AdmittedEvaluationView::admit_protocol_observation`] constructs it.
 /// A caller cannot construct it from a plain observation:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use qsl_package::AdmittedProtocolObservation;
 /// use qsl_semantics::model::observation::Observation;
 /// fn forge(observation: Observation) -> AdmittedProtocolObservation<'static> {
@@ -438,7 +450,7 @@ pub enum ViewFailure {
 ///
 /// Its environment is read-only through the public accessors:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// # use qsl_package::AdmittedProtocolObservation;
 /// fn mutate(authority: &AdmittedProtocolObservation<'_>) {
 ///     authority.environment().set_place_presence(Default::default());
