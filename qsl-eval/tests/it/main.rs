@@ -56,6 +56,7 @@ mod supplied_phases;
 mod tc235_business_meaning_runtime;
 mod temporal_trace;
 mod timed_subject;
+mod tick_monitor;
 mod timed_trace;
 mod total_functions;
 mod type_invariants;

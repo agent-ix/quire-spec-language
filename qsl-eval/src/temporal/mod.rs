@@ -43,6 +43,7 @@ mod outcome;
 mod plan;
 mod position;
 mod steps;
+mod tick_monitor;
 mod timed;
 mod tuple;
 mod window;
@@ -56,6 +57,10 @@ pub use outcome::{
     InsufficientDataEvaluation, TemporalOutcome, TemporalRefusal, UndefinedEvaluation,
 };
 pub use position::{PositionRefusal, TemporalPosition};
+pub use tick_monitor::{
+    definitely_before, within_bound, TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome,
+    TickResult, TickStep, TickStepError,
+};
 pub use timed::{evaluate_timed_at, TimedTrace};
 pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
