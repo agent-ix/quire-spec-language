@@ -50,7 +50,14 @@ FR-109's `ClauseRunRequest`, with the selection
 - `trace`: `TraceInput::Finite(Vec<DocumentRef>)`,
   `TraceInput::Lasso{prefix: Vec<DocumentRef>, loop: Vec<DocumentRef>}`, or
   `TraceInput::Model{initial: DocumentRef, universes, prefix:
-  Vec<ModelStep>, loop: Vec<ModelStep>}`; each `DocumentRef` names a
+  Vec<ModelStep>, loop: Vec<ModelStep>}`, `TraceInput::Progressed{trace: Vec<DocumentRef>, progress}` (FR-504), the finite
+  trace of an event-position or fixed-sample clause with its watermark,
+  completeness, scope closure, surrounding-execution closure and lower boundary,
+  or `TraceInput::Timestamped{
+  observations: Vec<{document: DocumentRef, stamp, order_key}>, watermark,
+  completeness, scope, lower_boundary}` (FR-501), the trace of a clause under the
+  timestamped-event finite-window profile, with an optional `ledger`
+  (`ProgressLedger`, FR-502) on the selection; each `DocumentRef` names a
   snapshot in the request's snapshot provision by identity (FR-106);
 - `over`: `{"reference": {"population": ..., "key": ...}}`, resolved in the
   observation at position 0, when the clause has an `over` parameter.
@@ -58,7 +65,9 @@ FR-109's `ClauseRunRequest`, with the selection
 ## Outputs
 
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
-the usage. Its `category` adds `inconclusive` (a pending result)
+the usage; for a `Timestamped` trace it also returns the updated `ledger`
+(FR-502) and FR-501's result report (basis, decision support, premises and
+result identity). Its `category` adds `pending` (a pending result, with the pending clause ids in its body)
 and `unsupported` (a missing fairness premise). Its `disposition` for a
 `violation` (`Completed(false)` or an `Undefined` that is a violation)
 carries the failing `TemporalPosition` and the refutation's
@@ -96,6 +105,19 @@ FR-267 writer writes these as the report holds them and derives none.
   `admit`, `invalid_runtime_input`/`invalid-value`: a bounded profile reads
   a closed finite trace here; the zero-counted protocol lasso FR-329
   reads under a bounded profile is not an input of this entry.
+- The entry SHALL evaluate a clause under the finite-window profile once
+  through FR-501 over `TraceInput::Timestamped`.
+- The entry SHALL evaluate an event-position or fixed-sample clause over
+  `TraceInput::Progressed` once through FR-504, and SHALL refuse `Progressed`
+  for any other profile or trace shape at stage `admit`,
+  `invalid_runtime_input`/`invalid-value`.
+- The entry SHALL report a `Finite`, `Lasso` or `Model` trace for that profile, and a
+  `Timestamped` trace for any other profile, at stage `admit`,
+  `invalid_runtime_input`/`invalid-value`. FR-501's `Pending` reports
+  `pending` (the exit of FR-285's row for a supplied-trace clause pending when the trace ends) and its `Indeterminate` reports `indeterminate` (exit 11)
+  with its reason as the cause, no `truth` and no counterexample. A progress
+  contradiction (FR-502) reports stage `evaluate`, category `refusal`, with its
+  record.
 - A refused `holds` condition (FR-327 "Refused condition") SHALL report
   stage `evaluate` with FR-100's `refused` outcome for its evaluation (the
   record's code, cause, fields and the atom's locus), its position, and
@@ -111,7 +133,7 @@ FR-267 writer writes these as the report holds them and derives none.
   `InsufficientData` to `undefined` (exit 10, FR-285) with its position,
   `count` and `min_count`, no `truth` and no counterexample, as the trace
   lacks the data to decide the claim (QSpec FR-414);
-  `Pending` to `inconclusive` (exit 0, completed without violation);
+  `Pending` to `pending` (exit 0, completed without violation) with the status and the pending clause ids in the report;
   `MissingFairnessPremise` to `unsupported` (exit 21) with cause
   `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to
   `incomplete` (exit 22), by QSpec FR-301's exit contract. Every
@@ -123,13 +145,15 @@ FR-267 writer writes these as the report holds them and derives none.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-330-AC-1 | From source, the `Counter` unit's clause `Bounded` (`eventually[0,1] holds(c.value = 2)`, event-position false-extension) over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, `violation`, position 0, exit 10. | Test (TC-840) |
-| FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `inconclusive`, exit 0, with no `truth`; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
+| FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `pending`, exit 0, with no `truth` and the clause id in the report's pending ids; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
 | FR-330-AC-3 | A selection naming `Absent` reports stage `select`, `missing_declaration`/`missing-name`; `Bounded` over a `Lasso` reports stage `admit`, `invalid_runtime_input`/`invalid-value`; an `over` naming key `ghost` reports stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; a `Lasso` with an empty loop reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-840) |
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause, `always[0,2] holds(3 mod (2 - c.value) >= 0)` in the `Counter` unit, which compiles, over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 | FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
 | FR-330-AC-7 | From source, the `Counter` clause `always[0,1] holds(InUnit(c.value))` under event-position false-extension with `function InUnit using v(x: Int[0, 1]): Boolean pure { x >= 0 }`, whose `holds` condition completes for `c.value` 0 and, for `c.value` 2, refuses the `Coerce` of 2 into `Int[0, 1]` with kernel `integer_out_of_domain`/`outside-domain` and `expected` naming `Int[0, 1]` (FR-096-AC-8, TC-428), over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
 | FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, category `undefined`, exit 10, position 2, `count` 0 and `min_count` 1, and no `truth`, no counterexample and no `UndefinedEvaluation`. | Test (TC-847) |
+| FR-330-AC-9 | From source, a clause under the finite-window profile run over `TraceInput::Timestamped` reports the outcomes of FR-501-AC-11 and never `unsupported_profile` or `ProfileNotEvaluated`; the same clause over `Finite` reports stage `admit`, `invalid_runtime_input`/`invalid-value`, and `Bounded` (event-position) over `Timestamped` reports the same. A `ledger` holding binding B at watermark 100 and a second request under B with watermark 60 reports stage `evaluate`, category `refusal`, `contradicted_dimension` `Watermark`. | Test (TC-1295, TC-1296) |
+| FR-330-AC-10 | From source, an event-position clause and a fixed-sample clause run over `TraceInput::Progressed` report the outcomes of FR-504-AC-1 and AC-2, and return the updated `ledger`; a `Progressed` request for an infinite-trace clause, or over a `Lasso`, reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
 
 ## Dependencies
 

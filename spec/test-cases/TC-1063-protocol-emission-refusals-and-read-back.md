@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify that S4 refuses a stale bound key and a missing temporal profile with existing catalog pairs and no package, that a protocol
-with an S3 refusal emits nothing, that QSL's I2 reader returns the emitted
+with an S3 refusal emits no node of its own and no package for the unit while
+the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
 limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21.
@@ -36,7 +37,7 @@ Compile or read one unit or graph per row and assert the stated result.
 | 2 | the same with the model relationship key, then with an attempt's operation anchor key | `missing_declaration`/`missing-name` at the relationship member, then at the attempt; no package |
 | 3 | **W** with an `await`, then a unit with only a `compensate`, in a package that selects no `temporal_profile` | `missing_declaration`/`missing-selection` at the first such construct; no package |
 | 4 | **W** in a unit that selects no protocol profile | no protocol node and no refusal for the declaration |
-| 5 | a unit holding **W** and a protocol whose join names a missing branch | the S3 refusal (`missing_declaration`/`missing-name` at the label); no protocol node of either protocol; **W** alone emits |
+| 5 | a unit holding **W** and a protocol **X** whose join names a missing branch | **X** `Refused` with `missing_declaration`/`missing-name` at the label; **W** `Emitted` with nodes byte-identical to **W** alone; the aggregate `Refused` with no package and no `package_id`; **W** alone emits a package (FR-383-AC-18; the full procedure is TC-1297) |
 
 ### Read-back
 
@@ -77,5 +78,5 @@ traced only once that file exists.
 
 - Each row asserts code, cause, locus and retained members as fields, never
   message text.
-- Rows 1 to 3 and 5 produce no package. Row 4 produces a package without a protocol
+- Rows 1 to 3 and 5 produce no package (row 5 still reports **W**'s result). Row 4 produces a package without a protocol
   node.

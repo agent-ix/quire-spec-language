@@ -61,7 +61,9 @@ As listed for each operation, plus its limits value and `&Cancel` (FR-275).
 ## Outputs
 
 As listed for each operation. A refusal is `StageFailure::Refused` carrying
-the refusing stage's own typed causes.
+the refusing stage's own typed causes and, for a unit that holds protocol
+declarations, the `protocol_results` of FR-503 (one `ProtocolResult` per
+declaration, in declaration order); `StageFailure::Limit` carries them likewise.
 
 ## Behavior
 

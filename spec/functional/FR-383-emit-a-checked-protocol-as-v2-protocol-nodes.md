@@ -17,8 +17,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-105
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-042
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-218
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-503
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-264
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-337
@@ -319,8 +325,10 @@ emissions.
 ### Refusals
 
 The emitter refuses with typed code, cause and member from the existing
-catalog, and produces no package for a refused protocol (all or nothing,
-FR-105).
+catalog. The package is all or nothing for the unit (FR-105): a unit with any
+refused protocol produces no package. The protocols are independent of one
+another (FR-042-AC-8): each protocol has its own result, and one protocol's
+refusal changes no other protocol's result (see "Per-protocol results").
 
 - A key bound at S3 that no node of the emitted graph carries (a required
   temporal clause, a model relationship, an operation anchor, a state clause)
@@ -335,10 +343,58 @@ FR-105).
 - A requirement cycle between a protocol and a temporal clause is refused at S3
   (FR-218). S4 treats it as unreachable and asserts that the emitted graph is
   acyclic.
-- A protocol with any S3 refusal emits no protocol node (FR-113).
+- A protocol with an S3 refusal emits no protocol node of its own (FR-113).
+  It does not suppress the nodes of any other protocol of the unit, which
+  keep their own results (see "Per-protocol results").
 - The emitter adds no limit of its own, and a protocol of any size and nesting
   depth emits. The node count is bounded when the package is read, by the
   `i2.*` limits (FR-264).
+
+### Per-protocol results
+
+- The protocols are processed in source order. S1 to S4 SHALL produce exactly
+  one `ProtocolResult` for each protocol declaration the parser delimited, in
+  declaration order: `Emitted { declaration, clause key, nodes }`, `Refused {
+  declaration, code, cause, locus }` whose locus pairs the source index and span
+  of the owning declaration (FR-042-AC-8), or `Incomplete { declaration, limit }`
+  carrying the typed limit refusal (`StageFailure::Limit`, `stage_limit_exceeded`)
+  that names `s3.work_units`. An operation that stops before S4 (`parse`,
+  `check`; FR-503) reports `Cleared { declaration, stage }` for a declaration
+  that passed every stage it ran, and only `compile` produces `Emitted`.
+- Independence SHALL hold at every stage whose work is per protocol: a refusal
+  at S1, S2, S3 or S4 that the stage attributes to one protocol declaration
+  gives that protocol a `Refused` result and changes no result of a protocol that
+  does not reach it. A refusal that the stage cannot attribute to one protocol
+  (a syntax error the parser cannot confine to one declaration, the unit
+  header, a profile selection or a model import) refuses the unit with no
+  per-protocol results.
+- A protocol that reaches a `Refused` protocol X, by reference or requirement,
+  SHALL be `Refused` `missing_declaration`/`missing-name` at the reference. The
+  catalog has no dependency cause, so the record SHALL carry the field
+  `refused_dependency`, naming X and its own code and cause, and the field
+  `consequence` set true; the record says the declaration exists and was
+  refused, not that it is missing.
+- The shared `s3.work_units` budget is consumed in source order. When a protocol
+  exhausts it, that protocol and every later protocol SHALL be `Incomplete`, and
+  every earlier result stands. Declaration order therefore changes results
+  only when the budget decides them; every non-budget outcome is independent of
+  declaration order.
+- The unit aggregate SHALL be `Refused` when any result is `Refused`,
+  `Incomplete` when none is `Refused` and any is `Incomplete`, and `Emitted`
+  otherwise. Only an `Emitted` aggregate carries a package and a `package_id`.
+  A `Refused` aggregate is carried as `StageFailure::Refused` whose code, cause
+  and locus are those of the first `Refused` result in declaration order and
+  whose payload holds every `ProtocolResult`, so the results of the protocols
+  that did emit remain readable. An `Incomplete` aggregate is carried as
+  `StageFailure::Limit` with the same payload. The aggregate never reports a
+  unit with a refused or incomplete protocol as admitted.
+- The unit's diagnostics SHALL list one record (code, cause, locus) for each
+  `Refused` result in declaration order and none for an `Emitted` result. The
+  exit is FR-285's: the items are the per-protocol results, and the multi-item
+  rule of FR-285-AC-2 decides the unit's exit, so a unit with a refused
+  protocol never exits 0.
+- A protocol refused `unsupported_construct`/`not-yet-implemented` (the
+  `NoOwnerModel` case) has the same standing as an S3 refusal.
 
 ### Reading the nodes back
 
@@ -377,7 +433,7 @@ FR-105).
 | FR-383-AC-15 | Emitting **W** twice, and in a unit that declares an unrelated protocol before it and one after it, gives the same protocol nodes and bytes for **W**; the clause node changes when, and only when, any node it reaches changes. | Test (TC-1062) |
 | FR-383-AC-16 | No emitted node carries a causal edge, a relationship alias, a runtime subject, an instance, an ordinal, a delivery or clock observation or an `internal`/`external` member. The causal relation derived from **W**'s emitted nodes by QSpec FR-464's rules holds the same (source port, target port) pairs as the compiled edge relation of **W**'s checked clause, back edges of the `repeat` included. | Test (TC-1062) |
 | FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package that selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a requirement cycle never reaches S4 (FR-218-AC-25). | Test (TC-1063) |
-| FR-383-AC-18 | A protocol with an S3 refusal (a join naming a missing branch) in a unit that also holds a good protocol emits no node of either protocol and no package; emitting the good protocol alone succeeds. | Test (TC-1063) |
+| FR-383-AC-18 | A unit that holds a good protocol **W** and a protocol **X** whose join names a missing branch has two results in declaration order: **W** `Emitted` with nodes and clause key byte-identical to those of emitting **W** alone, and **X** `Refused` with `missing_declaration`/`missing-name` at the label, locus the source index and span of **X**'s declaration. The aggregate is `Refused`, with no package and no `package_id`, and the results of both protocols stay readable from it. Emitting **W** alone succeeds with a package. | Test (TC-1063, TC-1297) |
 | FR-383-AC-19 | Reading **W**'s package through QSL's I2 reader admits it and returns every protocol node with the key, tag, form, type, declaration, body, dependencies and occurrences emitted; the protocol rebuilt from the read-back nodes equals the protocol rebuilt from the in-process checked clause in keys, set order, ordered lists, binder levels, channel premises, queue bounds and derived causal relation. | Test (TC-1063) |
 | FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending node-id order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
@@ -387,6 +443,10 @@ FR-105).
 | FR-383-AC-25 | SCC discovery is iterative and O(V + E), does not merge groups quadratically, computes each completed group's identity once, and uses no global lock on the emit path. There is no fixed recursion depth, group size, node count or group count cap: the only applicable work bound is the caller's shared `s3.work_units` budget, and exhaustion produces the existing typed limit refusal naming `s3.work_units`. A 100,000-node cycle group emits and reads back within the supplied budget without native stack overflow; the budget refuses at zero and one unit short and succeeds at the exact measured work; permuting authored node order leaves group identity unchanged. | Test (TC-1062) |
 | FR-383-AC-26 | Each protocol clause's node-level `owner_model` is the exact local model declaration node bound by the checker for its `over` subject, enters its application-node key preimage and exact dependencies, and is read back unchanged. Two clauses over different selected models have distinct owner edges; retargeting one changes its clause key. The edge is derived from the object type `over`'s `Reference` input names (QSpec FR-464), and a clause whose `over` names none has no edge to write (AC-27). | Test (TC-1062, TC-1063) |
 | FR-383-AC-27 | A protocol whose `over` input is `Boolean`, `Integer`, `Option<M::T>` or `Sequence<M::T>` is refused once with `unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` (QSL-1147) and, with the emission gate open, writes no `protocol_clause` node; the same protocol over `M::T` writes the clause. Over the emitted package, a clause without the edge, an edge on another node, an external edge and an edge omitted from `dependencies` each refuse as IR's reader does (`malformed_wire`, `malformed_wire`, `malformed_wire`, `invalid_semantic_graph`), a non-model target refuses `invalid_model_binding`/`malformed-declaration` at the edge (QSpec FR-464-AC-20), and retargeting only the edge refuses `invalid_package`/`stale-node-key` until the key and `package_id` are rebuilt. | Test (TC-1063) |
+| FR-383-AC-28 | In AC-18's unit the diagnostics hold exactly one record, **X**'s, and none for **W**; the unit exits as FR-285-AC-2 gives for the items {0, 20}, which is 20, and never 0. Declaring **X** before **W** gives the same two results and the same records. A protocol **Y** whose predicate-join function names **X** is `Refused` `missing_declaration`/`missing-name` at the reference with `refused_dependency` naming **X** (`missing_declaration`/`missing-name`) and `consequence` true, **W** is unchanged, and the aggregate is `Refused` with **X**'s code, cause and locus as the `StageFailure::Refused` primary. | Test (TC-1297) |
+| FR-383-AC-29 | Removing **X** from AC-18's unit changes **W**'s result in no byte, and removing **W** changes **X**'s refusal record in no field; an `unsupported_construct`/`not-yet-implemented` refusal (`NoOwnerModel`, AC-27) of one protocol beside a good one gives the same independence and the same `Refused` aggregate. | Test (TC-1297) |
+| FR-383-AC-30 | **W**, **Z** and **V** are three renamed copies of one protocol with equal measured work `n`. With an `s3.work_units` budget of exactly `n` and the source order **W**, **Z**, **V**, the results are **W** `Emitted`, **Z** `Incomplete` naming `s3.work_units` and **V** `Incomplete` naming `s3.work_units`; the aggregate is `Incomplete` (`StageFailure::Limit`) and exits 22. With the source order **Z**, **W**, **V** the results are **Z** `Emitted`, then **W** and **V** `Incomplete`. With a budget of `3n` all three are `Emitted` in either order. | Test (TC-1297) |
+| FR-383-AC-31 | A refusal at S1 (a syntax error the parser confines to **X**'s declaration), at S2, at S3 and at S4 (the `NoOwnerModel` refusal) each give **X** a `Refused` result with that stage's code and cause and leave **W**'s result byte-identical to **W** alone; a syntax error in the unit header gives a `Refused` unit with no `ProtocolResult`. FR-503 owns the stage obligations. | Test (TC-1297, TC-1298) |
 
 ## Dependencies
 

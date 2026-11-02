@@ -69,7 +69,7 @@ declarations.
 - **Given** the infinite-trace clause above and a three-position observed
   trace on which `c.value` reaches 3.
 - **When** the author runs the clause on the trace.
-- **Then** the run reports pending, `inconclusive`, never `proved`.
+- **Then** the run reports pending, category `pending`, never `proved`.
 
 ### US-033-EX-3: A lasso is decided exactly and its refutation replays
 

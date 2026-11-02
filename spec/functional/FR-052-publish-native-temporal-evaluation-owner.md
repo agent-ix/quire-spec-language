@@ -59,6 +59,8 @@ behaviors.
 | FR-052-AC-10 | For each independent activation, capture, anchor, profile/clock, progress, closure, execution and completeness fact present on the route, the result retains that fact distinctly; missing required evidence yields a typed non-truth outcome and never a false/default/closed/complete value. | Test |
 | FR-052-AC-11 | Missing, inconsistent, unsupported or over-budget evidence produces the corresponding typed outcome with no partial truth, while an independently settled sibling retains its FR-043 result. | Test |
 | FR-052-AC-12 | Where the route accepts a correction relation, a valid correction names its exact direct predecessor and changed evaluation input; self, non-direct, cross-obligation or identity-mismatched predecessors refuse, and the predecessor result remains unchanged. | Test |
+| FR-052-AC-13 | Where the route carries a progress ledger, a regressing watermark or a conflicting completeness revision under one binding is refused as FR-502 states, leaves the retained progress and every earlier result unchanged, and a foreign clock, clause, package or profile settles nothing for the binding (the spine successor of FR-043-AC-12). | Test (TC-144, TC-1296) |
+| FR-052-AC-14 | A checked temporal obligation selected under the timestamped-event finite-window profile is evaluated as FR-501 states and is never refused for its profile. | Test (TC-144, TC-1295) |
 
 ## Dependencies
 

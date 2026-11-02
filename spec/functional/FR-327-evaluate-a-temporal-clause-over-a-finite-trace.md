@@ -84,6 +84,13 @@ with an incomplete result, never a guess, when the work budget runs out.
 
 ### Bounded-profile evaluation
 
+A clause under `quire.temporal.timestamped-event.finite-window/v1` reads stamped
+positions and is evaluated by FR-501, not by the false-extension rules below.
+Its outcomes add `Pending { where, deadline }` and `Indeterminate { where,
+reason }` to this section's outcomes; `Pending` maps to the category pending (FR-285) and
+`Indeterminate` to the category indeterminate (exit 11, FR-285) with its reason as the cause,
+and neither is a truth value.
+
 - A `holds` atom SHALL evaluate through the one clause evaluator (FR-107)
   over the observation at its position.
 - Each interval operator SHALL have QSpec FR-091's offset meaning (future)

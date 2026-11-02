@@ -92,7 +92,7 @@ Every check ends in one outcome, and the process exit code matches it:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/outcomes-dark.svg">
-  <img alt="Every QSL check ends in exactly one outcome with its own exit code: success 0; violation or undefined 10; refused 20; unsupported 21; incomplete or inconclusive 22; internal failure 30. Only success and violation are answers about the rule; the others say why no answer was given." src="docs/images/outcomes-light.svg">
+  <img alt="Every QSL check ends in exactly one outcome with its own exit code: success 0; violation or undefined 10; refused 20; unsupported 21; indeterminate 11; incomplete or inconclusive 22; internal failure 30; a clause still pending when its trace ends exits 0. Only success and violation are answers about the rule; the others say why no answer was given." src="docs/images/outcomes-light.svg">
 </picture>
 
 | Outcome | Exit | Meaning |
@@ -102,6 +102,8 @@ Every check ends in one outcome, and the process exit code matches it:
 | refused | 20 | The input was rejected before any rule ran: bad syntax, a wrong model identity, a malformed request. |
 | unsupported | 21 | The construct is valid QSL, but the selected profile or backend cannot check it. |
 | incomplete, inconclusive | 22 | Data was missing or the work budget ran out. |
+| indeterminate | 11 | A finite-window clause whose window is closed and whose evidence is still missing or conflicting: neither held nor broken. |
+| pending | 0 | A clause still pending when its trace ends: no violation was observed, and the report lists the pending clauses. |
 | internal failure | 30 | A bug in QSL. |
 
 Only success and violation carry a truth value. Refused and incomplete results

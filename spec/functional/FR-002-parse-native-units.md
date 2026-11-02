@@ -59,6 +59,8 @@ argument are the driver's (FR-287, Overlap).
 - A grouped expression and each name and identity literal SHALL retain its
   exact source span.
 - Parsing SHALL establish no model linkage.
+- A syntax error inside one protocol declaration's delimited span SHALL be
+  confined to that declaration as FR-503 states.
 - When the source holds a syntax error, `qsl_cst::parse` SHALL return a
   recovered `ParsedSource` that retains every source byte, holds the located
   diagnostic and is not admissible; the `parse` operation SHALL refuse it as
@@ -75,6 +77,7 @@ argument are the driver's (FR-287, Overlap).
 | --- | --- | --- |
 | FR-002-AC-1 | The `parse` operation over `tests/fixtures/spine-compile.native` returns a `Staged<ParsedSource>` whose `ParsedSource` is admissible, has no diagnostic and holds the fixture's exact bytes. | Test (TC-012) |
 | FR-002-AC-2 | `qsl_cst::parse` over a unit holding each of `a < b < c`, `a = b != c` and `a < b + c = d` returns a `ParsedSource` that is not admissible and holds an `invalid_syntax` diagnostic at the second comparison operator. | Test (TC-012) |
+| FR-002-AC-9 | `qsl_cst::parse` over a unit of three protocols in which the second holds a missing closing brace inside its own span returns a recovered `ParsedSource` with the diagnostic attached to the second declaration, and the first and third declarations' CST equal their CST in the unit without the second (FR-503-AC-1). | Test (TC-1298) |
 | FR-002-AC-4 | `qsl_cst::parse` over a source whose syntax nodes exceed `s1.nodes` stops with `stage_limit_exceeded` naming `s1.nodes`, its configured value, the count reached and setting `s1.nodes` (FR-255). | Test (TC-012) |
 | FR-002-AC-5 | The CST node of a parenthesized expression spans from its `(` to its `)`, both included. | Test (TC-012) |
 | FR-002-AC-6 | The bounded malformed/truncation corpus returns a `ParsedSource` or a located diagnostic from `qsl_cst::parse` without panic; any admissible variant retains its exact submitted bytes. | Test (TC-019) |
