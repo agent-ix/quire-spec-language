@@ -441,8 +441,7 @@ fn on_watermark_body(spec: &EntrySpec) -> String {
         "let hz = if s.now > boundary then s.now else boundary + 1 in \
          let sw = {sweep} in \
          mk({state}, sw.results)",
-        sweep =
-            sweep("s.buffer_0", "hz", true, spec, pending, settled).replace("a.cells", "a.cells"),
+        sweep = sweep("s.buffer_0", "hz", true, spec, pending, settled),
         state = state_with("s.now", "s.history_start", "pruned(sw.cells)", spec),
     )
 }

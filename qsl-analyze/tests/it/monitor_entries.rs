@@ -243,7 +243,7 @@ pub(crate) fn run_entries(plan: &TimedMonitorPlan, inputs: &[Input]) -> Vec<Vec<
                             let value = atoms
                                 .iter()
                                 .find(|(a, _)| a == atom)
-                                .map_or(false, |(_, v)| *v);
+                                .is_some_and(|(_, v)| *v);
                             format!("a{atom}: {value}")
                         })
                         .collect::<Vec<_>>()
