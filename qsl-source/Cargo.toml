@@ -10,8 +10,8 @@ description = "ADR-011 §6.1 layer I3: the S0 intake adapter over Quire's pinned
 [features]
 default = []
 # The whole adapter is behind this feature; without it the crate is empty and
-# names no dependency. This feature is what lets QSL code name quire-rs; the
-# root crate's own `quire-extraction` feature enables it.
+# names no dependency. `qsl-replay` enables this feature through its own
+# `quire-extraction` feature.
 quire-extraction = [
     "dep:ix-trace-rs",
     "dep:qsl-foundation",

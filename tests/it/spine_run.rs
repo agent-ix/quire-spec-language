@@ -323,11 +323,10 @@ fn tc_450_step_3_unknown_edition_refuses_at_profile() {
 /// `invalid-request` at stage `request`, exit 20, empty stdout, whatever
 /// state its model files are in -- no model file is read. Each mutation
 /// alone still carries a `native-rule-model/1` model and a `call`, but those
-/// two later-order checks (FND-005) are exercised in isolation by
-/// `tc_450_step_4_native_model_refuses_alone`,
-/// `tc_450_step_4_no_call_refuses_alone` and (feature-gated)
-/// `tc_450_step_4_extraction_refuses_alone` below, since the base request
-/// here always carries a model that would refuse first.
+/// two later-order checks are exercised in isolation by
+/// `tc_450_step_4_native_model_refuses_alone` and
+/// `tc_450_step_4_no_call_refuses_alone` below, since the base request here
+/// always carries a model that would refuse first.
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
 fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
@@ -471,49 +470,6 @@ fn tc_450_step_4_no_call_refuses_alone() {
     assert_eq!(failure["stage"], "request", "{failure}");
     assert_eq!(
         failure["message"], "a 1-draft program runs through the spine; the request selects no call",
-        "{failure}"
-    );
-}
-
-/// FR-100-AC-3 (TC-450 step 4, FND-005): under the `quire-extraction`
-/// feature, a `1-draft` request whose `program` carries `extraction`, with
-/// every other named member absent and a valid `call` present, refuses
-/// `invalid-request` "... selects an extraction selection" at stage
-/// `request`, exit 20, empty stdout. FND-004 fixed the edition-read
-/// ordering that once made `CompleteRunSelection::Extraction` unreachable;
-/// this case shows the refusal fires now that nothing else pre-empts it.
-#[cfg(feature = "quire-extraction")]
-#[test]
-#[trace("TC-450", "FR-100-AC-3")]
-fn tc_450_step_4_extraction_refuses_alone() {
-    let program = std::fs::read(SEVEN_FIXTURE).unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("program.native"), &program).unwrap();
-    let job = json!({"format":"native-run/1","request":{
-        "models":[],
-        "program":{
-            "source":program_source(),
-            "extraction":{"body":{
-                "authority":"agent-ix","identity":"test:spine-run","revision_namespace":"fixture",
-                "revision":"fixture:1","document":"SpineRun","formal_revision":1,
-            }},
-        },
-        "call":call("seven", json!([])),
-    }});
-    std::fs::write(
-        directory.path().join("request.json"),
-        serde_json::to_vec(&job).unwrap(),
-    )
-    .unwrap();
-    let output = run(directory.path());
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(failure["code"], "invalid-request", "{failure}");
-    assert_eq!(failure["stage"], "request", "{failure}");
-    assert_eq!(
-        failure["message"],
-        "a 1-draft program runs through the spine; the request selects an extraction selection",
         "{failure}"
     );
 }

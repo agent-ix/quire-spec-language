@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-011 §2.1 I3 / FR-030-AC-2 to AC-5: pure extraction against the original document —
 //! preflight, fence location and exact byte-boundary verification. This adapter never
-//! reaches the native compiler. FR-030-AC-1 ("reaches mapped compilation") and every
-//! native-compile-failure case are tested at the SEAM-1 caller instead: see the
-//! `#[cfg(test)]` module in the root crate's `src/command/extraction.rs`.
+//! reaches the native compiler. FR-030-AC-1 ("reaches spine compilation") and the
+//! extracted-body run cases are tested by `qsl-replay` in
+//! `src/spine/clause/tests.rs`.
 
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Source, SourceIdentity, Span};
@@ -66,7 +66,14 @@ fn document(expression: &str, crlf: bool) -> Source {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-3", "FR-030-AC-4", "FR-011-AC-3")]
+#[trace(
+    "TC-108",
+    "FR-030-AC-3",
+    "FR-030-AC-4",
+    "FR-030-AC-2",
+    "FR-031-AC-2",
+    "FR-011-AC-3"
+)]
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let original = document("true", false);
     let ctx = context();
@@ -95,7 +102,7 @@ fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-4", "FR-030-AC-5")]
+#[trace("TC-108", "FR-030-AC-4", "FR-030-AC-5", "FR-030-AC-2")]
 fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
     let ctx = context();
     for crlf in [false, true] {

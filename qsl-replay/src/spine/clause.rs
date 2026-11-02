@@ -250,8 +250,7 @@ pub enum ClauseDisposition {
     Compile(Box<CompileRefusal>),
     /// Stage `compile`, category `refusal`, `unknown_language`: an I3
     /// extracted clause whose declared fence language is not `ix:native`
-    /// (the same refusal the root crate's `mapped::compile` gives). Nothing
-    /// is compiled.
+    /// Nothing is compiled.
     UnknownLanguage {
         /// The declared fence language.
         language: String,

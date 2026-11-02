@@ -39,10 +39,6 @@ default-run = "quire-spec"
 
 [features]
 default = []
-# ADR-011 §7.3 X-4: the I3 adapter crate `qsl-source` owns the
-# quire-rs dependency; this feature builds it with its own `quire-extraction`,
-# and turns on `qsl-replay`'s, so FR-109's `run_clause` accepts an I3 source.
-quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction", "qsl-replay/quire-extraction"]
 # `protocol_artifact::handoff::{write_v1, write_v2}`, the complete
 # compiled-protocol handoff producer a downstream crate calls in-process. It
 # embeds the authored `examples/protocol-handoff/` recipe inputs, so the
@@ -90,9 +86,6 @@ qsl-package = { path = "qsl-package" }
 qsl-replay = { path = "qsl-replay" }
 # The root package directly uses the admitted model projection API.
 quire-contract-model = { workspace = true }
-# ADR-011 §7.3 X-4: layer I3, extracted out of this crate. This
-# crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
-qsl-source = { path = "qsl-source", optional = true }
 logos = "0.16.1"
 num-bigint = "0.4.8"
 num-integer = "0.1.47"

@@ -61,9 +61,11 @@ It takes these inputs:
 
 The adapter checks source coordinates and exact bytes before it builds the
 source map, including the final LF that Quire omits on CRLF input. It does not
-compile. `mapped::compile` carries the verified map through
-parse, link, check and package, so diagnostics point into the original
-document. Input is bounded to 1 MiB and 4096 lines.
+compile. To run the verified body through the spine, pass the
+`ExtractedSource` as `qsl_replay::spine::ClauseRunSource::Extracted` and call
+`qsl_replay::spine::run_clause` with `qsl-replay/quire-extraction` enabled.
+The runner compiles the body under its own identity; the source map remains
+available on the `ExtractedSource`. Input is bounded to 1 MiB and 4096 lines.
 
 The tests in [`qsl-source/tests/it/quire_source.rs`](../qsl-source/tests/it/quire_source.rs)
 show how the context and the selection are built. Run them with:

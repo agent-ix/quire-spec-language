@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026: construct typed JSON views of native outcomes and actual provenance.
 
-#[cfg(feature = "quire-extraction")]
-mod extraction;
 mod types;
 
 use super::{LimitKind, RunCause, RunError, RunResult};
@@ -69,11 +67,6 @@ fn diagnostic_with_upstream<'a>(
 
 pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
-        #[cfg(feature = "quire-extraction")]
-        RunCause::Extraction(error) => {
-            let (stage, details) = extraction::failure(error);
-            (stage, types::Details::Extraction(details))
-        }
         RunCause::Io { path, error } => (
             types::Stage::File,
             types::Details::Io {
