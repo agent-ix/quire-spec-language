@@ -178,6 +178,7 @@ pub(super) fn run_temporal(
     }
     if let TraceInput::Timestamped(input) = trace {
         if input.positions.is_empty()
+            || input.uncertainty.checked_mul(2).is_none()
             || input
                 .positions
                 .windows(2)
@@ -288,13 +289,13 @@ pub(super) fn run_temporal(
                 .collect();
             match qsl_eval::temporal::TimedTrace::new(stamps) {
                 Ok(timed_trace) => {
-                    let margin = input.uncertainty.saturating_mul(2);
-                    let watermark = Rational::from_integer(Integer::from(
-                        input.watermark.saturating_sub(margin),
+                    let margin = Rational::from_integer(Integer::from(
+                        input.uncertainty.checked_mul(2).unwrap_or_default(),
                     ));
-                    let complete_through = input.complete_through.map(|through| {
-                        Rational::from_integer(Integer::from(through.saturating_sub(margin)))
-                    });
+                    let watermark = Rational::from_integer(Integer::from(input.watermark));
+                    let complete_through = input
+                        .complete_through
+                        .map(|through| Rational::from_integer(Integer::from(through)));
                     let observed = qsl_eval::temporal::evaluate_observed_finite_window(
                         run.package,
                         node,
@@ -303,6 +304,7 @@ pub(super) fn run_temporal(
                         &reference,
                         &watermark,
                         complete_through.as_ref(),
+                        &margin,
                         &mut meter,
                     );
                     observed
@@ -337,11 +339,67 @@ pub(super) fn run_temporal(
             RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
             other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
         },
-        (None, Ok(outcome)) => ClauseDisposition::Temporal(verdict(outcome)),
+        (None, Ok(outcome)) => {
+            let verdict = match trace {
+                TraceInput::Timestamped(input) => finite_window_verdict(outcome, input, clause),
+                TraceInput::Finite(_) | TraceInput::Lasso { .. } => verdict(outcome),
+            };
+            ClauseDisposition::Temporal(verdict)
+        }
         (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
         (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
     };
     report(disposition, ClauseRunUsage::from_meter(&meter, admitted))
+}
+
+fn finite_window_verdict(
+    outcome: TemporalOutcome,
+    input: &TimestampedTraceInput,
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+) -> TemporalVerdict {
+    let stamps = input
+        .positions
+        .iter()
+        .map(|position| Rational::from_integer(Integer::from(position.stamp)))
+        .collect();
+    let Ok(trace) = qsl_eval::temporal::TimedTrace::new(stamps) else {
+        return verdict(outcome);
+    };
+    let uncertainty = input.uncertainty.checked_mul(2).unwrap_or_default();
+    let margin = Rational::from_integer(Integer::from(uncertainty));
+    let deadline = qsl_eval::temporal::finite_window_deadline(
+        clause,
+        &trace,
+        qsl_eval::temporal::TemporalPosition::new(0),
+        &margin,
+    )
+    .ok()
+    .and_then(|value| value.numerator().to_u64())
+    .unwrap_or(u64::MAX);
+    match outcome {
+        TemporalOutcome::Pending if input.watermark >= deadline => {
+            if input
+                .complete_through
+                .is_none_or(|through| through < deadline)
+            {
+                TemporalVerdict::Indeterminate {
+                    at: 0,
+                    reason: TemporalIndeterminateReason::IncompleteInput,
+                }
+            } else {
+                TemporalVerdict::PendingWindow { at: 0, deadline }
+            }
+        }
+        TemporalOutcome::Pending => TemporalVerdict::PendingWindow { at: 0, deadline },
+        TemporalOutcome::Undefined(undefined) => TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: TemporalIndeterminateReason::MissingValuation {
+                position: undefined.at.index(),
+                atom: format!("holds-node@{}", undefined.at.index()),
+            },
+        },
+        other => verdict(other),
+    }
 }
 
 /// The spine's own form of the evaluator's outcome (FR-100-AC-8).

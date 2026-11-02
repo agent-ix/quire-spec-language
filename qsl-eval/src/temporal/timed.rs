@@ -633,6 +633,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
     position: TemporalPosition,
     watermark: &Rational,
     complete_through: Option<&Rational>,
+    uncertainty_margin: &Rational,
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
@@ -652,7 +653,7 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
         .filter(|at| *at < trace.stamps.len())
         .ok_or(PositionRefusal::OutsideTrace { position })?;
     let horizon = finite_future_reach(formula)?;
-    let deadline = trace.stamps[at].add(&horizon);
+    let deadline = trace.stamps[at].add(&horizon).add(uncertainty_margin);
     let closed_window =
         watermark >= &deadline && complete_through.is_some_and(|through| through >= &deadline);
     let mut evaluator = Evaluator {
@@ -673,6 +674,27 @@ pub fn evaluate_finite_window_at<L: TemporalLetters>(
         Err(Stop::Incomplete(incomplete)) => Ok(TemporalOutcome::Incomplete(incomplete)),
         Err(Stop::Refused(refusal)) => Err(refusal),
     }
+}
+
+/// The finite-window establishment deadline for one activation.
+pub fn finite_window_deadline(
+    clause: &CheckedTemporalClause,
+    trace: &TimedTrace,
+    position: TemporalPosition,
+    uncertainty_margin: &Rational,
+) -> Result<Rational, TemporalRefusal> {
+    if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
+        return Err(TemporalRefusal::NotTimedProfile {
+            profile: clause.profile(),
+        });
+    }
+    let at = usize::try_from(position.index())
+        .ok()
+        .filter(|at| *at < trace.stamps.len())
+        .ok_or(PositionRefusal::OutsideTrace { position })?;
+    Ok(trace.stamps[at]
+        .add(&finite_future_reach(clause.formula())?)
+        .add(uncertainty_margin))
 }
 
 /// The greatest future-operator upper-bound sum along any formula nesting

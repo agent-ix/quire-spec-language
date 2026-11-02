@@ -1190,13 +1190,27 @@ fn timestamped_windows_use_ticks_and_close_without_false_extension() {
 #[test]
 fn timestamped_windows_pending_and_decisive_witnesses() {
     let pending = report(timestamped(&[0, 1], &[0, 0], 1, Some(1)));
-    assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
+    assert_eq!(
+        outcome(&pending),
+        &TemporalVerdict::PendingWindow { at: 0, deadline: 5 }
+    );
+    assert_eq!(pending.category_label(), "pending");
 
     let settled = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
     assert_eq!(outcome(&settled), &TemporalVerdict::Violated { at: 0 });
 
     let witness = report(timestamped(&[0, 1], &[0, 1], 1, Some(1)));
     assert_eq!(outcome(&witness), &TemporalVerdict::Holds);
+
+    let incomplete = report(timestamped(&[0, 1], &[0, 0], 5, None));
+    assert_eq!(
+        outcome(&incomplete),
+        &TemporalVerdict::Indeterminate {
+            at: 0,
+            reason: crate::spine::TemporalIndeterminateReason::IncompleteInput,
+        }
+    );
+    assert_eq!(incomplete.category_label(), "indeterminate");
 }
 
 /// FR-337 and FR-330: an `on each ... when (g)` clause over a finite trace

@@ -363,6 +363,15 @@ impl ClauseDisposition {
             _ => None,
         }
     }
+
+    /// The category label for callers that need the complete QSL temporal
+    /// outcome set, including `pending` and `indeterminate`.
+    pub fn category_label(&self) -> &'static str {
+        match self {
+            Self::Temporal(outcome) => outcome.category_label(),
+            _ => self.category().as_str(),
+        }
+    }
 }
 
 /// The settlement of a temporal clause on one trace (FR-327 "Outputs"), as
@@ -391,6 +400,20 @@ pub enum TemporalVerdict {
     /// A finite prefix that neither shows a bad prefix nor can show more
     /// (FR-328): O-16 inconclusive.
     Pending,
+    /// A finite-window activation whose inclusive deadline is still ahead.
+    PendingWindow {
+        /// The activation position.
+        at: u64,
+        /// The first watermark tick that can establish the activation.
+        deadline: u64,
+    },
+    /// A closed finite window whose evidence leaves the truth unresolved.
+    Indeterminate {
+        /// The activation position.
+        at: u64,
+        /// The unresolved evidence reason.
+        reason: TemporalIndeterminateReason,
+    },
     /// The clause has a fairness set and the trace carries no enabledness
     /// to check it against (FR-328, FR-329): O-16 unsupported.
     MissingFairnessPremise {
@@ -422,11 +445,46 @@ impl TemporalVerdict {
                 ..
             } => Category::Undefined,
             Self::Violated { .. } | Self::Undefined { .. } => Category::Violation,
-            Self::Pending => Category::Inconclusive,
+            Self::Pending | Self::PendingWindow { .. } | Self::Indeterminate { .. } => {
+                Category::Inconclusive
+            }
             Self::MissingFairnessPremise { .. } => Category::Unsupported,
             Self::Incomplete(_) | Self::WindowLimitReached { .. } => Category::Incomplete,
         }
     }
+
+    /// Stable QSL category spelling, including temporal-only categories that
+    /// are not yet variants of the shared value catalog.
+    pub fn category_label(&self) -> &'static str {
+        match self {
+            Self::Holds => "success",
+            Self::Violated { .. } => "violation",
+            Self::Undefined {
+                cause: TemporalUndefinedCause::InsufficientData { .. },
+                ..
+            } => "undefined",
+            Self::Undefined { .. } => "violation",
+            Self::Pending | Self::PendingWindow { .. } => "pending",
+            Self::Indeterminate { .. } => "indeterminate",
+            Self::MissingFairnessPremise { .. } => "unsupported",
+            Self::Incomplete(_) | Self::WindowLimitReached { .. } => "incomplete",
+        }
+    }
+}
+
+/// Why closed finite-window evidence cannot determine a Boolean result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalIndeterminateReason {
+    /// A required atom valuation is absent.
+    MissingValuation { position: u64, atom: String },
+    /// Conflicting atom valuations were admitted at one position.
+    ConflictingValuation { position: u64, atom: String },
+    /// The completeness assertion does not cover the established window.
+    IncompleteInput,
+    /// A past operator reaches before a non-authoritative history cutoff.
+    MissingHistory,
+    /// A counter cover straddles an interval boundary.
+    StraddlesBound,
 }
 
 /// Why an atom has no value at a position (ADR-018 UE-2).
@@ -712,6 +770,14 @@ pub struct ClauseRunReport {
     /// Per-implication consequent observations from a completed native
     /// Boolean clause evaluation, in checked expression order.
     pub consequent_source_events: ConsequentSourceEvents,
+}
+
+impl ClauseRunReport {
+    /// Stable outcome category label. For temporal dispositions this returns
+    /// the full temporal category set, including `pending` and `indeterminate`.
+    pub fn category_label(&self) -> &'static str {
+        self.disposition.category_label()
+    }
 }
 
 /// FR-266: the basis of a report that derives no witness: `closed-scope`
