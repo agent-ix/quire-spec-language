@@ -56,3 +56,17 @@ Head 1da095f91, rebased on origin/main 347e9769e. Full `git diff origin/main...H
 ## Verdict (round 1)
 
 All six prior findings are fixed. One new low finding (FND-007). Builds and tests: qsl-eval (164 lib, 879 it), qsl-replay (919 lib, 195 it plus facade tests), qsl-semantics (749 passed) all green except the known check::lowering::model::tests::reference_types_key_over_their_model_nodes_and_record_the_correspondence, which also fails on clean main and is fixed by PR #2093. cargo fmt --check clean. No new allow attribute, no unwrap or expect on a production path (all in tests), no pins outside Cargo.lock; the Cargo.lock change moves only quire-checked and quire-eval to 7a4135ad and leaves contract-ir at main's commit. Mergeable.
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-007 | fixed | Head 42565f5e9 adds qsl-eval evaluate.rs test a_float_ordering_records_no_decision_but_an_authored_connective_does (TC-1091, FR-397-AC-12) and a cfg(test) Trail::decision accessor. The test evaluates the four orderings and an authored and over two orderings and asserts no synthesized connective records a decision while the authored one records exactly one. It passes on the branch and fails (panic at evaluate.rs:5476) when the Task::Short guard is replaced by an always-true condition; tree restored afterwards. |
+
+## Residual risk and gap (round 2)
+
+The guard still tells synthesized from authored connectives by location: a connective whose left operand sits at its own location. Authored connectives have child locations distinct from their parent's, so none shares its left operand's location today; no test covers a checker rewrite that would give an authored connective's left operand the parent's location. The synthesized connective is an ordinary NodeKind::Connective of the external quire-checked IR with no marker field, so an explicit marker needs an IR change: a gap for luna:IR:plan, not a defect of this PR (no shim hides it).
+
+## Verdict (round 2)
+
+All seven findings are fixed. Mergeable. The three qsl-semantics it failures the coder reports are failures on clean origin/main and outside this diff.
