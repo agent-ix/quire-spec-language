@@ -18,7 +18,7 @@ the V2 reader admits the emitted packages, and that every float source form
 (bit constructors, arithmetic, comparison operators, the reserved intrinsic
 calls and the conversions into and out of a float) checks, lowers and evaluates
 as FR-397 states, with the ill-formed inputs refused. Scope: FR-397-AC-1 to
-FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-24, FR-091-AC-48 and FR-091-AC-49
+FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-26, FR-091-AC-48 and FR-091-AC-49
 (FR-397-AC-9 is TC-917's).
 
 ## Test Procedure
@@ -63,6 +63,14 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-24, FR-091-AC-48 and FR-091-AC-49
 19. Compile and run the TC-193 source forms of FR-397-AC-24 (F01, F02,
     F02b, F04b, F05, F11, F20 and F34) through the run entry and the check
     entry.
+20. Check the intrinsic calls of FR-397-AC-25 in a unit with no float
+    parameter, then in the same unit with one `Float64[nearest-even]`
+    parameter added; check `sqrt()` and `bitIdentical()` in both.
+21. Run the four ordering comparisons of FR-397-AC-26 over `sqrt(p)` and
+    `sqrt(q)` and over `p` and `q` with an unlimited meter, read each spend and
+    the spend of `sqrt(p)`, `sqrt(q)`, `p` and `q` alone, check the equality of
+    FR-397-AC-26, then run each sqrt body under a work limit equal to and one
+    below its spend; repeat with a NaN operand.
 
 ## Expected Results
 
@@ -115,3 +123,11 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-24, FR-091-AC-48 and FR-091-AC-49
 19. Every listed bit pattern, flag and Boolean is produced; the F20 forms
     refuse `ill_typed`/`type-mismatch` at check with no charge; F34 equals
     step 9.
+20. With no float form every listed call refuses `invalid_package`/
+    `IeeeProfileNotAdmitted`; with one, `sqrt(i)` and `sqrt(i, i)` refuse
+    `ill_typed`/`type-mismatch`; `sqrt()` refuses `invalid_syntax`/
+    `unexpected-token` at `)` in both.
+21. The spend equals the parameter comparison's spend plus each operand's extra
+    spend once; at the limit each completes, one below it each is `incomplete`;
+    a double evaluation of an operand fails the equality and the limit; a NaN
+    operand gives false with at most one `compare_ieee` charge.
