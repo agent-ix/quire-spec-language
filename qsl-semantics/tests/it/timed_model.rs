@@ -741,7 +741,7 @@ pub(super) fn shown(node: CheckedNode<'_>) -> String {
     let child = |index: usize| children.get(index).copied().map_or_else(String::new, shown);
     match node.kind() {
         NodeKind::Not(_) => format!("not {}", child(0)),
-        NodeKind::Connective(connective, _, ..) => {
+        NodeKind::Connective(connective, ..) => {
             format!("({} {connective:?} {})", child(0), child(1))
         }
         NodeKind::Order(operator, ..) => format!("({} {operator:?} {})", child(0), child(1)),
