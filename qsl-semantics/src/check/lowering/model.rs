@@ -2040,14 +2040,15 @@ impl<'a> Lowering<'a> {
     /// operation whose effect is projected. The checked graph must retain
     /// the complete declaration view independently of both authored clauses
     /// and whether the optional sidecar can be formed; this also keeps graph
-    /// identities stable when FR-496's carrier is absent.
+    /// identities stable when FR-496's carrier is absent. A model admitted
+    /// without a `model` alias (a dispatch bridge's view) projects rows too
+    /// (QSpec FR-322-AC-303), so its declaring nodes are retained as well,
+    /// located under its selected document identity.
     pub(crate) fn operation_effect_nodes(&mut self) -> Result<(), CheckRefusal> {
         let mut declarations = BTreeMap::new();
         for model in self.models {
-            let Some(alias) = model.alias() else {
-                continue;
-            };
-            let location = type_declaration(alias);
+            let location =
+                type_declaration(model.alias().unwrap_or_else(|| model.selected_document()));
             let has_projected_operations = model.operation_effect_inputs().next().is_some();
             if has_projected_operations {
                 declarations.extend(
