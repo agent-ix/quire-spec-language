@@ -22,17 +22,21 @@ left untagged.
 2. After QSL-841, compile a downstream crate naming `DeclarationKind::Protocol`,
    `Family::Protocol` and `RegisteredDefinition::Protocol`; compile a `protocol`
    unit with unsupported content through the spine.
-3. After QSL-838 and QSL-858, search `src` for `crate::temporal`,
-   `crate::state`, `protocol_artifact::wire` and `ProtocolNumber`; run the
-   `Lasso::Model` cases of FR-329.
+3. After QSL-838 and QSL-858 land together, search `src` for `crate::temporal`,
+   `protocol_artifact::wire` and `ProtocolNumber`; run the `Lasso::Model` cases
+   of FR-329.
 4. After QSL-499, confirm `src/native_model` is absent and run TC-469.
-5. After QSL-830 and QSL-868, run TC-1027 steps 2 and 3 and parse a profile line
-   carrying a version and a digest with every parser.
+5. After QSL-830 and QSL-868, run TC-1027 steps 2 and 3, parse a profile line
+   carrying a version and a digest with every parser, and run `quire-spec parse`
+   with each flag and exit 20, 21, 22 and 30.
+6. Confirm the handoff writer, its feature, examples and snapshots exist until
+   QSL-1501 is closed.
 
 ## Expected Results
 
-- Step 1: no row is a GAP and every successor passes.
+- Step 1: every row is COVERED with a passing tagged test, a closed PORT, or a KEPT file.
 - Step 2: the imports fail; the unit refuses `unsupported_construct`.
 - Step 3: no import remains and the model lasso passes.
 - Step 4: the path is absent and TC-469 passes.
-- Step 5: no parser admits the profile line.
+- Step 5: no parser admits the profile line and the CLI behaves as before.
+- Step 6: all present before QSL-1501 closes.

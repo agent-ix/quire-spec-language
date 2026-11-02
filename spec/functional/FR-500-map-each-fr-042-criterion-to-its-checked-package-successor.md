@@ -18,62 +18,63 @@ relationships:
 
 ## Description
 
-[FR-042](FR-042-publish-compiled-protocol-artifacts.md) criteria AC-1 to AC-15
-are retired as historical, and the legacy emitter, reader and handoff tests
+[FR-042](FR-042-publish-compiled-protocol-artifacts.md) AC-1 to AC-15 are marked
+retired as historical, and the legacy emitter, reader and handoff tests
 (`native_*_emission`, `domain_protocol_emission`, `native_numeric_domain_emission`,
 `handoff_writer`, `compiled_protocol_v2`) are tagged to them. No successor test
-is tagged to any FR-042 criterion: the `qsl-package` and `qsl-eval` protocol
-tests are tagged FR-383, FR-390, TC-142 and TC-1061 to TC-1063. This requirement
-publishes the mapping from each FR-042 criterion to its successor criterion and
-test, names every GAP, and stages the deletion of each legacy file by the ticket
-whose closure unblocks it. A GAP is a spec or test ticket, never a deletion.
+carries an FR-042 tag; the `qsl-package` and `qsl-eval` protocol tests are tagged
+FR-383, FR-390, TC-142 and TC-1061 to TC-1063. This requirement maps each
+criterion to its successor criterion and test, says where a criterion has no
+tagged test, and stages each legacy file. A gap is a ticket, never a deletion.
+Locations are the `#[trace(...)]` attribute lines on current main and are
+re-verified by TC-1294.
 
-## Behavior
+Successor criteria with **no tagged test** on main: FR-383-AC-11, AC-15, AC-16,
+AC-18, AC-21, AC-22, AC-23; FR-390-AC-13, AC-15, AC-16, AC-18 to AC-22, AC-24
+to AC-27; all of FR-384. A row that depends on one of these is PARTIAL (QSL-1510).
 
-QSL SHALL delete a legacy protocol-artifact test file only when each criterion
-it backs, in the table below, has a successor row with no GAP, and the file's
-staging gate has closed. Successor locations are `file:line` of the tag on
-current main.
+## FR-042 criterion to successor
 
-### FR-042 criterion to successor
+Paths are under `qsl-package/src/emit/tests/` (QP) and
+`qsl-eval/tests/it/protocol_slots` (EV).
 
-| FR-042-AC | Successor criteria | Successor tests | Status |
-| --- | --- | --- | --- |
-| AC-1 selections, inventory, artifact identity | FR-383-AC-1, AC-2, AC-14, AC-15 | `qsl-package/src/emit/tests/owner_model.rs:114`, `protocol_requirements.rs:64`, `protocol_controls.rs:494` | partial; GAP-1: registered media/schema/encoding selections have no protocol-level criterion beyond the checked-package envelope (FR-264) |
-| AC-2 canonical bytes, order, numbers | FR-383-AC-12, AC-15; FR-497, FR-322 numeric lowering | `protocol_graph.rs:439`, `protocol_controls.rs:966` | partial; GAP-2: signed-64 extrema and normalized rationals in protocol value fields have no protocol-tagged test |
-| AC-3 one-axis selection sensitivity | FR-383-AC-14, AC-15 | `owner_model.rs:213`, `protocol_controls.rs:494` | partial; GAP-3: producer revision, accepted baseline and wire-selection axes have no v2 analogue; owner to confirm v2 content identity covers them |
-| AC-4 typed values, owners, query forms, wrong-type refusal | FR-383-AC-11, AC-17; FR-390-AC-6, AC-17, AC-18, AC-23 | `protocol_requirements.rs:625`, `protocol_requirements.rs:680`, `qsl-eval/tests/it/protocol_slots/acceptance.rs:900`, `owner_model.rs:165` | covered; FR-383-AC-11 has no tag |
-| AC-5 control topology, choice partition, bounded progress | FR-383-AC-6, AC-7; FR-218 (AC-30 proof budget); TC-1172 | `protocol_controls.rs:1088`, `protocol_controls.rs:375`, `protocol_controls.rs:692` | covered structurally; GAP-5: byte and read-back equivalence for received, own-attempt, domain-event choices has no per-test replacement |
-| AC-6 binding subjects, 1/2/1 delivery counts, repeat attempts, compensation registration | FR-383-AC-8, AC-9, AC-16; FR-384; FR-381; FR-390-AC-1, AC-2 | `protocol_compensation.rs:145`, `protocol_controls.rs:453`, `protocol_controls.rs:875`, `qsl-eval/tests/it/protocol_slots.rs:530` | open: FR-390 ACs under QSL-852; delivery counts are consumer binding (FR-383-AC-16, FR-384) |
-| AC-7 public reader, canonical bytes, mutation refusal | FR-383-AC-19, AC-20, AC-21 | `qsl-package/src/checked_v2/tests/protocol_corpus.rs:8`, `protocol_controls.rs:238`, `protocol_compensation.rs:91` | covered for the I2 reader; the legacy reader goes with B9 (QSL-838) |
-| AC-8 partial, unsupported, incomplete retain independent results | FR-383-AC-18, AC-27 | `owner_model.rs:342` | GAP-8: the spine refuses the whole unit on one S3 refusal (FR-383-AC-18); retaining an admitted subject beside an unsupported projection has no successor. Owner ruling needed |
-| AC-9 work-limit vectors | FR-383-AC-21, AC-25; FR-390-AC-9, AC-10; FR-218-AC-30 | `large_cycle.rs:7`, `qsl-eval/tests/it/protocol_slots.rs:711`, `acceptance.rs:1307` | partial; GAP-9: emit-side source, dependency, table, reference and canonical-output dimensions have no per-dimension zero/exact/one-short test |
-| AC-10 handoff consumed by quire-protocol | FR-383-AC-19; QSL-839 consumer repoint | none in this repository | GAP-10: no test proves the quire-protocol consumer reads the checked package (IT-001) |
-| AC-11 domain-package identity round trip | FR-056-AC-9; FR-383-AC-23, AC-26 | `owner_model.rs:119`, `owner_model.rs:209` | covered |
-| AC-12 explicit null domain package | FR-383-AC-23 (no `model` dependency, empty replication) | `owner_model.rs:119` | covered structurally; the nullable wire member retires with the wire |
-| AC-13 population and closure pairs, domain operation export | FR-380; FR-383-AC-4 | `qsl-package/src/protocol_activation.rs:14`, `protocol_graph.rs:178` | partial; GAP-13: no test reads back one pair per covering declaration |
-| AC-14 domain parameters and `result` binders | FR-383-AC-10; FR-390-AC-1, AC-23 | `protocol_controls.rs:453`, `acceptance.rs:380` | covered |
-| AC-15 `write_v1`/`write_v2` handoff directory | none: the checked package is the handoff | none | GAP-15: owner to confirm the checked-package v2 read by I2 replaces the directory and `expected.json` |
-
-### Deletion staging per legacy file
-
-| Legacy file or group | Deleted when | Blocker tickets |
+| FR-042-AC | Successor and tagged test | Disposition |
 | --- | --- | --- |
-| `native_compensation_emission.rs`, `native_refund_emission.rs`, `native_payment_retry_emission.rs`, `native_split_shipment_emission.rs` (AC-6) | FR-390-AC-1, AC-2, AC-9, AC-10 green; the timed `/2` test stays until QSL-1414 closes | QSL-852, QSL-1414 |
-| `native_choice_*`, `native_query_*`, `native_population_*`, `native_mixed_*`, `native_composite_*`, `native_domain_event_*`, `native_owned_attempt_progress_*` emission tests (AC-4, AC-5, AC-7, AC-9) | each test has a named equivalent that asserts bytes and read-back | spec and test ticket for GAP-5, GAP-9 |
-| `native_numeric_domain_emission.rs`, `domain_protocol_emission.rs` (AC-2, AC-11 to AC-14) | GAP-2 and GAP-13 closed | spec and test ticket |
-| `native/temporal_v2.rs`, `temporal_v3.rs`, `compiled_protocol_v2.rs` temporal half, `checked_temporal*` successors | FR-050 on the spine | QSL-1384, QSL-1446, QSL-1414 |
-| `handoff/writer.rs`, `handoff.rs`, the two examples, `examples/protocol-handoff`, committed snapshots, `tests/it/handoff_writer.rs` (AC-10, AC-15) | GAP-10 and GAP-15 closed | consumer repoint under QSL-839; spec ruling |
-| `native/mod.rs`, `controls.rs`, `channels.rs`, `families*`, `populations.rs`, `values.rs`, `types.rs`, `layout.rs`, `context.rs`, `metadata.rs`, `runtime*` | every group above deleted | all of the above |
-| B9 readers and `tests/it/protocol_artifact.rs` | QSL-838 | out of QSL-840 |
+| AC-1 selections, inventory, identity reference | FR-383-AC-1 (`QP/owner_model.rs:119`), AC-2 (`QP/protocol_requirements.rs:161`), AC-14 (`QP/protocol_controls.rs:496`, `owner_model.rs:213`) | PARTIAL: registered media/schema/encoding selections and complete original inventory have no protocol-level criterion beyond FR-264; QSL-1506 |
+| AC-2 canonical bytes, number vectors | FR-383-AC-12 (`QP/protocol_controls.rs:966`, `qsl-eval/tests/it/footprints.rs:1277`); `QP/protocol_graph.rs:439` is TC-1062 only and carries no FR-383-AC-12 or AC-15; AC-15 has no tagged test | PARTIAL: signed-64 extrema and normalized rationals in value fields and the FR-038 codec are PORT QSL-1506 |
+| AC-3 one-axis selection sensitivity | FR-383-AC-14 (`QP/protocol_controls.rs:496`) | PARTIAL: producer revision, baseline, wire-selection and dependency axes have no v2 analogue; the 25 legacy per-axis tests have no successor; PORT QSL-1506 |
+| AC-4 typed values, owners, query forms, wrong-type refusal | FR-383-AC-17 (`QP/protocol_requirements.rs:625,680`: missing-name refusal, not wrong-type); FR-390-AC-6 (`EV/acceptance.rs:900,2094`), AC-17 (`QP/owner_model.rs:165`), AC-23 (`EV/acceptance.rs:380`); FR-383-AC-11 untagged; FR-390-AC-18 untagged | PARTIAL |
+| AC-5 control topology, choice partition, bounded progress | FR-383-AC-6 (no tag at the cited site), AC-7 (`QP/protocol_controls.rs:375,692`); FR-218-AC-34 (`QP/protocol_controls.rs:1091`); TC-1172 | PARTIAL: structural only; byte and read-back equivalence for received, own-attempt and domain-event choices has no successor; QSL-1510 |
+| AC-6 binding subjects, 1/2/1 counts, repeat attempts, compensation | FR-383-AC-8 (`QP/protocol_compensation.rs:145`), AC-9 (`QP/protocol_controls.rs:453,875`), AC-16 untagged; FR-384 untagged and unimplemented; FR-390-AC-1 (`EV/acceptance.rs:1067,1133,1682`), AC-2 (`EV/protocol_slots.rs:530`) | PARTIAL: occurrence schema and delivery counts are PORT QSL-1506; FR-390 under QSL-852 |
+| AC-7 reader verifies canonical bytes, mutation refusal | FR-383-AC-19 and AC-20 (`QP/protocol_compensation.rs:91`, `QP/protocol_controls.rs:521,543,573`, `qsl-package/src/checked_v2/tests/protocol_corpus.rs:8`); AC-21 untagged | PARTIAL for the new wire; legacy `/1` reader KEEP until QSL-1501 |
+| AC-8 partial, unsupported, incomplete keep independent results | FR-042-AC-8 is retired as historical; per-protocol independence is kept by FR-383-AC-18, AC-28, AC-29 and TC-1297 (spec PR #2131); the unsupported owner case is FR-383-AC-27 (`QP/owner_model.rs:342`) | PARTIAL until #2131 merges and its tests are tagged |
+| AC-9 work-limit vectors per dimension | FR-383-AC-24 (`QP/protocol_recursion.rs:237`), AC-25 (`QP/large_cycle.rs:7`, `protocol_recursion.rs:395`); FR-390-AC-9 (`EV/protocol_slots.rs:711`, `EV/acceptance.rs:1307,1448`), AC-10 (`EV/acceptance.rs:1495`); AC-21 untagged | PARTIAL: emit-side source, dependency, table, reference and canonical-output dimensions have no per-dimension zero/exact/one-short test; QSL-1510 |
+| AC-10 handoff consumed by quire-protocol (IT-001) | none: quire-protocol runs the writer in process and never reads a checked package | KEEP until QSL-1501 |
+| AC-11 domain-package identity round trip | FR-056-AC-9; FR-383-AC-26 (`QP/owner_model.rs:213,233,381`); AC-23 untagged | PARTIAL |
+| AC-12 explicit null domain package | FR-383-AC-23 untagged; `owner_model.rs:119` is tagged AC-1 and AC-26 | PARTIAL: QSL-1510 |
+| AC-13 population and closure pairs, operation export, `Unsupported::Export` | FR-380; `qsl-package/src/protocol_activation.rs:14` is source with no tests; `QP/protocol_graph.rs:178` tests channel premises | PORT: pair read-back has no test (QSL-1510) |
+| AC-14 domain parameter and `result` binders | FR-383-AC-10 (`QP/protocol_controls.rs:457`), FR-390-AC-1, AC-23 | PARTIAL |
+| AC-15 `write_v1`, `write_v2` handoff directory | none | KEEP until QSL-1501 |
+
+## Deletion staging per legacy file
+
+| Legacy file or group | Deleted when | Owner |
+| --- | --- | --- |
+| `native_compensation_emission.rs`, `native_refund_emission.rs`, `native_payment_retry_emission.rs`, `native_split_shipment_emission.rs` | FR-390-AC-1, AC-2, AC-9, AC-10 green and QSL-1414 closed; the timed `/2` test stays until then | QSL-840 |
+| `native_choice_*`, `native_query_*`, `native_population_*`, `native_mixed_*`, `native_composite_*`, `native_domain_event_*`, `native_owned_attempt_progress_*` | each has a named byte and read-back equivalent | QSL-840 after QSL-1510 |
+| `native_numeric_domain_emission.rs`, `domain_protocol_emission.rs` | AC-2, AC-13 rows COVERED | QSL-840 after QSL-1506, QSL-1510 |
+| `native/temporal_v2.rs`, `temporal_v3.rs`, `compiled_protocol_v2.rs` temporal half, `checked_temporal_limits_v2.rs` (mounted at `compiled_protocol_v2.rs:1235-1236`) | FR-050 on the spine and a producer replaces `with_v2_inputs` | QSL-840 with QSL-858 |
+| `handoff/writer.rs`, `handoff.rs`, both examples, `examples/protocol-handoff`, snapshots, `tests/it/handoff_writer.rs`, feature `handoff-writer` | QSL-1501 closed; replaced by a checked-package writer | QSL-840 |
+| `native/*` emitters (`mod, controls, channels, families*, populations, values, types, layout, context, metadata, runtime*`) | all groups above | QSL-840 |
+| `decode, domain, encoding, intake, models, number, occurrence, recovery, validate, value_graph, wire, work, v2/*, v3/*` and `tests/it/protocol_artifact.rs` | FR-499 QSL-838 table | QSL-838 with QSL-858 |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-500-AC-1 | Each FR-042 criterion AC-1 to AC-15 appears in the map with a successor row or a named GAP. | Inspection (TC-1294) |
-| FR-500-AC-2 | Every successor test named in the map exists at the stated `file:line` and carries the successor criterion tag. | Test (TC-1294) |
-| FR-500-AC-3 | No legacy file in the staging table is deleted while a GAP its criteria name is open. | Test (TC-1294) |
+| FR-500-AC-1 | Each of FR-042-AC-1 to AC-15 has a row with a successor test at a stated location or a named PARTIAL, PORT or KEEP disposition. | Inspection (TC-1294) |
+| FR-500-AC-2 | Every successor location stated names a `#[trace(...)]` attribute that carries the stated criterion on the head of the change. | Test (TC-1294) |
+| FR-500-AC-3 | No legacy file in the staging table is deleted while its owner's gate is open. | Test (TC-1294) |
 
 ## Dependencies
 
