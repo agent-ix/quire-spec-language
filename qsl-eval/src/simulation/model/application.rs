@@ -442,7 +442,6 @@ impl Observed<'_> {
     pub(crate) fn state(&self) -> &ModelSimState {
         &self.state
     }
-
 }
 
 /// What one attempt's application of an observed state came to, beside the

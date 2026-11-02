@@ -199,8 +199,12 @@ opt-level = 3
 # Protocol exploration (QSL-1438: the LT-16 litmus test) spends its time in
 # the evaluator crates and in the generic collection code they share with
 # their dependencies, which a debug build otherwise runs unoptimized. Every
-# dependency, and the three crates exploration runs through, compile at
-# opt-level 1; the explicit levels above still apply.
+# dependency, qsl-foundation and qsl-semantics compile at opt-level 1; the
+# explicit levels above still apply. qsl-eval, and qsl-analyze, where the
+# explorer and the protocol system are instantiated for each memory model,
+# compile at opt-level 3: a crate below opt-level 2 reuses the unoptimized
+# generic instances (hashing, collection moves) of the opt-level 0 workspace
+# crates it depends on. Debug assertions stay on.
 [profile.dev.package."*"]
 opt-level = 1
 [profile.dev.package.qsl-foundation]
@@ -208,4 +212,6 @@ opt-level = 1
 [profile.dev.package.qsl-semantics]
 opt-level = 1
 [profile.dev.package.qsl-eval]
-opt-level = 1
+opt-level = 3
+[profile.dev.package.qsl-analyze]
+opt-level = 3
