@@ -78,26 +78,6 @@ impl BoolExpr {
             ),
         }
     }
-
-    /// The expression over the atom bit mask named `mask`.
-    fn render(&self, mask: &str, bits: &[usize]) -> String {
-        match self {
-            Self::Const(value) => value.to_string(),
-            Self::Atom(index) => {
-                let _ = bits;
-                format!("{mask}.a{index}")
-            }
-            Self::Node => "false".to_owned(),
-            Self::Not(inner) => format!("(not {})", inner.render(mask, bits)),
-            Self::And(a, b) => format!("({} and {})", a.render(mask, bits), b.render(mask, bits)),
-            Self::Or(a, b) => format!("({} or {})", a.render(mask, bits), b.render(mask, bits)),
-            Self::Implies(a, b) => format!(
-                "((not {}) or {})",
-                a.render(mask, bits),
-                b.render(mask, bits)
-            ),
-        }
-    }
 }
 
 /// The integer thresholds that decide a pair of ticks against an interval
@@ -880,7 +860,6 @@ pub fn render(spec: &EntrySpec) -> String {
     let node = &spec.node;
     let cap = node.capacity.max(1);
     let t = node.thresholds;
-    let bits = spec.atoms.clone();
     let mut out = String::new();
     let w = &mut out;
     let _ = writeln!(
@@ -1203,18 +1182,4 @@ pub fn render(spec: &EntrySpec) -> String {
         on_gap_body = on_gap_body(spec),
     );
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_atom_bit_mask_follows_input_order() {
-        let expr = BoolExpr::And(
-            Box::new(BoolExpr::Atom(7)),
-            Box::new(BoolExpr::Not(Box::new(BoolExpr::Atom(3)))),
-        );
-        assert_eq!(expr.render("m", &[3, 7]), "(m.a7 and (not m.a3))");
-    }
 }
