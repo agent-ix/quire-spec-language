@@ -1470,8 +1470,11 @@ fn temporal(g: &mut Grammar) {
             x("when"),
             r(P::Block),
             x("{"),
-            r(P::ClockBound),
-            star(s(vec![x("and"), r(P::ClockBound)])),
+            c(vec![r(P::ClockBound), r(P::QuantifiedClockBound)]),
+            star(s(vec![
+                x("and"),
+                c(vec![r(P::ClockBound), r(P::QuantifiedClockBound)]),
+            ])),
             x("}"),
         ]),
     );
@@ -1481,6 +1484,21 @@ fn temporal(g: &mut Grammar) {
             r(P::Postfix),
             c(vec![x("<"), x("<=")]),
             r(P::QuantityLiteral),
+        ]),
+    );
+    g.insert(
+        P::QuantifiedClockBound,
+        s(vec![
+            c(vec![x("forall"), x("exists")]),
+            x("("),
+            ident(),
+            x("in"),
+            r(P::Expression),
+            x(":"),
+            r(P::Postfix),
+            c(vec![x("<"), x("<=")]),
+            r(P::QuantityLiteral),
+            x(")"),
         ]),
     );
     g.insert(

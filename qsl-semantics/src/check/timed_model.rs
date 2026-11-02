@@ -732,6 +732,7 @@ pub struct TimeInvariant {
     context: EffectiveId,
     alternatives: Vec<StateAlternative>,
     bounds: Vec<ClockConstraint>,
+    binders: Vec<ElementBinding>,
     /// The declaration's span: the `time invariant` declaration, or the
     /// time declaration for a bound of a `max` constraint on clocks.
     span: Span,
@@ -869,6 +870,11 @@ impl TimeInvariant {
     /// The upper bounds, each `<` or `<=`, in declared order.
     pub fn bounds(&self) -> &[ClockConstraint] {
         &self.bounds
+    }
+
+    /// The quantified slot parameters whose live places are bounded.
+    pub fn binders(&self) -> &[ElementBinding] {
+        &self.binders
     }
 
     /// The declaration's span.
@@ -1201,6 +1207,8 @@ impl std::fmt::Debug for ResetTargetNodes {
 pub struct InvariantNodes {
     /// The Boolean `expression` node where the bounds hold.
     pub predicate: NodeKey,
+    /// The typed slot parameters that scope this invariant, in path order.
+    pub binders: Vec<NodeKey>,
     /// The upper bounds, in declared order.
     pub bounds: Vec<ConstraintNodes>,
     /// The declaration's span.
@@ -1211,11 +1219,13 @@ impl DebugWith for InvariantNodes {
     fn fmt_with(&self, f: &mut std::fmt::Formatter<'_>, table: &DebugTable) -> std::fmt::Result {
         let Self {
             predicate,
+            binders,
             bounds,
             span,
         } = self;
         f.debug_struct("InvariantNodes")
             .field("predicate", &NodeKeyDebug(predicate, table))
+            .field("binders", &NodeList(binders.iter(), table))
             .field("bounds", &bounds)
             .field("span", &span)
             .finish()
@@ -1474,12 +1484,13 @@ impl TimedModel {
             }
         }
         for invariant in &self.invariants {
-            if let Some(member) = invariant
-                .bounds
-                .iter()
-                .find_map(|bound| self.unwritten_constraint(bound))
-            {
-                return Some((Unwritten(member), invariant.span));
+            if invariant.bounds.iter().any(|bound| {
+                self.unwritten_constraint(bound).is_some()
+                    && !bound
+                        .binding()
+                        .is_some_and(|binding| invariant.binders.contains(binding))
+            }) {
+                return Some((Unwritten(Member::QuantifiedClause), invariant.span));
             }
             if invariant
                 .alternatives
@@ -1626,6 +1637,7 @@ struct InvariantDraft {
     name: String,
     alternatives: Vec<AlternativeDraft>,
     bounds: Vec<ClockConstraint>,
+    binders: Vec<ElementBinding>,
     span: Span,
     from_bound: bool,
 }
@@ -3866,22 +3878,35 @@ fn time_invariant(
     population: Option<PopulationDomain>,
     budget: &mut PartBudget,
 ) -> Result<InvariantDraft, CheckCause> {
+    let has_ordinary_bound = form
+        .bounds
+        .iter()
+        .any(|bound| matches!(bound, qsl_forms::TimeInvariantBoundForm::Clock(_)));
+    let has_quantified_bound = form
+        .bounds
+        .iter()
+        .any(|bound| matches!(bound, qsl_forms::TimeInvariantBoundForm::Quantified(_)));
+    if has_ordinary_bound && has_quantified_bound {
+        return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+    }
     let alternatives = state_alternatives(&form.guard, clocks, context, population, budget)?;
-    let bounds =
-        form.bounds
-            .iter()
-            .map(|bound| {
+    let mut bounds = Vec::with_capacity(form.bounds.len());
+    let mut binders = Vec::new();
+    for form_bound in &form.bounds {
+        match form_bound {
+            qsl_forms::TimeInvariantBoundForm::Clock(bound) => {
                 let root = bound.clock.expression.root_id();
-                let clock = clocks.read(&bound.clock, root, context).ok_or(
-                    TemporalCause::UnknownClock {
+                let clock = clocks
+                    .read(&bound.clock, root, context)
+                    .ok_or(TemporalCause::UnknownClock {
                         span: bound
                             .clock
                             .spans
                             .span(bound.clock.spans.root())
                             .unwrap_or(bound.span),
-                    },
-                )?;
-                Ok(ClockConstraint {
+                    })
+                    .map_err(timed)?;
+                bounds.push(ClockConstraint {
                     parameter: None,
                     clock,
                     via: Vec::new(),
@@ -3892,12 +3917,22 @@ fn time_invariant(
                     } else {
                         ClockOp::LessOrEqual
                     },
-                    bound: clocks.quantity(&bound.bound)?,
+                    bound: clocks.quantity(&bound.bound).map_err(timed)?,
                     span: bound.span,
-                })
-            })
-            .collect::<Result<Vec<_>, TemporalCause>>()
-            .map_err(timed)?;
+                });
+            }
+            qsl_forms::TimeInvariantBoundForm::Quantified(bound) => {
+                if bound.quantifier == qsl_forms::QuantifierKind::Exists {
+                    return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+                }
+                let (binding, constraint) = quantified::invariant_bound(bound, clocks, context)?;
+                if !binders.contains(&binding) {
+                    binders.push(binding);
+                }
+                bounds.push(constraint);
+            }
+        }
+    }
     // FR-230 "Guarded places": `when P { value(p) <= c }` bounds `p` where
     // `P` establishes `present(p)`.
     if let Some(unproved) = bounds.iter().find(|bound| {
@@ -3917,6 +3952,7 @@ fn time_invariant(
         name: form.name.name.clone(),
         alternatives,
         bounds,
+        binders,
         span: form.span,
         from_bound: false,
     })
@@ -4070,6 +4106,7 @@ fn clock_bounds(
                     },
                 }],
                 bounds,
+                binders: Vec::new(),
                 span,
                 from_bound: true,
             });
@@ -4780,6 +4817,7 @@ pub(crate) fn check(
                 context,
                 alternatives,
                 bounds: invariant.bounds,
+                binders: invariant.binders,
                 span: invariant.span,
                 from_bound: invariant.from_bound,
             });

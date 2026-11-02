@@ -4418,7 +4418,36 @@ pub struct ClockBoundForm {
     pub span: Span,
 }
 
-/// `time invariant Name when { P } { bound (and bound)* }` (FR-393).
+/// One quantified upper clock bound in a time invariant (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuantifiedClockBoundForm {
+    /// Universal or existential; S3 decides whether the source is admitted.
+    pub quantifier: super::hyper_clause::QuantifierKind,
+    /// The source element binder.
+    pub binder: DeclaredName,
+    /// The collection expression.
+    pub collection: ExpressionForm,
+    /// The bound element's clock expression.
+    pub clock: ExpressionForm,
+    /// `<` (true) or `<=` (false).
+    pub strict: bool,
+    /// The exact time quantity.
+    pub bound: QuantityForm,
+    /// The source span of this bound.
+    pub span: Span,
+}
+
+/// One time invariant bound, preserving source order (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimeInvariantBoundForm {
+    /// An ordinary clock bound.
+    Clock(ClockBoundForm),
+    /// A quantified clock bound.
+    Quantified(QuantifiedClockBoundForm),
+}
+
+/// `time invariant Name when { P } { bound (and bound)* }`, each bound
+/// ordinary or quantified (FR-393).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeInvariantForm {
     /// The declared name.
@@ -4426,7 +4455,7 @@ pub struct TimeInvariantForm {
     /// The `when` block's expression.
     pub guard: ExpressionForm,
     /// The clock bounds, in declared order.
-    pub bounds: Vec<ClockBoundForm>,
+    pub bounds: Vec<TimeInvariantBoundForm>,
     /// The span of the whole declaration.
     pub span: Span,
 }

@@ -755,7 +755,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
-        (K::Temporal(TemporalForm::MonitorPlan), NO_TAG),
+        (
+            K::Temporal(TemporalForm::MonitorPlan),
+            "QSL does not emit monitor-plan IR nodes yet",
+        ),
         (K::Protocol(ProtocolForm::Compensation), NO_TAG),
         (K::Claim(ClaimForm::VerificationClaim), NO_TAG),
         (K::Claim(ClaimForm::AnalysisClaim), NO_TAG),

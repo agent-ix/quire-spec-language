@@ -848,10 +848,132 @@ fn quantified_clock_guards_emit_ordered_slot_binders() {
     }
 }
 
+/// FR-230-AC-56, FR-393-AC-9 and QSpec FR-322-AC-295: a universal quantified
+/// invariant emits one family slot binder and an upper-bound constraint
+/// using that same binder. The family term bounds only live slots, so the
+/// invariant has no constraint to violate when the collection is empty.
+#[trace(
+    "TC-685",
+    "FR-230-AC-56",
+    "FR-393-AC-9",
+    "QSpec-FR-322-AC-295",
+    "QSpec-FR-415-AC-24"
+)]
+#[test]
+fn quantified_time_invariant_emits_binder_and_live_slot_bound() {
+    let (unit, wire) = emitted(
+        &timer_document(),
+        "time invariant All when { true } { forall(e in self.ts: e.x <= 9 ms) }\n",
+    );
+    let [invariant] = timed(&wire, "time_invariant")[..] else {
+        panic!("one time invariant");
+    };
+    assert_eq!(
+        names(&invariant["body"]),
+        ["predicate", "binders", "bounds"]
+    );
+    let predicate = target(&wire, member(&invariant["body"], "predicate"));
+    assert_true(&wire, predicate);
+    let [binder_reference] = member(&invariant["body"], "binders")["members"]
+        .as_array()
+        .expect("invariant binders")
+        .as_slice()
+    else {
+        panic!("one slot binder");
+    };
+    let binder = target(&wire, binder_reference);
+    assert_eq!(binder["semantic_form"], "parameter");
+    assert_eq!(literal(&binder["body"], "name"), "e");
+    let [bound_reference] = member(&invariant["body"], "bounds")["members"]
+        .as_array()
+        .expect("invariant bounds")
+        .as_slice()
+    else {
+        panic!("one upper bound");
+    };
+    let bound = target(&wire, bound_reference);
+    assert_eq!(literal(&bound["body"], "comparison"), "le");
+    assert_eq!(literal(&bound["body"], "bound"), "9/1");
+    let place = target(&wire, member(&bound["body"], "place"));
+    let path = member(&place["body"], "path")["members"]
+        .as_array()
+        .expect("template clock path");
+    assert_eq!(
+        path.iter()
+            .map(|step| literal(step, "kind"))
+            .collect::<Vec<_>>(),
+        ["field", "slot", "field"]
+    );
+    assert_eq!(literal(&path[0], "name"), "ts");
+    assert_eq!(literal(&path[2], "name"), "x");
+    assert_eq!(
+        member(&bound["body"], "slots")["members"],
+        json!([binder_reference]),
+        "the constraint slot is the invariant binder"
+    );
+    assert!(unit.contains("forall(e in self.ts: e.x <= 9 ms)"));
+    assert_declared_order(&wire);
+}
+
+/// FR-230-AC-56: existential quantified invariant bounds and quantified
+/// element-presence invariants refuse as a whole at the owning invariant.
+#[trace("TC-685", "FR-230-AC-56", "FR-230-AC-50")]
+#[test]
+fn unsupported_quantified_invariant_forms_refuse_without_partial_output() {
+    use qsl_foundation::diagnostic::Code;
+    use qsl_semantics::check::{CheckCause, TemporalCause};
+
+    for (document, source, expected) in [
+        (
+            timer_document(),
+            "time invariant Some when { true } { exists(e in self.ts: e.x <= 9 ms) }",
+            "time invariant Some",
+        ),
+        (
+            slot_presence_document(),
+            "time invariant HasElement when { forall(e in self.q: present(e)) } { self.x <= 9 ms }",
+            "time invariant HasElement",
+        ),
+    ] {
+        let (unit, result) = checked(&document, &format!("{source}\n"));
+        let refusals = result.expect_err("the unsupported invariant is refused");
+        let Some(refusal) = refusals.iter().find(|refusal| {
+            matches!(
+                &refusal.cause,
+                CheckCause::Temporal(cause)
+                    if matches!(&**cause, TemporalCause::TimeInvariantShape { .. }
+                        | TemporalCause::TimedModelNotEmitted { .. })
+            )
+        }) else {
+            panic!("the invariant refusal is reported: {refusals:?}");
+        };
+        let expected_code = if source.contains("exists(") {
+            Code::InvalidTimedModel
+        } else {
+            Code::UnsupportedConstruct
+        };
+        assert_eq!(refusal.cause.code(), expected_code, "{source}");
+        let span = match &refusal.cause {
+            CheckCause::Temporal(cause) => match &**cause {
+                TemporalCause::TimeInvariantShape { span }
+                | TemporalCause::TimedModelNotEmitted { span, .. } => *span,
+                other => panic!("invariant refusal: {other:?}"),
+            },
+            other => panic!("temporal refusal: {other:?}"),
+        };
+        assert!(
+            unit[span.start..span.end].starts_with(expected),
+            "{source}: refusal span {:?} is {:?}, expected prefix {expected:?}",
+            span,
+            &unit[span.start..span.end]
+        );
+    }
+}
+
 /// FR-230-AC-55, FR-230-AC-56, FR-230-AC-53: element-presence reads remain
 /// unavailable in timed guards, invariants and urgency predicates until their
-/// quantified wire form is admitted. Each model refuses as a whole instead of emitting a guard with
-/// the presence requirement missing.
+/// quantified wire form is admitted. Each model refuses as a whole instead of
+/// emitting a guard with the presence requirement missing.
 #[trace("TC-685", "FR-230-AC-53", "FR-230-AC-55", "FR-230-AC-56")]
 #[test]
 fn element_presence_in_timed_predicates_refuses_without_emitting_partial_nodes() {
@@ -880,6 +1002,31 @@ fn element_presence_in_timed_predicates_refuses_without_emitting_partial_nodes()
     let (member, text) = unwritten(&slot_presence_document(), &format!("{urgency}\n"));
     assert_eq!(member, Member::ElementPresence);
     assert!(text.starts_with("urgent HasElement"), "{text}");
+}
+
+/// FR-230-AC-57 / TC-685 step 38: a mixed quantified and ordinary bound
+/// list refuses at the invariant before it can emit a partially scoped node.
+/// The fixture's `ts` range includes zero, where one global binder would
+/// otherwise make the ordinary bound vacuous.
+#[trace("TC-685", "FR-230-AC-57")]
+#[test]
+fn a_mixed_quantified_invariant_bound_refuses_before_partial_emission() {
+    use qsl_foundation::diagnostic::Code;
+    use qsl_semantics::check::{CheckCause, TemporalCause};
+
+    let source = "time invariant Mixed when { true } { forall(e in self.ts: e.x <= 9 ms) and self.x < 12 ms }";
+    let (unit, result) = checked(&timer_document(), &format!("{source}\n"));
+    let refusals = result.expect_err("mixed bound scopes cannot be represented");
+    assert_eq!(refusals.len(), 1, "no partial timed model is produced");
+    let refusal = &refusals[0];
+    assert_eq!(refusal.cause.code(), Code::InvalidTimedModel);
+    let CheckCause::Temporal(cause) = &refusal.cause else {
+        panic!("temporal refusal: {:?}", refusal.cause);
+    };
+    let TemporalCause::TimeInvariantShape { span } = &**cause else {
+        panic!("time-invariant-shape refusal: {cause:?}");
+    };
+    assert!(unit[span.start..span.end].starts_with(source));
 }
 
 /// FR-230-AC-50, QSpec FR-342-AC-11: a clock-reading clause bound to an

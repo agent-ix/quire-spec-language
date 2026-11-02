@@ -18,6 +18,7 @@ use std::rc::Rc;
 
 use qsl_forms::{
     BinaryOperator, BinderQuery, ExprId, ExprNode, Expression, ExpressionForm, ExpressionSpans,
+    QuantifiedClockBoundForm, QuantifierKind,
 };
 use qsl_foundation::Span;
 
@@ -244,6 +245,79 @@ pub(super) fn read(
         BinderQuery::Forall => (each(&positive, budget)?, some(&negative, budget)?),
         _ => (some(&positive, budget)?, each(&negative, budget)?),
     }))
+}
+
+/// Read one S2 quantified invariant bound, keeping its slot selector as a
+/// family term so it applies to every currently live element.
+pub(super) fn invariant_bound(
+    form: &QuantifiedClockBoundForm,
+    clocks: &Clocks<'_>,
+    context: &EffectiveId,
+) -> Result<(ElementBinding, ClockConstraint), CheckCause> {
+    if form.quantifier != QuantifierKind::Forall {
+        return Err(timed(TemporalCause::TimeInvariantShape { span: form.span }));
+    }
+    let collection = Located::of(&form.collection, clocks, context)
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let collection_path = self_path(&form.collection, collection.root())
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let shape = clocks
+        .fields
+        .iter()
+        .find_map(|clock| {
+            if !clocks.model.conforms(context.clone(), clock.owner.clone())
+                || !clock.path.starts_with(&collection_path)
+            {
+                return None;
+            }
+            match clock.path.get(collection_path.len()) {
+                Some(PlaceStep::Slot(shape)) => Some(*shape),
+                _ => None,
+            }
+        })
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let path = collection_path
+        .into_iter()
+        .map(|step| match step {
+            PlaceStep::Field(name) => Some(name),
+            PlaceStep::Slot(_) | PlaceStep::Union(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let binding = ElementBinding {
+        name: form.binder.name.clone(),
+        path: path.clone(),
+        slot: SlotRef::Family,
+    };
+    let quantifier = Quantifier {
+        query: BinderQuery::Forall,
+        binder: &form.binder.name,
+        path,
+        shape,
+        body: form.clock.expression.root_id(),
+        span: form.span,
+    };
+    let located = Located::of(&form.clock, clocks, context)
+        .ok_or_else(|| timed(TemporalCause::TimeInvariantShape { span: form.span }))?;
+    let clock = element_clock(&located, quantifier.body, &quantifier, clocks)
+        .ok_or_else(|| timed(located.outside(quantifier.body)))?;
+    Ok((
+        binding.clone(),
+        ClockConstraint {
+            parameter: None,
+            clock,
+            via: Vec::new(),
+            slots: vec![SlotRef::Family],
+            binding: Some(binding),
+            op: if form.strict {
+                ClockOp::Less
+            } else {
+                ClockOp::LessOrEqual
+            },
+            bound: clocks.quantity(&form.bound).map_err(timed)?,
+            span: form.span,
+        },
+    ))
 }
 
 /// The generated cardinality expression belongs to the written quantifier.

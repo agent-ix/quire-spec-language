@@ -3918,11 +3918,16 @@ fn write_clauses(
         }
         let predicate = node_id(ids, &invariant.predicate);
         let region = span_region(invariant.span);
-        if let Some(held) = model
-            .invariants
-            .iter_mut()
-            .find(|held| held.predicate == predicate && held.bounds == bounds)
-        {
+        if let Some(held) = model.invariants.iter_mut().find(|held| {
+            held.predicate == predicate
+                && held.binders
+                    == invariant
+                        .binders
+                        .iter()
+                        .map(|key| node_id(ids, key))
+                        .collect::<Vec<_>>()
+                && held.bounds == bounds
+        }) {
             occur(&mut held.metadata, region, regions, false);
             continue;
         }
@@ -3934,7 +3939,11 @@ fn write_clauses(
         model.invariants.push(CheckedTimeInvariant {
             metadata,
             predicate,
-            binders: Vec::new(),
+            binders: invariant
+                .binders
+                .iter()
+                .map(|key| node_id(ids, key))
+                .collect(),
             bounds,
         });
     }

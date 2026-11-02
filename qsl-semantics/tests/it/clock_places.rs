@@ -843,6 +843,38 @@ fn a_quantified_guard_records_one_entry_per_size_or_slot() {
     );
 }
 
+/// FR-230-AC-56 / FR-415-AC-24: a universal quantified invariant keeps one
+/// family selector, which bounds each live collection slot and has no
+/// instance to constrain for an empty collection.
+#[trace("TC-685", "FR-230-AC-56", "QSpec-FR-415-AC-24")]
+#[test]
+fn a_quantified_time_invariant_bounds_the_live_slot_family() {
+    let document = timer_collection(Some(3), true, false);
+    let graph = check(
+        &document,
+        &format!(
+            "{UNITS}{DENSE}time invariant All when {{ true }} {{ \
+             forall(e in self.ts: e.x <= 9 ms) }}\n"
+        ),
+    )
+    .expect("a universal quantified invariant checks");
+    let model = timed(&graph);
+    let [invariant] = model.invariants() else {
+        panic!("one invariant: {:?}", model.invariants());
+    };
+    let [binding] = invariant.binders() else {
+        panic!("one slot binder: {:?}", invariant.binders());
+    };
+    assert_eq!(binding.name(), "e");
+    let [bound] = invariant.bounds() else {
+        panic!("one live-slot bound: {:?}", invariant.bounds());
+    };
+    assert_eq!(bound.slots(), [SlotRef::Family]);
+    assert_eq!(bound.binding(), Some(binding));
+    assert_eq!(bound.op(), ClockOp::LessOrEqual);
+    assert_eq!(bound.bound(), &exact(9, 1));
+}
+
 /// Part of FR-230-AC-21 (TC-685), "Resets by selection": `forall(e in
 /// self.ts: e.n > 1 implies e.x = 0 ms)` in `send`'s postcondition, whose
 /// frame names `ts`, records one reset of `ts.[slot].x` to 0 with the
