@@ -974,7 +974,7 @@ fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_parti
     let selections = tc134_selections(&graph);
     assert!(
         !selections.is_empty(),
-        "the timed compensation fixture selects at least one temporal declaration"
+        "the timed fixture selects at least one temporal declaration"
     );
     let package = CheckedPackage::link(graph);
     let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
@@ -1067,11 +1067,13 @@ fn tc134_timed_fixture_binds_explicit_temporal_declarations_and_reads_back_parti
     }
 }
 
-/// FR-048-AC-8: a missing, duplicate, surplus or profile-incompatible clock
-/// selection refuses emission for the timed compensation fixture.
+/// FR-048-AC-8, PARTIAL: a missing, duplicate, surplus or profile-incompatible
+/// clock selection for the explicit temporal declaration refuses emission.
+/// Compensation-window clock rows are NOT covered here; spec FR-050-AC-13/14
+/// and FR-322-AC-305 require them, pending IR-1262.
 #[trace("FR-048-AC-8", "TC-134")]
 #[test]
-fn tc134_timed_compensation_refuses_each_unfit_clock_selection() {
+fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
     use crate::emit::EmitRefusal as R;
     let graph = tc134_timed_graph();
     let selections = tc134_selections(&graph);
