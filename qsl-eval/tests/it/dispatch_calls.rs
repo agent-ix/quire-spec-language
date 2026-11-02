@@ -2191,7 +2191,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
         view_type(&view, "model.C"),
         view_type(&view, "model.D"),
     );
-    let mut clauses = bridge_clauses(a_type.clone());
+    let clauses = bridge_clauses(a_type.clone());
     let mut normalization_meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations_a = checked_dispatch_operation(
