@@ -31,6 +31,18 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-400
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-091
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-141
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-142
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-143
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-149
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-441
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-016
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-049
@@ -449,11 +461,38 @@ associations. IR's `expression::ValueType` is separate from the canonical
 evaluation target `quire_exact::ValueType`; neither a type-name match nor a
 structural `CheckedNodeId` is an admitted identity conversion. IR-1194 must
 supply exact `NodeKey`/`EffectiveId` associations for Composite and Reference
-and unit identities for Quantity. General coverage of String, Uuid, Timestamp,
-Dimension, Alias and Union requires explicit shared-type extensions wherever
-the canonical target cannot represent the admitted type; nested Option and
-Collection types require the same joins recursively. These tracker references
-record dependencies, not new spec-artifact edges or upstream API signatures.
+and `UnitId` identities for Quantity. Evaluator reach is decided as follows:
+
+- Native `String`, `UUID` and `Timestamp` are runtime values. A slot may
+  receive them from a literal, supplied binder, field read or function result,
+  including inside an Option, Collection, Record, Tuple or Union payload.
+  Equality and inequality use the existing QSL FR-056 and QSpec FR-149
+  relations. This adds no ordering, arithmetic, normalization, coercion or
+  literal grammar.
+- A Dimension is declaration/type metadata, not a runtime value. It is
+  reachable only through a Quantity type: the reader SHALL join the exact
+  admitted unit identity to `quire_exact::UnitId` and retain the declared or
+  compound unit identity required by QSpec FR-142. Dimension equivalence and
+  conversion continue to follow QSpec FR-142; a dimension name or matching
+  exponent vector is not an identity witness.
+- An Alias is transparent type syntax, not a runtime value or a distinct
+  evaluator type. Projection SHALL resolve its admitted target and use that
+  target's canonical type and identity. It SHALL NOT create an alias wrapper,
+  compare alias names, or use a name match to join distinct targets.
+- A Union is a runtime composite value. Projection SHALL preserve its exact
+  declared union identity, active member identity and positional payload;
+  each payload is projected recursively. Case evaluation selects by the
+  admitted member identity as FR-322 specifies. A member's spelling, ordinal
+  or matching payload shape is not an identity witness.
+
+These decisions select values the protocol evaluator SHALL reach; they do not
+broaden the operators or conversions those values support. The reader SHALL
+project each listed kind through the canonical evaluation types and exact
+identity joins. Missing or inconsistent projections follow the typed
+`ViewFailure` behavior above, before a view or meter charge exists; they do not
+make a listed kind outside the evaluator surface. Nested Option and Collection
+types require the same joins recursively. These tracker references record
+dependencies, not new API signatures.
 
 The reader projection SHALL preserve every evaluation- and charge-relevant
 operation flag, including `NodeKind::Attribute.derefed`. A bare object-field
@@ -664,6 +703,10 @@ value; check 6 does not apply to it.
 | FR-390-AC-21 | TC-1071 row 21 supplies the `Refused` result of FR-106 current-snapshot admission for another model and returns the original `invalid_model_binding`/`wrong-model-selection` record without a foreign-reference replacement. `Incomplete` preserves its kind/record and `Fault` preserves its `InternalFault`; none supplies successful authority or charges the meter. | Test |
 | FR-390-AC-22 | A malformed slot, duplicate source, unknown source, missing source and wrong-shaped value combined with a refused observation result return the corresponding check-1-through-5 failure before the observation result is inspected. With those defects absent, a reference-valued source and no observation returns the existing unavailable-observation record; a present failed result returns its original arm. All failures leave the caller's existing meter unchanged, and TC-1071 row 22 charges only its successful evaluation. | Test |
 | FR-390-AC-23 | TC-1070's E-P procedure carries one exact population declaration for every root and nested reference occurrence in a supplied source, including record, present-option and sequence paths. Its `Receipt.peer: Reference<Other>` is present in the supplied forward `Receipt` despite the selected initializer reading only `forward.total`; `Other` is not a direct protocol context, while `otherNodes` and `otherSpare` both declare `Other`. A missing, duplicate, extra or non-reference path refuses with the existing cause and typed path before observation inspection; a declaration from another model refuses `invalid_model_binding`/`wrong-model-selection`; wrong normalized identity/type refuses with its existing cause. A ghost key explicitly attributed to an empty `otherSpare` marked incomplete, or to an unlisted `otherSpare`, returns `incomplete_population`/`incomplete-scope` at that declaration node even if a matching object is present in `otherNodes`; the same ghost against a complete empty `otherSpare` returns `dangling_reference`/`absent-target-in-complete-population` for `otherSpare`. An unrelated incomplete population leaves the call admissible. Completing the seeded population then exposes any dangling reference in the recursive reference-field or relationship-end closure in FR-106 walk order. Every refusal/incomplete result retains the original shared FR-106 `AdmissionRecord`, and the meter is unchanged. | Test (TC-1070) |
+| FR-390-AC-24 | In an admitted reader-backed protocol slot, String equality compares exact scalar sequences; UUID and Timestamp equality compare their canonical payloads; these values do not coerce across kinds. `<`, `<=`, `>` and `>=` on these three native kinds remain refused at type checking under FR-056. Nested native values use these same relations and preserve the pre-emission result and ordered charge log after package admission. | Test |
+| FR-390-AC-25 | A Quantity reader projection preserves its exact declared or compound `UnitId`; two declared units of one dimension remain distinct Quantity types, and only an explicit FR-142 conversion yields the selected target unit type. A dimension name or matching exponent vector alone never selects a unit identity, and a Dimension is not admitted as a standalone runtime value. | Test |
+| FR-390-AC-26 | An alias to String, UUID, Timestamp, Quantity or Union resolves to the target's effective type and behavior without a runtime wrapper or alias-name identity. | Test |
+| FR-390-AC-27 | A Union reader projection preserves the exact declared union identity, active member identity and positional payload recursively. A case evaluates only the arm selected by exact member identity and binds that member's payload in order; spelling, ordinal and matching payload shape never select an arm. The emitted-and-admitted package yields the same value, outcome and ordered charge log as the source checked package. | Test |
 
 ## Dependencies
 
