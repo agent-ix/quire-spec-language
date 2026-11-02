@@ -1240,7 +1240,7 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
             && third_nodes == third_baseline
             && first_key == baseline_clause_key
             && third_key == third_clause_key
-    ));
+    ), "{:#?}", with_two_good.results());
 
     let only_broken = emit_checked_with_protocol_results(&CheckedPackage::link(check(&broken)))
         .expect("a refused protocol result is available without Flow");
