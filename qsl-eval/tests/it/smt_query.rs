@@ -1046,7 +1046,13 @@ fn ieee_relations_and_float_orderings_are_refused_as_out_of_fragment() {
             "IEEE numeric equality is not in the scalar SMT subset",
         ),
     ] {
-        let world = counter(INFINITE, &[formula.as_str()]);
+        let world = counter_with(
+            &format!(
+                "{COUNTER_CONTRACT}function Fl using v(f: Float64[nearest-even]): Boolean pure {{ true }}\n"
+            ),
+            INFINITE,
+            &[formula.as_str()],
+        );
         match world.query(0, SmtQueryKind::Unrolling { depth: 1 }) {
             Err(SmtEncodingRefusal::Refused(Refusal::OutOfFragment { form, locus })) => {
                 assert_eq!(form, expected, "{formula}");
