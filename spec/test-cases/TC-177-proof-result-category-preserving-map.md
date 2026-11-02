@@ -19,9 +19,13 @@ being encoded as the same terminal value; and that a `tested` backend result map
 `success` (the same category as `proved`) while remaining a distinct,
 recorded value that is never promoted to `proved`. `undefined` is not
 exercised here: ADR-013's O-16 category table marks it "not produced" for
-the proof column, so no FR-331 terminal record can construct it — a ninth
+the proof column, so no FR-331 terminal record can construct it — an
 attempted record naming `undefined` would not be a valid FR-331 input, not
-an omission from this test. A wrong implementation this test would catch:
+an omission from this test. The schema-derived coverage check also requires
+the current `measured` wire value, with its `accepted`, `rejected` and
+`undecided` decisions, to keep the FR-192 statistical axis mapped to
+`success`, `violation` and `inconclusive` without treating it as proof
+evidence. A wrong implementation this test would catch:
 mapping `declined` and `unsupported` to the same category (collapsing
 refusal into unsupported), reading a vacuous `Proved` run as ordinary
 success because the reader only inspects the outer `Proved` tag and never
@@ -30,7 +34,7 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
 
 ## Test Procedure
 
-1. Construct one minimal FR-331 terminal record for each of the eight wire
+1. Construct minimal FR-331 terminal records for each of the nine wire
    values FR-331's `results` vocabulary admits: `proved` (with at least one
    SUCCESS check), `proved` with zero SUCCESS checks (vacuous), `tested`,
    `refuted`, `declined` (with a typed refusal cause and a QSL catalog code),
@@ -41,27 +45,31 @@ of keeping it distinct within the `success` category. Scope: FR-069-AC-1.
    a `DisagreementCause`), `inconclusive` with cause `replay_refused`
    (carrying a catalog code), `inconclusive` with cause
    `kani_vacuous_proof` (from a ValueValidity domain admitting no assignment),
-   and `failed`. (Thirteen records total: two
-   distinct `incomplete` causes and two distinct `success`-category values,
-   `proved` and `tested`, are each constructed once. Each record is built
-   with its own typed `request_index`.)
+   `inconclusive` with cause `scalar_agrees`, `failed`; and `measured` with
+   each of `accepted`, `rejected` and `undecided` decisions. (Seventeen
+   records total: two distinct `incomplete` causes and two distinct
+   success-category values, `proved` and `tested`, plus three measured
+   decisions, are represented. The distinct wire-value names represented by
+   these records SHALL equal the current FR-331 `ResultValue` schema enum.
+   Each record is built with its own typed `request_index`.)
 2. Read each record into the proof-result envelope; each envelope's record
    keeps the `request_index` it was built with.
 3. Compare the resulting category against the ADR-013 O-16 category table
    row for that FR-331 value, and separately record the resulting value
    (`proved`, `tested`, `refuted`, and so on) alongside its category.
-4. Construct one further record identical to the ordinary `proved` record
-   from step 1 except that its SUCCESS-check count is zero instead of one;
-   read it and compare its category against the ordinary `proved` record's
-   category from step 3, to confirm the reader's category assignment
+4. Compare the zero-check `proved` record from step 1 against the ordinary
+   `proved` record's category from step 3, to confirm the reader's category assignment
    changes with the SUCCESS-check count and not merely with the outer
    `proved`/`refuted`/... disposition tag.
 
 ## Expected Results
 
-- Each of the eight FR-331 wire values maps to its ADR-013 O-16 category
+- Each of the nine FR-331 wire values maps to its ADR-013 O-16 category
   exactly as the category table states, with no two distinct FR-331 values
   mapping to the same category incorrectly.
+- `measured` with `accepted`, `rejected` or `undecided` maps to `success`,
+  `violation` or `inconclusive` respectively, and is never promoted to proof
+  evidence.
 - `proved` and `tested` both map to category `success`, but the recorded
   value distinguishes them: `tested` is never rewritten to `proved`.
 - The vacuous `proved` record (zero SUCCESS checks) maps to `inconclusive`

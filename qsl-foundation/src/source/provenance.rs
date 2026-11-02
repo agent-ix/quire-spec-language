@@ -19,12 +19,17 @@ use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 
 use alloc::{boxed::Box, string::String, vec::Vec};
+use core::cell::RefCell;
 use core::fmt;
 use hashbrown::HashMap;
 
 use quire_exact::{Location, NodeKey, Origin, Role};
 
-use super::node_table::{scoped, NodeKeyDebug};
+#[cfg(not(feature = "std"))]
+use super::node_table::scoped;
+#[cfg(feature = "std")]
+use super::node_table::NodeTableContents;
+use super::node_table::{NodeKeyDebug, NodeKeyDebugScoped, NodeTable};
 
 /// Why a provenance value could not be formed. Each condition a caller must
 /// tell apart is its own variant.
@@ -195,8 +200,7 @@ pub struct OccurrenceKey {
     origin: Origin,
 }
 
-/// The node is written through [`NodeKeyDebug`], so a key formatted under a
-/// [`scoped`] call is its node's table position, not the node's whole text.
+/// The node is written through [`NodeKeyDebug`] as its complete identity.
 impl fmt::Debug for OccurrenceKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OccurrenceKey")
@@ -279,13 +283,12 @@ pub struct PackageSourceMap {
     entries: HashMap<NodeKey, NodeOccurrences>,
 }
 
-/// Debug writes each entry as (node, role, ordinal) with its regions. The
-/// nodes are written once with `std`, in the table of the enclosing [`scoped`]
-/// call, so the output is linear in the package rather than repeating every
-/// nested operand per key. Without `std`, each entry writes its full key.
+/// Debug writes each entry as (node, role, ordinal) with its regions. With
+/// `std`, one explicitly local node table writes each nested identity once;
+/// without `std`, every entry writes its complete key.
 impl fmt::Debug for PackageSourceMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct Entries<'a>(&'a PackageSourceMap);
+        struct Entries<'a>(&'a PackageSourceMap, Option<&'a RefCell<NodeTable>>);
         impl fmt::Debug for Entries<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut map = f.debug_map();
@@ -298,7 +301,7 @@ impl fmt::Debug for PackageSourceMap {
                 for (_, occurrences) in nodes {
                     for (key, regions) in occurrences.values() {
                         let at = (
-                            NodeKeyDebug(&key.node),
+                            NodeKeyDebugScoped(&key.node, self.1),
                             key.origin.role(),
                             key.origin.ordinal(),
                         );
@@ -308,15 +311,24 @@ impl fmt::Debug for PackageSourceMap {
                 map.finish()
             }
         }
-        struct Body<'a>(&'a PackageSourceMap);
+        struct Body<'a>(&'a PackageSourceMap, Option<&'a RefCell<NodeTable>>);
         impl fmt::Debug for Body<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("PackageSourceMap")
-                    .field("entries", &Entries(self.0))
+                    .field("entries", &Entries(self.0, self.1))
                     .finish()
             }
         }
-        scoped(f, &Body(self))
+        #[cfg(feature = "std")]
+        {
+            let table = RefCell::new(NodeTable::new());
+            f.debug_struct("WithNodes")
+                .field("value", &Body(self, Some(&table)))
+                .field("nodes", &NodeTableContents(&table))
+                .finish()
+        }
+        #[cfg(not(feature = "std"))]
+        scoped(f, &Body(self, None))
     }
 }
 /// One node's mapped occurrences, in (role, ordinal) order, each with its
@@ -598,72 +610,11 @@ mod tests {
         (map, count.0)
     }
 
-    /// The source map's debug output is linear in the depth of its nested
-    /// nodes, not quadratic, and still names each node, role and ordinal.
-    #[cfg(feature = "std")]
-    #[test]
-    fn the_map_debug_output_grows_linearly_with_depth() {
-        let (_, small) = chain_debug(500);
-        let (_, middle) = chain_debug(1_000);
-        let (_, large) = chain_debug(2_000);
-        assert!(middle < small * 5 / 2, "500 -> 1k: {small} -> {middle}");
-        assert!(large < middle * 5 / 2, "1k -> 2k: {middle} -> {large}");
-        assert!(large < 2_000 * 200, "{large} bytes for 2000 entries");
-    }
-
-    /// Two maps formatted under one `scoped` call write a node they share
-    /// once, in one table, however many collections hold it.
-    #[cfg(feature = "std")]
-    #[test]
-    fn one_scope_writes_a_node_shared_by_two_maps_once() {
-        let (first, _) = chain_debug(3);
-        let (second, _) = chain_debug(3);
-        struct Both<'a>(&'a PackageSourceMap, &'a PackageSourceMap);
-        impl fmt::Debug for Both<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                super::scoped(f, &(self.0, self.1))
-            }
-        }
-        let text = alloc::format!("{:?}", Both(&first, &second));
-        assert_eq!(text.matches("\"leaf\"").count(), 1, "{text}");
-        assert_eq!(text.matches("PackageSourceMap {").count(), 2, "{text}");
-    }
-
-    /// Each node is written once, its nested node named by position, and each
-    /// entry names its node position, role, ordinal and regions.
-    #[cfg(feature = "std")]
-    #[test]
-    fn the_map_debug_names_each_node_once_and_each_entry() {
-        let (map, _) = chain_debug(3);
-        let text = alloc::format!("{map:?}");
-        let region = |at: u64| {
-            alloc::format!(
-                "[SourceRegion {{ source: RawSourceRef {{ authority: \"a\", identity: \"unit\" }}, \
-                 start: {at}, end: {} }}]",
-                at + 1
-            )
-        };
-        assert_eq!(
-            text,
-            alloc::format!(
-                "WithNodes {{ value: PackageSourceMap {{ entries: {{\
-                 (#0, Role(\"operand\"), 2): {}, \
-                 (#2, Role(\"operand\"), 0): {}, \
-                 (#1, Role(\"operand\"), 1): {}}} }}, \
-                 nodes: {{#0: pkg:[\"add\",#1,]:1, #1: pkg:[\"add\",#2,]:0, \
-                 #2: pkg:[\"leaf\",]:0}} }}",
-                region(2),
-                region(0),
-                region(1)
-            )
-        );
-    }
-
-    /// Without a thread-local table, each occurrence still writes every
-    /// nested identity segment, package, ordinal, role and source region.
+    /// Complete key output preserves every nested node at depth, along with
+    /// each key's role, ordinal and source region.
     #[cfg(not(feature = "std"))]
     #[test]
-    fn the_no_std_map_debug_writes_complete_nested_keys_and_regions() {
+    fn the_map_debug_writes_complete_nested_keys_and_regions() {
         let (map, _) = chain_debug(3);
         let region = |at: u64| {
             alloc::format!(
@@ -684,30 +635,70 @@ mod tests {
         );
     }
 
-    /// The no_std scope is transparent even around multiple maps: neither
-    /// value nor any nested key content is discarded or replaced by a ref.
-    #[cfg(not(feature = "std"))]
+    /// One local table writes each nested identity once and preserves every
+    /// entry's role, ordinal and source region.
+    #[cfg(feature = "std")]
     #[test]
-    fn a_no_std_scope_preserves_both_maps_with_their_full_keys() {
+    fn the_map_debug_names_each_node_once_and_each_entry() {
+        let (map, _) = chain_debug(3);
+        let region = |at: u64| {
+            alloc::format!(
+                "[SourceRegion {{ source: RawSourceRef {{ authority: \"a\", identity: \"unit\" }}, \
+                 start: {at}, end: {} }}]",
+                at + 1
+            )
+        };
+        assert_eq!(
+            alloc::format!("{map:?}"),
+            alloc::format!(
+                "WithNodes {{ value: PackageSourceMap {{ entries: {{\
+                 (#0, Role(\"operand\"), 2): {}, \
+                 (#2, Role(\"operand\"), 0): {}, \
+                 (#1, Role(\"operand\"), 1): {}}} }}, \
+                 nodes: {{#0: pkg:[\"add\",#1,]:1, #1: pkg:[\"add\",#2,]:0, \
+                 #2: pkg:[\"leaf\",]:0}} }}",
+                region(2),
+                region(0),
+                region(1)
+            )
+        );
+    }
+
+    /// Each value owns its debug table; wrapping several maps does not create
+    /// ambient state shared between unrelated formatter calls.
+    #[test]
+    fn separate_maps_format_with_independent_local_tables() {
         let (first, _) = chain_debug(3);
         let (second, _) = chain_debug(3);
         struct Both<'a>(&'a PackageSourceMap, &'a PackageSourceMap);
         impl fmt::Debug for Both<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                super::scoped(f, &(self.0, self.1))
+                super::super::node_table::scoped(f, &(self.0, self.1))
             }
         }
         let text = alloc::format!("{:?}", Both(&first, &second));
         assert_eq!(text, alloc::format!("({first:?}, {second:?})"));
-        assert_eq!(text.matches("\"leaf\"").count(), 6, "{text}");
+        let expected_leaves = if cfg!(feature = "std") { 2 } else { 6 };
+        assert_eq!(text.matches("\"leaf\"").count(), expected_leaves, "{text}");
         assert_eq!(text.matches("PackageSourceMap {").count(), 2, "{text}");
     }
 
-    /// The no_std fallback retains every nested operand at the same depths
-    /// used by the std growth regression, including the repeated subtrees.
+    /// A source map's std debug representation stays linear in nested depth.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_map_debug_output_grows_linearly_with_depth() {
+        let (_, small) = chain_debug(500);
+        let (_, middle) = chain_debug(1_000);
+        let (_, large) = chain_debug(2_000);
+        assert!(middle < small * 5 / 2, "500 -> 1k: {small} -> {middle}");
+        assert!(large < middle * 5 / 2, "1k -> 2k: {middle} -> {large}");
+        assert!(large < 2_000 * 200, "{large} bytes for 2000 entries");
+    }
+
+    /// The output retains every nested operand, including repeated subtrees.
     #[cfg(not(feature = "std"))]
     #[test]
-    fn the_no_std_map_debug_preserves_every_nested_node_at_depth() {
+    fn the_map_debug_preserves_every_nested_node_at_depth() {
         for depth in [500_u64, 1_000, 2_000] {
             let (map, _) = chain_debug(depth);
             let text = alloc::format!("{map:?}");

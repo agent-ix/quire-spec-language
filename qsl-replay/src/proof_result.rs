@@ -2240,8 +2240,69 @@ mod tests {
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
+        // Keep this sample map complete against the live FR-331 schema. A
+        // newly admitted wire value must get a representative value and an
+        // expected O-16 category here before this test can pass.
+        let qspec_dir = std::env::var_os("QSPEC_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../quire-specification")
+            });
+        let schema_path = qspec_dir.join("proposals/backend-provider-v1/schema.json");
+        let schema: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&schema_path)
+                .unwrap_or_else(|error| panic!("read FR-331 schema at {schema_path:?}: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("parse FR-331 schema at {schema_path:?}: {error}"));
+        let schema_values: BTreeSet<&str> = schema["$defs"]["ResultValue"]["enum"]
+            .as_array()
+            .expect("FR-331 ResultValue is an enum")
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("FR-331 ResultValue entry is a string")
+            })
+            .collect();
+        let measured = |decision| {
+            use crate::statistical::{
+                Confidence, Coverage, StatisticalBasis, StatisticalMethod, StatisticalProvenance,
+            };
+            use qsl_foundation::selection::DefinitionRef;
+
+            let half = Rational::new(Integer::one(), Integer::from(2_u64)).unwrap();
+            TerminalValue::Measured(Box::new(StatisticalVerdict {
+                decision,
+                estimate: None,
+                interval: None,
+                quantile: None,
+                basis: StatisticalBasis {
+                    method: StatisticalMethod::Okamoto,
+                    delay_grid_bits: None,
+                    confidence: Confidence::new(half.clone(), half.clone(), half.clone()).unwrap(),
+                    samples: 0,
+                    draws: 0,
+                    tests: 0,
+                    alpha_per_test: half.clone(),
+                    beta_per_test: half,
+                    coverage: Coverage::FiniteSample,
+                },
+                provenance: StatisticalProvenance {
+                    seed: 0,
+                    sampler: DefinitionRef::new("test", "sampler").unwrap(),
+                    timed_horizon: None,
+                    delay_grid_bits: None,
+                    max_sample_steps: None,
+                    tests: Vec::new(),
+                },
+                tests: Vec::new(),
+                witnesses: Vec::new(),
+            }))
+        };
         let cases = [
             (
+                "proved",
                 TerminalValue::Proved {
                     basis: ProofBasis::Checks { success_checks: 1 },
                     certification: Certification::Certified,
@@ -2250,6 +2311,7 @@ mod tests {
                 None,
             ),
             (
+                "proved",
                 TerminalValue::Proved {
                     basis: ProofBasis::Checks { success_checks: 0 },
                     certification: Certification::Certified,
@@ -2258,13 +2320,15 @@ mod tests {
                 Some(ReportedInconclusiveCause::KaniVacuousProof),
             ),
             (
+                "inconclusive",
                 TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof),
                 Category::Inconclusive,
                 Some(ReportedInconclusiveCause::KaniVacuousProof),
             ),
-            (TerminalValue::Tested, Category::Success, None),
-            (TerminalValue::Refuted, Category::Violation, None),
+            ("tested", TerminalValue::Tested, Category::Success, None),
+            ("refuted", TerminalValue::Refuted, Category::Violation, None),
             (
+                "declined",
                 TerminalValue::Declined {
                     cause: ProofRefusalCause::Refused,
                     code: DeclineCode::Qsl(Code::MissingDeclaration),
@@ -2273,6 +2337,7 @@ mod tests {
                 None,
             ),
             (
+                "declined",
                 TerminalValue::Declined {
                     cause: ProofRefusalCause::Refused,
                     code: DeclineCode::Std001(Std001Code::KANI_BOUND_INVALID),
@@ -2281,16 +2346,19 @@ mod tests {
                 None,
             ),
             (
+                "unsupported",
                 TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
                 Category::Unsupported,
                 None,
             ),
             (
+                "incomplete",
                 TerminalValue::Incomplete(IncompleteCause::TimedOut),
                 Category::Incomplete,
                 None,
             ),
             (
+                "incomplete",
                 TerminalValue::Incomplete(IncompleteCause::Cancelled {
                     source: CancelCause::Requested,
                 }),
@@ -2298,6 +2366,7 @@ mod tests {
                 None,
             ),
             (
+                "inconclusive",
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity_cause())),
                 Category::Inconclusive,
                 Some(ReportedInconclusiveCause::Cause(
@@ -2305,6 +2374,7 @@ mod tests {
                 )),
             ),
             (
+                "inconclusive",
                 TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
                     Code::StaleDependency,
                 )),
@@ -2314,24 +2384,55 @@ mod tests {
                 )),
             ),
             (
+                "inconclusive",
                 TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(agreement())),
                 Category::Inconclusive,
                 Some(ReportedInconclusiveCause::Cause(
                     InconclusiveCause::ScalarAgrees(agreement()),
                 )),
             ),
-            (TerminalValue::Failed, Category::InternalFailure, None),
+            (
+                "measured",
+                measured(Decision::Accepted),
+                Category::Success,
+                None,
+            ),
+            (
+                "measured",
+                measured(Decision::Rejected),
+                Category::Violation,
+                None,
+            ),
+            (
+                "measured",
+                measured(Decision::Undecided(
+                    crate::statistical::UndecidedCause::IndifferenceRegion,
+                )),
+                Category::Inconclusive,
+                None,
+            ),
+            (
+                "failed",
+                TerminalValue::Failed,
+                Category::InternalFailure,
+                None,
+            ),
         ];
+        let covered_values: BTreeSet<&str> = cases.iter().map(|(wire, ..)| *wire).collect();
+        assert_eq!(
+            covered_values, schema_values,
+            "TC-177 samples every current FR-331 result value exactly at the wire-value level"
+        );
         let items: Vec<TerminalRecord> = cases
             .iter()
             .enumerate()
-            .map(|(i, (value, _, _))| {
+            .map(|(i, (_, value, _, _))| {
                 TerminalRecord::from_value(RequestIndex::new(i), value.clone())
             })
             .collect();
         let envelopes =
             read_backend_provider_envelope(&source(items), crate::ReplayLimits::default()).unwrap();
-        for (i, (envelope, (value, expected_category, expected_cause))) in
+        for (i, (envelope, (_, value, expected_category, expected_cause))) in
             envelopes.iter().zip(cases.iter()).enumerate()
         {
             assert_eq!(
@@ -2348,16 +2449,31 @@ mod tests {
             );
         }
         // `tested` never gets rewritten to `proved`, despite sharing a
-        // category with it.
-        assert_eq!(
-            envelopes[0].record().value(),
-            &TerminalValue::Proved {
-                basis: ProofBasis::Checks { success_checks: 1 },
-                certification: Certification::Certified,
-            }
+        // category with it. Find both samples from the schema-driven cases
+        // instead of depending on their position in the array.
+        let proved = cases
+            .iter()
+            .position(|(_, value, ..)| {
+                matches!(
+                    value,
+                    TerminalValue::Proved {
+                        basis: ProofBasis::Checks { success_checks: 1 },
+                        ..
+                    }
+                )
+            })
+            .expect("ordinary proved case");
+        let tested = cases
+            .iter()
+            .position(|(_, value, ..)| *value == TerminalValue::Tested)
+            .expect("tested case");
+        assert_eq!(envelopes[proved].category(), Category::Success);
+        assert_eq!(envelopes[tested].category(), Category::Success);
+        assert_eq!(envelopes[tested].record().value(), &TerminalValue::Tested);
+        assert_ne!(
+            envelopes[proved].record().value(),
+            envelopes[tested].record().value()
         );
-        assert_eq!(envelopes[2].record().value(), &TerminalValue::Tested);
-        assert_ne!(envelopes[0].record().value(), envelopes[2].record().value());
         // An ordinary and a vacuous `Proved` record take different
         // categories, showing the reader inspects the SUCCESS-check count
         // and not merely the outer `Proved` tag.
