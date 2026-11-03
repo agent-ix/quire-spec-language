@@ -934,25 +934,26 @@ mod tests {
         };
         let a = view.type_identities()[&declaration].clone();
         let span = qsl_foundation::Span { start: 0, end: 0 };
-        let graph = PackageDeclarations {
-            types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(a, "M::A", vec![])])
-                .expect("one object type admits"),
-            models: vec![AdmittedModel::new(&domain_package, &view).expect("the view is its own")],
-            functions: vec![qsl_forms::FunctionDeclaration::new(
-                "f",
-                vec![("r".to_owned(), qsl_forms::TypeForm::name("M::A", span))],
-                qsl_forms::TypeForm::builtin(qsl_forms::BuiltinType::Boolean, span),
-                None,
-                qsl_forms::Expression::boolean(true),
-            )],
-            ..PackageDeclarations::new(
-                qsl_semantics::check::fixture_source(),
-                "test/package",
-                qsl_foundation::IdentityLimits::default(),
-            )
-        }
-        .check(CheckingLimits::default())
-        .expect("a function over a model reference checks");
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "test/package",
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types =
+            TypeEnvironment::new([], [ObjectTypeDeclaration::new(a, "M::A", vec![])])
+                .expect("one object type admits");
+        declarations.models =
+            vec![AdmittedModel::new(&domain_package, &view).expect("the view is its own")];
+        declarations.functions = vec![qsl_forms::FunctionDeclaration::new(
+            "f",
+            vec![("r".to_owned(), qsl_forms::TypeForm::name("M::A", span))],
+            qsl_forms::TypeForm::builtin(qsl_forms::BuiltinType::Boolean, span),
+            None,
+            qsl_forms::Expression::boolean(true),
+        )];
+        let graph = declarations
+            .check(CheckingLimits::default())
+            .expect("a function over a model reference checks");
         let model_nodes: Vec<quire_exact::NodeKey> = graph
             .semantic_graph()
             .nodes()

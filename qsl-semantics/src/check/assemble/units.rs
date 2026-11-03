@@ -342,6 +342,7 @@ fn provisional(
     scales: &[Option<Rational>],
     offsets: &[Option<Rational>],
     owner: &SourceOwner,
+    owners: &BTreeMap<String, SourceOwner>,
     package_name: &str,
 ) -> Provisional {
     let mut fixed = Provisional::default();
@@ -352,7 +353,7 @@ fn provisional(
             continue;
         }
         let key = DimensionPreimage::new(
-            owner.node_owner(package_name),
+            owners.get(&name).unwrap_or(owner).node_owner(package_name),
             vec![name.clone()],
             Vec::new(),
         )
@@ -414,6 +415,7 @@ pub(super) fn assemble(
     units: &[UnitForm],
     imported: &Imported,
     owner: &SourceOwner,
+    owners: &BTreeMap<String, SourceOwner>,
     package_name: &str,
     limits: AssemblyLimits,
 ) -> Result<Assembled, Refused> {
@@ -509,6 +511,7 @@ pub(super) fn assemble(
         &scales,
         &offsets,
         owner,
+        owners,
         package_name,
     );
     if !errors.is_empty() {
@@ -630,7 +633,11 @@ pub(super) fn assemble(
         topology: false,
         provisional: Provisional::default(),
     };
-    let node_owner = owner.node_owner(package_name);
+    let node_owners: BTreeSet<_> = owners
+        .values()
+        .map(|owner| owner.node_owner(package_name))
+        .chain(std::iter::once(owner.node_owner(package_name)))
+        .collect();
     let mut dimension_keys: Vec<Option<NodeKey>> = vec![None; dimensions.len()];
     let mut dimension_nodes = Vec::with_capacity(dimensions.len());
     for derived in [false, true] {
@@ -651,9 +658,12 @@ pub(super) fn assemble(
                 }
                 terms.sort();
             }
-            let preimage =
-                DimensionPreimage::new(node_owner.clone(), vec![form.name.name.clone()], terms)
-                    .map_err(|refusal| fault(refusal.into()))?;
+            let node_owner = owners
+                .get(&form.name.name)
+                .unwrap_or(owner)
+                .node_owner(package_name);
+            let preimage = DimensionPreimage::new(node_owner, vec![form.name.name.clone()], terms)
+                .map_err(|refusal| fault(refusal.into()))?;
             let key = preimage
                 .key()
                 .map_err(|refusal| fault(super::nominal_key_refusal(refusal)))?;
@@ -679,8 +689,12 @@ pub(super) fn assemble(
             let target = unit_edges[index]
                 .first()
                 .and_then(|target| unit_keys[*target].clone());
+            let node_owner = owners
+                .get(&units[index].name.name)
+                .unwrap_or(owner)
+                .node_owner(package_name);
             let preimage = UnitPreimage::new(
-                node_owner.clone(),
+                node_owner,
                 vec![units[index].name.name.clone()],
                 dimension.clone(),
                 target,
@@ -734,7 +748,9 @@ pub(super) fn assemble(
         }
     }
     let owners = OwnerSelection::new(
-        std::iter::once(node_owner.clone()).chain(imported.owners.iter().cloned()),
+        node_owners
+            .into_iter()
+            .chain(imported.owners.iter().cloned()),
     );
     let graph = admit_unit_graph(dimension_nodes, unit_nodes, &owners).map_err(fault)?;
     let mut spans = BTreeMap::new();
