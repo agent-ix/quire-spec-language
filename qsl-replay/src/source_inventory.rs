@@ -108,7 +108,8 @@ mod tests {
 
     use super::*;
     use crate::spine::{
-        check, parse, select, AdmittedModels, DependencyInput, ParseRequest, SpineLimits,
+        check, parse, select, AdmittedModels, DependencyInput, FrontEndFailure, ParseRequest,
+        SpineLimits,
     };
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -125,7 +126,7 @@ mod tests {
         )
     }
 
-    fn checked(text: &str) -> Result<CheckedUnit, StageFailure<Box<crate::spine::CompileRefusal>>> {
+    fn checked(text: &str) -> Result<CheckedUnit, FrontEndFailure> {
         let cancel = Cancel::new();
         let limits = SpineLimits::default();
         let identity = NativeIdentity::new("test", "unit:main", "test", "authored");
