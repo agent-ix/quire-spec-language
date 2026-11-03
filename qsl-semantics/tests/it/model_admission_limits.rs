@@ -110,6 +110,7 @@ fn refused_cause(refusal: &UnitIntakeRefusal) -> &ModelRefusalCause {
     "FR-506-AC-6",
     "FR-506-AC-7",
     "FR-506-AC-8",
+    "FR-015-AC-6",
     "TC-1301"
 )]
 #[test]

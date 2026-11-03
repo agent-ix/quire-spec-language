@@ -145,7 +145,7 @@ fn tc_041_invalid_roles_refuse_atomically() {
 }
 
 #[test]
-#[trace("TC-042", "FR-015-AC-3")]
+#[trace("TC-042", "FR-015-AC-1", "FR-015-AC-3", "TC-1308", "FR-513-AC-1")]
 fn tc_042_artifact_binds_semantics_and_provenance() {
     let original = parts().model();
     let mut reordered = parts();
@@ -195,6 +195,35 @@ fn tc_042_artifact_binds_semantics_and_provenance() {
         .unwrap()
         .model();
     assert_eq!(original.artifact_bytes(), relocated.artifact_bytes());
+    let mut changed_bound: serde_json::Value =
+        serde_json::from_str(native_rule_model::fixture()).unwrap();
+    let count = changed_bound["scalars"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|scalar| scalar["name"] == "Count")
+        .unwrap();
+    count["maximum"] = serde_json::json!(4);
+    let changed_bound = serde_json::to_string_pretty(&changed_bound).unwrap();
+    assert_ne!(
+        original.artifact_bytes(),
+        native_rule_model::from_text(&changed_bound, "native-rule-model.json")
+            .unwrap()
+            .model()
+            .artifact_bytes(),
+        "a selected model identity includes an otherwise unused scalar bound"
+    );
+    assert_ne!(
+        original.artifact_bytes(),
+        native_rule_model::from_text_with_identity(
+            native_rule_model::fixture(),
+            "native-rule-model.json",
+            "draft:2"
+        )
+        .unwrap()
+        .model()
+        .artifact_bytes()
+    );
 }
 
 #[test]

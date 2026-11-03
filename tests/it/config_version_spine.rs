@@ -237,6 +237,44 @@ fn run_clause_file(path: &Path, request: &Value) -> std::process::Output {
         .unwrap()
 }
 
+fn rename_identity(value: &mut Value, old: &str, new: &str) {
+    match value {
+        Value::String(text) => {
+            if text == old || text.starts_with(&format!("{old}/")) {
+                *text = text.replacen(old, new, 1);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                rename_identity(value, old, new);
+            }
+        }
+        Value::Object(members) => {
+            for value in members.values_mut() {
+                rename_identity(value, old, new);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+    }
+}
+
+fn emitted_model_bytes(document: &Value) -> Vec<u8> {
+    let input = serde_json::to_vec(document).expect("the model fixture is JSON");
+    let packages = qsl_semantics::model::intake::package_input([input.as_slice()])
+        .expect("the mutated domain package is keyed by its declared identity");
+    crate::support::front_end::emitted(
+        spine::unit_identity(),
+        "spine-unit.native",
+        spine::unit_text().as_bytes(),
+        &packages,
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("the selected ConfigVersion model admits through the spine")
+    .package()
+    .bytes()
+    .to_vec()
+}
+
 /// FR-312-AC-1/AC-5: a request names the selected self and anchor explicitly;
 /// the snapshot alone cannot choose either for the caller.
 #[trace("TC-891", "FR-312-AC-1", "FR-312-AC-5")]
@@ -1178,4 +1216,68 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(_) => {}
         other => panic!("QSpec I04 read did not admit the emitted package: {other:?}"),
     }
+}
+
+/// TC-1308 row 1: selected ConfigVersion semantics change emitted identity
+/// bytes, while source declaration order does not affect those bytes.
+#[trace("TC-1308", "FR-513-AC-1")]
+#[test]
+fn checked_package_identity_changes_with_model_content_and_ignores_order() {
+    let original: Value = serde_json::from_str(spine::DOMAIN_PACKAGE).unwrap();
+    let baseline = emitted_model_bytes(&original);
+
+    let mut field_bound = original.clone();
+    let version = field_bound["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|declaration| declaration["identity"] == "ix://example/config-version/VersionNumber")
+        .unwrap();
+    let maximum = version["constraints"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|constraint| constraint["keyword"] == "max")
+        .unwrap();
+    maximum["operands"]["value"] = serde_json::json!("1001");
+
+    let mut frame = original.clone();
+    frame["types"][1]["operations"][0]["frame"]["modifies"][0] =
+        serde_json::json!("ix://example/config-version/ConfigVersion/parent");
+
+    for (name, changed) in [("field bound", field_bound), ("frame entry", frame)] {
+        assert!(baseline != emitted_model_bytes(&changed), "{name}");
+    }
+    let mut reordered = original.clone();
+    let mut second_operation = reordered["types"][1]["operations"][0].clone();
+    rename_identity(
+        &mut second_operation,
+        "ix://example/config-version/ConfigVersion/attemptUpdate",
+        "ix://example/config-version/ConfigVersion/secondUpdate",
+    );
+    second_operation["name"] = serde_json::json!("secondUpdate");
+    reordered["types"][1]["operations"]
+        .as_array_mut()
+        .unwrap()
+        .push(second_operation);
+    let mut second_population = reordered["populations"][0].clone();
+    rename_identity(
+        &mut second_population,
+        "ix://example/config-version/config_history",
+        "ix://example/config-version/archive_history",
+    );
+    second_population["displayName"] =
+        serde_json::json!("ix://example/config-version/archive_history");
+    second_population["members"] = serde_json::json!([]);
+    reordered["populations"]
+        .as_array_mut()
+        .unwrap()
+        .push(second_population);
+    let ordered = emitted_model_bytes(&reordered);
+    reordered["types"][1]["operations"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    reordered["populations"].as_array_mut().unwrap().reverse();
+    assert_eq!(ordered, emitted_model_bytes(&reordered));
 }
