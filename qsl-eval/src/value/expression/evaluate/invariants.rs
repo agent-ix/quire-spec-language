@@ -1155,6 +1155,62 @@ fn object_package(
     qsl_package::CheckedPackage::link(graph)
 }
 
+/// QSL-1470 (FR-049-AC-2/AC-3): the protocol reader's attribute read and
+/// `reaches`'s edge read take their slot through `admitted_slot`, so a stored
+/// value that is not of the package's declared type refuses instead of
+/// reaching a shape fault or projecting another type.
+#[test]
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+fn the_reader_and_edge_reads_refuse_a_stored_value_of_another_type() {
+    let reference_type = ValueType::Reference(reference().object_type().clone());
+    let field = FieldRef::new(reference().object_type().clone(), "edge");
+    let storage = object_package(ValueType::Boolean, quire_exact::Presence::Optional);
+    let closure = quire_semantic_value::object_closure::ObjectClosure::new(
+        storage.graph().scope().types(),
+        [(
+            reference(),
+            vec![("edge", FieldValue::Present(Value::Boolean(true)))],
+        )],
+        &[],
+    )
+    .unwrap();
+    let package = object_package(reference_type.clone(), quire_exact::Presence::Required);
+    let graph = package.graph();
+    let objects = ObjectEnvironment::new(closure);
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(
+        graph.scope(),
+        graph,
+        &objects,
+        &mut meter,
+        graph.dispatch_tables(),
+    );
+    let literal = body(|_| NodeKind::Literal(CheckedLiteral(Value::Boolean(true))));
+    assert!(matches!(
+        machine.edge_targets(literal.root(), &reference(), &field),
+        Err(Halt::Family(FamilyResult::Refused(_)))
+    ));
+    set_frames(
+        &mut machine,
+        vec![vec![Some(Value::Reference(reference()))]],
+    );
+    let location = Location::root(Origin::Expression);
+    let read = quire_checked::NodeRead {
+        operation: NodeKind::Attribute {
+            reference: 0,
+            field,
+            optional: false,
+            derefed: false,
+        },
+        value_type: &reference_type,
+        location: &location,
+    };
+    assert!(matches!(
+        machine.eval_reader_read(read),
+        Err(Halt::Family(FamilyResult::Refused(_)))
+    ));
+}
+
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
@@ -1173,7 +1229,7 @@ fn edge_traversal_shape_probes_reach_all_seven_detecting_sites() {
         quire_exact::Presence::Required,
     );
     probe_package!(
-        "attribute-slot-unresolved",
+        "edge-slot-unresolved",
         m,
         package,
         ObjectEnvironment::default(),

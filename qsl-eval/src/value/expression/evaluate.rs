@@ -23,12 +23,14 @@ use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
+use super::slot_admission;
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
     CheckedGraph, CheckedNode, DispatchTable, NodeId, Operator, Scope, Slot,
 };
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
+use qsl_semantics::model::observation::OutOfRange;
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::divide as integer_divide;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
@@ -3522,7 +3524,11 @@ impl<'a, 'm> Machine<'a, 'm> {
             .find(|attribute| attribute.stands_for(edge))
             .ok_or_else(|| invariant("edge-attribute-unresolved"))?;
         let field = attribute.field();
-        let (slot, _) = self.admitted_slot(self.objects_for(node)?, current, edge)?;
+        let objects = self.objects_for(node)?;
+        if !objects.objects().contains(current) {
+            return Err(invariant("edge-slot-unresolved"));
+        }
+        let (slot, _) = self.admitted_slot(objects, current, edge)?;
         Self::slot_edge_targets(field, slot)
     }
 
@@ -3590,27 +3596,31 @@ impl<'a, 'm> Machine<'a, 'm> {
         let declared = types
             .attributes(reference.object_type().clone())
             .ok_or_else(refuse)?;
+        // Slots are stored by position, so the last declared attribute
+        // having a slot proves the layout is long enough.
+        let mut last = None;
         let mut read = None;
         for attribute in declared {
-            let slot = objects
-                .objects()
-                .attribute(types, reference, &attribute.identity())
-                .ok_or_else(refuse)?;
             if attribute.stands_for(field) {
-                read = Some((slot, attribute.field().value_type().clone()));
+                read = Some((attribute.identity(), attribute.field().value_type()));
             }
+            last = Some(attribute.identity());
         }
-        let (slot, value_type) = read.ok_or_else(|| invariant("attribute-slot-unresolved"))?;
-        let witnessed = objects.is_witnessed(types, reference, field);
+        let lookup = |identity: &FieldRef| {
+            objects
+                .objects()
+                .attribute(types, reference, identity)
+                .ok_or_else(refuse)
+        };
+        if let Some(last) = &last {
+            lookup(last)?;
+        }
+        let (identity, value_type) = read.ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+        let slot = lookup(&identity)?;
+        let witnesses: Vec<&OutOfRange> = objects.witnesses(types, reference, field).collect();
+        let witnessed = !witnesses.is_empty();
         if let FieldValue::Present(value) = slot {
-            // A witnessed slot (FR-106 check 6.5) relaxes only the integer
-            // range; its type and unit are still admitted.
-            let declared = if witnessed {
-                widen_integer_ranges(&value_type)
-            } else {
-                value_type
-            };
-            match types.admits(&declared, value) {
+            match slot_admission::admits(types, value_type, value, &witnesses) {
                 Ok(true) => {}
                 Ok(false) => return Err(refuse()),
                 Err(EnvironmentFailure::Allocation(_)) => {
@@ -4428,24 +4438,6 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         self.push_value(value, false);
         Ok(())
-    }
-}
-
-/// `value_type` with every `Int[lo, hi]` range replaced by `Integer`, through
-/// options and collection elements: the declared type a witnessed
-/// out-of-range slot is admitted against.
-fn widen_integer_ranges(value_type: &ValueType) -> ValueType {
-    match value_type {
-        ValueType::Int(_) => ValueType::Integer,
-        ValueType::Option(payload) => ValueType::option(widen_integer_ranges(payload)),
-        ValueType::Collection(collection) => {
-            ValueType::Collection(std::sync::Arc::new(quire_exact::CollectionType::new(
-                collection.kind(),
-                widen_integer_ranges(collection.element()),
-                collection.bound(),
-            )))
-        }
-        other => other.clone(),
     }
 }
 

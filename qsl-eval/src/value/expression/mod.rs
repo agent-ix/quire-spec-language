@@ -20,6 +20,7 @@ mod evaluate;
 mod family;
 mod protocol_slot;
 mod s6a;
+mod slot_admission;
 mod value_invariants;
 
 use evaluate::Machine;

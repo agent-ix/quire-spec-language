@@ -2695,6 +2695,249 @@ fn a_caller_attribute_layout_that_cannot_hold_the_package_attributes_is_refused(
     ));
 }
 
+/// QSL-1470 (FR-049-AC-2/AC-3): the members of a record-typed attribute are
+/// admitted against the package's own record declaration, not the caller's:
+/// a record built under a caller environment that gives `P.q` a foreign unit
+/// and `P.b` an integer is refused, bare and nested in a record, an option
+/// and a sequence, and never reaches a member read, a quantity operation or
+/// an equality as a fault or a value of another type.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn the_members_of_a_caller_built_record_attribute_are_admitted_against_the_package_declaration() {
+    use quire_eval::FamilyResult;
+    let units = units();
+    let (kilogram, foreign_table) = foreign_unit();
+    let record = CompositeShape::Record;
+    let field =
+        |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
+    let p_key = key("P");
+    let n_key = key("N");
+    let sequence = |element: ValueType| {
+        ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
+    };
+    let declarations = |q: &UnitId, b: ValueType| {
+        let p = ValueType::Composite(p_key.clone());
+        let composites = [
+            CompositeDeclaration::new(
+                p_key.clone(),
+                "P",
+                record(vec![
+                    field("q", ValueType::Quantity(q.clone())),
+                    field("b", b),
+                ]),
+            ),
+            CompositeDeclaration::new(n_key.clone(), "N", record(vec![field("inner", p.clone())])),
+        ];
+        let object = ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![
+                field("p", p.clone()),
+                field("o", ValueType::option(p.clone())),
+                field("s", sequence(p)),
+                field("n", ValueType::Composite(n_key.clone())),
+            ],
+        );
+        TypeEnvironment::new(composites, [object]).unwrap()
+    };
+    let package = expression_package(
+        declarations(&units.m, ValueType::Boolean).with_units(units.table.clone()),
+        false,
+    );
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let environment = |caller: TypeEnvironment, unit: &UnitId, b: Value| {
+        let q = FieldValue::Present(Value::Quantity(Quantity::new(
+            Rational::from_integer(integer(1)),
+            unit.clone(),
+        )));
+        let p = caller
+            .record(p_key.clone(), vec![("q", q), ("b", FieldValue::Present(b))])
+            .unwrap();
+        let present = |value: &Value| FieldValue::Present(value.clone());
+        let optional =
+            quire_exact::OptionValue::present(ValueType::Composite(p_key.clone()), p.clone())
+                .unwrap();
+        let collection_type = CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Composite(p_key.clone()),
+            None,
+        );
+        let many = quire_exact::form_collection(
+            &collection_type,
+            vec![p.clone()],
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap()
+        .completed()
+        .unwrap();
+        let n = caller
+            .record(n_key.clone(), vec![("inner", present(&p))])
+            .unwrap();
+        ObjectEnvironment::new(
+            ObjectClosure::new(
+                &caller,
+                [(
+                    reference.clone(),
+                    vec![
+                        ("p", present(&p)),
+                        ("o", present(&optional)),
+                        ("s", present(&many)),
+                        ("n", present(&n)),
+                    ],
+                )],
+                &[],
+            )
+            .unwrap(),
+        )
+    };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let member = |attribute: &str, name: &str| {
+        Expression::field(
+            Expression::field(Expression::deref(operand("r")), attribute.to_owned()),
+            name.to_owned(),
+        )
+    };
+    let attribute =
+        |name: &str| Expression::field(Expression::deref(operand("r")), name.to_owned());
+    let evaluate = |objects: &ObjectEnvironment, expression: &Expression| {
+        let checked = check_in(&package, &parameters, expression, None, CheckMode::Kernel).unwrap();
+        package
+            .evaluate(
+                &checked,
+                vec![Value::Reference(reference.clone())],
+                objects,
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap()
+            .outcome
+    };
+    let expressions = [
+        member("p", "b"),
+        Expression::binary(BinaryOperator::Add, member("p", "q"), member("p", "q")),
+        Expression::binary(BinaryOperator::Equal, member("p", "b"), member("p", "b")),
+        attribute("p"),
+        attribute("o"),
+        attribute("s"),
+        attribute("n"),
+    ];
+
+    let declared = environment(
+        declarations(&units.m, ValueType::Boolean).with_units(units.table.clone()),
+        &units.m,
+        Value::Boolean(true),
+    );
+    for expression in &expressions {
+        assert!(
+            matches!(evaluate(&declared, expression), FamilyOutcome::Evaluated(_)),
+            "a record typed as declared completes"
+        );
+    }
+    let foreign = environment(
+        declarations(&kilogram, ValueType::Integer).with_units(foreign_table),
+        &kilogram,
+        Value::Integer(integer(7)),
+    );
+    for expression in &expressions {
+        let outcome = evaluate(&foreign, expression);
+        assert!(
+            matches!(
+                outcome,
+                FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+            ),
+            "{expression:?}: {outcome:?}"
+        );
+    }
+}
+
+/// QSL-1470 (FR-049-AC-2/AC-3): a range witness relaxes the integer range
+/// only at the position it names. A witness for element 0 does not admit an
+/// out-of-range element 1, and a witness whose observed integer is not the
+/// stored one is forged.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn a_range_witness_relaxes_only_the_position_it_names() {
+    use quire_eval::FamilyResult;
+    let range = IntegerInterval::new(integer(0), integer(9)).unwrap();
+    let sequence =
+        |element: ValueType| CollectionType::new(CollectionKind::Sequence, element, None);
+    let object = |element: ValueType| {
+        ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![FieldDeclaration::new(
+                "xs",
+                ValueType::collection(sequence(element)),
+                Presence::Required,
+            )],
+        )
+    };
+    let package = expression_package(
+        TypeEnvironment::new([], [object(ValueType::Int(range.clone()))]).unwrap(),
+        false,
+    );
+    let caller = TypeEnvironment::new([], [object(ValueType::Integer)]).unwrap();
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let held = quire_exact::form_collection(
+        &sequence(ValueType::Integer),
+        vec![Value::Integer(integer(20)), Value::Integer(integer(30))],
+        &mut Meter::new(UNLIMITED),
+    )
+    .unwrap()
+    .completed()
+    .unwrap();
+    let closure = ObjectClosure::new(
+        &caller,
+        [(reference.clone(), vec![("xs", FieldValue::Present(held))])],
+        &[],
+    )
+    .unwrap();
+    let witness = |index: usize, observed: i64| qsl_semantics::model::observation::OutOfRange {
+        object: reference.clone(),
+        field: FieldRef::new(object_type("E"), "xs"),
+        index: Some(index),
+        range: range.clone(),
+        observed: integer(observed),
+        steps: Vec::new(),
+    };
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let read = Expression::field(Expression::deref(operand("r")), "xs".to_owned());
+    let checked = check_in(&package, &parameters, &read, None, CheckMode::Kernel).unwrap();
+    let run = |witnesses: Vec<_>| {
+        let objects = ObjectEnvironment::new(closure.clone()).with_out_of_range(witnesses);
+        package
+            .evaluate(
+                &checked,
+                vec![Value::Reference(reference.clone())],
+                &objects,
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap()
+            .outcome
+    };
+    for witnesses in [
+        vec![witness(0, 20)],
+        vec![witness(0, 20), witness(1, 31)],
+        vec![witness(0, 21), witness(1, 30)],
+    ] {
+        assert!(matches!(
+            run(witnesses),
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+        ),);
+    }
+    assert!(matches!(
+        run(vec![witness(0, 20), witness(1, 30)]),
+        FamilyOutcome::Evaluated(Outcome::Completed(_))
+    ));
+}
+
 /// A product or quotient's unit is a compound unit no package declares:
 /// checking forms it as the node's static type, and evaluation forms it again
 /// when the value exists, so a further operation reads it by its `UnitId`.
