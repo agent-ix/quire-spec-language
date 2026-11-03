@@ -2659,7 +2659,7 @@ impl<'a> Lowering<'a> {
                     semantic_form: "dimension_equivalence",
                     semantic_type: Some(NodeRef::Admitted(key.clone())),
                     declaration: None,
-                    owner: Some(Owner::Source(self.owner.clone())),
+                    owner: Some(Owner::Source(equivalence.owner.clone())),
                     body: BodyTerm::aggregate(
                         equivalence
                             .dimensions

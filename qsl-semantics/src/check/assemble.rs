@@ -3099,8 +3099,16 @@ impl PackageDeclarations {
         let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
         for (source, unit) in &units {
             for form in unit.forms() {
-                if let Some(name) = form.declared_name() {
-                    source_owners.insert(name.to_owned(), source.clone());
+                match form.form() {
+                    qsl_forms::DeclarationForm::DimensionEquivalence(equivalence) => {
+                        source_owners
+                            .insert(equivalence::source_owner_key(equivalence), source.clone());
+                    }
+                    _ => {
+                        if let Some(name) = form.declared_name() {
+                            source_owners.insert(name.to_owned(), source.clone());
+                        }
+                    }
                 }
             }
         }
@@ -3260,6 +3268,10 @@ impl PackageDeclarations {
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
+        let source_node_owners: BTreeMap<String, SourceOwner> = source_owners
+            .iter()
+            .map(|(key, source)| (key.clone(), SourceOwner::from(source)))
+            .collect();
         let mut admitted_source_owners: Vec<_> = source_owners
             .values()
             .map(|source| SourceOwner::from(source).node_owner(&package_name))
@@ -3594,6 +3606,7 @@ impl PackageDeclarations {
                     equivalence::SourceView::Admitted(&quantities),
                     &admitted,
                     &owner,
+                    &source_node_owners,
                     &package_name,
                     limits,
                     equivalence::Phase::All,
@@ -3610,6 +3623,7 @@ impl PackageDeclarations {
                     equivalence::SourceView::Provisional(&refused.provisional),
                     &admitted,
                     &owner,
+                    &source_node_owners,
                     &package_name,
                     limits,
                     equivalence::Phase::Base,
@@ -4232,10 +4246,18 @@ impl PackageDeclarations {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
         }
-        for equivalence in &equivalences {
+        for (index, equivalence) in equivalences.iter().enumerate() {
             package
                 .nominal_spans
                 .insert(equivalence.key.clone(), equivalence.span);
+            if let Ok(source) = RawSourceRef::new(
+                equivalence.owner.authority().to_owned(),
+                equivalence.owner.identity().to_owned(),
+            ) {
+                package
+                    .source_owners
+                    .insert(super::lowering::equivalence_origin(index), source);
+            }
         }
         package.dimension_equivalences = equivalences;
         package.functions = unit.functions;

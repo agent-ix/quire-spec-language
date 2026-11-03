@@ -3855,3 +3855,48 @@ fn aggregate_units_refuse_duplicate_type_declarations() {
         AssemblyCause::AmbiguousTypeName { name, .. } if name == "Point"
     )));
 }
+
+/// FR-480-AC-5: a dimension equivalence declared in a later unit keeps that
+/// unit's owner on its checked node and resolves its declaration region to
+/// that unit's source.
+#[trace("FR-480-AC-5")]
+#[test]
+fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
+    let a_text = text(
+        "",
+        "dimension Length; dimension Time; unit m : Length = rational(1, 1); unit s : Time = rational(1, 1);",
+    );
+    let b_text = text(
+        "",
+        "dimension Distance; dimension Duration; unit dm : Distance = rational(1, 1); unit ms : Duration = rational(1, 1); dimension Distance ~ Length by 1 dm = 1 m;",
+    );
+    let (source_a, unit_a) = parsed_unit_as("repo", "a", &a_text);
+    let (source_b, unit_b) = parsed_unit_as("repo", "b", &b_text);
+    let package = PackageDeclarations::assemble_units(
+        "test/package".to_owned(),
+        vec![(source_b.clone(), unit_b), (source_a, unit_a)],
+        crate::model::intake::SelectedModels::default(),
+        Vec::new(),
+        super::AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the cross-unit dimensions and units resolve");
+    let checked = package
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let node = checked
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "dimension_equivalence")
+        .expect("the equivalence has a checked node");
+    assert_eq!(
+        node.owner(),
+        Some(&Owner::Source(SourceOwner::from(&source_b)))
+    );
+    let region = checked
+        .region(&Location::root(Origin::TypeDeclaration {
+            name: super::super::lowering::equivalence_origin(0),
+        }))
+        .expect("the equivalence declaration resolves to its source");
+    assert_eq!(region.source(), &source_b);
+}

@@ -94,6 +94,8 @@ pub struct DimensionEquivalence {
     pub root_scale: Rational,
     /// The declaration's span.
     pub span: Span,
+    /// The source unit that declared this equivalence.
+    pub owner: SourceOwner,
 }
 
 /// The equivalence classes of the admitted pairs (QSpec FR-142 "Effect"):
@@ -478,6 +480,15 @@ pub(super) enum Phase {
     All,
 }
 
+/// Stable declaration key used to retain the source owner of an
+/// equivalence form while admitted units are combined.
+pub(super) fn source_owner_key(form: &DimensionEquivalenceForm) -> String {
+    format!(
+        "@dimension-equivalence:{}:{}",
+        form.dimensions[0].name, form.dimensions[1].name
+    )
+}
+
 /// The unit's dimension equivalences decided in `phase`: in
 /// [`Phase::Base`] no equivalence and every error of that phase, in
 /// [`Phase::All`] the admitted equivalences or every error found.
@@ -486,6 +497,7 @@ pub(super) fn assemble(
     source: SourceView<'_>,
     models: &[AdmittedModel],
     owner: &SourceOwner,
+    source_owners: &BTreeMap<String, SourceOwner>,
     package_name: &str,
     limits: AssemblyLimits,
     phase: Phase,
@@ -666,7 +678,6 @@ pub(super) fn assemble(
 
     // Keys, in source order.
     kept.sort_by_key(|(resolved, _)| resolved.form.span.start);
-    let node_owner = owner.node_owner(package_name);
     let mut equivalences = Vec::with_capacity(kept.len());
     for (resolved, ratio) in kept {
         let fault = |cause| vec![error(cause, resolved.form.span)];
@@ -680,6 +691,10 @@ pub(super) fn assemble(
             ))
         };
         let [first, second] = resolved.emitted_keys().ok_or_else(non_canonical)?;
+        let source_owner = source_owners
+            .get(&source_owner_key(&resolved.form))
+            .unwrap_or(owner);
+        let node_owner = source_owner.node_owner(package_name);
         let preimage = DimensionEquivalencePreimage::new(node_owner.clone(), first, second, &ratio)
             .ok_or_else(non_canonical)?;
         let [first, second] = preimage.dimensions();
@@ -696,6 +711,7 @@ pub(super) fn assemble(
             dimensions: preimage.dimensions(),
             root_scale: preimage.root_scale().clone(),
             span: resolved.form.span,
+            owner: source_owner.clone(),
         });
     }
     Ok(equivalences)
