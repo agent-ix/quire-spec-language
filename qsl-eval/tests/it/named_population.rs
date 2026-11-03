@@ -330,13 +330,7 @@ const OTHER: &str = "pre Others using v on M::Widget::grow { \
 /// over `counters`, which no member type covers, is FR-084's typed
 /// incomplete result, `Undefined` with reason `incomplete-closure` naming
 /// `Other`.
-#[trace(
-    "TC-1076",
-    "FR-391-AC-5",
-    "QSpec-TC-198",
-    "QSpec-FR-153-AC-12",
-    "QSpec-FR-153-AC-14"
-)]
+#[trace("TC-1076", "FR-391-AC-5", "QSpec-TC-198", "QSpec-FR-153-AC-12")]
 #[test]
 fn a_named_population_is_read_from_the_snapshot_of_the_clause_s_observation() {
     let mut unit = Unit::new(false, &format!("{ROOM}\n{SIZE}\n{GROW}\n{OTHER}"));
