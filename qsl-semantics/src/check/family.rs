@@ -486,7 +486,7 @@ fn encode_expression(
             }
             ExprNode::String(text) => {
                 out.write_str("string");
-                out.write_str(text);
+                out.write_str(text.text());
             }
             ExprNode::Name(name) => {
                 out.write_str("name");
@@ -947,6 +947,8 @@ pub(crate) enum Application<'a> {
     Imported {
         /// The function, as the import view names it.
         callee: NodeKey,
+        /// The library identity selected by the source import.
+        library: String,
         /// The function's index in the library's checked graph.
         function: usize,
         /// The function's checked signature in the library's graph; every
@@ -1202,9 +1204,25 @@ impl<'a> Application<'a> {
         }
         Ok(Self::Imported {
             callee,
+            library: import.identity.as_str().to_owned(),
             function,
             signature,
         })
+    }
+
+    pub(crate) fn pending_dependency_target(&self) -> Option<super::PendingDependencyTarget> {
+        match self {
+            Self::Function { function, .. } => {
+                Some(super::PendingDependencyTarget::LocalFunction(*function))
+            }
+            Self::Imported {
+                callee, library, ..
+            } => Some(super::PendingDependencyTarget::Imported {
+                library: library.clone(),
+                target: callee.clone(),
+            }),
+            Self::Tuple { .. } | Self::Ieee { .. } => None,
+        }
     }
 
     /// The type the argument at `index` is checked against.
@@ -1269,6 +1287,7 @@ impl<'a> Application<'a> {
                 callee,
                 function,
                 signature,
+                ..
             } => Ok(Node {
                 kind: NodeKind::ImportedCall {
                     callee,

@@ -247,10 +247,15 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
             body,
         )
     };
-    let declarations = PackageDeclarations {
-        types,
-        models: vec![model],
-        functions: vec![
+    let declarations = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.types = types;
+        declarations.models = vec![model];
+        declarations.functions = vec![
             function("Body", Expression::boolean(true)),
             function("Guard", Expression::call("GuardCheck".to_owned(), vec![])),
             FunctionDeclaration::new(
@@ -260,8 +265,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
                 None,
                 Expression::boolean(true),
             ),
-        ],
-        dispatch_operations: vec![DispatchOperation {
+        ];
+        declarations.dispatch_operations = vec![DispatchOperation {
             receiver_type: owner.clone(),
             member: "step".to_owned(),
             parameters: vec![],
@@ -269,8 +274,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
             selected_operation_owner: owner.clone(),
             selected_operation: "step".to_owned(),
             table: 0,
-        }],
-        dispatch_tables: vec![DispatchTable::new(
+        }];
+        declarations.dispatch_tables = vec![DispatchTable::new(
             vec![(
                 owner.clone(),
                 DispatchCandidate {
@@ -280,12 +285,8 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
                 },
             )],
             1,
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     };
     qsl_package::CheckedPackage::link(
         declarations
@@ -1049,13 +1050,14 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
         &[],
     )
     .unwrap();
-    let graph = qsl_semantics::check::PackageDeclarations {
-        ieee_profile: Some(profile),
-        ..qsl_semantics::check::PackageDeclarations::new(
+    let graph = {
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.ieee_profile = Some(profile);
+        declarations
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap();
@@ -1109,13 +1111,15 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
             ),
         ]),
     );
-    let graph = qsl_semantics::check::PackageDeclarations {
-        types: quire_semantic_value::declaration::TypeEnvironment::new([declaration], []).unwrap(),
-        ..qsl_semantics::check::PackageDeclarations::new(
+    let graph = {
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types =
+            quire_semantic_value::declaration::TypeEnvironment::new([declaration], []).unwrap();
+        declarations
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap();
@@ -1141,14 +1145,15 @@ fn object_package(
     let (types, model) = admitted_owner_fixture(vec![
         quire_semantic_value::declaration::FieldDeclaration::new("edge", value_type, presence),
     ]);
-    let graph = qsl_semantics::check::PackageDeclarations {
-        types,
-        models: vec![model],
-        ..qsl_semantics::check::PackageDeclarations::new(
+    let graph = {
+        let mut declarations = qsl_semantics::check::PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.models = vec![model];
+        declarations
     }
     .check(quire_semantic_value::checking::CheckingLimits::default())
     .unwrap();

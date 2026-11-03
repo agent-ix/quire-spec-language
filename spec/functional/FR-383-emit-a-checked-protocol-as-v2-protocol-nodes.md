@@ -153,11 +153,11 @@ arguments. `P` is the protocol's qualified name.
   temporal clause nodes the `requires temporal` members bind.
 - The I2 reader returns the nodes it decodes in its fixed-depth types
   (FR-264), or the QSpec refusal with its locus.
-- S4 writes the rows above in stages (QSL-1121). A protocol with a selected
-  profile whose checked graph holds only static and replicated roles on a
-  model type, channels with their queues, a `sequence` run
-  tree, a `finish`, an `origin` or `each` activation (with or without a
-  guard), protocol captures and a `scheduling` member emits the clause with its
+- S4 writes the rows above. A protocol with a selected profile whose checked
+  graph holds static and replicated roles on a model type, channels with their
+  queues, a run tree of any of the thirteen control forms, requirements,
+  compensation templates, a `finish`, an `origin` or `each` activation (with or
+  without a guard), protocol captures and a `scheduling` member emits the clause with its
   thirteen arguments in order (every set it does not hold an empty Group),
   with `relationships` naming its checked model relationship nodes once each
   in ascending node id order, the `over` and trigger binders at levels 0 and 1,
@@ -166,14 +166,12 @@ arguments. `P` is the protocol's qualified name.
   `captures` argument one `binder`/`initializer` Group per capture in source
   order, an `each` guard as the `guard` member of the `activation` Group, a
   replicated role's binder, a FIFO channel's message binder and the `finish`
-  binder at the level that follows the captures, and each role, channel, `sequence` and `finish` node at its
+  binder at the level that follows the captures, and each role, channel, control, compensation template and `finish` node at its
   declaration path and each queue with none; the `roles`,
   `channels` and `queues` sets are ascending by node id (QSpec FR-322 node `id`) whatever the
   source order. A protocol that holds any other construct refuses
   `unsupported_construct`/`not-yet-implemented` at its declaration, once for
-  each such construct and naming it, and so does a reference to it: a control
-  other than `sequence` (QSL-1126); a requirement or a compensation template
-  (QSL-1127); a `terminal when` condition that reads `over` under
+  each such construct and naming it, and so does a reference to it: a `terminal when` condition that reads `over` under
   `activation on each` (IR-1069); a function's or protocol's reference to a
   protocol that holds an `attempt`, whose node is written after the state
   clauses it lists, which follow the functions (QSL-1121g); a protocol in a cyclic component

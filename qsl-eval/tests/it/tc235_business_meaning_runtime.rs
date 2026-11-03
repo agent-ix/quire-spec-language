@@ -543,15 +543,16 @@ fn package_with_types(
         })
         .collect();
     CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            functions,
-            function_selections,
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations.functions = functions;
+            declarations.function_selections = function_selections;
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap(),
@@ -828,13 +829,14 @@ fn unresolved_object_reference_refuses_at_input_admission() {
     )
     .unwrap();
     let package = CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap(),
@@ -1263,13 +1265,14 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
     )
     .unwrap();
     let package = CheckedPackage::link(
-        PackageDeclarations {
-            types,
-            ..PackageDeclarations::new(
+        {
+            let mut declarations = PackageDeclarations::new(
                 qsl_semantics::check::fixture_source(),
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
-            )
+            );
+            declarations.types = types;
+            declarations
         }
         .check(CheckingLimits::default())
         .unwrap(),

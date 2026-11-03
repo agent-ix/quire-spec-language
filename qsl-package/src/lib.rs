@@ -30,7 +30,11 @@ pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
 mod protocol_activation;
+#[cfg(feature = "std")]
+mod protocol_occurrence;
 mod protocol_selection;
+#[cfg(feature = "std")]
+pub mod protocol_view;
 
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
@@ -66,6 +70,13 @@ pub use evaluation_view::{
     TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+#[cfg(feature = "std")]
+pub use protocol_occurrence::{
+    protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,
+    ControlOwner, OccurrenceRefusal, PopulationName, ProtocolOccurrence, ProtocolOccurrenceSchema,
+    RepeatDimension, RoleLifetime, RoleReplication, RoleSlot, RuntimeBindingRequirement,
+    SubjectKind,
+};
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 
 #[cfg(feature = "std")]

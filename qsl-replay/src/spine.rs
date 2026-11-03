@@ -45,14 +45,22 @@ pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
+mod subject;
 pub use lifecycle::{
-    admit_parsed_unit_list, check, check_with_execution_points,
+    admit_parsed_unit_list, check, check_units, check_with_execution_points,
     check_with_execution_points_and_refinement_internals, check_with_refinement_internals,
     check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
-    parse, preflight_unit_list, refusal_or_fault, select, AdmittedModels, AdmittedUnitList,
-    CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
+    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
+    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
+    ParseRequest, ParsedUnitSource, PendingObligation, TypeDeclaration, TypeReport,
+    TypeRequirement,
 };
 pub(crate) use lifecycle::{check_for_continuation, parse_for_continuation, ContinuationInputs};
+pub use subject::{
+    BuildProvenance, ComponentKind, DeclarationProfileComponent, DependencyComponent,
+    DependencyReferenceComponent, ModelComponent, ProfileComponent, RoleComponent, RoleKind,
+    SourceComponent, StaticSubject, SubjectUnavailable,
+};
 
 /// Accepted execution points keyed by the exact authored state-clause name
 /// (FR-104-AC-15). An absent entry means no point was supplied.
@@ -701,6 +709,7 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         return "no error recorded".to_owned();
     };
     let message = match &first.cause {
+        AssemblyCause::EmptyUnitList => "the package has no source units".to_owned(),
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
         AssemblyCause::ImportedTypeName { name } => {
             format!("`{name}` names an imported declaration, which stands only as a callee")

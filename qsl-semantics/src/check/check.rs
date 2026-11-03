@@ -53,7 +53,7 @@ use quire_checked::node::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod native_literal;
 mod typing;
@@ -373,6 +373,15 @@ pub struct PackageDeclarations {
     /// record, tuple and function node key (FR-092). The checked graph carries it on for the lock's
     /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// All admitted source references in canonical owner order.
+    pub(crate) sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
+    /// Source owner for each top-level declaration admitted from the
+    /// aggregate unit list. A missing entry means the single-source legacy
+    /// assembly path, whose owner is `source`.
+    pub(crate) source_owners: BTreeMap<String, qsl_foundation::source::provenance::RawSourceRef>,
+    /// Source reference for each ordinary function form, by declaration
+    /// index, retained for owner-aware occurrence regions.
+    pub(crate) function_sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
     /// The package's name: the package manifest's top-level `name`, required
     /// on every compile or check request (FR-091-OQ-3). It is the `package`
     /// of every source-owned declared or derived node key. A unit label
@@ -691,7 +700,10 @@ impl PackageDeclarations {
             selected_exact_identity_rows: (Vec::new(), Vec::new()),
             selected_tuple_declaration_rows: Vec::new(),
             pending_types: None,
-            source,
+            source: source.clone(),
+            sources: vec![source],
+            source_owners: BTreeMap::new(),
+            function_sources: Vec::new(),
             package_name: package_name.into(),
             protocol_profile: None,
             header_layers: Vec::new(),
@@ -948,6 +960,8 @@ pub struct Scope {
     index: ScopeIndex,
     /// Each admitted import by its qualifier (ADR-015 D-5).
     imports: BTreeMap<String, super::AdmittedImport>,
+    /// Predicate calls resolved while this one package is checked.
+    pub(crate) dependency_references: Arc<Mutex<Vec<super::PendingDependencyReference>>>,
 }
 
 qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, model_selections: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
@@ -1150,6 +1164,7 @@ impl Scope {
             symmetric_objects: BTreeMap::new(),
             index,
             imports: BTreeMap::new(),
+            dependency_references: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1372,6 +1387,22 @@ impl Scope {
     /// The admitted import whose qualifier is `qualifier`.
     pub(crate) fn imported(&self, qualifier: &str) -> Option<&super::AdmittedImport> {
         self.imports.get(qualifier)
+    }
+
+    pub(crate) fn record_dependency_reference(&self, reference: super::PendingDependencyReference) {
+        self.dependency_references
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(reference);
+    }
+
+    pub(crate) fn take_dependency_references(&self) -> Vec<super::PendingDependencyReference> {
+        std::mem::take(
+            &mut *self
+                .dependency_references
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Every admitted import, for typed consumers that resolve declarations

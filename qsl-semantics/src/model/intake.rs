@@ -123,8 +123,8 @@ pub(crate) fn selected_exact_identities_from_rows(
 
 mod unit;
 pub use unit::{
-    admit_unit, admit_unit_with_cancel, OperationClauseFailure, SelectedModel, SelectedModels,
-    TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
+    admit_unit, admit_unit_with_cancel, admit_units_with_cancel, OperationClauseFailure,
+    SelectedModel, SelectedModels, TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
 };
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a

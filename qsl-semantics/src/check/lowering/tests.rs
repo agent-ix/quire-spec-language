@@ -86,9 +86,10 @@ fn type_nodes(
     let mut occurrences = OccurrenceMap::default();
     let location = generated_location();
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
-    let mut lowering = Lowering::new(
+    let mut lowering = Lowering::new_with_source_owners(
         scope,
         owner,
+        &std::collections::BTreeMap::new(),
         &[],
         &[],
         scope.types().units().clone(),
@@ -1155,9 +1156,10 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
     let owner = SourceOwner::from(&fixture_source());
     let mut occurrences = OccurrenceMap::default();
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
-    let mut lowering = Lowering::new(
+    let mut lowering = Lowering::new_with_source_owners(
         &scope,
         &owner,
+        &std::collections::BTreeMap::new(),
         &[],
         &[],
         scope.types().units().clone(),

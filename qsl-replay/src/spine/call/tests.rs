@@ -1960,16 +1960,13 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
         Integer::one(),
         Integer::from(9_i64),
     ));
-    let graph = PackageDeclarations {
-        aliases: vec![("Pos".to_owned(), pos.clone())],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    }
-    .check(CheckingLimits::default())
-    .unwrap();
+    let mut declarations = PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.aliases = vec![("Pos".to_owned(), pos.clone())];
+    let graph = declarations.check(CheckingLimits::default()).unwrap();
     let package = CheckedPackage::link(graph);
 
     let q_type = ValueType::collection(CollectionType::new(

@@ -5813,7 +5813,6 @@ fn temporal_binding_rows(
         }
     }
 
-    let source = graph.source();
     let mut rows = Vec::new();
     for temporal in graph.temporal_clauses() {
         let clause = temporal.clause();
@@ -5826,6 +5825,13 @@ fn temporal_binding_rows(
         ) {
             continue;
         }
+        let location = graph
+            .occurrence(temporal.identity(), temporal.claim())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = graph
+            .region(location)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let source = region.source().clone();
         let span = clause.span();
         let key = (source.clone(), span.start, span.end);
         let Some(clock) = selected.remove(&key) else {
@@ -5863,6 +5869,16 @@ fn temporal_binding_rows(
         ) {
             continue;
         }
+        let occurrence = hyper
+            .assembled_occurrence()
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let location = graph
+            .occurrence(occurrence.node().clone(), occurrence.origin())
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let region = graph
+            .region(location)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let source = region.source().clone();
         let span = hyper.span();
         let key = (source.clone(), span.start, span.end);
         let Some(clock) = selected.remove(&key) else {
@@ -5878,9 +5894,6 @@ fn temporal_binding_rows(
                 profile: profile.identity(),
             });
         }
-        let occurrence = hyper
-            .assembled_occurrence()
-            .ok_or(EmitRefusal::SourceMapInvariant)?;
         let hyper_node = graph
             .semantic_graph()
             .node(occurrence.node().clone())
@@ -5946,6 +5959,10 @@ fn temporal_binding_rows(
         })
         .collect();
     for protocol in graph.protocols() {
+        // Protocol compensation templates do not carry an assembled claim
+        // occurrence; their existing source contract is the graph's primary
+        // source until protocol owner occurrences are exposed.
+        let source = graph.source().clone();
         for template in &protocol.obligations.compensations {
             let Some(profile) = template.temporal_profile else {
                 continue;
