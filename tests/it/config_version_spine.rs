@@ -1278,6 +1278,7 @@ fn checked_package_identity_changes_with_model_content_and_ignores_order() {
         .as_array_mut()
         .unwrap()
         .reverse();
+    reordered["types"].as_array_mut().unwrap().reverse();
     reordered["populations"].as_array_mut().unwrap().reverse();
     assert_eq!(ordered, emitted_model_bytes(&reordered));
 }

@@ -741,10 +741,24 @@ fn unit_selection(package_identity: &str) -> ModelSelection {
 #[test]
 fn duplicate_package_documents_refuse_and_one_identity_can_have_two_aliases() {
     let bytes = include_bytes!("../../../examples/config-version/model.semantic-ir.json");
+    let assert_conflict = |refusal: qsl_semantics::model::normalize::ModelRefusal| {
+        assert_eq!(refusal.code, Code::InvalidPackage);
+        assert_eq!(refusal.cause.as_str(), "conflicting-definition");
+        assert!(matches!(
+            refusal.cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::ConflictingPackage { identity }
+                if identity == "example/config-version"
+        ));
+    };
     let equal = package_input([bytes.as_slice(), bytes.as_slice()])
         .expect_err("one package identity cannot be supplied twice, even with equal documents");
-    assert_eq!(equal.code, Code::InvalidPackage);
-    assert_eq!(equal.cause.as_str(), "conflicting-definition");
+    assert_conflict(equal);
+
+    let same_version_different_content = format!("{}\n", std::str::from_utf8(bytes).unwrap());
+    let changed_content =
+        package_input([bytes.as_slice(), same_version_different_content.as_bytes()])
+            .expect_err("different contents under one identity conflict even when versions agree");
+    assert_conflict(changed_content);
 
     let different = std::str::from_utf8(bytes)
         .expect("fixture is UTF-8")
@@ -754,9 +768,12 @@ fn duplicate_package_documents_refuse_and_one_identity_can_have_two_aliases() {
             1,
         );
     let changed = package_input([bytes.as_slice(), different.as_bytes()])
-        .expect_err("different contents for one package identity conflict");
-    assert_eq!(changed.code, Code::InvalidPackage);
-    assert_eq!(changed.cause.as_str(), "conflicting-definition");
+        .expect_err("different versions and contents for one package identity conflict");
+    assert_conflict(changed);
+
+    // A refused package input is all-or-nothing: callers cannot select the
+    // first document as a partial binding after the duplicate is found.
+    assert!(package_input([bytes.as_slice(), bytes.as_slice()]).is_err());
 
     let packages = package_input([bytes.as_slice()]).expect("the single document is keyed");
     let selection = |alias: &str, start: usize| ModelSelection {
