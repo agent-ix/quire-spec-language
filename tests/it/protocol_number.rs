@@ -70,7 +70,14 @@ fn rationals_match_independent_exact_objects() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-2", "FR-038-AC-4")]
+#[trace(
+    "TC-1306",
+    "FR-511-AC-2",
+    "FR-511-AC-4",
+    "TC-117",
+    "FR-038-AC-2",
+    "FR-038-AC-4"
+)]
 fn integer_and_rational_kinds_are_not_coerced() {
     let integer = json!({"kind": "integer", "decimal": "1"});
     let rational = json!({"kind": "rational", "numerator": "1", "denominator": "1"});
@@ -182,7 +189,14 @@ fn invalid_rationals_are_refused_without_reduction_or_sign_repair() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-3", "FR-038-AC-4")]
+#[trace(
+    "TC-1306",
+    "FR-511-AC-2",
+    "FR-511-AC-4",
+    "TC-117",
+    "FR-038-AC-3",
+    "FR-038-AC-4"
+)]
 fn raw_number_tokens_never_become_decimal_components() {
     for token in [
         "0",
