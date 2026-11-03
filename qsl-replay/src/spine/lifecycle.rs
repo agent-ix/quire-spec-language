@@ -1089,71 +1089,75 @@ pub fn package_with_temporal_selections(
     cancel: &Cancel,
 ) -> Result<Staged<EmittedUnit>, FrontEndFailure> {
     let PackageLimits {} = limits;
-    stage(cancel, &|_| None, |work| {
-        for selection in selections {
-            let source_is_compiled = selection.source == *checked.source.reference()
-                || checked
-                    .libraries
-                    .iter()
-                    .any(|source| selection.source == *source.reference());
-            if !source_is_compiled {
-                return Err(Box::new(CompileRefusal::Emit(
-                    qsl_package::EmitRefusal::SurplusTemporalClockSelection {
-                        source_ref: selection.source.clone(),
-                        span: selection.declaration_span,
-                    },
-                )));
-            }
-        }
-        let own = temporal_selections_for_source(selections, checked.source.reference());
-        let protocol_emission = charged(cancel, &mut work.e4, || {
-            qsl_package::emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
-                &checked.package,
-                &own,
-                cancel,
-            )
-        })
-        .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
-        let results = lifecycle_emission_results(&protocol_emission);
-        let emission = match protocol_emission.aggregate() {
-            qsl_package::ProtocolEmissionAggregate::Emitted => {
-                protocol_emission.emission().ok_or_else(|| {
-                    Box::new(CompileRefusal::Emit(
-                        qsl_package::EmitRefusal::NothingToEmit {
-                            omitted: Vec::new(),
+    stage(
+        cancel,
+        &|_| None,
+        |work| -> Result<EmittedUnit, StageError> {
+            for selection in selections {
+                let source_is_compiled = selection.source == *checked.source.reference()
+                    || checked
+                        .libraries
+                        .iter()
+                        .any(|source| selection.source == *source.reference());
+                if !source_is_compiled {
+                    return Err(Box::new(CompileRefusal::Emit(
+                        qsl_package::EmitRefusal::SurplusTemporalClockSelection {
+                            source_ref: selection.source.clone(),
+                            span: selection.declaration_span,
                         },
-                    ))
-                })?
+                    )));
+                }
             }
-            qsl_package::ProtocolEmissionAggregate::Refused { primary } => {
-                return Err(StageError::with_protocol_results(
-                    Box::new(CompileRefusal::Check {
-                        refusals: vec![primary.clone()],
-                        region: None,
-                    }),
-                    results,
-                ));
-            }
-            qsl_package::ProtocolEmissionAggregate::Incomplete { primary } => {
-                let limit =
-                    LimitExceeded::new(primary.kind.setting(), primary.limit, primary.actual)
-                        .at(primary.region.clone().map(Locus::Region));
-                return Err(StageError::with_protocol_results(
-                    Box::new(CompileRefusal::Limit(limit)),
-                    results,
-                ));
-            }
-        };
-        let sources = std::iter::once(&checked.source)
-            .chain(&checked.libraries)
-            .cloned()
-            .collect();
-        Ok(EmittedUnit {
-            package: emission.package().clone(),
-            sources,
-            evidence: emission.evidence().clone(),
-        })
-    })
+            let own = temporal_selections_for_source(selections, checked.source.reference());
+            let protocol_emission = charged(cancel, &mut work.e4, || {
+                qsl_package::emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
+                    &checked.package,
+                    &own,
+                    cancel,
+                )
+            })
+            .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+            let results = lifecycle_emission_results(&protocol_emission);
+            let emission = match protocol_emission.aggregate() {
+                qsl_package::ProtocolEmissionAggregate::Emitted => {
+                    protocol_emission.emission().ok_or_else(|| {
+                        Box::new(CompileRefusal::Emit(
+                            qsl_package::EmitRefusal::NothingToEmit {
+                                omitted: Vec::new(),
+                            },
+                        ))
+                    })?
+                }
+                qsl_package::ProtocolEmissionAggregate::Refused { primary } => {
+                    return Err(StageError::with_protocol_results(
+                        Box::new(CompileRefusal::Check {
+                            refusals: vec![primary.clone()],
+                            region: None,
+                        }),
+                        results,
+                    ));
+                }
+                qsl_package::ProtocolEmissionAggregate::Incomplete { primary } => {
+                    let limit =
+                        LimitExceeded::new(primary.kind.setting(), primary.limit, primary.actual)
+                            .at(primary.region.clone().map(Locus::Region));
+                    return Err(StageError::with_protocol_results(
+                        Box::new(CompileRefusal::Limit(limit)),
+                        results,
+                    ));
+                }
+            };
+            let sources = std::iter::once(&checked.source)
+                .chain(&checked.libraries)
+                .cloned()
+                .collect();
+            Ok(EmittedUnit {
+                package: emission.package().clone(),
+                sources,
+                evidence: emission.evidence().clone(),
+            })
+        },
+    )
 }
 
 fn lifecycle_emission_results(
