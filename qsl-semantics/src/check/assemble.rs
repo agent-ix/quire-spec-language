@@ -193,6 +193,8 @@ pub enum TopologyFault {
 /// refuses in these cases").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssemblyCause {
+    /// The aggregate assembler was given no admitted source units.
+    EmptyUnitList,
     /// A qualified type name names no declaration of the unit and nothing
     /// in an admitted domain package.
     UnresolvedTypeName {
@@ -509,6 +511,7 @@ impl AssemblyCause {
     /// This cause's catalog code (FR-091 "Catalog codes").
     pub fn code(&self) -> Code {
         match self {
+            Self::EmptyUnitList => Code::InvalidPackage,
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
             | Self::UnresolvedOperation { .. }
@@ -601,6 +604,7 @@ impl AssemblyCause {
     /// ADR-013 O-17).
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
+            Self::EmptyUnitList => "established-invariant-broken",
             Self::UnresolvedTypeName { .. }
             | Self::UnresolvedOperation { .. }
             | Self::UnresolvedTerminalModel { .. }
@@ -3067,6 +3071,56 @@ pub struct AdmittedImport {
 qsl_foundation::debug_with_struct!(AdmittedImport, "AdmittedImport" { identity: plain, view: with, graph: with });
 
 impl PackageDeclarations {
+    /// Assemble an admitted set of source units as one declaration namespace.
+    /// Units are sorted by their `(authority, identity)` source reference
+    /// before forms are combined; declaration names retain the source that
+    /// contributed them so S3 can key nodes and source regions under that
+    /// owner. Admission of empty, duplicate, and colliding owners belongs to
+    /// the spine's FR-480 preflight stage.
+    pub fn assemble_units(
+        package_name: String,
+        mut units: Vec<(RawSourceRef, ParsedUnit)>,
+        models: impl Into<SelectedModels>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, AssemblyRefusal> {
+        units.sort_by(|(left, _), (right, _)| left.cmp(right));
+        let Some((source, _)) = units.first() else {
+            return Err(AssemblyRefusal {
+                errors: vec![AssemblyError {
+                    cause: AssemblyCause::EmptyUnitList,
+                    span: Span { start: 0, end: 0 },
+                }],
+            });
+        };
+        let source = source.clone();
+        let mut source_owners = BTreeMap::new();
+        let sources: Vec<_> = units.iter().map(|(source, _)| source.clone()).collect();
+        for (source, unit) in &units {
+            for form in unit.forms() {
+                if let Some(name) = form.declared_name() {
+                    source_owners.insert(name.to_owned(), source.clone());
+                }
+            }
+        }
+        let combined = ParsedUnit::combine(units.into_iter().map(|(_, unit)| unit));
+        Self::assemble_with_execution_points_and_cancel_and_owners(
+            source,
+            package_name,
+            combined,
+            models,
+            imports,
+            limits,
+            AssemblyRun {
+                cancel,
+                execution_points: BTreeMap::new(),
+            },
+            source_owners,
+            sources,
+        )
+    }
+
     /// FR-091's assembler: the package declared by `unit`, the S2 output of
     /// the source unit `source` names, whose authority and identity are the
     /// owner of every declared node (ADR-013 O-04), over `models`, the
@@ -3153,6 +3207,30 @@ impl PackageDeclarations {
         limits: AssemblyLimits,
         run: AssemblyRun<'_>,
     ) -> Result<Self, AssemblyRefusal> {
+        Self::assemble_with_execution_points_and_cancel_and_owners(
+            source.clone(),
+            package_name,
+            unit,
+            models,
+            imports,
+            limits,
+            run,
+            BTreeMap::new(),
+            vec![source.clone()],
+        )
+    }
+
+    fn assemble_with_execution_points_and_cancel_and_owners(
+        source: RawSourceRef,
+        package_name: String,
+        unit: ParsedUnit,
+        models: impl Into<SelectedModels>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+        run: AssemblyRun<'_>,
+        source_owners: BTreeMap<String, RawSourceRef>,
+        sources: Vec<RawSourceRef>,
+    ) -> Result<Self, AssemblyRefusal> {
         let AssemblyRun {
             cancel,
             execution_points,
@@ -3182,7 +3260,18 @@ impl PackageDeclarations {
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
-        let quantity_owners = OwnerSelection::new([owner.node_owner(&package_name)]);
+        let mut admitted_source_owners: Vec<_> = source_owners
+            .values()
+            .map(|source| SourceOwner::from(source).node_owner(&package_name))
+            .collect();
+        admitted_source_owners.push(owner.node_owner(&package_name));
+        let quantity_owners = OwnerSelection::new(admitted_source_owners);
+        let source_owner_for = |name: &str| {
+            source_owners
+                .get(name)
+                .map(SourceOwner::from)
+                .unwrap_or_else(|| owner.clone())
+        };
         // The selected packages' dimensions, which a source dimension's
         // terms may name.
         let imported = units::Imported::new(
@@ -3698,7 +3787,8 @@ impl PackageDeclarations {
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
         for enumeration in &unit.enums {
-            match admit_enum(enumeration, &owner, &package_name, &owners) {
+            let declaration_owner = source_owner_for(&enumeration.name.name);
+            match admit_enum(enumeration, &declaration_owner, &package_name, &owners) {
                 Ok(binding) => {
                     names
                         .types
@@ -3715,7 +3805,8 @@ impl PackageDeclarations {
         }
         let mut handles = Vec::with_capacity(unit.composites.len());
         for composite in &unit.composites {
-            match owner
+            let declaration_owner = source_owner_for(&composite.name.name);
+            match declaration_owner
                 .node_owner(&package_name)
                 .declared_type_handle(&composite.name.name)
             {
@@ -4093,6 +4184,8 @@ impl PackageDeclarations {
         }
 
         let mut package = PackageDeclarations::new(source, package_name, limits.identity);
+        package.sources = sources;
+        package.source_owners = source_owners;
         package.execution_point_keys = execution_points.keys().cloned().collect();
         package.types = types;
         package.operations = operations;
@@ -4146,6 +4239,17 @@ impl PackageDeclarations {
         }
         package.dimension_equivalences = equivalences;
         package.functions = unit.functions;
+        package.function_sources = package
+            .functions
+            .iter()
+            .map(|function| {
+                package
+                    .source_owners
+                    .get(&function.name)
+                    .cloned()
+                    .unwrap_or_else(|| package.source.clone())
+            })
+            .collect();
         package.function_selections = function_selections;
         declared_type_spans.extend(state_clauses.iter().enumerate().map(|(index, clause)| {
             (

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
@@ -17,7 +18,7 @@ use super::{
     admit_types_with, model_field, model_operation, model_value_type, AssemblyCause, AssemblyError,
     AssemblyRefusal, TopologyFault, Unmapped,
 };
-use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
+use crate::check::{CheckCause, Owner, PackageDeclarations, SourceOwner, TypeFormFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     AliasTypeRecord, ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
@@ -3694,4 +3695,163 @@ fn the_value_layer_admits_functions_and_the_package_records_its_layers() {
     .1
     .expect("the value layer admits functions, predicates and integer division");
     assert_eq!(package.header_layers, [HeaderLayer::ValueComplete]);
+}
+
+fn parsed_unit_as(
+    authority: &str,
+    identity: &str,
+    text: &str,
+) -> (RawSourceRef, qsl_forms::ParsedUnit) {
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new(authority, identity, "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the source unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let source = parsed.source().reference().clone();
+    (
+        source,
+        build_unit(&parsed).expect("S2 builds the source unit"),
+    )
+}
+
+/// FR-480-AC-2, AC-5, AC-8: the aggregate assembler resolves a function
+/// signature against another unit, keeps the declaring unit on the type
+/// node and its source region, and assigns stable identities in canonical
+/// source order independent of request order.
+#[trace("FR-480-AC-2", "FR-480-AC-5", "FR-480-AC-8")]
+#[test]
+fn aggregate_units_resolve_types_and_retain_the_declaring_source() {
+    let a_text = text("", "record Point { x: Int[0, 9]; }");
+    let b_text = text(
+        PROFILE_V,
+        "function px using v(p: Point): Int[0, 9] pure { p.x }",
+    );
+    let (source_a, unit_a) = parsed_unit_as("repo", "a", &a_text);
+    let (source_b, unit_b) = parsed_unit_as("repo", "b", &b_text);
+    let assemble = |units| {
+        PackageDeclarations::assemble_units(
+            "test/package".to_owned(),
+            units,
+            crate::model::intake::SelectedModels::default(),
+            Vec::new(),
+            super::AssemblyLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the aggregate namespace resolves Point")
+        .check(CheckingLimits::default())
+        .expect("the cross-unit function checks")
+    };
+    let first = assemble(vec![
+        (source_b.clone(), unit_b.clone()),
+        (source_a.clone(), unit_a.clone()),
+    ]);
+    let second = assemble(vec![(source_a.clone(), unit_a), (source_b.clone(), unit_b)]);
+
+    let callable = first.callable("px").expect("px is checked");
+    assert!(matches!(&callable.parameters[0].1, ValueType::Composite(_)));
+    let region = first
+        .region(&Location::root(Origin::TypeDeclaration {
+            name: "Point".to_owned(),
+        }))
+        .expect("Point resolves to its own source region");
+    assert_eq!(region.source(), &source_a);
+    assert_eq!(first.source(), &source_a);
+    assert_eq!(first.sources(), vec![&source_a, &source_b]);
+    let body_region = first
+        .region(&Location::root(Origin::Body {
+            function: "px".to_owned(),
+            index: 0,
+        }))
+        .expect("px resolves to its own source region");
+    assert_eq!(body_region.source(), &source_b);
+    assert_eq!(
+        first.function_identity("px"),
+        second.function_identity("px"),
+        "request order does not change function identity"
+    );
+    let first_point = first.checked_type_nodes().next().unwrap().node();
+    let second_point = second.checked_type_nodes().next().unwrap().node();
+    assert_eq!(first_point, second_point);
+
+    let moved_text = text(
+        PROFILE_V,
+        "record Point { x: Int[0, 9]; }\nfunction px using v(p: Point): Int[0, 9] pure { p.x }",
+    );
+    let (source_b, moved_unit) = parsed_unit_as("repo", "b", &moved_text);
+    let moved = assemble(vec![(source_b.clone(), moved_unit)]);
+    let moved_point = moved.checked_type_nodes().next().unwrap().node();
+    assert_eq!(
+        first_point, moved_point,
+        "the structural node identity remains stable when ownership moves"
+    );
+    let point_owner = |graph: &crate::check::CheckedGraph| {
+        graph
+            .semantic_graph()
+            .nodes()
+            .find(|node| {
+                node.declaration().is_some_and(|segments| {
+                    segments
+                        .last()
+                        .is_some_and(|segment| segment.as_str() == "Point")
+                })
+            })
+            .and_then(|node| node.owner())
+            .cloned()
+            .expect("Point's checked node retains its source owner")
+    };
+    assert_eq!(
+        point_owner(&first),
+        Owner::Source(SourceOwner::from(&source_a))
+    );
+    assert_eq!(
+        point_owner(&moved),
+        Owner::Source(SourceOwner::from(&source_b))
+    );
+    let px_owner = first
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.declaration().is_some_and(|segments| {
+                segments
+                    .last()
+                    .is_some_and(|segment| segment.as_str() == "px")
+            })
+        })
+        .and_then(|node| node.owner())
+        .cloned()
+        .expect("px's checked node retains its source owner");
+    assert_eq!(px_owner, Owner::Source(SourceOwner::from(&source_b)));
+    let moved_region = moved
+        .region(&Location::root(Origin::TypeDeclaration {
+            name: "Point".to_owned(),
+        }))
+        .expect("moved Point resolves to its new source region");
+    assert_eq!(moved_region.source(), &source_b);
+}
+
+/// FR-480-AC-2: a duplicate declaration is still ambiguous after the
+/// aggregate assembler has merged all units into one namespace.
+#[trace("FR-480-AC-2")]
+#[test]
+fn aggregate_units_refuse_duplicate_type_declarations() {
+    let (source_a, unit_a) =
+        parsed_unit_as("repo", "a", &text("", "record Point { x: Int[0, 9]; }"));
+    let (source_b, unit_b) =
+        parsed_unit_as("repo", "b", &text("", "record Point { y: Int[0, 9]; }"));
+    let refusal = PackageDeclarations::assemble_units(
+        "test/package".to_owned(),
+        vec![(source_a, unit_a), (source_b, unit_b)],
+        crate::model::intake::SelectedModels::default(),
+        Vec::new(),
+        super::AssemblyLimits::default(),
+        &Cancel::new(),
+    )
+    .expect_err("two Point declarations are ambiguous");
+    assert!(refusal.errors.iter().any(|error| matches!(
+        &error.cause,
+        AssemblyCause::AmbiguousTypeName { name, .. } if name == "Point"
+    )));
 }

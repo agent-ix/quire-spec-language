@@ -108,6 +108,8 @@ struct DeclaredSpans<'a> {
 fn resolve<'s>(
     memo: &SpanMemo,
     document: Document<'_>,
+    source_owners: &BTreeMap<String, RawSourceRef>,
+    function_sources: &[RawSourceRef],
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     declared: DeclaredSpans<'_>,
@@ -144,7 +146,17 @@ fn resolve<'s>(
         | Origin::ModelOperationClause { .. }
         | Origin::Expression => return None,
     };
-    region(document.source, document.embedding, span)
+    let source = match &location.origin {
+        Origin::Body { index, .. } | Origin::Measure { index, .. } => {
+            function_sources.get(*index).unwrap_or(document.source)
+        }
+        Origin::TypeDeclaration { name } => source_owners.get(name).unwrap_or(document.source),
+        _ => document.source,
+    };
+    let embedding = (source == document.source)
+        .then_some(document.embedding)
+        .flatten();
+    region(source, embedding, span)
 }
 
 /// `span` as a region of `source`. For a body embedded in a document
@@ -181,6 +193,8 @@ impl PackageDeclarations {
                 source: &self.source,
                 embedding: self.embedding.as_deref(),
             },
+            &self.source_owners,
+            &self.function_sources,
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             DeclaredSpans {
@@ -228,6 +242,8 @@ impl PackageDeclarations {
 #[derive(Clone, Debug)]
 pub struct DeclarationRegions {
     source: RawSourceRef,
+    source_owners: BTreeMap<String, RawSourceRef>,
+    function_sources: Vec<RawSourceRef>,
     embedding: Option<Arc<SourceMap>>,
     spans: Vec<Option<DeclarationSpans>>,
     /// Each state clause's form spans, by its index in source order.
@@ -264,6 +280,8 @@ impl DeclarationRegions {
                 source: &self.source,
                 embedding: self.embedding.as_deref(),
             },
+            &self.source_owners,
+            &self.function_sources,
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
             DeclaredSpans {
@@ -395,6 +413,8 @@ impl PackageDeclarations {
     pub fn regions(&self) -> DeclarationRegions {
         DeclarationRegions {
             source: self.source.clone(),
+            source_owners: self.source_owners.clone(),
+            function_sources: self.function_sources.clone(),
             embedding: self.embedding.clone(),
             spans: self
                 .functions
@@ -478,7 +498,15 @@ impl CheckedGraph {
         origin: &quire_exact::Origin,
     ) -> Option<SourceRegion> {
         if let Some(span) = self.parameter_span(node.clone(), origin) {
-            return region(&self.source, self.embedding.as_deref(), span);
+            let function_index = (0..self.function_sources.len())
+                .find(|index| self.function_identity_at(*index).as_ref() == Some(&node));
+            let source = function_index
+                .and_then(|index| self.function_sources.get(index))
+                .unwrap_or(&self.source);
+            let embedding = (source == &self.source)
+                .then_some(self.embedding.as_deref())
+                .flatten();
+            return region(source, embedding, span);
         }
         self.region(self.occurrence(node, origin)?)
     }
@@ -492,6 +520,8 @@ impl CheckedGraph {
                 source: &self.source,
                 embedding: self.embedding.as_deref(),
             },
+            &self.source_owners,
+            &self.function_sources,
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             DeclaredSpans {
@@ -518,6 +548,8 @@ impl CheckedGraph {
                     source: &self.source,
                     embedding: self.embedding.as_deref(),
                 },
+                &self.source_owners,
+                &self.function_sources,
                 |index| self.form_spans.get(index)?.as_ref(),
                 |index| Some(&self.state_clauses.get(index)?.spans),
                 DeclaredSpans {
@@ -538,7 +570,11 @@ impl CheckedGraph {
             Some(spans) => spans.declaration,
             None => *self.synthesized_spans.get(&index)?,
         };
-        region(&self.source, self.embedding.as_deref(), span)
+        let source = self.function_sources.get(index).unwrap_or(&self.source);
+        let embedding = (source == &self.source)
+            .then_some(self.embedding.as_deref())
+            .flatten();
+        region(source, embedding, span)
     }
 }
 

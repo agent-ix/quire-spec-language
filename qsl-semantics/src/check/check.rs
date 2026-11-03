@@ -373,6 +373,15 @@ pub struct PackageDeclarations {
     /// record, tuple and function node key (FR-092). The checked graph carries it on for the lock's
     /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
+    /// All admitted source references in canonical owner order.
+    pub(crate) sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
+    /// Source owner for each top-level declaration admitted from the
+    /// aggregate unit list. A missing entry means the single-source legacy
+    /// assembly path, whose owner is `source`.
+    pub(crate) source_owners: BTreeMap<String, qsl_foundation::source::provenance::RawSourceRef>,
+    /// Source reference for each ordinary function form, by declaration
+    /// index, retained for owner-aware occurrence regions.
+    pub(crate) function_sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
     /// The package's name: the package manifest's top-level `name`, required
     /// on every compile or check request (FR-091-OQ-3). It is the `package`
     /// of every source-owned declared or derived node key. A unit label
@@ -691,7 +700,10 @@ impl PackageDeclarations {
             selected_exact_identity_rows: (Vec::new(), Vec::new()),
             selected_tuple_declaration_rows: Vec::new(),
             pending_types: None,
-            source,
+            source: source.clone(),
+            sources: vec![source],
+            source_owners: BTreeMap::new(),
+            function_sources: Vec::new(),
             package_name: package_name.into(),
             protocol_profile: None,
             header_layers: Vec::new(),

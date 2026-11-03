@@ -641,6 +641,10 @@ pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
     /// entry.
     source: qsl_foundation::source::provenance::RawSourceRef,
+    sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
+    /// Per-declaration source references for a multi-unit checked package.
+    source_owners: BTreeMap<String, qsl_foundation::source::provenance::RawSourceRef>,
+    function_sources: Vec<qsl_foundation::source::provenance::RawSourceRef>,
     /// The package manifest's top-level name, the `package` of every
     /// structural node id the graph's nodes carry.
     package_name: String,
@@ -875,6 +879,9 @@ impl DebugWith for CheckedGraph {
         let CheckedGraph {
             graph_identity: _,
             source,
+            sources,
+            source_owners,
+            function_sources,
             package_name,
             scope,
             functions,
@@ -940,6 +947,9 @@ impl DebugWith for CheckedGraph {
         } = self;
         f.debug_struct("CheckedGraph")
             .field("source", &source)
+            .field("sources", &sources)
+            .field("source_owners", &source_owners)
+            .field("function_sources", &function_sources)
             .field("package_name", &package_name)
             .field("scope", &With(scope, table))
             .field("functions", &With(functions, table))
@@ -2380,6 +2390,11 @@ impl PackageDeclarations {
             .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
+        let source_owners: BTreeMap<String, node_key::SourceOwner> = self
+            .source_owners
+            .iter()
+            .map(|(name, source)| (name.clone(), node_key::SourceOwner::from(source)))
+            .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let models = self.models;
@@ -2585,9 +2600,10 @@ impl PackageDeclarations {
             let mut sealing_meter =
                 quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
             let mut sealing_occurrences = family::OccurrenceMap::default();
-            let mut sealing = lowering::Lowering::new(
+            let mut sealing = lowering::Lowering::new_with_source_owners(
                 &scope,
                 &owner,
+                &source_owners,
                 &models,
                 &dispatch_tables,
                 scope.types().units().clone(),
@@ -4403,9 +4419,10 @@ impl PackageDeclarations {
                 units.append(table);
             }
         }
-        let mut lowering = lowering::Lowering::new(
+        let mut lowering = lowering::Lowering::new_with_source_owners(
             &scope,
             &owner,
+            &source_owners,
             &models,
             &dispatch_tables,
             units,
@@ -6597,6 +6614,9 @@ impl PackageDeclarations {
         let mut graph = CheckedGraph {
             graph_identity: CheckedGraphIdentity::fresh(),
             source,
+            sources: self.sources,
+            source_owners: self.source_owners,
+            function_sources: self.function_sources,
             package_name,
             scope,
             functions,
@@ -7474,10 +7494,17 @@ impl CheckedGraph {
         &self.header_layers
     }
 
-    /// FR-001: the `RawSourceRef` of the unit this package was checked
-    /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
+    /// FR-001: the canonical first `RawSourceRef` of the checked package,
+    /// retained for the single-source compatibility accessor. Multi-unit
+    /// consumers should use [`Self::sources`] and owner-aware regions.
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
         &self.source
+    }
+
+    /// Every source reference contributing a declaration, in canonical
+    /// `(authority, identity)` order.
+    pub fn sources(&self) -> Vec<&qsl_foundation::source::provenance::RawSourceRef> {
+        self.sources.iter().collect()
     }
 
     /// The package manifest's top-level name this package was checked under:
