@@ -133,10 +133,23 @@ ported recipe is **R**; its elements and their spine requirements:
 | --- | --- |
 | `model.json` scalars `ObjectId` (text, 128), `Amount` 1..20, `Total` 0..100, `Tally` 0..5, `Wide` (signed 64-bit) | one domain package document with the same bounds, selected by a `model` declaration; `Amount` and `Total` carry no unit (FR-517-AC-13) |
 | scalars `Ratio` and `Exact` (bounded rationals) | none (FR-517-AC-12) |
-| records `Workflow`, `Notice`, `Provider`, and the compensation value types `Attempt` and `Recovery` (QSL-1556); sequence `receipts` (maximum 5) | the same records and bounded sequence |
+| records `Workflow`, `Notice`, `Provider`; sequence `receipts` (maximum 5); the compensations' `attempts`, `retry` and `recover` binders typed by the object type `Workflow` | the same records and bounded sequence, `Workflow` kept as the `over`, role and forward-binder type; the `attempts` type and the `retry` binders are the record value type `Attempt` (field `tally`), and the `recover` binder the record value type `Recovery` (field `receipts`) |
 | `predicates` and `state` bodies: cross-unit calls, bounded `sum`/`size` queries, the extrema literals `-9223372036854775808` and `9223372036854775807` | predicates and functions in a library unit imported by the main unit, with the same literals |
 | `temporal` bodies, three clock kinds: event position, fixed sample, timestamped event | four `temporal` clauses, each under a `profile` selection; clock configurations are given in the request (QSL-1557); `temporal_bindings` holds one row per temporal clause and per compensation template, in ascending `NodeRef` order |
 | `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, and the compensations `Full` (commit `Main::Committed`) and `Partial` (commit `never`) | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383), whose `recover` conditions test `size` of the receipts (FR-517-AC-14) |
+
+The legacy recipe's `Workflow` attempt and recovery binders are not portable,
+and **R** replaces their type rather than the element. An attempt record is a
+record or an event type (FR-381 "Activation, attempts and deadline"; QSpec
+FR-466 reference check 1 on `attempts.record_type`), so `attempts 3 of
+M::Workflow` is refused. The retry relation and the recovery predicate bar
+model state, and a field read of an object-typed binder is a model-state read
+(FR-381 "Names a stage may read", FR-381-AC-14; QSpec FR-464 "Slots that bar
+model state"), so `earlier.tally` and `recovered.receipts` over `Workflow`
+binders are refused. The compensations keep every stage, bound and retry
+relation of the legacy recipe over the record value types `Attempt` and
+`Recovery`, and their `recover` conditions are those of FR-517-AC-14
+(QSL-1556).
 
 **R** is three packages, one per clock kind, because the emitter admits one
 temporal profile selection per unit and the checker refuses a unit that selects
