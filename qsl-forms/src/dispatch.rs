@@ -159,6 +159,18 @@ pub struct ParsedUnit {
     forms: Vec<ParsedForm>,
 }
 
+/// One protocol declaration refused while the recovery-aware S2 entry point
+/// continued building its clean siblings.
+#[derive(Clone, Debug)]
+pub struct ProtocolFormsRefusal {
+    /// The authored protocol name.
+    pub declaration: String,
+    /// The enclosing declaration's source span.
+    pub declaration_span: Span,
+    /// The typed forms refusal.
+    pub refusal: FormsRefusal,
+}
+
 impl ParsedUnit {
     /// The header's edition, as written.
     pub fn edition(&self) -> Option<&str> {
@@ -413,6 +425,161 @@ pub fn build_unit(parsed: &ParsedSource) -> Result<ParsedUnit, FormsRefusal> {
         selections: parsed.selections().clone(),
         forms,
     })
+}
+
+/// Build every clean declaration while retaining refusals of individual
+/// protocol declarations. A diagnostic/recovery outside one delimited
+/// protocol remains a unit-level S2 refusal.
+pub fn build_unit_with_protocol_results(
+    parsed: &ParsedSource,
+) -> Result<(ParsedUnit, Vec<ProtocolFormsRefusal>), FormsRefusal> {
+    let cst = parsed.cst();
+    let protocol_nodes: Vec<_> = cst
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::ProtocolClause)
+        .collect();
+    let mut rejected = Vec::new();
+    for diagnostic in parsed.diagnostics() {
+        let Some(diagnostic_span) = diagnostic.byte_span() else {
+            return Err(FormsRefusal {
+                cause: FormsCause::DiagnosedSource(diagnostic.code),
+                span: None,
+                recoveries: Vec::new(),
+            });
+        };
+        let Some(protocol) = protocol_nodes.iter().find(|node| {
+            let span = node.span();
+            span.start < diagnostic_span.start && diagnostic_span.start <= span.end
+        }) else {
+            return Err(FormsRefusal {
+                cause: FormsCause::DiagnosedSource(diagnostic.code),
+                span: Some(diagnostic_span),
+                recoveries: Vec::new(),
+            });
+        };
+        let Some(owner) = declarations(cst).find(|declaration| {
+            declaration.span().start <= protocol.span().start
+                && protocol.span().end <= declaration.span().end
+        }) else {
+            return Err(FormsRefusal {
+                cause: FormsCause::UnexpectedShape {
+                    production: Production::ProtocolClause,
+                },
+                span: Some(protocol.span()),
+                recoveries: Vec::new(),
+            });
+        };
+        rejected.push(ProtocolFormsRefusal {
+            declaration: protocol_name(cst, protocol.span()),
+            declaration_span: owner.span(),
+            refusal: FormsRefusal {
+                cause: FormsCause::DiagnosedSource(diagnostic.code),
+                span: Some(diagnostic_span),
+                recoveries: cst.recoveries().to_vec(),
+            },
+        });
+    }
+    for recovery in cst.recoveries() {
+        let Some(protocol) = protocol_nodes.iter().find(|node| {
+            node.span().start < recovery.span.start && recovery.span.start <= node.span().end
+        }) else {
+            return Err(recovering(cst));
+        };
+        let Some(owner) = declarations(cst).find(|declaration| {
+            declaration.span().start <= protocol.span().start
+                && protocol.span().end <= declaration.span().end
+        }) else {
+            return Err(recovering(cst));
+        };
+        if !rejected
+            .iter()
+            .any(|entry| entry.declaration_span == owner.span())
+        {
+            rejected.push(ProtocolFormsRefusal {
+                declaration: protocol_name(cst, protocol.span()),
+                declaration_span: owner.span(),
+                refusal: recovering(cst),
+            });
+        }
+    }
+    let rejected_spans: Vec<_> = rejected
+        .iter()
+        .map(|entry| entry.declaration_span)
+        .collect();
+    let mut forms = Vec::new();
+    let edition = declared_edition(cst);
+    for node in declarations(cst) {
+        let is_protocol = contains_protocol(cst, node.span());
+        if rejected_spans.contains(&node.span()) {
+            continue;
+        }
+        let spelling = leading_token_spelling(cst, node).unwrap_or_default();
+        let Some(kind) = from_spelling(spelling) else {
+            let refusal = FormsRefusal::at(
+                FormsCause::NoDispatchEntry {
+                    spelling: String::from_utf8_lossy(spelling).into_owned(),
+                },
+                node.span(),
+            );
+            if is_protocol {
+                rejected.push(ProtocolFormsRefusal {
+                    declaration: protocol_name(cst, node.span()),
+                    declaration_span: node.span(),
+                    refusal,
+                });
+                continue;
+            }
+            return Err(refusal);
+        };
+        match dispatch(kind, Construct { cst, node }) {
+            Ok(form) => forms.push(ParsedForm {
+                span: node.span(),
+                edition: edition.clone(),
+                declared_extent: declared_extent(cst, node),
+                form,
+            }),
+            Err(refusal) if is_protocol => {
+                rejected.push(ProtocolFormsRefusal {
+                    declaration: protocol_name(cst, node.span()),
+                    declaration_span: node.span(),
+                    refusal,
+                });
+            }
+            Err(refusal) => return Err(refusal),
+        }
+    }
+    rejected.sort_by_key(|entry| entry.declaration_span.start);
+    Ok((
+        ParsedUnit {
+            edition: declared_edition(cst),
+            selections: parsed.selections().clone(),
+            forms,
+        },
+        rejected,
+    ))
+}
+
+fn contains_protocol(cst: &LosslessCst, span: Span) -> bool {
+    cst.nodes().iter().any(|node| {
+        node.production() == Production::ProtocolClause
+            && span.start <= node.span().start
+            && node.span().end <= span.end
+    })
+}
+
+fn protocol_name(cst: &LosslessCst, span: Span) -> String {
+    cst.source()
+        .text()
+        .get(span.start..span.end)
+        .and_then(|text| text.find("protocol").map(|index| &text[index + 8..]))
+        .map(str::trim_start)
+        .and_then(|rest| {
+            rest.split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()
+        })
+        .unwrap_or("<protocol>")
+        .to_owned()
 }
 
 fn recovering(cst: &LosslessCst) -> FormsRefusal {

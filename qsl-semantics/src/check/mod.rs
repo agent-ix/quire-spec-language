@@ -779,6 +779,9 @@ pub struct CheckedGraph {
     /// FR-383: protocol declarations refused by their own checks while
     /// independent declarations continued through checking.
     protocol_refusals: Vec<ProtocolCheckRefusal>,
+    /// Unit-level state-clause refusals retained by the protocol continuation
+    /// path so independent protocols can still be emitted.
+    unit_refusals: Vec<CheckRefusal>,
     /// Checked protocol classes retained for importing refinements (FR-147).
     protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
@@ -911,6 +914,7 @@ impl DebugWith for CheckedGraph {
             protocols,
             protocol_order,
             protocol_refusals,
+            unit_refusals,
             protocol_classes,
             protocol_node_keys,
             temporal_clauses,
@@ -996,6 +1000,7 @@ impl DebugWith for CheckedGraph {
             .field("protocols", &Seq(protocols, table))
             .field("protocol_order", protocol_order)
             .field("protocol_refusals", protocol_refusals)
+            .field("unit_refusals", unit_refusals)
             .field(
                 "protocol_classes",
                 &ValueMap(protocol_classes.iter(), table),
@@ -1510,7 +1515,13 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         let mut protocol_refusals = Vec::new();
-        let outcome = self.check_retaining_protocols(limits, cancel, false, &mut protocol_refusals);
+        let outcome = self.check_retaining_protocols(
+            limits,
+            cancel,
+            false,
+            false,
+            &mut protocol_refusals,
+        );
         let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
             results
                 .iter()
@@ -1539,7 +1550,19 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        self.check_retaining_protocols(limits, cancel, true, &mut Vec::new())
+        self.check_retaining_protocols(limits, cancel, true, false, &mut Vec::new())
+    }
+
+    /// Continue through a unit-level state-clause refusal so independent
+    /// protocol declarations can still be checked and reported by the
+    /// compiler. Public strict and protocol-results entry points keep their
+    /// established stop behavior.
+    pub fn check_with_protocol_continuation_and_cancel(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_retaining_protocols(limits, cancel, true, true, &mut Vec::new())
     }
 
     /// The check proper. `protocol_check_refusals` receives every refusal a
@@ -1555,6 +1578,7 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
         independent_protocols: bool,
+        continue_state_clause_refusals: bool,
         protocol_check_refusals: &mut Vec<ProtocolCheckRefusal>,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-230: S2 retains every timed declaration independent of header
@@ -1887,6 +1911,7 @@ impl PackageDeclarations {
             })
         };
         let mut refusals = Vec::new();
+        let mut unit_refusals = Vec::new();
         // QSL FR-246: the task sets and the claims over them. They are timed
         // forms, so FR-230's facet gate admits them; every defect is reported.
         let mut checked_task_sets = CheckedTaskSets::default();
@@ -2713,6 +2738,13 @@ impl PackageDeclarations {
                     });
                     return Err(refusals);
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    return Err(refusals);
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2728,6 +2760,13 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
             }
         }
         if !refusals.is_empty() {
@@ -2737,7 +2776,7 @@ impl PackageDeclarations {
         // family's own contract once every function signature is known (a
         // clause body may call a function), against the same package-wide
         // node total and contract meter.
-        let state_clause_forms = self.state_clauses;
+        let mut state_clause_forms = self.state_clauses;
         let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
         // FR-185: every read of an operation parameter by a checked
         // precondition, so a read of a random parameter refuses.
@@ -2796,6 +2835,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -2805,6 +2853,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -3209,7 +3264,22 @@ impl PackageDeclarations {
                 .iter()
                 .flat_map(|(_, pending)| pending.refusals().iter().cloned())
                 .collect();
-            return Err(with_deferred(refusals, &prechecked_deferred));
+            if continue_state_clause_refusals
+                && refusals
+                    .iter()
+                    .all(|refusal| matches!(refusal.location.origin, Origin::StateClause { .. }))
+            {
+                unit_refusals.append(&mut refusals);
+                // The continuation graph is only used to finish independent
+                // protocol checks. Do not carry a refused clause without its
+                // typed/lowered counterpart into requirement keying below.
+                // The package is refused at the unit boundary, so omitting
+                // these clauses from this temporary graph cannot emit them.
+                state_clause_forms.clear();
+                typed_clauses.clear();
+            } else {
+                return Err(with_deferred(refusals, &prechecked_deferred));
+            }
         }
         // FR-220: the model's views, for the symbolic footprints the access
         // classification of a protocol's `parallel` attempts reads.
@@ -3867,6 +3937,9 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => {
                     temporal_clause::refuses_after_activation(&clause.form, refusal)
                 }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                    temporal_clause::refuses_after_activation(&clause.form, refusal)
+                }
                 Err(_) => false,
             };
             if body_refused {
@@ -3995,6 +4068,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4004,6 +4086,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
             }
         }
         // FR-185: the `random`, `reward` and `workload` declarations,
@@ -4093,6 +4176,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4102,6 +4194,13 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
@@ -4208,6 +4307,15 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+                Err(StageFailure::LimitWithPayload(limit, _)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
                 Err(StageFailure::Cancelled(_)) => return Err(refusals),
                 Err(StageFailure::Fault(fault)) => {
                     refusals.push(CheckRefusal {
@@ -4217,6 +4325,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
             }
         }
         // The nodes the hyper conditions checked count against the package's
@@ -6540,6 +6649,7 @@ impl PackageDeclarations {
                 .map(|protocol| protocol.name.name.clone())
                 .collect(),
             protocol_refusals: std::mem::take(protocol_check_refusals),
+            unit_refusals,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
@@ -7652,6 +7762,13 @@ impl CheckedGraph {
     /// FR-383: typed refusals attributed to individual protocol declarations.
     pub fn protocol_refusals(&self) -> &[ProtocolCheckRefusal] {
         &self.protocol_refusals
+    }
+
+    /// Unit-level state-clause refusals preserved by the protocol
+    /// continuation check. Ordinary check operations still return these as
+    /// primary refusals.
+    pub fn unit_refusals(&self) -> &[CheckRefusal] {
+        &self.unit_refusals
     }
 
     /// FR-383: protocol names in declaration order, including refused ones.
