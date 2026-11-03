@@ -151,6 +151,24 @@ fn l04_a_diamond_selects_its_shared_library_once() {
     assert_eq!(l_selections.len(), 1);
 }
 
+/// FR-307-AC-4: a diamond whose two branches reach different packages under
+/// one library identity is `invalid_package`/`conflicting-definition`, not a
+/// choice of one branch's package.
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-4")]
+#[test]
+fn l04b_a_conflicting_diamond_is_a_conflicting_definition() {
+    let root = diamond_root();
+    let other_l = package("L", "L@1-other", Vec::new());
+    assert_ne!(other_l, library_l());
+    let supplied = [over_l("A"), over_l("B"), library_l(), other_l];
+    assert_library_refusal(
+        resolve_libraries(&root, &supplied),
+        &LibraryRefusal::ConflictingDefinition { library: name("L") },
+        Code::InvalidPackage,
+        LibraryCause::ConflictingDefinition,
+    );
+}
+
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[trace("QSpec-TC-227", "QSpec-FR-307-AC-4")]
 #[trace("TC-282", "FR-087-AC-12")]
@@ -190,8 +208,7 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
     assert_eq!(resolve_libraries(&root, &reversed).unwrap(), lock);
 }
 
-#[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]
-#[trace("QSpec-TC-227", "QSpec-FR-307-AC-4")]
+#[trace("QSpec-TC-227")]
 #[test]
 fn l07_migration_is_a_changed_export_set_and_never_relabels_evidence() {
     let old_library = library_l();
@@ -231,7 +248,6 @@ fn l07_migration_is_a_changed_export_set_and_never_relabels_evidence() {
     assert_eq!(new_lock.selections(), [name("L")]);
 }
 
-#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn an_import_view_lists_each_export_with_its_structural_key() {
     let view = ImportView::of(&library_l()).unwrap();
@@ -239,7 +255,6 @@ fn an_import_view_lists_each_export_with_its_structural_key() {
     assert_eq!(exports, [("R", &node_key("L@1::R"))]);
 }
 
-#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn an_export_name_that_is_not_a_qualified_name_is_invalid() {
     for export in ["", "1x", "A::", "::A", "A::1"] {
@@ -271,7 +286,6 @@ fn an_export_name_that_is_not_a_qualified_name_is_invalid() {
     }
 }
 
-#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn one_export_name_declared_twice_is_ambiguous() {
     let mut ambiguous = library_l();

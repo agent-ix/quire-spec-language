@@ -123,12 +123,7 @@ fn a_model_names_only_its_domain_package_identity() {
 #[test]
 fn an_import_names_only_its_library_identity() {
     let parse_import = |import: &str| {
-        let source = format!(
-            "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
-             {import}\n\
-             record R {{ datum: Integer; }}\n"
-        );
+        let source = import_unit(import);
         parse(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
@@ -180,9 +175,20 @@ fn an_import_names_only_its_library_identity() {
     }
 }
 
-/// The byte offset of `token` in the unit text `parse_import` builds.
+/// The unit text `an_import_names_only_its_library_identity` parses for one
+/// `import` line.
+fn import_unit(import: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         {import}\n\
+         record R {{ datum: Integer; }}\n"
+    )
+}
+
+/// The byte offset of `token` in the unit text built from `import`.
 fn token_offset(import: &str, token: &str) -> Option<usize> {
-    let header =
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
-    import.find(token).map(|at| header.len() + at)
+    let unit = import_unit(import);
+    let line = unit.find(import)?;
+    import.find(token).map(|at| line + at)
 }
