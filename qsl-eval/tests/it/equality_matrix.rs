@@ -2400,6 +2400,137 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
     );
 }
 
+/// One unit declared by a graph the evaluating package does not hold: its
+/// own `Mass` dimension, so neither its id nor its dimension is in `units()`.
+fn foreign_unit() -> (UnitId, UnitTable) {
+    let dimension = json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner_json(),
+        "qualified_declaration": ["Foreign", "Mass"],
+        "terms": [],
+    });
+    let dimension_key = DimensionPreimage::from_json(dimension.clone())
+        .unwrap()
+        .key()
+        .unwrap();
+    let unit = json!({
+        "version": "quire.unit-node/v1",
+        "owner": owner_json(),
+        "qualified_declaration": ["Foreign", "kilogram"],
+        "dimension_node_id": node_id(dimension_key.clone()),
+        "target_unit_node_id": serde_json::Value::Null,
+        "scale": {"numerator": "1", "denominator": "1"},
+        "offset": {"numerator": "0", "denominator": "1"},
+    });
+    let unit_key = UnitPreimage::from_json(unit.clone())
+        .unwrap()
+        .key()
+        .unwrap();
+    let graph = admit_unit_graph(
+        [(
+            DimensionPreimage::from_json(dimension).unwrap(),
+            dimension_key,
+        )],
+        [(UnitPreimage::from_json(unit).unwrap(), unit_key.clone())],
+        &owners(),
+    )
+    .unwrap();
+    (
+        graph.declared_unit_id(unit_key).unwrap(),
+        UnitTable::declared(&graph),
+    )
+}
+
+/// QSL-1470 (FR-049-AC-2/AC-3): the package declares `E { q: Quantity(metre) }`.
+/// A caller-built `ObjectClosure` typed under another `TypeEnvironment` gives
+/// `q` a unit the package does not hold (a foreign graph's kilogram) or one it
+/// does hold but not the declared one (second). Reading `q` refuses
+/// `invalid_runtime_input`/`wrong-value-kind` -- never an internal fault and
+/// never a completed quantity in the wrong unit -- while the same read over an
+/// environment typed as declared completes.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
+#[test]
+fn an_object_environment_typed_under_another_unit_is_refused_not_faulted_or_misread() {
+    use quire_eval::FamilyResult;
+
+    let units = units();
+    let (kilogram, foreign_table) = foreign_unit();
+    let object = |unit: &UnitId| {
+        ObjectTypeDeclaration::new(
+            object_type("E"),
+            "E",
+            vec![FieldDeclaration::new(
+                "q",
+                ValueType::Quantity(unit.clone()),
+                Presence::Required,
+            )],
+        )
+    };
+    let package = expression_package(
+        TypeEnvironment::new([], [object(&units.m)])
+            .unwrap()
+            .with_units(units.table.clone()),
+        false,
+    );
+    let whole = |value: i64| Rational::from_integer(integer(value));
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id([0x42]),
+        object_type("E"),
+        ObjectId::new("e").unwrap(),
+    );
+    let environment = |declared: &UnitId, table: &UnitTable, held: &UnitId| {
+        let caller = TypeEnvironment::new([], [object(declared)])
+            .unwrap()
+            .with_units(table.clone());
+        let quantity = FieldValue::Present(Value::Quantity(Quantity::new(whole(1), held.clone())));
+        ObjectEnvironment::new(
+            ObjectClosure::new(&caller, [(reference.clone(), vec![("q", quantity)])], &[]).unwrap(),
+        )
+    };
+    let read = || Expression::field(Expression::deref(operand("r")), "q".to_owned());
+    let parameters = [("r", ValueType::Reference(object_type("E")))];
+    let evaluate = |objects: &ObjectEnvironment, expression: &Expression| {
+        let checked = check_in(&package, &parameters, expression, None, CheckMode::Kernel).unwrap();
+        package
+            .evaluate(
+                &checked,
+                vec![Value::Reference(reference.clone())],
+                objects,
+                &mut Meter::new(UNLIMITED),
+            )
+            .unwrap()
+    };
+    let sum = Expression::binary(BinaryOperator::Add, read(), read());
+    let less = Expression::binary(BinaryOperator::Less, read(), read());
+
+    let declared = environment(&units.m, &units.table, &units.m);
+    let FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(total))) =
+        evaluate(&declared, &sum).outcome
+    else {
+        panic!("an environment typed as declared completes");
+    };
+    assert_eq!((total.magnitude(), total.unit()), (&whole(2), &units.m));
+
+    for (label, objects) in [
+        ("foreign", environment(&kilogram, &foreign_table, &kilogram)),
+        ("held", environment(&units.s, &units.table, &units.s)),
+    ] {
+        for expression in [&sum, &less, &read()] {
+            let FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) =
+                evaluate(&objects, expression).outcome
+            else {
+                panic!("{label}: an ill-typed environment refuses");
+            };
+            let code = cause.catalog_code();
+            assert_eq!(
+                (code.code(), code.cause()),
+                ("invalid_runtime_input", "wrong-value-kind"),
+                "{label}"
+            );
+        }
+    }
+}
+
 /// A product or quotient's unit is a compound unit no package declares:
 /// checking forms it as the node's static type, and evaluation forms it again
 /// when the value exists, so a further operation reads it by its `UnitId`.

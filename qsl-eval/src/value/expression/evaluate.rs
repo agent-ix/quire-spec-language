@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use super::causes::{
     HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
-    ProtocolClauseSnapshot, ProtocolClauseUnsupported,
+    ObjectFieldIllTyped, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
@@ -2383,6 +2383,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
                 self.log_field_read(node, objects, &reference, field)?;
                 let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
+                // FR-049-AC-2/AC-3: the environment is caller input; the slot
+                // must hold a value of the attribute's declared type under
+                // this package's types before it is projected. A witnessed
+                // out-of-range integer (FR-106 check 6.5) is the one
+                // admitted exception.
+                if !witnessed {
+                    self.admit_object_field(&reference, field, slot)?;
+                }
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
                 } else {
@@ -3565,6 +3573,45 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
     /// outside its declared range, which an optional slot's checked
     /// construction would refuse. Every other slot is checked as before.
+    /// Refuse a present attribute value that is not of the attribute's
+    /// declared type under the evaluating package's types.
+    fn admit_object_field(
+        &self,
+        reference: &ObjectReference,
+        field: &FieldRef,
+        slot: &FieldValue,
+    ) -> Result<(), Halt> {
+        let FieldValue::Present(value) = slot else {
+            return Ok(());
+        };
+        let types = self.scope.types();
+        let declared = types
+            .attributes(reference.object_type().clone())
+            .and_then(|attributes| {
+                attributes
+                    .iter()
+                    .find(|attribute| attribute.stands_for(field))
+            })
+            .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+        match types.admits(declared.field().value_type(), value) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Halt::Family(FamilyResult::Refused(Box::new(
+                ObjectFieldIllTyped {
+                    field: field.name.clone(),
+                },
+            )))),
+            Err(EnvironmentFailure::Allocation(_)) => {
+                Err(invariant("object-field-admission-allocation-denied"))
+            }
+            Err(EnvironmentFailure::Capacity(_)) => {
+                Err(invariant("object-field-admission-capacity-overflow"))
+            }
+            Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
+                Err(invariant("object-field-admission-contract-broken"))
+            }
+        }
+    }
+
     fn project(
         types: &TypeEnvironment,
         slot: &FieldValue,

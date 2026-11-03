@@ -749,9 +749,11 @@ fn quantity_operation_and_ordering_rejections_reach_the_real_typed_operators() {
 /// resolves every quantity type, admission matches argument units to
 /// parameter units, and an expression checked against another graph is
 /// refused before evaluation (#2098, FR-049-AC-1). The object-environment
-/// route is open under QSL-1470: a caller-supplied `ObjectEnvironment` or
-/// `ObjectClosure` typed under a different unit is not checked by
-/// `CheckedPackage::evaluate`. The probe drives the machine directly.
+/// route is closed too (QSL-1470, FR-049-AC-2/AC-3): an attribute read
+/// refuses a stored value that is not of the declared type under the
+/// package's own types, `invalid_runtime_input`/`wrong-value-kind`
+/// (`equality_matrix.rs`). No caller input reaches this fault, so the probe
+/// drives the machine directly.
 #[test]
 #[trace("TC-917", "FR-090-AC-15")]
 fn an_unresolved_unit_past_admission_is_an_internal_fault() {
@@ -1409,7 +1411,7 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
     "FR-401-AC-10",
     "TC-1191"
 )]
-fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
+fn an_out_of_type_stored_value_is_refused_at_the_public_call_and_evaluate_entries() {
     use super::super::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::PackageDeclarations;
@@ -1516,18 +1518,18 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                 package.evaluate(&checked, arguments, &objects, &mut meter)
             };
             if stored < 0 {
-                let Err(CallFailure::Fault(fault)) = result else {
-                    panic!("received typed kernel fault");
+                // QSL-1470 (FR-049-AC-2/AC-3): the stored -1 is caller input
+                // outside the declared `Int[0, 9]`, so the read refuses it
+                // rather than reaching the equality-source fault.
+                let FamilyOutcome::FamilyEvaluated(quire_eval::FamilyResult::Refused(cause)) =
+                    result.unwrap().outcome
+                else {
+                    panic!("an out-of-type stored value refuses");
                 };
-                assert_eq!(fault.stage(), "S6a");
-                assert_eq!(fault.invariant(), "checked-program-invariant");
+                let code = cause.catalog_code();
                 assert_eq!(
-                    fault.kernel_cause(),
-                    Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
-                );
-                assert_eq!(
-                    fault.category(),
-                    quire_semantic_value::catalog::Category::InternalFailure
+                    (code.code(), code.cause()),
+                    ("invalid_runtime_input", "wrong-value-kind")
                 );
                 let expected: &[ChargePoint] = if call {
                     &[ChargePoint::FunctionCall]

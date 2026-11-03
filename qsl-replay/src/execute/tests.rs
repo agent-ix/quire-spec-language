@@ -1613,7 +1613,7 @@ fn every_received_kernel_cause_survives_both_replay_fault_adapters() {
 
 #[test]
 #[trace("TC-918", "FR-096-AC-19")]
-fn real_public_package_equality_fault_propagates_into_replay_failure() {
+fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_replay() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{AdmittedModel, PackageDeclarations};
@@ -1730,21 +1730,20 @@ fn real_public_package_equality_fault_propagates_into_replay_failure() {
         } else {
             package.evaluate(&expression, arguments, &objects, &mut meter)
         }
-        .expect_err("real checked equality source violation");
-        let refusal = call_failure_to_replay_refusal(failure);
-        let ReplayRefusal::Fault(fault) = &refusal else {
-            panic!("received kernel fault became a refusal");
+        .expect("an out-of-type stored value is a refusal, not a call failure");
+        // QSL-1470 (FR-049-AC-2/AC-3): the stored -1 is caller input outside
+        // the declared `Int[0, 9]`; the read refuses it, so no equality-source
+        // fault reaches replay from caller input.
+        let quire_eval::FamilyOutcome::FamilyEvaluated(quire_eval::FamilyResult::Refused(cause)) =
+            failure.outcome
+        else {
+            panic!("an out-of-type stored value refuses");
         };
-        assert_eq!(fault.stage(), "S6a");
-        assert_eq!(fault.invariant(), "checked-program-invariant");
+        let code = cause.catalog_code();
         assert_eq!(
-            fault.kernel_cause(),
-            Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
+            (code.code(), code.cause()),
+            ("invalid_runtime_input", "wrong-value-kind")
         );
-        assert_eq!(refusal.code(), Code::RuntimeInvariant);
-        let terminal = TerminalValue::from_replay_refusal(&refusal);
-        assert!(matches!(terminal, TerminalValue::Failed));
-        assert_eq!(terminal.category(), Category::InternalFailure);
         let expected: &[ChargePoint] = if call {
             &[ChargePoint::FunctionCall]
         } else {
