@@ -78,23 +78,31 @@ impl SourceInventoryEnumerator for Traversal<'_> {
     }
 }
 
-/// The IR dimension a QSL limit kind charges.
-fn dimension(kind: LimitKind) -> SourceTypeWorkDimension {
+/// The IR dimension a QSL stage limit kind charges, or `None` for a kind
+/// that is not a type-admission stage limit. `TickCount` is a runtime
+/// temporal-evidence limit (FR-523) reported as `Incomplete`; FR-514 maps no
+/// type-work dimension to it, so it never becomes a `TypeWorkExhausted` cause.
+fn dimension(kind: LimitKind) -> Option<SourceTypeWorkDimension> {
     match kind {
-        LimitKind::InputBytes => SourceTypeWorkDimension::Bytes,
-        LimitKind::TokenCount | LimitKind::NodeCount => SourceTypeWorkDimension::Expressions,
-        LimitKind::EdgeCount => SourceTypeWorkDimension::Edges,
-        LimitKind::OccurrenceCount | LimitKind::DiagnosticCount => SourceTypeWorkDimension::Records,
-        LimitKind::WorkBudget => SourceTypeWorkDimension::Constraints,
-        LimitKind::RationalBits => SourceTypeWorkDimension::Normalization,
+        LimitKind::InputBytes => Some(SourceTypeWorkDimension::Bytes),
+        LimitKind::TokenCount | LimitKind::NodeCount => Some(SourceTypeWorkDimension::Expressions),
+        LimitKind::EdgeCount => Some(SourceTypeWorkDimension::Edges),
+        LimitKind::OccurrenceCount | LimitKind::DiagnosticCount => {
+            Some(SourceTypeWorkDimension::Records)
+        }
+        LimitKind::WorkBudget => Some(SourceTypeWorkDimension::Constraints),
+        LimitKind::RationalBits => Some(SourceTypeWorkDimension::Normalization),
+        LimitKind::TickCount => None,
     }
 }
 
 /// The cause IR's `TypeWorkExhausted` retains for a reached stage limit: the
 /// kind as a dimension, the configured bound as the limit, the bound as the
 /// charged usage and the excess past it as the unpaid increment, at the
-/// limit's source region when it has one.
-fn exhaustion(limit: &LimitExceeded) -> SourceInventoryIncompleteReason {
+/// limit's source region when it has one. `None` when the limit's kind is
+/// not a type-admission stage limit (see [`dimension`]).
+fn exhaustion(limit: &LimitExceeded) -> Option<SourceInventoryIncompleteReason> {
+    let dimension = dimension(limit.kind())?;
     let bound = usize::try_from(limit.configured_bound()).unwrap_or(usize::MAX);
     let reached = usize::try_from(limit.actual()).unwrap_or(usize::MAX);
     let (start, end) = match limit.locus() {
@@ -104,19 +112,21 @@ fn exhaustion(limit: &LimitExceeded) -> SourceInventoryIncompleteReason {
         ),
         _ => (0, 0),
     };
-    SourceInventoryIncompleteReason::TypeWorkExhausted(SourceTypeExhaustion {
-        dimension: dimension(limit.kind()),
-        limit: bound,
-        prior: bound,
-        requested: reached.saturating_sub(bound),
-        site: SourceObligationSite {
-            declaration: SourceDeclarationHandle(0),
-            unit: SourceUnitHandle(0),
-            expression: None,
-            start,
-            end,
+    Some(SourceInventoryIncompleteReason::TypeWorkExhausted(
+        SourceTypeExhaustion {
+            dimension,
+            limit: bound,
+            prior: bound,
+            requested: reached.saturating_sub(bound),
+            site: SourceObligationSite {
+                declaration: SourceDeclarationHandle(0),
+                unit: SourceUnitHandle(0),
+                expression: None,
+                start,
+                end,
+            },
         },
-    })
+    ))
 }
 
 fn requirement(key: &qsl_foundation::source::provenance::OccurrenceKey) -> SourceInventoryIdentity {
@@ -190,7 +200,8 @@ fn is_requirement_form(form: &qsl_forms::DeclarationForm) -> bool {
 /// - a stage limit is `Incomplete`: one requirement row per requirement form
 ///   of `parsed` (none when `parsed` is `None` because the limit stopped S1 or
 ///   S2), no obligation row, and the limit as the typed cause;
-/// - any other refusal has no inventory.
+/// - a limit that is not a type-admission stage limit (`TickCount`), and any
+///   other refusal, has no inventory.
 ///
 /// # Errors
 ///
@@ -220,6 +231,7 @@ pub fn qsl_inventory(
             (rows, None)
         }
         Err(StageFailure::Limit(limit) | StageFailure::LimitWithPayload(limit, _)) => {
+            let stop = exhaustion(limit).ok_or(InventoryRefusal::NoInventory)?;
             let rows = parsed
                 .into_iter()
                 .flat_map(|parsed| parsed.unit().forms())
@@ -227,7 +239,7 @@ pub fn qsl_inventory(
                 .enumerate()
                 .map(|(index, form)| form_requirement(index, form.declared_name()))
                 .collect();
-            (rows, Some(exhaustion(limit)))
+            (rows, Some(stop))
         }
         Err(_) => return Err(InventoryRefusal::NoInventory),
     };
@@ -476,6 +488,26 @@ mod tests {
             cause.limit,
             usize::try_from(limit.configured_bound()).expect("a small bound")
         );
+    }
+
+    /// FR-514-AC-3 (TC-1309 row 3), FR-523: a tick-count limit is a runtime
+    /// temporal-evidence limit with no type-work dimension, so it is not a
+    /// type-admission exhaustion and gives no inventory.
+    #[trace("FR-514-AC-3", "TC-1309")]
+    #[test]
+    fn a_runtime_tick_limit_yields_no_inventory_rather_than_a_type_work_cause() {
+        let limit = qsl_foundation::diagnostic::LimitExceeded::new(
+            Setting::TemporalEvidenceHistorySpan,
+            4,
+            5,
+        );
+        assert_eq!(limit.kind(), LimitKind::TickCount);
+        assert!(exhaustion(&limit).is_none());
+        let outcome: Result<Staged<CheckedUnit>, FrontEndFailure> = Err(StageFailure::Limit(limit));
+        assert!(matches!(
+            qsl_inventory(None, &outcome, &formal("NativeTypes0")),
+            Err(InventoryRefusal::NoInventory)
+        ));
     }
 
     /// FR-514-AC-3 (TC-1309 row 4): a limit that stops S1 leaves no parsed
