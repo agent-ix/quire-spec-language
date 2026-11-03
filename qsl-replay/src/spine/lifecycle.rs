@@ -85,14 +85,14 @@ use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::CheckedPackageEvaluation;
-use qsl_forms::{build_unit, parse_clause_text, ParsedUnit};
+use qsl_forms::{parse_clause_text, FormsRefusal, ParsedUnit};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, StageWork, Staged};
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source::Source;
 use qsl_foundation::Setting;
-use qsl_foundation::SourceIdentity;
 use qsl_foundation::SyntaxLimit;
+use qsl_foundation::{Code, SourceIdentity};
 use qsl_package as pkg;
 use qsl_package::{read_import_view, AdmittedPackages, Emission, Import, ImportViewRefusal};
 use qsl_semantics::check::{
@@ -207,10 +207,10 @@ fn failure_of(
     if let Some(fault) = fault_of(&refusal) {
         return StageFailure::Fault(fault);
     }
-    protocol_results.map_or_else(
-        || StageFailure::Refused(refusal.clone()),
-        |results| StageFailure::RefusedWithPayload(refusal, results),
-    )
+    match protocol_results {
+        Some(results) => StageFailure::RefusedWithPayload(refusal, results),
+        None => StageFailure::Refused(refusal),
+    }
 }
 
 /// The reached limit `refusal` reports, with the setting that raises it
@@ -819,7 +819,7 @@ pub fn select(
         let models = charged(cancel, &mut work.i1, || {
             select_models(parsed, packages, limits, cancel)
         })?;
-        Ok(AdmittedModels {
+        Ok::<_, Box<CompileRefusal>>(AdmittedModels {
             models,
             packages: packages.clone(),
         })
@@ -1208,25 +1208,25 @@ fn forms_protocol_results(
                 .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
                 .next()?
                 .to_owned();
-            Some(
-                refusals
-                    .iter()
-                    .find(|failure| failure.declaration == declaration)
-                    .map_or_else(
-                        || super::ProtocolResult::Cleared {
-                            declaration: declaration.clone(),
-                            stage: super::SpineStage::Forms,
-                        },
-                        |failure| super::ProtocolResult::Refused {
-                            declaration,
-                            source_index: 0,
-                            declaration_span: failure.declaration_span,
-                            code: failure.refusal.catalog_code(),
-                            cause: format!("{:?}", failure.refusal.cause),
-                            locus: None,
-                        },
-                    ),
-            )
+            let result = if let Some(failure) = refusals
+                .iter()
+                .find(|failure| failure.declaration == declaration)
+            {
+                super::ProtocolResult::Refused {
+                    declaration,
+                    source_index: 0,
+                    declaration_span: failure.declaration_span,
+                    code: failure.refusal.catalog_code(),
+                    cause: format!("{:?}", failure.refusal.cause),
+                    locus: None,
+                }
+            } else {
+                super::ProtocolResult::Cleared {
+                    declaration,
+                    stage: super::SpineStage::Forms,
+                }
+            };
+            Some(result)
         })
         .collect()
 }
@@ -1739,7 +1739,8 @@ impl<'a> Resolution<'a> {
                     limits.source,
                     cancel,
                 )
-            })?;
+            })
+            .map_err(|error| error.refusal)?;
             let models = charged(cancel, &mut self.work.i1, || {
                 select_models(&parsed, packages, limits.model, cancel)
             })?;
@@ -1771,7 +1772,8 @@ impl<'a> Resolution<'a> {
                 limits.source,
                 cancel,
             )
-        })?;
+        })
+        .map_err(|error| error.refusal)?;
         let models = charged(cancel, &mut self.work.i1, || {
             select_models(&parsed, packages, limits.model, cancel)
         })?;
