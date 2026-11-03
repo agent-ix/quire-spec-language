@@ -82,6 +82,15 @@ Not mergeable as written: two high findings (FND-001 depth limit against ADR-030
 | FND-025 | low | [QSL-1503] FR-499's row still cites open rows OPEN-5 to OPEN-7 in FR-525 although FR-525 has none, and FR-525's title and file name still say 'or name the open row'. FR-525's FR-052-AC-13/AC-14 row names FR-502 and FR-501 instead of criterion ids, and the FR-053-AC-9 'absent identity' row maps to FR-516-AC-2 (no delivery) rather than to the construction refusal of FR-526-AC-18. | spec/functional/FR-499-delete-each-retired-family-only-behind-its-named-successor.md:113 | wrong-requirement |
 | FND-026 | low | [QSL-1503] The RETIRE rows for FR-053-AC-9 (malformed and cross-version identity) and for the /1 entry points cite 'planner ruling' with no ticket or comment id, and FR-053-AC-9 remains in force in FR-053, a live requirement that FR-516 depends on, with no amendment. The structural reason is sound for the code, but FR-053 needs the amendment or the row needs the owner's ruling cited by id. | spec/functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor-or-name-the-open-row.md:127 | missing-requirement |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-027 | high | [QSL-1503] AC-2 expects a request with a closed complete trigger scope and no delivery to return activation Inactive, an open scope Unknown, and so on, but `trigger` is a required non-empty member and the new Assessed instance rule refuses with trigger-unknown any trigger that no delivery, origin or ledger entry holds. A request with no delivery therefore always names nothing and is refused, so the Inactive and Unknown vectors of AC-2 (and TC-1311 row 2, FR-524-AC-27 to AC-29 through the call, FR-524-AC-31) cannot occur. Either make trigger optional when no delivery exists, or restrict trigger-unknown to a request that has deliveries. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:198 | wrong-requirement |
+| FND-028 | medium | [QSL-1503] The new Assessed instance rule says the instance activates at the position the request's `anchor` names (position 0 for an `on origin` clause), but anchor is the authored activation anchor, which FR-524 compares by equality with each delivery's and capture's anchor, so it is an identity and nothing says how it names a position of the trace or how an `on each` clause's anchor position is found. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:75 | missing-requirement |
+| FND-029 | low | [QSL-1502] The one-outcome list of refusals in the Entry paragraph omits the two new refusals (trigger-unknown and a progress contradiction), and FR-504 is not edited although FR-501 says FR-504's Indeterminate carries instance and also_held_by. | spec/functional/FR-516-carry-the-temporal-evidence-request-and-result-on-the-checked-package-route.md:149 | missing-requirement |
+| FND-030 | low | [QSL-1502] AC-19 asserts that an earlier call's returned result is byte-equal after a later call stopped; a returned value cannot change unless it is shared, so no test can fail it. FR-522-AC-21 mixes two claims (equal input_identity, and distinct result_identity where a ledger entry exists). | spec/functional/FR-523-count-temporal-evidence-work-on-thirteen-named-counters-and-keep-a-stopped-instance-apart-from-a-stopped-declaration.md:174 | wrong-requirement |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -103,9 +112,20 @@ Not mergeable as written: two high findings (FND-001 depth limit against ADR-030
 | FND-015 | fixed | FR-255 Behavior 1 names the carrying type and the four kinds including tick count. |
 | FND-016 | fixed | Rows are split for FR-052-AC-11, FR-053-AC-9 and the valuation environment and replay. Two residual map defects are in FND-025. |
 | FND-017 | fixed | Connective sentence replaced by the two statements about formula(); AC-5 tests connectives; AC-2 and AC-4 no longer repeat a claim. |
+| FND-018 | fixed | Canonical order is stamp, order-authority identity (keyless last), key, observation identity: a total order. AC-21 pins the mixed-authority case. |
+| FND-019 | fixed | input_identity is over the evidence members only and excludes the relation and both ledgers; FR-522-AC-21 and TC-1317 row 26 test it, so unchanged-input can fire. |
+| FND-020 | fixed | The request carries an optional progress_ledger (FR-502 Inputs name the evidence call); FR-516-AC-17 tests the refusals; AC-8 states the extra temporal.visit per delivery or origin. |
+| FND-021 | fixed | FR-501 MissingValuation carries instance and also_held_by, FR-501 says FR-504 carries the same, FR-524-AC-2 is restated. FR-504 text itself is not edited (FND-029). |
+| FND-022 | fixed | FR-516 now says the instance activates once, combines no activations, and states what trigger naming nothing or a false-guard delivery returns. The trigger-unknown rule contradicts FR-516-AC-2 (FND-027) and the anchor-to-position step is undefined (FND-028). |
+| FND-023 | fixed | AC-12 lowers the ceiling over a three-correction chain and AC-13 is an Inspection of checked u64 arithmetic; no entry has to be constructed. |
+| FND-024 | fixed | The bullet states twelve successors, two retirements with reasons and the added instances counter; the count is right (nine carried plus three byte counters). |
+| FND-025 | fixed | No OPEN reference remains in FR-499, FR-525 or the TC rows; FR-525 and TC-1320 are renamed and linked in spec.md; the FR-052-AC-13 and AC-14 rows name criteria; the absent-identity row names FR-526-AC-18. |
+| FND-026 | fixed | FR-053-AC-9 is amended in place; every RETIRE row states a structural reason and a successor criterion (FR-525-AC-3); no unnamed planner ruling remains. |
 
 ## Verdict
 
 17 findings: 2 high, 10 medium, 5 low. Tickets: QSL-1502 8, QSL-1503 8, QSL-1504 1.
 
 Disposition pass 1 at head 87bdf5f2828737f46113bab3ee801a1e369fd27b: 17 fixed, 0 still-open, 9 new findings.
+
+Disposition pass 2 at head da760198b81dcf5724c51f5841866f2a5284c275.

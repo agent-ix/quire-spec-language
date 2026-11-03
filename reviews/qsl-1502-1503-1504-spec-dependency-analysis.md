@@ -37,9 +37,12 @@ Tickets: QSL-1502 (FR-522, FR-523, FR-516), QSL-1503. Dependency pass over the r
 | --- | --- | --- |
 | FND-001 | fixed | FR-516 relationships to FR-522, FR-523, FR-524 and FR-526 are references and each of them states it references FR-516 rather than depends on it; a depends_on cycle search over the spec finds none. |
 | FND-002 | still-open | FR-522 now states that FR-523 and FR-526 depend on it, but FR-523's Dependencies still list FR-524 (activation charges) and FR-526 (lineage) as dependencies while FR-524 and FR-526 depend on FR-523, and no edge from FR-523 states them: a prose cycle among FR-523, FR-524 and FR-526 remains. Reduce the FR-523 prose to references. |
+| FND-002 | fixed | FR-523 Dependencies say FR-524 and FR-526 depend on it and it does not depend on them; no depends_on cycle contains FR-516, FR-522 to FR-527, FR-501, FR-502 or FR-504. |
 
 ## Verdict
 
 2 findings: 0 high, 1 medium, 1 low. Tickets: QSL-1502 2.
 
 Disposition pass 1 at head 87bdf5f2828737f46113bab3ee801a1e369fd27b: 1 fixed, 1 still-open, 0 new findings.
+
+Disposition pass 2 at head da760198b81dcf5724c51f5841866f2a5284c275.

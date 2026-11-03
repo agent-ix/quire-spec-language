@@ -69,10 +69,10 @@ result field:
 
 | Retired `v2::Input` field | Successor field | Note |
 | --- | --- | --- |
-| `trigger: SemanticTriggerIdentity` | `trigger: SemanticTriggerIdentity` (non-empty opaque bytes) | selects the instance the call assesses among the resolved instances; for a clause that activates `on origin` it is the execution-origin identity |
+| `trigger: SemanticTriggerIdentity` | `trigger: Option<SemanticTriggerIdentity>` (non-empty opaque bytes when present) | selects the instance the call assesses among the resolved instances; for a clause that activates `on origin` it is the execution-origin identity; required when the request carries a delivery or an origin, and `None` when it carries none |
 | `correspondence: EvidenceRef` | `correspondence: EvidenceRef` | `EvidenceRef` keeps `identity`, `authority_identity`, `authority_revision`, `scope`, `population`, and carries `contract` (text), `schema_digest`, `digest` and `authority_digest` (byte strings) as opaque caller-supplied members: QSL does not compute, verify or interpret them (it does not authenticate observation evidence), echoes each byte for byte in the result's support references, and no truth, settlement or support value depends on them. Package content digests stay removed (QSL-1270); these are the observation owner's identifiers, not QSL's |
 | `positions: Vec<ObservedPosition>` | `positions` | each `{ observation: EvidenceRef, position, instance_valuations }`; `instance_valuations` is FR-524's map from a trigger identity to that instance's valuations at the position |
-| `anchor` | `anchor` | the authored activation anchor |
+| `anchor` | `anchor` | the authored activation anchor: the `EvidenceRef` identity of one of the request's positions, which fixes the activation position ("Assessed instance") |
 | `triggers: Vec<TriggerInput>` | `deliveries: Vec<TriggerDelivery>` (clause `on each`) or `origins: Vec<ExecutionOrigin>` (clause `on origin`) | the ordered deliveries, each `{ identity, receipt, anchor, payload, guard: Option<bool>, captures }`, so that a repeated delivery of one identity and several instances are expressible (FR-524). The retired native request admitted exactly one trigger; the legacy evaluator (`temporal::Trace.triggers`) admitted many, and this field is the successor of that list |
 | `trigger_evidence`, `trigger_scope` | same | `Evidence` and `Closure` of the retained `temporal` vocabulary, independent of the decision scope |
 | `decision_progress`, `decision_closure`, `surrounding_progress`, `surrounding_closure` | same | four independent axes (FR-052-AC-10) |
@@ -116,8 +116,9 @@ Result<EvidenceResult, CallFailure>`; **Refusal has one outcome.** Every refusal
 not held by the package or not a temporal clause, a request that fails
 construction (an empty trigger identity), a selection or supply refused before S6a
 (FR-390), a refused binding (FR-522), a delivery contradiction (FR-524), a
-control that does not map to the clause (below) and each relation refusal
-(FR-526). `activation = Unavailable` is a result,
+progress contradiction (FR-502), a `trigger-required` or `trigger-unknown`
+refusal, a control that does not map to the clause (below) and each relation
+refusal (FR-526). `activation = Unavailable` is a result,
 not a refusal: the call ran and a fact the clause needs was withdrawn, or the
 obligation was never activated.
 
@@ -137,15 +138,27 @@ obligation was never activated.
 - **No supplied truth.** The request has no truth, settlement or support field;
   the result's three are derived from the package and the evidence
   (FR-052-AC-9).
-- **Assessed instance.** The instance activates once, at the position the request's
-  `anchor` names (a clause `on origin` at position 0), so the call returns that one
-  activation's outcome and combines no activations. `trigger` names the assessed
-  instance among the resolved ones. When `trigger` names an identity that no delivery
-  or origin of the request and no entry of the ledger holds, the call is refused
-  with cause `trigger-unknown` as `Err(CallFailure::Admission)`. When `trigger`
-  names a delivery whose guard is false, there is no instance and the result holds
-  the activation disposition FR-524 gives a scope with no instance, no truth and the
-  matching `non_value`.
+- **Anchor.** The `anchor` is the `EvidenceRef` identity of one observed position of
+  the request. The activation position of a clause `on each` is that observation's
+  index in the request's positions (the canonical order of FR-501 for a
+  timestamped trace, the listed order for an event-position or fixed-sample
+  trace), and the activation position of a clause `on origin` is 0. When the
+  `anchor` is absent or names no observed position, the anchor is withdrawn and the
+  result is `Unavailable` with a `Missing` non-value naming the anchor.
+- **Assessed instance.** The instance activates once, at the activation position,
+  so the call returns that one activation's outcome and combines no activations.
+  `trigger` names the assessed instance among the resolved ones.
+- When the request carries no delivery and no origin and `trigger` is `None`, the
+  call returns the scope disposition of FR-524 (`Inactive` or `Unknown`), no truth
+  and the matching `non_value`.
+- When the request carries a delivery or an origin and `trigger` is `None`, the call
+  is refused with cause `trigger-required` as `Err(CallFailure::Admission)`.
+- When `trigger` is present and names an identity that no delivery or origin of the
+  request and no entry of the ledger holds, the call is refused with cause
+  `trigger-unknown` as `Err(CallFailure::Admission)`.
+- When `trigger` names a delivery whose guard is false, there is no instance and
+  the result holds the activation disposition FR-524 gives a scope with no
+  instance, no truth and the matching `non_value`.
 - **Progress.** A regressing watermark, a conflicting completeness revision and a
   closure contradiction in the request's progress assertion are refused as FR-502
   states, as `Err(CallFailure::Admission)` with an empty charge log and the
@@ -195,7 +208,7 @@ obligation was never activated.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-516-AC-1 | A compile-fail test that sets `truth`, `settlement`, `support` or `instance` on `EvidenceRequest` fails to compile, and the type has no member holding a QSL document or a QSL-computed digest. | Test (TC-1311) |
-| FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with a delivery whose capture is missing `Unavailable` and a `Missing` non-value naming the capture; with the anchor withdrawn `Unavailable`; a request naming a clause the package does not hold returns `Err(CallFailure::Admission)` with an empty charge log and no result. | Test (TC-1311) |
+| FR-516-AC-2 | Over **R**'s event-position clause with a closed complete trigger scope and no delivery, the result has `activation = Inactive`, `truth = None` and `non_value.kind = Inactive`; with an open trigger scope `Unknown` and `ActivationUnknown`; with one admitted delivery `Active` and a truth; with a delivery whose capture is missing `Unavailable` and a `Missing` non-value naming the capture; with the anchor withdrawn (absent or naming no observed position) `Unavailable`; a request naming a clause the package does not hold returns `Err(CallFailure::Admission)` with an empty charge log and no result. | Test (TC-1311) |
 | FR-516-AC-3 | With one fact withdrawn from an otherwise Active request (decision closure, completeness record, a support fact), the result truth, settlement and support are the FR-043 values of the remaining evidence, the result carries a `Missing` non-value for the withdrawn fact, and no field defaults to false, closed, settled or complete. | Test (TC-1311) |
 | FR-516-AC-4 | Two requests that differ only in one byte of the trigger identity give two different `result_identity` values, and an empty identity is refused at construction. | Test (TC-1311) |
 | FR-516-AC-5 | The decision and surrounding progress and closure axes, the trigger scope and the completeness record are each echoed in the result exactly as supplied, and changing one of them changes only its field and the derived truth where FR-043 says it does. | Test (TC-1311) |
@@ -212,7 +225,11 @@ obligation was never activated.
 | FR-516-AC-16 | A request whose `control` names a protocol clause with no FR-449 row is refused with cause `activation-mapping-missing`, and one whose row names another temporal clause is refused with `activation-mapping-mismatch`, each as `Err(CallFailure::Admission)` with an empty charge log. | Test (TC-1311) |
 | FR-516-AC-17 | Through `evaluate_temporal_evidence` with a `progress_ledger`, a regressing watermark and a conflicting completeness revision are refused as FR-502-AC-1 and AC-2 state, with an empty charge log and the progress ledger unchanged. | Test (TC-1311) |
 | FR-516-AC-18 | The result for the in-process package equals the result for the read-back package, charge log included. | Test (TC-1311) |
-| FR-516-AC-19 | A request whose `trigger` names no delivery, origin or ledger entry is refused with cause `trigger-unknown`, and one whose `trigger` names a delivery with a false guard returns no truth and the disposition of FR-524. | Test (TC-1311) |
+| FR-516-AC-19 | A request that carries `deliveries` and names a `trigger` that no delivery or ledger entry holds is refused with cause `trigger-unknown` as `Err(CallFailure::Admission)`. | Test (TC-1311) |
+| FR-516-AC-20 | A request that carries `deliveries` and a `trigger` of `None` is refused with cause `trigger-required`. | Test (TC-1311) |
+| FR-516-AC-21 | A request whose `trigger` names a delivery with a false guard returns no truth and the disposition of FR-524. | Test (TC-1311) |
+| FR-516-AC-22 | For a clause `on each` whose `anchor` names the observation at index 2, the activation outcome reports position 2, and for a clause `on origin` it reports position 0 whatever the `anchor` names among the positions. | Test (TC-1311) |
+| FR-516-AC-23 | A request whose `anchor` names no observed position returns `Unavailable` with a `Missing` non-value naming the anchor. | Test (TC-1311) |
 
 ## Dependencies
 

@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify FR-522-AC-1 to FR-522-AC-21 and FR-330-AC-11. **R** is the recipe package of FR-517 with its three clock kinds. Each refusal row varies one member of the asserted binding from the clause's own row. The numeric clock values are the rows of **R**'s lock, read by the test and not copied here. Every request states the clause's own `binding` unless the row varies it.
+Verify FR-522-AC-1 to FR-522-AC-22 and FR-330-AC-11. **R** is the recipe package of FR-517 with its three clock kinds. Each refusal row varies one member of the asserted binding from the clause's own row. The numeric clock values are the rows of **R**'s lock, read by the test and not copied here. Every request states the clause's own `binding` unless the row varies it.
 
 ## Test Procedure
 
@@ -43,9 +43,10 @@ Verify FR-522-AC-1 to FR-522-AC-21 and FR-330-AC-11. **R** is the recipe package
 | 23 | 19 | event-position `Progressed`: `sequence_authority`, `W`, scope varied alone | distinct identities |
 | 24 | 20 | in-process package vs read-back package | equal `result_identity` |
 | 25 | FR-330-AC-11 | `run_clause`: `Timestamped` with another clock name; `Progressed` with another profile; `Timestamped` with no `binding` (FR-330-AC-11) | stage `admit`, `invalid_runtime_input`/`invalid-value` with `Clock`; with `Profile`; refused |
-| 26 | 21 | two requests differing only in the relation, the `EvidenceLedger` or the progress ledger | equal `input_identity`; distinct `result_identity` where the ledger holds a retained-instance entry |
+| 26 | 21 | two requests differing only in the relation, the `EvidenceLedger` or the progress ledger | equal `input_identity` |
+| 27 | 22 | two requests differing only in a retained-instance entry, or the progress-ledger entry | distinct `result_identity` |
 
-Tag the test `#[trace("FR-522-AC-1", ..., "FR-522-AC-21", "FR-330-AC-11", "TC-1317")]`; the identity rows 17a to 17e carry FR-522-AC-17.
+Tag the test `#[trace("FR-522-AC-1", ..., "FR-522-AC-22", "FR-330-AC-11", "TC-1317")]`; the identity rows 17a to 17e carry FR-522-AC-17.
 
 ## Expected Results
 

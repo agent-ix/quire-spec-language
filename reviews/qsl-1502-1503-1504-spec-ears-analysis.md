@@ -59,9 +59,12 @@ Tickets: QSL-1502, QSL-1503, QSL-1504. EARS pass over the Behavior statements of
 | FND-006 | fixed | The inference caveat is removed from FR-526; the rationale is stated as behavior. |
 | FND-007 | fixed | The location and names are stated as the requirement. |
 | FND-008 | fixed | The Recommendation column and the owner-choice note are gone from FR-525. |
+| FND-009 | fixed | The four double-SHALL statements are split (none remains in FR-522, FR-523, FR-524, FR-526, FR-527) and FR-525-AC-2 is Inspection. |
 
 ## Verdict
 
 8 findings: 0 high, 4 medium, 4 low. Tickets: QSL-1502 2, QSL-1503 4, QSL-1504 2.
 
 Disposition pass 1 at head 87bdf5f2828737f46113bab3ee801a1e369fd27b: 8 fixed, 0 still-open, 1 new findings.
+
+Disposition pass 2 at head da760198b81dcf5724c51f5841866f2a5284c275.

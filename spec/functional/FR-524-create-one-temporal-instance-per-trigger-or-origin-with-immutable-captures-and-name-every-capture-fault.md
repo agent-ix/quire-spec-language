@@ -60,7 +60,7 @@ QSpec FR-093 and FR-094 own activation, guard and capture meaning. FR-053 owns
 the opaque trigger identity. `evaluate_temporal_evidence` (FR-516) carries an
 ordered `deliveries` list for a clause that activates `on each` and an `origins`
 list for a clause that activates `on origin`, and calls `activate` once with them.
-`trigger` of the request selects the instance the call assesses. The other
+`trigger` of the request, when present, selects the instance the call assesses; a request that carries no delivery and no origin has no `trigger` (FR-516). The other
 instances the lists resolve are reported in `instances` and are not assessed in
 that call.
 
@@ -270,7 +270,7 @@ No output holds a truth value.
 | FR-524-AC-28 | `Missing` trigger evidence reports `Unknown(missing)` and `Refused` evidence reports `Unknown(refused)`, whatever the closure. | Test (TC-1319) |
 | FR-524-AC-29 | A closed scope with an incomplete trigger record and no instance reports `Unknown(open)` with incomplete completeness. | Test (TC-1319) |
 | FR-524-AC-30 | No disposition of AC-27 to AC-29 carries a truth value or evaluates a position. | Test (TC-1319) |
-| FR-524-AC-31 | Through `evaluate_temporal_evidence` the activation states of FR-516-AC-2 equal the dispositions of AC-27 and AC-28, and a faulted assessed instance reports `Unavailable`. | Test (TC-1319) |
+| FR-524-AC-31 | Through `evaluate_temporal_evidence` with no delivery, no origin and `trigger` `None`, the activation states of FR-516-AC-2 equal the dispositions of AC-27 and AC-28, and a faulted assessed instance reports `Unavailable`. | Test (TC-1319) |
 
 ## Dependencies
 

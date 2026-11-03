@@ -96,6 +96,9 @@ defined below.
   `W >= D` (fixed-sample); a position at `D + 1` does not.
 - **Missing valuations and history.** The evaluator SHALL treat missing and
   conflicting valuations as FR-501 "Verdicts" states with possibility sets,
+  and its `Indeterminate` carries the `instance` and `also_held_by` members of
+  FR-501's `MissingValuation` reason for an instance-bound atom of an evidence
+  call (FR-524),
   returning `Indeterminate` where no progress can resolve the verdict (fixed-sample: `W` has reached the anchor
   coordinate plus the reach; event-position: `scope` is `Closed`) and `Pending`
   otherwise. A past operator reaching before position 0 under

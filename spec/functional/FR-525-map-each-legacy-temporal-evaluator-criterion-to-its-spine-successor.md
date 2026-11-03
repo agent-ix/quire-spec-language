@@ -77,7 +77,7 @@ QSL-858's train.
 | FR-043-AC-10 four independent axes; no caller basis | FR-501-AC-15; FR-516-AC-1, AC-5 | PORT (FR-501) and QSL-1545 |
 | FR-043-AC-11 watermark settles a silent deadline; event-position does not | FR-501-AC-3, AC-6; FR-504-AC-1, AC-2 | PORT (FR-501, FR-504) |
 | FR-043-AC-12 regressing watermark, conflicting completeness | FR-502-AC-1 to AC-8 | PORT (FR-502) |
-| FR-043-AC-13 one identity per input set | FR-522-AC-15 to AC-20; FR-501-AC-16 | PORT QSL-1502 |
+| FR-043-AC-13 one identity per input set | FR-522-AC-15 to AC-22; FR-501-AC-16 | PORT QSL-1502 |
 | FR-043-AC-14 `/2` authenticated clock configuration and report | FR-522-AC-4, AC-6, AC-9, AC-12 | PORT QSL-1502 |
 | FR-043-AC-14 `/1` entry points: parameter mutations not refused, no authenticated binding | none | RETIRE with the `/1` lane (structural reason: no caller of the `/1` entry points exists; Contract IR FR-350 and quire-protocol IT-001 consume the `/2` entry points; successor FR-522-AC-9, the authenticated form) |
 
@@ -124,7 +124,7 @@ QSL-858's train.
 | FR-053-AC-7, AC-8 distinct identities stay distinct | FR-524-AC-1, AC-7; FR-516-AC-4 | PORT QSL-1503 |
 | FR-053-AC-9 empty identity | FR-516-AC-4; FR-526-AC-18 | PORT QSL-1503 |
 | FR-053-AC-9 mismatched or stale identity | FR-524-AC-20; FR-526-AC-8, AC-10 | PORT QSL-1503 |
-| FR-053-AC-9 absent identity | FR-516-AC-2, FR-516-AC-19 (an absent delivery is `Inactive` or `Unknown`, never an aliased instance); FR-526-AC-18 | PORT QSL-1545 |
+| FR-053-AC-9 absent identity | FR-516-AC-2, FR-516-AC-20, FR-516-AC-21 (an absent delivery is `Inactive` or `Unknown`, never an aliased instance); FR-526-AC-18 | PORT QSL-1545 |
 | FR-053-AC-9 malformed identity, cross-version translation | none: the identity is opaque non-empty bytes (FR-053) and the request type has one version | RETIRE (structural reason: the identity is opaque non-empty bytes with one version, so neither can occur; successor FR-053-AC-9 as amended, FR-526-AC-18) |
 | NFR-008-AC-1 checked tick arithmetic, refused before any position | FR-523-AC-16 | PORT QSL-1502 |
 | NFR-008-AC-2 reached limit, typed stop, siblings keep results | FR-523-AC-5, AC-12 to AC-14 | PORT QSL-1502 |
