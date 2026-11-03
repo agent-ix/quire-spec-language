@@ -812,6 +812,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-527
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-528
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1378,6 +1380,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-525](functional/FR-525-map-each-legacy-temporal-evaluator-criterion-to-its-spine-successor.md) | FR |
 | [FR-526](functional/FR-526-chain-a-temporal-evidence-result-to-its-direct-predecessor-and-refuse-a-relation-that-changes-nothing.md) | FR |
 | [FR-527](functional/FR-527-classify-native-to-tl-mapping-support-from-the-checked-temporal-clause-node.md) | FR |
+| [FR-528](functional/FR-528-write-a-source-integrity-claim-on-every-source-reference-of-an-emitted-checked-package.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |
