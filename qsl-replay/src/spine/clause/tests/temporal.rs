@@ -3107,7 +3107,7 @@ mod progressed;
 /// node alone gives them one retained entry. They are two occurrences and
 /// each keeps its own progress: `Twin` accepts a watermark below the one
 /// `Bounded` retained.
-#[trace("FR-502-AC-1", "TC-1296")]
+#[trace("FR-502-AC-12", "TC-1296")]
 #[test]
 fn two_clauses_with_one_body_keep_separate_progress_bindings() {
     let (bounded, ledger) = retained_ledger();
@@ -3137,4 +3137,29 @@ fn two_clauses_with_one_body_keep_separate_progress_bindings() {
         100
     );
     assert_eq!(updated.entry(&twin).expect("Twin's entry").watermark(), 50);
+    // A later lower watermark under `Bounded` is still a regression.
+    let regress = report_of_progress(&updated);
+    assert_eq!(regress.ledger, Some(updated));
+}
+
+/// `Bounded` asserting a watermark below the 100 it retained: refused.
+fn report_of_progress(ledger: &crate::spine::ProgressLedger) -> ClauseRunReport {
+    let report = report(with_progress(
+        finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
+        60,
+        crate::spine::ProgressCompleteness::Complete { through: 60 },
+        ledger,
+    ));
+    let ClauseDisposition::ProgressContradiction(refusal) = &report.disposition else {
+        panic!("a progress contradiction, got {:?}", report.disposition);
+    };
+    assert_eq!(
+        refusal
+            .record
+            .fields
+            .get("contradicted_dimension")
+            .map(String::as_str),
+        Some("Watermark")
+    );
+    report
 }

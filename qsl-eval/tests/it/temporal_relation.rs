@@ -294,7 +294,14 @@ fn an_empty_identity_is_refused_and_one_byte_changes_the_result_identity() {
     assert_ne!(one.result_identity, two.result_identity);
 }
 
-#[trace("FR-526-AC-9", "FR-524-AC-19", "TC-1321", "TC-1319")]
+#[trace(
+    "FR-502-AC-12",
+    "FR-526-AC-9",
+    "FR-524-AC-19",
+    "TC-1296",
+    "TC-1321",
+    "TC-1319"
+)]
 #[test]
 fn two_occurrences_of_one_body_keep_separate_instances_results_and_progress() {
     let (first, p) = setup();
