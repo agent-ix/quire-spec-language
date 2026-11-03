@@ -47,5 +47,5 @@ Both requested pairs remain visible at their request indices, and the required
 `unsupported` pair makes complete aggregate success unavailable. On the state
 declaration, `operation-contract` is admitted and `finite-replay` is an
 inapplicable capability naming the state family (FR-057-AC-11); the declaration
-body is still admitted. Each kind applies to exactly the family FR-057's
-applicability table gives it.
+body is still admitted. Each kind applies to exactly the declaration families
+FR-507's applicability table lists it under.

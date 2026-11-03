@@ -178,7 +178,7 @@ application in its body is one claim of its own, its value validity
 | `case` exhaustiveness obligation | none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as `undefined_expression`/`unproved-exhaustiveness` |
 | Operation precondition, postcondition or invariant | `operation-contract` |
 | Frame obligation (`modifies`, `creates`, `deletes`) | `operation-contract` |
-| Replay of one finite execution | `finite-replay` |
+| Replay of one finite execution against protocol semantics | `finite-replay` |
 | Refinement between two operation contracts or state models (a proof route no V1 ticket owns; the [#191](https://github.com/agent-ix/quire-spec-language/issues/191) and [#192](https://github.com/agent-ix/quire-spec-language/issues/192) corpus gates are test gates that request no kind, ADR-017 RF-1) | `operation-contract`, one claim per clause implication |
 | Abstraction relation (quire-specification FR-353) | none; it is a premise of the `operation-contract` claim it binds |
 | Temporal requirement under a finite-trace or infinite-trace profile | `temporal-satisfaction` |
@@ -186,30 +186,27 @@ application in its body is one claim of its own, its value validity
 | Other protocol analysis claim | its `protocol`-family kind |
 
 Each recorded requirement names one kind from this table, and applies to the
-family the "Kind applicability" table below gives that kind.
+declaration family that holds its claim form, as FR-507 states.
 
 ### Kind applicability
 
-A requested pair's kind applies to the QSL declaration family listed below,
-or to no current QSL declaration family where the entry says `none`:
+A requested pair's kind applies to the declaration family that holds its
+claim, not to a family fixed by the kind. The declaration families are
+QSpec FR-290's seven labels (`value`, `state-model`, `temporal-trace`,
+`relation-claim`, `protocol`, `probabilistic`, `real-time`), separate from
+the FR-290 kind groups in this requirement's vocabulary table. FR-507 owns
+the table of each family's applicable kinds and QSL's mapping from claim
+forms to families. A family may admit more than one kind and a kind may apply
+to more than one family: a `relation` clause with an implementation binding
+holds a `temporal-satisfaction` claim and an `operation-contract` claim, both
+on `relation-claim`. `finite-replay` applies to `protocol` only, because only
+a choreography is replayed.
 
-| Kind | QSL declaration family |
-| --- | --- |
-| `value-validity` | predicate |
-| `operation-contract` | state |
-| `finite-replay` | protocol |
-| `temporal-satisfaction` | temporal |
-| `global-conformance`, `monitorability`, `local-projection`, `refinement`, `realizability`, `composition` | protocol |
-| `probabilistic-satisfaction` | the probabilistic claim form (FR-186), FR-290 family `probabilistic` |
-| `schedulability` | the task-set and schedulability claim forms (FR-246), FR-290 family `real-time` |
-
-FR-507 states the applicability table over the spine's declaration families and claim forms and supersedes this table where they differ. FR-290's `finite-replay` family applies to a QSL protocol declaration, because only a choreography is replayed; the `probabilistic` and `real-time` families apply to the probabilistic claim form (FR-186) and the task-set claim forms (FR-246).
-
-If a requested pair's kind does not apply to its declaration's family, then the
-QSL composed linker SHALL record the pair as an inapplicable capability, naming
-the declaration's family. A required inapplicable pair makes complete admission
-unavailable. An inapplicable pair withholds no declaration body from its family
-checker.
+If a requested pair's kind does not apply to its claim's declaration family,
+then the pair SHALL be recorded as an inapplicable capability,
+`invalid_capability`/`inapplicable-kind`, naming the family (FR-507). A
+required inapplicable pair makes complete admission unavailable. An
+inapplicable pair withholds no declaration body from its family checker.
 
 ### Family-body admission
 
@@ -390,7 +387,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
 | FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal complete descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item, except the row for refinement between two operation contracts or state models, whose proof route no V1 ticket owns (ADR-017 RF-1); an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
-| FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it, or is inapplicable to all current QSL declaration families where the table says `none`. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration and a `probabilistic-satisfaction` request on a state declaration are inapplicable; a `probabilistic-satisfaction` request on a probabilistic claim and a `schedulability` request on a task-set claim are applicable (FR-507), name the declaration family, and leave its body reaching its family checker. | Test (TC-115, TC-971, TC-1302) |
+| FR-057-AC-11 | Each kind is applicable to exactly the declaration families whose FR-507 row lists it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration and a `probabilistic-satisfaction` request on a state declaration are inapplicable, name the declaration family `state-model`, and leave its body reaching its family checker; a `probabilistic-satisfaction` request on a probabilistic claim, a `schedulability` request on a task-set claim, and both the `temporal-satisfaction` model claim and the `operation-contract` code claim of one `relation` clause with an implementation binding are applicable (FR-507). | Test (TC-115, TC-971, TC-1302) |
 | FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |
 | FR-057-AC-13 | The family projection for each capability label equals the FR-290 family column in this requirement's table, including `probabilistic-satisfaction` → `probabilistic` and `schedulability` → `real-time`; it introduces no QSL alias. | Test (TC-971) |
 | FR-057-AC-14 | The composed admission stage projection preserves this requirement's stage ownership for every kind: requested labels are admitted by the composed linker without registry input; advertised labels are admitted by `descriptor_from_manifest`; and candidate sets are computed by the registry only after descriptor admission. | Test (TC-973) |
@@ -419,7 +416,7 @@ checker's definition permissions. Their ownership is decided in #211.
   `unbounded-extent` case are #222's.
 - Where this requirement abbreviates FR-290 (diagnostic payloads, report
   order, `inconsistent-candidates` coverage), FR-290 governs.
-- #210 decides which family records which requirements, within this
-  requirement's "Kind applicability" table. #211 decides the QSL
+- #210 decides which family records which requirements, within
+  FR-507's applicability table. #211 decides the QSL
   carrier member for the vocabulary identity and the ownership of the other QSL
   types named for capabilities.
