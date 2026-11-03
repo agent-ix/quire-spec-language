@@ -20,6 +20,13 @@ use crate::checked_v2::{resolve_clause_root, role_spelling, wire_graph};
 /// `i2.work_units` default. A formula node shared by several parents is read
 /// once per parent, so the expansion of a package of `n` nodes can exceed `n`
 /// exponentially; the view refuses past this count instead.
+///
+/// The bound is linear, not small: each visit keeps one `OperatorUse` (a
+/// borrowed identity and an interval clone, on the order of 100 bytes) and
+/// each `holds` visit one `CheckedNodeId` clone (a path vector of about seven
+/// segments, a few hundred bytes), so a formula at the limit holds on the
+/// order of a hundred megabytes. The spec's `&[CheckedNodeId]` accessors need
+/// owned ids, so the per-visit cost is not reduced here.
 pub(super) const FORMULA_VISITS: u64 = CheckedPackageReadLimits::bounded().work;
 
 /// The operation identity of a `holds` atom.

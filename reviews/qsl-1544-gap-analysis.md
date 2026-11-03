@@ -36,3 +36,10 @@ counted as gated, not as passing coverage.
 
 Every AC has an owning test or a named gate. One medium (AC-8/AC-9 not bound in the matrix) and
 one low (recipe packages exercise no predicate view). The two gated ACs are correctly gated.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `qsl-package/tests/checked_views_surface.rs` (AC-8) and `tests/it/retired_checked_views_paths.rs` (AC-9) are `#[trace]`-tagged tests that scan the doctest blocks. Re-run at c5611aa24: each is red when the digest `compile_fail,E0599` block is dropped, when `E0451` loses its code, when the compiling control is `ignore`d (AC-8), and when the `temporal_subject` `compile_fail,E0432` block is dropped or the `wire` control is `ignore`d (AC-9). The doctests themselves pass (16 + 9). |
+| FND-002 | fixed | `the_recipe_due_leaf_reads_the_view_binder` reads the recipe `Due` leaf from the event-position package: `HoldsLeaf`, `binders() == [view]`, non-empty span; passes. |

@@ -70,3 +70,19 @@ No high finding. The views are correct against the ACs on the paths tests exerci
 pattern is acceptable. Two medium findings need a fix in this PR: FND-001 (a missing
 discriminating test, small) and FND-002 (decide and state or bound the expansion). FND-003 and
 FND-004 are low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-005 | low | The `FormulaTooLarge` refusal exists (public `ViewRefusal` variant, `FORMULA_VISITS` = 1,000,000) but FR-515's `ViewRefusal` list ("the variants of this requirement are") and ACs do not name it or the budget; the only test is tagged AC-3. State the variant and the budget in FR-515 (and an AC, or tag the test to a new one) so the closed enum and the spec agree. | qsl-package/src/checked_views.rs:46-50; spec/functional/FR-515-read-the-checked-predicate-and-temporal-subject-from-a-checked-package.md | missing-requirement |
+| FND-006 | low | The budget counts `OperatorUse` visits, not memory: each visit retains an `OperatorUse` and each `holds` clones a `CheckedNodeId` (a boxed package name plus a heap path vector), so the ceiling at 1,000,000 visits is linear but large (order hundreds of MB, estimated, not measured), and 1,000,000 is the reader's read-work default, which bounds reading the package, not expanding it. Sound against exponential growth (the check precedes each expansion and exits early), but the ceiling is generous. Non-blocking. | qsl-package/src/checked_views/subject.rs:19-23,458-462 | missing-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_shared_operand_reads_the_span_inside_its_own_clause` (two clauses sharing a `holds` operand, one entry per reading, each view's span inside its own formula root, spans differ) is red under the first-entry `leaf_source` mutant (re-run at c5611aa24). after_excerpt: `entries.find(|entry| entry.regions.iter().all(inside)).or(first)` is now pinned by that test. |
+| FND-002 | fixed | `formula_reads` checks `uses.len() >= visits` at the top of every pop, before the node is expanded or pushed, and returns `FormulaTooLarge`; pending grows by one node's arguments per visit, so work and memory are linear in the budget. `a_formula_whose_expansion_exceeds_the_budget_is_refused` (8 entries ok at budget 8, refused at 7) is red with the check disabled, with `>` for `>=`, and with the check removed. The spec side is FND-005; the memory ceiling is FND-006. |
+| FND-003 | fixed | `a_sub_term_of_the_activation_guard_is_a_clause_leaf` selects each guard sub-term as a `ClauseLeaf` and refuses it for another clause; red under the guard-root-removed mutant. |
+| FND-004 | accepted-no-change | `checked_predicate` now builds the node index once per call (`subject_in` shares the `Graph`). The remaining cost (a `Graph` and a `wire_graph` per call, so O(clauses x leaves x nodes) for a caller that reads every leaf) is linear per call, FR-515 states no complexity bound, and a per-package cache would need interior state in a borrowed read-only package. Acceptable. |
