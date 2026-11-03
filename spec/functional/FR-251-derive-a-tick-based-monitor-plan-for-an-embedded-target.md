@@ -367,12 +367,15 @@ may repair such a disagreement by inventing another evaluation rule.
   fraction). `EventBuffer` and `monitor.max_event_rate` extend FR-127's
   `limit` and `setting` fields for a monitor run, which has no model-check
   request. **Overflow raises `history_start`.** An overflow of any buffer, bounded or
-  unbounded, also raises `State.history_start` to the tick of the overflowing
-  event, exactly as `on_gap` sets it and with the existing `State` fields only:
-  the lost event is not in any buffer, so every past-time operator whose window
-  reaches before that tick (`now - b` below it) is `indeterminate`, never a
-  definite verdict, until `now - b` reaches it, when the window no longer holds
-  the lost event. A bounded operator's older entries stay in its buffer, and a
+  unbounded, also raises `State.history_start` to `T + 1 + 2u`, where `T` is the tick of
+  the overflowing event and `1 + 2u` is one tick cover, with the existing `State`
+  fields only: the lost event covers `[T - u, T + 1 + u)`, so a window whose
+  widened start `now - b - u` is below `T + 1 + u` still holds it. The lost event
+  is not in any buffer, so every past-time operator whose window reaches before
+  `history_start` (`now - b` below `T + 1 + 2u`) is `indeterminate`, never a
+  definite verdict, and it is decided again only when `now - b` is at least
+  `T + 1 + 2u`, the first reading at which the widened window no longer holds the
+  lost event. A bounded operator's older entries stay in its buffer, and a
   bounded `once` can never settle `false`, nor a `historically` `true`, over a
   window that holds the lost event. The overflow of an unbounded past operator is
   also sticky for that operator ("Unbounded past operators").
@@ -485,7 +488,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-37 | Two plans of AC-1's clause that differ only in the checked body of one atom, or only in the checked body of the activation guard, have different `PlanId`s. | Test (TC-1081) |
 | FR-251-AC-38 | Two plans of AC-1's clause that differ only in the checked body of a declared helper function that an entry calls, directly or through another helper, have different `PlanId`s and different plan-root keys while the helper's own `node_id` (its declaration path, its call identity) is unchanged and it stays a declared node; the key covers the helper through its body root's node `node_id`, which is content, and not through a graph position or a name alone (QSpec FR-487). | Test (TC-1081) |
 | FR-251-AC-39 | `TimedMonitorPlan` built through its public constructor with one atom body swapped has an unequal `PlanId`, and a plan with equal bodies throughout has an equal `PlanId`. | Test (TC-1081) |
-| FR-251-AC-40 | Under AC-2's premises (`once[0 ms, 10 ms] holds(p)`, capacity 22), 23 events at ticks 0 to 22 with `p` false at ticks 0 to 21 and true at the lost 23rd event settle the affected obligations `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` and raise `history_start` to tick 22; `once[0 ms, 10 ms] holds(p)` read at tick 5000 is `indeterminate`, not `false`, and read at tick 10100 (`now - b` is 100, at least 22) decides from the entries then in the window. For `historically[0 ms, 10 ms] holds(p)` with `p` true at ticks 0 to 21 and false at the lost event, the read at tick 5000 is `indeterminate`, not `true`. | Test (TC-706) |
+| FR-251-AC-40 | Under AC-2's premises (`once[0 ms, 10 ms] holds(p)`, capacity 22, `b` 10000 ticks, `u` 0), 23 events at ticks 0 to 22 with `p` false at ticks 0 to 21 and true at the lost 23rd event settle the affected obligations `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` and raise `history_start` to `22 + 1 + 0` = 23; `once[0 ms, 10 ms] holds(p)` read at tick 5000 is `indeterminate`, not `false`, at tick 10022 (`now - b` is 22) is still `indeterminate`, and at tick 10023 (`now - b` is 23) decides from the entries then in the window. For `historically[0 ms, 10 ms] holds(p)` with `p` true at ticks 0 to 21 and false at the lost event, the read at tick 5000 and at tick 10022 is `indeterminate`, not `true`. With `u` 2 ticks the lost event at tick 22 raises `history_start` to 22 + 1 + 4 = 27 and the first deciding tick is 10027. | Test (TC-706) |
 | FR-251-AC-41 | For `once`, `historically`, `since` and `triggered` without an upper bound, the differential of AC-7 compares the monitor with the `HistoryCutoff` evaluator of "Unbounded past operators" (every atom before the baseline `indeterminate`) and requires equal verdicts; it also evaluates the same trace under QSpec's infinite-trace evaluator and requires that every definite monitor verdict equals that evaluator's verdict, and an `indeterminate` monitor verdict is not compared. | Test (TC-1081) |
 
 ## Dependencies

@@ -74,3 +74,22 @@ Residual disposition table, new findings: FND-014 open (ruling), FND-015 open, F
 ## Verdict (disposition pass 1)
 
 13 of 13 original findings fixed; `quire validate` exits 0 on all touched files; ids FR-251-AC-22..39, FR-106-AC-66..69, FR-390-AC-64, FR-514-AC-7..10 are unused on main and no other open QSL PR (2184, 2192, 2193, 2195, 2196, 2197, 2199) touches spec/. Mergeable except FND-015: close it in this batch (two sentences plus one AC) or the planner records an explicit ticket and accepts the pre-existing gap; FND-014 needs a planner or Peter ruling but does not block.
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-014 | fixed | FR-251 states the AC-7 oracle for unbounded past (HistoryCutoff evaluator, refinement check against the infinite-trace verdict, indeterminate compared with nothing; AC-41, TC-1081 step 25). The refinement claim is sound: a definite Kleene verdict under an unknown prefix holds for every prefix, including the all-false prefix. QSpec FR-092's added sentence is scoped to the tick monitor and narrows no existing profile rule. |
+| FND-015 | fixed | Overflow of any buffer raises State.history_start to the overflowing tick (AC-40, TC-706 step 6); the arithmetic holds in ticks (b = 10 ms = 10000 ticks, now - b at tick 5000 is -5000, at 10100 is 100). Raising history_start can only turn definite verdicts indeterminate: that is incompleteness, not unsoundness, and it applies only after a premise violation (the rate limit was exceeded); it contradicts no FR-501/FR-516 completeness claim (those govern the spine evaluators, not the monitor), and it matches the existing on_gap rule. See FND-018 for the boundary. |
+| FND-016 | fixed | AC-29 states p true and q false at tick 5000. |
+| FND-017 | fixed | TC-1076 scope names FR-106-AC-67. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-018 | medium | The overflow rule lets a window decide again when "now - b reaches" the lost event's tick T (AC-40: "at least 22"). The window of a past operator at now is the closed range from now - b, widened by the tick cover (1 + 2u), so at now - b = T it still contains the lost event: a once can settle false (historically true) over a window that holds the lost event. The condition must be strict and cover-widened (now - b > T + 1 + 2u, or history_start raised to T + 1 + 2u), and AC-40's read at the boundary should say so. Edge case, one phrase. | FR-251 Overflow raises history_start; FR-251-AC-40 | wrong-requirement |
+
+## Verdict (disposition pass 2)
+
+Not yet mergeable: FND-018 (medium, one-phrase fix). Otherwise `quire validate` clean, no id collisions (no other open QSL PR touches spec/), all prior findings fixed.
