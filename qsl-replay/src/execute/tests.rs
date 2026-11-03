@@ -1669,28 +1669,26 @@ fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_rep
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let operand = || Expression::field(Expression::deref(Expression::name("receiver")), "number");
     let source = Expression::binary(BinaryOperator::Equal, operand(), operand());
-    let declarations = PackageDeclarations {
-        types: types(ValueType::Int(
-            IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap(),
-        )),
-        models: vec![model],
-        functions: vec![FunctionDeclaration::new(
-            "Compare",
-            vec![(
-                "receiver".to_owned(),
-                TypeForm::builtin(BuiltinType::Reference, span)
-                    .with_arguments(vec![TypeForm::name("Owner", span)]),
-            )],
-            TypeForm::builtin(BuiltinType::Boolean, span),
-            None,
-            source.clone(),
+    let mut declarations = PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.types = types(ValueType::Int(
+        IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap(),
+    ));
+    declarations.models = vec![model];
+    declarations.functions = vec![FunctionDeclaration::new(
+        "Compare",
+        vec![(
+            "receiver".to_owned(),
+            TypeForm::builtin(BuiltinType::Reference, span)
+                .with_arguments(vec![TypeForm::name("Owner", span)]),
         )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    };
+        TypeForm::builtin(BuiltinType::Boolean, span),
+        None,
+        source.clone(),
+    )];
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     let expression = package
@@ -1828,28 +1826,26 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
             .with_arguments(vec![TypeForm::name("M::A", span)]),
         Expression::name("population"),
     ));
-    let declarations = PackageDeclarations {
-        types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(owner, "M::A", vec![])])
-            .unwrap(),
-        models: vec![AdmittedModel::new(&domain, &view).unwrap()],
-        functions: vec![FunctionDeclaration::new(
-            "Count",
-            vec![(
-                "population".to_owned(),
-                TypeForm::new(TypeFormHead::Population, span)
-                    .with_arguments(vec![TypeForm::name("M::A", span)])
-                    .with_bounds(vec!["1".to_owned()]),
-            )],
-            TypeForm::builtin(BuiltinType::Integer, span),
-            None,
-            source.clone(),
+    let mut declarations = PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.types =
+        TypeEnvironment::new([], [ObjectTypeDeclaration::new(owner, "M::A", vec![])]).unwrap();
+    declarations.models = vec![AdmittedModel::new(&domain, &view).unwrap()];
+    declarations.functions = vec![FunctionDeclaration::new(
+        "Count",
+        vec![(
+            "population".to_owned(),
+            TypeForm::new(TypeFormHead::Population, span)
+                .with_arguments(vec![TypeForm::name("M::A", span)])
+                .with_bounds(vec!["1".to_owned()]),
         )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    };
+        TypeForm::builtin(BuiltinType::Integer, span),
+        None,
+        source.clone(),
+    )];
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     let expression = package
@@ -1953,20 +1949,19 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
         Expression::name("left"),
         Expression::name("right"),
     );
-    let declarations = PackageDeclarations {
-        enums: vec![binding],
-        functions: vec![FunctionDeclaration::new(
-            "Compare",
-            vec![
-                ("left".to_owned(), TypeForm::name("State", span)),
-                ("right".to_owned(), TypeForm::name("State", span)),
-            ],
-            TypeForm::builtin(BuiltinType::Boolean, span),
-            None,
-            source.clone(),
-        )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source(), "fixture", limits)
-    };
+    let mut declarations =
+        PackageDeclarations::new(qsl_semantics::check::fixture_source(), "fixture", limits);
+    declarations.enums = vec![binding];
+    declarations.functions = vec![FunctionDeclaration::new(
+        "Compare",
+        vec![
+            ("left".to_owned(), TypeForm::name("State", span)),
+            ("right".to_owned(), TypeForm::name("State", span)),
+        ],
+        TypeForm::builtin(BuiltinType::Boolean, span),
+        None,
+        source.clone(),
+    )];
     let package =
         qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     let expression = package

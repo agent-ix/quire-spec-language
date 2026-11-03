@@ -2271,16 +2271,16 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     )
     .expect("the unit graph admits");
     let units = quire_semantic_value::quantity::UnitTable::declared(&graph);
-    let graph = qsl_semantics::check::PackageDeclarations {
-        types: quire_semantic_value::declaration::TypeEnvironment::default().with_units(units),
-        ..qsl_semantics::check::PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture",
-            qsl_foundation::IdentityLimits::default(),
-        )
-    }
-    .check(quire_semantic_value::checking::CheckingLimits::default())
-    .expect("the unit table checks");
+    let mut declarations = qsl_semantics::check::PackageDeclarations::new(
+        qsl_semantics::check::fixture_source(),
+        "fixture",
+        qsl_foundation::IdentityLimits::default(),
+    );
+    declarations.types =
+        quire_semantic_value::declaration::TypeEnvironment::default().with_units(units);
+    let graph = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the unit table checks");
     (
         qsl_package::CheckedPackage::link(graph),
         quire_exact::UnitId::declared(metre_key),
