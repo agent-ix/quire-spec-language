@@ -308,6 +308,7 @@ fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
         );
     let unit_b_header = SOURCE
         .replace("acme/orders", "acme/inventory")
+        .replace("model M =", "model N =")
         .replace(
             "profile v = \"quire.value.complete/v1\";\n",
             "profile v = \"quire.value.complete/v1\";\nprofile p = \"quire.protocol.finite-global/v1\";\n",
@@ -316,7 +317,7 @@ fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
     let unit_b = format!(
         "{}{}function plain using v(): Integer pure {{ 1 }}\n",
         unit_b_header,
-        protocol("FlowB", "agent")
+        protocol("FlowB", "agent").replace("M::Gadget", "N::Gadget")
     );
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
