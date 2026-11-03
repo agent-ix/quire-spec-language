@@ -15,26 +15,39 @@ use super::identity::{InputIdentity, ResultIdentity};
 use super::trigger::{CapturedValue, Payload, Receipt, SemanticTriggerIdentity};
 
 /// The obligation an instance or a result belongs to: the checked package
-/// identity and the clause (FR-524 "The evidence ledger").
+/// identity and the clause occurrence (FR-524 "The evidence ledger"). Two
+/// clauses of one body and different names share a declaration node and are
+/// two occurrences.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObligationKey {
     package: Box<str>,
     clause: Box<[u8]>,
+    occurrence: u64,
 }
 
 impl ObligationKey {
     /// The obligation of `clause`, the encoded identity of the clause's
     /// declaration node, in `package`.
-    pub fn new(package: impl Into<Box<str>>, clause: impl Into<Box<[u8]>>) -> Self {
+    pub fn new(
+        package: impl Into<Box<str>>,
+        clause: impl Into<Box<[u8]>>,
+        occurrence: u64,
+    ) -> Self {
         Self {
             package: package.into(),
             clause: clause.into(),
+            occurrence,
         }
     }
 
     /// The package identity.
     pub fn package(&self) -> &str {
         &self.package
+    }
+
+    /// The declaration's occurrence ordinal.
+    pub const fn occurrence(&self) -> u64 {
+        self.occurrence
     }
 
     /// The encoded clause identity.

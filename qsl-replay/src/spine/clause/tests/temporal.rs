@@ -122,6 +122,8 @@ impl Unit {
         match self {
             Self::Bounded => {
                 "temporal Bounded using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { eventually[0,1] holds(c.value = 2) }\n\
+                 temporal Twin using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { eventually[0,1] holds(c.value = 2) }\n"
             }
             Self::Infinite => {
@@ -3099,3 +3101,40 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
 
 mod checked_route_owner;
 mod progressed;
+
+/// FR-502 (per-occurrence binding): two clauses with equal bodies and
+/// different names share one checked clause node, so a binding keyed by the
+/// node alone gives them one retained entry. They are two occurrences and
+/// each keeps its own progress: `Twin` accepts a watermark below the one
+/// `Bounded` retained.
+#[trace("FR-502-AC-1", "TC-1296")]
+#[test]
+fn two_clauses_with_one_body_keep_separate_progress_bindings() {
+    let (bounded, ledger) = retained_ledger();
+    assert_eq!(ledger.len(), 1);
+    let report = report(with_progress(
+        finite(Unit::Bounded, "Twin", &[0, 1, 2]),
+        50,
+        crate::spine::ProgressCompleteness::Complete { through: 50 },
+        &ledger,
+    ));
+    let updated = report
+        .ledger
+        .expect("a lower watermark under another occurrence is accepted");
+    assert_eq!(updated.len(), 2);
+    let twin = updated
+        .bindings()
+        .find(|binding| **binding != bounded)
+        .expect("a second binding")
+        .clone();
+    assert_eq!(twin.clause, bounded.clause, "equal bodies share one node");
+    assert_ne!(twin.occurrence, bounded.occurrence);
+    assert_eq!(
+        updated
+            .entry(&bounded)
+            .expect("Bounded's entry")
+            .watermark(),
+        100
+    );
+    assert_eq!(updated.entry(&twin).expect("Twin's entry").watermark(), 50);
+}

@@ -37,15 +37,14 @@ use super::trigger::{
 };
 use crate::temporal::finite_window::{
     evaluate_finite_window_at, Basis, ClockCover, IndeterminateReason, LowerBoundary,
-    TimestampedObservation, TimestampedTrace, Valuation, Watermark, WindowCharge, WindowClock,
-    WindowProgress, WindowUnit, WindowVerdict,
+    ProgressedRefusal, SampleProgress, TimestampedObservation, TimestampedTrace, Valuation,
+    Watermark, WindowCharge, WindowClock, WindowProgress, WindowUnit, WindowVerdict,
 };
 use crate::temporal::ledger::{
     ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
     DEFAULT_COVERED_POSITIONS,
 };
 use crate::temporal::letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters};
-use crate::temporal::outcome::TemporalRefusal;
 use crate::temporal::position::TemporalPosition;
 use qsl_semantics::check::FormulaNodeId;
 
@@ -204,7 +203,11 @@ fn admit<'a>(
     }
     let clause_bytes =
         serde_json::to_vec(declaration).map_err(|_| fault("clause-identity-encodes"))?;
-    let obligation = ObligationKey::new(declaration.package.clone(), clause_bytes);
+    let obligation = ObligationKey::new(
+        declaration.package.clone(),
+        clause_bytes,
+        subject.occurrence,
+    );
     let progress_ledger = admit_progress(subject, request)?;
     let identity = identity_of(subject, request, &authenticated, &obligation, meter)
         .map_err(|_| fault("identity-members-encode"))?;
@@ -386,9 +389,16 @@ fn canonical(positions: &[EvidencePosition]) -> Vec<&EvidencePosition> {
     ordered
 }
 
-fn encode_trace(request: &EvidenceRequest) -> Vec<u8> {
+fn encode_trace(subject: &EvidenceSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
     let mut encoder = MemberEncoder::new().u64(request.positions.len() as u64);
-    for position in canonical(&request.positions) {
+    // The listing is the order of an event-position or fixed-sample trace;
+    // a timestamped trace has the canonical order of FR-501.
+    let ordered = if subject.clause.profile() == TemporalProfile::TimestampedEventFiniteWindow {
+        canonical(&request.positions)
+    } else {
+        request.positions.iter().collect()
+    };
+    for position in ordered {
         encoder = encode_ref(encoder, &position.observation).u64(position.position);
         encoder = encoder.option(position.order_key.as_ref(), |encoder, key| {
             encoder.text(&key.authority).u64(key.key as u64)
@@ -399,6 +409,7 @@ fn encode_trace(request: &EvidenceRequest) -> Vec<u8> {
             encoder = encode_valuations(encoder.bytes(instance.as_bytes()), valuations);
         }
     }
+    encoder = encoder.u64(subject.occurrence);
     encoder = encoder.option(request.anchor.as_ref(), |encoder, anchor| {
         encoder.text(anchor)
     });
@@ -567,7 +578,7 @@ fn identity_of(
         .ceilings(&request.limits)
         .meter_ceiling(meter.limits().work_units)
         .member(IdentityMember::Cover, cover)
-        .member(IdentityMember::Trace, encode_trace(request))
+        .member(IdentityMember::Trace, encode_trace(subject, request))
         .member(IdentityMember::Progress, encode_progress(request))
         .member(IdentityMember::Trigger, trigger)
         .member(
@@ -746,11 +757,19 @@ impl TemporalLetters for EvidenceLetters<'_> {
         _meter: &mut Meter,
     ) -> Result<Valuation, LetterStop> {
         let atom_index = u64::try_from(atom.index()).map_err(|_| Self::invariant("atom-in-u64"))?;
-        let supplied = self
+        let Some(supplied) = self
             .trace
             .supplied_index(position)
             .and_then(|index| self.request.positions.get(index))
-            .ok_or_else(|| Self::invariant("position-is-supplied"))?;
+        else {
+            // A silent sample is no observation: every atom reads false
+            // there (FR-504).
+            return if position.index() >= self.trace.observed() as u64 {
+                Ok(Valuation::False)
+            } else {
+                Err(Self::invariant("position-is-supplied"))
+            };
+        };
         let hit = self.request.evicted.iter().find(|record| {
             matches!(record, Evicted::Valuation { instance, position, atom }
                 if *atom == atom_index
@@ -825,8 +844,56 @@ fn watermark_of(request: &EvidenceRequest) -> Watermark {
 /// Admit the trace. A withdrawn fact is read as nothing asserted: an open
 /// scope, an incomplete record, a history cutoff and no watermark, which
 /// never makes a verdict more definite than the evidence supports.
-fn admit_trace(facts: &Facts<'_>) -> Result<TimestampedTrace, TemporalRefusal> {
+fn admit_trace(
+    facts: &Facts<'_>,
+    meter: &mut Meter,
+) -> Result<Result<TimestampedTrace, Box<Outcome>>, CallFailure> {
     let request = facts.request;
+    let clause = facts.subject.clause;
+    let completeness = request
+        .completeness
+        .as_ref()
+        .map_or(ProgressCompleteness::Incomplete, |record| record.state);
+    let scope = request.decision_closure.unwrap_or(ProgressClosure::Open);
+    let execution = request.surrounding_closure.unwrap_or(ProgressClosure::Open);
+    let lower_boundary = if request.authoritative_origin == Some(true) {
+        LowerBoundary::AuthoritativeOrigin
+    } else {
+        LowerBoundary::HistoryCutoff
+    };
+    if matches!(
+        clause.profile(),
+        TemporalProfile::EventPositionFalseExtension | TemporalProfile::FixedSampleFalseExtension
+    ) {
+        // Position `i` of the listing has coordinate `i` (FR-504). A withdrawn
+        // watermark asserts nothing beyond the last observation.
+        let last = u64::try_from(request.positions.len().saturating_sub(1))
+            .map_err(|_| fault("positions-in-u64"))?;
+        let progress = SampleProgress {
+            watermark: request.decision_progress.unwrap_or(last),
+            completeness,
+            scope,
+            execution,
+            lower_boundary,
+        };
+        let observations = request
+            .positions
+            .iter()
+            .map(|position| position.observation.identity.clone())
+            .collect();
+        return match TimestampedTrace::admit_progressed(clause, observations, progress, meter) {
+            Err(_) => Err(fault("trace-admits")),
+            Ok(Ok(trace)) => Ok(Ok(trace)),
+            Ok(Err(ProgressedRefusal::Incomplete(incomplete))) => Ok(Err(Box::new(
+                Outcome::stopped(EvidenceIncomplete::Meter(incomplete)),
+            ))),
+            Ok(Err(refused)) => Err(refusal(
+                "progress-inconsistent",
+                "positions",
+                &[("refusal", format!("{refused:?}"))],
+            )),
+        };
+    }
     let unit = match &facts.authenticated.clock {
         qsl_package::ClockConfiguration::TimestampedEvent { timestamp_unit } => {
             timestamp_unit.to_string()
@@ -835,7 +902,7 @@ fn admit_trace(facts: &Facts<'_>) -> Result<TimestampedTrace, TemporalRefusal> {
         | qsl_package::ClockConfiguration::FixedSample { .. } => String::new(),
     };
     TimestampedTrace::admit(
-        facts.subject.clause.name(),
+        clause.name(),
         WindowClock {
             unit,
             cover: request.cover,
@@ -851,19 +918,14 @@ fn admit_trace(facts: &Facts<'_>) -> Result<TimestampedTrace, TemporalRefusal> {
             .collect(),
         WindowProgress {
             watermark: watermark_of(request),
-            completeness: request
-                .completeness
-                .as_ref()
-                .map_or(ProgressCompleteness::Incomplete, |record| record.state),
-            scope: request.decision_closure.unwrap_or(ProgressClosure::Open),
-            execution: request.surrounding_closure.unwrap_or(ProgressClosure::Open),
-            lower_boundary: if request.authoritative_origin == Some(true) {
-                LowerBoundary::AuthoritativeOrigin
-            } else {
-                LowerBoundary::HistoryCutoff
-            },
+            completeness,
+            scope,
+            execution,
+            lower_boundary,
         },
     )
+    .map(Ok)
+    .map_err(|_| fault("trace-admits"))
 }
 
 fn no_instance(scope: TriggerScope, request: &EvidenceRequest) -> Outcome {
@@ -958,7 +1020,10 @@ fn assess(
         }
         Some(_) | None => {}
     }
-    let trace = admit_trace(facts).map_err(|_| fault("trace-admits"))?;
+    let trace = match admit_trace(facts, &mut *meter)? {
+        Ok(trace) => trace,
+        Err(stopped) => return Ok(*stopped),
+    };
     let canonical_anchor = (0..trace.len())
         .find(|index| {
             trace
@@ -1126,14 +1191,6 @@ fn evaluate(
 ) -> Result<Outcome, CallFailure> {
     let request = facts.request;
     let clause = facts.subject.clause;
-    if clause.profile() != TemporalProfile::TimestampedEventFiniteWindow {
-        return Ok(Outcome {
-            activation: ActivationState::Active,
-            ..Outcome::stopped(EvidenceIncomplete::ProfileNotEvaluated {
-                profile: clause.profile().identity().to_string(),
-            })
-        });
-    }
     let mut letters = EvidenceLetters {
         request,
         trace,
@@ -1180,7 +1237,9 @@ fn evaluate(
     match evaluation.verdict {
         WindowVerdict::Holds => outcome.truth = Some(Truth::True),
         WindowVerdict::Violated { .. } => outcome.truth = Some(Truth::False),
-        WindowVerdict::Pending { .. } => outcome.truth = Some(Truth::Pending),
+        WindowVerdict::Pending { .. } | WindowVerdict::PendingNextEvent { .. } => {
+            outcome.truth = Some(Truth::Pending);
+        }
         WindowVerdict::Indeterminate { reason, .. } => {
             let (indeterminate, kind, code) = match reason {
                 IndeterminateReason::MissingValuation { position, atom } => {

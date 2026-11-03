@@ -67,8 +67,14 @@ pub struct ProgressAssertion {
 pub struct LedgerBinding {
     /// The checked package identity.
     pub package: qsl_foundation::SourceIdentity,
-    /// The checked clause identity.
+    /// The checked clause identity: the declaration node, which is keyed by
+    /// the clause's content and so is shared by two clauses of one body.
     pub clause: quire_exact::NodeKey,
+    /// The occurrence of the declaration (its `claim` ordinal, the
+    /// `occurrence` of its `temporal_bindings` row): two clauses with equal
+    /// bodies and different names are two occurrences and keep separate
+    /// progress.
+    pub occurrence: u64,
     /// The clock binding name.
     pub clock: String,
     /// The selected profile identity.
@@ -385,6 +391,7 @@ impl From<eval::LedgerBinding> for LedgerBinding {
         Self {
             package: binding.package,
             clause: binding.clause,
+            occurrence: binding.occurrence,
             clock: binding.clock,
             profile: binding.profile,
         }
@@ -396,6 +403,7 @@ impl From<LedgerBinding> for eval::LedgerBinding {
         Self {
             package: binding.package,
             clause: binding.clause,
+            occurrence: binding.occurrence,
             clock: binding.clock,
             profile: binding.profile,
         }

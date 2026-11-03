@@ -47,28 +47,49 @@ pub(crate) struct Env {
     row: TemporalBinding,
     rows: Vec<ActivationRow>,
     pub(crate) binding: TraceBinding,
+    pub(crate) occurrence: u64,
 }
 
 pub(crate) fn env(activation: &str, body: &str) -> Env {
-    let fixture = fixture(FINITE_WINDOW, "c: Counter", activation, body);
+    build(
+        FINITE_WINDOW,
+        json!({"kind": "timestamped_event", "timestamp_unit": "ms"}),
+        activation,
+        body,
+    )
+}
+
+const EVENT_POSITION: &str = "quire.temporal.event-position.false-extension/v1";
+
+/// A clause under the event-position profile (FR-504).
+pub(crate) fn event_env(activation: &str, body: &str) -> Env {
+    build(
+        EVENT_POSITION,
+        json!({"kind": "event_position", "sequence_authority": "order-events"}),
+        activation,
+        body,
+    )
+}
+
+fn build(profile_identity: &str, clock: serde_json::Value, activation: &str, body: &str) -> Env {
+    let fixture = fixture(profile_identity, "c: Counter", activation, body);
     let declaration: CheckedNodeId =
         serde_json::from_value(json!({"package": "recipe", "path": ["Due"], "ordinal": 0}))
             .expect("a node identity");
     let profile: CheckedSelection = serde_json::from_value(json!({
         "role": "temporal_profile",
-        "definition": {"authority": "agent-ix", "identity": FINITE_WINDOW},
+        "definition": {"authority": "agent-ix", "identity": profile_identity},
     }))
     .expect("a profile selection");
-    let clock = json!({"kind": "timestamped_event", "timestamp_unit": "ms"});
     let row: TemporalBinding = serde_json::from_value(json!({
         "declaration": {"package": "recipe", "path": ["Due"], "ordinal": 0},
         "occurrence": 0,
         "clock_name": "stamp-clock",
-        "clock": clock,
+        "clock": clock.clone(),
     }))
     .expect("a temporal binding row");
     let binding = TraceBinding {
-        profile: FINITE_WINDOW.into(),
+        profile: profile_identity.into(),
         clock_name: "stamp-clock".into(),
         parameters: serde_json::from_value::<ClockConfiguration>(clock).expect("a clock"),
     };
@@ -79,6 +100,7 @@ pub(crate) fn env(activation: &str, body: &str) -> Env {
         row,
         rows: Vec::new(),
         binding,
+        occurrence: 0,
     }
 }
 
@@ -92,10 +114,12 @@ impl Env {
             },
             clause: &self.fixture.clause,
             instance_bound: bound.iter().copied().collect(),
+            occurrence: self.occurrence,
             activation_map: &self.rows,
             progress: LedgerBinding {
                 package: qsl_foundation::SourceIdentity::new("a", "u"),
                 clause: crate::support::ids::node_key(b"Due"),
+                occurrence: self.occurrence,
                 clock: "stamp-clock".to_owned(),
                 profile: FINITE_WINDOW.to_owned(),
             },
@@ -121,7 +145,14 @@ impl Env {
         ObligationKey::new(
             self.declaration.package.clone(),
             serde_json::to_vec(&self.declaration).expect("encodes"),
+            self.occurrence,
         )
+    }
+
+    /// The same clause body as another occurrence of the declaration.
+    pub(crate) fn occurrence(mut self, occurrence: u64) -> Self {
+        self.occurrence = occurrence;
+        self
     }
 
     /// The same clause under another package and declaration name.
@@ -1161,4 +1192,40 @@ fn a_shared_meter_stops_the_second_instance_at_the_visit_charge_point() {
     let two = evaluate_temporal_evidence(&subject, &asked, &mut shared).expect("a result");
     assert_eq!(two.truth, None);
     assert!(matches!(two.incomplete, Some(EvidenceIncomplete::Meter(_))));
+}
+
+#[trace("FR-516-AC-2", "FR-516-AC-8", "TC-1311")]
+#[test]
+fn an_event_position_clause_is_evaluated_through_the_progress_carrier() {
+    let env = event_env("on origin", "eventually[0, 1] holds(p)");
+    let p = env.atom("p");
+    let subject = env.subject(&[]);
+    let at = |values: [Valuation; 3]| {
+        let mut asked = request(
+            &env,
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| position(index as u64, &[(p, value)]))
+                .collect(),
+        );
+        asked.origins = vec![origin("o1", "a")];
+        asked.trigger = Some(id("o1"));
+        asked
+    };
+    let holds = call(
+        &env,
+        &subject,
+        &at([Valuation::False, Valuation::True, Valuation::False]),
+    )
+    .expect("a result");
+    assert_eq!(holds.activation, ActivationState::Active);
+    assert_eq!(holds.truth, Some(Truth::True));
+    let fails = call(
+        &env,
+        &subject,
+        &at([Valuation::False, Valuation::False, Valuation::False]),
+    )
+    .expect("a result");
+    assert_eq!(fails.truth, Some(Truth::False));
 }

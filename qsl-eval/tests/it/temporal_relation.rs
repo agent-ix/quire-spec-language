@@ -293,3 +293,38 @@ fn an_empty_identity_is_refused_and_one_byte_changes_the_result_identity() {
     let two = run(&env, &other).expect("a result");
     assert_ne!(one.result_identity, two.result_identity);
 }
+
+#[trace("FR-526-AC-9", "FR-524-AC-19", "TC-1321", "TC-1319")]
+#[test]
+fn two_occurrences_of_one_body_keep_separate_instances_results_and_progress() {
+    let (first, p) = setup();
+    let second = setup().0.occurrence(1);
+    // Retain `t1` and a progress entry under occurrence 0.
+    let mut one = asking(&first, p, Valuation::True);
+    one.progress_ledger = Some(qsl_eval::temporal::ProgressLedger::new());
+    let r1 = run(&first, &one).expect("a result");
+    // Occurrence 1 under the same ledgers: `t1` with another payload is not a
+    // contradiction, a lower watermark is not a regression, and the result
+    // of occurrence 0 is not its predecessor.
+    let mut other = asking(&second, p, Valuation::True);
+    other.deliveries[0].payload = qsl_eval::temporal::evidence::Payload::new(b"another".as_slice());
+    other.ledger = Some(r1.ledger.clone());
+    other.progress_ledger = r1.progress_ledger.clone();
+    other.decision_progress = Some(50);
+    other.completeness = other.completeness.map(|mut record| {
+        record.state = qsl_eval::temporal::ProgressCompleteness::Complete { through: 50 };
+        record
+    });
+    let r2 = run(&second, &other).expect("a separate occurrence is accepted");
+    assert_eq!(r2.lineage, 0);
+    assert_eq!(r2.ledger.instance_count(), 2);
+    assert_eq!(r2.ledger.result_count(), 2);
+    assert_eq!(
+        r2.progress_ledger.as_ref().map(|ledger| ledger.len()),
+        Some(2)
+    );
+    let mut correcting = asking(&second, p, Valuation::False);
+    correcting.relation = Relation::Superseding(r1.result_identity.clone());
+    correcting.ledger = Some(r2.ledger.clone());
+    expect_refusal(run(&second, &correcting), "predecessor-not-latest");
+}

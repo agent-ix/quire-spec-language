@@ -308,11 +308,6 @@ pub enum EvidenceIncomplete {
         /// The atom.
         atom: u64,
     },
-    /// The clause's profile is not evaluated by this call yet.
-    ProfileNotEvaluated {
-        /// The profile identity.
-        profile: String,
-    },
 }
 
 /// The result of a temporal evidence call (FR-516 "Outputs").
@@ -396,6 +391,10 @@ pub struct EvidenceSubject<'p> {
     pub instance_bound: std::collections::BTreeSet<u64>,
     /// The package's FR-449 activation-map rows.
     pub activation_map: &'p [ActivationRow],
+    /// The occurrence of the clause's declaration (the `occurrence` of its
+    /// `temporal_bindings` row): the evidence ledger keys instances and
+    /// results by it, so clauses of equal bodies keep separate ones.
+    pub occurrence: u64,
     /// The binding progress is retained under (FR-502).
     pub progress: LedgerBinding,
 }

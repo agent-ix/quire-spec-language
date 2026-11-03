@@ -700,6 +700,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         let binding = LedgerBinding {
             package: package_identity,
             clause: node.identity(),
+            occurrence: node.claim().ordinal(),
             clock: clause.clock().to_owned(),
             profile: clause.profile().identity().to_owned(),
         };
