@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem, analyze_items, derived_protocol_item,
+    analyze_items, derived_protocol_item, AnalyzeRecord, DerivedItemMismatch, Engines, ProtocolItem,
 };
 use qsl_analyze::model_check::manifest as en1;
 use qsl_analyze::model_check::{ModelCheckRefusal, ProtocolCheckRequest};
@@ -21,35 +21,35 @@ use qsl_eval::simulation::protocol::{
     MemoryModel, MemorySelection, ProtocolTransition, Ra, StepKind, Tso,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
-use qsl_foundation::MemoryModelName;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::MemoryModelName;
 use qsl_replay::node_occurrence;
 use qsl_replay::{
-    CertificateRule, CounterexampleKind, DisagreementCause, IncompleteCause, MemoryBound,
-    MemoryBoundMember, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ModelTraceSettlement, ProofCertificate, ProtocolCertificateRequest, Race,
-    ResultLabel, TemporalCertificateCheck, TemporalCounterexample, TerminalValue,
-    check_protocol_closure,
+    check_protocol_closure, CertificateRule, CounterexampleKind, DisagreementCause,
+    IncompleteCause, MemoryBound, MemoryBoundMember, ModelCheckItem, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, ModelStep, ModelTraceSettlement, ProofCertificate,
+    ProtocolCertificateRequest, Race, ResultLabel, TemporalCertificateCheck,
+    TemporalCounterexample, TerminalValue,
 };
 use qsl_route::deadlock::{
-    ItemObligation, ModelTemporalItem, ObligationKind, ProtocolTemporalItem,
+    ItemObligation, ModelTemporalItem, NoAnchor, ObligationKind, ProtocolTemporalItem,
 };
 use qsl_route::model_request::{ModelRequest, WrittenRequest};
 use qsl_route::request::{DerivedLimits, ItemKind, RequestItem};
 use qsl_semantics::check::Capability;
 use qsl_semantics::family::{ClaimExtent, Requirements};
 use quire_exact::Cancel;
-use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::PropertyForm;
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 
 use crate::dense_route::{ids, registry};
 use crate::derived_request::{
     derived_subjects, items_of_kind, protocol_request, protocol_request_under, settled,
 };
 use crate::fill::tcb_01_event_position_selection;
-use crate::litmus::{NO_BOTH_ZERO, attempt, contracts, protocol, protocol_with};
-use crate::weak_memory::{Case, MP, litmus_run, load_ordered, select, steps};
+use crate::litmus::{attempt, contracts, protocol, protocol_with, NO_BOTH_ZERO};
+use crate::weak_memory::{litmus_run, load_ordered, select, steps, Case, MP};
 
 /// `SB::Main::Both` resolved to `tso`.
 fn tso() -> [MemorySelection; 1] {
@@ -694,7 +694,7 @@ fn a_store_after_the_send_races_with_the_receivers_load() {
 #[test]
 fn the_race_freedom_item_over_a_model_subject_is_refused() {
     use crate::counter::{
-        CONTRACT, Documents, UNLIMITED, package_with_clauses, subject as model_subject,
+        package_with_clauses, subject as model_subject, Documents, CONTRACT, UNLIMITED,
     };
     let documents = Documents::new(crate::counter::document(false));
     let (package, _) = package_with_clauses(&documents.document, CONTRACT, &[]);
@@ -1931,10 +1931,7 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
     };
 
     let ordered = run(&profiled_stores("y"));
-    let [
-        (1, deadlock_backend, deadlock, None),
-        (2, race_backend, race, None),
-    ] = &ordered[..]
+    let [(1, deadlock_backend, deadlock, None), (2, race_backend, race, None)] = &ordered[..]
     else {
         panic!("{ordered:?}");
     };
@@ -1948,10 +1945,7 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
 
     let racing = profiled_stores("x");
     let racy = run(&racing);
-    let [
-        (1, _, deadlock, None),
-        (2, race_backend, TerminalValue::Refuted, Some(kind)),
-    ] = &racy[..]
+    let [(1, _, deadlock, None), (2, race_backend, TerminalValue::Refuted, Some(kind))] = &racy[..]
     else {
         panic!("{racy:?}");
     };
@@ -2008,7 +2002,7 @@ fn a_protocol_derived_items_caller_limits_reach_en1() {
             ModelCheckItem::RaceFreedom,
         );
         analyzed(vec![
-            derived_protocol_item(&derived, &obligation, item).expect("the race-freedom run"),
+            derived_protocol_item(&derived, &obligation, item).expect("the race-freedom run")
         ])
         .remove(0)
     };
@@ -2142,14 +2136,12 @@ fn a_protocol_derived_item_refuses_a_run_over_other_resolved_models() {
             &derived_request_over(&case, &tso_selection, &DerivedLimits::default()),
             kind,
         );
-        assert!(
-            derived_protocol_item(
-                &tso_derived,
-                &tso_obligation,
-                protocol_run(&case, &tso_selection, item, item)
-            )
-            .is_ok()
-        );
+        assert!(derived_protocol_item(
+            &tso_derived,
+            &tso_obligation,
+            protocol_run(&case, &tso_selection, item, item)
+        )
+        .is_ok());
     }
 }
 
@@ -2184,7 +2176,7 @@ fn a_protocol_derived_items_max_store_buffer_reaches_the_run_and_the_check() {
             ModelCheckItem::DeadlockFreedom,
         );
         analyzed(vec![
-            derived_protocol_item(&derived, &obligation, item).expect("the deadlock-freedom run"),
+            derived_protocol_item(&derived, &obligation, item).expect("the deadlock-freedom run")
         ])
         .remove(0)
     };

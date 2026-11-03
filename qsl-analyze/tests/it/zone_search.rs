@@ -6,20 +6,20 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_analyze::zone_check::{
-    ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits, ZoneCheckOutcome, ZoneCheckRefusal,
-    ZoneCheckRequest, ZoneStop, ZoneUndecided, certificate_item, check_timed_model,
+    certificate_item, check_timed_model, ZoneCheckItem, ZoneCheckLimit, ZoneCheckLimits,
+    ZoneCheckOutcome, ZoneCheckRefusal, ZoneCheckRequest, ZoneStop, ZoneUndecided,
 };
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TimedBehaviour, TimedSystem};
 use qsl_eval::temporal::{
-    AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
-    TimedTrace, UndefinedCause, evaluate_timed_at,
+    evaluate_timed_at, AtomReading, InsufficientData, LetterStop, TemporalLetters, TemporalOutcome,
+    TemporalPosition, TimedTrace, UndefinedCause,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::{
-    CertEdge, CertificateCheckLimits, CertifiedItem, CounterexampleKind, DivergentTarget,
-    TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate, ZoneCertificateRefusal,
-    ZoneCertificateRequest, ZoneCertificateVerdict, check_zone_certificate,
+    check_zone_certificate, CertEdge, CertificateCheckLimits, CertifiedItem, CounterexampleKind,
+    DivergentTarget, TemporalCounterexample, TimedPoint, UndefinedLocus, ZoneCertificate,
+    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::reductions::Reductions;
@@ -27,7 +27,7 @@ use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{FormulaNode, FormulaNodeId};
 use quire_exact::{Cancel, Integer, Meter, Rational, Undefined};
 
-use crate::timed_world::{DENSE, World, document, world};
+use crate::timed_world::{document, world, World, DENSE, PACKAGE};
 
 pub(crate) const INFINITE: &str = "profile inf = \"quire.temporal.infinite-trace/v1\";\n";
 pub(crate) const TIMED: &str = "profile tt = \"quire.temporal.timed/v1\";\n";
@@ -1053,12 +1053,10 @@ fn a_safety_proof_carries_a_reachability_certificate() {
     assert_eq!(certificate.lu_bounds.lower.len(), 1);
     assert!(certificate.nodes.len() > 1);
     // Edges by source in discovery order.
-    assert!(
-        certificate
-            .edges
-            .windows(2)
-            .all(|pair| pair[0].from <= pair[1].from)
-    );
+    assert!(certificate
+        .edges
+        .windows(2)
+        .all(|pair| pair[0].from <= pair[1].from));
     assert_edges_cover(&four, &certificate);
     // `Idle`, the initial state with no invariant, is quiescent.
     let admitted = &certificate.admitted;
@@ -1121,13 +1119,11 @@ fn a_locked_node_is_listed_with_its_edges() {
         assert_eq!(node.zone.bound(1, 0), one);
     }
     assert_eq!(certificate.admitted.target, DivergentTarget::Quiescent(0));
-    assert!(
-        certificate
-            .admitted
-            .path
-            .iter()
-            .all(|&edge| !certificate.nodes[certificate.edges[edge].to].locked)
-    );
+    assert!(certificate
+        .admitted
+        .path
+        .iter()
+        .all(|&edge| !certificate.nodes[certificate.edges[edge].to].locked));
 }
 
 fn edge_index(certificate: &Certificate, edge: &CertEdge) -> usize {
@@ -1584,12 +1580,10 @@ fn a_timed_invariant_builds_no_automaton() {
         );
         let stats = match claim(&timed, ZoneCheckLimits::default(), &Cancel::new()) {
             ZoneCheckOutcome::Holds { stats, certificate } => {
-                assert!(
-                    certificate
-                        .nodes
-                        .iter()
-                        .all(|node| node.automaton_state == 0)
-                );
+                assert!(certificate
+                    .nodes
+                    .iter()
+                    .all(|node| node.automaton_state == 0));
                 assert_edges_cover(&timed, &certificate);
                 stats
             }
