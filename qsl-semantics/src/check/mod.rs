@@ -1515,13 +1515,8 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         let mut protocol_refusals = Vec::new();
-        let outcome = self.check_retaining_protocols(
-            limits,
-            cancel,
-            false,
-            false,
-            &mut protocol_refusals,
-        );
+        let outcome =
+            self.check_retaining_protocols(limits, cancel, false, false, &mut protocol_refusals);
         let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
             results
                 .iter()
@@ -2762,7 +2757,7 @@ impl PackageDeclarations {
                 }
                 Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
-                    refusals.push(refusal);
+                    refusals.push(*refusal);
                     if exhausted {
                         return Err(refusals);
                     }
@@ -2861,7 +2856,7 @@ impl PackageDeclarations {
                 }
                 Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
-                    refusals.push(refusal);
+                    refusals.push(*refusal);
                     if exhausted {
                         return Err(refusals);
                     }
@@ -4086,7 +4081,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
-                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(*refusal),
             }
         }
         // FR-185: the `random`, `reward` and `workload` declarations,
@@ -4202,7 +4197,7 @@ impl PackageDeclarations {
                 }
                 Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
-                    refusals.push(refusal);
+                    refusals.push(*refusal);
                     if exhausted {
                         return Err(refusals);
                     }
@@ -4325,7 +4320,7 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
-                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(refusal),
+                Err(StageFailure::RefusedWithPayload(refusal, _)) => refusals.push(*refusal),
             }
         }
         // The nodes the hyper conditions checked count against the package's

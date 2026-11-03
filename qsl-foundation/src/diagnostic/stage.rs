@@ -266,8 +266,10 @@ mod tests {
     fn a_stage_failure_payload_does_not_change_its_category_or_exit() {
         let refusal = Cause("ill_typed");
         let plain: StageFailure<Cause> = StageFailure::Refused(refusal);
-        let with_payload: StageFailure<Cause, Vec<&str>> =
-            StageFailure::RefusedWithPayload(Cause("ill_typed"), vec!["emitted", "refused"]);
+        let with_payload: StageFailure<Cause, Vec<&str>> = StageFailure::RefusedWithPayload(
+            Box::new(Cause("ill_typed")),
+            vec!["emitted", "refused"],
+        );
         assert_eq!(plain.category(), with_payload.category());
         assert_eq!(
             plain.category().exit_code(),
@@ -437,8 +439,10 @@ pub enum StageFailure<C, P = ()> {
     /// The stage refused its input with its own typed cause.
     Refused(C),
     /// A stage refusal with caller-defined retained stage results. The
-    /// payload does not change the refusal cause or category.
-    RefusedWithPayload(C, P),
+    /// payload does not change the refusal cause or category. The cause is
+    /// boxed so this variant does not keep `Refused(C)` from sharing its
+    /// layout niche, which would grow every `StageFailure<C>`.
+    RefusedWithPayload(Box<C>, P),
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// stage stopped at its next charge (ADR-029 LC-3, FR-276).
     Cancelled(CancelCause),
@@ -462,7 +466,7 @@ impl<C, P> StageFailure<C, P> {
     pub fn into_refused(self) -> Result<C, Stopped> {
         match self {
             Self::Refused(cause) => Ok(cause),
-            Self::RefusedWithPayload(cause, _) => Ok(cause),
+            Self::RefusedWithPayload(cause, _) => Ok(*cause),
             Self::Limit(limit) => Err(Stopped::Limit(limit)),
             Self::LimitWithPayload(limit, _) => Err(Stopped::Limit(limit)),
             Self::Cancelled(cause) => Err(Stopped::Cancelled(cause)),

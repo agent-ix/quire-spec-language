@@ -8,13 +8,8 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::temporal::{
-    evaluate_observed, ContradictedDimension, HoldsStop, LedgerRefusal, PositionRefusal,
-    TemporalOutcome, TemporalRefusal, TemporalTrace, UndefinedCause, UndefinedEvaluation,
-    WindowRefusal,
-};
-pub use qsl_eval::temporal::{
-    LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
-    ProgressContradiction, ProgressLedger, ProgressValue,
+    evaluate_observed, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
+    UndefinedCause, UndefinedEvaluation, WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
@@ -26,6 +21,10 @@ use qsl_semantics::model::observation::{
 use quire_exact::{Meter, ValueType};
 use quire_semantic_value::catalog::CatalogCode;
 
+use super::progress::{
+    ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressValue, Refusal,
+};
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
     CompiledRun, ConsequentEventRefusal, ConsequentSourceEvents, RunRefusal,
@@ -179,9 +178,6 @@ pub struct OverObject {
     pub key: String,
 }
 
-/// The covered-position ceiling a ledger refusal names (FR-502, FR-255).
-pub use qsl_eval::temporal::CoveredPositionsLimitReached as ProgressLimitReached;
-
 /// A progress contradiction as the spine reports it (FR-330, FR-502 Outputs):
 /// the typed contradiction and the `invalid_runtime_input`/`invalid-value`
 /// record that carries `contradicted_dimension`, `clock`, `retained` and
@@ -261,10 +257,10 @@ pub fn admit_progress(
     ledger
         .admit(binding, assertion, positions, covered_positions)
         .map_err(|refusal| match refusal {
-            LedgerRefusal::Contradiction(contradiction) => Box::new(
+            Refusal::Contradiction(contradiction) => Box::new(
                 ClauseDisposition::ProgressContradiction(Box::new(contradiction.into())),
             ),
-            LedgerRefusal::LimitReached(reached) => Box::new(ClauseDisposition::Temporal(
+            Refusal::LimitReached(reached) => Box::new(ClauseDisposition::Temporal(
                 TemporalVerdict::ProgressLimitReached(reached),
             )),
         })
