@@ -20,7 +20,8 @@ use super::subject::{Activation, TemporalSubjectView};
 /// this function does not take.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Closure {
-    /// The surrounding execution is complete: a closed trace.
+    /// The surrounding execution is complete: a closed trace. The legacy
+    /// `temporal::Closure` spells this `Closed`; the Contract IR repoint maps it.
     Complete,
     /// The surrounding execution is an open prefix.
     Open,
@@ -194,8 +195,10 @@ impl Classification {
 /// Why a clause was not classified.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum MappingRefusal {
-    /// The lock holds no `profile_selections` row naming a temporal profile
-    /// the support table covers for the clause's `temporal_profile` law.
+    /// The view's `profile_selections` row names a definition identity that
+    /// is none of the five temporal profiles the `TemporalTrace` family
+    /// admits. A package with no row at all is refused by the reader, so it
+    /// never reaches here.
     #[error("the lock selects no temporal profile for the clause")]
     NoProfileSelection,
 }
@@ -231,8 +234,8 @@ fn direction(identity: &str) -> Option<Direction> {
 /// false-extension profile maps to the origin-complete-history target
 /// whatever the closure; whether the history is complete is a bridge premise.
 ///
-/// Refuses [`MappingRefusal::NoProfileSelection`] when the clause's profile is
-/// none the support table covers.
+/// Refuses [`MappingRefusal::NoProfileSelection`] when the clause's profile row
+/// names none of the five admitted temporal profiles.
 ///
 /// Only the surrounding-execution closure is taken; a decision-scope closure
 /// is a different type and does not compile here:
