@@ -74,6 +74,43 @@ pub struct ProtocolSupply<'a> {
 }
 
 /// The result of evaluating a checked protocol slot (FR-390).
+///
+/// No result is coerced to a Boolean (FR-520-AC-12): neither this type nor
+/// the S6a `Evaluation` it carries has an `as_bool` method or an
+/// `Into<bool>` conversion.
+///
+/// ```compile_fail,E0599
+/// fn coerce(result: qsl_eval::value::ProtocolSlotEvaluation) -> bool {
+///     result.as_bool()
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// fn coerce(result: quire_eval::Evaluation) -> bool {
+///     result.as_bool()
+/// }
+/// ```
+///
+/// ```compile_fail,E0277
+/// fn coerce(result: qsl_eval::value::ProtocolSlotEvaluation) -> bool {
+///     result.into()
+/// }
+/// ```
+///
+/// ```compile_fail,E0277
+/// fn coerce(result: quire_eval::Evaluation) -> bool {
+///     result.into()
+/// }
+/// ```
+///
+/// ```no_run
+/// fn unavailable(result: &qsl_eval::value::ProtocolSlotEvaluation) -> bool {
+///     matches!(result, qsl_eval::value::ProtocolSlotEvaluation::Unavailable { .. })
+/// }
+/// fn evaluated(result: &quire_eval::Evaluation) -> bool {
+///     format!("{result:?}").is_empty()
+/// }
+/// ```
 #[derive(Debug)]
 pub enum ProtocolSlotEvaluation {
     /// The shared S6a evaluator's result.

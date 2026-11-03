@@ -375,16 +375,6 @@ fn missing_or_unavailable_recovery_evidence_is_never_true() {
         matches!(unavailable, ProtocolSlotEvaluation::Unavailable { .. }),
         "{unavailable:?}"
     );
-    for source in [
-        "qsl-eval/src/value/mod.rs",
-        "qsl-eval/src/value/expression/mod.rs",
-    ] {
-        let text = std::fs::read_to_string(format!("{}/../{source}", env!("CARGO_MANIFEST_DIR")))
-            .expect("source is readable");
-        for forbidden in ["fn as_bool", "Into<bool> for", "unwrap_or(false)"] {
-            assert!(!text.contains(forbidden), "{source} exposes {forbidden}");
-        }
-    }
 }
 
 #[test]
@@ -577,4 +567,179 @@ fn the_retired_state_module_and_its_exports_do_not_exist() {
         scanned > 50,
         "the scan covered the workspace sources: {scanned}"
     );
+}
+
+fn doc_blocks(text: &str) -> Vec<(String, String)> {
+    let mut blocks = Vec::new();
+    let mut open: Option<(String, String)> = None;
+    for line in text.lines() {
+        let Some(doc) = line.trim_start().strip_prefix("///") else {
+            continue;
+        };
+        let doc = doc.trim();
+        match (&mut open, doc.strip_prefix("```")) {
+            (None, Some(info)) => open = Some((info.to_owned(), String::new())),
+            (Some(_), Some(_)) => blocks.extend(open.take()),
+            (Some((_, body)), None) => {
+                body.push_str(doc);
+                body.push('\n');
+            }
+            (None, None) => {}
+        }
+    }
+    blocks
+}
+
+#[test]
+#[trace("FR-520-AC-12", "TC-1315")]
+fn no_boolean_coercion_is_pinned_by_compile_fail_doctests_with_a_compiling_control() {
+    let path = format!(
+        "{}/src/value/expression/protocol_slot.rs",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let blocks = doc_blocks(&std::fs::read_to_string(&path).expect("protocol_slot.rs reads"));
+    for (info, convert, ty) in [
+        (
+            "compile_fail,E0599",
+            "result.as_bool()",
+            "qsl_eval::value::ProtocolSlotEvaluation",
+        ),
+        (
+            "compile_fail,E0599",
+            "result.as_bool()",
+            "quire_eval::Evaluation",
+        ),
+        (
+            "compile_fail,E0277",
+            "result.into()",
+            "qsl_eval::value::ProtocolSlotEvaluation",
+        ),
+        (
+            "compile_fail,E0277",
+            "result.into()",
+            "quire_eval::Evaluation",
+        ),
+    ] {
+        assert!(
+            blocks.iter().any(|(block, body)| block == info
+                && body.contains(convert)
+                && body.contains(&format!("result: {ty}"))),
+            "no `{info}` doctest for `{convert}` on {ty}"
+        );
+    }
+    assert!(
+        blocks.iter().any(|(info, body)| info == "no_run"
+            && body.contains("ProtocolSlotEvaluation::Unavailable")
+            && body.contains("quire_eval::Evaluation")),
+        "the compiling control is missing"
+    );
+}
+
+#[test]
+#[trace("FR-520-AC-13", "TC-1315")]
+fn no_evaluation_result_is_coerced_with_unwrap_or_false() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut stack = vec![
+        std::path::PathBuf::from(format!("{manifest}/src")),
+        std::path::PathBuf::from(format!("{manifest}/../qsl-package/src")),
+    ];
+    let mut scanned = 0_usize;
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("directory reads") {
+            let path = entry.expect("entry reads").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().is_none_or(|ext| ext != "rs") {
+                continue;
+            }
+            scanned += 1;
+            let text = std::fs::read_to_string(&path).expect("source reads");
+            let lines: Vec<&str> = text.lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                if !line.contains("unwrap_or(false)") {
+                    continue;
+                }
+                // Other uses (bit-vector and map lookups) are not evaluation
+                // results; the few lines before the call are the statement.
+                let statement = lines[index.saturating_sub(4)..=index].join("\n");
+                for word in [
+                    "Evaluation",
+                    "evaluate_protocol_slot",
+                    "Outcome::Completed",
+                    "FamilyOutcome",
+                ] {
+                    assert!(
+                        !statement.contains(word),
+                        "{}:{} coerces an evaluation result with unwrap_or(false)",
+                        path.display(),
+                        index + 1
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        scanned > 20,
+        "the scan covered the evaluation crates: {scanned}"
+    );
+}
+
+#[test]
+#[ignore = "gated on IR-1280: quire-exact's Meter has no per-binder attribution or accounting_version"]
+#[trace("FR-520-AC-11", "TC-1315")]
+fn per_binder_accounting_attributes_every_charge_and_carries_the_version() {
+    let package = fixture();
+    let call = || {
+        let mut meter = Meter::new(UNLIMITED);
+        let result = package
+            .evaluate_protocol_slot(
+                &slot(&package, "Refunds", "Refund", "recovery.predicate", None),
+                &ProtocolSupply {
+                    binders: vec![
+                        (
+                            binder(&package, "Refunds", "recovered"),
+                            SuppliedValue::Unavailable(CatalogCode::new(
+                                "unavailable_observation",
+                                "missing-required-artifact",
+                            ))
+                            .into(),
+                        ),
+                        (
+                            binder(&package, "Refunds", "target"),
+                            protocol_value(SuppliedValue::Value(int(10))),
+                        ),
+                        (
+                            binder(&package, "Refunds", "activated"),
+                            protocol_value(SuppliedValue::Value(Value::Boolean(false))),
+                        ),
+                    ],
+                    observation: None,
+                },
+                &mut meter,
+            )
+            .expect("an unavailable binder is a slot outcome");
+        assert!(matches!(result, ProtocolSlotEvaluation::Unavailable { .. }));
+        meter
+    };
+    let first = call();
+    let second = call();
+    assert_eq!(first, second, "equal supplies give equal logs");
+    assert_eq!(
+        first.admitted_charges(),
+        second.admitted_charges(),
+        "equal supplies give equal charge logs"
+    );
+    // What IR-1280 adds: attribution per binder read and the version.
+    let log = format!("{first:?}");
+    assert!(
+        log.contains("accounting_version"),
+        "the log carries accounting_version"
+    );
+    assert!(
+        log.contains("recovered"),
+        "the read binder has its own entry"
+    );
+    assert!(!log.contains("activated"), "an unread binder has no entry");
 }
