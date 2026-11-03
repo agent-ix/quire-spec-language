@@ -361,17 +361,29 @@ fn a_compensation_without_its_temporal_alias_keeps_missing_profile() {
     let found = assembled
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect_err("a template whose using alias is not selected refuses");
-    let [refusal] = found.as_slice() else {
-        panic!("one refusal: {found:?}");
+    let missing_profile = found.iter().find_map(|refusal| {
+        let crate::check::CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+            return None;
+        };
+        match cause.as_ref() {
+            ProtocolAnchorCause::MissingProfile { alias, span } if alias == "e" => {
+                Some((refusal, span))
+            }
+            _ => None,
+        }
+    });
+    let Some((refusal, span)) = missing_profile else {
+        panic!("a missing profile alias refusal: {found:?}");
     };
     assert_eq!(refusal.cause.code().as_str(), "missing_declaration");
     assert_eq!(refusal.cause.cause(), Some("missing-name"));
-    let crate::check::CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
-        panic!("a protocol cause: {refusal:?}");
-    };
-    let ProtocolAnchorCause::MissingProfile { alias, span } = cause.as_ref() else {
-        panic!("a missing profile alias, got {cause:?}");
-    };
-    assert_eq!(alias, "e");
+    assert!(
+        !found.iter().any(|refusal| matches!(
+            &refusal.cause,
+            crate::check::CheckCause::ProtocolAnchor(cause)
+                if matches!(cause.as_ref(), ProtocolAnchorCause::WrongProfileKind { .. })
+        )),
+        "an absent profile alias is not a wrong-kind selection: {found:?}"
+    );
     assert_eq!(&text[span.start..span.end], "e");
 }
