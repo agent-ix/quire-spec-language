@@ -12,7 +12,9 @@ relationships:
 
 Verify `analyze` over QSL's layer-A engines: a `certified` proof, a replayed counterexample, and an item no engine accepts.
 
-Scope: FR-281-AC-1 to FR-281-AC-3, FR-281-AC-8 to FR-281-AC-10.
+Scope: FR-281-AC-1 to FR-281-AC-3, FR-281-AC-8 to FR-281-AC-10, FR-281-AC-13.
+
+Every item names a claim of a declaration family its kind applies to (FR-507) unless a step says otherwise: a `value-validity` item names a value claim and a `temporal-satisfaction` item a temporal clause's claim.
 
 ## Test Procedure
 
@@ -22,6 +24,7 @@ Scope: FR-281-AC-1 to FR-281-AC-3, FR-281-AC-8 to FR-281-AC-10.
 4. Build `engines` with `Engines::with` holding test engines `qsl.test-a` and `qsl.test-b`, both advertising (`value-validity`, `bounded`), each counting its runs. Run one `value-validity` bounded item settled `Supported(qsl.test-b)`; settled `InvalidRequest` with `invalid_capability`/`ambiguous-backend` naming both; settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability`; settled `RequiresBound`; and settled `Supported(qsl.test-c)`.
 5. Run step 3's request with a binding whose `universes` name a population the package does not declare.
 6. Call `Engines::with` on step 4's `engines` with a second engine whose manifest's `BackendId` is `qsl.test-a`; then run an item settled `Supported(qsl.test-a)` on the set it was called on. Run a `temporal-satisfaction` item settled `Supported(qsl.test-a)`. Read step 3's first record's members.
+7. On step 4's `engines`, with `qsl.test-a` advertising only (`value-validity`, `bounded`), run a `finite-replay` item on a state clause's claim handed `Supported(qsl.test-c)`, then `Supported(qsl.test-a)`, then `InvalidRequest` with `invalid_capability`/`ambiguous-backend`. Run a `temporal-satisfaction` item on a temporal clause's claim handed the same three.
 
 Tag the tests `#[trace("TC-762", "<AC id>")]`.
 
@@ -33,3 +36,4 @@ Tag the tests `#[trace("TC-762", "<AC id>")]`.
 - Step 4: `qsl.test-b` alone runs and the record names it; then records settled by `invalid-request` (`ambiguous-backend`, both named), `unsupported` and `requires-bound` (no diagnostic) dispositions with no run; then `invalid-request` with `invalid_capability`/`unknown-backend` naming `qsl.test-c` and no run. Neither test engine runs except in the first case.
 - Step 5: `StageFailure::Refused(AnalyzeRefusal::Binding)` holding `invalid_runtime_input`/`wrong-role-mapping`, no record, no engine run.
 - Step 6: `invalid_capability`/`duplicate-backend` naming `qsl.test-a`; the first `qsl.test-a` engine runs the `Supported(qsl.test-a)` item. The `temporal-satisfaction` item settles `invalid-request` with `invalid_capability`/`inconsistent-candidates` naming `qsl.test-a`, `temporal-satisfaction` and `bounded`, and no engine runs. Step 3's first record carries the `unsupported-requested-capability` diagnostic naming the claim kind and no `cause` member.
+- Step 7: each `finite-replay` record is `invalid-request` with `invalid_capability`/`inapplicable-kind`, payload `capability` `finite-replay` and `family` `state-model`, never `unknown-backend`, `inconsistent-candidates` or `ambiguous-backend`, and no engine runs. The `temporal-satisfaction` records are `unknown-backend` naming `qsl.test-c`, `inconsistent-candidates` naming `qsl.test-a`, and the handed `ambiguous-backend` disposition, with no run.

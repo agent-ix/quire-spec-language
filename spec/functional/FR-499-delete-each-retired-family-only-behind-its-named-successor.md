@@ -147,7 +147,7 @@ no such variant and are retained. The composed AST holds 19 protocol types.
 | Emission of the choreography | FR-383 | PARTIAL: FR-383-AC-11, 15, 16, 18, 21, 22, 23 have no tagged test (QSL-1510) |
 | Protocol-node expression evaluation | FR-390; tests in FR-500 | PARTIAL (QSL-852) |
 | Channel `delivery [lo,hi]` numeric interval (B8 emitted it) | none | PORT QSL-1507 |
-| Capability-to-family applicability, `InapplicableCapability`, twelve-kind table (FR-057-AC-11, `requests.rs`) | none | PORT QSL-1507 |
+| Capability-to-family applicability, `InapplicableCapability`, twelve-kind table (FR-057-AC-11, `requests.rs`) | FR-507, TC-1302 | PORT QSL-1524 |
 | Use-site profile-kind admission (`WrongProfileKind`; `protocol P using <value profile>` accepted today) | none | PORT QSL-1507 |
 | `ObservationBinding` closure requires `Protocol` | none | PORT QSL-1507 |
 | Composed proof discharge for a protocol (`correspondence.rs:226`, `proofs/engine/roots.rs`) | none, untested | PORT QSL-1507 (state the observable, then delete) |

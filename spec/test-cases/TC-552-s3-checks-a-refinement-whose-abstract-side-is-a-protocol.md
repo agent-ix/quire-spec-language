@@ -12,7 +12,7 @@ relationships:
 
 Verify the abstract protocol side: resolution of the protocol, node targets,
 the refinement's internal list (its shape, spellings, resolution, locus and refusal), the
-`refinement` requirement record and the unsupported liveness half.
+single `temporal-satisfaction` requirement record (FR-144's) and the unsupported liveness half.
 
 Scope: FR-147-AC-1 to FR-147-AC-16. Builds: **built** is a build whose
 support set holds `protocol-abstract-side` and `refinement-internal-list`;
@@ -78,7 +78,7 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 ## Expected Results
 
 - Step 1: `AbstractSide::Protocol` naming `Twice`, `abstract_internal =
-  [Twice::Done]`, one `refinement` record and no `temporal-satisfaction` record;
+  [Twice::Done]`, one `temporal-satisfaction` record and no `refinement` record;
   the node row checks naming `a1`.
 - Step 2: each variant refuses with FR-147-AC-2's code and subcode.
 - Step 3: liveness half `unsupported`, `unsupported-requested-capability`,
@@ -129,7 +129,7 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   `package_id` and `clause` the key its checked graph holds for `Twice`,
   `abstract_internal = [Twice::Done]`; the node row checks naming `a1`;
   `ill_typed`/`type-mismatch` at `true`; `missing_declaration`/`missing-name`
-  at `Thrice`, at `Counter` and at `LocalTwice`; one `refinement` record whose
+  at `Thrice`, at `Counter` and at `LocalTwice`; one `temporal-satisfaction` record whose
   obligation identity names the dependency's `package_id` and differs from
   step 1's; the node's `protocol` is the dependency's `package_id` with
   `Twice`'s node id, its `dependencies` hold no entry for `Twice`, and its node
