@@ -84,11 +84,15 @@ pub(super) fn operator_span_at(spans: &ExpressionSpans, location: &Location) -> 
     spans.operator_span(SpanMemo::default().reach(spans, location)?)
 }
 
-/// The source a region is read from, and the document it is embedded in.
+/// The source a region is read from, the document it is embedded in, and
+/// the sources that own the unit's declarations when it was assembled from
+/// several.
 #[derive(Clone, Copy)]
 struct Document<'a> {
     source: &'a RawSourceRef,
     embedding: Option<&'a SourceMap>,
+    source_owners: &'a BTreeMap<String, RawSourceRef>,
+    function_sources: &'a [RawSourceRef],
 }
 
 /// The spans of declarations that are not function or state clause forms: a
@@ -108,8 +112,6 @@ struct DeclaredSpans<'a> {
 fn resolve<'s>(
     memo: &SpanMemo,
     document: Document<'_>,
-    source_owners: &BTreeMap<String, RawSourceRef>,
-    function_sources: &[RawSourceRef],
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     declared: DeclaredSpans<'_>,
@@ -121,6 +123,11 @@ fn resolve<'s>(
         sites,
         synthesized,
     } = declared;
+    let Document {
+        source_owners,
+        function_sources,
+        ..
+    } = document;
     let span = match &location.origin {
         // A function synthesized for dispatch has no form spans: every
         // occurrence in it is located at the declaration it came from.
@@ -199,9 +206,9 @@ impl PackageDeclarations {
             Document {
                 source: &self.source,
                 embedding: self.embedding.as_deref(),
+                source_owners: &self.source_owners,
+                function_sources: &self.function_sources,
             },
-            &self.source_owners,
-            &self.function_sources,
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             DeclaredSpans {
@@ -286,9 +293,9 @@ impl DeclarationRegions {
             Document {
                 source: &self.source,
                 embedding: self.embedding.as_deref(),
+                source_owners: &self.source_owners,
+                function_sources: &self.function_sources,
             },
-            &self.source_owners,
-            &self.function_sources,
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
             DeclaredSpans {
@@ -526,9 +533,9 @@ impl CheckedGraph {
             Document {
                 source: &self.source,
                 embedding: self.embedding.as_deref(),
+                source_owners: &self.source_owners,
+                function_sources: &self.function_sources,
             },
-            &self.source_owners,
-            &self.function_sources,
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             DeclaredSpans {
@@ -554,9 +561,9 @@ impl CheckedGraph {
                 Document {
                     source: &self.source,
                     embedding: self.embedding.as_deref(),
+                    source_owners: &self.source_owners,
+                    function_sources: &self.function_sources,
                 },
-                &self.source_owners,
-                &self.function_sources,
                 |index| self.form_spans.get(index)?.as_ref(),
                 |index| Some(&self.state_clauses.get(index)?.spans),
                 DeclaredSpans {

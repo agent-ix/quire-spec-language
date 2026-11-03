@@ -70,13 +70,14 @@ fn object(
 
 fn package(object_types: Vec<ObjectTypeDeclaration>) -> (CheckedPackage, TypeEnvironment) {
     let types = TypeEnvironment::new([], object_types).unwrap();
-    let graph = PackageDeclarations {
-        types: types.clone(),
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types.clone();
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();

@@ -145,22 +145,23 @@ fn aliases() -> Vec<(String, ValueType)> {
 }
 
 fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> CheckedPackage {
-    let graph = PackageDeclarations {
-        types,
-        aliases: aliases(),
-        functions,
-        // FR-094: `holder_environment`'s `Reference<M::Obj>` field keys
-        // over this model's node.
-        models: vec![crate::support::model::object_model(
-            "collection-queries",
-            "M::Obj",
-            object_type("M::Obj"),
-        )],
-        ..PackageDeclarations::new(
+    let graph = {
+        let mut declarations = PackageDeclarations::new(
             qsl_semantics::check::fixture_source(),
             "fixture".to_owned(),
             qsl_foundation::IdentityLimits::default(),
-        )
+        );
+        declarations.types = types;
+        declarations.aliases = aliases();
+        declarations.functions = functions;
+        // FR-094: `holder_environment`'s `Reference<M::Obj>` field keys
+        // over this model's node.
+        declarations.models = vec![crate::support::model::object_model(
+            "collection-queries",
+            "M::Obj",
+            object_type("M::Obj"),
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -517,9 +518,14 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
     }
 
-    let linked = PackageDeclarations {
-        aliases: aliases(),
-        functions: vec![FunctionDeclaration::new(
+    let linked = {
+        let mut declarations = PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            "fixture".to_owned(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        declarations.aliases = aliases();
+        declarations.functions = vec![FunctionDeclaration::new(
             "r".to_owned(),
             vec![(
                 "e".to_owned(),
@@ -528,12 +534,8 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             reduce,
-        )],
-        ..PackageDeclarations::new(
-            qsl_semantics::check::fixture_source(),
-            "fixture".to_owned(),
-            qsl_foundation::IdentityLimits::default(),
-        )
+        )];
+        declarations
     }
     .check(CheckingLimits::default())
     .unwrap_err();

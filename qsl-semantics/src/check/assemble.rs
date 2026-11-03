@@ -115,6 +115,15 @@ pub struct AssemblyRun<'a> {
     pub execution_points: BTreeMap<String, quire_contract_model::ExecutionPoint>,
 }
 
+/// The sources an assembly reads: the primary source that owns the package,
+/// every admitted source, and the source that owns each declaration when
+/// several units were combined.
+struct SourceUnits {
+    primary: RawSourceRef,
+    sources: Vec<RawSourceRef>,
+    source_owners: BTreeMap<String, RawSourceRef>,
+}
+
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssemblyLimits {
@@ -3134,7 +3143,6 @@ impl PackageDeclarations {
         }
         let combined = ParsedUnit::combine(units.into_iter().map(|(_, unit)| unit));
         Self::assemble_with_execution_points_and_cancel_and_owners(
-            source,
             package_name,
             combined,
             models,
@@ -3144,8 +3152,11 @@ impl PackageDeclarations {
                 cancel,
                 execution_points: BTreeMap::new(),
             },
-            source_owners,
-            sources,
+            SourceUnits {
+                primary: source,
+                sources,
+                source_owners,
+            },
         )
     }
 
@@ -3236,29 +3247,34 @@ impl PackageDeclarations {
         run: AssemblyRun<'_>,
     ) -> Result<Self, AssemblyRefusal> {
         Self::assemble_with_execution_points_and_cancel_and_owners(
-            source.clone(),
             package_name,
             unit,
             models,
             imports,
             limits,
             run,
-            BTreeMap::new(),
-            vec![source.clone()],
+            SourceUnits {
+                primary: source.clone(),
+                sources: vec![source],
+                source_owners: BTreeMap::new(),
+            },
         )
     }
 
     fn assemble_with_execution_points_and_cancel_and_owners(
-        source: RawSourceRef,
         package_name: String,
         unit: ParsedUnit,
         models: impl Into<SelectedModels>,
         imports: Vec<AdmittedImport>,
         limits: AssemblyLimits,
         run: AssemblyRun<'_>,
-        source_owners: BTreeMap<String, RawSourceRef>,
-        sources: Vec<RawSourceRef>,
+        source_units: SourceUnits,
     ) -> Result<Self, AssemblyRefusal> {
+        let SourceUnits {
+            primary: source,
+            sources,
+            source_owners,
+        } = source_units;
         let AssemblyRun {
             cancel,
             execution_points,
@@ -3626,9 +3642,11 @@ impl PackageDeclarations {
                     &unit.equivalences,
                     equivalence::SourceView::Admitted(&quantities),
                     &admitted,
-                    &owner,
-                    &source_node_owners,
-                    &package_name,
+                    equivalence::Ownership {
+                        owner: &owner,
+                        source_owners: &source_node_owners,
+                        package_name: &package_name,
+                    },
                     limits,
                     equivalence::Phase::All,
                 )
@@ -3643,9 +3661,11 @@ impl PackageDeclarations {
                     &unit.equivalences,
                     equivalence::SourceView::Provisional(&refused.provisional),
                     &admitted,
-                    &owner,
-                    &source_node_owners,
-                    &package_name,
+                    equivalence::Ownership {
+                        owner: &owner,
+                        source_owners: &source_node_owners,
+                        package_name: &package_name,
+                    },
                     limits,
                     equivalence::Phase::Base,
                 )
