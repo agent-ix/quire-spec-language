@@ -10,7 +10,7 @@
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
-use quire_semantic_value::Origin;
+use quire_semantic_value::location::Origin;
 
 use super::receiver_frames::{counter, fixture, snapshot, unit_and_packages};
 use super::*;
@@ -2040,7 +2040,7 @@ fn timestamped_guarded_on_each_undefined_guard_reports_named_incomplete_activati
     assert_eq!(report.disposition.exit_code(), 22);
     assert_eq!(report.disposition.truth(), None);
     match &report.disposition {
-        ClauseDisposition::TemporalActivationIncomplete { at, guard } => {
+        TemporalVerdict::ActivationIncomplete { at, guard } => {
             assert_eq!(*at, 0);
             assert_eq!(
                 guard.origin,

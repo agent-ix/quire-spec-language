@@ -655,14 +655,18 @@ pub(super) fn run_temporal(
     let temporal_visits = observed.temporal_visits;
     let disposition = if let Some(position) = unestablished_activation {
         match node.guard() {
-            Some((guard, _)) => ClauseDisposition::TemporalActivationIncomplete {
-                at: position.index(),
-                guard: guard.location().clone(),
-            },
-            None => ClauseDisposition::EvaluateFault(InternalFault::new(
-                "temporal.observed",
-                "undefined-activation-has-guard",
-            )),
+            Some((guard, _)) => {
+                ClauseDisposition::Temporal(TemporalVerdict::ActivationIncomplete {
+                    at: position.index(),
+                    guard: guard.location().clone(),
+                })
+            }
+            None => {
+                ClauseDisposition::EvaluateFault(quire_semantic_value::catalog::InternalFault::new(
+                    "temporal.observed",
+                    "undefined-activation-has-guard",
+                ))
+            }
         }
     } else {
         match (observed.stopped, observed.result) {

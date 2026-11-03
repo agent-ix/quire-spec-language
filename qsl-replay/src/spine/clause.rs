@@ -287,14 +287,6 @@ pub enum ClauseDisposition {
     /// result is `inconclusive`, a missing fairness premise `unsupported`,
     /// and a false or undefined clause a `violation` at its position.
     Temporal(TemporalVerdict),
-    /// Stage `evaluate`, category `incomplete` (FR-044-AC-7): an activation
-    /// guard could not be established, so no temporal instance is evaluated.
-    TemporalActivationIncomplete {
-        /// The trace position whose activation guard was unresolved.
-        at: u64,
-        /// The checked source identity of the guard that could not be established.
-        guard: quire_semantic_value::Location,
-    },
     /// Stage `evaluate`, category `refusal` (FR-330): the evaluator refused
     /// the supplied trace (a lasso with an empty loop, for one).
     TemporalRefusal(TemporalTraceRefusal),
@@ -313,7 +305,6 @@ impl ClauseDisposition {
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
             Self::Evaluate(_)
             | Self::Temporal(_)
-            | Self::TemporalActivationIncomplete { .. }
             | Self::TemporalRefusal(_)
             | Self::FrameViolation(_)
             | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
@@ -346,7 +337,6 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
-            Self::TemporalActivationIncomplete { .. } => Category::Incomplete,
             Self::Temporal(outcome) => outcome.category(),
             // The refusal's own catalog code decides: a malformed trace is a
             // refusal, a profile the evaluator does not read is unsupported.
@@ -380,7 +370,6 @@ impl ClauseDisposition {
     pub fn category_label(&self) -> &'static str {
         match self {
             Self::Temporal(outcome) => outcome.category_label(),
-            Self::TemporalActivationIncomplete { .. } => "incomplete",
             _ => self.category().as_str(),
         }
     }
@@ -390,8 +379,6 @@ impl ClauseDisposition {
     pub fn exit_code(&self) -> u8 {
         if let Self::Temporal(outcome) = self {
             outcome.exit_code()
-        } else if matches!(self, Self::TemporalActivationIncomplete { .. }) {
-            22
         } else {
             self.category().trace_exit_code()
         }
@@ -466,6 +453,14 @@ pub enum TemporalVerdict {
     },
     /// The work budget ran out; no truth value (ADR-014 TR-5).
     Incomplete(quire_exact::Incomplete),
+    /// The activation guard could not be established, so no temporal
+    /// instance was evaluated (FR-044-AC-7).
+    ActivationIncomplete {
+        /// The trace position whose activation guard was unresolved.
+        at: u64,
+        /// The checked source identity of the guard that could not be established.
+        guard: quire_semantic_value::location::Location,
+    },
     /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
     /// V-7); no truth value.
     WindowLimitReached {
@@ -493,7 +488,9 @@ impl TemporalVerdict {
                 Category::Inconclusive
             }
             Self::MissingFairnessPremise { .. } => Category::Unsupported,
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => Category::Incomplete,
+            Self::Incomplete(_)
+            | Self::ActivationIncomplete { .. }
+            | Self::WindowLimitReached { .. } => Category::Incomplete,
         }
     }
 
@@ -511,7 +508,9 @@ impl TemporalVerdict {
             Self::Pending | Self::PendingWindow { .. } => "pending",
             Self::Indeterminate { .. } => "indeterminate",
             Self::MissingFairnessPremise { .. } => "unsupported",
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => "incomplete",
+            Self::Incomplete(_)
+            | Self::ActivationIncomplete { .. }
+            | Self::WindowLimitReached { .. } => "incomplete",
         }
     }
 
@@ -523,7 +522,9 @@ impl TemporalVerdict {
             Self::Violated { .. } | Self::Undefined { .. } => 10,
             Self::Indeterminate { .. } => 11,
             Self::MissingFairnessPremise { .. } => 21,
-            Self::Incomplete(_) | Self::WindowLimitReached { .. } => 22,
+            Self::Incomplete(_)
+            | Self::ActivationIncomplete { .. }
+            | Self::WindowLimitReached { .. } => 22,
         }
     }
 }
