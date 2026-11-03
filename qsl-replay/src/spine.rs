@@ -788,6 +788,16 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 } => format!(
                     "{message}: parallel `{parallel}` joins on predicate `{function}`, but no function declaration resolves"
                 ),
+                ProtocolAnchorCause::RefusedDependency {
+                    function,
+                    refused_dependency,
+                    ..
+                } => format!(
+                    "{message}: predicate `{function}` depends on refused protocol `{}` ({}/{})",
+                    refused_dependency.declaration,
+                    refused_dependency.code.as_str(),
+                    refused_dependency.cause
+                ),
                 ProtocolAnchorCause::JoinFunctionKind {
                     parallel,
                     function,
@@ -2046,7 +2056,9 @@ mod tests {
     };
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity, Span};
-    use qsl_semantics::check::{CheckCause, CheckRefusal, HybridCause, ProtocolAnchorCause};
+    use qsl_semantics::check::{
+        CheckCause, CheckRefusal, HybridCause, ProtocolAnchorCause, RefusedProtocolDependency,
+    };
     use qsl_semantics::value::DefinitionRole;
     use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
@@ -2188,6 +2200,32 @@ mod tests {
             let message = check_message(&[refusal]);
             assert!(message.ends_with(expected), "{message}");
         }
+    }
+
+    #[trace("FR-383-AC-28")]
+    #[test]
+    fn refused_protocol_dependency_message_includes_typed_target_cause() {
+        let refusal = CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::RefusedDependency {
+                function: "Retired".to_owned(),
+                refused_dependency: Box::new(RefusedProtocolDependency {
+                    declaration: "Retired".to_owned(),
+                    code: Code::UnsupportedConstruct,
+                    cause: "not-yet-implemented",
+                }),
+                consequence: true,
+                span: Span { start: 4, end: 11 },
+            })),
+        };
+        let message = check_message(&[refusal]);
+        assert!(
+            message.ends_with(
+                "missing_declaration (missing-name): predicate `Retired` depends on refused \
+                 protocol `Retired` (unsupported_construct/not-yet-implemented)"
+            ),
+            "{message}"
+        );
     }
 
     /// FR-096 at the CLI's compile: `Typer`'s package-wide node stop on

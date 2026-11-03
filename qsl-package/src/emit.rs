@@ -47,6 +47,7 @@ use qsl_semantics::value::{
     ModelRole, NodeOwner, TemporalRole,
 };
 use quire_exact::{Cancel, NodeKey, Origin, PathSegment, Role};
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
@@ -77,6 +78,10 @@ pub enum EmitRefusal {
         /// Every node the wire would omit, with its cause.
         omitted: Vec<OmittedNode>,
     },
+    /// The graph has protocol-local refusals, so only its per-protocol result
+    /// API may expose the successful protocol nodes.
+    #[error("per-protocol refusals require emit_checked_with_protocol_results")]
+    ProtocolResultsRequired,
     /// The caller's region conversion places no region, or an empty one,
     /// for one occurrence.
     #[error("occurrence {role:?}/{ordinal} of node {node} has no source region")]
@@ -102,6 +107,10 @@ pub enum EmitRefusal {
         /// The encoder's message.
         reason: String,
     },
+    /// The checker's retained protocol results and emitted node identities
+    /// do not agree.
+    #[error("the checked graph's per-protocol result mapping is incomplete")]
+    ProtocolResultInvariant,
     /// A protocol reference is bound to a key that is not the key of a node
     /// the emitter writes (FR-218 stale target): a reference binds a key,
     /// never a name, and a name is never looked up again.
@@ -287,6 +296,7 @@ impl EmitRefusal {
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
+            | Self::ProtocolResultsRequired
             | Self::MissingTemporalClockSelection { .. } => Code::UnsupportedProjection,
             Self::SurplusTemporalClockSelection { .. }
             | Self::DuplicateTemporalClockSelection { .. }
@@ -312,6 +322,7 @@ impl EmitRefusal {
             | Self::MissingEqualityIdentityContext { .. } => Code::RuntimeInvariant,
             Self::ForeignDimensionOperand { .. } => Code::UnsupportedConstruct,
             Self::MissingDispatchIdentityContext { .. } => Code::RuntimeInvariant,
+            Self::ProtocolResultInvariant => Code::RuntimeInvariant,
         }
     }
 
@@ -324,6 +335,7 @@ impl EmitRefusal {
             }
             Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
+            | Self::ProtocolResultsRequired
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
@@ -345,6 +357,7 @@ impl EmitRefusal {
             | Self::TemporalClockProfileMismatch { .. } => None,
             Self::ForeignDimensionOperand { .. } => Some("not-yet-implemented"),
             Self::MissingDispatchIdentityContext { .. } => None,
+            Self::ProtocolResultInvariant => None,
         }
     }
 }
@@ -422,6 +435,106 @@ pub struct Emission {
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
+}
+
+/// A protocol's result from checked-package emission (FR-383).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProtocolEmissionResult {
+    /// The declaration emitted its checked clause and owned nodes. The node
+    /// records retain structural operand ids, so a sibling protocol cannot
+    /// change their bytes by shifting package-level index segments.
+    Emitted {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The structural identity of the emitted clause.
+        clause_key: NodeKey,
+        /// The protocol-owned semantic nodes in canonical package order,
+        /// with structural operand ids and no package-level index segments.
+        nodes: Vec<serde_json::Value>,
+    },
+    /// The declaration was refused during checking. Independent results are
+    /// retained alongside this refusal.
+    Refused {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The declaration's index in the original source unit.
+        source_index: usize,
+        /// The span of the declaration's name.
+        declaration_span: qsl_foundation::Span,
+        /// The first typed refusal attributed to this declaration.
+        refusal: qsl_semantics::check::CheckRefusal,
+    },
+    /// The protocol could not finish within its shared checking budget.
+    Incomplete {
+        /// The authored protocol declaration name.
+        declaration: String,
+        /// The typed S3 work-limit refusal.
+        limit: qsl_semantics::check::StageLimitCause,
+    },
+}
+
+/// The unit-level result of emitting independent protocol results.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProtocolEmissionAggregate {
+    /// Every protocol declaration emitted successfully.
+    Emitted,
+    /// At least one protocol was refused; no package is admitted.
+    Refused {
+        /// The first refused protocol's primary record.
+        primary: qsl_semantics::check::CheckRefusal,
+    },
+    /// No protocol was refused, but at least one is incomplete.
+    Incomplete {
+        /// The first incomplete protocol's typed limit.
+        primary: qsl_semantics::check::StageLimitCause,
+    },
+}
+
+/// Per-protocol results and the aggregate emission decision.
+#[derive(Clone)]
+pub struct ProtocolEmission {
+    results: Vec<ProtocolEmissionResult>,
+    aggregate: ProtocolEmissionAggregate,
+    emission: Option<Emission>,
+}
+
+impl ProtocolEmission {
+    /// Protocol results in source declaration order.
+    pub fn results(&self) -> &[ProtocolEmissionResult] {
+        &self.results
+    }
+
+    /// The aggregate admission result.
+    pub fn aggregate(&self) -> &ProtocolEmissionAggregate {
+        &self.aggregate
+    }
+
+    /// The package, present only when every protocol result is emitted.
+    pub fn emission(&self) -> Option<&Emission> {
+        self.emission.as_ref()
+    }
+
+    /// One primary diagnostic for each refused protocol, in declaration
+    /// order (FR-383 diagnostics rule).
+    pub fn diagnostics(&self) -> impl Iterator<Item = &qsl_semantics::check::CheckRefusal> + '_ {
+        self.results.iter().filter_map(|result| match result {
+            ProtocolEmissionResult::Emitted { .. } => None,
+            ProtocolEmissionResult::Refused { refusal, .. } => Some(refusal),
+            ProtocolEmissionResult::Incomplete { .. } => None,
+        })
+    }
+
+    /// The unit exit code under FR-285's multi-item severity ordering.
+    pub fn exit_code(&self) -> u8 {
+        Category::most_severe(self.results.iter().map(|result| match result {
+            ProtocolEmissionResult::Emitted { .. } => Category::Success.exit_code(),
+            ProtocolEmissionResult::Refused { refusal, .. } => {
+                refusal.cause.code().category().exit_code()
+            }
+            ProtocolEmissionResult::Incomplete { .. } => Category::Incomplete.exit_code(),
+        }))
+        .unwrap_or_else(|| Category::Success.exit_code())
+    }
 }
 
 /// Debug writes the source map's node keys into the enclosing table, so a
@@ -3410,6 +3523,14 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
     }
 }
 
+fn require_protocol_results_for_refusals(package: &CheckedPackage) -> Result<(), EmitRefusal> {
+    if package.graph().protocol_refusals().is_empty() {
+        Ok(())
+    } else {
+        Err(EmitRefusal::ProtocolResultsRequired)
+    }
+}
+
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
@@ -3419,10 +3540,160 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// package does not change, so a dependency reached again, or a caller that
 /// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     if let Some(emission) = package.remembered_emission() {
         return Ok(emission.clone());
     }
     emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// Emit the checked graph without reading or populating `CheckedPackage`'s
+/// remembered emission. Per-protocol results use this before deciding
+/// whether the aggregate is admissible.
+fn emit_checked_uncached(
+    package: &CheckedPackage,
+    cancel: &Cancel,
+) -> Result<Emission, EmitRefusal> {
+    let graph = package.graph();
+    emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+        &[],
+    )
+}
+
+/// Emit checked protocols independently and retain each protocol's result
+/// when another protocol was refused by S3 (FR-383 AC-18, AC-28, AC-29).
+/// The returned aggregate carries a package only when every protocol emits.
+pub fn emit_checked_with_protocol_results(
+    package: &CheckedPackage,
+) -> Result<ProtocolEmission, EmitRefusal> {
+    let graph = package.graph();
+    let emission = match emit_checked_uncached(package, &Cancel::new()) {
+        Ok(emission) => Some(emission),
+        Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
+        Err(refusal) => return Err(refusal),
+    };
+    let structural_nodes = emission
+        .as_ref()
+        .map(|emission| {
+            serde_json::from_slice::<serde_json::Value>(emission.package().bytes())
+                .map_err(encoding)
+                .and_then(|wire| {
+                    wire.pointer("/semantic_graph/nodes")
+                        .and_then(serde_json::Value::as_array)
+                        .cloned()
+                        .ok_or_else(|| encoding("emitted semantic graph has no nodes array"))
+                })
+                .and_then(|nodes| {
+                    serde_json::from_value::<Vec<CheckedSemanticNodeV2>>(serde_json::Value::Array(
+                        nodes,
+                    ))
+                    .map_err(encoding)
+                })
+        })
+        .transpose()?;
+    let ids = StructuralIds::default();
+    let mut structural_nodes = structural_nodes;
+    if let Some(nodes) = structural_nodes.as_mut() {
+        read_index_segments(&ids, nodes, &mut Vec::new())?;
+    }
+    let mut results = Vec::with_capacity(graph.protocol_order().len());
+    let mut first_refusal = None;
+    let mut first_incomplete = None;
+    for declaration in graph.protocol_order() {
+        if let Some(refused) = graph
+            .protocol_refusals()
+            .iter()
+            .find(|refused| refused.declaration == *declaration)
+        {
+            let refusal = refused
+                .refusals
+                .first()
+                .cloned()
+                .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+            if let qsl_semantics::check::CheckCause::ResourceExhausted(limit) = &refusal.cause {
+                if limit.kind == qsl_semantics::check::CheckingLimitKind::WorkBudget {
+                    first_incomplete.get_or_insert_with(|| (**limit).clone());
+                    results.push(ProtocolEmissionResult::Incomplete {
+                        declaration: declaration.clone(),
+                        limit: (**limit).clone(),
+                    });
+                    continue;
+                }
+            }
+            first_refusal.get_or_insert_with(|| refusal.clone());
+            results.push(ProtocolEmissionResult::Refused {
+                declaration: declaration.clone(),
+                source_index: refused.source_index,
+                declaration_span: refused.declaration_span,
+                refusal,
+            });
+            continue;
+        }
+        let keys = graph
+            .protocol_node_keys(declaration)
+            .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+        let clause_key = keys
+            .clause
+            .clone()
+            .ok_or(EmitRefusal::ProtocolResultInvariant)?;
+        let mut owned_ids = Vec::new();
+        for key in keys
+            .nodes
+            .values()
+            .chain(keys.channels.values())
+            .chain(keys.roles.values())
+            .chain(keys.compensations.iter())
+            .chain(keys.terminal.iter())
+        {
+            owned_ids.push(node_id(&ids, key));
+        }
+        owned_ids.push(node_id(&ids, &clause_key));
+        let nodes = if let Some(structural_nodes) = structural_nodes.as_ref() {
+            let nodes: Vec<serde_json::Value> = structural_nodes
+                .iter()
+                .filter(|node| owned_ids.contains(&node.node_id))
+                .map(serde_json::to_value)
+                .collect::<Result<_, _>>()
+                .map_err(encoding)?;
+            if !nodes.iter().any(|node| {
+                node.get("semantic_form")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("protocol_clause")
+            }) {
+                return Err(EmitRefusal::ProtocolResultInvariant);
+            }
+            nodes
+        } else {
+            return Err(EmitRefusal::ProtocolResultInvariant);
+        };
+        results.push(ProtocolEmissionResult::Emitted {
+            declaration: declaration.clone(),
+            clause_key,
+            nodes,
+        });
+    }
+    let aggregate = if let Some(primary) = first_refusal {
+        ProtocolEmissionAggregate::Refused { primary }
+    } else if let Some(primary) = first_incomplete {
+        ProtocolEmissionAggregate::Incomplete { primary }
+    } else {
+        ProtocolEmissionAggregate::Emitted
+    };
+    let emission = match aggregate {
+        ProtocolEmissionAggregate::Emitted => emission,
+        ProtocolEmissionAggregate::Refused { .. }
+        | ProtocolEmissionAggregate::Incomplete { .. } => None,
+    };
+    Ok(ProtocolEmission {
+        results,
+        aggregate,
+        emission,
+    })
 }
 
 /// Emit a checked package with explicit clock configurations for every
@@ -3447,6 +3718,7 @@ pub fn emit_checked_with_temporal_selections_and_cancel(
     selections: &[TemporalClockSelection],
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     let graph = package.graph();
     emit_package_inner(
         package,
@@ -4443,15 +4715,8 @@ pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
-    let graph = package.graph();
-    let emission = emit_package_inner(
-        package,
-        graph.memoized_regions(),
-        |_| None,
-        cancel,
-        &ir_decodes,
-        &[],
-    )?;
+    require_protocol_results_for_refusals(package)?;
+    let emission = emit_checked_uncached(package, cancel)?;
     package.remember_emission(&emission);
     Ok(emission)
 }
@@ -4464,6 +4729,7 @@ pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes, &[])
 }
 
@@ -4475,6 +4741,7 @@ pub fn emit_package_with_temporal_selections(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     selections: &[TemporalClockSelection],
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     emit_package_inner(
         package,
         regions,
@@ -4501,6 +4768,7 @@ fn emit_package_with_fault(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes, &[])
 }
 
@@ -4530,6 +4798,7 @@ pub fn emit_checked_with_fault(
     package: &CheckedPackage,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
+    require_protocol_results_for_refusals(package)?;
     let graph = package.graph();
     emit_package_with_fault(package, graph.memoized_regions(), fault)
 }

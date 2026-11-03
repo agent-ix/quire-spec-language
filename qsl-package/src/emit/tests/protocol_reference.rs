@@ -170,6 +170,73 @@ fn a_function_referring_to_a_protocol_with_an_attempt_refuses_typed() {
     );
 }
 
+/// FR-383-AC-18, TC-1297: a refused earlier declaration does not shift the
+/// source-indexed attempt facts for the later checked protocol.
+#[trace("FR-383-AC-18", "TC-1297")]
+#[test]
+fn a_later_attempt_protocol_lowers_after_an_earlier_refusal() {
+    let broken = "protocol Broken using v over (input: Config::ConfigVersion) on origin {\n\
+         role R on Config::ConfigVersion;\n\
+         run sequence Main { parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, ghost]; }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }\n";
+    let later = format!(
+        "protocol Later using v over (input: Config::ConfigVersion) on origin {{\n\
+         role R on Config::ConfigVersion;\n\
+         run sequence Main {{ {ATTEMPT_ROOT} }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    );
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         profile p = \"{PROTOCOL_PROFILE}\";\n\
+         model Config = \"example/config-version\";\n{broken}{later}"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-1497", "fixture", "fixture:1"),
+        "program.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the two declarations");
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the declarations");
+    let checked = PackageDeclarations::assemble(
+        raw,
+        "pkg".to_owned(),
+        unit,
+        vec![super::config_version_model(false)],
+        Vec::new(),
+    )
+    .expect("the declarations assemble")
+    .check_with_protocol_results(CheckingLimits::default())
+    .expect("protocol-local S3 refusal is retained");
+    assert_eq!(checked.protocol_refusals().len(), 1);
+    assert_eq!(checked.protocol_refusals()[0].declaration, "Broken");
+
+    let package = CheckedPackage::link(checked);
+    let results = emit_checked_with_protocol_results(&package)
+        .expect("the later protocol with an attempt emits independently");
+    let [ProtocolEmissionResult::Refused {
+        declaration: refused,
+        ..
+    }, ProtocolEmissionResult::Emitted {
+        declaration: emitted,
+        nodes,
+        ..
+    }] = results.results()
+    else {
+        panic!("the independent results retain both declarations");
+    };
+    assert_eq!(refused, "Broken");
+    assert_eq!(emitted, "Later");
+    assert!(nodes.iter().any(|node| {
+        node["semantic_form"] == "control"
+            && node["body"]["operation"]["member"]["operator"] == "attempt"
+    }));
+}
+
 pub(super) fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
     let matching: Vec<&Value> = nodes(wire)
         .iter()

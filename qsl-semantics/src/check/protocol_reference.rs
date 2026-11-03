@@ -7,12 +7,12 @@ use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use qsl_forms::ProtocolDeclarationForm;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::Location;
 
 use super::ir::CheckedBody;
-use super::lowering::{declaration_origin, ProtocolInput};
+use super::lowering::ProtocolInput;
 use super::protocol_clause::CheckedProtocol;
-use super::refusal::{CheckCause, CheckRefusal, KeyFault, ProtocolReferenceCause};
+use super::refusal::{CheckCause, CheckRefusal, ProtocolReferenceCause};
 
 /// The refusal of every reference to a target already referred to earlier in
 /// the unit, at the later reference, naming the first. `bodies` are the
@@ -48,31 +48,27 @@ pub(super) fn repeated<'b>(bodies: impl IntoIterator<Item = &'b CheckedBody>) ->
     refusals
 }
 
-/// Each protocol of `protocols` as lowering reads it, with what S3 checked
-/// of it. `places[i]` is the position of the `i`-th protocol among
-/// `checked`; a protocol S3 refused has none, and lowering reads none of
-/// them, so one is a fault.
+/// Each successfully checked protocol as lowering reads it. A protocol S3
+/// refused has no input; its source index is retained for authored edges.
 pub(super) fn inputs<'a>(
     protocols: &'a [ProtocolDeclarationForm],
     places: &[Option<usize>],
     checked: &'a [CheckedProtocol],
 ) -> Result<Vec<ProtocolInput<'a>>, CheckRefusal> {
-    protocols
+    Ok(protocols
         .iter()
         .enumerate()
-        .map(|(index, form)| {
+        .filter_map(|(index, form)| {
             places
                 .get(index)
                 .copied()
                 .flatten()
                 .and_then(|place| checked.get(place))
-                .map(|checked| ProtocolInput { form, checked })
-                .ok_or_else(|| CheckRefusal {
-                    location: Location::root(Origin::TypeDeclaration {
-                        name: declaration_origin(&form.name.name),
-                    }),
-                    cause: CheckCause::InternalFault(Box::new(KeyFault::UncheckedProtocolFact)),
+                .map(|checked| ProtocolInput {
+                    source_index: index,
+                    form,
+                    checked,
                 })
         })
-        .collect()
+        .collect())
 }
