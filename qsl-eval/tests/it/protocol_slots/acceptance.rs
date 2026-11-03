@@ -18,6 +18,8 @@ macro_rules! assert_value_eq {
     }};
 }
 
+mod state_compensation;
+
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
 mod tc1070;
 use tc1070::{document, document_ep, model, SOURCE};
