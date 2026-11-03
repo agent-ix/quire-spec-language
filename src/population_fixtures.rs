@@ -34,9 +34,9 @@ use qsl_package::{read_import_view, AdmittedPackages, CheckedPackage, V2ReadLimi
 use qsl_semantics::{check::PackageDeclarations, library::LibraryName};
 use quire_contract_model::{
     encode_checked_package_v2, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
-    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageSourceCorrespondenceRef,
-    CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticGraphV2, CheckedSemanticNodeV2,
-    CheckedTerm,
+    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageSidecarsRef,
+    CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedPackageV2ReadResult,
+    CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedTerm,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -218,7 +218,12 @@ fn with_population_package<T>(
         "pop",
         parameters,
         TypeForm::builtin(BuiltinType::Boolean, span),
-        None,
+        CheckedPackageSidecarsRef {
+            checked_term_data: base.checked_term_data(),
+            temporal_bindings: base.temporal_bindings(),
+            schedulability_claims: base.schedulability_claim_rows(),
+            operation_effects: base.operation_effect_rows(),
+        },
         Expression::boolean(true),
     );
     let packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE])
