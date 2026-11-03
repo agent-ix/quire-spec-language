@@ -9,7 +9,7 @@ use quire_spec_language::number::{
 use serde_json::{json, Value};
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-1")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-1")]
 fn integers_match_independent_exact_objects() {
     assert_eq!(NUMERIC_PROFILE, "quire.protocol.numeric/1");
     let vectors = [
@@ -35,7 +35,7 @@ fn integers_match_independent_exact_objects() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-2")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-2")]
 fn rationals_match_independent_exact_objects() {
     let vectors = [
         (1, 3, "1", "3"),
@@ -70,7 +70,14 @@ fn rationals_match_independent_exact_objects() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-2", "FR-038-AC-4")]
+#[trace(
+    "TC-1306",
+    "FR-511-AC-2",
+    "FR-511-AC-4",
+    "TC-117",
+    "FR-038-AC-2",
+    "FR-038-AC-4"
+)]
 fn integer_and_rational_kinds_are_not_coerced() {
     let integer = json!({"kind": "integer", "decimal": "1"});
     let rational = json!({"kind": "rational", "numerator": "1", "denominator": "1"});
@@ -94,7 +101,7 @@ fn offered_component(component: NumberComponent, text: &str) -> Value {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-3")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-3")]
 fn noncanonical_decimal_components_have_typed_failures() {
     for text in [
         "", "-", "-0", "+1", "01", "-01", "1.0", "1e3", "1E3", "１", "١", " 1", "1 ", "--1",
@@ -117,7 +124,7 @@ fn noncanonical_decimal_components_have_typed_failures() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-3")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-3")]
 fn component_overflow_has_a_distinct_typed_failure() {
     for text in ["9223372036854775808", "-9223372036854775809"] {
         for component in [
@@ -137,7 +144,7 @@ fn component_overflow_has_a_distinct_typed_failure() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-3")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-3")]
 fn invalid_rationals_are_refused_without_reduction_or_sign_repair() {
     let vectors = [
         ("1", "0", NumberError::NonPositiveDenominator),
@@ -182,7 +189,14 @@ fn invalid_rationals_are_refused_without_reduction_or_sign_repair() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-3", "FR-038-AC-4")]
+#[trace(
+    "TC-1306",
+    "FR-511-AC-2",
+    "FR-511-AC-4",
+    "TC-117",
+    "FR-038-AC-3",
+    "FR-038-AC-4"
+)]
 fn raw_number_tokens_never_become_decimal_components() {
     for token in [
         "0",
@@ -224,7 +238,7 @@ fn raw_number_tokens_never_become_decimal_components() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-4")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-4")]
 fn closed_shapes_reject_unknown_missing_duplicate_and_cross_kind_members() {
     for offered in [
         r#"{}"#,
@@ -273,7 +287,7 @@ fn closed_shapes_reject_unknown_missing_duplicate_and_cross_kind_members() {
 }
 
 #[test]
-#[trace("TC-1306", "FR-511-AC-2", "TC-117", "FR-038-AC-5")]
+#[trace("TC-1306", "FR-511-AC-2", "FR-511-AC-4", "TC-117", "FR-038-AC-5")]
 fn wire_validation_does_not_apply_model_bounds_or_frontend_normalization() {
     let integer: ExactInteger =
         serde_json::from_str(r#"{"kind":"integer","decimal":"20"}"#).unwrap();
