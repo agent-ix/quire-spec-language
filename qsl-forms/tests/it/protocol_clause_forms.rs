@@ -47,6 +47,35 @@ fn build(declarations: &str) -> (String, ParsedUnit) {
     (text, unit)
 }
 
+/// FR-503-AC-4 (TC-1298 row 3): a protocol form refusal does not suppress
+/// forms for clean sibling declarations.
+#[trace("TC-1298", "FR-503-AC-4")]
+#[test]
+fn recovery_aware_forms_keep_clean_protocol_siblings() {
+    let w = recovery_flow("Main::Committed", false, "").replace("RecoveryFlow", "W");
+    let x = recovery_flow("Main::Committed", false, "").replace("RecoveryFlow", "X");
+    let z = recovery_flow("Main::Committed", false, "").replace("RecoveryFlow", "Z");
+    let broken_x = x.trim_end_matches('}');
+    let (text, parsed) = parse(&format!("{w}\n{broken_x}\n{z}"));
+    let (unit, refusals) = qsl_forms::build_unit_with_protocol_results(&parsed)
+        .expect("the protocol-scoped syntax error does not reject sibling forms");
+    let protocol_names: Vec<_> = unit
+        .forms()
+        .iter()
+        .filter_map(|form| match form.form() {
+            DeclarationForm::Protocol(protocol) => Some(protocol.name.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(protocol_names, ["W", "Z"]);
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].declaration, "X");
+    assert!(
+        text[refusals[0].declaration_span.start..refusals[0].declaration_span.end]
+            .starts_with("protocol X")
+    );
+}
+
 fn refusal(declarations: &str) -> (String, FormsCause, Option<Span>) {
     let (text, parsed) = admissible(declarations);
     match build_unit(&parsed) {
