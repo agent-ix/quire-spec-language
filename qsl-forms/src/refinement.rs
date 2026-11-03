@@ -17,7 +17,7 @@ use quire_exact::Integer;
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
     DeclarationForm, DeclaredName, ExactNumberForm, ExpressionForm, FairnessConstraintForm,
-    FairnessGranularity, FairnessKind, NameForm, TypeForm, UsingAlias,
+    FairnessGranularity, FairnessKind, NameForm, StringLiteral, TypeForm, UsingAlias,
 };
 use super::temporal_clause::expression_form;
 use super::value::{
@@ -287,8 +287,8 @@ pub enum HistoryLiteralForm {
     Boolean(bool),
     /// `none`.
     None,
-    /// A quoted text, decoded.
-    Text(String),
+    /// A quoted text, decoded, with its source spelling.
+    Text(StringLiteral),
     /// `rational(n, d)` or `decimal(c, s)`.
     Exact(ExactNumberForm),
     /// A full-path enum member.
@@ -607,10 +607,11 @@ fn history_literal(
             (_, b"true") => Ok(HistoryLiteralForm::Boolean(true)),
             (_, b"false") => Ok(HistoryLiteralForm::Boolean(false)),
             (_, b"none") => Ok(HistoryLiteralForm::None),
-            (TokenKind::Text, _) => Ok(HistoryLiteralForm::Text(
-                qsl_cst::token::decode_quoted(&text(token, literal)?)
-                    .ok_or_else(|| unexpected(literal))?,
-            )),
+            (TokenKind::Text, _) => {
+                let quoted = StringLiteral::from_spelling(text(token, literal)?)
+                    .ok_or_else(|| unexpected(literal))?;
+                Ok(HistoryLiteralForm::Text(quoted))
+            }
             _ => Err(unexpected(literal)),
         },
         _ => Err(unexpected(literal)),

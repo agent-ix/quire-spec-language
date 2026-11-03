@@ -190,7 +190,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 self.findings.refuse(row.ty.span, mismatch());
                 continue;
             }
-            let initial = match self.literal(&row.initial, &declared) {
+            let initial = match Self::literal(&row.initial, &declared) {
                 Ok(initial) if declared.admits(&initial) => initial,
                 Ok(_) => {
                     self.findings.refuse(row.initial_span, mismatch());
@@ -222,7 +222,6 @@ impl<'c, 'a> Checker<'c, 'a> {
     /// is not one (QSpec FR-375's history-literal rule). Whether the value
     /// is a member of the declared type's value set is the caller's check.
     fn literal(
-        &self,
         literal: &HistoryLiteralForm,
         declared: &ValueType,
     ) -> Result<Value, RefinementCause> {
@@ -235,7 +234,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 Ok(OptionValue::none((**payload).clone()))
             }
             (HistoryLiteralForm::Text(text), ValueType::Text(text_type)) => {
-                let payload = TextPayload::from_source_literal(text.as_str(), format!("{text:?}"));
+                let payload = TextPayload::from_source_literal(text.text(), text.spelling());
                 match admit_text(
                     &payload,
                     text_type,
@@ -253,7 +252,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                     .map_err(|_| mismatch())
             }
             (literal, ValueType::Option(payload)) => {
-                let inner = self.literal(literal, payload)?;
+                let inner = Self::literal(literal, payload)?;
                 OptionValue::present((**payload).clone(), inner).map_err(|_| mismatch())
             }
             _ => Err(mismatch()),
@@ -347,5 +346,45 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
         }
         rows
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use qsl_forms::StringLiteral;
+    use quire_exact::{TextProfile, TextProvenance, TextType};
+
+    use super::*;
+
+    /// The provenance of the history `Text` literal written `spelling`.
+    fn provenance(spelling: &str, text_type: TextType) -> TextProvenance {
+        let literal = StringLiteral::from_spelling(spelling).expect("a quoted text");
+        let value = Checker::literal(
+            &HistoryLiteralForm::Text(literal),
+            &ValueType::Text(text_type),
+        )
+        .expect("the literal is a value of its Text type");
+        let Value::Text(text) = value else {
+            panic!("a Text value, not {value:?}");
+        };
+        text.payload().provenance().clone()
+    }
+
+    /// FR-310-AC-4, QSpec TC-186 T06b: a history row's `Text` initial keeps
+    /// its quoted spelling as provenance, so a raw `é` and `\u00e9` stay
+    /// distinct over one retained value.
+    #[trace("FR-310-AC-4", "QSpec-TC-186", "QSpec-FR-141-AC-4")]
+    #[test]
+    fn a_history_text_initial_keeps_its_spelling_as_provenance() {
+        for profile in [TextProfile::BinaryUtf8, TextProfile::Nfc] {
+            let text_type = TextType::new(0, 8, profile).expect("a Text type");
+            let raw = provenance("\"\u{e9}\"", text_type);
+            let escaped = provenance("\"\\u00e9\"", text_type);
+            assert_eq!(raw, TextProvenance::SourceLiteral("\"\u{e9}\"".into()));
+            assert_eq!(escaped, TextProvenance::SourceLiteral("\"\\u00e9\"".into()));
+            assert_ne!(raw, escaped);
+            assert_eq!(raw, provenance("\"\u{e9}\"", text_type));
+        }
     }
 }
