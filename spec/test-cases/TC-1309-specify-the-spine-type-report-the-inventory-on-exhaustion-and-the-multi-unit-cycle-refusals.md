@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the type report, the inventory outcomes and the cross-unit cycle
-refusals of FR-514. Scope: FR-514-AC-1 to FR-514-AC-6.
+refusals of FR-514. Scope: FR-514-AC-1 to FR-514-AC-10.
 
 ## Test Procedure
 
@@ -32,8 +32,12 @@ x }`, a state `post` clause on an object operation, and a protocol with one
 | 9 | document 1 `unit z : T = z2 * rational(2, 1); unit z2 : T = z * rational(2, 1);`, document 2 `dimension L;` | `invalid_package`/`definition-cycle`, both edges, naming document 1 |
 | 10 | the QSpec TC-187 dimension-cycle vector split across documents 1 and 2 (vector referenced by case ID, not copied) | `invalid_package`/`definition-cycle`, naming the first document in list order |
 | 11 | the pieces table of FR-514 against FR-480's acceptance criteria | every FR-480-AC id present; only AC-2 in two rows, with disjoint sentences |
+| 12 | `T0` with an `enum` beside the forms, `s3.work_units` one below need | `Incomplete`; one requirement-form row each for `f`, the state clause and the protocol with ordinals 0, 1, 2; no row for the `enum` |
+| 13 | `T0`, sufficient limits | `Complete`; one row per requirement record and per pending obligation; each obligation row's QSL form holds the capability kind name, the owning declaration ordinal, unit 0 and the span; the IR identity carries the interim I-2 values |
+| 14 | the limits of rows 3 and 4 | `InventoryCause` holds stage, limit kind, setting, bound and observed value; the IR cause has dimension `constraints` / `expressions`, `limit` the bound and the interim I-3 values |
+| 15 | `parsed` `None` over an S1 limit, an S3 limit and `Ok(unit)` | `Incomplete` with zero rows; `MissingParsedUnit`; `MissingParsedUnit` |
 
-Tag the test `#[trace("FR-514-AC-1", "FR-514-AC-2", "FR-514-AC-3", "FR-514-AC-4", "FR-514-AC-5", "FR-514-AC-6", "TC-1309")]`.
+Tag the test `#[trace("FR-514-AC-1", "FR-514-AC-2", "FR-514-AC-3", "FR-514-AC-4", "FR-514-AC-5", "FR-514-AC-6", "FR-514-AC-7", "FR-514-AC-8", "FR-514-AC-9", "FR-514-AC-10", "TC-1309")]`.
 
 ## Expected Results
 

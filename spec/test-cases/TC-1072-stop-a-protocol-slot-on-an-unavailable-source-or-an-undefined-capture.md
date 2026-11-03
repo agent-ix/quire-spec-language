@@ -14,7 +14,7 @@ Verify that a source supplied as unavailable stops an evaluation only when the
 evaluation reads it, that the stop names the binder and the read and keeps the
 charges made, and that a capture whose initializer makes a call with a false
 precondition gives the capture slot an undefined result with its cause. Scope:
-FR-390-AC-7 and FR-390-AC-8.
+FR-390-AC-7, FR-390-AC-8 and FR-390-AC-64.
 
 Catches an unavailable source that becomes false, zero or an empty value, an
 unavailable source that stops a call whose short-circuit never reads it, a stop
@@ -49,6 +49,7 @@ initializer.
 | 7 | U's `Refunds.captures[1]` | `view = n5` | `FamilyResult::Undefined` with reason `precondition-false`, category undefined, exit status 10; no value |
 | 8 | U's `Refunds.captures[1]` | `view = n6` | `Completed(true)` |
 | 9 | the rows above | | exit status: rows 1, 3, 4 and 5 incomplete (22); row 7 undefined (10); rows 2, 6 and 8 completed (0) |
+| 10 | row 1's supply, with fixture E in-process, read back through the checked-package reader with the read's leaf carrying a location, and read back with the leaf carrying none | `Unavailable`: binder `activated`, cause `not-observed`, the location `Some` the first two times and `None` the third |
 
 ## Expected Results
 

@@ -236,8 +236,11 @@ the proof before emission and a termination claim is their only reader
   key; or `Undefined`, `Refused` or `Incomplete`, or a family result, as
   FR-107 and FR-100 map them.
 - `ProtocolSlotEvaluation::Unavailable`, holding the binder supplied as
-  `Unavailable`, its cause and the location of the read that met it.
-  Category incomplete.
+  `Unavailable`, its cause and the location of the read that met it as an
+  `Option`: for a view backed by a reader (a checked-package v2 view), the read's
+  leaf takes its location from its own admitted node (QSpec FR-322-AC-310), and
+  the location is `None` when the admitted wire carries no leaf location for
+  that read; QSL never invents one. Category incomplete.
 - `CallFailure::Admission(Box<CallAdmissionFailure>)` for a selection or
   supply refused or left incomplete before S6a. `CallAdmissionFailure` is the
   one closed `Refused`/`Incomplete` result owned by quire-eval; each variant
@@ -735,7 +738,8 @@ value; check 6 does not apply to it.
   skipping the right operand when the left decides (FR-107).
 - If evaluation reads a binder supplied as `Unavailable`, then the evaluator
   SHALL stop and return `Unavailable` with that binder and the location of the
-  read, keeping the charges already made. An `Unavailable` binder that
+  read (`None` for a reader-backed view whose admitted wire carries no leaf
+  location for the read, QSpec FR-322-AC-310), keeping the charges already made. An `Unavailable` binder that
   evaluation does not read has no effect on the result.
 - If the meter denies a charge, then the evaluator SHALL return
   `Outcome::Incomplete` naming the counter, `resource_exhausted`/
@@ -827,6 +831,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-61 | In fixture E-C, the handle of the `let` node of `Composed.let` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
 | FR-390-AC-62 | In fixture E-C, the handle of the conditional node of `Composed.if` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
 | FR-390-AC-63 | In fixture E-C, the handle of the case node of `Composed.case` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
+| FR-390-AC-64 | The `Unavailable` result's read location is `Some(location)` for a view backed by the in-process checked package, and for a reader-backed view `Some(location)` when the read's leaf node carries a location of its own (QSpec FR-322-AC-310) and `None` when the admitted wire carries none for it; QSL supplies no location the wire did not. Over TC-1072 row 1 read through each backing, the first two give the read of `activated` located and the third gives `Unavailable` naming the binder and the cause with `None`. | Test (TC-1072) |
 ## Dependencies
 
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md): the `ProtocolClause` arm,

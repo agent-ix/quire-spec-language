@@ -379,6 +379,25 @@ collection values" admission:
   earlier; a supplied set is never deduplicated. A bag groups the elements
   that are the same member into one member whose multiplicity is their
   number.
+- **Collection document members.** FR-106's collection document is the native
+  counterpart of QSpec FR-181's tagged form (ADR-034 CS-1, CS-2): FR-181's `type`
+  member (the kind) and `elements` member (the entries) are carried by one
+  member, the tag, whose name is the kind (`sequence`, `set`, `bag` or
+  `ordered-set`) and whose array value is the entries. QSpec FR-144-AC-16's
+  causes therefore apply to the document as follows, in this order: a value
+  that is not a JSON object is `invalid_runtime_input`/`wrong-value-kind` at
+  the field; an object with no member named by the declared kind is
+  `missing-member` naming that kind, except that an object whose one member is
+  another collection tag is `wrong-value-kind` at the field (a `ids` written as
+  a `sequence`), and an object whose two or more members are all collection tags
+  other than the declared one is `missing-member` naming the declared kind; an object with the declared tag and any other member is
+  `unknown-member` naming the first other member in document order, a second
+  collection tag included; a tag whose value is not an array is
+  `wrong-value-kind` naming the tag. A QSpec FR-181 tagged form
+  `{"type": "set", "elements": [...]}` is no value of this grammar (ADR-034
+  CS-1): it has no member named by the declared kind and is `missing-member`
+  naming it. These checks run before the bound check and before any element
+  is read.
 - The array order of a set or bag is not part of its value: two documents
   whose set or bag elements differ only in order give the same typed
   observation and different documents. The
@@ -995,7 +1014,15 @@ required; check 10 settles it.
        field, the declared range and the observed value.
 7. Completeness check. If a required population is not marked `complete`, then
    admission SHALL return `Incomplete` with `incomplete_population`/
-   `incomplete-scope`, naming the first such population in walk order.
+   `incomplete-scope`, naming the first such population in walk order. A
+   required population with no row at all in the snapshot is a missing row, not
+   an open extent, and returns `Incomplete` with `incomplete_population`/
+   `missing-required-artifact` (QSpec FR-153-AC-14) naming that population; a
+   listed row not marked `complete` keeps `incomplete-scope`. The first required
+   population in walk order that is unlisted or not complete is the one named,
+   with the cause of its own kind. This rule is about a required **population**;
+   an unlisted relationship extent is not a population and keeps
+   `incomplete-scope` when a clause reads it (FR-364, below).
    Admission SHALL skip the dangling check over an incomplete population.
    A `reference` value in a field of a read context also makes the population it names required, as a reference value in an
    object field does, because a context has no population of its own to mark
@@ -1250,7 +1277,11 @@ required; check 10 settles it.
 | FR-106-AC-62 | A current snapshot admitted through the view entry returns QSV `ObservationAdmission::Admitted`; its authority retains the exact selected model, document identity, population manifest/bundles and admission usage after the caller drops the provisions. Public struct construction, mutation of its environment or completeness/provenance, and conversion from a caller-built `Observation` fail to compile; reading the documented accessors compiles. The factory's result type is QSV's generic specialized to the opaque QSL authority; no local result declaration/alias or layer-4 dependency on `quire-eval` exists. | Test |
 | FR-106-AC-63 | A snapshot of another model yields `Refused` with the original QSV `AdmissionRecord` and `invalid_model_binding`/`wrong-model-selection`; a nested-value refusal preserves every `catalog`, `fields`, `path` and `kernel` component. `authority()` on `Refused`, `Incomplete` and `Fault` returns that same distinct arm and payload; `Fault` preserves the original `InternalFault`. The QSL admission implementation uses QSV's record/path types with no local copies. | Test |
 | FR-106-AC-64 | Over TC-1071 row 20, an authority retaining `n5` but marking its required `nodes` population incomplete yields `incomplete_population`/`incomplete-scope` naming that population's exact node, before any dangling check. With `nodes` complete and a second unreferenced population incomplete, the same supplied source admits. A recursively required incomplete population is reported in FR-106 walk order; completing it exposes any subsequent check-8 dangling defect. | Test |
-| FR-106-AC-65 | For FR-390's reference-occurrence seeds, two same-universe, same-effective-type populations retain distinct checked declaration nodes, including when one is empty or unlisted. A supplied ghost reference attributed to the empty/unlisted declaration makes only that declaration and its recursive check-7 closure required; with it incomplete, the original `AdmissionRecord` is `incomplete_population`/`incomplete-scope` at that node before check 8, and with it complete check 8 reports the ghost against that same population. Snapshot reference fields and relationship ends extend the recursive closure in existing walk order. No object key, normalized type/universe pair, caller label, or mutable authority state substitutes for the declaration identity. | Test |
+| FR-106-AC-65 | For FR-390's reference-occurrence seeds, two same-universe, same-effective-type populations retain distinct checked declaration nodes, including when one is empty or unlisted. A supplied ghost reference attributed to the empty/unlisted declaration makes only that declaration and its recursive check-7 closure required; with its row listed and incomplete, the original `AdmissionRecord` is `incomplete_population`/`incomplete-scope` at that node before check 8, with no row for it `incomplete_population`/`missing-required-artifact` at that node before check 8, and with it complete check 8 reports the ghost against that same population. Snapshot reference fields and relationship ends extend the recursive closure in existing walk order. No object key, normalized type/universe pair, caller label, or mutable authority state substitutes for the declaration identity. | Test |
+| FR-106-AC-66 | Over TC-1171's fixture, `ids: Set<UUID>[0, 3]` written `{}` and written `{"type": "set", "elements": []}` each refuse `invalid_runtime_input`/`missing-member` naming `set`, as does `ids` written `{"bag": [], "sequence": []}` (two collection tags, neither the declared one); the same cases in a parameter or a state-machine context field use their own path roots. This is the native counterpart of QSpec FR-144-AC-16's absent `type` or `elements`. | Test (TC-1171) |
+| FR-106-AC-67 | A snapshot with a required population `P` that has no row returns `Incomplete` with `incomplete_population`/`missing-required-artifact` naming `P` and no collection; the same snapshot with a `P` row marked `"complete": false` returns `incomplete_population`/`incomplete-scope`; with both an unlisted required population and a listed incomplete one, the first in walk order is named with the cause of its own kind. | Test (TC-1076) |
+| FR-106-AC-68 | Over TC-1171's fixture, `ids` written `{"set": [], "extra": 1}` refuses `unknown-member` naming `extra`, and `counts: Bag<Int[0, 9]>[0, 4]` written `{"bag": [], "set": []}` refuses `unknown-member` naming `set`; the first other member in document order is named. This is the native counterpart of QSpec FR-144-AC-16's extra member. | Test (TC-1171) |
+| FR-106-AC-69 | Over TC-1171's fixture, `order: OrderedSet<Int[0, 9]>[0, 3]` written `{"ordered-set": 1}`, `ids` written `[]`, and `ids` written `{"bag": []}` each refuse `wrong-value-kind` (naming the tag for the non-array, the field otherwise). This is the native counterpart of QSpec FR-144-AC-16's wrong-kind tag. | Test (TC-1171) |
 
 ## Dependencies
 

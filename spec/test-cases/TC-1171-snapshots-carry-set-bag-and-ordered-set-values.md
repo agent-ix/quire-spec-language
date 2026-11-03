@@ -12,7 +12,7 @@ relationships:
 
 Verify that admission reads `set`, `bag` and `ordered-set` values by QSpec FR-144's supplied-collection rules, writes sets and bags in the order of their elements' native encoding, decides frame changes by collection equality, witnesses out-of-range elements and counts elements toward `observation.values`; and that a Decimal value keeps its supplied coefficient and scale outside a set or bag, is normalized as the element of a set or bag, compares by value and is checked for membership by value; that a Rational is normalized wherever it stands, a Float keeps its exact bits and is a member by bit identity, a Quantity keeps its exact magnitude and unit, and a String element keeps its exact scalar sequence, each in a scalar slot and as the element of a set, bag or ordered set.
 
-Scope: FR-106-AC-50, FR-106-AC-51, FR-106-AC-52, FR-106-AC-53, FR-106-AC-54, FR-106-AC-55, FR-106-AC-56, FR-106-AC-57, FR-106-AC-58, FR-106-AC-59, FR-106-AC-60.
+Scope: FR-106-AC-50, FR-106-AC-51, FR-106-AC-52, FR-106-AC-53, FR-106-AC-54, FR-106-AC-55, FR-106-AC-56, FR-106-AC-57, FR-106-AC-58, FR-106-AC-59, FR-106-AC-60, FR-106-AC-66, FR-106-AC-68, FR-106-AC-69.
 
 ## Test Procedure
 
@@ -30,6 +30,8 @@ Decimal fixture: the same package with `Tagged` also declaring `price: Decimal[0
 8. Over the numeric fixture, admit each FR-106-AC-58 mutation, and a signalling-NaN `gain` post value under `PostStateRange::Witness`.
 9. Over the numeric fixture, admit each FR-106-AC-59 refusal mutation and each FR-106-AC-60 refusal mutation, including the five-element `names`.
 
+10. Admit each FR-106-AC-66, FR-106-AC-68 and FR-106-AC-69 mutation of the `Tagged` current snapshot, and the same in a `retag` parameter and in a state-machine context field.
+
 Numeric fixture: the same package with `Tagged` also declaring `ratio: Rational[-10, 10; 1, 12]`, `ratios: Set<Rational[-10, 10; 1, 12]>[0, 3]`, `weights: Bag<Rational[-10, 10; 1, 12]>[0, 3]`, `lane: OrderedSet<Rational[-10, 10; 1, 12]>[0, 2]`, `gain: Float64`, `levels: Set<Float64>[0, 6]`, `taps: Bag<Float32>[0, 3]`, `reach: Quantity<Units::metre>`, `spans: Set<Quantity<Units::metre>>[0, 3]`, `loads: Bag<Quantity<Units::metre>>[0, 3]`, `names: Set<String>[0, 4]`, `notes: Set<Option<String>>[0, 2]` and `lines: OrderedSet<String>[0, 3]`, over the unit `Units::metre` and its second unit `Units::second`; `z1` and `a1` hold `ratio` `0`/`1`, `gain` with bits `0000000000000000`, `reach` `0` metre and an empty value of each collection.
 
 Tag the tests `#[trace("TC-1171", "FR-106-AC-n")]`.
@@ -45,3 +47,4 @@ Tag the tests `#[trace("TC-1171", "FR-106-AC-n")]`.
 - Step 7: each refusal FR-106-AC-56 names, with its code, cause, path and member or type; the witness run refuses `invalid-value` with no `OutOfRange`.
 - Step 8: each refusal FR-106-AC-58 names; every bit pattern admits and a Float is never reported `OutOfRange`.
 - Step 9: each refusal FR-106-AC-59 and FR-106-AC-60 names, with its code, cause, path and member; the Decimal magnitude outside any `Decimal[..]` domain admits.
+- Step 10: each refusal FR-106-AC-66, FR-106-AC-68 and FR-106-AC-69 names, with its code, cause and naming; the second and third passes root their paths at the parameter or context field.
