@@ -211,7 +211,7 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
     );
     assert!(matches!(
         refused,
-        Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::SiblingImport { identity, unit: 1 })) if identity == "a-unit"
+        Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::SiblingImport { identity, unit, region: Some(region) })) if identity == "a-unit" && unit.identity == "a-unit" && region.source().identity() == "z-unit" && region.start() < region.end()
     ));
 
     let different_profiles = format!(
@@ -226,13 +226,60 @@ fn parsed_unit_list_rejects_cross_unit_names_and_orders_distinct_units_canonical
     );
     assert!(matches!(
         refused,
+        Err(CompileRefusal::UnitList(crate::spine::UnitListRefusal::HeaderConflict {
+            first_unit,
+            second_unit,
+            first_header,
+            second_header,
+            region: Some(region),
+        })) if first_unit.identity == "z-unit"
+            && second_unit.identity == "a-unit"
+            && first_header.start == 0
+            && second_header.start == 0
+            && region.source().identity() == "a-unit"
+            && usize::try_from(region.end()).unwrap() == second_header.end
+    ));
+
+    let profile_order_first = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile x = \"p1\";\nprofile y = \"p2\";\nfunction ordered_a(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    let profile_order_second = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile y = \"p2\";\nprofile x = \"p1\";\nfunction ordered_b(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    assert!(matches!(
+        admit_parsed_unit_list(
+            vec![
+                parse_named(&first, profile_order_first.as_bytes()),
+                parse_named(&second, profile_order_second.as_bytes()),
+            ],
+            &DependencyInput::default(),
+        ),
         Err(CompileRefusal::UnitList(
-            crate::spine::UnitListRefusal::HeaderConflict {
-                first: 0,
-                second: 1
-            }
+            crate::spine::UnitListRefusal::HeaderConflict { .. }
         ))
     ));
+
+    assert!(!super::headers_match(
+        Some("1-draft"),
+        &["p1"],
+        Some("0-draft"),
+        &["p1"],
+    ));
+
+    let alias_first = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction from_v using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    let alias_second = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile w = \"quire.value.complete/v1\";\nfunction from_w using w(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+    );
+    assert!(admit_parsed_unit_list(
+        vec![
+            parse_named(&first, alias_first.as_bytes()),
+            parse_named(&second, alias_second.as_bytes()),
+        ],
+        &DependencyInput::default(),
+    )
+    .is_ok());
 }
 
 /// The one library the import tests supply: `x < 5` over a digit.

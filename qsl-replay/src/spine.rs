@@ -418,7 +418,7 @@ impl CompileRefusal {
     /// one.
     pub fn region(&self) -> Option<&SourceRegion> {
         match self {
-            Self::UnitList(_) => None,
+            Self::UnitList(refusal) => refusal.region(),
             Self::Source(diagnostic) => diagnostic.region.as_ref(),
             Self::Forms { region, .. }
             | Self::Intake { region, .. }
@@ -485,12 +485,18 @@ pub enum UnitListRefusal {
         identity: String,
     },
     /// Unit headers disagree on language, edition, or ordered profile identities.
-    #[error("invalid_package/conflicting-definition: unit headers at positions {first} and {second} differ")]
+    #[error("invalid_package/conflicting-definition: headers of {first_unit:?} ({first_header:?}) and {second_unit:?} ({second_header:?}) differ")]
     HeaderConflict {
-        /// Position of the first header.
-        first: usize,
-        /// Position of the conflicting header.
-        second: usize,
+        /// Identity of the first unit.
+        first_unit: Box<SourceIdentity>,
+        /// Header span in the first unit.
+        first_header: Span,
+        /// Identity of the conflicting unit.
+        second_unit: Box<SourceIdentity>,
+        /// Header span in the conflicting unit.
+        second_header: Span,
+        /// Region of the conflicting unit's header.
+        region: Option<SourceRegion>,
     },
     /// A native declaration name is repeated across distinct units.
     #[error("ambiguous_declaration/ambiguous-name: `{name}` is declared at unit {first_unit:?} ({first_span:?}) and unit {second_unit:?} ({second_span:?})")]
@@ -507,12 +513,14 @@ pub enum UnitListRefusal {
         second_span: Span,
     },
     /// An import names another supplied unit instead of a library.
-    #[error("missing_import/missing-selection: import `{identity}` names sibling unit {unit} but no library is supplied")]
+    #[error("missing_import/missing-selection: import `{identity}` at {region:?} names sibling unit {unit:?} but no library is supplied")]
     SiblingImport {
         /// The import identity that matches a sibling unit.
         identity: String,
-        /// Position of the sibling unit.
-        unit: usize,
+        /// Identity of the sibling unit.
+        unit: Box<SourceIdentity>,
+        /// Region of the import identity in the importing unit.
+        region: Option<SourceRegion>,
     },
 }
 
@@ -539,6 +547,20 @@ impl UnitListRefusal {
             Self::DuplicateName { .. } => "ambiguous-name",
             Self::SiblingImport { .. } => "missing-selection",
         })
+    }
+
+    /// Source region carried by a refusal, when it identifies an offending
+    /// unit header or import.
+    pub fn region(&self) -> Option<&SourceRegion> {
+        match self {
+            Self::HeaderConflict { region, .. } | Self::SiblingImport { region, .. } => {
+                region.as_ref()
+            }
+            Self::Empty
+            | Self::DuplicateOwner { .. }
+            | Self::LibraryOwner { .. }
+            | Self::DuplicateName { .. } => None,
+        }
     }
 }
 

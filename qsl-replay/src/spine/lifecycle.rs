@@ -450,6 +450,7 @@ pub fn admit_parsed_unit_list(
             }));
         }
     }
+    let first_header = header_span(&units[0]);
     let first_profiles: Vec<_> = units[0]
         .unit()
         .selections()
@@ -465,10 +466,19 @@ pub fn admit_parsed_unit_list(
             .iter()
             .map(|selection| selection.identity.as_str())
             .collect();
-        if unit.unit().edition() != units[0].unit().edition() || profiles != first_profiles {
+        if !headers_match(
+            units[0].unit().edition(),
+            &first_profiles,
+            unit.unit().edition(),
+            &profiles,
+        ) {
+            let second_header = header_span(unit);
             return Err(CompileRefusal::UnitList(UnitListRefusal::HeaderConflict {
-                first: 0,
-                second: index,
+                first_unit: Box::new(requests[0].clone()),
+                first_header,
+                second_unit: Box::new(requests[index].clone()),
+                second_header,
+                region: region(unit.source().reference(), second_header),
             }));
         }
     }
@@ -483,7 +493,8 @@ pub fn admit_parsed_unit_list(
                 ) {
                     return Err(CompileRefusal::UnitList(UnitListRefusal::SiblingImport {
                         identity: import.identity.clone(),
-                        unit: sibling,
+                        unit: Box::new(requests[sibling].clone()),
+                        region: region(unit.source().reference(), import.identity_span),
                     }));
                 }
             }
@@ -523,6 +534,27 @@ pub fn admit_parsed_unit_list(
 
 fn same_owner(first: &SourceIdentity, second: &SourceIdentity) -> bool {
     first.authority == second.authority && first.identity == second.identity
+}
+
+fn header_span(unit: &ParsedUnitSource) -> qsl_foundation::Span {
+    let end = unit
+        .unit()
+        .selections()
+        .profiles
+        .last()
+        .map(|profile| profile.span.end)
+        .or_else(|| qsl_cst::declared_edition(unit.source().text()).map(|edition| edition.span.end))
+        .unwrap_or(0);
+    qsl_foundation::Span { start: 0, end }
+}
+
+fn headers_match(
+    first_edition: Option<&str>,
+    first_profiles: &[&str],
+    second_edition: Option<&str>,
+    second_profiles: &[&str],
+) -> bool {
+    first_edition == second_edition && first_profiles == second_profiles
 }
 
 impl ParsedUnitSource {
