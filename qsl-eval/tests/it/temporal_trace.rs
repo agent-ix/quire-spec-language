@@ -40,6 +40,17 @@ pub(crate) struct Fixture {
 }
 
 pub(crate) fn fixture(profile: &str, over: &str, activation: &str, body: &str) -> Fixture {
+    fixture_within(profile, over, activation, body, qsl_cst::Limits::default())
+}
+
+/// [`fixture`] with the S1 `limits` the unit is read under.
+pub(crate) fn fixture_within(
+    profile: &str,
+    over: &str,
+    activation: &str,
+    body: &str,
+    limits: qsl_cst::Limits,
+) -> Fixture {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
@@ -52,7 +63,7 @@ pub(crate) fn fixture(profile: &str, over: &str, activation: &str, body: &str) -
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
         text.as_bytes(),
-        qsl_cst::Limits::default(),
+        limits,
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());

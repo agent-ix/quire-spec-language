@@ -447,6 +447,10 @@ impl CompileRefusal {
                 | Setting::I2WorkUnits => SpineStage::Intake,
                 // Limits of operations outside the front-end compile: no
                 // front-end refusal carries one, so they name no stage of it.
+                // The `temporal_evidence.*` ceilings are of this kind: a
+                // temporal evidence call reports them as `Incomplete` (FR-523),
+                // and the spec gives them no compile stage (FR-255), so the
+                // arm only completes this exhaustive match.
                 Setting::AdmissionPopulationMembers
                 | Setting::AdmissionWorkUnits
                 | Setting::AdmissionAncestorSteps
@@ -467,6 +471,19 @@ impl CompileRefusal {
                 | Setting::ModelCheckMaxStoreBuffer
                 | Setting::ModelCheckMaxMessages
                 | Setting::ExpansionMaxCandidates
+                | Setting::TemporalEvidenceFormulaNodes
+                | Setting::TemporalEvidenceInstances
+                | Setting::TemporalEvidencePositions
+                | Setting::TemporalEvidenceValuations
+                | Setting::TemporalEvidenceCaptures
+                | Setting::TemporalEvidenceSupport
+                | Setting::TemporalEvidenceHistorySpan
+                | Setting::TemporalEvidenceEvaluationSteps
+                | Setting::TemporalEvidenceLineage
+                | Setting::TemporalEvidenceVisited
+                | Setting::TemporalEvidenceRequestBytes
+                | Setting::TemporalEvidenceResultBytes
+                | Setting::TemporalEvidenceMemberBytes
                 | Setting::InspectMaxViewEntries
                 | Setting::ProgressCoveredPositions => SpineStage::Emit,
             },

@@ -2427,6 +2427,19 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::ModelWorkUnits
             | Setting::ModelAncestorSteps
             | Setting::ModelFamilySteps
+            | Setting::TemporalEvidenceFormulaNodes
+            | Setting::TemporalEvidenceInstances
+            | Setting::TemporalEvidencePositions
+            | Setting::TemporalEvidenceValuations
+            | Setting::TemporalEvidenceCaptures
+            | Setting::TemporalEvidenceSupport
+            | Setting::TemporalEvidenceHistorySpan
+            | Setting::TemporalEvidenceEvaluationSteps
+            | Setting::TemporalEvidenceLineage
+            | Setting::TemporalEvidenceVisited
+            | Setting::TemporalEvidenceRequestBytes
+            | Setting::TemporalEvidenceResultBytes
+            | Setting::TemporalEvidenceMemberBytes
             | Setting::AdmissionPopulationMembers
             | Setting::AdmissionWorkUnits
             | Setting::AdmissionAncestorSteps

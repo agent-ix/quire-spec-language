@@ -35,6 +35,7 @@
 //! the one clause evaluator (FR-107).
 
 mod engine;
+pub mod evidence;
 mod finite_window;
 mod input;
 mod ledger;

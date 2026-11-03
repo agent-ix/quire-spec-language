@@ -46,10 +46,15 @@ pub enum LimitKind {
     /// Rational bits: the bit length of an exact rational's numerator or
     /// denominator.
     RationalBits,
+    /// Tick count: a temporal evidence call's history span, in ticks of the
+    /// clause's clock (FR-523). It has no `stage_limit_exceeded` cause: the
+    /// temporal evidence call reports it as `Incomplete`, never as a stage
+    /// limit, so it is outside [`Self::ALL`].
+    TickCount,
 }
 
 impl LimitKind {
-    /// Every kind, in the catalog row's order.
+    /// Every kind a stage limit reports, in the catalog row's order.
     pub const ALL: [Self; 8] = [
         Self::InputBytes,
         Self::TokenCount,
@@ -73,6 +78,7 @@ impl LimitKind {
             Self::DiagnosticCount => "diagnostic-count-exceeded",
             Self::WorkBudget => "work-budget-exceeded",
             Self::RationalBits => "rational-bits-exceeded",
+            Self::TickCount => "tick-count-exceeded",
         }
     }
 
@@ -88,6 +94,7 @@ impl LimitKind {
             Self::DiagnosticCount => "diagnostic",
             Self::WorkBudget => "work",
             Self::RationalBits => "rational bit",
+            Self::TickCount => "tick",
         }
     }
 }
