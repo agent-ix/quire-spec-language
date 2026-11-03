@@ -76,11 +76,14 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    run_clause, run_clause_with_temporal_selections, ClauseArgument, ClauseArgumentValue,
-    ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
-    ClauseRunSource, ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent,
-    ConsequentSourceEvents, ConsequentState, OperationName, OverObject, TemporalPositionRefusal,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    admit_progress, run_clause, run_clause_with_temporal_selections, ClauseArgument,
+    ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
+    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, LedgerBinding,
+    ObservedPosition, OperationName, OverObject, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLimitReached,
+    ProgressRefusal, ProgressValue, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TimestampedObservation,
     TraceInput,
 };
 mod refinement;
@@ -398,7 +401,8 @@ impl CompileRefusal {
                 | Setting::ModelCheckMaxStoreBuffer
                 | Setting::ModelCheckMaxMessages
                 | Setting::ExpansionMaxCandidates
-                | Setting::InspectMaxViewEntries => SpineStage::Emit,
+                | Setting::InspectMaxViewEntries
+                | Setting::ProgressCoveredPositions => SpineStage::Emit,
             },
         }
     }
@@ -1844,6 +1848,8 @@ pub struct SpineLimits {
     /// The I2 reader's ceilings for each library's emitted package the
     /// compile imports (`i2.*`).
     pub imports: qsl_package::V2ReadLimits,
+    /// The progress ledger's ceilings (FR-502).
+    pub progress: ProgressLimits,
 }
 
 /// FR-255: every compile stage's settings, each owned by one part.
@@ -1855,6 +1861,7 @@ impl qsl_foundation::SettingLimits for SpineLimits {
         bounds.extend(self.dependencies.bounds());
         bounds.extend(self.assembly.bounds());
         bounds.extend(self.imports.bounds());
+        bounds.extend(self.progress.bounds());
         bounds
     }
 
@@ -1865,6 +1872,38 @@ impl qsl_foundation::SettingLimits for SpineLimits {
             || self.dependencies.set_bound(setting, bound)
             || self.assembly.set_bound(setting, bound)
             || self.imports.set_bound(setting, bound)
+            || self.progress.set_bound(setting, bound)
+    }
+}
+
+/// The progress ledger's ceiling (FR-502).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProgressLimits {
+    /// The positions the ledger may list as covered, set by
+    /// `progress.covered_positions`. Defaults to 1000000.
+    pub covered_positions: u64,
+}
+
+/// FR-255: the `progress.*` settings.
+impl qsl_foundation::SettingLimits for ProgressLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![(Setting::ProgressCoveredPositions, self.covered_positions)]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        if setting != Setting::ProgressCoveredPositions {
+            return false;
+        }
+        self.covered_positions = bound;
+        true
+    }
+}
+
+impl Default for ProgressLimits {
+    fn default() -> Self {
+        Self {
+            covered_positions: qsl_eval::temporal::DEFAULT_COVERED_POSITIONS,
+        }
     }
 }
 

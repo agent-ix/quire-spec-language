@@ -36,6 +36,7 @@
 
 mod engine;
 mod input;
+mod ledger;
 mod letters;
 mod observed;
 mod observed_window;
@@ -49,6 +50,12 @@ mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
+pub use ledger::{
+    ContradictedDimension, CoveredPositionsLimitReached, LedgerBinding, LedgerEntry, LedgerRefusal,
+    ObservedPosition, ProgressAssertion, ProgressClosure, ProgressCompleteness,
+    ProgressContradiction, ProgressLedger, ProgressValue, COVERED_POSITIONS_SETTING,
+    DEFAULT_COVERED_POSITIONS,
+};
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{evaluate_observed, evaluate_observed_at, HoldsStop, ObservedRun};
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};

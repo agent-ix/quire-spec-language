@@ -553,7 +553,9 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
         ClauseDisposition::EvaluateFault(_) => one(ToolFailure, Code::RuntimeInvariant, None),
         // A refinement check runs state clauses and functions; it selects no
         // temporal clause, so a temporal disposition is a broken invariant.
-        ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_) => {
+        ClauseDisposition::Temporal(_)
+        | ClauseDisposition::TemporalRefusal(_)
+        | ClauseDisposition::ProgressContradiction(_) => {
             one(ToolFailure, Code::RuntimeInvariant, None)
         }
     }

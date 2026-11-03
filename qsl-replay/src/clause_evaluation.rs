@@ -397,7 +397,8 @@ fn settle(disposition: ClauseDisposition) -> ClauseEvaluation {
         | ClauseDisposition::NotAPredicate { .. }
         | ClauseDisposition::FrameViolation(_)
         | ClauseDisposition::Temporal(_)
-        | ClauseDisposition::TemporalRefusal(_) => unreachable_disposition(),
+        | ClauseDisposition::TemporalRefusal(_)
+        | ClauseDisposition::ProgressContradiction(_) => unreachable_disposition(),
     }
 }
 

@@ -807,6 +807,7 @@ fn selection(
                     population: over.0,
                     key: over.1,
                 },
+                ledger: None,
             })
         }
     }
