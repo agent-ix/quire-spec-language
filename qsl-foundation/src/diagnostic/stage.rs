@@ -322,41 +322,26 @@ mod tests {
     #[trace("TC-427", "FR-096-AC-2", "TC-428", "FR-096-AC-7")]
     #[test]
     fn limit_exceeded_reports_stage_limit_exceeded_per_setting() {
-        let tick_settings: Vec<_> = Setting::ALL
-            .iter()
-            .copied()
-            .filter(|setting| setting.kind() == crate::diagnostic::LimitKind::TickCount)
-            .collect();
-        // `temporal_evidence.history_span` reports `tick count` on an
-        // `Incomplete`, not a `stage_limit_exceeded` catalog row (FR-255
-        // Behavior 1 row for `TemporalEvidenceLimits`): it is the only
-        // setting without a catalog code, and every other assertion below
-        // still holds for it.
-        assert_eq!(tick_settings, [Setting::TemporalEvidenceHistorySpan]);
         for setting in Setting::ALL.iter().copied() {
             let exceeded = LimitExceeded::new(setting, 10, 11);
             let cause = setting.kind().catalog_cause();
             let code = exceeded.catalog_code();
             assert_eq!(code, CatalogCode::new("stage_limit_exceeded", cause));
-            if tick_settings.contains(&setting) {
-                assert_eq!(category_of(&code), None);
-            } else {
-                assert_eq!(category_of(&code), Some(Category::Incomplete));
-                let fields = exceeded.catalog_fields().expect("a key-table row");
-                assert_eq!(
-                    fields.into_iter().collect::<Vec<_>>(),
-                    [
-                        ("actual", "11".to_owned()),
-                        ("bound", "10".to_owned()),
-                        ("kind", cause.to_owned()),
-                        ("setting", setting.name().to_owned()),
-                    ]
-                );
-            }
+            assert_eq!(category_of(&code), Some(Category::Incomplete));
             assert_eq!(exceeded.configured_bound(), 10);
             assert_eq!(exceeded.actual(), 11);
             assert_eq!(exceeded.setting(), setting);
             assert_eq!(exceeded.locus(), None);
+            let fields = exceeded.catalog_fields().expect("a key-table row");
+            assert_eq!(
+                fields.into_iter().collect::<Vec<_>>(),
+                [
+                    ("actual", "11".to_owned()),
+                    ("bound", "10".to_owned()),
+                    ("kind", cause.to_owned()),
+                    ("setting", setting.name().to_owned()),
+                ]
+            );
         }
     }
 
