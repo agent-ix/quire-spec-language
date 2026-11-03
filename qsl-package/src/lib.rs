@@ -64,7 +64,10 @@ pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 
 #[cfg(feature = "std")]
-pub use quire_contract_model::ClockConfiguration;
+pub use quire_contract_model::{
+    CheckedArtifactRef, CheckedNodeId, CheckedSelection, ClockConfiguration, ClockExactNumber,
+    TemporalBinding,
+};
 
 // The FR-105-AC-6 fault-injection seam. Public only under
 // `test-support` (see `emit.rs`'s doc comments and this crate's

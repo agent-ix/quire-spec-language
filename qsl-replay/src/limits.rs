@@ -10,6 +10,7 @@
 
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::Limits as ExploreLimits;
+use qsl_eval::temporal::evidence::TemporalEvidenceLimits;
 use qsl_foundation::{AccountingSetting, Setting, SettingLimits, SettingName, UsageRefusal};
 use qsl_semantics::library::bundle::PackageLimits as LibraryLimits;
 use qsl_semantics::model::observation::ObservationLimits;
@@ -296,6 +297,8 @@ pub struct CallerLimits {
     pub prepare: PrepareLimits,
     /// FR-255's analysis-engine limits.
     pub engines: EngineLimits,
+    /// The thirteen counters of one temporal evidence call (FR-523).
+    pub temporal_evidence: TemporalEvidenceLimits,
     /// The typed-view entry limit consumed by `qsl-inspect`.
     pub inspect_max_view_entries: u64,
     /// The call's accounting budgets (`quire.value.accounting/v1`).
@@ -315,6 +318,7 @@ impl Default for CallerLimits {
             render: RenderLimits::default(),
             prepare: PrepareLimits::default(),
             engines: EngineLimits::default(),
+            temporal_evidence: TemporalEvidenceLimits::default(),
             inspect_max_view_entries: 10_000_000,
             accounting: AccountingLimits::default(),
         }
@@ -379,7 +383,7 @@ impl CallerLimits {
         limits
     }
 
-    fn parts(&self) -> [&dyn SettingLimits; 10] {
+    fn parts(&self) -> [&dyn SettingLimits; 11] {
         [
             &self.spine,
             &self.library,
@@ -391,6 +395,7 @@ impl CallerLimits {
             &self.render,
             &self.prepare,
             &self.engines,
+            &self.temporal_evidence,
         ]
     }
 }
@@ -406,7 +411,7 @@ impl SettingLimits for CallerLimits {
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
-        let parts: [&mut dyn SettingLimits; 10] = [
+        let parts: [&mut dyn SettingLimits; 11] = [
             &mut self.spine,
             &mut self.library,
             &mut self.admission,
@@ -417,6 +422,7 @@ impl SettingLimits for CallerLimits {
             &mut self.render,
             &mut self.prepare,
             &mut self.engines,
+            &mut self.temporal_evidence,
         ];
         if setting == Setting::InspectMaxViewEntries {
             self.inspect_max_view_entries = bound;
@@ -586,6 +592,67 @@ mod tests {
             let refusal = CallerLimits::from_operands(operands).unwrap_err();
             assert_eq!(refusal.operand, operand);
             assert_eq!(refusal.cause, cause);
+        }
+    }
+
+    /// FR-523-AC-1: for each of the thirteen counters the setting
+    /// `temporal_evidence.<counter>` is accepted by the settings operation,
+    /// sets that counter's ceiling and no other, and the defaults are
+    /// FR-255's.
+    #[trace("TC-1318", "FR-523-AC-1")]
+    #[test]
+    fn each_temporal_evidence_setting_sets_its_counter_alone() {
+        use qsl_eval::temporal::evidence::EvidenceCounter;
+        let defaults = TemporalEvidenceLimits::default();
+        assert_eq!(
+            CallerLimits::from_operands([]).unwrap().temporal_evidence,
+            defaults
+        );
+        assert_eq!(EvidenceCounter::ALL.len(), 13);
+        for counter in EvidenceCounter::ALL {
+            let operand = format!("temporal_evidence.{}=123456789", counter.name());
+            let set = CallerLimits::from_operands([operand.as_str()])
+                .unwrap()
+                .temporal_evidence;
+            for other in EvidenceCounter::ALL {
+                let expected = if other == counter {
+                    123_456_789
+                } else {
+                    defaults.ceiling(other)
+                };
+                assert_eq!(set.ceiling(other), expected, "{operand}: {}", other.name());
+            }
+            assert_eq!(
+                counter.setting().name(),
+                format!("temporal_evidence.{}", counter.name())
+            );
+        }
+    }
+
+    /// FR-523-AC-2: `temporal_evidence.formula_depth`,
+    /// `temporal_evidence.depth`, a bare counter name and a value that is not
+    /// a non-negative integer are each refused as unknown or non-numeric
+    /// settings.
+    #[trace("TC-1318", "FR-523-AC-2")]
+    #[test]
+    fn retired_and_malformed_temporal_evidence_settings_are_refused() {
+        for (operand, cause) in [
+            (
+                "temporal_evidence.formula_depth=5",
+                UsageCause::UnknownSetting,
+            ),
+            ("temporal_evidence.depth=5", UsageCause::UnknownSetting),
+            ("temporal_evidence.json_depth=5", UsageCause::UnknownSetting),
+            ("formula_nodes=5", UsageCause::UnknownSetting),
+            ("positions=5", UsageCause::UnknownSetting),
+            ("temporal_evidence.positions=ten", UsageCause::NotAnInteger),
+            ("temporal_evidence.positions=-1", UsageCause::NotAnInteger),
+            ("temporal_evidence.positions=1.5", UsageCause::NotAnInteger),
+            ("temporal_evidence.positions=", UsageCause::NotAnInteger),
+        ] {
+            let refusal = CallerLimits::from_operands([operand]).unwrap_err();
+            assert_eq!(refusal.operand, operand);
+            assert_eq!(refusal.cause, cause, "{operand}");
         }
     }
 
