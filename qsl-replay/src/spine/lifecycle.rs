@@ -944,16 +944,12 @@ fn type_report(graph: &qsl_semantics::check::CheckedGraph, source: &RawSourceRef
                 continue;
             };
             let key = temporal.identity();
-            let Some(node) = graph.semantic_graph().node(key.clone()) else {
-                continue;
-            };
-            if !owns(node) {
+            let claim_origin = temporal.claim().clone();
+            if occurrence_span(&key, &claim_origin).is_none() {
                 continue;
             }
-            let occurrence = qsl_foundation::source::provenance::OccurrenceKey::new(
-                key.clone(),
-                temporal.claim().clone(),
-            );
+            let occurrence =
+                qsl_foundation::source::provenance::OccurrenceKey::new(key.clone(), claim_origin);
             obligations.push(PendingObligation {
                 node: key,
                 occurrence,
