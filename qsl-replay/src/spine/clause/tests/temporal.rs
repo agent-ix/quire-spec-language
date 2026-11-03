@@ -2090,7 +2090,6 @@ fn timestamped_counter_margin_delays_establishment() {
 #[trace("TC-1295", "FR-501-AC-14")]
 #[test]
 fn timestamped_report_gives_basis_and_decision_support() {
-    use qsl_eval::temporal::Basis;
     let always = |scope_closed: bool| {
         report(timestamped_changed(
             timestamped_with(
