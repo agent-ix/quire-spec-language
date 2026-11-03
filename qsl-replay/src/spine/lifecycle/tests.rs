@@ -692,8 +692,8 @@ fn checked_unit_type_report_lists_its_checked_declarations() {
          function f using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
          temporal Due using inf over (input: M::Widget) clock \"model-steps\" on origin {{ always holds(true) }}\n\
          protocol Fill using Complete over (input: M::Widget) on origin {{\n\
-           requires temporal Due;\n\
            role R on M::Widget;\n\
+           requires temporal Due;\n\
            run sequence Main {{ }}\n\
            finish End as (outcome: Boolean) {{ true }};\n\
          }}"
