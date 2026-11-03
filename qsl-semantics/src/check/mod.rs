@@ -6760,10 +6760,10 @@ impl PackageDeclarations {
             let Some(checked) = checked_protocols.get(checked_index) else {
                 continue;
             };
-            let source = self
+            let source_owner = self
                 .source_owners
                 .get(&form.name.name)
-                .unwrap_or(&self.source)
+                .unwrap_or(&source)
                 .clone();
             for attempt in &form.attempts {
                 let Some(checked_attempt) = checked
@@ -6775,7 +6775,7 @@ impl PackageDeclarations {
                 };
                 for (contract, target) in attempt.contracts.iter().zip(&checked_attempt.contracts) {
                     dependency_references.push(CheckedDependencyReference {
-                        source: source.clone(),
+                        source: source_owner.clone(),
                         referring_declaration: form.name.name.clone(),
                         kind: CheckedDependencyKind::OperationContract,
                         site: CheckedDependencySite::OperationContract(contract.span),
@@ -6794,7 +6794,7 @@ impl PackageDeclarations {
                 });
                 if let Some(target) = target {
                     dependency_references.push(CheckedDependencyReference {
-                        source: source.clone(),
+                        source: source_owner.clone(),
                         referring_declaration: form.name.name.clone(),
                         kind: CheckedDependencyKind::TemporalObligation,
                         site: CheckedDependencySite::TemporalRequirement(requirement.temporal.span),
