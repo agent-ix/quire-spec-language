@@ -343,36 +343,55 @@ fn parse_does_not_attach_protocol_results_to_unattributable_syntax_errors() {
     }
 }
 
-/// FR-503-AC-1 (TC-1298 row 3): an attributable S2 refusal is indexed within
-/// its own source, and its locus keeps the owning source identity.
+/// FR-503-AC-1 (TC-1298 row 3): S2's recovery-aware build retains clean
+/// siblings and attributes X to its own declaration in the library source.
 #[trace("TC-1298", "FR-503-AC-1")]
 #[test]
 fn forms_refusal_is_attributed_to_its_declaration_and_source() {
     use crate::spine::ProtocolResult;
     use qsl_cst::Production;
-    use qsl_forms::{FormsCause, FormsRefusal, ProtocolFormsRefusal};
+    use qsl_forms::FormsCause;
 
-    let bytes = format!(
+    let root_bytes = format!(
         "{HEADER}\n{}\n{}\n{}",
         protocol_source("W", true),
         protocol_source("X", true),
         protocol_source("Z", true)
     );
+    let library_bytes = format!(
+        "{HEADER}\n{}\n{}\n{}",
+        protocol_source("W", true),
+        protocol_source("X", false),
+        protocol_source("Z", true)
+    );
     let cancel = Cancel::new();
-    let parse_source = |authority: &str, location: &str| {
-        let source = SourceIdentity::new(authority, location, "fixture", location);
-        qsl_cst::parse_with_cancel(
+    let parse_source = |location: &str, bytes: &str| {
+        let source = SourceIdentity::new("agent-ix", location, "fixture", location);
+        super::parse_unit(
             source,
             "unit.native",
             bytes.as_bytes(),
             SourceLimits::default(),
             &cancel,
         )
-        .expect("three protocol declarations parse")
+        .unwrap_or_else(|_| panic!("the source reaches the protocol-aware forms builder"))
     };
-    let root = parse_source("agent-ix", "test:lifecycle-root");
-    let library = parse_source("agent-ix", "test:lifecycle-library");
-    let root_results = super::forms_protocol_results(&root, &[]).expect("root protocols");
+    let root = parse_source("test:lifecycle-root", &root_bytes);
+    let library = parse_source("test:lifecycle-library", &library_bytes);
+    assert!(root.protocol_forms_refusal.is_none());
+    assert_eq!(root.unit().forms().len(), 3);
+    assert_eq!(library.unit().forms().len(), 2, "W and Z forms survive");
+    let forms_refusal = library
+        .protocol_forms_refusal
+        .as_ref()
+        .expect("the recovering CST produces an S2 refusal");
+    assert!(matches!(
+        &forms_refusal.cause,
+        FormsCause::DiagnosedSource(Code::InvalidSyntax)
+    ));
+    assert_eq!(forms_refusal.recoveries.len(), 1);
+
+    let root_results = root.protocol_results();
     assert!(root_results.iter().all(|result| matches!(
         result,
         ProtocolResult::Cleared {
@@ -381,13 +400,23 @@ fn forms_refusal_is_attributed_to_its_declaration_and_source() {
         }
     )));
 
+    let (_, forms_refusals) = qsl_forms::build_unit_with_protocol_results(library.syntax())
+        .expect("the recovery is scoped to protocol X");
+    assert_eq!(forms_refusals.len(), 1);
+    assert_eq!(forms_refusals[0].declaration, "X");
+    assert!(matches!(
+        &forms_refusals[0].refusal.cause,
+        FormsCause::DiagnosedSource(Code::InvalidSyntax)
+    ));
     let declaration_span = library
+        .syntax()
         .cst()
         .nodes()
         .iter()
         .filter(|node| node.production() == Production::Declaration)
         .find(|node| {
             library
+                .syntax()
                 .source()
                 .text()
                 .get(node.span().start..node.span().end)
@@ -395,19 +424,9 @@ fn forms_refusal_is_attributed_to_its_declaration_and_source() {
         })
         .expect("X's declaration node")
         .span();
-    let refusal = ProtocolFormsRefusal {
-        declaration: "X".to_owned(),
-        declaration_span,
-        refusal: FormsRefusal {
-            cause: FormsCause::UnexpectedShape {
-                production: Production::ProtocolClause,
-            },
-            span: Some(declaration_span),
-            recoveries: Vec::new(),
-        },
-    };
-    let library_results =
-        super::forms_protocol_results(&library, &[refusal]).expect("library protocols");
+    assert_eq!(forms_refusals[0].declaration_span, declaration_span);
+    let library_results = super::forms_protocol_results(library.syntax(), &forms_refusals)
+        .expect("library protocol results");
     assert!(matches!(
         library_results.as_slice(),
         [
@@ -424,6 +443,8 @@ fn forms_refusal_is_attributed_to_its_declaration_and_source() {
             && z == "Z"
             && locus.source() == library.source().reference()
             && locus.source() != root.source().reference()
+            && locus.start() == declaration_span.start as u64
+            && locus.end() == declaration_span.end as u64
     ));
 }
 
