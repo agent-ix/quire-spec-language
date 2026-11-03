@@ -29,7 +29,7 @@ use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::Value;
 use quire_semantic_value::checking::CheckingLimits;
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
 
@@ -531,7 +531,8 @@ pub(crate) const NO_BOTH_ZERO: &str = "temporal NoBothZero using t0 over (k: M::
      \"model-steps\" on origin { always holds(not (k.r1 = 0 and k.r2 = 0)) }\n";
 
 /// The bounded event-position form used by fixtures that also await.
-pub(crate) const NO_BOTH_ZERO_BOUNDED: &str = "temporal NoBothZero using t0 over (k: M::Core) clock \
+pub(crate) const NO_BOTH_ZERO_BOUNDED: &str =
+    "temporal NoBothZero using t0 over (k: M::Core) clock \
      \"model-steps\" on origin { always[0,1] holds(not (k.r1 = 0 and k.r2 = 0)) }\n";
 
 /// The `SB` unit over `run`, with the claim.

@@ -103,10 +103,7 @@ impl Case {
     /// [`Self::with_letters`] with the protocol profile alias retained as a
     /// declaration but removed from the selected profiles, for FR-368's
     /// no-protocol-profile route case.
-    pub(crate) fn without_protocol_profile(
-        body: &str,
-        letters: &'static dyn ModelLetters,
-    ) -> Self {
+    pub(crate) fn without_protocol_profile(body: &str, letters: &'static dyn ModelLetters) -> Self {
         let checked = crate::litmus::package_without_protocol_profile_selection(body);
         let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&checked);
         Self {

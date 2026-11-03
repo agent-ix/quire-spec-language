@@ -4,7 +4,7 @@
 //! checked-package writer refuses explicitly.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{ProtocolCheckRequest, check_protocol};
+use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
 use qsl_eval::model_subject::{AtomStop, ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::simulation::protocol::{MemorySelection, StepKind};
@@ -15,7 +15,7 @@ use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter};
 
 use crate::fill::{projections, reachable, sc_system};
-use crate::litmus::{Documents, attempt, contracts, field, package, protocol};
+use crate::litmus::{attempt, contracts, field, package, protocol, Documents};
 use crate::weak_memory::select;
 
 const PRETEST_CLAIM: &str = "temporal NoLoad using t0 over (k: M::Core) clock \"model-steps\" \

@@ -18,7 +18,7 @@ use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
-use serde_json::{Value as Json, json};
+use serde_json::{json, Value as Json};
 
 pub(crate) const PACKAGE: &str = "test/timed";
 
@@ -495,11 +495,11 @@ pub(crate) fn refining_from(
     abstract_inflight: bool,
 ) -> Result<Refining, Vec<(String, String, String)>> {
     let packages = package_input([abstract_document, concrete_document]).unwrap();
-    let abstract_package =
-        serde_json::from_slice::<Json>(abstract_document).expect("JSON")["package"]["identity"]
-            .as_str()
-            .expect("an identity")
-            .to_owned();
+    let abstract_package = serde_json::from_slice::<Json>(abstract_document).expect("JSON")
+        ["package"]["identity"]
+        .as_str()
+        .expect("an identity")
+        .to_owned();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\

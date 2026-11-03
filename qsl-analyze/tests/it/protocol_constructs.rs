@@ -6,20 +6,20 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_eval::simulation::SubjectSystem;
 use qsl_eval::simulation::protocol::{
     ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind, ThreadPath, WaitCause,
 };
-use serde_json::{Value as Json, json};
+use qsl_eval::simulation::SubjectSystem;
+use serde_json::{json, Value as Json};
 
 use qsl_foundation::diagnostic::Code;
 use qsl_replay::{CompileRefusal, ReplayRefusal};
 use qsl_semantics::check::{CheckCause, ProtocolConstruct, ProtocolReferenceCause};
 
 use crate::fill::{
-    Reached, attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system,
+    attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system, Reached,
 };
-use crate::protocol_system::{Case, touch};
+use crate::protocol_system::{touch, Case};
 
 /// The protocol `P` with `members` and `run` over `ADR-027 §7`'s contracts,
 /// from `c.v = 0`.

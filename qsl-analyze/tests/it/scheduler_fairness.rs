@@ -13,26 +13,26 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::ProtocolCheckRequest;
-use qsl_analyze::model_check::{ModelCheckRefusal, check_protocol};
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
-use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState};
 use qsl_eval::simulation::protocol::{
     FairnessOrigin, MemorySelection, ProtocolClass, ProtocolFairness, ProtocolTarget,
     ProtocolTransition, ResolvedMemory, StepKind, ThreadPath,
 };
+use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::AtomReading;
-use qsl_foundation::MemoryModelName;
-use qsl_foundation::SourceIdentity;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::MemoryModelName;
+use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    ComponentWitness, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
-    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
-    ProofCertificate, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits,
-    ReplayRefusal, ResultLabel, TemporalCounterexample, replay_protocol_trace,
-    settle_protocol_check,
+    replay_protocol_trace, settle_protocol_check, ComponentWitness, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal,
+    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ProofCertificate,
+    ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel,
+    TemporalCounterexample,
 };
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedProtocolTarget, PackageDeclarations, ProtocolAnchorCause,
@@ -48,9 +48,9 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use serde_json::Value;
 
 use crate::fill::{
-    Documents, attempt, contracts, document, fill_unit, instance, package_with, package_with_name,
-    protocol, reachable, sc_system, subject, tcb_01_event_position_selection, unit_text, universe,
-    v,
+    attempt, contracts, document, fill_unit, instance, package_with, package_with_name, protocol,
+    reachable, sc_system, subject, tcb_01_event_position_selection, unit_text, universe, v,
+    Documents,
 };
 use crate::model_settle::{envelope_at, request_named};
 
@@ -460,11 +460,9 @@ fn scheduling_adversarial_admits_the_lasso_that_starves_a_branch() {
                 && transition.node() == Some("Both/s/Sender/Done")
         }));
     }
-    assert!(
-        cycle
-            .iter()
-            .all(|step| step.transition.node() != Some("Both/s/Sender/Done"))
-    );
+    assert!(cycle
+        .iter()
+        .all(|step| step.transition.node() != Some("Both/s/Sender/Done")));
 
     let record = adversarial.settle(&outcome);
     assert_eq!(record.label, ResultLabel::Refuted, "{record:?}");
@@ -872,15 +870,13 @@ fn compensation_fairness_target_emits_and_covers_transitions() {
         })
         .expect("scheduler compensation fairness");
     let reached = reachable(&system);
-    assert!(
-        reached
-            .iter()
-            .any(|state| state.steps.iter().any(|(step, _)| {
-                matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd)
-                    && compensation.class_of(step).is_some()
-                    && scheduler_compensation.class_of(step).is_some()
-            }))
-    );
+    assert!(reached
+        .iter()
+        .any(|state| state.steps.iter().any(|(step, _)| {
+            matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd)
+                && compensation.class_of(step).is_some()
+                && scheduler_compensation.class_of(step).is_some()
+        })));
 }
 
 /// Exercise compensation fairness in liveness filtering and replay after IR
