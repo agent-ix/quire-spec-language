@@ -26,6 +26,10 @@ use super::{
 /// What the writer needs of one plan.
 #[derive(Clone, Debug)]
 pub struct MonitorPlanWire<'a> {
+    /// The identity of the temporal clause the plan monitors (its checked
+    /// node key). The root's `clause` member is bound by this identity, not
+    /// by position, so a package with several clauses binds the right one.
+    pub clause: &'a quire_exact::NodeKey,
     /// The clause's formula arena.
     pub formula: &'a qsl_semantics::check::CheckedFormula,
     /// The counter's name.
@@ -66,8 +70,14 @@ fn invariant(reason: &'static str) -> EmitRefusal {
     EmitRefusal::MonitorPlanInvariant(reason)
 }
 
-fn declared(nodes: &[CheckedSemanticNodeV2], name: &str) -> Option<usize> {
-    nodes.iter().position(|node| {
+/// The one node declared as `name`; two declarations of one name refuse
+/// rather than bind the first (`missing` names the absent node).
+fn declared(
+    nodes: &[CheckedSemanticNodeV2],
+    name: &str,
+    missing: &'static str,
+) -> Result<usize, EmitRefusal> {
+    let mut found = nodes.iter().enumerate().filter(|(_, node)| {
         node.declaration.as_ref().is_some_and(|declaration| {
             declaration
                 .qualified_name
@@ -75,7 +85,14 @@ fn declared(nodes: &[CheckedSemanticNodeV2], name: &str) -> Option<usize> {
                 .map(AsRef::as_ref)
                 .eq([name])
         })
-    })
+    });
+    let first = found.next().ok_or_else(|| invariant(missing))?;
+    if found.next().is_some() {
+        return Err(EmitRefusal::MonitorPlanAmbiguous {
+            name: name.to_owned(),
+        });
+    }
+    Ok(first.0)
 }
 
 fn canonical_rational(value: &Rational) -> String {
@@ -116,6 +133,65 @@ fn rename_bindings(body: &mut CheckedTerm, renames: &[(&str, &str)]) {
             }
         }
     }
+}
+
+/// Rename the field of every field projection (`quire.op.record.project`)
+/// of a renamed record in `body`. The operation record is read-only in the
+/// typed model, so the body goes through its wire form.
+fn rename_projections(
+    body: &mut CheckedTerm,
+    renamed_types: &BTreeSet<CheckedNodeId>,
+    renames: &[(&str, &str)],
+) -> Result<(), EmitRefusal> {
+    fn visit(
+        value: &mut serde_json::Value,
+        declarations: &[serde_json::Value],
+        renames: &[(&str, &str)],
+    ) -> bool {
+        let mut changed = false;
+        match value {
+            serde_json::Value::Object(map) => {
+                if let Some(member) = map
+                    .get_mut("operation")
+                    .and_then(|operation| operation.get_mut("member"))
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    let owned = member
+                        .get("declaration")
+                        .is_some_and(|declaration| declarations.contains(declaration));
+                    let renamed = member
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|name| renames.iter().find(|(from, _)| *from == name))
+                        .map(|(_, to)| (*to).to_owned());
+                    if let (true, Some(to)) = (owned, renamed) {
+                        member.insert("name".to_owned(), serde_json::Value::String(to));
+                        changed = true;
+                    }
+                }
+                for child in map.values_mut() {
+                    changed |= visit(child, declarations, renames);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for child in items {
+                    changed |= visit(child, declarations, renames);
+                }
+            }
+            _ => {}
+        }
+        changed
+    }
+    let declarations = renamed_types
+        .iter()
+        .map(|id| serde_json::to_value(id).map_err(|_| invariant("a node id is JSON")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut wire = serde_json::to_value(&*body).map_err(|_| invariant("a body is JSON"))?;
+    if visit(&mut wire, &declarations, renames) {
+        *body = serde_json::from_value(wire)
+            .map_err(|_| invariant("a renamed body is a checked term"))?;
+    }
+    Ok(())
 }
 
 /// Replace every reference to a node id, and the node's own id, and its
@@ -253,13 +329,13 @@ fn formula_nodes(
 /// reading it back through IR first (the writer works on the admitted
 /// graph).
 pub fn emit_monitor_plan_over(
-    base: &Emission,
+    base: &EmittedPackage,
     identity: qsl_semantics::library::LibraryName,
     evidence: &quire_contract_model::CheckedPackageEvidence,
     plan: &MonitorPlanWire<'_>,
 ) -> Result<Emission, EmitRefusal> {
     let read = crate::checked_v2::read_checked_package_v2(
-        base.package().bytes(),
+        base.bytes(),
         identity,
         crate::checked_v2::V2ReadLimits::default(),
         evidence,
@@ -278,20 +354,37 @@ pub fn emit_monitor_plan(
     let mut source_map = base.source_map().to_vec();
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     // The inspection map is read from the structural form, before the
-    // graph goes to wire form for the edits.
+    // graph goes to wire form for the edits. The clause is selected in that
+    // form too, by its own identity.
     let inspection = super::inspection_source_map(ids, &source_map)?;
+    let clause_id = qsl_semantics::check::wire_id::structural_id(plan.clause);
+    let mut clauses = nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| node.node_id == clause_id);
+    let clause_at = clauses
+        .next()
+        .map(|(at, _)| at)
+        .ok_or_else(|| invariant("the selected temporal clause is in the package"))?;
+    if clauses.next().is_some() {
+        return Err(EmitRefusal::MonitorPlanAmbiguous {
+            name: "the selected temporal clause".to_owned(),
+        });
+    }
     write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
-    let package: String = nodes
-        .first()
-        .map(|node| node.node_id.package.to_string())
-        .ok_or_else(|| invariant("the base package has nodes"))?;
+    // The generated nodes belong to the package being compiled, which the
+    // selected clause is a node of (a domain package's nodes may come first).
+    let package: String = nodes[clause_at].node_id.package.to_string();
 
     // 1. The record fields FR-487 names that the surface cannot spell.
     let mut renamed_types: BTreeSet<CheckedNodeId> = BTreeSet::new();
     for name in plan.renamed_records {
-        let at = declared(&nodes, name).ok_or_else(|| invariant("a renamed record is declared"))?;
+        let at = declared(&nodes, name, "a renamed record is declared")?;
         rename_bindings(&mut nodes[at].body, plan.renames);
         renamed_types.insert(nodes[at].node_id.clone());
+    }
+    for node in nodes.iter_mut() {
+        rename_projections(&mut node.body, &renamed_types, plan.renames)?;
     }
     let mut changes = Vec::new();
     for node in nodes.iter_mut() {
@@ -307,11 +400,14 @@ pub fn emit_monitor_plan(
     }
     rekey(&mut nodes, &mut source_map, &changes);
 
-    // 2. The entries: declaration-less function nodes keyed by content.
+    // 2. The entries: declaration-less function nodes keyed by content. A
+    // function the entries call stays a named declaration, keyed by its
+    // name, so the entry's key carries the entry's own body and not the
+    // bodies of the helpers it calls.
     let mut entry_ids = Vec::new();
     let mut changes = Vec::new();
     for name in plan.entries {
-        let at = declared(&nodes, name).ok_or_else(|| invariant("an entry is declared"))?;
+        let at = declared(&nodes, name, "an entry is declared")?;
         let (parameters, body) = param_targets(&nodes[at])?;
         let index_of = |id: &CheckedNodeId| -> Result<u64, EmitRefusal> {
             nodes
@@ -349,9 +445,7 @@ pub fn emit_monitor_plan(
 
     // 3. The nodes the root names.
     let node_of = |name: &str| -> Result<CheckedNodeId, EmitRefusal> {
-        declared(&nodes, name)
-            .map(|at| nodes[at].node_id.clone())
-            .ok_or_else(|| invariant("a named type is declared"))
+        declared(&nodes, name, "a named type is declared").map(|at| nodes[at].node_id.clone())
     };
     let state = node_of(plan.state)?;
     let inputs = node_of(plan.inputs)?;
@@ -380,6 +474,11 @@ pub fn emit_monitor_plan(
     };
     let integer = scalar("integer").ok_or_else(|| invariant("the integer type is in the graph"))?;
     let text = scalar("text").ok_or_else(|| invariant("the text type is in the graph"))?;
+    let clause_region = source_map
+        .iter()
+        .find(|entry| entry.node_id == nodes[clause_at].node_id)
+        .map(|entry| entry.regions.clone())
+        .ok_or_else(|| invariant("the clause is located"))?;
     let rational = match scalar("rational") {
         Some(id) => id,
         None => {
@@ -391,6 +490,12 @@ pub fn emit_monitor_plan(
                 ],
                 ordinal: 0,
             };
+            source_map.push(CheckedSourceMapEntry {
+                node_id: id.clone(),
+                role: CheckedOccurrenceRole::Generated,
+                ordinal: 0,
+                regions: clause_region.clone(),
+            });
             nodes.push(CheckedSemanticNodeV2 {
                 owner_model: None,
                 node_id: id.clone(),
@@ -411,13 +516,11 @@ pub fn emit_monitor_plan(
             id
         }
     };
-    let clause = nodes
-        .iter()
-        .find(|node| {
-            node.node_tag.as_ref() == "temporal" && node.semantic_form.as_ref() == "temporal_clause"
-        })
-        .cloned()
-        .ok_or_else(|| invariant("the package has a temporal clause"))?;
+    let clause = nodes[clause_at].clone();
+    if clause.node_tag.as_ref() != "temporal" || clause.semantic_form.as_ref() != "temporal_clause"
+    {
+        return Err(invariant("the selected node is a temporal clause"));
+    }
     let tick_unit = nodes
         .iter()
         .find(|node| {
@@ -542,16 +645,11 @@ pub fn emit_monitor_plan(
         body.reference_targets().into_iter().cloned().collect();
     dependencies.sort();
     dependencies.dedup();
-    let region = source_map
-        .iter()
-        .find(|entry| entry.node_id == clause.node_id)
-        .map(|entry| entry.regions.clone())
-        .ok_or_else(|| invariant("the clause is located"))?;
     source_map.push(CheckedSourceMapEntry {
         node_id: root_id.clone(),
         role: CheckedOccurrenceRole::Generated,
         ordinal: 0,
-        regions: region,
+        regions: clause_region,
     });
     nodes.push(CheckedSemanticNodeV2 {
         owner_model: None,
@@ -632,4 +730,51 @@ fn finish(
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quire_contract_model::CheckedDeclaration;
+
+    fn node(name: &str, form: &str) -> CheckedSemanticNodeV2 {
+        let id = CheckedNodeId {
+            package: "p".into(),
+            path: vec![Segment::Name(name.into()), Segment::Name(form.into())],
+            ordinal: 0,
+        };
+        CheckedSemanticNodeV2 {
+            owner_model: None,
+            node_id: id.clone(),
+            schema_version: GRAPH_V2.into(),
+            node_tag: "scalar_type".into(),
+            semantic_form: form.into(),
+            semantic_type: id,
+            dependencies: Vec::new(),
+            occurrences: Vec::new(),
+            recursion_group: None,
+            declaration: Some(CheckedDeclaration {
+                qualified_name: vec![name.into()],
+            }),
+            owner: None,
+            body: CheckedTerm::aggregate(Vec::new()),
+        }
+    }
+
+    /// A name binds only when exactly one node declares it.
+    #[test]
+    fn a_declared_name_binds_only_when_exactly_one_node_declares_it() {
+        let nodes = [node("State", "record"), node("Other", "record")];
+        assert_eq!(declared(&nodes, "State", "missing").ok(), Some(0));
+        assert_eq!(declared(&nodes, "Other", "missing").ok(), Some(1));
+        assert!(matches!(
+            declared(&nodes, "Absent", "missing"),
+            Err(EmitRefusal::MonitorPlanInvariant("missing"))
+        ));
+        let twice = [node("State", "record"), node("State", "function")];
+        assert!(matches!(
+            declared(&twice, "State", "missing"),
+            Err(EmitRefusal::MonitorPlanAmbiguous { name }) if name == "State"
+        ));
+    }
 }

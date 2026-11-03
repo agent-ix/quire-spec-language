@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use qsl_analyze::monitor_entries::{render, spec_from_plan, EntrySpec};
+use qsl_analyze::monitor_entries::{render, spec_from_plan, EntrySpec, Expr};
 use qsl_eval::temporal::{TickBound, TickMonitorReference, TickMonitorSpec, TickOutcome, TickStep};
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
@@ -391,6 +391,7 @@ fn sorted(mut steps: Vec<Vec<(i128, i64)>>) -> Vec<Vec<(i128, i64)>> {
     steps
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn the_entries_agree_with_the_reference_on_a_deadline_trace() {
     let plan = deadline_plan();
@@ -516,7 +517,7 @@ fn nested_shapes() -> Vec<String> {
     ]
 }
 
-fn microsecond_target(
+pub(crate) fn microsecond_target(
     uncertainty: Rational,
     rate: i64,
     width_bits: u32,
@@ -543,6 +544,7 @@ fn families() -> [qsl_replay::MonitorTarget; 4] {
     ]
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn every_operator_agrees_with_the_reference_without_uncertainty() {
     for shape in SHAPES {
@@ -550,6 +552,7 @@ fn every_operator_agrees_with_the_reference_without_uncertainty() {
     }
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn every_operator_agrees_with_the_reference_under_uncertainty() {
     for shape in SHAPES {
@@ -557,6 +560,7 @@ fn every_operator_agrees_with_the_reference_under_uncertainty() {
     }
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn small_buffers_overflow_the_same_way() {
     for shape in SHAPES {
@@ -564,6 +568,7 @@ fn small_buffers_overflow_the_same_way() {
     }
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn reading_gaps_fail_the_open_instances_the_same_way() {
     for shape in SHAPES {
@@ -571,7 +576,7 @@ fn reading_gaps_fail_the_open_instances_the_same_way() {
     }
 }
 
-const ROOT_SHAPES: [&str; 5] = [
+pub(crate) const ROOT_SHAPES: [&str; 5] = [
     "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))",
     "always once[0 ms, 3 ms] holds(c.versionNumber = 3)",
     "eventually (holds(c.versionNumber = 2) and always[0 ms, 3 ms] holds(c.versionNumber = 3))",
@@ -579,6 +584,7 @@ const ROOT_SHAPES: [&str; 5] = [
     "always historically[1 ms, 3 ms] holds(c.versionNumber = 3)",
 ];
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn unbounded_roots_fold_one_outcome_per_activation_like_the_reference() {
     for shape in ROOT_SHAPES {
@@ -588,6 +594,7 @@ fn unbounded_roots_fold_one_outcome_per_activation_like_the_reference() {
     }
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn nested_operators_agree_with_the_reference_on_every_trace_family() {
     for shape in nested_shapes() {
@@ -597,6 +604,7 @@ fn nested_operators_agree_with_the_reference_on_every_trace_family() {
     }
 }
 
+#[trace("TC-1081", "FR-251-AC-7")]
 #[test]
 fn a_zero_activation_capacity_never_starts_the_root() {
     let mut target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
@@ -604,109 +612,6 @@ fn a_zero_activation_capacity_never_starts_the_root() {
     for shape in ROOT_SHAPES {
         differential(shape, target.clone(), 10);
     }
-}
-
-/// The plan-root wire (QSpec FR-487, FR-322-AC-308/309): the generated
-/// entries become declaration-less function nodes and one
-/// `temporal`/`monitor_plan` node names them with the plan's premises.
-#[test]
-fn the_plan_root_is_written_with_seventeen_bindings() {
-    use qsl_package::{emit_checked, emit_monitor_plan_over, MonitorPlanWire};
-    let formula = ROOT_SHAPES[0];
-    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
-    let plan = premise_plan(formula, &target);
-    let spec = spec_from_plan(&plan).unwrap();
-    let (package, _) = crate::monitor_plan::checked_clause_in(formula, &render(&spec), true);
-    let emission = emit_checked(&package).expect("the unit emits");
-    let name = qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap();
-    let domain = crate::units::Domain::config_version();
-    let mut evidence = emission.evidence().clone();
-    evidence
-        .insert_domain_package_document(domain.package, domain.document.clone())
-        .unwrap();
-    let premises = plan.root_premises();
-    let buffers: Vec<(usize, u64)> = plan
-        .buffers()
-        .iter()
-        .map(|(id, c)| (id.index(), *c))
-        .collect();
-    let wire = MonitorPlanWire {
-        formula: plan.program().formula(),
-        counter: &premises.counter,
-        counter_width_bits: premises.counter_width_bits,
-        max_reading_gap: premises.max_reading_gap,
-        max_event_rate: &premises.max_event_rate,
-        uncertainty: &premises.uncertainty,
-        buffers: &buffers,
-        tick_unit: plan.binding().unit(),
-        activation_capacity: premises.activation_capacity,
-        state: "State",
-        inputs: "Inputs",
-        scope: "Scope",
-        result: "Result",
-        entries: [
-            qsl_analyze::monitor_entries::names::INIT,
-            qsl_analyze::monitor_entries::names::ON_EVENT,
-            qsl_analyze::monitor_entries::names::ON_WATERMARK,
-            qsl_analyze::monitor_entries::names::ON_GAP,
-        ],
-        renamed_records: &["Instance", "Activation", "LimitReached"],
-        renames: &qsl_analyze::monitor_entries::WIRE_FIELD_NAMES,
-    };
-    let rooted = emit_monitor_plan_over(&emission, name, &evidence, &wire)
-        .unwrap_or_else(|refusal| panic!("{refusal:?}"));
-    let json: serde_json::Value = serde_json::from_slice(rooted.package().bytes()).unwrap();
-    let nodes = json["semantic_graph"]["nodes"].as_array().unwrap();
-    let roots: Vec<&serde_json::Value> = nodes
-        .iter()
-        .filter(|n| n["node_tag"] == "temporal" && n["semantic_form"] == "monitor_plan")
-        .collect();
-    assert_eq!(roots.len(), 1);
-    let members = roots[0]["body"]["members"].as_array().unwrap();
-    let names: Vec<&str> = members
-        .iter()
-        .map(|m| m["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, qsl_replay::PLAN_ROOT_BINDINGS.to_vec());
-    // The entries are declaration-less function nodes.
-    for name in ["init", "on_event", "on_watermark", "on_gap"] {
-        let member = members.iter().find(|m| m["name"] == name).unwrap();
-        let target = &member["value"]["target"];
-        let entry = nodes.iter().find(|n| &n["node_id"] == target).unwrap();
-        assert_eq!(entry["node_tag"], "function");
-        assert!(entry.get("declaration").is_none() && entry.get("owner").is_none());
-    }
-    // FR-487 field spellings.
-    let record = |name: &str| {
-        nodes
-            .iter()
-            .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
-            .unwrap()
-    };
-    let fields = |name: &str| -> Vec<String> {
-        record(name)["body"]["members"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|m| m["name"].as_str().unwrap().to_owned())
-            .collect()
-    };
-    assert_eq!(fields("Instance"), ["subject", "subformula", "origin"]);
-    assert_eq!(fields("Activation"), ["subformula", "origin", "status"]);
-    assert_eq!(fields("LimitReached"), ["limit", "value", "setting"]);
-    // The status of an activation is a record holding the integer position
-    // of the instance (QSpec FR-487-AC-8, MP-81).
-    assert_eq!(fields("ActStatus")[0], "position");
-    assert_eq!(
-        fields("State"),
-        [
-            "now",
-            "history_start",
-            "buffer_0",
-            "activations",
-            "event_position"
-        ]
-    );
 }
 
 /// The wire of the plan root for `formula` under `target`, with the root's
@@ -728,6 +633,31 @@ fn root_wire_with(
     edit_spec: impl Fn(&mut EntrySpec),
     tweak: impl Fn(String) -> String,
 ) -> serde_json::Value {
+    let (bytes, _) = root_bytes_with(formula, target, edit, edit_spec, tweak);
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+/// The bytes of the plan-root package of [`root_wire_with`], and the evidence
+/// its reader needs.
+fn root_bytes_with(
+    formula: &str,
+    target: &qsl_replay::MonitorTarget,
+    edit: impl Fn(&mut Premises),
+    edit_spec: impl Fn(&mut EntrySpec),
+    tweak: impl Fn(String) -> String,
+) -> (Vec<u8>, quire_contract_model::CheckedPackageEvidence) {
+    try_root_bytes_with(formula, target, edit, edit_spec, tweak)
+        .unwrap_or_else(|refusal| panic!("{refusal:?}"))
+}
+
+/// [`root_bytes_with`], the writer's refusal returned.
+fn try_root_bytes_with(
+    formula: &str,
+    target: &qsl_replay::MonitorTarget,
+    edit: impl Fn(&mut Premises),
+    edit_spec: impl Fn(&mut EntrySpec),
+    tweak: impl Fn(String) -> String,
+) -> Result<(Vec<u8>, quire_contract_model::CheckedPackageEvidence), qsl_package::EmitRefusal> {
     use qsl_package::{emit_checked, emit_monitor_plan_over, MonitorPlanWire};
     let plan = premise_plan(formula, target);
     let mut spec = spec_from_plan(&plan).unwrap();
@@ -747,6 +677,7 @@ fn root_wire_with(
         uncertainty: plan.root_premises().uncertainty,
         activation_capacity: plan.root_premises().activation_capacity,
         capacity_delta: 0,
+        state: "State",
     };
     edit(&mut premises);
     let buffers: Vec<(usize, u64)> = plan
@@ -755,7 +686,9 @@ fn root_wire_with(
         .map(|(id, c)| (id.index(), *c + premises.capacity_delta))
         .collect();
     let root = plan.root_premises();
+    let clause_key = package.graph().temporal_clauses()[0].identity();
     let wire = MonitorPlanWire {
+        clause: &clause_key,
         formula: plan.program().formula(),
         counter: &premises.counter,
         counter_width_bits: root.counter_width_bits,
@@ -765,7 +698,7 @@ fn root_wire_with(
         buffers: &buffers,
         tick_unit: &premises.tick_unit,
         activation_capacity: premises.activation_capacity,
-        state: "State",
+        state: premises.state,
         inputs: "Inputs",
         scope: "Scope",
         result: "Result",
@@ -778,9 +711,8 @@ fn root_wire_with(
         renamed_records: &["Instance", "Activation", "LimitReached"],
         renames: &qsl_analyze::monitor_entries::WIRE_FIELD_NAMES,
     };
-    let rooted = emit_monitor_plan_over(&emission, name, &evidence, &wire)
-        .unwrap_or_else(|refusal| panic!("{refusal:?}"));
-    serde_json::from_slice(rooted.package().bytes()).unwrap()
+    let rooted = emit_monitor_plan_over(emission.package(), name, &evidence, &wire)?;
+    Ok((rooted.package().bytes().to_vec(), rooted.evidence().clone()))
 }
 
 struct Premises {
@@ -790,57 +722,58 @@ struct Premises {
     uncertainty: Rational,
     activation_capacity: u64,
     capacity_delta: u64,
+    /// The declared name the root binds as its `state`.
+    state: &'static str,
 }
 
-fn root_key(wire: &serde_json::Value) -> serde_json::Value {
-    wire["semantic_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|n| n["node_tag"] == "temporal" && n["semantic_form"] == "monitor_plan")
-        .unwrap()["node_id"]
-        .clone()
+/// The content key the strict reader derives for the plan root of `formula`
+/// under `target` with the premises edited by `edit`.
+fn root_key(
+    formula: &str,
+    target: &qsl_replay::MonitorTarget,
+    edit: impl Fn(&mut Premises),
+) -> quire_contract_model::CheckedNodeId {
+    let (bytes, evidence) = root_bytes_with(formula, target, edit, |_| {}, |source| source);
+    crate::monitor_root::keys(&crate::monitor_root::read_back(&bytes, &evidence)).root
 }
 
 /// FR-487-AC-6 (MP-02, MP-33, MP-43, MP-44, MP-45, MP-58): each
-/// identity-bearing premise alone gives a different root key.
+/// identity-bearing premise alone gives a different root key, as the strict
+/// reader derives it.
 #[test]
 fn each_root_premise_alone_changes_the_root_key() {
     let formula = ROOT_SHAPES[0];
     let target = microsecond_target(crate::monitor_plan::ratio(1, 2), 2, 12, 3600);
-    let base = root_key(&root_wire(formula, &target, |_| {}));
-    let variants: Vec<(&str, serde_json::Value)> = vec![
+    let base = root_key(formula, &target, |_| {});
+    assert_eq!(base, root_key(formula, &target, |_| {}));
+    let variants: Vec<(&str, quire_contract_model::CheckedNodeId)> = vec![
         (
             "MP-02 capacity",
-            root_key(&root_wire(formula, &target, |p| p.capacity_delta = 1)),
+            root_key(formula, &target, |p| p.capacity_delta = 1),
         ),
         (
             "MP-33 uncertainty",
-            root_key(&root_wire(formula, &target, |p| {
+            root_key(formula, &target, |p| {
                 p.uncertainty = crate::monitor_plan::ratio(0, 1)
-            })),
+            }),
         ),
         (
             "MP-43 counter",
-            root_key(&root_wire(formula, &target, |p| {
-                p.counter = "ticks2".to_owned()
-            })),
+            root_key(formula, &target, |p| p.counter = "ticks2".to_owned()),
         ),
         (
             "MP-44 rate",
-            root_key(&root_wire(formula, &target, |p| {
+            root_key(formula, &target, |p| {
                 p.rate = crate::monitor_plan::ratio(1, 10)
-            })),
+            }),
         ),
         (
             "MP-45 tick unit",
-            root_key(&root_wire(formula, &target, |p| {
-                p.tick_unit = "ms".to_owned()
-            })),
+            root_key(formula, &target, |p| p.tick_unit = "ms".to_owned()),
         ),
         (
             "MP-58 activations",
-            root_key(&root_wire(formula, &target, |p| p.activation_capacity += 1)),
+            root_key(formula, &target, |p| p.activation_capacity += 1),
         ),
     ];
     for (id, key) in &variants {
@@ -851,6 +784,25 @@ fn each_root_premise_alone_changes_the_root_key() {
             assert_ne!(left, right);
         }
     }
+}
+
+/// A name nothing declares cannot be bound as the root's `state`.
+#[test]
+fn the_writer_refuses_a_name_nothing_declares() {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let refusal = try_root_bytes_with(
+        ROOT_SHAPES[0],
+        &target,
+        |p| p.state = "NoSuchType",
+        |_| {},
+        |source| source,
+    )
+    .map(|_| ())
+    .unwrap_err();
+    assert!(
+        matches!(refusal, qsl_package::EmitRefusal::MonitorPlanInvariant(_)),
+        "{refusal:?}"
+    );
 }
 
 /// FR-322-AC-309: a declaration-less function node is keyed
@@ -933,6 +885,107 @@ fn a_gap_fails_every_open_instance_in_instance_order() {
     let (node, steps) = gap_results(&[false, false]);
     let sub = i128::try_from(node).unwrap();
     assert_eq!(steps[2], [(sub, 6), (10 * 1000 + sub, 6)]);
+}
+
+/// QSpec FR-487 "Counter-gap path", the activation-held half of MP-54: an
+/// instance of an unbounded operator that is still open when the counter
+/// faults settles `Failed(ReadingGapExceeded)` and is dropped, exactly as an
+/// open buffered instance does, and the reading after the fault starts clean.
+#[trace("TC-1081", "FR-251-AC-11")]
+#[test]
+fn a_gap_fails_the_open_activation_held_instance() {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 16, 100);
+    // The truth that keeps the instance open: `eventually` is never met,
+    // `always` is never violated.
+    for (shape, truth) in [
+        ("eventually holds(c.versionNumber = 3)", false),
+        ("always holds(c.versionNumber = 3)", true),
+    ] {
+        let plan = premise_plan(shape, &target);
+        let atom = spec_from_plan(&plan).unwrap().atoms[0];
+        // The first reading is the baseline, the second an event, the third
+        // jumps past `max_reading_gap`, the fourth is differenced from it.
+        let inputs = vec![
+            Input::Reading(0, vec![(atom, truth)]),
+            Input::Reading(10, vec![(atom, truth)]),
+            Input::Reading(5000, vec![(atom, truth)]),
+            Input::Reading(5010, vec![(atom, truth)]),
+        ];
+        let entries = sorted(run_entries(&plan, &inputs));
+        assert_eq!(entries, sorted(run_reference(&plan, &inputs)), "{shape}");
+        let failed = |step: usize| entries[step].iter().filter(|(_, code)| *code == 6).count();
+        assert_eq!(
+            failed(0) + failed(1),
+            0,
+            "{shape}: nothing fails before the gap"
+        );
+        assert_eq!(failed(2), 1, "{shape}: the open instance fails at the gap");
+        assert_eq!(
+            failed(3),
+            0,
+            "{shape}: the dropped instance reports no more"
+        );
+    }
+}
+
+/// An aggregate atom is unknown at every position, as the reference
+/// evaluator has it: an operator over it never decides true or false.
+#[trace("TC-1081", "FR-251-AC-7")]
+#[test]
+fn an_aggregate_atom_is_unknown_in_the_entries() {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let plan = premise_plan("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)", &target);
+    let mut spec = spec_from_plan(&plan).unwrap();
+    let atom = spec.atoms[0];
+    let node = spec
+        .nodes
+        .iter_mut()
+        .find(|node| node.interval.is_some())
+        .unwrap();
+    node.psi = Expr::Unknown;
+    let inputs = vec![
+        Input::Reading(0, vec![(atom, true)]),
+        Input::Reading(1000, vec![(atom, true)]),
+        Input::Reading(4000, vec![(atom, true)]),
+        Input::Watermark(9000),
+    ];
+    let codes: Vec<i64> = run_entries_with(&plan, &spec, &inputs)
+        .into_iter()
+        .flatten()
+        .map(|(_, code)| code)
+        .collect();
+    assert!(
+        codes.contains(&4),
+        "the settled instance is indeterminate: {codes:?}"
+    );
+    assert!(
+        codes.iter().all(|code| *code == 3 || *code == 4),
+        "never decided true or false: {codes:?}"
+    );
+}
+
+/// A plan whose interval operator has no buffer row is refused rather than
+/// given a capacity of one.
+#[test]
+fn an_interval_operator_without_a_buffer_row_is_refused() {
+    let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
+    let plan = premise_plan("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)", &target);
+    let node = interval_node(&plan);
+    let without = TimedMonitorPlan::new(
+        plan.subject().clone(),
+        plan.binding().clone(),
+        plan.uncertainty().clone(),
+        plan.max_reading_gap(),
+        plan.program().clone(),
+        plan.intervals().to_vec(),
+        Vec::new(),
+        plan.rate_limit().clone(),
+        plan.activation_capacity(),
+    );
+    assert_eq!(
+        spec_from_plan(&without),
+        Err(qsl_analyze::monitor_entries::EntryRefusal::MissingBuffer { node })
+    );
 }
 
 /// QSL FR-251 "Entry bindings": the `Inputs` fields are the already-read
@@ -1463,8 +1516,10 @@ fn a_past_window_is_indeterminate_until_it_has_refilled_past_the_marker() {
     assert!(codes.windows(2).all(|w| !(w[0] == 2 && w[1] == 4)));
 }
 
-/// FR-251-AC-6 / TC-1081 step 3: two monitors built from one plan share no
-/// state, and each result keeps its subject and obligation origin.
+/// FR-251-AC-6 / TC-1081 step 3, the isolation half: two monitors built from
+/// one plan share no state, and each result keeps its subject and obligation
+/// origin. Refusing to rebind a live monitor to another program or target is
+/// RT's executor and is not covered here.
 #[trace("TC-1081", "FR-251-AC-6")]
 #[test]
 fn two_monitors_from_one_plan_share_no_state() {
@@ -1504,104 +1559,75 @@ fn two_monitors_from_one_plan_share_no_state() {
     assert_eq!(sizes[..4], [1, 0, 0, 0], "the second monitor holds nothing");
 }
 
-/// FR-251-AC-9 / TC-1081 step 6: each of the four entries is a function node
-/// of the plan root, and changing the body of any one changes the emitted
-/// function graph under it. (The plan-root content key is rebuilt from the
-/// graph by the strict reader, IR-721; a path holds index segments only, so
-/// the key cannot be compared here.)
+/// FR-251-AC-9 / TC-1081 step 6 and FR-251-AC-5 (the entry and init bodies,
+/// which a `TimedMonitorPlan` does not hold): changing the body of any one of
+/// the four entries changes that entry's content key and the plan root's, and
+/// no other entry's. The keys are the ones the strict reader derives from the
+/// package, read from the entries the root's own members name. An entry's key
+/// carries the entry's own body; the named helper functions it calls are
+/// keyed by name, so a change inside a helper is not covered by this key.
 #[trace("TC-1081", "FR-251-AC-9")]
+#[trace("TC-1081", "FR-251-AC-5")]
 #[test]
-fn changing_any_one_entry_body_changes_the_function_it_names() {
+fn changing_any_one_entry_body_changes_the_plan_root_key() {
+    use crate::monitor_root::{keys, read_back};
     let formula = ROOT_SHAPES[0];
     let target = microsecond_target(crate::monitor_plan::ratio(0, 1), 2, 12, 3600);
-    // The function node's own body names its operands by id, so the body of
-    // an entry is the closure of the nodes it depends on.
-    let closure = |wire: &serde_json::Value, start: &serde_json::Value| -> String {
-        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
-        let mut seen: Vec<&serde_json::Value> = Vec::new();
-        let mut stack = vec![start.clone()];
-        while let Some(id) = stack.pop() {
-            let Some(node) = nodes.iter().find(|n| n["node_id"] == id) else {
-                continue;
-            };
-            if seen.contains(&node) {
-                continue;
-            }
-            seen.push(node);
-            for dependency in node["dependencies"].as_array().into_iter().flatten() {
-                stack.push(dependency.clone());
-            }
+    let keys_of = |tweak: &dyn Fn(String) -> String| {
+        let (bytes, evidence) = root_bytes_with(formula, &target, |_| {}, |_| {}, tweak);
+        keys(&read_back(&bytes, &evidence))
+    };
+    let base = keys_of(&|source| source);
+    assert_eq!(
+        base,
+        keys_of(&|source| source),
+        "the keys are deterministic"
+    );
+    // The four entries differ pairwise, so a swapped member would show.
+    for (a, left) in base.entries.iter().enumerate() {
+        for right in &base.entries[a + 1..] {
+            assert_ne!(left, right);
         }
-        let mut parts: Vec<String> = seen.iter().map(|node| node.to_string()).collect();
-        parts.sort();
-        parts.join("\n")
-    };
-    let body_of = |wire: &serde_json::Value, name: &str| -> String {
-        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
-        let node = nodes
-            .iter()
-            .find(|n| n["declaration"]["qualified_name"] == serde_json::json!([name]))
-            .unwrap_or_else(|| panic!("{name}"));
-        closure(wire, &node["node_id"])
-    };
-    let init_body = |wire: &serde_json::Value| -> String {
-        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
-        let root = nodes
-            .iter()
-            .find(|n| n["node_tag"] == "temporal" && n["semantic_form"] == "monitor_plan")
-            .unwrap();
-        let member = root["body"]["members"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|m| m["name"] == "init")
-            .unwrap();
-        let entry = nodes
-            .iter()
-            .find(|n| n["node_id"] == member["value"]["target"])
-            .unwrap();
-        closure(wire, &entry["node_id"])
-    };
-    let base = root_wire(formula, &target, |_| {});
-    for (from, to, helper) in [
-        ("history_start: 0 - 1", "history_start: 0 - 2", None),
+    }
+    // (entry index, text changed, replacement): init, on_event,
+    // on_watermark, on_gap. Each is text of the entry's own body.
+    for (entry, from, to) in [
+        (0, "history_start: 0 - 1", "history_start: 0 - 2"),
         (
-            "let pos = s.event_position + 1 in",
-            "let pos = s.event_position + 2 in",
-            Some("onEventR"),
+            1,
+            "onEventR(s, delta, i) in",
+            "onEventR(s, delta + 0, i) in",
         ),
         (
-            "else boundary + 1 in",
-            "else boundary + 2 in",
-            Some("onWatermarkR"),
+            2,
+            "onWatermarkR(s, boundary, scope_in) in",
+            "onWatermarkR(s, boundary + 0, scope_in) in",
         ),
-        (
-            "let now2 = s.now + gap in",
-            "let now2 = s.now + gap + 1 in",
-            Some("onGapR"),
-        ),
+        (3, "onGapR(s, gap) in", "onGapR(s, gap + 0) in"),
     ] {
-        let variant = root_wire_with(
-            formula,
-            &target,
-            |_| {},
-            |_| {},
-            |source| {
-                assert!(source.contains(from), "{from}");
-                source.replacen(from, to, 1)
-            },
+        let variant = keys_of(&|source| {
+            assert!(source.contains(from), "{from}");
+            source.replacen(from, to, 1)
+        });
+        assert_ne!(variant.root, base.root, "entry {entry}: the root key");
+        assert_ne!(
+            variant.entries[entry], base.entries[entry],
+            "entry {entry}: its own key"
         );
-        let (before, after) = match helper {
-            Some(name) => (body_of(&base, name), body_of(&variant, name)),
-            None => (init_body(&base), init_body(&variant)),
-        };
-        assert_ne!(before, after, "{from}");
+        for other in (0..4).filter(|other| *other != entry) {
+            assert_eq!(
+                variant.entries[other], base.entries[other],
+                "entry {entry} changed entry {other}"
+            );
+        }
     }
 }
 
-/// FR-251-AC-4 / TC-1081 step 1: the closed program holds both atom bodies,
-/// the entries and the state type as nodes of the emitted package.
-#[trace("TC-1081", "FR-251-AC-4")]
+/// The closed program holds both atom bodies, the entries and the state
+/// type as nodes of the emitted package. This is the node-presence half of
+/// FR-251-AC-4 / TC-1081 step 1 only; building a monitor from the plan alone
+/// and refusing a removed transition body need RT's executor, so the
+/// criterion is not claimed here.
 #[test]
 fn the_emitted_program_holds_the_atom_bodies_the_entries_and_the_state_type() {
     let formula = ROOT_SHAPES[0];

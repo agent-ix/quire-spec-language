@@ -1397,6 +1397,7 @@ dependencies = [
  "qsl-semantics",
  "quire-canonical",
  "quire-checked",
+ "quire-contract-model",
  "quire-eval",
  "quire-exact",
  "quire-semantic-value",

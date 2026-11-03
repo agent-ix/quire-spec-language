@@ -27,6 +27,7 @@ pub mod exact_probabilistic;
 pub mod model_check;
 pub mod monitor_entries;
 pub mod monitor_plan;
+pub mod monitor_root;
 pub mod provider;
 pub mod schedulability;
 pub mod statistical;

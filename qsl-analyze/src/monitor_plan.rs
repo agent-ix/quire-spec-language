@@ -7,6 +7,8 @@ use num_traits::{One, ToPrimitive};
 use quire_exact::{Integer as ExactInteger, Rational};
 
 use qsl_eval::temporal::{TickBound, TickShape};
+
+use crate::monitor_entries::spec_from_plan;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -193,6 +195,9 @@ pub fn produce(
     plan.root_premises()
         .validate()
         .map_err(MonitorPlanRefusal::Premise)?;
+    // FR-251 "Fault boundary": a clause with no complete program derives no
+    // plan, so the shape the entries are generated from is checked here.
+    spec_from_plan(&plan)?;
     let obligations = plan_obligations(&plan, settings);
     Ok((plan, obligations))
 }

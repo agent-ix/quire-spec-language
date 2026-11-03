@@ -540,6 +540,33 @@ pub enum MonitorPlanRefusal {
     /// A premise the plan-root node carries would be refused by its reader.
     #[error("plan-root premise refused: {0}")]
     Premise(PremiseDefect),
+    /// An unbounded operator that looks backwards (`once`, `historically`,
+    /// `since`, `triggered` with no interval) has no program (FR-251 "Fault
+    /// boundary").
+    #[error("unbounded past operator {node} yields no complete program")]
+    UnboundedPast {
+        /// The formula arena index.
+        node: usize,
+    },
+    /// An unbounded operator whose operands hold another unbounded operator
+    /// has no program (FR-251 "Fault boundary").
+    #[error("unbounded operator {node} over an unbounded operator yields no complete program")]
+    UnboundedOverUnbounded {
+        /// The formula arena index.
+        node: usize,
+    },
+    /// A tick threshold of the operator does not fit the program's integers.
+    #[error("the ticks of operator {node} do not fit the program's integers")]
+    TickRange {
+        /// The formula arena index.
+        node: usize,
+    },
+    /// An interval operator has no row in the buffer table.
+    #[error("interval operator {node} has no buffer capacity")]
+    MissingBuffer {
+        /// The formula arena index.
+        node: usize,
+    },
 }
 
 /// FR-251's target input, before unit scales are resolved from the package.

@@ -33,7 +33,7 @@ use num_bigint::BigInt;
 use num_integer::Integer as _;
 use num_traits::ToPrimitive;
 use qsl_eval::temporal::{operator_parts, temporal_leaves, TickBound, TickShape};
-use qsl_replay::TimedMonitorPlan;
+use qsl_replay::{MonitorPlanRefusal, TimedMonitorPlan};
 use qsl_semantics::check::{Activation, FormulaNode};
 use quire_exact::{Integer as ExactInteger, Rational};
 
@@ -43,6 +43,9 @@ use quire_exact::{Integer as ExactInteger, Rational};
 pub enum Expr {
     /// `true` or `false`.
     Const(bool),
+    /// An aggregate atom: the program carries no admitted window for it, so
+    /// it is unknown at every position, as the reference evaluator has it.
+    Unknown,
     /// The `holds` atom with this formula arena index.
     Atom(usize),
     /// The temporal operator with this formula arena index.
@@ -189,6 +192,23 @@ pub enum EntryRefusal {
         /// The formula arena index.
         node: usize,
     },
+    /// An interval operator has no row in the plan's buffer table.
+    #[error("interval operator {node} has no buffer capacity")]
+    MissingBuffer {
+        /// The formula arena index.
+        node: usize,
+    },
+}
+
+impl From<EntryRefusal> for MonitorPlanRefusal {
+    fn from(refusal: EntryRefusal) -> Self {
+        match refusal {
+            EntryRefusal::UnboundedPast { node } => Self::UnboundedPast { node },
+            EntryRefusal::UnboundedOverUnbounded { node } => Self::UnboundedOverUnbounded { node },
+            EntryRefusal::TickRange { node } => Self::TickRange { node },
+            EntryRefusal::MissingBuffer { node } => Self::MissingBuffer { node },
+        }
+    }
 }
 
 /// The record fields FR-487 names that the surface cannot spell yet:
@@ -241,7 +261,7 @@ fn expr_of(nodes: &[FormulaNode], index: usize) -> Expr {
     match &nodes[index] {
         FormulaNode::Constant(value) => Expr::Const(*value),
         FormulaNode::Holds { .. } => Expr::Atom(index),
-        FormulaNode::Aggregate { .. } => Expr::Const(false),
+        FormulaNode::Aggregate { .. } => Expr::Unknown,
         FormulaNode::Not(a) => Expr::Not(child(*a)),
         FormulaNode::And(a, b) => Expr::And(child(*a), child(*b)),
         FormulaNode::Or(a, b) => Expr::Or(child(*a), child(*b)),
@@ -288,7 +308,8 @@ pub fn spec_from_plan(plan: &TimedMonitorPlan) -> Result<EntrySpec, EntryRefusal
                     .buffers()
                     .iter()
                     .find(|(id, _)| id.index() == *index)
-                    .map_or(1, |(_, capacity)| *capacity);
+                    .map(|(_, capacity)| *capacity)
+                    .ok_or(EntryRefusal::MissingBuffer { node: *index })?;
                 Some(IntervalSpec {
                     thresholds,
                     capacity,
@@ -475,6 +496,7 @@ impl<'a> Gen<'a> {
     /// the horizon of the frame it is read in.
     fn render(&self, expr: &Expr) -> String {
         match expr {
+            Expr::Unknown => "vUnknown()".to_owned(),
             Expr::Const(true) => "vTrue()".to_owned(),
             Expr::Const(false) => "vFalse()".to_owned(),
             Expr::Atom(index) if self.spec.unprojectable.contains(index) => {
@@ -819,7 +841,7 @@ impl<'a> Gen<'a> {
                     collect(a, out);
                     collect(b, out);
                 }
-                Expr::Const(_) | Expr::Atom(_) => {}
+                Expr::Const(_) | Expr::Unknown | Expr::Atom(_) => {}
             }
         }
         collect(expr, &mut leaves);
@@ -1155,7 +1177,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(
             out,
             "function {init} using v(): State pure {{ \
-                State {{ now: 0, history_start: 0 - 1, {init_buffers}activations: noActs(), event_position: 0 }} }}\n\
+                let initial = State {{ now: 0, history_start: 0 - 1, {init_buffers}activations: noActs(), event_position: 0 }} in initial }}\n\
              function onEventR using v(s: State, delta: Integer, i: {inputs}): StepR pure {{ \
                 let now2 = s.now + delta in \
                 let pos = s.event_position + 1 in \

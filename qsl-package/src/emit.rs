@@ -177,6 +177,13 @@ pub enum EmitRefusal {
     /// (QSpec FR-487).
     #[error("the tick-monitor plan cannot be written: {0}")]
     MonitorPlanInvariant(&'static str),
+    /// The plan-root writer found a name or selection declared more than
+    /// once and refuses to bind the first (QSpec FR-487).
+    #[error("the tick-monitor plan cannot be written: {name} is declared more than once")]
+    MonitorPlanAmbiguous {
+        /// The ambiguous declared name.
+        name: String,
+    },
     /// A checked refinement has no selected subject key to bind.
     #[error("a checked refinement has no selected state-machine subject node")]
     RefinementSubjectNotEmitted,
@@ -313,6 +320,7 @@ impl EmitRefusal {
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Code::UnsupportedConstruct
             }
+            Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
             Self::TimedModelNodeSetMismatch | Self::TimedOrder(_) => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
@@ -349,6 +357,7 @@ impl EmitRefusal {
             | Self::TimedOrder(_)
             | Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
+            | Self::MonitorPlanAmbiguous { .. }
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
             | Self::UnlocatedRefinementDeclaration

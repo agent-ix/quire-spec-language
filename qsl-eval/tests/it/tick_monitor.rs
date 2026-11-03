@@ -271,11 +271,9 @@ fn after_a_gap_history_is_gone_and_past_windows_are_indeterminate() {
             last = result.outcome;
         }
     }
-    assert!(plan.width_bits == 16);
-    assert!(matches!(
-        last,
-        TickOutcome::False | TickOutcome::Indeterminate
-    ));
+    // Every reading after the gap is false, so once the window has refilled
+    // the operator decides false: the marker no longer covers it.
+    assert_eq!(last, TickOutcome::False);
 }
 
 #[trace("TC-706", "FR-251-AC-16")]
@@ -385,7 +383,7 @@ fn root_outcome(body: &str, steps: &[Vec<(usize, bool)>], ticks: &[u64]) -> Tick
         .unwrap()
 }
 
-#[trace("TC-1081", "FR-251-AC-7")]
+#[trace("TC-706", "FR-251")]
 #[test]
 fn open_and_closed_lower_endpoints_differ_at_the_event_itself() {
     // The reading is its own witness at offset exactly 0: a closed lower
@@ -401,7 +399,7 @@ fn open_and_closed_lower_endpoints_differ_at_the_event_itself() {
     );
 }
 
-#[trace("TC-1081", "FR-251-AC-7")]
+#[trace("TC-706", "FR-251")]
 #[test]
 fn the_reversed_implication_settles_by_its_own_operands() {
     // `eventually ack implies req`: ack comes true at tick 2998 inside the

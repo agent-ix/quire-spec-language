@@ -23,6 +23,31 @@ pub(crate) fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("nonzero")
 }
 
+/// The text of a unit holding one timed clause `C` over a `ConfigVersion`,
+/// its time source declared in the unit when `real_time` (so the package
+/// emits), and `extra` declarations appended.
+pub(crate) fn unit_source(formula: &str, extra: &str, real_time: bool, activation: &str) -> String {
+    let domain = Domain::config_version();
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t = \"quire.temporal.timed/v1\";\n\
+         {complete}\
+         model M = \"{}\";\n\
+         {TIME_UNITS}\
+         {time_decl}\
+         temporal C using t over (c: M::ConfigVersion) clock \"model-time\" {activation} {{ {formula} }}\n\
+         {extra}\n",
+        domain.package,
+        complete = if real_time {
+            "profile tc = \"quire.temporal.complete/v1\";\n"
+        } else {
+            ""
+        },
+        time_decl = if real_time { "time M dense unit ms;\n" } else { "" },
+    )
+}
+
 pub(crate) fn checked_clause(formula: &str) -> (CheckedPackage, usize) {
     checked_clause_with(formula, "")
 }
@@ -53,20 +78,7 @@ pub(crate) fn checked_clause_on(
     let packages =
         qsl_semantics::model::intake::package_input([domain.document.as_slice()]).unwrap();
     let source = SourceIdentity::new("agent-ix", "monitor-plan", "git", "1");
-    let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
-         profile t = \"quire.temporal.timed/v1\";\n\
-         {complete}\
-         model M = \"{}\";\n\
-         {TIME_UNITS}\
-         {time_decl}\
-         temporal C using t over (c: M::ConfigVersion) clock \"model-time\" {activation} {{ {formula} }}\n\
-         {extra}\n",
-        domain.package,
-        complete = if real_time { "profile tc = \"quire.temporal.complete/v1\";\n" } else { "" },
-        time_decl = if real_time { "time M dense unit ms;\n" } else { "" },
-    );
+    let unit = unit_source(formula, extra, real_time, activation);
     let parsed = qsl_cst::parse(
         source.clone(),
         "monitor.native",
@@ -472,4 +484,240 @@ fn admission_refuses_a_plan_with_one_component_replaced() {
     let other = premise_plan(formula, &other_target);
     assert_ne!(other.id(), plan.id());
     assert!(admit(&package, library(), clause, &other_target, &other).is_ok());
+}
+
+/// FR-251-AC-5 (TC-1081 step 2), every component a plan holds: an atom, an
+/// operand reference, an interval association, a buffer owner, the activation
+/// binding, the counter, the tick unit, the event rate and the activation
+/// capacity are each replaced alone with one the selection does not derive,
+/// and each candidate is refused at admission. The entry and init bodies are
+/// not part of a `TimedMonitorPlan`; the plan-root content key carries them
+/// (`changing_any_one_entry_body_changes_the_plan_root_key`).
+#[trace("TC-1081", "FR-251-AC-5")]
+#[test]
+fn admission_refuses_each_component_replaced_alone() {
+    use qsl_analyze::monitor_plan::{admit, PlanAdmissionRefusal};
+    use qsl_replay::{
+        ClockBindingKey, MonitorAtom, MonitorProgram, SubformulaId, TickInterval, TimedMonitorPlan,
+    };
+    use qsl_semantics::check::Activation;
+    let formula = "always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))";
+    let (package, _) = checked_clause(formula);
+    let clause = package.graph().temporal_clauses()[0].clause();
+    let library = || qsl_semantics::library::LibraryName::new("fixture").expect("a library name");
+    let target = base_target();
+    let plan = premise_plan(formula, &target);
+    assert!(admit(&package, library(), clause, &target, &plan).is_ok());
+    let program = plan.program();
+    let atoms = program.atoms();
+    assert_eq!(atoms.len(), 2);
+    let interval = plan.intervals()[0].0;
+    let other_node = (0..program.formula().nodes().len())
+        .find(|index| *index != program.root().index() && *index != interval.index())
+        .expect("another formula node");
+    let with_program = |root: SubformulaId, atoms: Vec<MonitorAtom>, activation: Activation| {
+        MonitorProgram::new(
+            root,
+            program.formula().clone(),
+            activation,
+            atoms,
+            program.guard().map(|(body, slots)| (body.clone(), slots)),
+        )
+    };
+    let rebuild = |program: MonitorProgram,
+                   binding: ClockBindingKey,
+                   intervals: Vec<(SubformulaId, TickInterval)>,
+                   buffers: Vec<(SubformulaId, u64)>,
+                   rate: Rational,
+                   activations: u64| {
+        TimedMonitorPlan::new(
+            plan.subject().clone(),
+            binding,
+            plan.uncertainty().clone(),
+            plan.max_reading_gap(),
+            program,
+            intervals,
+            buffers,
+            rate,
+            activations,
+        )
+    };
+    let same = |program: MonitorProgram| {
+        rebuild(
+            program,
+            plan.binding().clone(),
+            plan.intervals().to_vec(),
+            plan.buffers().to_vec(),
+            plan.rate_limit().clone(),
+            plan.activation_capacity(),
+        )
+    };
+    let swapped_atoms = vec![
+        MonitorAtom::new(atoms[0].id(), atoms[1].body().clone(), atoms[0].slots()),
+        atoms[1].clone(),
+    ];
+    let binding = plan.binding();
+    let candidates: Vec<(&str, TimedMonitorPlan)> = vec![
+        (
+            "atom",
+            same(with_program(
+                program.root(),
+                swapped_atoms,
+                program.activation(),
+            )),
+        ),
+        (
+            "operand reference",
+            same(with_program(
+                SubformulaId::new(other_node),
+                atoms.to_vec(),
+                program.activation(),
+            )),
+        ),
+        (
+            "activation binding",
+            same(with_program(
+                program.root(),
+                atoms.to_vec(),
+                Activation::Each { guarded: false },
+            )),
+        ),
+        (
+            "interval association",
+            rebuild(
+                program.clone(),
+                binding.clone(),
+                vec![(
+                    interval,
+                    TickInterval::new(ratio(0, 1), true, ratio(4, 1), true),
+                )],
+                plan.buffers().to_vec(),
+                plan.rate_limit().clone(),
+                plan.activation_capacity(),
+            ),
+        ),
+        (
+            "buffer owner",
+            rebuild(
+                program.clone(),
+                binding.clone(),
+                plan.intervals().to_vec(),
+                vec![(SubformulaId::new(other_node), plan.buffers()[0].1)],
+                plan.rate_limit().clone(),
+                plan.activation_capacity(),
+            ),
+        ),
+        (
+            "counter",
+            rebuild(
+                program.clone(),
+                ClockBindingKey::new(
+                    "other".to_owned(),
+                    binding.unit().to_owned(),
+                    binding.unit_seconds().clone(),
+                    binding.width_bits(),
+                ),
+                plan.intervals().to_vec(),
+                plan.buffers().to_vec(),
+                plan.rate_limit().clone(),
+                plan.activation_capacity(),
+            ),
+        ),
+        (
+            "tick unit",
+            rebuild(
+                program.clone(),
+                ClockBindingKey::new(
+                    binding.counter().to_owned(),
+                    "us".to_owned(),
+                    ratio(1, 1_000_000),
+                    binding.width_bits(),
+                ),
+                plan.intervals().to_vec(),
+                plan.buffers().to_vec(),
+                plan.rate_limit().clone(),
+                plan.activation_capacity(),
+            ),
+        ),
+        (
+            "event rate",
+            rebuild(
+                program.clone(),
+                binding.clone(),
+                plan.intervals().to_vec(),
+                plan.buffers().to_vec(),
+                ratio(3, 1),
+                plan.activation_capacity(),
+            ),
+        ),
+        (
+            "activation capacity",
+            rebuild(
+                program.clone(),
+                binding.clone(),
+                plan.intervals().to_vec(),
+                plan.buffers().to_vec(),
+                plan.rate_limit().clone(),
+                plan.activation_capacity() + 1,
+            ),
+        ),
+    ];
+    for (what, candidate) in &candidates {
+        assert_ne!(candidate, &plan, "{what} makes a different plan");
+        assert_eq!(
+            admit(&package, library(), clause, &target, candidate),
+            Err(PlanAdmissionRefusal::NotDerivedFromSelection),
+            "{what}"
+        );
+    }
+}
+
+/// FR-251 "Fault boundary": production and admission both refuse a clause
+/// whose program cannot be generated, so no plan is derived or admitted for
+/// it.
+#[trace("TC-706", "FR-251")]
+#[test]
+fn production_and_admission_refuse_a_clause_with_no_complete_program() {
+    use qsl_analyze::monitor_plan::{admit, PlanAdmissionRefusal};
+    let library = || qsl_semantics::library::LibraryName::new("fixture").expect("a library name");
+    let target = base_target();
+    for (shape, past) in [
+        ("once holds(c.versionNumber = 2)", true),
+        ("always eventually holds(c.versionNumber = 2)", false),
+    ] {
+        let (package, _) = checked_clause(shape);
+        let clause = package.graph().temporal_clauses()[0].clause();
+        let produced = produce(
+            &package,
+            library(),
+            clause,
+            &target,
+            &TimingObligationSettings::default(),
+        )
+        .map(|_| ())
+        .unwrap_err();
+        let admitted = admit(
+            &package,
+            library(),
+            clause,
+            &target,
+            &premise_plan("holds(c.versionNumber = 2)", &target),
+        );
+        assert_eq!(
+            admitted,
+            Err(PlanAdmissionRefusal::Underivable(produced.clone())),
+            "{shape}"
+        );
+        if past {
+            assert!(
+                matches!(produced, MonitorPlanRefusal::UnboundedPast { .. }),
+                "{produced:?}"
+            );
+        } else {
+            assert!(
+                matches!(produced, MonitorPlanRefusal::UnboundedOverUnbounded { .. }),
+                "{produced:?}"
+            );
+        }
+    }
 }
