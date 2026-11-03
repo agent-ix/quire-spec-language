@@ -295,6 +295,10 @@ fn aggregate_units_keep_sibling_imports_and_references_out_of_each_subject() {
     let source_a = SourceIdentity::new("test", "unit-a", "git", "1");
     let source_b = SourceIdentity::new("test", "unit-b", "git", "1");
     let unit_a = SOURCE
+        .replace(
+            "profile v = \"quire.value.complete/v1\";\n",
+            "profile v = \"quire.value.complete/v1\";\nprofile p = \"quire.protocol.finite-global/v1\";\n",
+        )
         .replace("model M =", "import \"lib-a\" as d;\nmodel M =")
         .replace(
             ANSWER,
