@@ -1368,9 +1368,11 @@ fn a_window_settles_at_exactly_the_deadline() {
 
 /// FR-501-AC-26 (row 40): two observations of one stamp keyed with the same
 /// key of one order authority have no usable order, so an order-sensitive
-/// operator refuses at the later position in either listing, and the
-/// observation identity never breaks the tie; an order-insensitive operator
-/// evaluates, with one outcome and one result identity for both listings.
+/// operator (`until` and `release` on origin, `since` and `triggered` on each,
+/// anchored at position 2) refuses at the later position in either listing,
+/// and the observation identity never breaks the tie; an order-insensitive
+/// operator evaluates, with one outcome and one result identity for both
+/// listings.
 #[trace("TC-1295", "FR-501-AC-26")]
 #[test]
 fn a_repeated_key_of_one_authority_is_not_a_usable_order() {
@@ -1386,11 +1388,13 @@ fn a_repeated_key_of_one_authority_is_not_a_usable_order() {
     };
     let forward = request(vec![start.clone(), row("x"), row("y")], 1, Some(1));
     let backward = request(vec![start, row("y"), row("x")], 1, Some(1));
-    for body in [
-        "holds(p) until[0,1] holds(q)",
-        "holds(p) release[0,1] holds(q)",
+    for (body, activation) in [
+        ("holds(p) until[0,1] holds(q)", "on origin"),
+        ("holds(p) release[0,1] holds(q)", "on origin"),
+        ("holds(p) since[0,1] holds(q)", "on each (q: Counter)"),
+        ("holds(p) triggered[0,1] holds(q)", "on each (q: Counter)"),
     ] {
-        let fixture = clause("on origin", body);
+        let fixture = clause(activation, body);
         for listing in [&forward, &backward] {
             assert_eq!(
                 run_with(&fixture, listing, SCALAR_LIMITS_UNLIMITED).0.err(),
