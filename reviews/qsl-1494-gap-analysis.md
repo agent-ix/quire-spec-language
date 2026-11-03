@@ -44,3 +44,22 @@ Plan completion: not assessed.
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-001 | high | The replay implementation does not connect progress-carrying traces to the ledger, leaving FR-502 AC-5/6, FR-052 AC-13, and FR-330 AC-9 unimplemented at the route boundary. | qsl-replay/src/spine/clause/temporal.rs:40; qsl-replay/src/spine/clause/temporal.rs:250; qsl-replay/src/spine/clause/temporal.rs:349 | correct-requirement-no-evidence |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `TraceInput` now has progress-carrying inputs and `run_temporal` calls `admit_progress`; the replay test verifies the report's updated ledger and evaluate-stage watermark contradiction. |
+
+## New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The test suite does not cover a new position whose observation identity matches a retained position but whose stamp differs; the ledger currently admits it as covered. | qsl-eval/src/temporal/ledger.rs:93; qsl-eval/src/temporal/ledger.rs:306 |
+
+
+**Round 2 disposition.**
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | still-open | The covered set and contradiction check still ignore stamp, so the missing-position case remains possible. |

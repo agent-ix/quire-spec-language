@@ -46,3 +46,21 @@ The immutable `admit` API supports atomic rejection, and the unit tests exercise
 - FR-052 AC-13 and FR-330 AC-9 are not implemented end to end by this diff.
 
 ## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `TraceInput` now has `Progressed` and `Timestamped` cases; `run_temporal` admits progress and returns the updated ledger, and a replay test verifies update then unchanged ledger on watermark regression. |
+| FND-002 | fixed | `LedgerBinding.package` now uses `SourceIdentity` and `clause` uses `NodeKey`, preserving the checked identities in the key. |
+
+## New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The covered-position set drops each position's stamp and compares only its observation identity. If the same observation appears at a new stamp at or before a retained complete-through value, `check_progress` treats it as already covered and accepts it instead of refusing the previously uncovered position. Retain the full position identity, including stamp, in the coverage set and test this case. | qsl-eval/src/temporal/ledger.rs:63; qsl-eval/src/temporal/ledger.rs:93; qsl-eval/src/temporal/ledger.rs:240; qsl-eval/src/temporal/ledger.rs:306 |
+
+
+**Round 2 disposition.**
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | still-open | The fix commit still stores covered positions as identity strings only. A second position with the same observation identity and a different stamp is therefore treated as covered. |

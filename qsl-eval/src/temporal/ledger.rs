@@ -4,7 +4,8 @@
 //! A caller that evaluates one temporal clause repeatedly as observation
 //! arrives carries one [`ProgressLedger`]. For each [`LedgerBinding`] the ledger
 //! retains what that binding has already asserted about its watermark,
-//! completeness and closure, and the identities of the positions it covered.
+//! completeness and closure, and the identity and stamp of each position it
+//! covered.
 //! [`ProgressLedger::admit`] refuses an assertion that contradicts the retained
 //! entry and returns the updated ledger otherwise; the ledger it was called on
 //! is never changed, so a refusal rolls back nothing and rewrites no earlier
@@ -90,7 +91,7 @@ pub struct LedgerEntry {
     completeness: ProgressCompleteness,
     scope: ProgressClosure,
     execution: ProgressClosure,
-    covered: BTreeSet<String>,
+    covered: BTreeSet<ObservedPosition>,
 }
 
 impl LedgerEntry {
@@ -114,10 +115,10 @@ impl LedgerEntry {
         self.execution
     }
 
-    /// The identities of every position an accepted request of this binding
-    /// supplied, in identity order.
-    pub fn covered(&self) -> impl Iterator<Item = &str> {
-        self.covered.iter().map(String::as_str)
+    /// The identity and stamp of every position an accepted request of this
+    /// binding supplied, in identity-then-stamp order.
+    pub fn covered(&self) -> impl Iterator<Item = &ObservedPosition> {
+        self.covered.iter()
     }
 }
 
@@ -237,7 +238,7 @@ impl ProgressLedger {
             check_progress(binding, retained, assertion, positions)
                 .map_err(LedgerRefusal::Contradiction)?;
         }
-        covered.extend(positions.iter().map(|position| position.identity.clone()));
+        covered.extend(positions.iter().cloned());
         let others: usize = self
             .entries
             .iter()
@@ -303,9 +304,10 @@ fn check_progress(
                 ProgressValue::Completeness(assertion.completeness),
             ));
         }
-        if let Some(position) = positions.iter().find(|position| {
-            position.stamp <= through && !retained.covered.contains(&position.identity)
-        }) {
+        if let Some(position) = positions
+            .iter()
+            .find(|position| position.stamp <= through && !retained.covered.contains(position))
+        {
             return Err(contradiction(
                 ContradictedDimension::Completeness,
                 ProgressValue::Completeness(retained.completeness),
@@ -662,8 +664,47 @@ mod tests {
             &[at("p120", 120)],
         )
         .expect("position at 120");
-        let covered: Vec<&str> = next.entry(&binding()).expect("entry").covered().collect();
-        assert_eq!(covered, ["p0", "p1", "p120", "p2", "p3"]);
+        let covered: Vec<(&str, u64)> = next
+            .entry(&binding())
+            .expect("entry")
+            .covered()
+            .map(|position| (position.identity.as_str(), position.stamp))
+            .collect();
+        assert_eq!(
+            covered,
+            [("p0", 0), ("p1", 1), ("p120", 120), ("p2", 2), ("p3", 3)]
+        );
+    }
+
+    #[trace("FR-502-AC-7", "TC-1296")]
+    #[test]
+    fn a_retained_identity_at_one_stamp_does_not_cover_it_at_another_stamp() {
+        let ledger = retaining(assertion(100, complete(100)), &[at("same-id", 0)]);
+        let before = ledger.clone();
+        let refusal = admit(
+            &ledger,
+            &binding(),
+            assertion(100, complete(100)),
+            &[at("same-id", 80)],
+        )
+        .expect_err("same identity at a new in-range stamp is uncovered");
+        assert_eq!(
+            contradiction(refusal),
+            ProgressContradiction {
+                dimension: ContradictedDimension::Completeness,
+                clock: "ms".to_owned(),
+                retained: ProgressValue::Completeness(complete(100)),
+                asserted: ProgressValue::Position(at("same-id", 80)),
+            }
+        );
+        assert_eq!(ledger, before, "refusal leaves the input ledger unchanged");
+        let covered: Vec<(&str, u64)> = ledger
+            .entry(&binding())
+            .expect("retained entry")
+            .covered()
+            .map(|position| (position.identity.as_str(), position.stamp))
+            .collect();
+        assert_eq!(covered, [("same-id", 0)]);
     }
 
     #[trace("FR-502-AC-8", "TC-1296")]
@@ -695,8 +736,13 @@ mod tests {
                 4,
             )
             .expect("omits p1 and p2, adds one beyond through");
-        let covered: Vec<&str> = next.entry(&binding()).expect("entry").covered().collect();
-        assert_eq!(covered, ["far", "p0", "p1", "p2"]);
+        let covered: Vec<(&str, u64)> = next
+            .entry(&binding())
+            .expect("entry")
+            .covered()
+            .map(|position| (position.identity.as_str(), position.stamp))
+            .collect();
+        assert_eq!(covered, [("far", 9), ("p0", 0), ("p1", 1), ("p2", 2)]);
         let refused = next
             .admit(
                 &binding(),
