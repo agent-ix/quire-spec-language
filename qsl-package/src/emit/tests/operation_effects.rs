@@ -654,6 +654,7 @@ fn wire_without_member(package: &CheckedPackageV2) -> Value {
         quire_contract_model::CheckedPackageSidecarsRef {
             checked_term_data: package.checked_term_data(),
             temporal_bindings: package.temporal_bindings(),
+            temporal_clause_names: package.temporal_clause_names(),
             operation_effects: None,
             schedulability_claims: (!schedulability_claims.is_empty())
                 .then_some(schedulability_claims.as_slice()),
